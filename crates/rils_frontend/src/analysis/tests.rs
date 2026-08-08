@@ -1,0 +1,663 @@
+use super::*;
+
+#[test]
+fn resolves_local_definitions_and_references() {
+    let source = "let value = 42; value";
+    let analysis = analyze(source).unwrap();
+    assert!(analysis.diagnostics.is_empty());
+    let reference = analysis
+        .symbols
+        .iter()
+        .find(|symbol| !symbol.is_definition && symbol.name == "value")
+        .unwrap();
+    assert_eq!(reference.definition_span, Some(Span::new(4, 9)));
+}
+
+#[test]
+fn reports_undefined_names_without_executing() {
+    let analysis = analyze("if false { missing }").unwrap();
+    assert_eq!(analysis.diagnostics.len(), 1);
+    assert!(analysis.diagnostics[0].message.contains("missing"));
+}
+
+#[test]
+fn pattern_bindings_are_scoped() {
+    let analysis = analyze("match Some(1) { Some(value) => value, None => 0 }; value").unwrap();
+    assert_eq!(analysis.diagnostics.len(), 1);
+    assert!(analysis.diagnostics[0].message.contains("undefined"));
+}
+
+#[test]
+fn analyzes_builtin_result_patterns_and_try_expressions() {
+    let source = r#"
+            fn source() -> Result<int, string> { Ok(42) }
+            fn forward() -> Result<int, string> {
+                let value = source()?;
+                Ok(value)
+            }
+            match forward() { Ok(value) => value, Err(_) => 0 }
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn analyzes_standard_io_and_fs_paths() {
+    let source = r#"
+            fn load(path: string) -> Result<string, std::io::Error> {
+                std::fs::read_to_string(path)
+            }
+            let loaded = std::fs::read_to_string("missing.txt");
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+    assert!(analysis.inlay_hints.iter().any(|hint| {
+        &source[hint.span.start..hint.span.end] == "loaded"
+            && hint.label == ": Result<string, std::io::Error>"
+    }));
+}
+
+#[test]
+fn annotated_types_resolve_to_their_declarations() {
+    let source = "struct Point { x: int }\nfn keep(value: Point) -> Point { value }\nlet p: Point = Point { x: 1 };";
+    let analysis = analyze(source).unwrap();
+    assert!(analysis.diagnostics.is_empty());
+    let definition = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "Point")
+        .unwrap()
+        .span;
+    let references = analysis
+        .symbols
+        .iter()
+        .filter(|symbol| !symbol.is_definition && symbol.name == "Point")
+        .collect::<Vec<_>>();
+    assert_eq!(references.len(), 4);
+    assert!(
+        references
+            .iter()
+            .all(|reference| reference.definition_span == Some(definition))
+    );
+}
+
+#[test]
+fn resolves_ufcs_methods_and_place_expressions() {
+    let source = r#"
+            trait Value { fn value(&self) -> int; }
+            struct Number { inner: int }
+            impl Value for Number { fn value(&self) -> int { self.inner } }
+
+            let mut number = Number { inner: 1 };
+            number.inner = 42;
+            let index = 0;
+            number[index];
+            Value::value(&number);
+            <Number as Value>::value(&number);
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+
+    let definition = analysis
+        .symbols
+        .iter()
+        .find(|symbol| {
+            symbol.is_definition && symbol.kind == SymbolKind::Method && symbol.name == "value"
+        })
+        .expect("trait method definition");
+    let ufcs_references = analysis
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            !symbol.is_definition
+                && symbol.kind == SymbolKind::Method
+                && symbol.name == "value"
+                && symbol.definition_span == Some(definition.span)
+        })
+        .count();
+    assert_eq!(ufcs_references, 2);
+
+    assert!(
+        analysis
+            .symbols
+            .iter()
+            .any(|symbol| !symbol.is_definition && symbol.name == "index")
+    );
+}
+
+#[test]
+fn infers_function_let_and_pattern_binding_types() {
+    let source = "
+            fn answer() { 42 }
+            fn identity<T>(input: T) { input }
+            fn make_getter() {
+                fn get() { 42 }
+                get
+            }
+            let result = answer();
+            let copied = identity(result);
+            let getter = make_getter();
+            let nested = getter();
+            let maybe = Some(result);
+            match maybe { Some(value) => value, None => 0 }
+            struct Point { x: int }
+            let point = Point { x: 1 };
+            match point { Point { x } => x }
+        ";
+    let analysis = analyze(source).unwrap();
+    for expected in [": int", ": Option<int>", " -> int"] {
+        assert!(
+            analysis
+                .inlay_hints
+                .iter()
+                .any(|hint| hint.label == expected),
+            "missing hint {expected:?}: {:?}",
+            analysis.inlay_hints
+        );
+    }
+    let answer = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "answer")
+        .unwrap();
+    assert_eq!(
+        answer.inferred_type,
+        Some(Type::function(Vec::new(), Type::Int))
+    );
+    let copied = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "copied")
+        .unwrap();
+    assert_eq!(copied.inferred_type, Some(Type::Int));
+    let getter = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "getter")
+        .unwrap();
+    assert_eq!(
+        getter.inferred_type,
+        Some(Type::function(Vec::new(), Type::Int))
+    );
+    let nested = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "nested")
+        .unwrap();
+    assert_eq!(nested.inferred_type, Some(Type::Int));
+    assert!(
+        analysis.inlay_hints.iter().any(|hint| {
+            &source[hint.span.start..hint.span.end] == "x" && hint.label == ": int"
+        })
+    );
+}
+
+#[test]
+fn resolves_macro_definitions_and_invocations() {
+    let source = "macro twice($value) { $value + $value } twice!(21)";
+    let analysis = analyze(source).unwrap();
+    let definition = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.kind == SymbolKind::Macro)
+        .unwrap();
+    let reference = analysis
+        .symbols
+        .iter()
+        .find(|symbol| !symbol.is_definition && symbol.kind == SymbolKind::Macro)
+        .unwrap();
+    assert_eq!(reference.definition_span, Some(definition.span));
+}
+
+#[test]
+fn analyzes_modules_imports_and_builtin_namespaces() {
+    let source = r#"
+            mod math { pub fn answer() -> int { 42 } }
+            use math::answer;
+            let value = answer();
+            std::io::println(value);
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+    assert!(analysis.symbols.iter().any(|symbol| {
+        symbol.is_definition && symbol.name == "math" && symbol.kind == SymbolKind::Module
+    }));
+    assert!(
+        analysis
+            .symbols
+            .iter()
+            .any(|symbol| { symbol.is_definition && symbol.name == "answer" })
+    );
+}
+
+#[test]
+fn reports_non_exhaustive_builtin_and_enum_matches() {
+    let source = r#"
+            enum State { Ready, Waiting(int), Failed { code: int } }
+            let state = State::Ready;
+            match state { State::Ready => 1, State::Waiting(_) => 2 };
+            match Some(1) { Some(value) => value };
+            match true { true => 1 };
+        "#;
+    let analysis = analyze(source).unwrap();
+    let messages = analysis
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(messages.iter().any(|message| message.contains("Failed")));
+    assert!(messages.iter().any(|message| message.contains("None")));
+    assert!(messages.iter().any(|message| message.contains("false")));
+}
+
+#[test]
+fn accepts_exhaustive_matches_and_reports_unreachable_arms() {
+    let source = r#"
+            match Some(1) {
+                Some(value) => value,
+                None => 0,
+                _ => -1,
+                Some(_) => -2,
+            };
+        "#;
+    let analysis = analyze(source).unwrap();
+    let unreachable = analysis
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message == "unreachable match arm")
+        .count();
+    assert_eq!(unreachable, 2, "{:?}", analysis.diagnostics);
+    assert!(
+        !analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("non-exhaustive"))
+    );
+}
+
+#[test]
+fn reports_missing_return_paths_and_unreachable_statements() {
+    let source = r#"
+            fn incomplete(flag: bool) -> int {
+                if flag { return 1; }
+            }
+            fn complete(flag: bool) -> int {
+                if flag { return 1; } else { return 2; }
+                3
+            }
+            loop {
+                break;
+                4;
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert_eq!(
+        analysis
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message.contains("not all paths return"))
+            .count(),
+        1,
+        "{:?}",
+        analysis.diagnostics
+    );
+    assert_eq!(
+        analysis
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message == "unreachable statement")
+            .count(),
+        2,
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn accepts_diverging_loops_and_finds_duplicate_literals() {
+    let source = r#"
+            fn forever() -> int { loop {} }
+            match 1 { 1 => 1, 1 => 2, _ => 3 };
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        !analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("not all paths return")),
+        "{:?}",
+        analysis.diagnostics
+    );
+    assert_eq!(
+        analysis
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message == "unreachable match arm")
+            .count(),
+        1,
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn reports_moves_and_merges_definite_branch_moves() {
+    let source = r#"
+            fn moved(flag: bool) {
+                let first = "first";
+                let owner = first;
+                first;
+
+                let second = "second";
+                if flag { let left = second; } else { let right = second; }
+                second;
+
+                let third = "third";
+                if flag { let maybe = third; }
+                third;
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    let moved = analysis
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message.contains("use of moved value"))
+        .collect::<Vec<_>>();
+    assert_eq!(moved.len(), 2, "{:?}", analysis.diagnostics);
+    assert!(
+        moved
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("first"))
+    );
+    assert!(
+        moved
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("second"))
+    );
+}
+
+#[test]
+fn preserves_copy_values_and_allows_multiple_mutable_references() {
+    let source = r#"
+            fn valid() -> int {
+                let value = 21;
+                let copied = value;
+                let mut target = value + copied;
+                {
+                    let first = &mut target;
+                    let second = &mut target;
+                    *first = *second;
+                }
+                target
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn reports_mutability_borrow_and_reference_escape_errors() {
+    let source = r#"
+            fn invalid_return(value: &int) { value }
+            fn invalid_local() {
+                let immutable = 1;
+                immutable = 2;
+                let writable = &mut immutable;
+
+                let text = "hello";
+                {
+                    let reference = &text;
+                    let moved = text;
+                }
+
+                let value = 1;
+                let wrapped = Some(&value);
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    for expected in [
+        "cannot be returned",
+        "cannot assign to immutable",
+        "cannot mutably reference immutable",
+        "while it is referenced",
+        "cannot be stored inside owned values",
+    ] {
+        assert!(
+            analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(expected)),
+            "missing {expected:?}: {:?}",
+            analysis.diagnostics
+        );
+    }
+}
+
+#[test]
+fn releases_local_and_temporary_borrows() {
+    let source = r#"
+            fn inspect(value: &string) -> int { 1 }
+            fn valid() {
+                let first = "first";
+                inspect(&first);
+                let moved_first = first;
+
+                let second = "second";
+                { let reference = &second; }
+                let moved_second = second;
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn tracks_partial_field_moves_and_field_reinitialization() {
+    let source = r#"
+            struct Message { text: string, code: int }
+            fn invalid() {
+                let message = Message { text: "hello", code: 1 };
+                let text = message.text;
+                message.text;
+                message;
+            }
+            fn valid() {
+                let mut message = Message { text: "hello", code: 1 };
+                let text = message.text;
+                message.text = "again";
+                let restored = message;
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert_eq!(
+        analysis
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message.contains("moved place"))
+            .count(),
+        1,
+        "{:?}",
+        analysis.diagnostics
+    );
+    assert_eq!(
+        analysis
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message.contains("partially moved"))
+            .count(),
+        1,
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn reports_basic_static_type_mismatches() {
+    let source = r#"
+            fn takes_int(value: int) -> int { value }
+            fn wrong_return() -> int { "wrong" }
+            fn explicit_wrong() -> int { return "wrong"; }
+
+            let annotated: string = 42;
+            let mut assigned: int = 1;
+            assigned = "wrong";
+            takes_int("wrong");
+            if 1 { 1 } else { 2 };
+            let mixed = if true { 1 } else { "wrong" };
+            let array = [1, "wrong"];
+            let range = 0..false;
+            unwrap_or(Some(1), "wrong");
+        "#;
+    let analysis = analyze(source).unwrap();
+    for expected in [
+        "function result expects `int`",
+        "return value expects `int`",
+        "initializer expects `string`",
+        "assigned value expects `int`",
+        "argument expects `int`",
+        "if condition expects `bool`",
+        "if branch expects `int`",
+        "array element expects `int`",
+        "range bound expects `int`",
+        "default argument expects `int`",
+    ] {
+        assert!(
+            analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(expected)),
+            "missing {expected:?}: {:?}",
+            analysis.diagnostics
+        );
+    }
+}
+
+#[test]
+fn accepts_aliases_generics_and_mixed_numeric_operators() {
+    let source = r#"
+            type Count = int;
+            fn identity<T>(value: T) -> T { value }
+            fn convert(value: float) -> float { value }
+            let count: Count = 42;
+            let text = identity("text");
+            let number = convert(1.5);
+            let mixed = 1 + 2.5;
+            if true { count } else { 0 };
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn tracks_owned_and_borrowed_method_receivers() {
+    let source = r#"
+            struct Message { text: string }
+            impl Message {
+                fn read(&self) -> int { 1 }
+                fn replace(&mut self, text: string) { *self = Message { text: text } }
+                fn consume(self) -> int { 1 }
+            }
+
+            fn invalid_move() {
+                let message = Message { text: "hello" };
+                message.read();
+                message.consume();
+                message;
+            }
+
+            fn invalid_mutability() {
+                let message = Message { text: "hello" };
+                message.replace("next");
+            }
+
+            fn invalid_argument() {
+                let mut message = Message { text: "hello" };
+                message.replace(42);
+            }
+
+            fn valid() {
+                let mut message = Message { text: "hello" };
+                message.read();
+                message.replace("next");
+                message.read();
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    for expected in [
+        "use of moved value `message`",
+        "cannot mutably reference immutable variable `message`",
+        "argument expects `string`",
+    ] {
+        assert!(
+            analysis
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(expected)),
+            "missing {expected:?}: {:?}",
+            analysis.diagnostics
+        );
+    }
+    assert_eq!(analysis.diagnostics.len(), 3, "{:?}", analysis.diagnostics);
+}
+
+#[test]
+fn merges_moves_from_all_loop_break_paths() {
+    let source = r#"
+            fn definite() {
+                let text = "owned";
+                loop {
+                    let consumed = text;
+                    break;
+                }
+                text;
+            }
+
+            fn conditional(flag: bool) {
+                let text = "owned";
+                loop {
+                    if flag {
+                        let consumed = text;
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+                text;
+            }
+        "#;
+    let analysis = analyze(source).unwrap();
+    let moved = analysis
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message.contains("use of moved value `text`"))
+        .count();
+    assert_eq!(moved, 1, "{:?}", analysis.diagnostics);
+}

@@ -1,0 +1,503 @@
+//! Runtime bridge between static [`Type`] descriptions and dynamically stored [`Value`]s.
+
+use std::{collections::HashMap, rc::Rc};
+
+use crate::{
+    ast::EnumVariant,
+    types::{FunctionSignature, RuntimeValue, Type, merge_type_arguments, merge_types},
+    value::{EnumInstance, EnumPayload, FieldSlot, StructInstance, Value, enum_variant_name},
+};
+
+impl RuntimeValue for Value {
+    fn is_accepted_by(&self, expected: &Type) -> bool {
+        accepts(expected, self)
+    }
+
+    fn constrain_to(&self, expected: &Type) -> Option<Self> {
+        constrain(expected, self)
+    }
+
+    fn runtime_type(&self) -> Option<Type> {
+        type_of_value(self)
+    }
+}
+fn accepts(expected: &Type, value: &Value) -> bool {
+    match (expected, value) {
+        (Type::Unknown | Type::Variable(_), _) => true,
+        (Type::Unit, Value::Unit)
+        | (Type::Bool, Value::Bool(_))
+        | (Type::Int, Value::Integer(_))
+        | (Type::Float, Value::Float(_))
+        | (Type::String, Value::String(_)) => true,
+        (Type::Tuple(expected), Value::Tuple(sequence)) => {
+            let elements = sequence.elements.borrow();
+            expected.len() == elements.len()
+                && expected
+                    .iter()
+                    .zip(elements.iter())
+                    .all(|(expected, slot)| {
+                        slot.value
+                            .as_ref()
+                            .is_some_and(|value| expected.accepts(value))
+                    })
+        }
+        (Type::Array { element, length }, Value::Array(sequence)) => {
+            let elements = sequence.elements.borrow();
+            *length == elements.len()
+                && elements.iter().all(|slot| {
+                    slot.value
+                        .as_ref()
+                        .is_some_and(|value| element.accepts(value))
+                })
+        }
+        (Type::Named { name, arguments }, Value::Vec(sequence)) if name == "Vec" => {
+            arguments.len() == 1
+                && sequence.elements.borrow().iter().all(|slot| {
+                    slot.value
+                        .as_ref()
+                        .is_some_and(|value| arguments[0].accepts(value))
+                })
+        }
+        (
+            Type::Reference {
+                mutable: expected_mutable,
+                inner: expected_inner,
+            },
+            Value::Reference(reference),
+        ) => {
+            (!*expected_mutable || reference.mutable)
+                && reference
+                    .read()
+                    .ok()
+                    .is_some_and(|value| expected_inner.accepts(&value))
+        }
+        (
+            expected @ Type::Function { .. },
+            value @ (Value::Function(_)
+            | Value::BytecodeFunction(_)
+            | Value::NativeFunction(_)
+            | Value::HostFunction(_)
+            | Value::HostBoundMethod(_)
+            | Value::VariantConstructor(_)
+            | Value::BoundMethod(_)
+            | Value::BuiltinBoundMethod(_)
+            | Value::TraitMethodSelector(_)),
+        ) => Type::of_value(value).is_some_and(|actual| merge_types(expected, &actual).is_some()),
+        (
+            Type::Option(expected),
+            Value::Option {
+                value: None,
+                element_type,
+            },
+        ) => element_type
+            .as_ref()
+            .is_none_or(|actual| merge_types(expected, actual).is_some()),
+        (
+            Type::Option(inner_type),
+            Value::Option {
+                value: Some(value), ..
+            },
+        ) => inner_type.accepts(value.as_ref()),
+        (
+            Type::Result(expected_ok, expected_error),
+            Value::Result {
+                value,
+                ok_type,
+                error_type,
+            },
+        ) => match value {
+            Ok(value) => {
+                expected_ok.accepts(value.as_ref())
+                    && error_type
+                        .as_ref()
+                        .is_none_or(|actual| merge_types(expected_error, actual).is_some())
+            }
+            Err(value) => {
+                expected_error.accepts(value.as_ref())
+                    && ok_type
+                        .as_ref()
+                        .is_none_or(|actual| merge_types(expected_ok, actual).is_some())
+            }
+        },
+        (Type::Named { name, arguments }, Value::Struct(instance)) => {
+            instance.type_definition.name == *name
+                && type_arguments_compatible(arguments, &instance.type_arguments)
+        }
+        (Type::Named { name, arguments }, Value::Enum(instance)) => {
+            instance.type_definition.name == *name
+                && type_arguments_compatible(arguments, &instance.type_arguments)
+        }
+        (Type::Named { name, arguments }, Value::Range(_)) => {
+            name == "Range" && arguments.is_empty()
+        }
+        (Type::Named { name, arguments }, Value::HostObject(object)) => {
+            arguments.is_empty() && object.type_definition.name == *name
+        }
+        _ => false,
+    }
+}
+
+fn constrain(expected: &Type, value: &Value) -> Option<Value> {
+    if !expected.accepts(value) {
+        return None;
+    }
+    match (expected, value) {
+        (Type::Tuple(expected), Value::Tuple(sequence)) => {
+            let source = sequence.elements.borrow();
+            let elements = expected
+                .iter()
+                .zip(source.iter())
+                .map(|(expected, slot)| {
+                    Some(FieldSlot {
+                        value: Some(expected.constrain(slot.value.as_ref()?)?),
+                        type_annotation: expected.clone(),
+                        references: 0,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(Value::Tuple(Rc::new(crate::value::SequenceValue {
+                elements: std::cell::RefCell::new(elements),
+                element_type: std::cell::RefCell::new(None),
+            })))
+        }
+        (Type::Array { element, .. }, Value::Array(sequence)) => {
+            let source = sequence.elements.borrow();
+            let elements = source
+                .iter()
+                .map(|slot| {
+                    Some(FieldSlot {
+                        value: Some(element.constrain(slot.value.as_ref()?)?),
+                        type_annotation: (**element).clone(),
+                        references: 0,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(Value::Array(Rc::new(crate::value::SequenceValue {
+                elements: std::cell::RefCell::new(elements),
+                element_type: std::cell::RefCell::new(Some((**element).clone())),
+            })))
+        }
+        (Type::Named { name, arguments }, Value::Vec(sequence))
+            if name == "Vec" && arguments.len() == 1 =>
+        {
+            let expected = &arguments[0];
+            let source = sequence.elements.borrow();
+            let elements = source
+                .iter()
+                .map(|slot| {
+                    Some(FieldSlot {
+                        value: Some(expected.constrain(slot.value.as_ref()?)?),
+                        type_annotation: expected.clone(),
+                        references: 0,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(Value::Vec(Rc::new(crate::value::SequenceValue {
+                elements: std::cell::RefCell::new(elements),
+                element_type: std::cell::RefCell::new(Some(expected.clone())),
+            })))
+        }
+        (
+            Type::Option(inner_type),
+            Value::Option {
+                value,
+                element_type: _,
+            },
+        ) => {
+            let value = match value {
+                Some(value) => Some(Rc::new(inner_type.constrain(value.as_ref())?)),
+                None => None,
+            };
+            Some(Value::Option {
+                value,
+                element_type: Some((**inner_type).clone()),
+            })
+        }
+        (Type::Result(ok_type, error_type), Value::Result { value, .. }) => Some(Value::Result {
+            value: match value {
+                Ok(value) => Ok(Rc::new(ok_type.constrain(value.as_ref())?)),
+                Err(value) => Err(Rc::new(error_type.constrain(value.as_ref())?)),
+            },
+            ok_type: Some((**ok_type).clone()),
+            error_type: Some((**error_type).clone()),
+        }),
+        (Type::Named { arguments, .. }, Value::Struct(instance)) => {
+            let type_arguments = merge_type_arguments(arguments, &instance.type_arguments)?;
+            let substitutions = instance
+                .type_definition
+                .generic_parameters
+                .iter()
+                .map(|parameter| parameter.name.clone())
+                .zip(type_arguments.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            let source_fields = instance.fields.borrow();
+            let mut fields = HashMap::new();
+            for definition in &instance.type_definition.fields {
+                let expected = definition.type_annotation.substitute(&substitutions);
+                let value = source_fields.get(&definition.name)?.value.as_ref()?;
+                let constrained = expected.constrain(value)?;
+                fields.insert(
+                    definition.name.clone(),
+                    FieldSlot {
+                        value: Some(constrained),
+                        type_annotation: expected,
+                        references: 0,
+                    },
+                );
+            }
+            Some(Value::Struct(Rc::new(StructInstance {
+                type_definition: instance.type_definition.clone(),
+                fields: std::cell::RefCell::new(fields),
+                type_arguments,
+            })))
+        }
+        (Type::Named { arguments, .. }, Value::Enum(instance)) => {
+            let type_arguments = merge_type_arguments(arguments, &instance.type_arguments)?;
+            let substitutions = instance
+                .type_definition
+                .generic_parameters
+                .iter()
+                .map(|parameter| parameter.name.clone())
+                .zip(type_arguments.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            let variant = instance
+                .type_definition
+                .variants
+                .iter()
+                .find(|variant| enum_variant_name(variant) == instance.variant)?;
+            let payload = match (variant, &instance.payload) {
+                (EnumVariant::Unit { .. }, EnumPayload::Unit) => EnumPayload::Unit,
+                (
+                    EnumVariant::Tuple {
+                        fields: definitions,
+                        ..
+                    },
+                    EnumPayload::Tuple(values),
+                ) if definitions.len() == values.len() => EnumPayload::Tuple(
+                    definitions
+                        .iter()
+                        .zip(values)
+                        .map(|(definition, value)| {
+                            definition.substitute(&substitutions).constrain(value)
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                ),
+                (
+                    EnumVariant::Record {
+                        fields: definitions,
+                        ..
+                    },
+                    EnumPayload::Record(values),
+                ) => {
+                    let mut constrained = values.clone();
+                    for definition in definitions {
+                        let expected = definition.type_annotation.substitute(&substitutions);
+                        let value = constrained.get(&definition.name)?;
+                        constrained.insert(definition.name.clone(), expected.constrain(value)?);
+                    }
+                    EnumPayload::Record(constrained)
+                }
+                _ => return None,
+            };
+            Some(Value::Enum(Rc::new(EnumInstance {
+                type_definition: instance.type_definition.clone(),
+                variant: instance.variant.clone(),
+                payload,
+                type_arguments,
+            })))
+        }
+        _ => Some(value.clone()),
+    }
+}
+
+fn type_of_value(value: &Value) -> Option<Type> {
+    match value {
+        Value::Unit => Some(Type::Unit),
+        Value::Bool(_) => Some(Type::Bool),
+        Value::Integer(_) => Some(Type::Int),
+        Value::Float(_) => Some(Type::Float),
+        Value::String(_) => Some(Type::String),
+        Value::Tuple(sequence) => Some(Type::Tuple(
+            sequence
+                .elements
+                .borrow()
+                .iter()
+                .map(|slot| Type::of_value(slot.value.as_ref()?))
+                .collect::<Option<Vec<_>>>()?,
+        )),
+        Value::Array(sequence) => Some(Type::Array {
+            element: Box::new(
+                sequence
+                    .element_type
+                    .borrow()
+                    .clone()
+                    .unwrap_or(Type::Unknown),
+            ),
+            length: sequence.elements.borrow().len(),
+        }),
+        Value::Vec(sequence) => Some(Type::Named {
+            name: "Vec".into(),
+            arguments: vec![
+                sequence
+                    .element_type
+                    .borrow()
+                    .clone()
+                    .unwrap_or(Type::Unknown),
+            ],
+        }),
+        Value::SequenceIterator(iterator) => Some(Type::Named {
+            name: "SequenceIterator".into(),
+            arguments: vec![iterator.element_type.clone()],
+        }),
+        Value::BytecodeIterator(_) => Some(Type::Named {
+            name: "Iterator".into(),
+            arguments: vec![Type::Unknown],
+        }),
+        Value::Reference(reference) => Some(Type::Reference {
+            mutable: reference.mutable,
+            inner: Box::new(Type::of_value(&reference.read().ok()?)?),
+        }),
+        Value::Function(function) => Some(function_type(function)),
+        Value::BytecodeFunction(_) => Some(Type::opaque_function()),
+        Value::NativeFunction(function) => Some(
+            function
+                .signature
+                .as_ref()
+                .map_or_else(Type::opaque_function, FunctionSignature::as_type),
+        ),
+        Value::HostFunction(function) => Some(
+            function
+                .signature
+                .as_ref()
+                .map_or_else(Type::opaque_function, FunctionSignature::as_type),
+        ),
+        Value::HostBoundMethod(method) => Some(
+            method
+                .function
+                .signature
+                .as_ref()
+                .map_or_else(Type::opaque_function, FunctionSignature::as_type),
+        ),
+        Value::HostObject(object) => Some(Type::named(object.type_definition.name.clone())),
+        Value::VariantConstructor(constructor) => {
+            let variant = constructor
+                .type_definition
+                .variants
+                .iter()
+                .find(|variant| enum_variant_name(variant) == constructor.variant)?;
+            let EnumVariant::Tuple { fields, .. } = variant else {
+                return Some(Type::opaque_function());
+            };
+            Some(Type::function(
+                fields.clone(),
+                Type::Named {
+                    name: constructor.type_definition.name.clone(),
+                    arguments: constructor
+                        .type_definition
+                        .generic_parameters
+                        .iter()
+                        .map(|parameter| Type::Variable(parameter.name.clone()))
+                        .collect(),
+                },
+            ))
+        }
+        Value::BoundMethod(method) => {
+            let mut signature = function_type(&method.function);
+            if let Type::Function {
+                parameters: Some(parameters),
+                ..
+            } = &mut signature
+                && !parameters.is_empty()
+            {
+                parameters.remove(0);
+            }
+            Some(signature)
+        }
+        Value::BuiltinBoundMethod(method) => Some(match method.method {
+            crate::value::BuiltinMethod::RangeNext => {
+                Type::function(Vec::new(), Type::Option(Box::new(Type::Int)))
+            }
+            crate::value::BuiltinMethod::RangeIntoIter => {
+                Type::function(Vec::new(), Type::named("Range"))
+            }
+            crate::value::BuiltinMethod::Clone => Type::function(Vec::new(), Type::Unknown),
+            crate::value::BuiltinMethod::SequenceLen => Type::function(Vec::new(), Type::Int),
+            crate::value::BuiltinMethod::VecPush => Type::function(vec![Type::Unknown], Type::Unit),
+            crate::value::BuiltinMethod::VecPop | crate::value::BuiltinMethod::SequenceNext => {
+                Type::function(Vec::new(), Type::Option(Box::new(Type::Unknown)))
+            }
+            crate::value::BuiltinMethod::SequenceIntoIter => Type::function(
+                Vec::new(),
+                Type::Named {
+                    name: "SequenceIterator".into(),
+                    arguments: vec![Type::Unknown],
+                },
+            ),
+            crate::value::BuiltinMethod::ResultIsOk | crate::value::BuiltinMethod::ResultIsErr => {
+                Type::function(Vec::new(), Type::Bool)
+            }
+            crate::value::BuiltinMethod::ResultUnwrap => {
+                let return_type = match method.receiver.as_ref() {
+                    Value::Result { ok_type, .. } => ok_type.clone().unwrap_or(Type::Unknown),
+                    _ => Type::Unknown,
+                };
+                Type::function(Vec::new(), return_type)
+            }
+            crate::value::BuiltinMethod::ResultUnwrapOr => {
+                let return_type = match method.receiver.as_ref() {
+                    Value::Result { ok_type, .. } => ok_type.clone().unwrap_or(Type::Unknown),
+                    _ => Type::Unknown,
+                };
+                Type::function(vec![return_type.clone()], return_type)
+            }
+        }),
+        Value::TraitMethodSelector(_) => Some(Type::opaque_function()),
+        Value::Option { element_type, .. } => Some(Type::Option(Box::new(
+            element_type.clone().unwrap_or(Type::Unknown),
+        ))),
+        Value::Result {
+            ok_type,
+            error_type,
+            ..
+        } => Some(Type::Result(
+            Box::new(ok_type.clone().unwrap_or(Type::Unknown)),
+            Box::new(error_type.clone().unwrap_or(Type::Unknown)),
+        )),
+        Value::Struct(instance) => Some(Type::Named {
+            name: instance.type_definition.name.clone(),
+            arguments: instance.type_arguments.clone(),
+        }),
+        Value::Enum(instance) => Some(Type::Named {
+            name: instance.type_definition.name.clone(),
+            arguments: instance.type_arguments.clone(),
+        }),
+        Value::Range(_) => Some(Type::named("Range")),
+        Value::BuiltinFunction(_) => Some(Type::opaque_function()),
+        Value::BuiltinType(_)
+        | Value::Module(_)
+        | Value::HostType(_)
+        | Value::StructType(_)
+        | Value::EnumType(_)
+        | Value::TraitType(_)
+        | Value::TypeAlias(_) => None,
+    }
+}
+
+fn type_arguments_compatible(expected: &[Type], actual: &[Type]) -> bool {
+    expected.len() == actual.len()
+        && expected
+            .iter()
+            .zip(actual)
+            .all(|(expected, actual)| merge_types(expected, actual).is_some())
+}
+
+fn function_type(function: &crate::value::UserFunction) -> Type {
+    Type::function(
+        function
+            .parameters
+            .iter()
+            .map(|parameter| parameter.type_annotation.clone().unwrap_or(Type::Unknown))
+            .collect(),
+        function.return_type.clone().unwrap_or(Type::Unknown),
+    )
+}

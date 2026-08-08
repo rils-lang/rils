@@ -1,0 +1,306 @@
+use std::mem::discriminant;
+
+mod declaration;
+mod expression;
+mod pattern;
+mod support;
+mod type_annotation;
+
+use crate::{
+    ast::{
+        AssociatedType, BinaryOp, Block, EnumVariant, Expr, GenericParameter, ImplMethod, Literal,
+        LogicalOp, MacroSymbol, MatchArm, NamedField, Parameter, Pattern, Program, Stmt,
+        TraitMethod, TypeReference, UnaryOp,
+    },
+    source::Span,
+    token::{Token, TokenKind},
+    types::Type,
+};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParseError {
+    pub message: String,
+    pub span: Span,
+}
+
+pub fn parse(tokens: Vec<Token>) -> Result<Program, ParseError> {
+    parse_with_native_macros(tokens, crate::macros::STANDARD_NATIVE_MACROS)
+}
+
+pub fn parse_with_native_macros(
+    tokens: Vec<Token>,
+    native_macros: &[crate::macros::NativeMacroDefinition],
+) -> Result<Program, ParseError> {
+    let expansion = crate::macros::expand(tokens, native_macros)?;
+    Parser::new(expansion.tokens, expansion.macros).parse_program()
+}
+
+pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
+    if tokens.is_empty() || !has_balanced_delimiters(tokens) {
+        return false;
+    }
+    let mut fragment = mask_macro_invocations(tokens);
+    let end = fragment.last().map_or(0, |token| token.span.end);
+    fragment.push(Token::new(TokenKind::Eof, Span::new(end, end)));
+    let mut parser = Parser::new(fragment, Vec::new());
+    parser.expression().is_ok() && parser.check(&TokenKind::Eof)
+}
+
+fn has_balanced_delimiters(tokens: &[Token]) -> bool {
+    let mut parens = 0usize;
+    let mut braces = 0usize;
+    for token in tokens {
+        match token.kind {
+            TokenKind::LeftParen => parens += 1,
+            TokenKind::RightParen if parens > 0 => parens -= 1,
+            TokenKind::RightParen => return false,
+            TokenKind::LeftBrace => braces += 1,
+            TokenKind::RightBrace if braces > 0 => braces -= 1,
+            TokenKind::RightBrace => return false,
+            _ => {}
+        }
+    }
+    parens == 0 && braces == 0
+}
+
+fn mask_macro_invocations(tokens: &[Token]) -> Vec<Token> {
+    let mut output = Vec::new();
+    let mut current = 0;
+    while current < tokens.len() {
+        if matches!(
+            tokens.get(current).map(|token| &token.kind),
+            Some(TokenKind::Identifier(_))
+        ) && matches!(
+            tokens.get(current + 1).map(|token| &token.kind),
+            Some(TokenKind::Bang)
+        ) && matches!(
+            tokens.get(current + 2).map(|token| &token.kind),
+            Some(TokenKind::LeftParen)
+        ) {
+            let mut depth = 1usize;
+            let mut end = current + 3;
+            while end < tokens.len() {
+                match tokens[end].kind {
+                    TokenKind::LeftParen => depth += 1,
+                    TokenKind::RightParen => {
+                        depth -= 1;
+                        if depth == 0 {
+                            let span = tokens[current].span.merge(tokens[end].span);
+                            output.push(Token::new(TokenKind::Integer(0), span));
+                            current = end + 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                end += 1;
+            }
+            if depth == 0 {
+                continue;
+            }
+        }
+        output.push(tokens[current].clone());
+        current += 1;
+    }
+    output
+}
+
+struct Parser {
+    tokens: Vec<Token>,
+    current: usize,
+    generic_scopes: Vec<Vec<GenericParameter>>,
+    type_references: Vec<TypeReference>,
+    macros: Vec<MacroSymbol>,
+    loop_depth: usize,
+    block_depth: usize,
+}
+
+impl Parser {
+    fn new(tokens: Vec<Token>, macros: Vec<MacroSymbol>) -> Self {
+        Self {
+            tokens,
+            current: 0,
+            generic_scopes: Vec::new(),
+            type_references: Vec::new(),
+            macros,
+            loop_depth: 0,
+            block_depth: 0,
+        }
+    }
+
+    fn parse_program(mut self) -> Result<Program, ParseError> {
+        let mut statements = Vec::new();
+        while !self.check(&TokenKind::Eof) {
+            statements.push(self.statement()?);
+        }
+        Ok(Program {
+            statements,
+            type_references: self.type_references,
+            macros: self.macros,
+        })
+    }
+
+    fn statement(&mut self) -> Result<Stmt, ParseError> {
+        if self.block_depth > 0
+            && matches!(
+                self.peek().kind,
+                TokenKind::Pub
+                    | TokenKind::Mod
+                    | TokenKind::Use
+                    | TokenKind::Struct
+                    | TokenKind::Enum
+                    | TokenKind::Type
+                    | TokenKind::Impl
+                    | TokenKind::Trait
+            )
+        {
+            return Err(ParseError {
+                message: "this item declaration is only allowed at module scope".into(),
+                span: self.peek().span,
+            });
+        }
+        if let Some(token) = self.take(&TokenKind::Pub) {
+            let statement = self.statement()?;
+            if !matches!(
+                statement,
+                Stmt::Function { .. }
+                    | Stmt::Struct { .. }
+                    | Stmt::Enum { .. }
+                    | Stmt::TypeAlias { .. }
+                    | Stmt::Trait { .. }
+                    | Stmt::Module { .. }
+                    | Stmt::Use { .. }
+            ) {
+                return Err(ParseError {
+                    message: "`pub` is only allowed on declarations, modules, and use items".into(),
+                    span: token.span,
+                });
+            }
+            let span = token.span.merge(statement_span_for_parser(&statement));
+            return Ok(Stmt::Public {
+                statement: Box::new(statement),
+                span,
+            });
+        }
+        if let Some(token) = self.take(&TokenKind::Mod) {
+            return self.module_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Use) {
+            return self.use_statement(token.span);
+        }
+        if self.take(&TokenKind::Let).is_some() {
+            return self.let_statement();
+        }
+        if let Some(token) = self.take(&TokenKind::Fn) {
+            return self.function_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Struct) {
+            return self.struct_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Enum) {
+            return self.enum_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Type) {
+            return self.type_alias_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Impl) {
+            return self.impl_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Trait) {
+            return self.trait_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::While) {
+            return self.while_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Loop) {
+            return self.loop_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::For) {
+            return self.for_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Return) {
+            return self.return_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Break) {
+            return self.break_statement(token.span);
+        }
+        if let Some(token) = self.take(&TokenKind::Continue) {
+            return self.continue_statement(token.span);
+        }
+        self.expression_statement()
+    }
+}
+
+fn statement_span_for_parser(statement: &Stmt) -> Span {
+    match statement {
+        Stmt::Public { span, .. }
+        | Stmt::Module { span, .. }
+        | Stmt::Use { span, .. }
+        | Stmt::Let { span, .. }
+        | Stmt::Function { span, .. }
+        | Stmt::Struct { span, .. }
+        | Stmt::Enum { span, .. }
+        | Stmt::TypeAlias { span, .. }
+        | Stmt::Impl { span, .. }
+        | Stmt::Trait { span, .. }
+        | Stmt::While { span, .. }
+        | Stmt::Loop { span, .. }
+        | Stmt::For { span, .. }
+        | Stmt::Return { span, .. }
+        | Stmt::Break { span, .. }
+        | Stmt::Continue { span, .. } => *span,
+        Stmt::Expr { expression, .. } => expression.span(),
+    }
+}
+
+fn expression_path(expression: &Expr) -> Option<Vec<String>> {
+    match expression {
+        Expr::Variable { name, .. } => Some(vec![name.clone()]),
+        Expr::Path { segments, .. } => Some(segments.clone()),
+        _ => None,
+    }
+}
+
+fn enum_variant_name(variant: &EnumVariant) -> &str {
+    match variant {
+        EnumVariant::Unit { name, .. }
+        | EnumVariant::Tuple { name, .. }
+        | EnumVariant::Record { name, .. } => name,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::lex;
+
+    #[test]
+    fn parses_function_and_if_expression() {
+        let source = "fn max(a, b) { if a > b { a } else { b } }";
+        let program = parse(lex(source).unwrap()).unwrap();
+        assert!(matches!(program.statements[0], Stmt::Function { .. }));
+    }
+
+    #[test]
+    fn rejects_invalid_assignment_target() {
+        let error = parse(lex("(1 + 2) = 3;").unwrap()).unwrap_err();
+        assert_eq!(error.message, "invalid assignment target");
+    }
+
+    #[test]
+    fn only_functions_can_be_declared_inside_blocks() {
+        let error = parse(lex("fn outer() { struct Local { value: int } }").unwrap())
+            .expect_err("local type items are not part of the language");
+        assert!(error.message.contains("module scope"));
+
+        parse(lex("fn outer() { fn local() -> int { 1 } local() }").unwrap())
+            .expect("nested functions remain valid");
+    }
+
+    #[test]
+    fn recognizes_function_call_comparisons_as_macro_expression_fragments() {
+        let mut tokens = crate::lexer::lex("type_of(getter) == \"fn() -> int\"").unwrap();
+        tokens.pop();
+        assert!(super::is_expression_fragment(&tokens));
+    }
+}

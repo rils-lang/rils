@@ -1,0 +1,41 @@
+[package]
+name = "rils"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+description = "A Rust-inspired lightweight scripting language"
+license.workspace = true
+repository.workspace = true
+include = [
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/LICENSE",
+    "/README.md",
+    "/examples/**",
+    "/src/**",
+]
+
+[dependencies]
+rils_compiler.workspace = true
+rils_frontend.workspace = true
+
+[workspace]
+members = [
+    ".",
+    "crates/rils_compiler",
+    "crates/rils_frontend",
+    "tools/rils-analyzer"
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rils-lang/rils"
+
+[workspace.dependencies]
+rils_compiler = { version = "0.1.0", path = "crates/rils_compiler" }
+rils_frontend = { version = "0.1.0", path = "crates/rils_frontend" }

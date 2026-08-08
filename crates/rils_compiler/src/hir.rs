@@ -1,0 +1,1105 @@
+use std::{
+    cell::{Cell, RefCell},
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
+
+use crate::{
+    ast::{Block, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
+    bytecode::CompileError,
+    source::Span,
+};
+
+mod imports;
+mod ir;
+mod symbols;
+
+use imports::*;
+pub use ir::*;
+use symbols::*;
+
+pub(crate) fn lower(program: &Program) -> Result<HirProgram, CompileError> {
+    ProgramLowerer::new(program)?.lower(program)
+}
+
+struct ProgramLowerer {
+    functions: HashMap<String, FunctionId>,
+    methods: HashMap<String, MethodInfo>,
+    method_names: HashMap<String, Option<MethodInfo>>,
+    types: HashMap<String, TypeId>,
+    type_definitions: Vec<HirTypeDefinition>,
+}
+
+impl ProgramLowerer {
+    fn new(program: &Program) -> Result<Self, CompileError> {
+        let mut functions = HashMap::new();
+        let mut types = HashMap::new();
+        let mut type_definitions = Vec::new();
+        for statement in &program.statements {
+            if let Some(declaration) = function_declaration(statement) {
+                let id = functions.len() + 1;
+                if functions.insert(declaration.name.to_string(), id).is_some() {
+                    return Err(CompileError::unsupported(
+                        format!("duplicate function `{}`", declaration.name),
+                        declaration.span,
+                    ));
+                }
+            }
+            let statement = match statement {
+                Stmt::Public { statement, .. } => statement.as_ref(),
+                statement => statement,
+            };
+            let definition = match statement {
+                Stmt::Struct {
+                    name,
+                    generic_parameters,
+                    fields,
+                    ..
+                } => Some(HirTypeDefinition::Struct {
+                    name: name.clone(),
+                    generic_parameters: generic_parameters.clone(),
+                    fields: fields.clone(),
+                }),
+                Stmt::Enum {
+                    name,
+                    generic_parameters,
+                    variants,
+                    ..
+                } => Some(HirTypeDefinition::Enum {
+                    name: name.clone(),
+                    generic_parameters: generic_parameters.clone(),
+                    variants: variants.clone(),
+                }),
+                _ => None,
+            };
+            if let Some(definition) = definition {
+                let name = match &definition {
+                    HirTypeDefinition::Struct { name, .. }
+                    | HirTypeDefinition::Enum { name, .. } => name.clone(),
+                };
+                types.insert(name, type_definitions.len());
+                type_definitions.push(definition);
+            }
+        }
+        collect_nested_symbols(
+            &program.statements,
+            &mut Vec::new(),
+            &mut functions,
+            &mut types,
+            &mut type_definitions,
+        )?;
+
+        let mut methods = HashMap::new();
+        let mut method_names = HashMap::new();
+        let mut next_method_id = functions.values().copied().max().unwrap_or(0) + 1;
+        collect_method_symbols(
+            &program.statements,
+            &mut Vec::new(),
+            &mut next_method_id,
+            &mut methods,
+            &mut method_names,
+        );
+        collect_use_aliases(
+            &program.statements,
+            &mut Vec::new(),
+            &mut functions,
+            &mut types,
+        );
+        Ok(Self {
+            functions,
+            methods,
+            method_names,
+            types,
+            type_definitions,
+        })
+    }
+
+    fn lower(self, program: &Program) -> Result<HirProgram, CompileError> {
+        let next_function_id = Rc::new(Cell::new(
+            self.methods
+                .values()
+                .map(|method| method.function)
+                .chain(self.functions.values().copied())
+                .max()
+                .unwrap_or(0)
+                + 1,
+        ));
+        let generated = Rc::new(RefCell::new(Vec::new()));
+        let mut lowered = Vec::with_capacity(self.functions.len() + 1);
+        let entry_statements = program
+            .statements
+            .iter()
+            .filter(|statement| !is_compile_time_declaration(statement))
+            .collect::<Vec<_>>();
+        lowered.push(
+            FunctionLowerer::new(
+                &self.functions,
+                &self.methods,
+                &self.method_names,
+                &self.types,
+                next_function_id.clone(),
+                generated.clone(),
+            )
+            .lower_entry(&entry_statements)?,
+        );
+
+        let mut declarations = program
+            .statements
+            .iter()
+            .filter_map(function_declaration)
+            .map(|declaration| (self.functions[&declaration.qualified_name], declaration))
+            .collect::<Vec<_>>();
+        collect_nested_function_declarations(
+            &program.statements,
+            &mut Vec::new(),
+            &self.functions,
+            &mut declarations,
+        );
+        collect_method_declarations(
+            &program.statements,
+            &mut Vec::new(),
+            &self.methods,
+            &mut declarations,
+        );
+        declarations.sort_by_key(|(id, _)| *id);
+        for (_, declaration) in declarations {
+            lowered.push(
+                FunctionLowerer::new(
+                    &self.functions,
+                    &self.methods,
+                    &self.method_names,
+                    &self.types,
+                    next_function_id.clone(),
+                    generated.clone(),
+                )
+                .lower_function(declaration)?,
+            );
+        }
+        let mut generated = generated.borrow_mut();
+        generated.sort_by_key(|(id, _)| *id);
+        lowered.extend(generated.drain(..).map(|(_, function)| function));
+        Ok(HirProgram {
+            functions: lowered,
+            types: self.type_definitions,
+            iterators: iterator_methods(&self.methods),
+            entry: 0,
+        })
+    }
+}
+
+struct FunctionLowerer<'a> {
+    functions: &'a HashMap<String, FunctionId>,
+    methods: &'a HashMap<String, MethodInfo>,
+    method_names: &'a HashMap<String, Option<MethodInfo>>,
+    types: &'a HashMap<String, TypeId>,
+    namespace: String,
+    scopes: Vec<HashMap<String, LocalId>>,
+    mutable: Vec<bool>,
+    in_function: bool,
+    capture_count: usize,
+    next_function_id: Rc<Cell<FunctionId>>,
+    generated: Rc<RefCell<Vec<(FunctionId, HirFunction)>>>,
+    captured: HashSet<LocalId>,
+}
+
+impl<'a> FunctionLowerer<'a> {
+    fn new(
+        functions: &'a HashMap<String, FunctionId>,
+        methods: &'a HashMap<String, MethodInfo>,
+        method_names: &'a HashMap<String, Option<MethodInfo>>,
+        types: &'a HashMap<String, TypeId>,
+        next_function_id: Rc<Cell<FunctionId>>,
+        generated: Rc<RefCell<Vec<(FunctionId, HirFunction)>>>,
+    ) -> Self {
+        Self {
+            functions,
+            methods,
+            method_names,
+            types,
+            namespace: String::new(),
+            scopes: vec![HashMap::new()],
+            mutable: Vec::new(),
+            in_function: false,
+            capture_count: 0,
+            next_function_id,
+            generated,
+            captured: HashSet::new(),
+        }
+    }
+
+    fn lower_entry(mut self, statements: &[&Stmt]) -> Result<HirFunction, CompileError> {
+        let statements = statements
+            .iter()
+            .map(|statement| self.statement(statement))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(HirFunction {
+            name: "<script>".into(),
+            parameter_count: 0,
+            capture_count: 0,
+            local_count: self.mutable.len(),
+            local_mutability: self.mutable,
+            statements,
+            span: Span::default(),
+        })
+    }
+
+    fn lower_function(
+        mut self,
+        declaration: FunctionDeclaration<'_>,
+    ) -> Result<HirFunction, CompileError> {
+        self.in_function = true;
+        self.namespace = declaration
+            .qualified_name
+            .rsplit_once("::")
+            .map_or_else(String::new, |(namespace, _)| namespace.to_string());
+        for parameter in declaration.parameters {
+            let local = self.mutable.len();
+            self.mutable.push(parameter.mutable);
+            self.scopes[0].insert(parameter.name.clone(), local);
+        }
+        let statements = self.statements(&declaration.body.statements)?;
+        Ok(HirFunction {
+            name: declaration.qualified_name,
+            parameter_count: declaration.parameters.len(),
+            capture_count: self.capture_count,
+            local_count: self.mutable.len(),
+            local_mutability: self.mutable,
+            statements,
+            span: declaration.span,
+        })
+    }
+
+    fn statements(&mut self, statements: &[Stmt]) -> Result<Vec<HirStatement>, CompileError> {
+        statements
+            .iter()
+            .map(|statement| self.statement(statement))
+            .collect()
+    }
+
+    fn statement(&mut self, statement: &Stmt) -> Result<HirStatement, CompileError> {
+        match statement {
+            Stmt::Public { statement, .. } => self.statement(statement),
+            Stmt::Let {
+                name,
+                mutable,
+                initializer,
+                span,
+                ..
+            } => {
+                let initializer = self.expression(initializer)?;
+                let local = self.mutable.len();
+                self.mutable.push(*mutable);
+                self.scopes.last_mut().unwrap().insert(name.clone(), local);
+                Ok(HirStatement::Let {
+                    local,
+                    initializer,
+                    span: *span,
+                })
+            }
+            Stmt::While {
+                condition,
+                body,
+                span,
+            } => Ok(HirStatement::While {
+                condition: self.expression(condition)?,
+                body: self.block_statements(body)?,
+                span: *span,
+            }),
+            Stmt::Loop { body, span } => Ok(HirStatement::Loop {
+                body: self.block_statements(body)?,
+                span: *span,
+            }),
+            Stmt::For {
+                binding,
+                iterable,
+                body,
+                span,
+                ..
+            } => {
+                let iterable = self.expression(iterable)?;
+                let local = self.mutable.len();
+                self.mutable.push(false);
+                self.scopes.push(HashMap::new());
+                self.scopes
+                    .last_mut()
+                    .unwrap()
+                    .insert(binding.clone(), local);
+                let body = self.statements(&body.statements);
+                self.scopes.pop();
+                Ok(HirStatement::For {
+                    binding: local,
+                    iterable,
+                    body: body?,
+                    span: *span,
+                })
+            }
+            Stmt::Return { value, span } if self.in_function => Ok(HirStatement::Return {
+                value: value
+                    .as_ref()
+                    .map(|value| self.expression(value))
+                    .transpose()?,
+                span: *span,
+            }),
+            Stmt::Break { value, span } => Ok(HirStatement::Break {
+                value: value
+                    .as_ref()
+                    .map(|value| self.expression(value))
+                    .transpose()?,
+                span: *span,
+            }),
+            Stmt::Continue { span } => Ok(HirStatement::Continue { span: *span }),
+            Stmt::Expr {
+                expression,
+                terminated,
+            } => Ok(HirStatement::Expression {
+                expression: self.expression(expression)?,
+                terminated: *terminated,
+                span: expression.span(),
+            }),
+            Stmt::Function {
+                name,
+                parameters,
+                body,
+                span,
+                ..
+            } => {
+                let local = self.mutable.len();
+                self.mutable.push(false);
+                self.scopes.last_mut().unwrap().insert(name.clone(), local);
+
+                let mut visible = HashMap::new();
+                for scope in &self.scopes {
+                    visible.extend(scope.iter().map(|(name, local)| (name.clone(), *local)));
+                }
+                let mut captured = visible.into_iter().collect::<Vec<_>>();
+                captured.sort_by_key(|(_, local)| *local);
+                let captures = captured.iter().map(|(_, local)| *local).collect::<Vec<_>>();
+                self.captured.extend(captures.iter().copied());
+
+                let function = self.next_function_id.get();
+                self.next_function_id.set(function + 1);
+                let mut child = FunctionLowerer::new(
+                    self.functions,
+                    self.methods,
+                    self.method_names,
+                    self.types,
+                    self.next_function_id.clone(),
+                    self.generated.clone(),
+                );
+                child.in_function = true;
+                child.capture_count = captures.len();
+                child.mutable = captures.iter().map(|local| self.mutable[*local]).collect();
+                child.scopes[0] = captured
+                    .into_iter()
+                    .enumerate()
+                    .map(|(capture, (name, _))| (name, capture))
+                    .collect();
+                let qualified_name = format!("{}${}@{}", self.namespace, name, span.start);
+                let lowered = child.lower_function(FunctionDeclaration {
+                    name,
+                    qualified_name,
+                    parameters,
+                    body,
+                    span: *span,
+                })?;
+                self.generated.borrow_mut().push((function, lowered));
+                Ok(HirStatement::DefineFunction {
+                    local,
+                    function,
+                    captures,
+                    span: *span,
+                })
+            }
+            unsupported => Err(CompileError::unsupported(
+                "this declaration is not supported by the bytecode backend yet",
+                statement_span(unsupported),
+            )),
+        }
+    }
+
+    fn expression(&mut self, expression: &Expr) -> Result<HirExpression, CompileError> {
+        match expression {
+            Expr::Literal { value, span } => Ok(HirExpression::Literal {
+                value: match value {
+                    Literal::Unit => HirLiteral::Unit,
+                    Literal::Bool(value) => HirLiteral::Bool(*value),
+                    Literal::Integer(value) => HirLiteral::Integer(*value),
+                    Literal::Float(value) => HirLiteral::Float(*value),
+                    Literal::String(value) => HirLiteral::String(value.clone()),
+                },
+                span: *span,
+            }),
+            Expr::Variable { name, span } if name == "None" => {
+                Ok(HirExpression::OptionNone { span: *span })
+            }
+            Expr::Variable { name, span } => {
+                if let Some(local) = self.lookup(name) {
+                    Ok(HirExpression::Local { local, span: *span })
+                } else if let Some(function) = self.function_id(name) {
+                    Ok(HirExpression::Function {
+                        function,
+                        span: *span,
+                    })
+                } else {
+                    Err(CompileError::unsupported(
+                        format!("bytecode backend cannot resolve non-local value `{name}`"),
+                        *span,
+                    ))
+                }
+            }
+            Expr::Path { segments, span } => {
+                if let Some(function) = self.function_id(&segments.join("::")) {
+                    return Ok(HirExpression::Function {
+                        function,
+                        span: *span,
+                    });
+                }
+                let (type_id, variant) = self.enum_variant_path(segments, *span)?;
+                Ok(HirExpression::ConstructUnitVariant {
+                    type_id,
+                    variant,
+                    span: *span,
+                })
+            }
+            Expr::QualifiedPath {
+                target,
+                trait_name,
+                member,
+                span,
+            } => {
+                let target_name = nominal_type_name(target).ok_or_else(|| {
+                    CompileError::unsupported("UFCS target must be a nominal type", *span)
+                })?;
+                let key = method_key(
+                    &self.scoped_name(target_name),
+                    Some(&self.scoped_name(trait_name)),
+                    member,
+                );
+                let method = self.methods.get(&key).ok_or_else(|| {
+                    CompileError::unsupported(format!("unknown trait method `{key}`"), *span)
+                })?;
+                Ok(HirExpression::Function {
+                    function: method.function,
+                    span: *span,
+                })
+            }
+            Expr::Member { object, name, span }
+                if self
+                    .method_names
+                    .get(name)
+                    .and_then(|method| *method)
+                    .is_some() =>
+            {
+                let method = self.method_names[name].expect("guarded method");
+                let receiver = method.receiver.ok_or_else(|| {
+                    CompileError::unsupported(
+                        format!("associated function `{name}` cannot be bound to a receiver"),
+                        *span,
+                    )
+                })?;
+                Ok(HirExpression::BindMethod {
+                    function: method.function,
+                    receiver: Box::new(self.method_receiver(object, receiver)?),
+                    span: *span,
+                })
+            }
+            Expr::Index { span, .. } | Expr::Member { span, .. } => Ok(HirExpression::Place {
+                place: self.place(expression)?,
+                span: *span,
+            }),
+            Expr::Assign {
+                target,
+                value,
+                span,
+            } => match target.as_ref() {
+                Expr::Variable { name, .. } => {
+                    let local = self.lookup(name).ok_or_else(|| {
+                        CompileError::unsupported(format!("unknown local `{name}`"), target.span())
+                    })?;
+                    if !self.mutable[local] {
+                        return Err(CompileError::unsupported(
+                            format!("cannot assign to immutable local `{name}`"),
+                            *span,
+                        ));
+                    }
+                    Ok(HirExpression::Assign {
+                        local,
+                        value: Box::new(self.expression(value)?),
+                        span: *span,
+                    })
+                }
+                Expr::Index { .. } | Expr::Member { .. } => Ok(HirExpression::AssignPlace {
+                    place: self.place(target)?,
+                    value: Box::new(self.expression(value)?),
+                    span: *span,
+                }),
+                Expr::Unary {
+                    operator: UnaryOp::Dereference,
+                    operand,
+                    ..
+                } => Ok(HirExpression::AssignDereference {
+                    reference: Box::new(self.expression(operand)?),
+                    value: Box::new(self.expression(value)?),
+                    span: *span,
+                }),
+                _ => Err(CompileError::unsupported(
+                    "assignment place is not supported by the bytecode backend yet",
+                    *span,
+                )),
+            },
+            Expr::Unary {
+                operator,
+                operand,
+                span,
+            } => Ok(HirExpression::Unary {
+                operator: *operator,
+                operand: Box::new(self.expression(operand)?),
+                span: *span,
+            }),
+            Expr::Borrow {
+                mutable,
+                target,
+                span,
+            } => match target.as_ref() {
+                Expr::Variable { name, .. } => {
+                    let local = self.lookup(name).ok_or_else(|| {
+                        CompileError::unsupported(format!("unknown local `{name}`"), target.span())
+                    })?;
+                    Ok(HirExpression::BorrowLocal {
+                        local,
+                        mutable: *mutable,
+                        span: *span,
+                    })
+                }
+                Expr::Index { .. } | Expr::Member { .. } => Ok(HirExpression::BorrowPlace {
+                    place: self.place(target)?,
+                    mutable: *mutable,
+                    span: *span,
+                }),
+                Expr::Unary {
+                    operator: UnaryOp::Dereference,
+                    operand,
+                    ..
+                } => Ok(HirExpression::Reborrow {
+                    reference: Box::new(self.expression(operand)?),
+                    mutable: *mutable,
+                    span: *span,
+                }),
+                _ => Err(CompileError::unsupported(
+                    "borrow place is not supported by the bytecode backend yet",
+                    *span,
+                )),
+            },
+            Expr::Binary {
+                left,
+                operator,
+                right,
+                span,
+            } => Ok(HirExpression::Binary {
+                left: Box::new(self.expression(left)?),
+                operator: *operator,
+                right: Box::new(self.expression(right)?),
+                span: *span,
+            }),
+            Expr::Logical {
+                left,
+                operator,
+                right,
+                span,
+            } => Ok(HirExpression::Logical {
+                left: Box::new(self.expression(left)?),
+                operator: *operator,
+                right: Box::new(self.expression(right)?),
+                span: *span,
+            }),
+            Expr::Call {
+                callee,
+                arguments,
+                span,
+            } => {
+                if let Expr::QualifiedPath {
+                    target,
+                    trait_name,
+                    member,
+                    ..
+                } = callee.as_ref()
+                {
+                    let target_name = nominal_type_name(target).ok_or_else(|| {
+                        CompileError::unsupported("UFCS target must be a nominal type", *span)
+                    })?;
+                    let target_name = self.scoped_name(target_name);
+                    let trait_name = self.scoped_name(trait_name);
+                    let key = method_key(&target_name, Some(&trait_name), member);
+                    let method = self.methods.get(&key).copied().ok_or_else(|| {
+                        CompileError::unsupported(format!("unknown trait method `{key}`"), *span)
+                    })?;
+                    return Ok(HirExpression::Call {
+                        function: method.function,
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
+                if let Expr::Path { segments, .. } = callee.as_ref() {
+                    let key = segments.join("::");
+                    if let Some((name, signature)) = collection_import_signature(&key) {
+                        return Ok(HirExpression::CallImport {
+                            name: name.into(),
+                            signature,
+                            capability: "core".into(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    if let Some(signature) =
+                        rils_frontend::standard_library::standard_function_signature(&key)
+                    {
+                        let capability = if key.starts_with("std::fs::") {
+                            "std::fs"
+                        } else {
+                            "std::io"
+                        };
+                        return Ok(HirExpression::CallImport {
+                            name: key,
+                            signature,
+                            capability: capability.into(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    if let Some(function) = self.function_id(&key) {
+                        return Ok(HirExpression::Call {
+                            function,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    if let Some(method) = self.symbol_id(self.methods, &key) {
+                        return Ok(HirExpression::Call {
+                            function: method.function,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    let (type_id, variant) = self.enum_variant_path(segments, *span)?;
+                    return Ok(HirExpression::ConstructTupleVariant {
+                        type_id,
+                        variant,
+                        fields: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
+                if let Expr::Member { object, name, .. } = callee.as_ref() {
+                    if self.method_names.get(name).is_none()
+                        && let Some((import_name, signature, receiver)) =
+                            collection_method_import(name)
+                    {
+                        let receiver = self.method_receiver(object, receiver)?;
+                        let mut lowered = Vec::with_capacity(arguments.len() + 1);
+                        lowered.push(receiver);
+                        lowered.extend(
+                            arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        );
+                        return Ok(HirExpression::CallImport {
+                            name: import_name.into(),
+                            signature,
+                            capability: "core".into(),
+                            arguments: lowered,
+                            span: *span,
+                        });
+                    }
+                    let method = self
+                        .method_names
+                        .get(name)
+                        .and_then(|value| *value)
+                        .ok_or_else(|| {
+                            CompileError::unsupported(
+                                format!("bytecode method `{name}` is ambiguous or unavailable"),
+                                *span,
+                            )
+                        })?;
+                    let mut lowered = Vec::with_capacity(
+                        arguments.len() + usize::from(method.receiver.is_some()),
+                    );
+                    if let Some(receiver) = method.receiver {
+                        lowered.push(self.method_receiver(object, receiver)?);
+                    }
+                    lowered.extend(
+                        arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    );
+                    return Ok(HirExpression::Call {
+                        function: method.function,
+                        arguments: lowered,
+                        span: *span,
+                    });
+                }
+                if let Expr::Variable { name, .. } = callee.as_ref()
+                    && matches!(name.as_str(), "Some" | "Ok" | "Err")
+                {
+                    let [argument] = arguments.as_slice() else {
+                        return Err(CompileError::unsupported(
+                            format!("`{name}` expects exactly one argument"),
+                            *span,
+                        ));
+                    };
+                    let value = Box::new(self.expression(argument)?);
+                    return Ok(match name.as_str() {
+                        "Some" => HirExpression::OptionSome { value, span: *span },
+                        "Ok" => HirExpression::ResultOk { value, span: *span },
+                        "Err" => HirExpression::ResultErr { value, span: *span },
+                        _ => unreachable!(),
+                    });
+                }
+                if let Expr::Variable { name, .. } = callee.as_ref()
+                    && self.lookup(name).is_none()
+                    && let Some(function) = self.function_id(name)
+                {
+                    return Ok(HirExpression::Call {
+                        function,
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
+                if let Expr::Variable { name, .. } = callee.as_ref()
+                    && self.lookup(name).is_none()
+                    && let Some(signature) = core_import_signature(name)
+                {
+                    return Ok(HirExpression::CallImport {
+                        name: name.clone(),
+                        signature,
+                        capability: "core".into(),
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
+                Ok(HirExpression::CallValue {
+                    callee: Box::new(self.expression(callee)?),
+                    arguments: arguments
+                        .iter()
+                        .map(|argument| self.expression(argument))
+                        .collect::<Result<_, _>>()?,
+                    span: *span,
+                })
+            }
+            Expr::RecordLiteral { path, fields, span } => {
+                let (type_id, variant) = if path.len() >= 2 {
+                    let enum_name = path[..path.len() - 1].join("::");
+                    if let Some(type_id) = self.types.get(&enum_name) {
+                        (*type_id, Some(path.last().unwrap().clone()))
+                    } else {
+                        (self.type_id(&path.join("::"), *span)?, None)
+                    }
+                } else {
+                    (self.type_id(path.last().unwrap(), *span)?, None)
+                };
+                Ok(HirExpression::ConstructRecord {
+                    type_id,
+                    variant,
+                    fields: fields
+                        .iter()
+                        .map(|(name, value)| Ok((name.clone(), self.expression(value)?)))
+                        .collect::<Result<_, CompileError>>()?,
+                    span: *span,
+                })
+            }
+            Expr::Try { operand, span } if self.in_function => Ok(HirExpression::Try {
+                operand: Box::new(self.expression(operand)?),
+                span: *span,
+            }),
+            Expr::Match { value, arms, span } => {
+                let value = Box::new(self.expression(value)?);
+                let mut lowered_arms = Vec::with_capacity(arms.len());
+                for arm in arms {
+                    self.scopes.push(HashMap::new());
+                    let pattern = self.pattern(&arm.pattern)?;
+                    let expression = self.expression(&arm.expression)?;
+                    self.scopes.pop();
+                    lowered_arms.push(HirMatchArm {
+                        pattern,
+                        expression,
+                        span: arm.pattern.span(),
+                    });
+                }
+                Ok(HirExpression::Match {
+                    value,
+                    arms: lowered_arms,
+                    span: *span,
+                })
+            }
+            Expr::Tuple { elements, span } => Ok(HirExpression::Tuple {
+                elements: elements
+                    .iter()
+                    .map(|element| self.expression(element))
+                    .collect::<Result<_, _>>()?,
+                span: *span,
+            }),
+            Expr::Array {
+                elements,
+                repeat,
+                span,
+            } => Ok(HirExpression::Array {
+                elements: elements
+                    .iter()
+                    .map(|element| self.expression(element))
+                    .collect::<Result<_, _>>()?,
+                repeat: repeat
+                    .as_ref()
+                    .map(|value| self.expression(value).map(Box::new))
+                    .transpose()?,
+                span: *span,
+            }),
+            Expr::Range { start, end, span } => Ok(HirExpression::Range {
+                start: Box::new(self.expression(start)?),
+                end: Box::new(self.expression(end)?),
+                span: *span,
+            }),
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+                span,
+            } => Ok(HirExpression::If {
+                condition: Box::new(self.expression(condition)?),
+                then_branch: self.block_statements(then_branch)?,
+                else_branch: else_branch
+                    .as_ref()
+                    .map(|branch| self.expression(branch).map(Box::new))
+                    .transpose()?,
+                span: *span,
+            }),
+            Expr::Block(block) => Ok(HirExpression::Block {
+                statements: self.block_statements(block)?,
+                span: block.span,
+            }),
+            _ => Err(CompileError::unsupported(
+                "expression is not supported by the bytecode backend yet",
+                expression.span(),
+            )),
+        }
+    }
+
+    fn block_statements(&mut self, block: &Block) -> Result<Vec<HirStatement>, CompileError> {
+        let first_local = self.mutable.len();
+        self.scopes.push(HashMap::new());
+        let mut statements = self.statements(&block.statements)?;
+        self.scopes.pop();
+        for local in (first_local..self.mutable.len()).rev() {
+            if self.captured.contains(&local) {
+                continue;
+            }
+            statements.push(HirStatement::DropLocal {
+                local,
+                span: block.span,
+            });
+        }
+        Ok(statements)
+    }
+
+    fn pattern(&mut self, pattern: &Pattern) -> Result<HirPattern, CompileError> {
+        Ok(match pattern {
+            Pattern::Wildcard { .. } => HirPattern::Wildcard,
+            Pattern::Binding { name, .. } => {
+                let local = self.mutable.len();
+                self.mutable.push(false);
+                self.scopes.last_mut().unwrap().insert(name.clone(), local);
+                HirPattern::Binding(local)
+            }
+            Pattern::Literal { value, .. } => HirPattern::Literal(match value {
+                Literal::Unit => HirLiteral::Unit,
+                Literal::Bool(value) => HirLiteral::Bool(*value),
+                Literal::Integer(value) => HirLiteral::Integer(*value),
+                Literal::Float(value) => HirLiteral::Float(*value),
+                Literal::String(value) => HirLiteral::String(value.clone()),
+            }),
+            Pattern::Some { inner, .. } => HirPattern::Some(Box::new(self.pattern(inner)?)),
+            Pattern::None { .. } => HirPattern::None,
+            Pattern::Ok { inner, .. } => HirPattern::Ok(Box::new(self.pattern(inner)?)),
+            Pattern::Err { inner, .. } => HirPattern::Err(Box::new(self.pattern(inner)?)),
+            Pattern::TupleVariant { path, fields, .. } => HirPattern::TupleVariant {
+                path: path.clone(),
+                fields: fields
+                    .iter()
+                    .map(|pattern| self.pattern(pattern))
+                    .collect::<Result<_, _>>()?,
+            },
+            Pattern::Record { path, fields, .. } => HirPattern::Record {
+                path: path.clone(),
+                fields: fields
+                    .iter()
+                    .map(|(name, pattern)| Ok((name.clone(), self.pattern(pattern)?)))
+                    .collect::<Result<_, CompileError>>()?,
+            },
+            Pattern::Path { path, .. } => HirPattern::Path(path.clone()),
+        })
+    }
+
+    fn place(&mut self, expression: &Expr) -> Result<HirPlace, CompileError> {
+        match expression {
+            Expr::Variable { name, span } => Ok(HirPlace {
+                local: self.lookup(name).ok_or_else(|| {
+                    CompileError::unsupported(format!("unknown local `{name}`"), *span)
+                })?,
+                projections: Vec::new(),
+            }),
+            Expr::Member { object, name, span } => {
+                let mut place = self.place(object)?;
+                place.projections.push(match name.parse::<i64>() {
+                    Ok(index) => HirProjection::Index(Box::new(HirExpression::Literal {
+                        value: HirLiteral::Integer(index),
+                        span: *span,
+                    })),
+                    Err(_) => HirProjection::Field(name.clone()),
+                });
+                Ok(place)
+            }
+            Expr::Index { object, index, .. } => {
+                let mut place = self.place(object)?;
+                place
+                    .projections
+                    .push(HirProjection::Index(Box::new(self.expression(index)?)));
+                Ok(place)
+            }
+            Expr::Unary {
+                operator: UnaryOp::Dereference,
+                operand,
+                ..
+            } => self.place(operand),
+            _ => Err(CompileError::unsupported(
+                "place must be rooted in a local value",
+                expression.span(),
+            )),
+        }
+    }
+
+    fn method_receiver(
+        &mut self,
+        expression: &Expr,
+        receiver: ReceiverMode,
+    ) -> Result<HirExpression, CompileError> {
+        match receiver {
+            ReceiverMode::Owned => self.expression(expression),
+            ReceiverMode::Reference { mutable } => match expression {
+                Expr::Variable { name, span } => Ok(HirExpression::BorrowLocal {
+                    local: self.lookup(name).ok_or_else(|| {
+                        CompileError::unsupported(format!("unknown local `{name}`"), *span)
+                    })?,
+                    mutable,
+                    span: *span,
+                }),
+                Expr::Member { .. } | Expr::Index { .. } => Ok(HirExpression::BorrowPlace {
+                    place: self.place(expression)?,
+                    mutable,
+                    span: expression.span(),
+                }),
+                _ => Ok(HirExpression::BorrowTemporary {
+                    value: Box::new(self.expression(expression)?),
+                    mutable,
+                    span: expression.span(),
+                }),
+            },
+        }
+    }
+
+    fn lookup(&self, name: &str) -> Option<LocalId> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name).copied())
+    }
+
+    fn type_id(&self, name: &str, span: Span) -> Result<TypeId, CompileError> {
+        self.symbol_id(self.types, name).ok_or_else(|| {
+            CompileError::unsupported(format!("unknown bytecode type `{name}`"), span)
+        })
+    }
+
+    fn function_id(&self, name: &str) -> Option<FunctionId> {
+        self.symbol_id(self.functions, name)
+    }
+
+    fn scoped_name(&self, name: &str) -> String {
+        if self.namespace.is_empty() || name.contains("::") {
+            name.to_string()
+        } else {
+            format!("{}::{name}", self.namespace)
+        }
+    }
+
+    fn symbol_id<T: Copy>(&self, symbols: &HashMap<String, T>, name: &str) -> Option<T> {
+        if !self.namespace.is_empty() {
+            let relative = format!("{}::{name}", self.namespace);
+            if let Some(id) = symbols.get(&relative).copied() {
+                return Some(id);
+            }
+        }
+        symbols.get(name).copied()
+    }
+
+    fn enum_variant_path(
+        &self,
+        path: &[String],
+        span: Span,
+    ) -> Result<(TypeId, String), CompileError> {
+        if path.len() < 2 {
+            return Err(CompileError::unsupported(
+                "expected an enum variant path",
+                span,
+            ));
+        }
+        Ok((
+            self.type_id(&path[..path.len() - 1].join("::"), span)?,
+            path.last().unwrap().clone(),
+        ))
+    }
+}
+
+fn statement_span(statement: &Stmt) -> Span {
+    match statement {
+        Stmt::Public { span, .. }
+        | Stmt::Module { span, .. }
+        | Stmt::Use { span, .. }
+        | Stmt::Let { span, .. }
+        | Stmt::Function { span, .. }
+        | Stmt::Struct { span, .. }
+        | Stmt::Enum { span, .. }
+        | Stmt::TypeAlias { span, .. }
+        | Stmt::Impl { span, .. }
+        | Stmt::Trait { span, .. }
+        | Stmt::While { span, .. }
+        | Stmt::Loop { span, .. }
+        | Stmt::For { span, .. }
+        | Stmt::Return { span, .. }
+        | Stmt::Break { span, .. }
+        | Stmt::Continue { span, .. } => *span,
+        Stmt::Expr { expression, .. } => expression.span(),
+    }
+}

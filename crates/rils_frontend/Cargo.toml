@@ -1,0 +1,12 @@
+[package]
+name = "rils_frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+description = "Syntax and type model for the Rils scripting language"
+license.workspace = true
+repository.workspace = true
+include = ["/Cargo.toml", "/src/**"]
+
+[dependencies]

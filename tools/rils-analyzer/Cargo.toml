@@ -1,0 +1,18 @@
+[package]
+name = "rils_analyzer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Language Server Protocol implementation for Rils"
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rils-analyzer"
+path = "src/main.rs"
+
+[dependencies]
+lsp-server = "0.10.0"
+rils_frontend.workspace = true
+serde_json = "1.0"
