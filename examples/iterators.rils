@@ -1,0 +1,50 @@
+struct CounterRange {
+    current: int,
+    end: int,
+}
+
+impl Iterator for CounterRange {
+    type Item = int;
+
+    fn next(&mut self) -> Option<int> {
+        if self.current < self.end {
+            let value = self.current;
+            let end = self.end;
+            *self = CounterRange {
+                current: value + 1,
+                end: end,
+            };
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+struct CountTo {
+    end: int,
+}
+
+impl IntoIterator for CountTo {
+    type IntoIter = CounterRange;
+
+    fn into_iter(self) -> CounterRange {
+        CounterRange {
+            current: 0,
+            end: self.end,
+        }
+    }
+}
+
+let mut total = 0;
+for value in CountTo { end: 5 } {
+    total = total + value;
+}
+
+println!("sum:", total);
+
+let mut range_total = 0;
+for value in 0..5 {
+    range_total = range_total + value;
+}
+println!("range sum:", range_total);

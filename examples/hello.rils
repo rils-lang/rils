@@ -1,0 +1,14 @@
+// Rils 0.1 基础示例
+
+fn factorial(n: int) -> int {
+    if n <= 1 {
+        1
+    } else {
+        n * factorial(n - 1)
+    }
+}
+
+let language = "Rils";
+println!("hello from", language);
+println!("6! =", factorial(6));
+assert!(factorial(5) == 120, "factorial is broken");

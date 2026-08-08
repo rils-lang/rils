@@ -1,0 +1,13 @@
+use std::io::Error;
+
+fn roundtrip(path: string) -> Result<string, Error> {
+    std::fs::write(clone(&path), "hello from Rils")?;
+    let text = std::fs::read_to_string(clone(&path))?;
+    std::fs::remove_file(path)?;
+    Ok(text)
+}
+
+match roundtrip("rils-standard-library-example.txt") {
+    Ok(text) => println!(text),
+    Err(error) => println!("filesystem error:", error.kind, error.message),
+}

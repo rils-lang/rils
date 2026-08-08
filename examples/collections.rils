@@ -1,0 +1,21 @@
+let mut pair: (int, string) = (20, "tuple");
+pair.0 = 22;
+
+let mut fixed = [10, 20, 12];
+fixed[0] = pair.0;
+
+{
+    let item = &mut fixed[2];
+    *item = *item - 2;
+}
+
+let mut values: Vec<int> = Vec::from(fixed);
+values.push(10);
+println!("length:", values.len());
+
+let mut total = 0;
+for value in values {
+    total = total + value;
+}
+
+println!("total:", total);

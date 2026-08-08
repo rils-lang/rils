@@ -1,0 +1,17 @@
+fn read_number(success: bool) -> Result<int, string> {
+    if success {
+        Ok(40)
+    } else {
+        Err("could not read number")
+    }
+}
+
+fn add_two(success: bool) -> Result<int, string> {
+    let value = read_number(success)?;
+    Ok(value + 2)
+}
+
+match add_two(true) {
+    Ok(value) => println!("value:", value),
+    Err(error) => println!("error:", error),
+}

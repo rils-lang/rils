@@ -1,0 +1,26 @@
+fn find_positive(value: int) {
+    if value > 0 {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+let found = find_positive(42);
+let missing = find_positive(-1);
+
+assert!(is_some(found));
+assert!(is_none(missing));
+
+let found_value = match found {
+    Some(value) => value,
+    None => 0,
+};
+
+let missing_value = match missing {
+    Some(value) => value,
+    None => 0,
+};
+
+println!("found:", found_value);
+println!("fallback:", missing_value);

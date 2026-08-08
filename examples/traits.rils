@@ -1,0 +1,42 @@
+trait Describe {
+    fn describe(self) -> string;
+}
+
+trait Value {
+    fn value(self) -> int;
+}
+
+struct Number {
+    inner: int,
+}
+
+impl Describe for Number {
+    fn describe(self) -> string {
+        "number"
+    }
+}
+
+impl Value for Number {
+    fn value(self) -> int {
+        self.inner
+    }
+}
+
+fn print_value<T: Describe + Value>(item: T) -> int {
+    println!(item.describe(), item.value());
+    item.value()
+}
+
+struct Wrapper<T> {
+    item: T,
+}
+
+impl<T> Describe for Wrapper<T> {
+    fn describe(self) -> string {
+        "wrapper"
+    }
+}
+
+let number = Number { inner: 42 };
+assert!(print_value(number) == 42);
+println!(Wrapper { item: number }.describe());

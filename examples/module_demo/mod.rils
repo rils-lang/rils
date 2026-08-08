@@ -1,0 +1,7 @@
+fn internal_value() -> int {
+    40
+}
+
+pub fn answer() -> int {
+    internal_value() + 2
+}

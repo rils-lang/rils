@@ -1,0 +1,24 @@
+struct Box<T> {
+    value: T,
+}
+
+type ValueBox<T> = Box<T>;
+type IntBox = ValueBox<int>;
+
+trait Factory {
+    type Item<T> = Box<T>;
+    fn make(self) -> Self::Item<int>;
+}
+
+struct IntFactory {
+    value: int,
+}
+
+impl Factory for IntFactory {
+    fn make(self) -> Box<int> {
+        Box { value: self.value }
+    }
+}
+
+let boxed: IntBox = IntFactory { value: 42 }.make();
+println!(boxed.value);

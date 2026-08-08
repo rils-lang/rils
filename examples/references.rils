@@ -1,0 +1,28 @@
+struct Counter {
+    value: int,
+}
+
+impl Counter {
+    fn set(&mut self, value: int) {
+        *self = Counter { value: value };
+    }
+}
+
+fn add(value: &mut int, amount: int) {
+    *value = *value + amount;
+}
+
+let mut counter = Counter { value: 0 };
+
+{
+    let first = &mut counter.value;
+    let second = &mut counter.value;
+    add(first, 20);
+    add(second, 22);
+}
+
+let copied = clone(&counter);
+assert!(copied.value == 42);
+
+counter.set(7);
+println!(counter.value);

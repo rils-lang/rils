@@ -1,0 +1,22 @@
+fn describe(value: Option<Option<int>>) -> string {
+    match value {
+        Some(Some(number)) => {
+            println!("nested value:", number);
+            "present"
+        }
+        Some(None) => "inner None",
+        None => "outer None",
+    }
+}
+
+println!(describe(Some(Some(42))));
+println!(describe(Some(None)));
+println!(describe(None));
+
+let label = match 404 {
+    200 => "ok",
+    404 => "not found",
+    _ => "other",
+};
+
+println!(label);

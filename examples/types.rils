@@ -1,0 +1,38 @@
+struct Point {
+    x: float,
+    y: float,
+}
+
+impl Point {
+    fn new(x: float, y: float) -> Point {
+        Point { x: x, y: y }
+    }
+
+    fn length_squared(self) -> float {
+        self.x * self.x + self.y * self.y
+    }
+}
+
+enum Command {
+    Stop,
+    Move(Point),
+    Say { text: string },
+}
+
+impl Command {
+    fn describe(self) -> string {
+        match self {
+            Command::Stop => "stop",
+            Command::Move(Point { x, y }) => {
+                println!("move to", x, y);
+                "move"
+            }
+            Command::Say { text } => text,
+        }
+    }
+}
+
+let point = Point::new(3.0, 4.0);
+println!("length squared:", point.length_squared());
+println!(Command::Move(point).describe());
+println!(Command::Say { text: "hello" }.describe());
