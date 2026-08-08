@@ -21,6 +21,7 @@ pub struct TypeReference {
     pub span: Span,
     pub definition_span: Option<Span>,
     pub is_builtin: bool,
+    pub arguments: Vec<Type>,
 }
 
 #[derive(Clone, Debug)]

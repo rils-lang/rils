@@ -143,6 +143,7 @@ impl Parser {
                             bound.as_str(),
                             "Copy" | "Clone" | "Iterator" | "IntoIterator"
                         ),
+                        arguments: Vec::new(),
                     });
                     if bounds.contains(&bound) {
                         return Err(ParseError {

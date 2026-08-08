@@ -278,14 +278,17 @@ impl Server {
         else {
             return Ok(Value::Null);
         };
-        let detail = match &symbol.inferred_type {
-            Some(inferred) if matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method) => {
+        let detail = match (&symbol.detail, &symbol.inferred_type) {
+            (Some(detail), _) => detail.clone(),
+            (_, Some(inferred))
+                if matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method) =>
+            {
                 function_declaration(&symbol.name, inferred)
             }
-            Some(inferred) if symbol.kind == SymbolKind::Parameter => {
+            (_, Some(inferred)) if symbol.kind == SymbolKind::Parameter => {
                 format!("parameter {}: {inferred}", symbol.name)
             }
-            Some(inferred) if symbol.kind == SymbolKind::Variable => {
+            (_, Some(inferred)) if symbol.kind == SymbolKind::Variable => {
                 format!("let {}: {inferred}", symbol.name)
             }
             _ => format!("{} {}", kind_label(symbol.kind), symbol.name),
@@ -717,9 +720,12 @@ fn hex(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Document, Type, analysis, diagnostics, file_uri_to_path, function_declaration, offset,
-        path_to_file_uri, position,
+        Document, Server, Type, analysis, diagnostics, file_uri_to_path, function_declaration,
+        offset, path_to_file_uri, position,
     };
+    use lsp_server::Connection;
+    use serde_json::json;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn positions_use_utf16_characters() {
@@ -736,6 +742,39 @@ mod tests {
         assert_eq!(
             function_declaration("make_value", &ty),
             "fn make_value() -> fn() -> int"
+        );
+    }
+
+    #[test]
+    fn hover_shows_expanded_type_aliases() {
+        let text = "struct Box<T> { value: T }\ntype ValueBox<T> = Box<T>;\ntype IntBox = ValueBox<int>;\nlet value: IntBox = Box { value: 1 };";
+        let uri = "file:///aliases.rils".to_owned();
+        let (connection, _client) = Connection::memory();
+        let mut documents = HashMap::new();
+        documents.insert(
+            uri.clone(),
+            Document {
+                text: text.into(),
+                analysis: rils_frontend::analysis::analyze(text),
+            },
+        );
+        let server = Server {
+            connection,
+            documents,
+            workspace_documents: HashSet::new(),
+        };
+
+        let hover = server
+            .hover(&json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": 2, "character": 5 }
+            }))
+            .unwrap();
+        assert_eq!(
+            hover
+                .pointer("/contents/value")
+                .and_then(|value| value.as_str()),
+            Some("```rils\ntype IntBox = Box<int>\n```")
         );
     }
 

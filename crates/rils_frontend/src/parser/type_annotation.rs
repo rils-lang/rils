@@ -140,11 +140,13 @@ impl Parser {
                 | "std"
                 | "prelude"
         );
+        let mut reference_index = self.type_references.len();
         self.type_references.push(TypeReference {
             name: name.clone(),
             span: name_span,
             definition_span: generic_definition,
             is_builtin,
+            arguments: Vec::new(),
         });
         let parse_arguments = |parser: &mut Self| -> Result<Vec<Type>, ParseError> {
             let mut arguments = Vec::new();
@@ -173,6 +175,7 @@ impl Parser {
                     &TokenKind::Greater,
                     "expected `>` after Option element type",
                 )?;
+                self.type_references[reference_index].arguments = vec![inner.clone()];
                 Ok(Type::Option(Box::new(inner)))
             }
             "Result" => {
@@ -181,6 +184,7 @@ impl Parser {
                 self.expect(&TokenKind::Comma, "expected `,` in Result type")?;
                 let error = self.type_annotation()?;
                 self.expect(&TokenKind::Greater, "expected `>` after Result types")?;
+                self.type_references[reference_index].arguments = vec![ok.clone(), error.clone()];
                 Ok(Type::Result(Box::new(ok), Box::new(error)))
             }
             _ => {
@@ -212,12 +216,16 @@ impl Parser {
                         span,
                         definition_span: None,
                         is_builtin: builtin_path,
+                        arguments: Vec::new(),
                     });
+                    reference_index = self.type_references.len() - 1;
                     path.push(segment);
                 }
+                let arguments = parse_arguments(self)?;
+                self.type_references[reference_index].arguments = arguments.clone();
                 let base = Type::Named {
                     name: path.join("::"),
-                    arguments: parse_arguments(self)?,
+                    arguments,
                 };
                 Ok(base)
             }

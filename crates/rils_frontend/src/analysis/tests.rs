@@ -138,6 +138,63 @@ fn resolves_ufcs_methods_and_place_expressions() {
 }
 
 #[test]
+fn classifies_called_members_as_methods_and_other_members_as_fields() {
+    let source = r#"
+            struct Factory { value: int }
+            impl Factory {
+                fn make(&self) -> int { self.value }
+            }
+            let factory = Factory { value: 42 };
+            factory.make();
+            factory.value;
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+
+    assert!(analysis.symbols.iter().any(|symbol| {
+        !symbol.is_definition && symbol.name == "make" && symbol.kind == SymbolKind::Method
+    }));
+    assert!(analysis.symbols.iter().any(|symbol| {
+        !symbol.is_definition && symbol.name == "value" && symbol.kind == SymbolKind::Field
+    }));
+}
+
+#[test]
+fn describes_type_aliases_with_recursively_expanded_targets() {
+    let source = r#"
+            struct Box<T> { value: T }
+            type ValueBox<T> = Box<T>;
+            type IntBox = ValueBox<int>;
+            fn consume(value: IntBox) {}
+        "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+
+    for expected in [
+        "type ValueBox<T> = Box<T>",
+        "type ValueBox<int> = Box<int>",
+        "type IntBox = Box<int>",
+    ] {
+        assert!(
+            analysis
+                .symbols
+                .iter()
+                .any(|symbol| symbol.detail.as_deref() == Some(expected)),
+            "missing {expected:?}: {:?}",
+            analysis.symbols
+        );
+    }
+}
+
+#[test]
 fn infers_function_let_and_pattern_binding_types() {
     let source = "
             fn answer() { 42 }
@@ -626,6 +683,47 @@ fn tracks_owned_and_borrowed_method_receivers() {
         );
     }
     assert_eq!(analysis.diagnostics.len(), 3, "{:?}", analysis.diagnostics);
+}
+
+#[test]
+fn infers_generic_record_literals_in_return_positions() {
+    let analysis = analyze(
+        r#"
+            struct Pair<T, U> { first: T, second: U }
+            impl<T, U> Pair<T, U> {
+                fn swap(self) -> Pair<U, T> {
+                    Pair { first: self.second, second: self.first }
+                }
+            }
+        "#,
+    )
+    .unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn accepts_exhaustive_nested_option_matches() {
+    let analysis = analyze(
+        r#"
+            fn describe(value: Option<Option<int>>) -> int {
+                match value {
+                    Some(Some(number)) => number,
+                    Some(None) => 0,
+                    None => -1,
+                }
+            }
+        "#,
+    )
+    .unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
 }
 
 #[test]

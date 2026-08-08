@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     FrontendError,
@@ -30,6 +30,7 @@ pub struct SymbolOccurrence {
     pub kind: SymbolKind,
     pub is_definition: bool,
     pub inferred_type: Option<Type>,
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +84,12 @@ struct Definition {
     kind: SymbolKind,
 }
 
+#[derive(Clone)]
+struct TypeAliasDefinition {
+    parameters: Vec<String>,
+    target: Type,
+}
+
 #[doc(hidden)]
 pub fn analyze_program(program: &Program) -> DocumentAnalysis {
     Analyzer::new().analyze(program)
@@ -97,6 +104,7 @@ pub fn analyze(source: &str) -> Result<DocumentAnalysis, FrontendError> {
 struct Analyzer {
     scopes: Vec<HashMap<String, Definition>>,
     trait_members: HashMap<(String, String), Span>,
+    type_aliases: HashMap<String, TypeAliasDefinition>,
     result: DocumentAnalysis,
 }
 
@@ -163,12 +171,14 @@ impl Analyzer {
         Self {
             scopes: vec![globals],
             trait_members: HashMap::new(),
+            type_aliases: HashMap::new(),
             result: DocumentAnalysis::default(),
         }
     }
 
     fn analyze(mut self, program: &Program) -> DocumentAnalysis {
         self.collect_trait_members(&program.statements);
+        self.collect_type_aliases(&program.statements);
         self.macros(program);
         self.statements(&program.statements);
         self.type_references(program);
@@ -209,6 +219,39 @@ impl Analyzer {
             })
             .collect();
         self.result
+    }
+
+    fn collect_type_aliases(&mut self, statements: &[Stmt]) {
+        for statement in statements {
+            let statement = match statement {
+                Stmt::Public { statement, .. } => statement.as_ref(),
+                statement => statement,
+            };
+            match statement {
+                Stmt::Module {
+                    statements: Some(statements),
+                    ..
+                } => self.collect_type_aliases(statements),
+                Stmt::TypeAlias {
+                    name,
+                    generic_parameters,
+                    target,
+                    ..
+                } => {
+                    self.type_aliases.insert(
+                        name.clone(),
+                        TypeAliasDefinition {
+                            parameters: generic_parameters
+                                .iter()
+                                .map(|parameter| parameter.name.clone())
+                                .collect(),
+                            target: target.clone(),
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 
     fn collect_trait_members(&mut self, statements: &[Stmt]) {
@@ -257,6 +300,7 @@ impl Analyzer {
                     kind: SymbolKind::Macro,
                     is_definition: false,
                     inferred_type: None,
+                    detail: None,
                 });
             }
         }
@@ -312,6 +356,7 @@ impl Analyzer {
                         },
                         is_definition: false,
                         inferred_type: None,
+                        detail: None,
                     });
                 }
                 let name = alias.as_ref().or_else(|| path.last()).expect("use path");
@@ -422,6 +467,16 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Type);
+                let arguments = generic_parameters
+                    .iter()
+                    .map(|parameter| Type::Variable(parameter.name.clone()))
+                    .collect::<Vec<_>>();
+                let detail = self.type_alias_detail(name, &arguments);
+                self.result
+                    .symbols
+                    .last_mut()
+                    .expect("type alias definition symbol")
+                    .detail = detail;
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                 }
@@ -522,6 +577,7 @@ impl Analyzer {
                             kind: SymbolKind::Method,
                             is_definition: false,
                             inferred_type: None,
+                            detail: None,
                         });
                     }
                 }
@@ -541,6 +597,7 @@ impl Analyzer {
                 kind: SymbolKind::Method,
                 is_definition: false,
                 inferred_type: None,
+                detail: None,
             }),
             Expr::Member { object, name, span } => {
                 self.expression(object);
@@ -551,6 +608,7 @@ impl Analyzer {
                     kind: SymbolKind::Field,
                     is_definition: false,
                     inferred_type: None,
+                    detail: None,
                 });
             }
             Expr::Index { object, index, .. } => {
@@ -604,7 +662,20 @@ impl Analyzer {
             Expr::Call {
                 callee, arguments, ..
             } => {
-                self.expression(callee);
+                if let Expr::Member { object, name, span } = callee.as_ref() {
+                    self.expression(object);
+                    self.result.symbols.push(SymbolOccurrence {
+                        name: name.clone(),
+                        span: member_name_span(*span, name),
+                        definition_span: None,
+                        kind: SymbolKind::Method,
+                        is_definition: false,
+                        inferred_type: None,
+                        detail: None,
+                    });
+                } else {
+                    self.expression(callee);
+                }
                 for argument in arguments {
                     self.expression(argument);
                 }
@@ -695,6 +766,7 @@ impl Analyzer {
             kind,
             is_definition: true,
             inferred_type: None,
+            detail: None,
         });
     }
 
@@ -707,6 +779,7 @@ impl Analyzer {
                 kind: definition.kind,
                 is_definition: false,
                 inferred_type: None,
+                detail: None,
             });
         } else {
             self.result.diagnostics.push(AnalysisDiagnostic::error(
@@ -720,6 +793,7 @@ impl Analyzer {
                 kind: fallback_kind,
                 is_definition: false,
                 inferred_type: None,
+                detail: None,
             });
         }
     }
@@ -750,7 +824,112 @@ impl Analyzer {
                 kind: SymbolKind::Type,
                 is_definition: false,
                 inferred_type: None,
+                detail: self.type_alias_detail(&reference.name, &reference.arguments),
             });
+        }
+    }
+
+    fn type_alias_detail(&self, name: &str, arguments: &[Type]) -> Option<String> {
+        let alias = self.type_aliases.get(name)?;
+        if alias.parameters.len() != arguments.len() {
+            return None;
+        }
+        let expanded = self.expand_type_alias(name, arguments, &mut HashSet::new())?;
+        let arguments = if arguments.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<{}>",
+                arguments
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        Some(format!("type {name}{arguments} = {expanded}"))
+    }
+
+    fn expand_type_alias(
+        &self,
+        name: &str,
+        arguments: &[Type],
+        visiting: &mut HashSet<String>,
+    ) -> Option<Type> {
+        let alias = self.type_aliases.get(name)?;
+        if alias.parameters.len() != arguments.len() || !visiting.insert(name.into()) {
+            return None;
+        }
+        let substitutions = alias
+            .parameters
+            .iter()
+            .cloned()
+            .zip(arguments.iter().cloned())
+            .collect::<HashMap<_, _>>();
+        let expanded = self.expand_type(&alias.target.substitute(&substitutions), visiting);
+        visiting.remove(name);
+        Some(expanded)
+    }
+
+    fn expand_type(&self, ty: &Type, visiting: &mut HashSet<String>) -> Type {
+        match ty {
+            Type::Named { name, arguments } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.expand_type(argument, visiting))
+                    .collect::<Vec<_>>();
+                self.expand_type_alias(name, &arguments, visiting)
+                    .unwrap_or_else(|| Type::Named {
+                        name: name.clone(),
+                        arguments,
+                    })
+            }
+            Type::Option(inner) => Type::Option(Box::new(self.expand_type(inner, visiting))),
+            Type::Result(ok, error) => Type::Result(
+                Box::new(self.expand_type(ok, visiting)),
+                Box::new(self.expand_type(error, visiting)),
+            ),
+            Type::Tuple(elements) => Type::Tuple(
+                elements
+                    .iter()
+                    .map(|element| self.expand_type(element, visiting))
+                    .collect(),
+            ),
+            Type::Array { element, length } => Type::Array {
+                element: Box::new(self.expand_type(element, visiting)),
+                length: *length,
+            },
+            Type::Reference { mutable, inner } => Type::Reference {
+                mutable: *mutable,
+                inner: Box::new(self.expand_type(inner, visiting)),
+            },
+            Type::Function {
+                parameters,
+                return_type,
+            } => Type::Function {
+                parameters: parameters.as_ref().map(|parameters| {
+                    parameters
+                        .iter()
+                        .map(|parameter| self.expand_type(parameter, visiting))
+                        .collect()
+                }),
+                return_type: Box::new(self.expand_type(return_type, visiting)),
+            },
+            Type::Associated {
+                base,
+                trait_name,
+                name,
+                arguments,
+            } => Type::Associated {
+                base: Box::new(self.expand_type(base, visiting)),
+                trait_name: trait_name.clone(),
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.expand_type(argument, visiting))
+                    .collect(),
+            },
+            other => other.clone(),
         }
     }
 
