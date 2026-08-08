@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import sys
 import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
@@ -73,17 +75,34 @@ def workspace_version(metadata: dict[str, object]) -> str:
     return str(versions.pop())
 
 
-def wait_for_crate(cargo: str, package: str, version: str) -> None:
+def crate_is_available(package: str, version: str) -> bool:
+    request = Request(
+        f"https://crates.io/api/v1/crates/{package}/{version}",
+        headers={
+            "User-Agent": "rils-release-script/0.1 "
+            "(https://github.com/rils-lang/rils)"
+        },
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            return response.status == 200
+    except HTTPError as error:
+        if error.code == 404:
+            return False
+        raise RuntimeError(
+            f"crates.io returned HTTP {error.code} while checking "
+            f"{package} v{version}"
+        ) from error
+    except URLError as error:
+        raise RuntimeError(
+            f"Could not check {package} v{version} on crates.io: {error.reason}"
+        ) from error
+
+
+def wait_for_crate(package: str, version: str) -> None:
     maximum_attempts = 30
     for attempt in range(1, maximum_attempts + 1):
-        result = subprocess.run(
-            [cargo, "info", f"{package}@{version}"],
-            cwd=REPOSITORY_ROOT,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if result.returncode == 0:
+        if crate_is_available(package, version):
             return
         if attempt < maximum_attempts:
             print(
@@ -149,9 +168,12 @@ def main() -> int:
 
     if args.publish:
         for index, package in enumerate(RELEASE_PACKAGES):
-            run([cargo, "publish", "-p", package])
+            if crate_is_available(package, version):
+                print(f"Skipping already published {package} v{version}", flush=True)
+            else:
+                run([cargo, "publish", "-p", package])
             if index < len(RELEASE_PACKAGES) - 1:
-                wait_for_crate(cargo, package, version)
+                wait_for_crate(package, version)
 
     print("Rils release completed successfully:")
     for artifact in sorted(artifact_directory.iterdir()):
