@@ -9,11 +9,7 @@ impl Iterator for CounterRange {
     fn next(&mut self) -> Option<int> {
         if self.current < self.end {
             let value = self.current;
-            let end = self.end;
-            *self = CounterRange {
-                current: value + 1,
-                end: end,
-            };
+            self.current = self.current + 1;
             Some(value)
         } else {
             None

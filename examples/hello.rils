@@ -1,11 +1,13 @@
 // Rils 0.1 基础示例
 
 fn factorial(n: int) -> int {
-    if n <= 1 {
-        1
-    } else {
-        n * factorial(n - 1)
+    let mut current = 2;
+    let mut result = 1;
+    while current <= n {
+        result = result * current;
+        current = current + 1;
     }
+    result
 }
 
 let language = "Rils";

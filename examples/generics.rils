@@ -37,7 +37,7 @@ let pair: Pair<int, string> = Pair {
 };
 
 let swapped = pair.swap();
-println!(swapped.first, swapped.second);
+println!(clone(&swapped.first), swapped.second);
 
 let replaced = swapped.replace_first(true);
 println!(replaced.first, replaced.second);

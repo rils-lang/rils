@@ -258,6 +258,28 @@ fn links_and_executes_core_imports() {
 }
 
 #[test]
+fn compiles_and_executes_standard_native_macros() {
+    let module = compile(
+        r#"
+            print!();
+            println!();
+            assert!(true, "must remain true");
+            42
+        "#,
+    )
+    .unwrap();
+    let mut host = BytecodeHost::standard();
+    host.enable_standard_io().unwrap();
+    assert_eq!(module.execute_with_host(&host).unwrap(), Value::Integer(42));
+
+    let failure = compile("assert!(false, \"expected failure\")")
+        .unwrap()
+        .execute()
+        .unwrap_err();
+    assert!(failure.message.contains("expected failure"));
+}
+
+#[test]
 fn compiles_vec_construction_methods_and_owned_iteration() {
     assert_matches_interpreter(
         r#"

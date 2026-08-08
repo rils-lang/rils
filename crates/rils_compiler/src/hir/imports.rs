@@ -22,6 +22,29 @@ pub(super) fn core_import_signature(name: &str) -> Option<FunctionSignature> {
     })
 }
 
+pub(super) fn native_macro_import(
+    name: &str,
+) -> Option<(&'static str, FunctionSignature, &'static str)> {
+    Some(match name {
+        "#rils_native_print" => (
+            "std::io::print",
+            FunctionSignature::variadic(Type::Unit),
+            "std::io",
+        ),
+        "#rils_native_println" => (
+            "std::io::println",
+            FunctionSignature::variadic(Type::Unit),
+            "std::io",
+        ),
+        "#rils_native_assert" => (
+            "core::assert",
+            FunctionSignature::variadic(Type::Unit),
+            "core",
+        ),
+        _ => return None,
+    })
+}
+
 pub(super) fn collection_import_signature(name: &str) -> Option<(&'static str, FunctionSignature)> {
     Some(match name {
         "Vec::new" | "std::collections::Vec::new" => (

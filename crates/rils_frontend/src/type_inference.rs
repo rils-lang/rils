@@ -28,6 +28,7 @@ struct Binding {
 
 #[derive(Clone, Default)]
 struct TypeDefinition {
+    generic_parameters: Vec<String>,
     fields: HashMap<String, Type>,
     variants: HashMap<String, VariantDefinition>,
     methods: HashMap<String, Type>,
@@ -101,10 +102,19 @@ impl Inferencer {
                     statements: Some(statements),
                     ..
                 } => self.collect_type_definitions(statements),
-                Stmt::Struct { name, fields, .. } => {
+                Stmt::Struct {
+                    name,
+                    generic_parameters,
+                    fields,
+                    ..
+                } => {
                     self.types.insert(
                         name.clone(),
                         TypeDefinition {
+                            generic_parameters: generic_parameters
+                                .iter()
+                                .map(|parameter| parameter.name.clone())
+                                .collect(),
                             fields: fields
                                 .iter()
                                 .map(|field| (field.name.clone(), field.type_annotation.clone()))
@@ -114,8 +124,19 @@ impl Inferencer {
                         },
                     );
                 }
-                Stmt::Enum { name, variants, .. } => {
-                    let mut definition = TypeDefinition::default();
+                Stmt::Enum {
+                    name,
+                    generic_parameters,
+                    variants,
+                    ..
+                } => {
+                    let mut definition = TypeDefinition {
+                        generic_parameters: generic_parameters
+                            .iter()
+                            .map(|parameter| parameter.name.clone())
+                            .collect(),
+                        ..TypeDefinition::default()
+                    };
                     for variant in variants {
                         let (variant_name, payload) = match variant {
                             EnumVariant::Unit { name, .. } => (name, VariantDefinition::Unit),
@@ -515,13 +536,46 @@ impl Inferencer {
                 _ => Type::Unknown,
             },
             Expr::RecordLiteral { path, fields, .. } => {
-                for (_, value) in fields {
-                    self.expression(value, returns);
+                let actual_fields = fields
+                    .iter()
+                    .map(|(name, value)| (name, self.expression(value, returns)))
+                    .collect::<Vec<_>>();
+                let Some(name) = path.first() else {
+                    return Type::Unknown;
+                };
+                let Some(definition) = self.types.get(name).cloned() else {
+                    return Type::Named {
+                        name: name.clone(),
+                        arguments: Vec::new(),
+                    };
+                };
+                let declared_fields = path
+                    .get(1)
+                    .and_then(|variant| definition.variants.get(variant))
+                    .and_then(|variant| match variant {
+                        VariantDefinition::Record(fields) => Some(fields),
+                        _ => None,
+                    })
+                    .unwrap_or(&definition.fields);
+                let mut substitutions = HashMap::new();
+                for (field, actual) in actual_fields {
+                    if let Some(expected) = declared_fields.get(field) {
+                        infer_type_variables(expected, &actual, &mut substitutions);
+                    }
                 }
-                path.first().map_or(Type::Unknown, |name| Type::Named {
+                Type::Named {
                     name: name.clone(),
-                    arguments: Vec::new(),
-                })
+                    arguments: definition
+                        .generic_parameters
+                        .iter()
+                        .map(|parameter| {
+                            substitutions
+                                .get(parameter)
+                                .cloned()
+                                .unwrap_or(Type::Unknown)
+                        })
+                        .collect(),
+                }
             }
             Expr::Assign { target, value, .. } => {
                 self.expression(target, returns);

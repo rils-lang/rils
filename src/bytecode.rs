@@ -923,6 +923,7 @@ fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
             "unwrap_or",
             FunctionSignature::fixed(vec![Type::Unknown, Type::Unknown], Type::Unknown),
         ),
+        ("core::assert", FunctionSignature::variadic(Type::Unit)),
         (
             "core::vec::new",
             FunctionSignature::fixed(
@@ -1047,6 +1048,18 @@ fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 "`unwrap_or` expects Option or Result, found {}",
                 value.type_name()
             )),
+        },
+        "core::assert" => match arguments.first() {
+            Some(Value::Bool(true)) => Ok(Value::Unit),
+            Some(Value::Bool(false)) => Err(arguments
+                .get(1)
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "assertion failed".into())),
+            Some(value) => Err(format!(
+                "`assert` expects bool, found {}",
+                value.type_name()
+            )),
+            None => Err("`assert` expects at least one argument".into()),
         },
         "core::vec::new" => Ok(Value::Vec(Rc::new(SequenceValue {
             elements: RefCell::new(Vec::new()),

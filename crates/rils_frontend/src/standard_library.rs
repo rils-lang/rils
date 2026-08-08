@@ -4,6 +4,7 @@ pub fn standard_function_signature(name: &str) -> Option<FunctionSignature> {
     let error = Type::named("std::io::Error");
     let result = |ok| Type::Result(Box::new(ok), Box::new(error.clone()));
     let signature = match name {
+        "std::io::print" | "std::io::println" => FunctionSignature::variadic(Type::Unit),
         "std::io::read_line" => FunctionSignature::fixed(Vec::new(), result(Type::String)),
         "std::io::write" | "std::io::write_line" => {
             FunctionSignature::fixed(vec![Type::Unknown], result(Type::Unit))

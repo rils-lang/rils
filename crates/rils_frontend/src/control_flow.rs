@@ -270,13 +270,13 @@ impl<'a> Checker<'a> {
         let mut catch_all = false;
 
         for arm in arms {
-            let coverage = pattern_coverage(&arm.pattern, &ty);
+            let coverage = pattern_coverage(&arm.pattern, &ty, &self.enums);
             let domain_already_covered = domain
                 .as_ref()
                 .is_some_and(|domain| domain.iter().all(|key| covered.contains(key)));
             let unreachable = catch_all
                 || domain_already_covered
-                || coverage.as_ref().is_some_and(|key| covered.contains(key));
+                || (!coverage.is_empty() && coverage.iter().all(|key| covered.contains(key)));
             if unreachable {
                 self.diagnostics.push(AnalysisDiagnostic::warning(
                     "unreachable match arm",
@@ -284,12 +284,10 @@ impl<'a> Checker<'a> {
                 ));
                 continue;
             }
-            match coverage {
-                None if is_irrefutable(&arm.pattern) => catch_all = true,
-                Some(key) => {
-                    covered.insert(key);
-                }
-                None => {}
+            if coverage.is_empty() && is_irrefutable(&arm.pattern) {
+                catch_all = true;
+            } else {
+                covered.extend(coverage);
             }
         }
 
@@ -356,40 +354,93 @@ fn expression_can_produce_unit(expression: &Expr) -> bool {
 fn match_domain(ty: &Type, enums: &HashMap<String, Vec<String>>) -> Option<Vec<String>> {
     match ty {
         Type::Bool => Some(vec!["true".into(), "false".into()]),
-        Type::Option(_) => Some(vec!["Some".into(), "None".into()]),
-        Type::Result(_, _) => Some(vec!["Ok".into(), "Err".into()]),
+        Type::Option(inner) => Some(
+            variant_domain("Some", inner, enums)
+                .into_iter()
+                .chain(["None".into()])
+                .collect(),
+        ),
+        Type::Result(ok, error) => Some(
+            variant_domain("Ok", ok, enums)
+                .into_iter()
+                .chain(variant_domain("Err", error, enums))
+                .collect(),
+        ),
         Type::Named { name, .. } => enums.get(name).cloned(),
         _ => None,
     }
 }
 
-fn pattern_coverage(pattern: &Pattern, ty: &Type) -> Option<String> {
+fn variant_domain(prefix: &str, inner: &Type, enums: &HashMap<String, Vec<String>>) -> Vec<String> {
+    match_domain(inner, enums).map_or_else(
+        || vec![prefix.into()],
+        |domain| {
+            domain
+                .into_iter()
+                .map(|key| format!("{prefix}({key})"))
+                .collect()
+        },
+    )
+}
+
+fn pattern_coverage(
+    pattern: &Pattern,
+    ty: &Type,
+    enums: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
     match pattern {
         Pattern::Literal {
             value: Literal::Bool(value),
             ..
-        } if matches!(ty, Type::Bool) => Some(value.to_string()),
-        Pattern::Literal { value, .. } => literal_key(value),
-        Pattern::Some { inner, .. } if matches!(ty, Type::Option(_)) && is_irrefutable(inner) => {
-            Some("Some".into())
+        } if matches!(ty, Type::Bool) => vec![value.to_string()],
+        Pattern::Literal { value, .. } => literal_key(value).into_iter().collect(),
+        Pattern::Some { inner, .. } => {
+            let Type::Option(inner_type) = ty else {
+                return Vec::new();
+            };
+            if is_irrefutable(inner) {
+                return variant_domain("Some", inner_type, enums);
+            }
+            pattern_coverage(inner, inner_type, enums)
+                .into_iter()
+                .map(|key| format!("Some({key})"))
+                .collect()
         }
-        Pattern::None { .. } if matches!(ty, Type::Option(_)) => Some("None".into()),
-        Pattern::Ok { inner, .. } if matches!(ty, Type::Result(_, _)) && is_irrefutable(inner) => {
-            Some("Ok".into())
+        Pattern::None { .. } if matches!(ty, Type::Option(_)) => vec!["None".into()],
+        Pattern::Ok { inner, .. } => {
+            let Type::Result(ok_type, _) = ty else {
+                return Vec::new();
+            };
+            if is_irrefutable(inner) {
+                return variant_domain("Ok", ok_type, enums);
+            }
+            pattern_coverage(inner, ok_type, enums)
+                .into_iter()
+                .map(|key| format!("Ok({key})"))
+                .collect()
         }
-        Pattern::Err { inner, .. } if matches!(ty, Type::Result(_, _)) && is_irrefutable(inner) => {
-            Some("Err".into())
+        Pattern::Err { inner, .. } => {
+            let Type::Result(_, error_type) = ty else {
+                return Vec::new();
+            };
+            if is_irrefutable(inner) {
+                return variant_domain("Err", error_type, enums);
+            }
+            pattern_coverage(inner, error_type, enums)
+                .into_iter()
+                .map(|key| format!("Err({key})"))
+                .collect()
         }
         Pattern::TupleVariant { path, fields, .. } if fields.iter().all(is_irrefutable) => {
-            path.last().cloned()
+            path.last().cloned().into_iter().collect()
         }
         Pattern::Record { path, fields, .. }
             if fields.iter().all(|(_, pattern)| is_irrefutable(pattern)) =>
         {
-            path.last().cloned()
+            path.last().cloned().into_iter().collect()
         }
-        Pattern::Path { path, .. } => path.last().cloned(),
-        _ => None,
+        Pattern::Path { path, .. } => path.last().cloned().into_iter().collect(),
+        _ => Vec::new(),
     }
 }
 

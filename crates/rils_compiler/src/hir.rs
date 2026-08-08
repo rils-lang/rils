@@ -788,6 +788,21 @@ impl<'a> FunctionLowerer<'a> {
                 }
                 if let Expr::Variable { name, .. } = callee.as_ref()
                     && self.lookup(name).is_none()
+                    && let Some((import_name, signature, capability)) = native_macro_import(name)
+                {
+                    return Ok(HirExpression::CallImport {
+                        name: import_name.into(),
+                        signature,
+                        capability: capability.into(),
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
+                if let Expr::Variable { name, .. } = callee.as_ref()
+                    && self.lookup(name).is_none()
                     && let Some(signature) = core_import_signature(name)
                 {
                     return Ok(HirExpression::CallImport {

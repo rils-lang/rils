@@ -1,4 +1,4 @@
-fn find_positive(value: int) {
+fn find_positive(value: int) -> Option<int> {
     if value > 0 {
         Some(value)
     } else {

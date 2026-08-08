@@ -3,7 +3,10 @@ use std::{
     rc::Rc,
 };
 
-use crate::{types::FunctionSignature, value::Value};
+use crate::{
+    types::{FunctionSignature, Type},
+    value::Value,
+};
 
 use super::{call_core_import, core_imports};
 
@@ -53,7 +56,38 @@ impl BytecodeHost {
     }
 
     pub fn enable_standard_io(&mut self) -> Result<(), String> {
-        self.enable_standard_capability("std::io")
+        self.enable_standard_capability("std::io")?;
+        if !self.functions.contains_key("std::io::print") {
+            self.register_function(
+                "std::io::print",
+                FunctionSignature::variadic(Type::Unit),
+                "std::io",
+                |arguments| {
+                    for value in arguments {
+                        print!("{value}");
+                    }
+                    Ok(Value::Unit)
+                },
+            )?;
+        }
+        if !self.functions.contains_key("std::io::println") {
+            self.register_function(
+                "std::io::println",
+                FunctionSignature::variadic(Type::Unit),
+                "std::io",
+                |arguments| {
+                    for (index, value) in arguments.iter().enumerate() {
+                        if index > 0 {
+                            print!(" ");
+                        }
+                        print!("{value}");
+                    }
+                    println!();
+                    Ok(Value::Unit)
+                },
+            )?;
+        }
+        Ok(())
     }
 
     pub fn enable_standard_fs(&mut self) -> Result<(), String> {

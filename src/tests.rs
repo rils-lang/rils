@@ -2185,3 +2185,77 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
         Value::Integer(42)
     );
 }
+
+#[test]
+fn bundled_examples_compile_to_bytecode() {
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+    for relative_path in [
+        "closures.rils",
+        "collections.rils",
+        "generics.rils",
+        "hello.rils",
+        "iterators.rils",
+        "loops.rils",
+        "macros.rils",
+        "match.rils",
+        "module_demo/mod.rils",
+        "modules.rils",
+        "option.rils",
+        "references.rils",
+        "result.rils",
+        "standard_fs.rils",
+        "traits.rils",
+        "type_aliases.rils",
+        "types.rils",
+    ] {
+        let path = examples.join(relative_path);
+        compile_file(&path).unwrap_or_else(|error| {
+            panic!("example `{}` failed to compile: {error}", path.display())
+        });
+    }
+}
+
+#[test]
+fn bundled_examples_match_interpreter_and_vm() {
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+    for relative_path in [
+        "closures.rils",
+        "collections.rils",
+        "generics.rils",
+        "hello.rils",
+        "iterators.rils",
+        "loops.rils",
+        "macros.rils",
+        "match.rils",
+        "module_demo/mod.rils",
+        "modules.rils",
+        "option.rils",
+        "references.rils",
+        "result.rils",
+        "traits.rils",
+        "type_aliases.rils",
+        "types.rils",
+    ] {
+        let path = examples.join(relative_path);
+        let interpreted = Engine::new().eval_file(&path).unwrap_or_else(|error| {
+            panic!(
+                "example `{}` failed in the interpreter: {error}",
+                path.display()
+            )
+        });
+        let module = compile_file(&path).unwrap_or_else(|error| {
+            panic!("example `{}` failed to compile: {error}", path.display())
+        });
+        let mut host = BytecodeHost::standard();
+        host.enable_standard_io().unwrap();
+        let executed = module.execute_with_host(&host).unwrap_or_else(|error| {
+            panic!("example `{}` failed in the VM: {error}", path.display())
+        });
+        assert_eq!(
+            interpreted,
+            executed,
+            "interpreter and VM differ for example `{}`",
+            path.display()
+        );
+    }
+}

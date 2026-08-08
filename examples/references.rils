@@ -4,7 +4,7 @@ struct Counter {
 
 impl Counter {
     fn set(&mut self, value: int) {
-        *self = Counter { value: value };
+        self.value = value;
     }
 }
 
