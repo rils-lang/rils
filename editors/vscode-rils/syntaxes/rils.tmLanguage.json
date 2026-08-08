@@ -1,0 +1,288 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Rils",
+  "scopeName": "source.rils",
+  "patterns": [
+    {"include": "#comments"},
+    {"include": "#strings"},
+    {"include": "#numbers"},
+    {"include": "#declarations"},
+    {"include": "#qualified-paths"},
+    {"include": "#macro-syntax"},
+    {"include": "#keywords"},
+    {"include": "#constants"},
+    {"include": "#types"},
+    {"include": "#functions"},
+    {"include": "#operators"},
+    {"include": "#punctuation"}
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.rils",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.rils",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.rils",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.rils",
+              "match": "\\\\[nrt\"\\\\]"
+            },
+            {
+              "name": "invalid.illegal.escape.rils",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.rils",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.rils",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "storage.type.function.rils"},
+            "2": {"name": "entity.name.function.rils"}
+          }
+        },
+        {
+          "match": "\\b(macro)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "keyword.declaration.macro.rils"},
+            "2": {"name": "entity.name.function.preprocessor.rils"}
+          }
+        },
+        {
+          "match": "\\b(struct|enum|trait)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "storage.type.rils"},
+            "2": {"name": "entity.name.type.rils"}
+          }
+        },
+        {
+          "match": "\\b(type)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "storage.type.rils"},
+            "2": {"name": "entity.name.type.rils"}
+          }
+        },
+        {
+          "match": "\\b(pub\\s+)?(mod)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "storage.modifier.rils"},
+            "2": {"name": "keyword.declaration.rils"},
+            "3": {"name": "entity.name.namespace.rils"}
+          }
+        },
+        {
+          "match": "\\b(let)\\s+(mut\\s+)?([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "storage.type.rils"},
+            "2": {"name": "storage.modifier.rils"},
+            "3": {"name": "variable.other.readwrite.rils"}
+          }
+        },
+        {
+          "match": "\\b(impl)\\s+(?:<[^>{}]+>\\s*)?([_\\p{L}][_\\p{L}\\p{N}]*)\\s+(for)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "keyword.declaration.rils"},
+            "2": {"name": "entity.name.type.trait.rils"},
+            "3": {"name": "keyword.declaration.rils"},
+            "4": {"name": "entity.name.type.rils"}
+          }
+        },
+        {
+          "match": "\\b(impl)\\s+(?:<[^>{}]+>\\s*)?([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "keyword.declaration.rils"},
+            "2": {"name": "entity.name.type.rils"}
+          }
+        }
+      ]
+    },
+    "macro-syntax": {
+      "patterns": [
+        {
+          "name": "variable.other.metavariable.rils",
+          "match": "\\$[_\\p{L}][_\\p{L}\\p{N}]*"
+        },
+        {
+          "name": "storage.type.fragment.rils",
+          "match": "(?<=:)\\s*(?:expr|lit|ident)\\b"
+        },
+        {
+          "name": "keyword.operator.repetition.rils",
+          "match": "(?<=\\))\\s*[*+]"
+        }
+      ]
+    },
+    "qualified-paths": {
+      "patterns": [
+        {
+          "match": "<\\s*([_\\p{L}][_\\p{L}\\p{N}]*)\\s+(as)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*>\\s*(::)\\s*([_\\p{L}][_\\p{L}\\p{N}]*)(?=\\s*\\()",
+          "captures": {
+            "1": {"name": "entity.name.type.rils"},
+            "2": {"name": "keyword.control.rils"},
+            "3": {"name": "entity.name.type.trait.rils"},
+            "4": {"name": "punctuation.accessor.double-colon.rils"},
+            "5": {"name": "entity.name.function.member.rils"}
+          }
+        },
+        {
+          "match": "<\\s*([_\\p{L}][_\\p{L}\\p{N}]*)\\s+(as)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*>\\s*(::)\\s*([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "captures": {
+            "1": {"name": "entity.name.type.rils"},
+            "2": {"name": "keyword.control.rils"},
+            "3": {"name": "entity.name.type.trait.rils"},
+            "4": {"name": "punctuation.accessor.double-colon.rils"},
+            "5": {"name": "entity.name.type.rils"}
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.rils",
+          "match": "\\b(?:if|else|while|loop|for|in|as|match|return|break|continue|use)\\b"
+        },
+        {
+          "name": "keyword.declaration.rils",
+          "match": "\\b(?:let|mut|fn|macro|struct|enum|impl|trait|type|mod|pub)\\b"
+        },
+        {
+          "name": "variable.language.self.rils",
+          "match": "\\bself\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.rils",
+          "match": "\\b(?:true|false)\\b"
+        },
+        {
+          "name": "constant.language.unit.rils",
+          "match": "\\(\\)"
+        },
+        {
+          "name": "constant.language.option.rils",
+          "match": "\\b(?:Some|None|Ok|Err)\\b"
+        },
+        {
+          "name": "invalid.deprecated.rils",
+          "match": "\\bnil\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.rils",
+          "match": "\\b(?:bool|int|float|string|function|Option|Result|Self)\\b"
+        },
+        {
+          "name": "support.type.builtin.rils",
+          "match": "\\b(?:Range|Vec|Copy|Clone|Iterator|IntoIterator|Error|ErrorKind|core|std|prelude|io|fs|collections)\\b"
+        },
+        {
+          "name": "entity.name.type.rils",
+          "match": "\\b\\p{Lu}[_\\p{L}\\p{N}]*\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.rils",
+          "match": "\\b(?:clone|is_some|is_none|is_ok|is_err|unwrap|unwrap_or|type_of|read_line|write_line|flush|read_to_string|append|try_exists|read_dir|create_dir_all|remove_file|remove_dir)(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.function.preprocessor.rils",
+          "match": "\\b[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*!\\s*\\()"
+        },
+        {
+          "name": "entity.name.function.member.rils",
+          "match": "(?<=\\.)[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.function.call.rils",
+          "match": "\\b[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*\\()"
+        },
+        {
+          "name": "variable.other.property.rils",
+          "match": "(?<=\\.)[_\\p{L}][_\\p{L}\\p{N}]*"
+        },
+        {
+          "name": "variable.other.property.rils",
+          "match": "(?<=\\.)[0-9]+\\b"
+        },
+        {
+          "name": "variable.other.property.rils",
+          "match": "\\b[_\\p{L}][_\\p{L}\\p{N}]*(?=\\s*:)"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.return-type.rils",
+          "match": "->"
+        },
+        {
+          "name": "punctuation.separator.match-arm.rils",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.range.rils",
+          "match": "\\.\\."
+        },
+        {
+          "name": "punctuation.accessor.double-colon.rils",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.comparison.rils",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.rils",
+          "match": "&&|\\|\\||[+\\-*/%=!&|?]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.brackets.rils",
+          "match": "[\\[\\]]"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "name": "rils-language",
+  "displayName": "Rils Language",
+  "description": "Syntax highlighting and language intelligence for the Rust-Inspired Lightweight Script language.",
+  "version": "0.1.0",
+  "publisher": "rils-lang",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:rils"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "build": "node ./scripts/build.js",
+    "check": "npm run build --silent && node ./scripts/check.js",
+    "vscode:prepublish": "npm run build"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "rils",
+        "aliases": [
+          "Rils",
+          "rils"
+        ],
+        "extensions": [
+          ".rils"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rils",
+        "scopeName": "source.rils",
+        "path": "./syntaxes/rils.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Rils",
+      "properties": {
+        "rils.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the rils-analyzer executable. When empty, the extension searches the current workspace and then PATH."
+        },
+        "rils.server.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace communication between VS Code and rils-analyzer."
+        }
+      }
+    },
+    "semanticTokenScopes": [
+      {
+        "language": "rils",
+        "scopes": {
+          "variable": [
+            "variable.other.readwrite.rils"
+          ],
+          "parameter": [
+            "variable.parameter.rils"
+          ],
+          "function": [
+            "entity.name.function.rils"
+          ],
+          "type": [
+            "entity.name.type.rils"
+          ],
+          "interface": [
+            "entity.name.type.trait.rils"
+          ],
+          "property": [
+            "variable.other.property.rils"
+          ],
+          "method": [
+            "entity.name.function.member.rils"
+          ],
+          "enumMember": [
+            "variable.other.enummember.rils"
+          ],
+          "namespace": [
+            "entity.name.namespace.rils"
+          ]
+        }
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.28.1"
+  }
+}

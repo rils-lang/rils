@@ -1,0 +1,7 @@
+.vscode/**
+dist/**
+node_modules/**
+scripts/**
+extension.js
+package-lock.json
+*.vsix
