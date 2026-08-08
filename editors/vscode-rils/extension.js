@@ -10,7 +10,7 @@ const {
 
 let client;
 
-function resolveServer() {
+function resolveServer(context) {
   const configured = vscode.workspace
     .getConfiguration("rils")
     .get("server.path", "")
@@ -22,6 +22,12 @@ function resolveServer() {
   const executable = process.platform === "win32"
     ? "rils-analyzer.exe"
     : "rils-analyzer";
+  const bundled = path.join(context.extensionPath, "server", executable);
+  if (fs.existsSync(bundled)) {
+    return bundled;
+  }
+
+  const workspaceCandidates = [];
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     for (const profile of ["release", "debug"]) {
       const candidate = path.join(
@@ -31,16 +37,23 @@ function resolveServer() {
         executable,
       );
       if (fs.existsSync(candidate)) {
-        return candidate;
+        workspaceCandidates.push({
+          path: candidate,
+          modified: fs.statSync(candidate).mtimeMs,
+        });
       }
     }
+  }
+  workspaceCandidates.sort((left, right) => right.modified - left.modified);
+  if (workspaceCandidates.length > 0) {
+    return workspaceCandidates[0].path;
   }
   return "rils-analyzer";
 }
 
 async function activate(context) {
   const serverOptions = {
-    command: resolveServer(),
+    command: resolveServer(context),
     args: [],
     transport: TransportKind.stdio,
   };

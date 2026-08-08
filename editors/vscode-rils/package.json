@@ -5,9 +5,17 @@
   "version": "0.1.0",
   "publisher": "rils-lang",
   "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rils-lang/rils.git",
+    "directory": "editors/vscode-rils"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Programming Languages"
   ],
@@ -47,7 +55,7 @@
         "rils.server.path": {
           "type": "string",
           "default": "",
-          "description": "Path to the rils-analyzer executable. When empty, the extension searches the current workspace and then PATH."
+          "description": "Path to the rils-analyzer executable. When empty, the extension uses its bundled analyzer, a workspace build, or PATH."
         },
         "rils.server.trace": {
           "type": "string",

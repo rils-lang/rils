@@ -47,7 +47,7 @@
 # 测试与文档
 
 - 语言语义、编译后端或 Analyzer 改动完成后，至少运行 `cargo fmt --check`、`cargo test --workspace` 和 `cargo clippy --workspace --all-targets -- -D warnings`。
-- VS Code 插件改动后运行其 `npm run check`；需要生成安装包时，从仓库根目录运行 `tools/package-vscode-rils.ps1`。
+- VS Code 插件改动后运行其 `npm run check`；需要生成安装包时，从仓库根目录运行 `python tools/release-vscode.py`。
 - 用户可见语法或语义同步更新 `docs/language/` 中对应章节及目录；当前能力和使用入口同步更新 `README.md`；实施状态和后续顺序同步更新 `docs/implementation-roadmap.md`；字节码边界和格式设计同步更新 `docs/bytecode.md`。
 - 文档中的“当前支持”“暂不支持”和后续计划必须与实现一致。已经完成的能力要及时从待办列表移除。
 

@@ -1,7 +1,8 @@
 # Rils for Visual Studio Code
 
-This extension provides syntax highlighting and connects VS Code to
-`rils-analyzer` for diagnostics and language intelligence.
+This extension provides syntax highlighting and language intelligence through
+`rils-analyzer`. Published platform-specific VSIX packages include the matching
+Analyzer executable, so users do not need to install it separately.
 
 Version 0.1 follows the Rils 0.1 language version. Its TextMate grammar covers
 the implemented declarations, generics and trait bounds, trait implementations,
@@ -23,11 +24,15 @@ Definite semantic failures are errors; unreachable statements and match arms are
 
 To validate and package the extension into `dist/` from the repository root:
 
-```powershell
-.\tools\package-vscode-rils.ps1
+```console
+python tools/release-vscode.py
 ```
 
-Pass `-SkipInstall` to reuse the currently installed npm dependencies.
+The script detects the current platform by default. Pass a supported VS Code
+target such as `--target win32-x64`, `--skip-install` to reuse the currently
+installed npm dependencies, or `--publish` to publish the generated VSIX after
+packaging it. Cross-platform targets require the corresponding Rust target and
+linker to be installed.
 The build step bundles the extension and language client into `out/extension.js`, so packaged
 VSIX files do not include the development `node_modules` tree.
 
@@ -41,9 +46,11 @@ npm run check
 ```
 
 Open `editors/vscode-rils` as a VS Code workspace and press `F5`. The included
-launch configuration starts an Extension Development Host. The extension first searches
-the workspace's `target/release` and `target/debug` directories, then falls
-back to `rils-analyzer` on `PATH`.
+launch configuration starts an Extension Development Host. The extension uses
+`rils.server.path` when configured, then its bundled Analyzer. During repository
+development it selects the newest Analyzer build from the workspace's
+`target/release` and `target/debug` directories, and finally falls back to
+`rils-analyzer` on `PATH`.
 
 For another analyzer location, set `rils.server.path`.
 
