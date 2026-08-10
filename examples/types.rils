@@ -1,14 +1,14 @@
 struct Point {
-    x: float,
-    y: float,
+    x: f64,
+    y: f64,
 }
 
 impl Point {
-    fn new(x: float, y: float) -> Point {
+    fn new(x: f64, y: f64) -> Point {
         Point { x: x, y: y }
     }
 
-    fn length_squared(self) -> float {
+    fn length_squared(self) -> f64 {
         self.x * self.x + self.y * self.y
     }
 }

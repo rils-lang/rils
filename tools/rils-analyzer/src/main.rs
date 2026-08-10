@@ -738,16 +738,16 @@ mod tests {
 
     #[test]
     fn formats_higher_order_function_declarations() {
-        let ty = Type::function(Vec::new(), Type::function(Vec::new(), Type::Int));
+        let ty = Type::function(Vec::new(), Type::function(Vec::new(), Type::I32));
         assert_eq!(
             function_declaration("make_value", &ty),
-            "fn make_value() -> fn() -> int"
+            "fn make_value() -> fn() -> i32"
         );
     }
 
     #[test]
     fn hover_shows_expanded_type_aliases() {
-        let text = "struct Box<T> { value: T }\ntype ValueBox<T> = Box<T>;\ntype IntBox = ValueBox<int>;\nlet value: IntBox = Box { value: 1 };";
+        let text = "struct Box<T> { value: T }\ntype ValueBox<T> = Box<T>;\ntype IntBox = ValueBox<i32>;\nlet value: IntBox = Box { value: 1 };";
         let uri = "file:///aliases.rils".to_owned();
         let (connection, _client) = Connection::memory();
         let mut documents = HashMap::new();
@@ -774,7 +774,7 @@ mod tests {
             hover
                 .pointer("/contents/value")
                 .and_then(|value| value.as_str()),
-            Some("```rils\ntype IntBox = Box<int>\n```")
+            Some("```rils\ntype IntBox = Box<i32>\n```")
         );
     }
 
@@ -792,7 +792,7 @@ mod tests {
 
     #[test]
     fn publishes_control_flow_diagnostics() {
-        let text = "fn value(flag: bool) -> int { if flag { 1 } }";
+        let text = "fn value(flag: bool) -> i32 { if flag { 1 } }";
         let result = rils_frontend::analysis::analyze(text);
         let output = diagnostics(text, &result);
         assert_eq!(output.len(), 1);
@@ -818,7 +818,7 @@ mod tests {
 
     #[test]
     fn publishes_warnings_with_lsp_warning_severity() {
-        let text = "fn value() -> int { return 1; 2 }";
+        let text = "fn value() -> i32 { return 1; 2 }";
         let result = rils_frontend::analysis::analyze(text);
         let output = diagnostics(text, &result);
         assert!(output.iter().any(|diagnostic| {
@@ -828,13 +828,13 @@ mod tests {
 
     #[test]
     fn publishes_static_type_diagnostics() {
-        let text = "fn value(input: int) -> int { input } value(\"wrong\")";
+        let text = "fn value(input: i32) -> i32 { input } value(\"wrong\")";
         let result = rils_frontend::analysis::analyze(text);
         let output = diagnostics(text, &result);
         assert!(output.iter().any(|diagnostic| {
             diagnostic["message"]
                 .as_str()
-                .is_some_and(|message| message.contains("argument expects `int`"))
+                .is_some_and(|message| message.contains("argument expects `i32`"))
                 && diagnostic["severity"] == 1
         }));
     }

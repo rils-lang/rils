@@ -406,11 +406,9 @@ impl Interpreter {
                 let guard = owner.projection_guard(span)?;
                 let value = owner.projection_value(span)?;
                 let index = self.evaluate(index, environment.clone())?;
-                let Value::Integer(index) = index else {
-                    return Err(RuntimeError::new("collection indices must be int", span));
+                let Value::Usize(index) = index else {
+                    return Err(RuntimeError::new("collection indices must be usize", span));
                 };
-                let index = usize::try_from(index)
-                    .map_err(|_| RuntimeError::new("collection index cannot be negative", span))?;
                 let sequence = match value {
                     Value::Array(sequence) | Value::Vec(sequence) => sequence,
                     value => {

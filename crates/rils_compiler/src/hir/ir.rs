@@ -48,6 +48,7 @@ pub enum HirTypeDefinition {
 
 pub struct HirFunction {
     pub name: String,
+    pub exported: bool,
     pub parameter_count: usize,
     pub capture_count: usize,
     pub local_count: usize,
@@ -293,7 +294,20 @@ pub enum HirPattern {
 pub enum HirLiteral {
     Unit,
     Bool(bool),
-    Integer(i64),
-    Float(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    Isize(isize),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    Usize(usize),
+    F32(f32),
+    F64(f64),
+    Char(char),
     String(String),
 }

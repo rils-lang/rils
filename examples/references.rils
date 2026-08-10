@@ -1,14 +1,14 @@
 struct Counter {
-    value: int,
+    value: i32,
 }
 
 impl Counter {
-    fn set(&mut self, value: int) {
+    fn set(&mut self, value: i32) {
         self.value = value;
     }
 }
 
-fn add(value: &mut int, amount: int) {
+fn add(value: &mut i32, amount: i32) {
     *value = *value + amount;
 }
 

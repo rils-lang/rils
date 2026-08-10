@@ -312,7 +312,11 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         "Range",
         Value::StructType(Rc::new(StructType {
             name: "Range".into(),
-            generic_parameters: Vec::new(),
+            generic_parameters: vec![GenericParameter {
+                name: "T".into(),
+                bounds: Vec::new(),
+                span: Span::default(),
+            }],
             fields: Vec::new(),
             methods: Default::default(),
             trait_methods: Default::default(),
@@ -329,7 +333,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                         TypeAliasType {
                             name: "Item".into(),
                             generic_parameters: Vec::new(),
-                            target: Type::Int,
+                            target: Type::Variable("T".into()),
                         },
                     )]),
                 ),
@@ -340,7 +344,10 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                         TypeAliasType {
                             name: "IntoIter".into(),
                             generic_parameters: Vec::new(),
-                            target: Type::named("Range"),
+                            target: Type::Named {
+                                name: "Range".into(),
+                                arguments: vec![Type::Variable("T".into())],
+                            },
                         },
                     )]),
                 ),

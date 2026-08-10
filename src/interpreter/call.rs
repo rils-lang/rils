@@ -239,7 +239,7 @@ impl Interpreter {
                                 span,
                             ));
                         }
-                        let Value::Range(range) = reference
+                        let Value::Range(mut range) = reference
                             .read()
                             .map_err(|message| RuntimeError::new(message, span))?
                         else {
@@ -248,27 +248,16 @@ impl Interpreter {
                                 span,
                             ));
                         };
-                        if range.current >= range.end {
-                            return Ok(Value::Option {
-                                value: None,
-                                element_type: Some(Type::Int),
-                            });
-                        }
-                        let current = range.current;
-                        let next = current.checked_add(1).ok_or_else(|| {
-                            RuntimeError::new("range iteration overflowed int", span)
+                        let element_type = range.element_type();
+                        let current = range
+                            .next()
+                            .map_err(|message| RuntimeError::new(message, span))?;
+                        reference.write(Value::Range(range)).map_err(|error| {
+                            super::evaluation::assignment_error(error, "Range", span)
                         })?;
-                        reference
-                            .write(Value::Range(RangeValue {
-                                current: next,
-                                end: range.end,
-                            }))
-                            .map_err(|error| {
-                                super::evaluation::assignment_error(error, "Range", span)
-                            })?;
                         Ok(Value::Option {
-                            value: Some(Rc::new(Value::Integer(current))),
-                            element_type: Some(Type::Int),
+                            value: current.map(Rc::new),
+                            element_type: Some(element_type),
                         })
                     }
                     BuiltinMethod::SequenceLen => {
@@ -289,9 +278,7 @@ impl Interpreter {
                                 ));
                             }
                         };
-                        Ok(Value::Integer(i64::try_from(length).map_err(|_| {
-                            RuntimeError::new("collection length exceeds int", span)
-                        })?))
+                        Ok(Value::Usize(length))
                     }
                     BuiltinMethod::VecPush => {
                         let Value::Reference(reference) = method.receiver.as_ref() else {

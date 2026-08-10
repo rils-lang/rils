@@ -166,6 +166,21 @@ pub(super) fn literal_end(input: &[Token], position: usize) -> Option<usize> {
         token.kind,
         TokenKind::Integer(_)
             | TokenKind::Float(_)
+            | TokenKind::I8(_)
+            | TokenKind::I16(_)
+            | TokenKind::I32(_)
+            | TokenKind::I64(_)
+            | TokenKind::I128(_)
+            | TokenKind::Isize(_)
+            | TokenKind::U8(_)
+            | TokenKind::U16(_)
+            | TokenKind::U32(_)
+            | TokenKind::U64(_)
+            | TokenKind::U128(_)
+            | TokenKind::Usize(_)
+            | TokenKind::F32(_)
+            | TokenKind::F64(_)
+            | TokenKind::Char(_)
             | TokenKind::String(_)
             | TokenKind::True
             | TokenKind::False

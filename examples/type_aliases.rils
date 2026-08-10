@@ -3,19 +3,19 @@ struct Box<T> {
 }
 
 type ValueBox<T> = Box<T>;
-type IntBox = ValueBox<int>;
+type IntBox = ValueBox<i32>;
 
 trait Factory {
     type Item<T> = Box<T>;
-    fn make(self) -> Self::Item<int>;
+    fn make(self) -> Self::Item<i32>;
 }
 
 struct IntFactory {
-    value: int,
+    value: i32,
 }
 
 impl Factory for IntFactory {
-    fn make(self) -> Box<int> {
+    fn make(self) -> Box<i32> {
         Box { value: self.value }
     }
 }

@@ -8,11 +8,11 @@ Struct 和 enum 都可以拥有 `impl`：
 
 ```rust
 impl Point {
-    fn new(x: float, y: float) -> Point {
+    fn new(x: f64, y: f64) -> Point {
         Point { x: x, y: y }
     }
 
-    fn length_squared(self) -> float {
+    fn length_squared(self) -> f64 {
         self.x * self.x + self.y * self.y
     }
 }
@@ -77,7 +77,7 @@ fn choose<T>(left: T, right: T) -> T {
     left
 }
 
-choose(1, 2);       // T = int
+choose(1, 2);       // T = i32
 choose(1, "wrong"); // 类型错误
 ```
 
@@ -88,7 +88,7 @@ struct Holder<T> {
     value: Option<T>,
 }
 
-let holder: Holder<int> = Holder {
+let holder: Holder<i32> = Holder {
     value: None,
 };
 ```
@@ -105,7 +105,7 @@ struct Box<T> {
 }
 
 type ValueBox<T> = Box<T>;
-type IntBox = ValueBox<int>;
+type IntBox = ValueBox<i32>;
 
 let value: IntBox = Box { value: 42 };
 ```
@@ -154,13 +154,13 @@ Trait 可以声明必需关联类型，也可以使用 `=` 提供默认类型。
 ```rust
 trait Factory {
     type Item<T> = Box<T>;
-    fn make(self) -> Self::Item<int>;
+    fn make(self) -> Self::Item<i32>;
 }
 
 impl Iterator for Counter {
-    type Item = int;
+    type Item = i32;
 
-    fn next(&mut self) -> Option<int> {
+    fn next(&mut self) -> Option<i32> {
         // ...
     }
 }
@@ -183,8 +183,8 @@ let right: <Both as Right>::Item = "right";
 
 ```rust
 struct Point {
-    x: int,
-    y: int,
+    x: i32,
+    y: i32,
 }
 
 impl Describe for Point {
@@ -221,7 +221,7 @@ fn describe<T: Describe>(value: T) -> string {
     value.describe()
 }
 
-fn combine<T: Left + Right>(value: T) -> int {
+fn combine<T: Left + Right>(value: T) -> i32 {
     value.left() + value.right()
 }
 ```

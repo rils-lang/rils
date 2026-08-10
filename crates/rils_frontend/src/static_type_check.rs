@@ -194,7 +194,12 @@ impl<'a> Checker<'a> {
             Expr::Index { object, index, .. } => {
                 self.expression(object);
                 self.expression(index);
-                self.expect(&Type::Int, self.ty(index), index.span(), "collection index");
+                self.expect(
+                    &Type::USIZE,
+                    self.ty(index),
+                    index.span(),
+                    "collection index",
+                );
             }
             Expr::Tuple { elements, .. } => {
                 for element in elements {
@@ -218,7 +223,7 @@ impl<'a> Checker<'a> {
                 if let Some(repeat) = repeat {
                     self.expression(repeat);
                     self.expect(
-                        &Type::Int,
+                        &Type::USIZE,
                         self.ty(repeat),
                         repeat.span(),
                         "array repeat count",
@@ -249,10 +254,11 @@ impl<'a> Checker<'a> {
                     UnaryOp::Not => self.expect_bool(operand, "operand of `!`"),
                     UnaryOp::Negate => {
                         let ty = self.ty(operand);
-                        if !matches!(
+                        let signed = matches!(
                             ty,
-                            Type::Int | Type::Float | Type::Unknown | Type::Variable(_)
-                        ) {
+                            Type::Integer(integer) if integer.is_signed()
+                        ) || matches!(ty, Type::Float(_));
+                        if !signed && !matches!(ty, Type::Unknown | Type::Variable(_)) {
                             self.diagnostic(
                                 format!("operand of unary `-` must be numeric, found `{ty}`"),
                                 *span,
@@ -299,8 +305,16 @@ impl<'a> Checker<'a> {
             Expr::Range { start, end, .. } => {
                 self.expression(start);
                 self.expression(end);
-                self.expect(&Type::Int, self.ty(start), start.span(), "range bound");
-                self.expect(&Type::Int, self.ty(end), end.span(), "range bound");
+                let start_type = self.ty(start);
+                let end_type = self.ty(end);
+                if !start_type.is_integer() || start_type != end_type {
+                    self.diagnostic(
+                        format!(
+                            "range bounds must have the same integer type, found `{start_type}` and `{end_type}`"
+                        ),
+                        start.span().merge(end.span()),
+                    );
+                }
             }
             Expr::Call {
                 callee,
@@ -497,7 +511,6 @@ fn binary_compatible(operator: BinaryOp, left: &Type, right: &Type) -> bool {
     {
         return true;
     }
-    let numeric = |ty: &Type| matches!(ty, Type::Int | Type::Float);
-    (numeric(left) && numeric(right))
+    (left == right && left.is_numeric())
         || (operator == BinaryOp::Add && left == &Type::String && right == &Type::String)
 }

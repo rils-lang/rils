@@ -21,11 +21,13 @@ use crate::{
 };
 
 mod encoder;
+mod format;
 mod host;
 mod verifier;
 mod vm;
 
 use encoder::encode;
+pub use format::{BYTECODE_FORMAT_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeFormatError};
 pub use host::{BYTECODE_HOST_ABI_VERSION, BytecodeHost, BytecodeHostHandler, BytecodeImport};
 use vm::VirtualMachine;
 
@@ -87,6 +89,7 @@ enum RuntimeType {
 #[derive(Clone)]
 struct BytecodeFunction {
     name: String,
+    exported: bool,
     constants: Vec<Constant>,
     instructions: Vec<SpannedInstruction>,
     register_count: usize,
@@ -118,6 +121,44 @@ impl BytecodeModule {
         self.verify()?;
         let imports = self.link(host)?;
         VirtualMachine::new(self, imports, max_steps).execute()
+    }
+
+    /// Calls a named bytecode function without executing the module entry point.
+    ///
+    /// This is intended for embedding hosts that keep a compiled module and invoke
+    /// stateless script entry points repeatedly. Functions with captured values are
+    /// rejected because their closure environment only exists while another
+    /// bytecode invocation is running.
+    pub fn call(&self, name: &str, arguments: Vec<Value>) -> Result<Value, BytecodeError> {
+        self.call_with_host_and_limit(name, arguments, &BytecodeHost::standard(), 1_000_000)
+    }
+
+    pub fn call_with_host_and_limit(
+        &self,
+        name: &str,
+        arguments: Vec<Value>,
+        host: &BytecodeHost,
+        max_steps: usize,
+    ) -> Result<Value, BytecodeError> {
+        self.verify()?;
+        let function = self
+            .functions
+            .iter()
+            .position(|function| function.exported && function.name == name)
+            .ok_or_else(|| {
+                BytecodeError::new(
+                    format!("unknown exported function `{name}`"),
+                    Span::default(),
+                )
+            })?;
+        if function == self.entry {
+            return Err(BytecodeError::new(
+                "the module entry point cannot be called by name",
+                Span::default(),
+            ));
+        }
+        let imports = self.link(host)?;
+        VirtualMachine::new_call(self, imports, max_steps, function, arguments)?.execute()
     }
 
     pub fn imports(&self) -> &[BytecodeImport] {
@@ -290,8 +331,21 @@ pub(crate) fn compile_program(
 enum Constant {
     Unit,
     Bool(bool),
-    Integer(i64),
-    Float(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    Isize(isize),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    Usize(usize),
+    F32(f32),
+    F64(f64),
+    Char(char),
     String(String),
 }
 
@@ -300,8 +354,21 @@ impl Constant {
         match self {
             Self::Unit => Value::Unit,
             Self::Bool(value) => Value::Bool(*value),
-            Self::Integer(value) => Value::Integer(*value),
-            Self::Float(value) => Value::Float(*value),
+            Self::I8(value) => Value::I8(*value),
+            Self::I16(value) => Value::I16(*value),
+            Self::I32(value) => Value::I32(*value),
+            Self::I64(value) => Value::I64(*value),
+            Self::I128(value) => Value::I128(*value),
+            Self::Isize(value) => Value::Isize(*value),
+            Self::U8(value) => Value::U8(*value),
+            Self::U16(value) => Value::U16(*value),
+            Self::U32(value) => Value::U32(*value),
+            Self::U64(value) => Value::U64(*value),
+            Self::U128(value) => Value::U128(*value),
+            Self::Usize(value) => Value::Usize(*value),
+            Self::F32(value) => Value::F32(*value),
+            Self::F64(value) => Value::F64(*value),
+            Self::Char(value) => Value::Char(*value),
             Self::String(value) => Value::String(Rc::from(value.as_str())),
         }
     }
@@ -688,8 +755,21 @@ fn hir_literal_value(literal: &HirLiteral) -> Value {
     match literal {
         HirLiteral::Unit => Value::Unit,
         HirLiteral::Bool(value) => Value::Bool(*value),
-        HirLiteral::Integer(value) => Value::Integer(*value),
-        HirLiteral::Float(value) => Value::Float(*value),
+        HirLiteral::I8(value) => Value::I8(*value),
+        HirLiteral::I16(value) => Value::I16(*value),
+        HirLiteral::I32(value) => Value::I32(*value),
+        HirLiteral::I64(value) => Value::I64(*value),
+        HirLiteral::I128(value) => Value::I128(*value),
+        HirLiteral::Isize(value) => Value::Isize(*value),
+        HirLiteral::U8(value) => Value::U8(*value),
+        HirLiteral::U16(value) => Value::U16(*value),
+        HirLiteral::U32(value) => Value::U32(*value),
+        HirLiteral::U64(value) => Value::U64(*value),
+        HirLiteral::U128(value) => Value::U128(*value),
+        HirLiteral::Usize(value) => Value::Usize(*value),
+        HirLiteral::F32(value) => Value::F32(*value),
+        HirLiteral::F64(value) => Value::F64(*value),
+        HirLiteral::Char(value) => Value::Char(*value),
         HirLiteral::String(value) => Value::String(Rc::from(value.as_str())),
     }
 }
@@ -747,10 +827,7 @@ fn merge_sequence_types(left: &Type, right: &Type) -> Option<Type> {
     if right == &Type::Unknown || left == right {
         return Some(left.clone());
     }
-    match (left, right) {
-        (Type::Int, Type::Float) | (Type::Float, Type::Int) => Some(Type::Float),
-        _ => None,
-    }
+    None
 }
 
 fn condition_value(value: &Value, span: Span) -> Result<bool, BytecodeError> {
@@ -770,15 +847,9 @@ fn condition_value(value: &Value, span: Span) -> Result<bool, BytecodeError> {
 fn unary(operator: UnaryOp, value: Value, span: Span) -> Result<Value, BytecodeError> {
     match (operator, value) {
         (UnaryOp::Not, value) => Ok(Value::Bool(!condition_value(&value, span)?)),
-        (UnaryOp::Negate, Value::Integer(value)) => value
-            .checked_neg()
-            .map(Value::Integer)
-            .ok_or_else(|| BytecodeError::new("integer overflow", span)),
-        (UnaryOp::Negate, Value::Float(value)) => Ok(Value::Float(-value)),
-        (UnaryOp::Negate, value) => Err(BytecodeError::new(
-            format!("unary `-` expects a number, found {}", value.type_name()),
-            span,
-        )),
+        (UnaryOp::Negate, value) => {
+            crate::numeric::negate(value).map_err(|message| BytecodeError::new(message, span))
+        }
         (UnaryOp::Dereference, _) => Err(BytecodeError::new(
             "dereference is not supported by the bytecode MVP",
             span,
@@ -802,77 +873,8 @@ fn binary(
     {
         return Ok(Value::String(Rc::from(format!("{left}{right}"))));
     }
-    match (left, right) {
-        (Value::Integer(left), Value::Integer(right)) => {
-            binary_integers(left, operator, right, span)
-        }
-        (Value::Integer(left), Value::Float(right)) => {
-            binary_floats(left as f64, operator, right, span)
-        }
-        (Value::Float(left), Value::Integer(right)) => {
-            binary_floats(left, operator, right as f64, span)
-        }
-        (Value::Float(left), Value::Float(right)) => binary_floats(left, operator, right, span),
-        (left, right) => Err(BytecodeError::new(
-            format!(
-                "operator expects compatible numbers, found {} and {}",
-                left.type_name(),
-                right.type_name()
-            ),
-            span,
-        )),
-    }
-}
-
-fn binary_integers(
-    left: i64,
-    operator: BinaryOp,
-    right: i64,
-    span: Span,
-) -> Result<Value, BytecodeError> {
-    use BinaryOp::*;
-    let checked = |value: Option<i64>| {
-        value
-            .map(Value::Integer)
-            .ok_or_else(|| BytecodeError::new("integer overflow", span))
-    };
-    match operator {
-        Add => checked(left.checked_add(right)),
-        Subtract => checked(left.checked_sub(right)),
-        Multiply => checked(left.checked_mul(right)),
-        Divide if right == 0 => Err(BytecodeError::new("division by zero", span)),
-        Divide => checked(left.checked_div(right)),
-        Remainder if right == 0 => Err(BytecodeError::new("division by zero", span)),
-        Remainder => checked(left.checked_rem(right)),
-        Greater => Ok(Value::Bool(left > right)),
-        GreaterEqual => Ok(Value::Bool(left >= right)),
-        Less => Ok(Value::Bool(left < right)),
-        LessEqual => Ok(Value::Bool(left <= right)),
-        Equal | NotEqual => unreachable!(),
-    }
-}
-
-fn binary_floats(
-    left: f64,
-    operator: BinaryOp,
-    right: f64,
-    span: Span,
-) -> Result<Value, BytecodeError> {
-    use BinaryOp::*;
-    match operator {
-        Add => Ok(Value::Float(left + right)),
-        Subtract => Ok(Value::Float(left - right)),
-        Multiply => Ok(Value::Float(left * right)),
-        Divide if right == 0.0 => Err(BytecodeError::new("division by zero", span)),
-        Divide => Ok(Value::Float(left / right)),
-        Remainder if right == 0.0 => Err(BytecodeError::new("division by zero", span)),
-        Remainder => Ok(Value::Float(left % right)),
-        Greater => Ok(Value::Bool(left > right)),
-        GreaterEqual => Ok(Value::Bool(left >= right)),
-        Less => Ok(Value::Bool(left < right)),
-        LessEqual => Ok(Value::Bool(left <= right)),
-        Equal | NotEqual => unreachable!(),
-    }
+    crate::numeric::binary(left, operator, right)
+        .map_err(|message| BytecodeError::new(message, span))
 }
 
 fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
@@ -946,7 +948,7 @@ fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
         ),
         (
             "core::sequence::len",
-            FunctionSignature::fixed(vec![shared()], Type::Int),
+            FunctionSignature::fixed(vec![shared()], Type::USIZE),
         ),
         (
             "core::vec::push",
@@ -1097,9 +1099,7 @@ fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
                     ));
                 }
             };
-            Ok(Value::Integer(
-                i64::try_from(length).map_err(|_| "collection length exceeds int")?,
-            ))
+            Ok(Value::Usize(length))
         }
         "core::vec::push" => {
             let Value::Reference(reference) = &arguments[0] else {

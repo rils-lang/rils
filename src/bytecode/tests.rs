@@ -58,8 +58,8 @@ fn compiles_loop_values_and_moves() {
 #[test]
 fn compiled_modules_are_reusable_and_limit_steps() {
     let module = compile("let value = 40; value + 2").unwrap();
-    assert_eq!(module.execute().unwrap(), Value::Integer(42));
-    assert_eq!(module.execute().unwrap(), Value::Integer(42));
+    assert_eq!(module.execute().unwrap(), Value::I32(42));
+    assert_eq!(module.execute().unwrap(), Value::I32(42));
     assert!(module.instruction_count() > 0);
     assert!(module.register_count() > 0);
 
@@ -69,7 +69,7 @@ fn compiled_modules_are_reusable_and_limit_steps() {
 
     let recursion = compile(
         r#"
-                fn recurse(value: int) -> int { recurse(value + 1) }
+                fn recurse(value: i32) -> i32 { recurse(value + 1) }
                 recurse(0)
             "#,
     )
@@ -79,14 +79,34 @@ fn compiled_modules_are_reusable_and_limit_steps() {
 }
 
 #[test]
+fn calls_named_functions_with_arguments() {
+    let module = compile("pub fn add(left: i32, right: i32) -> i32 { left + right }").unwrap();
+    assert_eq!(
+        module
+            .call("add", vec![Value::I32(20), Value::I32(22)])
+            .unwrap(),
+        Value::I32(42)
+    );
+
+    let error = module.call("missing", Vec::new()).unwrap_err();
+    assert!(error.message.contains("unknown exported function"));
+    let error = module.call("add", vec![Value::I32(1)]).unwrap_err();
+    assert!(error.message.contains("expects 2 arguments"));
+
+    let private = compile("fn hidden() -> i32 { 42 }").unwrap();
+    let error = private.call("hidden", Vec::new()).unwrap_err();
+    assert!(error.message.contains("unknown exported function"));
+}
+
+#[test]
 fn compiles_functions_recursion_and_early_return() {
     let source = r#"
-            fn factorial(n: int) -> int {
+            fn factorial(n: i32) -> i32 {
                 if n <= 1 { return 1; }
                 n * factorial(n - 1)
             }
 
-            fn choose(flag: bool, value: int) -> int {
+            fn choose(flag: bool, value: i32) -> i32 {
                 if flag { return value; }
                 0
             }
@@ -96,18 +116,18 @@ fn compiles_functions_recursion_and_early_return() {
     assert_matches_interpreter(source);
     let module = compile(source).unwrap();
     assert_eq!(module.function_count(), 2);
-    assert_eq!(module.execute().unwrap(), Value::Integer(722));
+    assert_eq!(module.execute().unwrap(), Value::I32(722));
 }
 
 #[test]
 fn compiles_top_level_function_values_and_indirect_calls() {
     assert_matches_interpreter(
         r#"
-                fn apply(transform: fn(int) -> int, value: int) -> int {
+                fn apply(transform: fn(i32) -> i32, value: i32) -> i32 {
                     transform(value)
                 }
 
-                fn double(value: int) -> int { value * 2 }
+                fn double(value: i32) -> i32 { value * 2 }
 
                 let transform = double;
                 apply(transform, 21)
@@ -115,23 +135,23 @@ fn compiles_top_level_function_values_and_indirect_calls() {
     );
     assert_matches_interpreter(
         r#"
-                fn answer() -> int { 42 }
-                fn select() -> fn() -> int { answer }
+                fn answer() -> i32 { 42 }
+                fn select() -> fn() -> i32 { answer }
                 let selected = select();
                 selected()
             "#,
     );
     assert_matches_interpreter(
         r#"
-                fn answer() -> int { 42 }
-                fn select() -> fn() -> int { answer }
+                fn answer() -> i32 { 42 }
+                fn select() -> fn() -> i32 { answer }
                 select()()
             "#,
     );
     assert_matches_interpreter(
         r#"
-                fn left() -> int { 20 }
-                fn right() -> int { 22 }
+                fn left() -> i32 { 20 }
+                fn right() -> i32 { 22 }
                 (if true { left } else { right })() + right()
             "#,
     );
@@ -141,11 +161,11 @@ fn compiles_top_level_function_values_and_indirect_calls() {
 fn compiles_bound_methods_and_general_receivers() {
     assert_matches_interpreter(
         r#"
-                struct Number { value: int }
+                struct Number { value: i32 }
                 impl Copy for Number {}
                 impl Number {
-                    fn add(self, amount: int) -> int { self.value + amount }
-                    fn read(&self) -> int { self.value }
+                    fn add(self, amount: i32) -> i32 { self.value + amount }
+                    fn read(&self) -> i32 { self.value }
                 }
 
                 let add = Number { value: 40 }.add;
@@ -154,7 +174,7 @@ fn compiles_bound_methods_and_general_receivers() {
     );
     assert_matches_interpreter(
         r#"
-                struct Counter { value: int }
+                struct Counter { value: i32 }
                 struct State { counter: Counter }
                 impl Counter {
                     fn increment(&mut self) { self.value = self.value + 1; }
@@ -172,10 +192,10 @@ fn compiles_bound_methods_and_general_receivers() {
 fn compiles_qualified_method_values() {
     assert_matches_interpreter(
         r#"
-                trait Read { fn read(&self) -> int; }
-                struct Number { value: int }
+                trait Read { fn read(&self) -> i32; }
+                struct Number { value: i32 }
                 impl Read for Number {
-                    fn read(&self) -> int { self.value }
+                    fn read(&self) -> i32 { self.value }
                 }
 
                 let read = <Number as Read>::read;
@@ -189,7 +209,7 @@ fn compiles_qualified_method_values() {
 fn compiles_places_rooted_in_references() {
     assert_matches_interpreter(
         r#"
-                struct Number { value: int }
+                struct Number { value: i32 }
                 fn update(number: &mut Number) {
                     (*number).value = 40;
                     let value = &mut (*number).value;
@@ -209,9 +229,9 @@ fn compiles_places_rooted_in_references() {
 fn compiles_closures_with_shared_mutable_captures() {
     assert_matches_interpreter(
         r#"
-                fn make_counter() -> fn() -> int {
+                fn make_counter() -> fn() -> i32 {
                     let mut count = 0;
-                    fn next() -> int {
+                    fn next() -> i32 {
                         count = count + 1;
                         count
                     }
@@ -270,7 +290,7 @@ fn compiles_and_executes_standard_native_macros() {
     .unwrap();
     let mut host = BytecodeHost::standard();
     host.enable_standard_io().unwrap();
-    assert_eq!(module.execute_with_host(&host).unwrap(), Value::Integer(42));
+    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(42));
 
     let failure = compile("assert!(false, \"expected failure\")")
         .unwrap()
@@ -286,7 +306,8 @@ fn compiles_vec_construction_methods_and_owned_iteration() {
                 let mut values = Vec::from([1, 2]);
                 values.push(3);
                 let popped = values.pop();
-                let mut total = unwrap(popped) + values.len();
+                assert!(values.len() == 2);
+                let mut total = unwrap(popped) + 2;
                 for value in values {
                     total = total + value;
                 }
@@ -295,7 +316,7 @@ fn compiles_vec_construction_methods_and_owned_iteration() {
     );
     assert_matches_interpreter(
         r#"
-                let mut values: Vec<int> = Vec::new();
+                let mut values: Vec<i32> = Vec::new();
                 values.push(40);
                 values.push(2);
                 unwrap(values.pop())
@@ -307,11 +328,11 @@ fn compiles_vec_construction_methods_and_owned_iteration() {
 fn compiles_custom_iterator_and_into_iterator_traits() {
     assert_matches_interpreter(
         r#"
-                struct CounterRange { current: int, end: int }
+                struct CounterRange { current: i32, end: i32 }
 
                 impl Iterator for CounterRange {
-                    type Item = int;
-                    fn next(&mut self) -> Option<int> {
+                    type Item = i32;
+                    fn next(&mut self) -> Option<i32> {
                         if self.current < self.end {
                             let value = self.current;
                             let end = self.end;
@@ -332,12 +353,12 @@ fn compiles_custom_iterator_and_into_iterator_traits() {
     );
     assert_matches_interpreter(
         r#"
-                struct CounterRange { current: int, end: int }
-                struct CountTo { end: int }
+                struct CounterRange { current: i32, end: i32 }
+                struct CountTo { end: i32 }
 
                 impl Iterator for CounterRange {
-                    type Item = int;
-                    fn next(&mut self) -> Option<int> {
+                    type Item = i32;
+                    fn next(&mut self) -> Option<i32> {
                         if self.current < self.end {
                             let value = self.current;
                             let end = self.end;
@@ -425,8 +446,8 @@ fn standard_fs_imports_require_explicit_capability() {
 fn compiles_nested_recursive_functions() {
     assert_matches_interpreter(
         r#"
-                fn calculate(value: int) -> int {
-                    fn factorial(value: int) -> int {
+                fn calculate(value: i32) -> i32 {
+                    fn factorial(value: i32) -> i32 {
                         if value <= 1 { return 1; }
                         value * factorial(value - 1)
                     }
@@ -441,8 +462,8 @@ fn compiles_nested_recursive_functions() {
 fn compiles_nested_calls_and_owned_arguments() {
     assert_matches_interpreter(
         r#"
-                fn add_one(n: int) -> int { n + 1 }
-                fn twice(n: int) -> int { add_one(add_one(n)) }
+                fn add_one(n: i32) -> i32 { n + 1 }
+                fn twice(n: i32) -> i32 { add_one(add_one(n)) }
                 twice(40)
             "#,
     );
@@ -525,11 +546,11 @@ fn compiles_option_result_and_question_mark() {
     assert_matches_interpreter("Err(7)");
 
     let source = r#"
-            fn read(flag: bool) -> Result<int, string> {
+            fn read(flag: bool) -> Result<i32, string> {
                 if flag { Ok(20) } else { Err("missing") }
             }
 
-            fn double(flag: bool) -> Result<int, string> {
+            fn double(flag: bool) -> Result<i32, string> {
                 let value = read(flag)?;
                 Ok(value * 2)
             }
@@ -576,12 +597,12 @@ fn compiles_match_literals_options_results_and_bindings() {
 fn compiles_type_aliases_and_type_erased_generic_functions() {
     assert_matches_interpreter(
         r#"
-                type Number = int;
+                type Number = i32;
                 type Alias<T> = T;
 
                 fn identity<T: Clone>(value: T) -> T { value }
                 let left: Number = identity(20);
-                let right: Alias<int> = identity(22);
+                let right: Alias<i32> = identity(22);
                 (left, right)
             "#,
     );
@@ -591,8 +612,8 @@ fn compiles_type_aliases_and_type_erased_generic_functions() {
 fn compiles_local_and_element_borrows_and_dereference_assignment() {
     assert_matches_interpreter(
         r#"
-                fn increment(value: &mut int) { *value = *value + 1; }
-                fn run() -> int {
+                fn increment(value: &mut i32) { *value = *value + 1; }
+                fn run() -> i32 {
                     let mut value = 40;
                     increment(&mut value);
                     let shared = &value;
@@ -603,7 +624,7 @@ fn compiles_local_and_element_borrows_and_dereference_assignment() {
     );
     assert_matches_interpreter(
         r#"
-                fn run() -> int {
+                fn run() -> i32 {
                     let mut values = [1, 2, 3];
                     let reference = &mut values[1];
                     *reference = 9;
@@ -628,8 +649,8 @@ fn compiles_local_and_element_borrows_and_dereference_assignment() {
 fn compiles_struct_fields_borrows_and_enum_patterns() {
     assert_matches_interpreter(
         r#"
-                struct Point { x: int, y: int }
-                fn run() -> int {
+                struct Point { x: i32, y: i32 }
+                fn run() -> i32 {
                     let mut point = Point { x: 1, y: 2 };
                     let x = &mut point.x;
                     *x = 10;
@@ -643,8 +664,8 @@ fn compiles_struct_fields_borrows_and_enum_patterns() {
         r#"
                 enum Message {
                     Quit,
-                    Value(int),
-                    Move { x: int, y: int },
+                    Value(i32),
+                    Move { x: i32, y: i32 },
                 }
                 let first = Message::Value(21);
                 let second = Message::Move { x: 10, y: 11 };
@@ -674,7 +695,7 @@ fn compiles_struct_fields_borrows_and_enum_patterns() {
 fn compiles_nested_struct_field_places() {
     assert_matches_interpreter(
         r#"
-            struct Leaf { value: int }
+            struct Leaf { value: i32 }
             struct Branch { leaf: Leaf }
             struct Tree { branch: Branch }
 
@@ -696,7 +717,7 @@ fn compiles_nested_struct_field_places() {
 fn compiles_mixed_nested_field_and_index_places() {
     assert_matches_interpreter(
         r#"
-            struct Group { values: [int; 2] }
+            struct Group { values: [i32; 2] }
 
             let mut groups = Vec::from([
                 Group { values: [1, 2] },
@@ -718,15 +739,15 @@ fn compiles_mixed_nested_field_and_index_places() {
 fn compiles_associated_functions_and_all_self_receivers() {
     assert_matches_interpreter(
         r#"
-                struct Counter { value: int }
+                struct Counter { value: i32 }
                 impl Counter {
-                    fn new(value: int) -> Self { Counter { value: value } }
-                    fn get(&self) -> int { self.value }
-                    fn add(&mut self, amount: int) {
+                    fn new(value: i32) -> Self { Counter { value: value } }
+                    fn get(&self) -> i32 { self.value }
+                    fn add(&mut self, amount: i32) {
                         let next = self.value + amount;
                         *self = Counter { value: next };
                     }
-                    fn into_value(self) -> int { self.value }
+                    fn into_value(self) -> i32 { self.value }
                 }
 
                 let mut counter = Counter::new(10);
@@ -737,9 +758,9 @@ fn compiles_associated_functions_and_all_self_receivers() {
     );
     assert_matches_interpreter(
         r#"
-                enum Number { Value(int) }
+                enum Number { Value(i32) }
                 impl Number {
-                    fn read(self) -> int {
+                    fn read(self) -> i32 {
                         match self { Number::Value(value) => value }
                     }
                 }
@@ -753,10 +774,10 @@ fn compiles_associated_functions_and_all_self_receivers() {
 fn compiles_trait_impl_dispatch_and_ufcs() {
     assert_matches_interpreter(
         r#"
-                trait Value { fn value(&self) -> int; }
-                struct Number { inner: int }
+                trait Value { fn value(&self) -> i32; }
+                struct Number { inner: i32 }
                 impl Value for Number {
-                    fn value(&self) -> int { self.inner }
+                    fn value(&self) -> i32 { self.inner }
                 }
 
                 let number = Number { inner: 21 };
@@ -770,8 +791,8 @@ fn compiles_inline_modules_qualified_calls_and_use_aliases() {
     assert_matches_interpreter(
         r#"
                 mod math {
-                    fn increment(value: int) -> int { value + 1 }
-                    pub fn add(left: int, right: int) -> int {
+                    fn increment(value: i32) -> i32 { value + 1 }
+                    pub fn add(left: i32, right: i32) -> i32 {
                         increment(left + right - 1)
                     }
                 }
@@ -785,7 +806,7 @@ fn compiles_inline_modules_qualified_calls_and_use_aliases() {
         r#"
                 mod outer {
                     pub mod inner {
-                        pub fn answer() -> int { 42 }
+                        pub fn answer() -> i32 { 42 }
                     }
                 }
                 outer::inner::answer()
@@ -795,12 +816,12 @@ fn compiles_inline_modules_qualified_calls_and_use_aliases() {
     assert_matches_interpreter(
         r#"
                 mod first {
-                    fn answer() -> int { 20 }
-                    pub fn value() -> int { answer() }
+                    fn answer() -> i32 { 20 }
+                    pub fn value() -> i32 { answer() }
                 }
                 mod second {
-                    fn answer() -> int { 22 }
-                    pub fn value() -> int { answer() }
+                    fn answer() -> i32 { 22 }
+                    pub fn value() -> i32 { answer() }
                 }
                 first::value() + second::value()
             "#,
@@ -812,8 +833,8 @@ fn compiles_module_qualified_nominal_types() {
     assert_matches_interpreter(
         r#"
                 mod model {
-                    pub struct Point { value: int }
-                    pub enum Message { Value { value: int } }
+                    pub struct Point { value: i32 }
+                    pub enum Message { Value { value: i32 } }
                 }
 
                 let point = model::Point { value: 20 };
@@ -831,22 +852,22 @@ fn compiles_impls_declared_inside_modules() {
     assert_matches_interpreter(
         r#"
                 mod model {
-                    pub struct Number { value: int }
-                    pub trait Read { fn read(&self) -> int; }
+                    pub struct Number { value: i32 }
+                    pub trait Read { fn read(&self) -> i32; }
 
                     impl Number {
-                        fn new(value: int) -> Self { Number { value: value } }
-                        fn add(&mut self, amount: int) {
+                        fn new(value: i32) -> Self { Number { value: value } }
+                        fn add(&mut self, amount: i32) {
                             let next = self.value + amount;
                             *self = Number { value: next };
                         }
                     }
 
                     impl Read for Number {
-                        fn read(&self) -> int { self.value }
+                        fn read(&self) -> i32 { self.value }
                     }
 
-                    pub fn read_again(number: &Number) -> int {
+                    pub fn read_again(number: &Number) -> i32 {
                         <Number as Read>::read(number)
                     }
                 }
@@ -866,10 +887,10 @@ fn compile_file_loads_external_modules() {
     let root = directory.join("main.rils");
     let module = directory.join("math.rils");
     std::fs::write(&root, "mod math; use math::answer; answer()").unwrap();
-    std::fs::write(&module, "pub fn answer() -> int { 42 }").unwrap();
+    std::fs::write(&module, "pub fn answer() -> i32 { 42 }").unwrap();
 
     let compiled = crate::compile_file(&root).expect("file module should compile");
-    assert_eq!(compiled.execute().unwrap(), Value::Integer(42));
+    assert_eq!(compiled.execute().unwrap(), Value::I32(42));
 
     std::fs::remove_file(root).unwrap();
     std::fs::remove_file(module).unwrap();
@@ -888,14 +909,14 @@ fn rejects_static_errors_and_unsupported_features() {
     );
 
     let ownership_error = compile(
-        "fn outer(value: &int) { fn inner() { *value } inner } let value = 1; outer(&value)",
+        "fn outer(value: &i32) { fn inner() { *value } inner } let value = 1; outer(&value)",
     )
     .err()
     .expect("closures cannot capture local references");
     assert!(ownership_error.message.contains("capture local references"));
 
     let borrowed_method = compile(
-        "struct Value { inner: int } impl Value { fn read(&self) -> int { self.inner } } let value = Value { inner: 1 }; let read = value.read; read()",
+        "struct Value { inner: i32 } impl Value { fn read(&self) -> i32 { self.inner } } let value = Value { inner: 1 }; let read = value.read; read()",
     )
     .err()
     .expect("bound method values cannot retain a local reference");

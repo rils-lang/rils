@@ -8,8 +8,8 @@ Struct 使用命名字段，并且至少包含一个字段：
 
 ```rust
 struct Point {
-    x: float,
-    y: float,
+    x: f64,
+    y: f64,
 }
 
 let mut point: Point = Point {
@@ -38,7 +38,7 @@ let field = &mut point.x;
 Tuple 使用 Rust 风格的语法和数字字段；单元素 tuple 必须保留尾逗号：
 
 ```rust
-let mut pair: (int, string) = (42, "answer");
+let mut pair: (i32, string) = (42, "answer");
 pair.0 = 43;
 let text = pair.1;
 ```
@@ -46,7 +46,7 @@ let text = pair.1;
 固定数组类型写作 `[T; N]`。数组字面量既支持元素列表，也支持要求元素为 `Copy` 的重复形式：
 
 ```rust
-let mut values: [int; 3] = [10, 20, 30];
+let mut values: [i32; 3] = [10, 20, 30];
 values[1] = 21;
 let item = &mut values[2];
 *item = 31;
@@ -54,13 +54,13 @@ let item = &mut values[2];
 let zeroes = [0; 8];
 ```
 
-数组元素必须同型，索引必须是非负 `int`。索引表达式只复制 `Copy` 元素；非 Copy 元素不能
+数组元素必须同型，索引必须是 `usize`。无后缀整数字面量及由它初始化的绑定可从索引用法推导为 `usize`。索引表达式只复制 `Copy` 元素；非 Copy 元素不能
 通过索引移出，但可以通过 `&values[index]` 或 `&mut values[index]` 局部借用。
 
 `Vec<T>` 当前提供最小核心 API：
 
 ```rust
-let mut values: Vec<int> = Vec::new();
+let mut values: Vec<i32> = Vec::new();
 values.push(20);
 values.push(22);
 let length = values.len();
@@ -79,7 +79,7 @@ Enum 支持 unit、tuple 和 record 三类 variant：
 ```rust
 enum Message {
     Quit,
-    Move(int, int),
+    Move(i32, i32),
     Write { text: string },
 }
 

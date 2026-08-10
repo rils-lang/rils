@@ -35,7 +35,22 @@ pub enum TokenKind {
     OrOr,
     Arrow,
     Identifier(String),
-    Integer(i64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    Isize(isize),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    Usize(usize),
+    F32(f32),
+    F64(f64),
+    Char(char),
+    Integer(i128),
     Float(f64),
     String(String),
     Let,
@@ -103,8 +118,21 @@ impl TokenKind {
             Self::OrOr => "`||`",
             Self::Arrow => "`->`",
             Self::Identifier(_) => "identifier",
-            Self::Integer(_) => "integer",
-            Self::Float(_) => "float",
+            Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::I128(_)
+            | Self::Isize(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::U128(_)
+            | Self::Usize(_)
+            | Self::Integer(_) => "integer",
+            Self::F32(_) | Self::F64(_) | Self::Float(_) => "f64",
+            Self::Char(_) => "char",
             Self::String(_) => "string",
             Self::Let => "`let`",
             Self::Mut => "`mut`",

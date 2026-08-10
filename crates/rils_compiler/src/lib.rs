@@ -67,7 +67,12 @@ pub fn compile(source: &str) -> Result<mir::MirProgram, CompileError> {
 }
 
 pub fn compile_program(program: &Program) -> Result<mir::MirProgram, CompileError> {
-    if let Some(diagnostic) = analyze_program(program)
+    let mut program = program.clone();
+    rils_frontend::resolve_numeric_literals(&mut program).map_err(|error| CompileError {
+        message: error.message,
+        span: error.span,
+    })?;
+    if let Some(diagnostic) = analyze_program(&program)
         .diagnostics
         .into_iter()
         .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
@@ -77,7 +82,7 @@ pub fn compile_program(program: &Program) -> Result<mir::MirProgram, CompileErro
             span: diagnostic.span,
         });
     }
-    mir::lower(hir::lower(program)?)
+    mir::lower(hir::lower(&program)?)
 }
 
 #[cfg(test)]
@@ -86,7 +91,7 @@ mod tests {
 
     #[test]
     fn compiles_source_through_static_analysis_hir_and_mir() {
-        let program = compile("fn add(left: int, right: int) -> int { left + right } add(1, 2)")
+        let program = compile("fn add(left: i32, right: i32) -> i32 { left + right } add(1, 2)")
             .expect("source should lower to MIR");
 
         assert_eq!(program.entry, 0);

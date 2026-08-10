@@ -8,7 +8,7 @@
 
 ```rust
 let name = "Rils";
-let mut count: int = 0;
+let mut count: i32 = 0;
 count = count + 1;
 ```
 
@@ -16,7 +16,7 @@ count = count + 1;
 
 ### 所有权、移动与局部引用
 
-`()`、`bool`、`int`、`float` 以及只包含 Copy 值的 Option、Result、struct 和 enum 是
+`()`、`bool`、`i32`、`f64` 以及只包含 Copy 值的 Option、Result、struct 和 enum 是
 Copy 值。其他值默认拥有唯一所有者，赋值、传参和返回会移动所有权：
 
 ```rust
@@ -36,7 +36,7 @@ let copied = clone(&text);
 的独占含义：同一个存储位置可以同时存在多个可写引用，并且所有引用都能观察到修改。
 
 ```rust
-fn set(value: &mut int, next: int) {
+fn set(value: &mut i32, next: i32) {
     *value = next;
 }
 

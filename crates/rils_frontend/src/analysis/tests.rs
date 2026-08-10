@@ -30,8 +30,8 @@ fn pattern_bindings_are_scoped() {
 #[test]
 fn analyzes_builtin_result_patterns_and_try_expressions() {
     let source = r#"
-            fn source() -> Result<int, string> { Ok(42) }
-            fn forward() -> Result<int, string> {
+            fn source() -> Result<i32, string> { Ok(42) }
+            fn forward() -> Result<i32, string> {
                 let value = source()?;
                 Ok(value)
             }
@@ -67,7 +67,7 @@ fn analyzes_standard_io_and_fs_paths() {
 
 #[test]
 fn annotated_types_resolve_to_their_declarations() {
-    let source = "struct Point { x: int }\nfn keep(value: Point) -> Point { value }\nlet p: Point = Point { x: 1 };";
+    let source = "struct Point { x: i32 }\nfn keep(value: Point) -> Point { value }\nlet p: Point = Point { x: 1 };";
     let analysis = analyze(source).unwrap();
     assert!(analysis.diagnostics.is_empty());
     let definition = analysis
@@ -92,9 +92,9 @@ fn annotated_types_resolve_to_their_declarations() {
 #[test]
 fn resolves_ufcs_methods_and_place_expressions() {
     let source = r#"
-            trait Value { fn value(&self) -> int; }
-            struct Number { inner: int }
-            impl Value for Number { fn value(&self) -> int { self.inner } }
+            trait Value { fn value(&self) -> i32; }
+            struct Number { inner: i32 }
+            impl Value for Number { fn value(&self) -> i32 { self.inner } }
 
             let mut number = Number { inner: 1 };
             number.inner = 42;
@@ -140,9 +140,9 @@ fn resolves_ufcs_methods_and_place_expressions() {
 #[test]
 fn classifies_called_members_as_methods_and_other_members_as_fields() {
     let source = r#"
-            struct Factory { value: int }
+            struct Factory { value: i32 }
             impl Factory {
-                fn make(&self) -> int { self.value }
+                fn make(&self) -> i32 { self.value }
             }
             let factory = Factory { value: 42 };
             factory.make();
@@ -168,7 +168,7 @@ fn describes_type_aliases_with_recursively_expanded_targets() {
     let source = r#"
             struct Box<T> { value: T }
             type ValueBox<T> = Box<T>;
-            type IntBox = ValueBox<int>;
+            type IntBox = ValueBox<i32>;
             fn consume(value: IntBox) {}
         "#;
     let analysis = analyze(source).unwrap();
@@ -180,8 +180,8 @@ fn describes_type_aliases_with_recursively_expanded_targets() {
 
     for expected in [
         "type ValueBox<T> = Box<T>",
-        "type ValueBox<int> = Box<int>",
-        "type IntBox = Box<int>",
+        "type ValueBox<i32> = Box<i32>",
+        "type IntBox = Box<i32>",
     ] {
         assert!(
             analysis
@@ -209,12 +209,12 @@ fn infers_function_let_and_pattern_binding_types() {
             let nested = getter();
             let maybe = Some(result);
             match maybe { Some(value) => value, None => 0 }
-            struct Point { x: int }
+            struct Point { x: i32 }
             let point = Point { x: 1 };
             match point { Point { x } => x }
         ";
     let analysis = analyze(source).unwrap();
-    for expected in [": int", ": Option<int>", " -> int"] {
+    for expected in [": i32", ": Option<i32>", " -> i32"] {
         assert!(
             analysis
                 .inlay_hints
@@ -231,14 +231,14 @@ fn infers_function_let_and_pattern_binding_types() {
         .unwrap();
     assert_eq!(
         answer.inferred_type,
-        Some(Type::function(Vec::new(), Type::Int))
+        Some(Type::function(Vec::new(), Type::I32))
     );
     let copied = analysis
         .symbols
         .iter()
         .find(|symbol| symbol.is_definition && symbol.name == "copied")
         .unwrap();
-    assert_eq!(copied.inferred_type, Some(Type::Int));
+    assert_eq!(copied.inferred_type, Some(Type::I32));
     let getter = analysis
         .symbols
         .iter()
@@ -246,17 +246,17 @@ fn infers_function_let_and_pattern_binding_types() {
         .unwrap();
     assert_eq!(
         getter.inferred_type,
-        Some(Type::function(Vec::new(), Type::Int))
+        Some(Type::function(Vec::new(), Type::I32))
     );
     let nested = analysis
         .symbols
         .iter()
         .find(|symbol| symbol.is_definition && symbol.name == "nested")
         .unwrap();
-    assert_eq!(nested.inferred_type, Some(Type::Int));
+    assert_eq!(nested.inferred_type, Some(Type::I32));
     assert!(
         analysis.inlay_hints.iter().any(|hint| {
-            &source[hint.span.start..hint.span.end] == "x" && hint.label == ": int"
+            &source[hint.span.start..hint.span.end] == "x" && hint.label == ": i32"
         })
     );
 }
@@ -281,7 +281,7 @@ fn resolves_macro_definitions_and_invocations() {
 #[test]
 fn analyzes_modules_imports_and_builtin_namespaces() {
     let source = r#"
-            mod math { pub fn answer() -> int { 42 } }
+            mod math { pub fn answer() -> i32 { 42 } }
             use math::answer;
             let value = answer();
             std::io::println(value);
@@ -306,7 +306,7 @@ fn analyzes_modules_imports_and_builtin_namespaces() {
 #[test]
 fn reports_non_exhaustive_builtin_and_enum_matches() {
     let source = r#"
-            enum State { Ready, Waiting(int), Failed { code: int } }
+            enum State { Ready, Waiting(i32), Failed { code: i32 } }
             let state = State::Ready;
             match state { State::Ready => 1, State::Waiting(_) => 2 };
             match Some(1) { Some(value) => value };
@@ -351,10 +351,10 @@ fn accepts_exhaustive_matches_and_reports_unreachable_arms() {
 #[test]
 fn reports_missing_return_paths_and_unreachable_statements() {
     let source = r#"
-            fn incomplete(flag: bool) -> int {
+            fn incomplete(flag: bool) -> i32 {
                 if flag { return 1; }
             }
-            fn complete(flag: bool) -> int {
+            fn complete(flag: bool) -> i32 {
                 if flag { return 1; } else { return 2; }
                 3
             }
@@ -389,7 +389,7 @@ fn reports_missing_return_paths_and_unreachable_statements() {
 #[test]
 fn accepts_diverging_loops_and_finds_duplicate_literals() {
     let source = r#"
-            fn forever() -> int { loop {} }
+            fn forever() -> i32 { loop {} }
             match 1 { 1 => 1, 1 => 2, _ => 3 };
         "#;
     let analysis = analyze(source).unwrap();
@@ -452,7 +452,7 @@ fn reports_moves_and_merges_definite_branch_moves() {
 #[test]
 fn preserves_copy_values_and_allows_multiple_mutable_references() {
     let source = r#"
-            fn valid() -> int {
+            fn valid() -> i32 {
                 let value = 21;
                 let copied = value;
                 let mut target = value + copied;
@@ -475,7 +475,7 @@ fn preserves_copy_values_and_allows_multiple_mutable_references() {
 #[test]
 fn reports_mutability_borrow_and_reference_escape_errors() {
     let source = r#"
-            fn invalid_return(value: &int) { value }
+            fn invalid_return(value: &i32) { value }
             fn invalid_local() {
                 let immutable = 1;
                 immutable = 2;
@@ -513,7 +513,7 @@ fn reports_mutability_borrow_and_reference_escape_errors() {
 #[test]
 fn releases_local_and_temporary_borrows() {
     let source = r#"
-            fn inspect(value: &string) -> int { 1 }
+            fn inspect(value: &string) -> i32 { 1 }
             fn valid() {
                 let first = "first";
                 inspect(&first);
@@ -535,7 +535,7 @@ fn releases_local_and_temporary_borrows() {
 #[test]
 fn tracks_partial_field_moves_and_field_reinitialization() {
     let source = r#"
-            struct Message { text: string, code: int }
+            struct Message { text: string, code: i32 }
             fn invalid() {
                 let message = Message { text: "hello", code: 1 };
                 let text = message.text;
@@ -575,12 +575,12 @@ fn tracks_partial_field_moves_and_field_reinitialization() {
 #[test]
 fn reports_basic_static_type_mismatches() {
     let source = r#"
-            fn takes_int(value: int) -> int { value }
-            fn wrong_return() -> int { "wrong" }
-            fn explicit_wrong() -> int { return "wrong"; }
+            fn takes_int(value: i32) -> i32 { value }
+            fn wrong_return() -> i32 { "wrong" }
+            fn explicit_wrong() -> i32 { return "wrong"; }
 
             let annotated: string = 42;
-            let mut assigned: int = 1;
+            let mut assigned: i32 = 1;
             assigned = "wrong";
             takes_int("wrong");
             if 1 { 1 } else { 2 };
@@ -591,16 +591,16 @@ fn reports_basic_static_type_mismatches() {
         "#;
     let analysis = analyze(source).unwrap();
     for expected in [
-        "function result expects `int`",
-        "return value expects `int`",
+        "function result expects `i32`",
+        "return value expects `i32`",
         "initializer expects `string`",
-        "assigned value expects `int`",
-        "argument expects `int`",
+        "assigned value expects `i32`",
+        "argument expects `i32`",
         "if condition expects `bool`",
-        "if branch expects `int`",
-        "array element expects `int`",
-        "range bound expects `int`",
-        "default argument expects `int`",
+        "if branch expects `i32`",
+        "array element expects `i32`",
+        "range bounds must have the same integer type",
+        "default argument expects `i32`",
     ] {
         assert!(
             analysis
@@ -614,15 +614,15 @@ fn reports_basic_static_type_mismatches() {
 }
 
 #[test]
-fn accepts_aliases_generics_and_mixed_numeric_operators() {
+fn accepts_aliases_generics_and_concrete_numeric_operators() {
     let source = r#"
-            type Count = int;
+            type Count = i32;
             fn identity<T>(value: T) -> T { value }
-            fn convert(value: float) -> float { value }
+            fn convert(value: f64) -> f64 { value }
             let count: Count = 42;
             let text = identity("text");
             let number = convert(1.5);
-            let mixed = 1 + 2.5;
+            let sum = 1 + 2;
             if true { count } else { 0 };
         "#;
     let analysis = analyze(source).unwrap();
@@ -638,9 +638,9 @@ fn tracks_owned_and_borrowed_method_receivers() {
     let source = r#"
             struct Message { text: string }
             impl Message {
-                fn read(&self) -> int { 1 }
+                fn read(&self) -> i32 { 1 }
                 fn replace(&mut self, text: string) { *self = Message { text: text } }
-                fn consume(self) -> int { 1 }
+                fn consume(self) -> i32 { 1 }
             }
 
             fn invalid_move() {
@@ -709,7 +709,7 @@ fn infers_generic_record_literals_in_return_positions() {
 fn accepts_exhaustive_nested_option_matches() {
     let analysis = analyze(
         r#"
-            fn describe(value: Option<Option<int>>) -> int {
+            fn describe(value: Option<Option<i32>>) -> i32 {
                 match value {
                     Some(Some(number)) => number,
                     Some(None) => 0,

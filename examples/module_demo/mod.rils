@@ -1,7 +1,7 @@
-fn internal_value() -> int {
+fn internal_value() -> i32 {
     40
 }
 
-pub fn answer() -> int {
+pub fn answer() -> i32 {
     internal_value() + 2
 }

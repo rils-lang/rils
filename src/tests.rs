@@ -1,10 +1,51 @@
 use super::*;
 
-fn integer(source: &str) -> i64 {
+fn integer(source: &str) -> i32 {
     match eval(source).unwrap() {
-        Value::Integer(value) => value,
+        Value::I32(value) => value,
         value => panic!("expected integer, found {value:?}"),
     }
+}
+
+#[test]
+fn supports_concrete_numeric_types_char_and_contextual_usize_inference() {
+    let source = r#"
+        assert!(type_of(1i8) == "i8");
+        assert!(type_of(1i16) == "i16");
+        assert!(type_of(1i32) == "i32");
+        assert!(type_of(1i64) == "i64");
+        assert!(type_of(1i128) == "i128");
+        assert!(type_of(1isize) == "isize");
+        assert!(type_of(1u8) == "u8");
+        assert!(type_of(1u16) == "u16");
+        assert!(type_of(1u32) == "u32");
+        assert!(type_of(1u64) == "u64");
+        assert!(type_of(1u128) == "u128");
+        assert!(type_of(1usize) == "usize");
+        assert!(type_of(1.5f32) == "f32");
+        assert!(type_of(1.5f64) == "f64");
+        assert!(type_of('你') == "char");
+
+        let values = [20, 22];
+        let index = 1;
+        assert!(type_of(index) == "usize");
+        values[index]
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(22));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(22));
+}
+
+#[test]
+fn integer_ranges_preserve_their_concrete_type() {
+    let source = r#"
+        let mut total: u16 = 0u16;
+        for value in 1u16..4u16 {
+            total = total + value;
+        }
+        total
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::U16(6));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::U16(6));
 }
 
 #[test]
@@ -12,7 +53,7 @@ fn builtin_result_constructs_matches_and_unwraps_values() {
     assert_eq!(
         integer(
             r#"
-                fn answer(success: bool) -> Result<int, string> {
+                fn answer(success: bool) -> Result<i32, string> {
                     if success { Ok(42) } else { Err("failed") }
                 }
 
@@ -35,7 +76,7 @@ fn builtin_result_constructs_matches_and_unwraps_values() {
     assert_eq!(
         integer(
             r#"
-                let value: Result<int, string> = Ok(42);
+                let value: Result<i32, string> = Ok(42);
                 assert!(value.is_ok());
                 value.unwrap()
             "#,
@@ -43,7 +84,7 @@ fn builtin_result_constructs_matches_and_unwraps_values() {
         42
     );
     assert_eq!(
-        integer("let value: Result<int, string> = Err(\"failed\"); value.unwrap_or(42)"),
+        integer("let value: Result<i32, string> = Err(\"failed\"); value.unwrap_or(42)"),
         42
     );
     assert_eq!(integer("core::result::unwrap(core::result::Ok(42))"), 42);
@@ -71,7 +112,7 @@ fn standard_fs_uses_result_and_structured_io_errors() {
         r#"
             use std::io::ErrorKind;
 
-            fn roundtrip() -> Result<int, std::io::Error> {{
+            fn roundtrip() -> Result<i32, std::io::Error> {{
                 std::fs::create_dir_all("{directory_text}")?;
                 std::fs::write("{file_text}", "hello")?;
                 std::fs::append("{file_text}", " world")?;
@@ -101,7 +142,7 @@ fn standard_fs_uses_result_and_structured_io_errors() {
     if directory.exists() {
         std::fs::remove_dir_all(&directory).unwrap();
     }
-    assert_eq!(result.unwrap(), Value::Integer(42));
+    assert_eq!(result.unwrap(), Value::I32(42));
 }
 
 #[test]
@@ -109,11 +150,11 @@ fn question_mark_unwraps_ok_and_propagates_err() {
     assert_eq!(
         integer(
             r#"
-                fn source(success: bool) -> Result<int, string> {
+                fn source(success: bool) -> Result<i32, string> {
                     if success { Ok(40) } else { Err("failed") }
                 }
 
-                fn add_two(success: bool) -> Result<int, string> {
+                fn add_two(success: bool) -> Result<i32, string> {
                     let value = source(success)?;
                     Ok(value + 2)
                 }
@@ -127,8 +168,8 @@ fn question_mark_unwraps_ok_and_propagates_err() {
     assert_eq!(
         integer(
             r#"
-                fn fail() -> Result<int, string> { Err("failed") }
-                fn propagate() -> Result<int, string> {
+                fn fail() -> Result<i32, string> { Err("failed") }
+                fn propagate() -> Result<i32, string> {
                     let value = fail()?;
                     assert!(false);
                     Ok(value)
@@ -152,13 +193,13 @@ fn question_mark_reports_invalid_context_and_return_type() {
             .contains("can only be used inside a function")
     );
 
-    let non_result = eval("fn bad() -> int { 1? } bad()").unwrap_err();
+    let non_result = eval("fn bad() -> i32 { 1? } bad()").unwrap_err();
     assert!(non_result.to_string().contains("requires Result"));
 
     let incompatible_error = eval(
         r#"
-            fn source() -> Result<int, string> { Err("failed") }
-            fn bad() -> Result<int, int> {
+            fn source() -> Result<i32, string> { Err("failed") }
+            fn bad() -> Result<i32, i32> {
                 let value = source()?;
                 Ok(value)
             }
@@ -169,7 +210,7 @@ fn question_mark_reports_invalid_context_and_return_type() {
     assert!(
         incompatible_error
             .to_string()
-            .contains("type mismatch: expected int, found string"),
+            .contains("type mismatch: expected i32, found string"),
         "{incompatible_error}"
     );
 }
@@ -272,7 +313,7 @@ fn struct_fields_are_assignable_places() {
     assert_eq!(
         integer(
             r#"
-                struct Inner { value: int }
+                struct Inner { value: i32 }
                 struct Outer { inner: Inner }
 
                 let mut outer = Outer { inner: Inner { value: 1 } };
@@ -291,7 +332,7 @@ fn struct_fields_are_assignable_places() {
     assert_eq!(
         integer(
             r#"
-                struct Point { x: int }
+                struct Point { x: i32 }
                 let mut point = Point { x: 1 };
                 {
                     let point_ref = &mut point;
@@ -308,7 +349,7 @@ fn struct_fields_are_assignable_places() {
 fn field_places_enforce_mutability_types_and_active_references() {
     let immutable = eval(
         r#"
-            struct Point { x: int }
+            struct Point { x: i32 }
             let point = Point { x: 1 };
             point.x = 2;
         "#,
@@ -318,17 +359,17 @@ fn field_places_enforce_mutability_types_and_active_references() {
 
     let mismatch = eval(
         r#"
-            struct Point { x: int }
+            struct Point { x: i32 }
             let mut point = Point { x: 1 };
             point.x = "wrong";
         "#,
     )
     .unwrap_err();
-    assert!(mismatch.to_string().contains("field `x` of type int"));
+    assert!(mismatch.to_string().contains("field `x` of type i32"));
 
     let borrowed = eval(
         r#"
-            struct Inner { value: int }
+            struct Inner { value: i32 }
             struct Outer { inner: Inner }
             let mut outer = Outer { inner: Inner { value: 1 } };
             {
@@ -356,7 +397,7 @@ fn indexing_rejects_non_collection_values() {
     assert!(
         error
             .to_string()
-            .contains("type `int` does not support indexing")
+            .contains("type `i32` does not support indexing")
     );
 }
 
@@ -366,14 +407,14 @@ fn for_loops_consume_custom_iterators() {
         integer(
             r#"
                 struct CounterRange {
-                    current: int,
-                    end: int,
+                    current: i32,
+                    end: i32,
                 }
 
                 impl Iterator for CounterRange {
-                    type Item = int;
+                    type Item = i32;
 
-                    fn next(&mut self) -> Option<int> {
+                    fn next(&mut self) -> Option<i32> {
                         if self.current < self.end {
                             let value = self.current;
                             let end = self.end;
@@ -401,13 +442,13 @@ fn for_loops_use_into_iterator_when_available() {
     assert_eq!(
         integer(
             r#"
-                struct CounterRange { current: int, end: int }
-                struct CountTo { end: int }
+                struct CounterRange { current: i32, end: i32 }
+                struct CountTo { end: i32 }
 
                 impl Iterator for CounterRange {
-                    type Item = int;
+                    type Item = i32;
 
-                    fn next(&mut self) -> Option<int> {
+                    fn next(&mut self) -> Option<i32> {
                         if self.current < self.end {
                             let value = self.current;
                             let end = self.end;
@@ -467,7 +508,7 @@ fn integer_ranges_work_with_for_loops() {
     );
 
     let error = eval("for value in 0..2.5 {}").unwrap_err();
-    assert!(error.to_string().contains("range bounds must both be int"));
+    assert!(error.to_string().contains("range bounds"));
 }
 
 #[test]
@@ -477,9 +518,9 @@ fn generic_type_aliases_expand_in_annotations() {
             r#"
                 struct Box<T> { value: T }
                 type ValueBox<T> = Box<T>;
-                type IntBox = ValueBox<int>;
+                type IntBox = ValueBox<i32>;
 
-                fn unbox(value: IntBox) -> int { value.value }
+                fn unbox(value: IntBox) -> i32 { value.value }
 
                 let boxed: IntBox = Box { value: 42 };
                 unbox(boxed)
@@ -509,11 +550,11 @@ fn associated_types_participate_in_trait_signatures() {
                     fn get(&self) -> Self::Item;
                 }
 
-                struct Number { value: int }
+                struct Number { value: i32 }
 
                 impl Source for Number {
-                    type Item = int;
-                    fn get(&self) -> int { self.value }
+                    type Item = i32;
+                    fn get(&self) -> i32 { self.value }
                 }
 
                 fn read<T: Source>(value: &T) -> T::Item {
@@ -530,7 +571,7 @@ fn associated_types_participate_in_trait_signatures() {
     let missing = eval(
         r#"
             trait Source { type Item; }
-            struct Number { value: int }
+            struct Number { value: i32 }
             impl Source for Number {}
         "#,
     )
@@ -547,9 +588,9 @@ fn associated_types_participate_in_trait_signatures() {
                 type Item;
                 fn get(&self) -> Self::Item;
             }
-            struct Number { value: int }
+            struct Number { value: i32 }
             impl Source for Number {
-                type Item = int;
+                type Item = i32;
                 fn get(&self) -> string { "wrong" }
             }
         "#,
@@ -567,13 +608,13 @@ fn trait_associated_types_support_defaults_and_generics() {
 
                 trait Factory {
                     type Item<T> = Box<T>;
-                    fn make(self) -> Self::Item<int>;
+                    fn make(self) -> Self::Item<i32>;
                 }
 
-                struct IntFactory { value: int }
+                struct IntFactory { value: i32 }
 
                 impl Factory for IntFactory {
-                    fn make(self) -> Box<int> { Box { value: self.value } }
+                    fn make(self) -> Box<i32> { Box { value: self.value } }
                 }
 
                 IntFactory { value: 42 }.make().value
@@ -590,27 +631,27 @@ fn trait_methods_keep_their_trait_identity_and_support_ufcs() {
             r#"
                 trait Left {
                     type Item;
-                    fn value(&self) -> int;
+                    fn value(&self) -> i32;
                 }
 
                 trait Right {
                     type Item;
-                    fn value(&self) -> int;
+                    fn value(&self) -> i32;
                 }
 
-                struct Both { inner: int }
+                struct Both { inner: i32 }
 
                 impl Left for Both {
-                    type Item = int;
-                    fn value(&self) -> int { self.inner }
+                    type Item = i32;
+                    fn value(&self) -> i32 { self.inner }
                 }
 
                 impl Right for Both {
                     type Item = string;
-                    fn value(&self) -> int { self.inner + 1 }
+                    fn value(&self) -> i32 { self.inner + 1 }
                 }
 
-                fn read_left<T: Left>(value: &T) -> int {
+                fn read_left<T: Left>(value: &T) -> i32 {
                     <T as Left>::value(value)
                 }
 
@@ -629,11 +670,11 @@ fn trait_methods_keep_their_trait_identity_and_support_ufcs() {
 
     let ambiguous = eval(
         r#"
-            trait Left { fn value(&self) -> int; }
-            trait Right { fn value(&self) -> int; }
-            struct Both { inner: int }
-            impl Left for Both { fn value(&self) -> int { self.inner } }
-            impl Right for Both { fn value(&self) -> int { self.inner + 1 } }
+            trait Left { fn value(&self) -> i32; }
+            trait Right { fn value(&self) -> i32; }
+            struct Both { inner: i32 }
+            impl Left for Both { fn value(&self) -> i32 { self.inner } }
+            impl Right for Both { fn value(&self) -> i32 { self.inner + 1 } }
             let both = Both { inner: 20 };
             both.value()
         "#,
@@ -652,15 +693,15 @@ fn inherent_methods_take_priority_over_trait_methods() {
     assert_eq!(
         integer(
             r#"
-                trait Value { fn value(&self) -> int; }
-                struct Number { inner: int }
+                trait Value { fn value(&self) -> i32; }
+                struct Number { inner: i32 }
 
                 impl Value for Number {
-                    fn value(&self) -> int { self.inner }
+                    fn value(&self) -> i32 { self.inner }
                 }
 
                 impl Number {
-                    fn value(&self) -> int { self.inner * 2 }
+                    fn value(&self) -> i32 { self.inner * 2 }
                 }
 
                 let number = Number { inner: 21 };
@@ -693,7 +734,7 @@ fn builtin_clone_trait_provides_clone_method_for_owned_values() {
     assert_eq!(
         integer(
             r#"
-                struct Number { value: int }
+                struct Number { value: i32 }
 
                 impl Clone for Number {
                     fn clone(&self) -> Self {
@@ -732,8 +773,8 @@ fn functions_are_recursive_and_blocks_return_values() {
 #[test]
 fn function_types_preserve_higher_order_signatures() {
     let source = r#"
-            fn make_value() -> fn() -> int {
-                fn value() -> int {
+            fn make_value() -> fn() -> i32 {
+                fn value() -> i32 {
                     42
                 }
                 value
@@ -743,21 +784,21 @@ fn function_types_preserve_higher_order_signatures() {
                 transform(value)
             }
 
-            fn double(value: int) -> int {
+            fn double(value: i32) -> i32 {
                 value * 2
             }
 
-            let getter: fn() -> int = make_value();
-            assert!(type_of(getter) == "fn() -> int");
+            let getter: fn() -> i32 = make_value();
+            assert!(type_of(getter) == "fn() -> i32");
             assert!(getter() == 42);
             apply(double, 21)
         "#;
-    assert_eq!(eval(source).unwrap(), Value::Integer(42));
+    assert_eq!(eval(source).unwrap(), Value::I32(42));
 
     let mismatch = eval(
         r#"
                 fn text(value: string) -> string { value }
-                let invalid: fn(int) -> int = text;
+                let invalid: fn(i32) -> i32 = text;
             "#,
     )
     .unwrap_err();
@@ -843,7 +884,7 @@ fn copy_structs_duplicate_their_storage() {
     assert_eq!(
         integer(
             r#"
-                struct Counter { value: int }
+                struct Counter { value: i32 }
                 let mut first = Counter { value: 1 };
                 let second = first;
                 {
@@ -864,8 +905,8 @@ fn multiple_mutable_references_share_a_local_storage_slot() {
             r#"
                 let mut value = 1;
                 {
-                    let first: &mut int = &mut value;
-                    let second: &mut int = &mut value;
+                    let first: &mut i32 = &mut value;
+                    let second: &mut i32 = &mut value;
                     *first = 20;
                     *second = *second + 22;
                 }
@@ -881,11 +922,11 @@ fn multiple_mutable_references_can_target_a_struct_field() {
     assert_eq!(
         integer(
             r#"
-                struct Counter { value: int }
+                struct Counter { value: i32 }
                 let mut counter = Counter { value: 0 };
                 {
                     let first = &mut counter.value;
-                    let second: &mut int = &mut counter.value;
+                    let second: &mut i32 = &mut counter.value;
                     *first = 20;
                     *second = *second + 22;
                 }
@@ -913,7 +954,7 @@ fn field_references_keep_the_owner_storage_stable() {
 
     let replaced = eval(
         r#"
-            struct Counter { value: int }
+            struct Counter { value: i32 }
             let mut counter = Counter { value: 1 };
             {
                 let value = &counter.value;
@@ -930,7 +971,7 @@ fn methods_can_receive_local_mutable_references() {
     assert_eq!(
         integer(
             r#"
-                struct Counter { value: int }
+                struct Counter { value: i32 }
                 impl Counter {
                     fn set_answer(&mut self) {
                         *self = Counter { value: 42 };
@@ -950,9 +991,9 @@ fn methods_support_all_rust_style_self_receivers() {
     assert_eq!(
         integer(
             r#"
-                struct Counter { value: int }
+                struct Counter { value: i32 }
                 impl Counter {
-                    fn read(&self) -> int {
+                    fn read(&self) -> i32 {
                         self.value
                     }
 
@@ -966,7 +1007,7 @@ fn methods_support_all_rust_style_self_receivers() {
                         self
                     }
 
-                    fn consume(self) -> int {
+                    fn consume(self) -> i32 {
                         self.value
                     }
                 }
@@ -987,13 +1028,13 @@ fn traits_accept_rust_style_reference_receivers() {
         integer(
             r#"
                 trait Read {
-                    fn read(&self) -> int;
+                    fn read(&self) -> i32;
                 }
 
-                struct Number { value: int }
+                struct Number { value: i32 }
 
                 impl Read for Number {
-                    fn read(&self) -> int {
+                    fn read(&self) -> i32 {
                         self.value
                     }
                 }
@@ -1010,7 +1051,7 @@ fn traits_accept_rust_style_reference_receivers() {
 fn self_receivers_are_restricted_to_the_first_method_parameter() {
     for source in [
         "fn invalid(&self) {}",
-        "struct Value { inner: int } impl Value { fn invalid(value: int, &self) {} }",
+        "struct Value { inner: i32 } impl Value { fn invalid(value: i32, &self) {} }",
     ] {
         let error = eval(source).unwrap_err();
         assert!(error.to_string().contains("self"));
@@ -1022,7 +1063,7 @@ fn reference_parameters_can_mutate_their_owner() {
     assert_eq!(
         integer(
             r#"
-                fn set_answer(target: &mut int) {
+                fn set_answer(target: &mut i32) {
                     *target = 42;
                 }
                 let mut value = 0;
@@ -1055,9 +1096,9 @@ fn immutable_references_reject_writes() {
 fn references_cannot_escape_or_enter_owned_types() {
     for source in [
         "let value = 1; let global = &value;",
-        "fn invalid(value: &int) -> &int { value }",
-        "struct Invalid { value: &int }",
-        "let value = 1; let invalid: Option<&int> = None;",
+        "fn invalid(value: &i32) -> &i32 { value }",
+        "struct Invalid { value: &i32 }",
+        "let value = 1; let invalid: Option<&i32> = None;",
         "let value = 1; let invalid = Some(&value);",
         "let escaped = { let value = 1; &value };",
         "fn outer() { let value = 1; let reference = &value; fn nested() {} } outer()",
@@ -1074,7 +1115,7 @@ fn references_cannot_escape_or_enter_owned_types() {
 fn engine_keeps_globals_between_evaluations() {
     let mut engine = Engine::new();
     engine.eval("let answer = 42;").unwrap();
-    assert_eq!(engine.eval("answer").unwrap(), Value::Integer(42));
+    assert_eq!(engine.eval("answer").unwrap(), Value::I32(42));
 }
 
 #[test]
@@ -1097,9 +1138,9 @@ fn option_represents_present_and_absent_values() {
     assert_eq!(
         integer(
             r#"
-                let missing: Option<int> = None;
-                let present: Option<int> = Some(40);
-                fn maybe(value: int) -> Option<int> {
+                let missing: Option<i32> = None;
+                let present: Option<i32> = Some(40);
+                fn maybe(value: i32) -> Option<i32> {
                     if value > 0 { Some(value) } else { None }
                 }
                 unwrap_or(missing, 2) + unwrap(present) + unwrap_or(maybe(0), 0)
@@ -1112,13 +1153,13 @@ fn option_represents_present_and_absent_values() {
 #[test]
 fn annotations_check_initializers_assignments_parameters_and_returns() {
     for source in [
-        "let value: int = None;",
+        "let value: i32 = None;",
         "let missing = None;",
         "let mut value = 1; value = None;",
-        "let mut value: int = 1; value = Some(1);",
-        "fn identity(value: int) -> int { value } identity(None)",
-        "fn wrong() -> Option<int> { 42 } wrong()",
-        "let missing: Option<int> = None; unwrap_or(missing, \"wrong\")",
+        "let mut value: i32 = 1; value = Some(1);",
+        "fn identity(value: i32) -> i32 { value } identity(None)",
+        "fn wrong() -> Option<i32> { 42 } wrong()",
+        "let missing: Option<i32> = None; unwrap_or(missing, \"wrong\")",
     ] {
         let error = eval(source).unwrap_err();
         assert!(
@@ -1152,7 +1193,7 @@ fn match_destructures_option_values() {
     assert_eq!(
         integer(
             r#"
-                fn flatten(value: Option<Option<int>>) -> int {
+                fn flatten(value: Option<Option<i32>>) -> i32 {
                     match value {
                         Some(Some(number)) => number,
                         Some(None) => -1,
@@ -1208,7 +1249,7 @@ fn return_propagates_from_match_arm_blocks() {
     assert_eq!(
         integer(
             r#"
-                fn read(value: Option<int>) -> int {
+                fn read(value: Option<i32>) -> i32 {
                     match value {
                         Some(number) => {
                             return number;
@@ -1229,16 +1270,16 @@ fn structs_support_construction_fields_and_impl_methods() {
         integer(
             r#"
                 struct Point {
-                    x: int,
-                    y: int,
+                    x: i32,
+                    y: i32,
                 }
 
                 impl Point {
-                    fn new(x: int, y: int) -> Point {
+                    fn new(x: i32, y: i32) -> Point {
                         Point { x: x, y: y }
                     }
 
-                    fn sum(self) -> int {
+                    fn sum(self) -> i32 {
                         self.x + self.y
                     }
 
@@ -1260,7 +1301,7 @@ fn struct_patterns_destructure_fields() {
     assert_eq!(
         integer(
             r#"
-                struct Point { x: int, y: int }
+                struct Point { x: i32, y: i32 }
                 let point = Point { x: 40, y: 2 };
                 match point {
                     Point { x, y } => x + y,
@@ -1278,11 +1319,11 @@ fn enums_support_unit_tuple_and_record_variants() {
             r#"
                 enum Message {
                     Quit,
-                    Move(int, int),
+                    Move(i32, i32),
                     Write { text: string },
                 }
 
-                fn score(message: Message) -> int {
+                fn score(message: Message) -> i32 {
                     match message {
                         Message::Quit => 0,
                         Message::Move(x, y) => x + y,
@@ -1305,12 +1346,12 @@ fn enums_can_have_impl_methods() {
         integer(
             r#"
                 enum Number {
-                    Exact(int),
+                    Exact(i32),
                     Missing,
                 }
 
                 impl Number {
-                    fn value_or(self, fallback: int) -> int {
+                    fn value_or(self, fallback: i32) -> i32 {
                         match self {
                             Number::Exact(value) => value,
                             Number::Missing => fallback,
@@ -1329,9 +1370,9 @@ fn enums_can_have_impl_methods() {
 #[test]
 fn record_construction_checks_missing_unknown_and_invalid_fields() {
     for source in [
-        "struct Point { x: int, y: int } Point { x: 1 };",
-        "struct Point { x: int, y: int } Point { x: 1, y: 2, z: 3 };",
-        "struct Point { x: int, y: int } Point { x: \"wrong\", y: 2 };",
+        "struct Point { x: i32, y: i32 } Point { x: 1 };",
+        "struct Point { x: i32, y: i32 } Point { x: 1, y: 2, z: 3 };",
+        "struct Point { x: i32, y: i32 } Point { x: \"wrong\", y: 2 };",
     ] {
         let error = eval(source).unwrap_err();
         assert!(
@@ -1389,7 +1430,7 @@ fn generic_structs_and_impl_methods_preserve_arguments() {
                     }
                 }
 
-                let pair: Pair<int, string> = Pair {
+                let pair: Pair<i32, string> = Pair {
                     first: 42,
                     second: "Rils",
                 };
@@ -1440,7 +1481,7 @@ fn generic_enums_support_partial_inference_and_annotations() {
                     }
                 }
 
-                let failure: Outcome<int, string> = Outcome::Err("failed");
+                let failure: Outcome<i32, string> = Outcome::Err("failed");
                 value_or(failure, 42)
                 "#
         ),
@@ -1471,7 +1512,7 @@ fn outer_annotations_fill_unresolved_generic_arguments() {
                 struct Holder<T> {
                     value: Option<T>,
                 }
-                let holder: Holder<int> = Holder { value: None };
+                let holder: Holder<i32> = Holder { value: None };
                 unwrap_or(holder.value, 42)
                 "#
         ),
@@ -1483,12 +1524,12 @@ fn outer_annotations_fill_unresolved_generic_arguments() {
             struct Holder<T> {
                 value: Option<T>,
             }
-            let holder: Holder<int> = Holder { value: None };
+            let holder: Holder<i32> = Holder { value: None };
             unwrap_or(holder.value, "wrong")
             "#,
     )
     .unwrap_err();
-    assert!(error.to_string().contains("default must be int"));
+    assert!(error.to_string().contains("default must be i32"));
 }
 
 #[test]
@@ -1500,8 +1541,8 @@ fn traits_define_and_dispatch_required_methods() {
             }
 
             struct Point {
-                x: int,
-                y: int,
+                x: i32,
+                y: i32,
             }
 
             impl Describe for Point {
@@ -1524,8 +1565,8 @@ fn generic_trait_bounds_are_enforced() {
                 fn describe(self) -> string;
             }
 
-            struct Point { value: int }
-            struct Hidden { value: int }
+            struct Point { value: i32 }
+            struct Hidden { value: i32 }
 
             impl Describe for Point {
                 fn describe(self) -> string { "point" }
@@ -1559,7 +1600,7 @@ fn trait_self_types_are_checked() {
                     fn duplicate(self) -> Self;
                 }
 
-                struct Number { value: int }
+                struct Number { value: i32 }
 
                 impl Duplicate for Number {
                     fn duplicate(self) -> Number {
@@ -1608,19 +1649,19 @@ fn trait_impl_rejects_missing_and_wrong_methods() {
     for source in [
         r#"
             trait Describe { fn describe(self) -> string; }
-            struct Point { value: int }
+            struct Point { value: i32 }
             impl Describe for Point {}
             "#,
         r#"
             trait Describe { fn describe(self) -> string; }
-            struct Point { value: int }
+            struct Point { value: i32 }
             impl Describe for Point {
-                fn describe(self) -> int { 1 }
+                fn describe(self) -> i32 { 1 }
             }
             "#,
         r#"
             trait Describe { fn describe(self) -> string; }
-            struct Point { value: int }
+            struct Point { value: i32 }
             impl Describe for Point {
                 fn describe(self) -> string { "point" }
                 fn extra(self) -> string { "extra" }
@@ -1642,7 +1683,7 @@ fn duplicate_trait_impls_are_rejected() {
     let error = eval(
         r#"
             trait Describe { fn describe(self) -> string; }
-            struct Point { value: int }
+            struct Point { value: i32 }
             impl Describe for Point {
                 fn describe(self) -> string { "first" }
             }
@@ -1661,19 +1702,19 @@ fn generic_parameters_support_multiple_trait_bounds() {
         integer(
             r#"
                 trait Left {
-                    fn left(self) -> int;
+                    fn left(self) -> i32;
                 }
                 trait Right {
-                    fn right(self) -> int;
+                    fn right(self) -> i32;
                 }
-                struct Both { value: int }
+                struct Both { value: i32 }
                 impl Left for Both {
-                    fn left(self) -> int { self.value }
+                    fn left(self) -> i32 { self.value }
                 }
                 impl Right for Both {
-                    fn right(self) -> int { self.value }
+                    fn right(self) -> i32 { self.value }
                 }
-                fn sum<T: Left + Right>(value: T) -> int {
+                fn sum<T: Left + Right>(value: T) -> i32 {
                     value.left() + value.right()
                 }
                 sum(Both { value: 21 })
@@ -1688,7 +1729,7 @@ fn builtin_copy_and_clone_traits_participate_in_bounds() {
     assert_eq!(
         integer(
             r#"
-                fn add_twice<T: Copy>(value: T) -> int {
+                fn add_twice<T: Copy>(value: T) -> i32 {
                     value + value
                 }
 
@@ -1740,7 +1781,7 @@ fn nominal_types_can_implement_builtin_clone_and_copy() {
     assert_eq!(
         integer(
             r#"
-                struct Number { value: int }
+                struct Number { value: i32 }
                 impl Copy for Number {}
                 let number = Number { value: 21 };
                 let copied = number;
@@ -1827,22 +1868,19 @@ fn plus_repetition_requires_at_least_one_match() {
 #[test]
 fn rust_helper_forwards_native_functions_as_rils_macros() {
     fn host_sum(arguments: &[Value]) -> Result<Value, String> {
-        let mut total = 0_i64;
+        let mut total = 0_i32;
         for value in arguments {
-            let Value::Integer(value) = value else {
+            let Value::I32(value) = value else {
                 return Err("host_sum expects integers".into());
             };
             total += value;
         }
-        Ok(Value::Integer(total))
+        Ok(Value::I32(total))
     }
 
     let mut engine = Engine::new();
     rils_forward_macro!(engine, host_sum, 1, usize::MAX, host_sum).unwrap();
-    assert_eq!(
-        engine.eval("host_sum!(20, 22)").unwrap(),
-        Value::Integer(42)
-    );
+    assert_eq!(engine.eval("host_sum!(20, 22)").unwrap(), Value::I32(42));
     let error = engine.eval("host_sum!()").unwrap_err();
     assert!(error.to_string().contains("expects at least 1 argument"));
 }
@@ -1878,7 +1916,7 @@ fn tuples_support_fields_assignment_and_borrowing() {
     assert_eq!(
         integer(
             r#"
-                let mut pair: (int, int) = (20, 1);
+                let mut pair: (i32, i32) = (20, 1);
                 pair.1 = 2;
                 {
                     let value = &mut pair.0;
@@ -1896,7 +1934,7 @@ fn arrays_support_literals_repeat_and_index_places() {
     assert_eq!(
         integer(
             r#"
-                let mut values: [int; 3] = [10, 20, 0];
+                let mut values: [i32; 3] = [10, 20, 0];
                 values[2] = 11;
                 {
                     let item = &mut values[2];
@@ -1915,12 +1953,13 @@ fn vec_supports_core_methods_and_owned_iteration() {
     assert_eq!(
         integer(
             r#"
-                let mut values: Vec<int> = Vec::new();
+                let mut values: Vec<i32> = Vec::new();
                 values.push(10);
                 values.push(20);
                 values.push(12);
                 let last = unwrap(values.pop());
-                let mut total = last + values.len();
+                assert!(values.len() == 2);
+                let mut total = last + 2;
                 for value in values {
                     total = total + value;
                 }
@@ -1954,7 +1993,7 @@ fn collection_iterators_support_trait_qualified_calls() {
         integer(
             r#"
                 let values = [20, 22];
-                let mut iterator = <[int; 2] as IntoIterator>::into_iter(values);
+                let mut iterator = <[i32; 2] as IntoIterator>::into_iter(values);
                 let first = unwrap(Iterator::next(&mut iterator));
                 let second = unwrap(Iterator::next(&mut iterator));
                 first + second
@@ -2000,8 +2039,8 @@ fn inline_modules_enforce_visibility_and_support_use_aliases() {
         integer(
             r#"
                 mod math {
-                    fn hidden(value: int) -> int { value + 1 }
-                    pub fn add(left: int, right: int) -> int {
+                    fn hidden(value: i32) -> i32 { value + 1 }
+                    pub fn add(left: i32, right: i32) -> i32 {
                         hidden(left + right - 1)
                     }
                 }
@@ -2015,7 +2054,7 @@ fn inline_modules_enforce_visibility_and_support_use_aliases() {
 
     let private = eval(
         r#"
-            mod math { fn hidden() -> int { 42 } }
+            mod math { fn hidden() -> i32 { 42 } }
             math::hidden()
         "#,
     )
@@ -2030,7 +2069,7 @@ fn nested_modules_and_builtin_module_paths_execute() {
             r#"
                 pub mod outer {
                     pub mod inner {
-                        pub fn answer() -> int { 42 }
+                        pub fn answer() -> i32 { 42 }
                     }
                 }
                 let value = outer::inner::answer();
@@ -2049,8 +2088,8 @@ fn public_nominal_types_construct_through_module_paths() {
         integer(
             r#"
                 mod model {
-                    pub struct Point { value: int }
-                    pub enum Message { Value { value: int } }
+                    pub struct Point { value: i32 }
+                    pub enum Message { Value { value: i32 } }
                 }
                 let point = model::Point { value: 20 };
                 let message = model::Message::Value { value: 22 };
@@ -2071,10 +2110,10 @@ fn eval_file_loads_external_modules() {
     let root = directory.join("main.rils");
     let module = directory.join("math.rils");
     std::fs::write(&root, "mod math; use math::answer; answer()").unwrap();
-    std::fs::write(&module, "pub fn answer() -> int { 42 }").unwrap();
+    std::fs::write(&module, "pub fn answer() -> i32 { 42 }").unwrap();
 
     let value = Engine::new().eval_file(&root).unwrap();
-    assert_eq!(value, Value::Integer(42));
+    assert_eq!(value, Value::I32(42));
 
     std::fs::remove_file(root).unwrap();
     std::fs::remove_file(module).unwrap();
@@ -2083,7 +2122,7 @@ fn eval_file_loads_external_modules() {
 
 #[test]
 fn host_modules_accept_stateful_function_closures() {
-    let state = std::rc::Rc::new(std::cell::Cell::new(40_i64));
+    let state = std::rc::Rc::new(std::cell::Cell::new(40_i32));
     let captured = state.clone();
     let mut engine = Engine::new();
     engine.register_module("host::counter").unwrap();
@@ -2091,17 +2130,17 @@ fn host_modules_accept_stateful_function_closures() {
         .register_module_function("host::counter", "next", 0, 0, move |_| {
             let next = captured.get() + 1;
             captured.set(next);
-            Ok(Value::Integer(next))
+            Ok(Value::I32(next))
         })
         .unwrap();
 
     assert_eq!(
         engine.eval("host::counter::next()").unwrap(),
-        Value::Integer(41)
+        Value::I32(41)
     );
     assert_eq!(
         engine.eval("host::counter::next()").unwrap(),
-        Value::Integer(42)
+        Value::I32(42)
     );
 }
 
@@ -2112,26 +2151,26 @@ fn typed_host_functions_validate_arguments_and_returns() {
         .register_module_typed_function(
             "host::math",
             "identity",
-            vec![Type::Int],
-            Type::Int,
+            vec![Type::I32],
+            Type::I32,
             |arguments| Ok(arguments[0].clone()),
         )
         .unwrap();
     assert_eq!(
         engine.eval("host::math::identity(42)").unwrap(),
-        Value::Integer(42)
+        Value::I32(42)
     );
     let argument_error = engine.eval("host::math::identity(\"wrong\")").unwrap_err();
     assert!(
         argument_error
             .to_string()
-            .contains("expected int, found string"),
+            .contains("expected i32, found string"),
         "{argument_error}"
     );
 
     let mut engine = Engine::new();
     engine
-        .register_module_typed_function("host", "wrong_return", Vec::new(), Type::Int, |_| {
+        .register_module_typed_function("host", "wrong_return", Vec::new(), Type::I32, |_| {
             Ok(Value::String("wrong".into()))
         })
         .unwrap();
@@ -2142,7 +2181,7 @@ fn typed_host_functions_validate_arguments_and_returns() {
             .contains("return value of `wrong_return`")
             && return_error
                 .to_string()
-                .contains("expected int, found string"),
+                .contains("expected i32, found string"),
         "{return_error}"
     );
 }
@@ -2154,18 +2193,18 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
     counter_type
         .register_method("next", 0, 0, |arguments| {
             let counter = arguments[0]
-                .host_payload::<std::cell::Cell<i64>>()
+                .host_payload::<std::cell::Cell<i32>>()
                 .ok_or_else(|| "invalid Counter receiver".to_string())?;
             let next = counter.get() + 1;
             counter.set(next);
-            Ok(Value::Integer(next))
+            Ok(Value::I32(next))
         })
         .unwrap();
     let constructor_type = counter_type.clone();
     engine
         .register_module_function("host", "counter", 1, 1, move |arguments| {
-            let Value::Integer(initial) = arguments[0] else {
-                return Err("counter expects int".into());
+            let Value::I32(initial) = arguments[0] else {
+                return Err("counter expects i32".into());
             };
             Ok(constructor_type.value(std::cell::Cell::new(initial)))
         })
@@ -2182,7 +2221,7 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
                 "#,
             )
             .unwrap(),
-        Value::Integer(42)
+        Value::I32(42)
     );
 }
 

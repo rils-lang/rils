@@ -69,14 +69,13 @@ impl Parser {
             let element = self.type_annotation()?;
             self.expect(&TokenKind::Semicolon, "expected `;` before array length")?;
             let token = self.advance().clone();
-            let TokenKind::Integer(length) = token.kind else {
-                return Err(ParseError {
-                    message: "array length must be a non-negative integer".into(),
-                    span: token.span,
-                });
-            };
-            let length = usize::try_from(length).map_err(|_| ParseError {
-                message: "array length must be a non-negative integer".into(),
+            let length = match token.kind {
+                TokenKind::Integer(length) => usize::try_from(length).ok(),
+                TokenKind::Usize(length) => Some(length),
+                _ => None,
+            }
+            .ok_or_else(|| ParseError {
+                message: "array length must be a non-negative usize literal".into(),
                 span: token.span,
             })?;
             self.expect(&TokenKind::RightBracket, "expected `]` after array type")?;
@@ -123,8 +122,21 @@ impl Parser {
         let is_builtin = matches!(
             name.as_str(),
             "bool"
-                | "int"
-                | "float"
+                | "i8"
+                | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+                | "u8"
+                | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+                | "f32"
+                | "f64"
+                | "char"
                 | "string"
                 | "function"
                 | "Option"
@@ -164,8 +176,21 @@ impl Parser {
 
         match name.as_str() {
             "bool" => Ok(Type::Bool),
-            "int" => Ok(Type::Int),
-            "float" => Ok(Type::Float),
+            "int" => Err(ParseError {
+                message: "built-in type `int` was removed; use an explicit integer type such as `i32` or `i64`".into(),
+                span: name_span,
+            }),
+            "float" => Err(ParseError {
+                message: "built-in type `float` was removed; use `f32` or `f64`".into(),
+                span: name_span,
+            }),
+            name if crate::types::IntegerType::from_name(name).is_some() => Ok(Type::Integer(
+                crate::types::IntegerType::from_name(name).expect("integer name was checked"),
+            )),
+            name if crate::types::FloatType::from_name(name).is_some() => Ok(Type::Float(
+                crate::types::FloatType::from_name(name).expect("float name was checked"),
+            )),
+            "char" => Ok(Type::Char),
             "string" => Ok(Type::String),
             "function" => Ok(Type::opaque_function()),
             "Option" => {

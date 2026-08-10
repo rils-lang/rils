@@ -1,5 +1,117 @@
 use std::{collections::HashMap, fmt};
 
+use crate::source::Span;
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum IntegerType {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    Isize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    Usize,
+}
+
+impl IntegerType {
+    pub const ALL: [Self; 12] = [
+        Self::I8,
+        Self::I16,
+        Self::I32,
+        Self::I64,
+        Self::I128,
+        Self::Isize,
+        Self::U8,
+        Self::U16,
+        Self::U32,
+        Self::U64,
+        Self::U128,
+        Self::Usize,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::Isize => "isize",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+            Self::Usize => "usize",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "i8" => Some(Self::I8),
+            "i16" => Some(Self::I16),
+            "i32" => Some(Self::I32),
+            "i64" => Some(Self::I64),
+            "i128" => Some(Self::I128),
+            "isize" => Some(Self::Isize),
+            "u8" => Some(Self::U8),
+            "u16" => Some(Self::U16),
+            "u32" => Some(Self::U32),
+            "u64" => Some(Self::U64),
+            "u128" => Some(Self::U128),
+            "usize" => Some(Self::Usize),
+            _ => None,
+        }
+    }
+
+    pub const fn is_signed(self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128 | Self::Isize
+        )
+    }
+}
+
+impl fmt::Display for IntegerType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum FloatType {
+    F32,
+    F64,
+}
+
+impl FloatType {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "f32" => Some(Self::F32),
+            "f64" => Some(Self::F64),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for FloatType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FunctionSignature {
     pub parameters: Option<Vec<Type>>,
@@ -33,8 +145,11 @@ impl FunctionSignature {
 pub enum Type {
     Unit,
     Bool,
-    Int,
-    Float,
+    Integer(IntegerType),
+    Float(FloatType),
+    IntegerVariable(Span),
+    FloatVariable(Span),
+    Char,
     String,
     Tuple(Vec<Type>),
     Array {
@@ -72,6 +187,21 @@ pub trait RuntimeValue: Sized {
 }
 
 impl Type {
+    pub const I32: Self = Self::Integer(IntegerType::I32);
+    pub const F64: Self = Self::Float(FloatType::F64);
+    pub const USIZE: Self = Self::Integer(IntegerType::Usize);
+
+    pub const fn is_integer(&self) -> bool {
+        matches!(self, Self::Integer(_) | Self::IntegerVariable(_))
+    }
+
+    pub const fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            Self::Integer(_) | Self::Float(_) | Self::IntegerVariable(_) | Self::FloatVariable(_)
+        )
+    }
+
     pub fn contains_reference(&self) -> bool {
         match self {
             Self::Reference { .. } => true,
@@ -299,8 +429,11 @@ impl fmt::Display for Type {
         match self {
             Self::Unit => write!(f, "()"),
             Self::Bool => write!(f, "bool"),
-            Self::Int => write!(f, "int"),
-            Self::Float => write!(f, "float"),
+            Self::Integer(ty) => write!(f, "{ty}"),
+            Self::Float(ty) => write!(f, "{ty}"),
+            Self::IntegerVariable(_) => write!(f, "{{integer}}"),
+            Self::FloatVariable(_) => write!(f, "{{f64}}"),
+            Self::Char => write!(f, "char"),
             Self::String => write!(f, "string"),
             Self::Tuple(elements) => {
                 write!(f, "(")?;

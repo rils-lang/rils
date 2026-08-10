@@ -29,6 +29,7 @@ pub struct MirProgram {
 
 pub struct MirFunction {
     pub name: String,
+    pub exported: bool,
     pub blocks: Vec<BasicBlock>,
     pub constants: Vec<HirLiteral>,
     pub register_count: usize,

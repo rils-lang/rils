@@ -26,8 +26,21 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (Type::Unknown | Type::Variable(_), _) => true,
         (Type::Unit, Value::Unit)
         | (Type::Bool, Value::Bool(_))
-        | (Type::Int, Value::Integer(_))
-        | (Type::Float, Value::Float(_))
+        | (Type::Integer(crate::IntegerType::I8), Value::I8(_))
+        | (Type::Integer(crate::IntegerType::I16), Value::I16(_))
+        | (Type::Integer(crate::IntegerType::I32), Value::I32(_))
+        | (Type::Integer(crate::IntegerType::I64), Value::I64(_))
+        | (Type::Integer(crate::IntegerType::I128), Value::I128(_))
+        | (Type::Integer(crate::IntegerType::Isize), Value::Isize(_))
+        | (Type::Integer(crate::IntegerType::U8), Value::U8(_))
+        | (Type::Integer(crate::IntegerType::U16), Value::U16(_))
+        | (Type::Integer(crate::IntegerType::U32), Value::U32(_))
+        | (Type::Integer(crate::IntegerType::U64), Value::U64(_))
+        | (Type::Integer(crate::IntegerType::U128), Value::U128(_))
+        | (Type::Integer(crate::IntegerType::Usize), Value::Usize(_))
+        | (Type::Float(crate::FloatType::F32), Value::F32(_))
+        | (Type::Float(crate::FloatType::F64), Value::F64(_))
+        | (Type::Char, Value::Char(_))
         | (Type::String, Value::String(_)) => true,
         (Type::Tuple(expected), Value::Tuple(sequence)) => {
             let elements = sequence.elements.borrow();
@@ -127,8 +140,8 @@ fn accepts(expected: &Type, value: &Value) -> bool {
             instance.type_definition.name == *name
                 && type_arguments_compatible(arguments, &instance.type_arguments)
         }
-        (Type::Named { name, arguments }, Value::Range(_)) => {
-            name == "Range" && arguments.is_empty()
+        (Type::Named { name, arguments }, Value::Range(range)) => {
+            name == "Range" && (arguments.is_empty() || arguments == &vec![range.element_type()])
         }
         (Type::Named { name, arguments }, Value::HostObject(object)) => {
             arguments.is_empty() && object.type_definition.name == *name
@@ -314,8 +327,21 @@ fn type_of_value(value: &Value) -> Option<Type> {
     match value {
         Value::Unit => Some(Type::Unit),
         Value::Bool(_) => Some(Type::Bool),
-        Value::Integer(_) => Some(Type::Int),
-        Value::Float(_) => Some(Type::Float),
+        Value::I8(_) => Some(Type::Integer(crate::IntegerType::I8)),
+        Value::I16(_) => Some(Type::Integer(crate::IntegerType::I16)),
+        Value::I32(_) => Some(Type::I32),
+        Value::I64(_) => Some(Type::Integer(crate::IntegerType::I64)),
+        Value::I128(_) => Some(Type::Integer(crate::IntegerType::I128)),
+        Value::Isize(_) => Some(Type::Integer(crate::IntegerType::Isize)),
+        Value::U8(_) => Some(Type::Integer(crate::IntegerType::U8)),
+        Value::U16(_) => Some(Type::Integer(crate::IntegerType::U16)),
+        Value::U32(_) => Some(Type::Integer(crate::IntegerType::U32)),
+        Value::U64(_) => Some(Type::Integer(crate::IntegerType::U64)),
+        Value::U128(_) => Some(Type::Integer(crate::IntegerType::U128)),
+        Value::Usize(_) => Some(Type::USIZE),
+        Value::F32(_) => Some(Type::Float(crate::FloatType::F32)),
+        Value::F64(_) => Some(Type::F64),
+        Value::Char(_) => Some(Type::Char),
         Value::String(_) => Some(Type::String),
         Value::Tuple(sequence) => Some(Type::Tuple(
             sequence
@@ -415,13 +441,13 @@ fn type_of_value(value: &Value) -> Option<Type> {
         }
         Value::BuiltinBoundMethod(method) => Some(match method.method {
             crate::value::BuiltinMethod::RangeNext => {
-                Type::function(Vec::new(), Type::Option(Box::new(Type::Int)))
+                Type::function(Vec::new(), Type::Option(Box::new(Type::Unknown)))
             }
             crate::value::BuiltinMethod::RangeIntoIter => {
                 Type::function(Vec::new(), Type::named("Range"))
             }
             crate::value::BuiltinMethod::Clone => Type::function(Vec::new(), Type::Unknown),
-            crate::value::BuiltinMethod::SequenceLen => Type::function(Vec::new(), Type::Int),
+            crate::value::BuiltinMethod::SequenceLen => Type::function(Vec::new(), Type::USIZE),
             crate::value::BuiltinMethod::VecPush => Type::function(vec![Type::Unknown], Type::Unit),
             crate::value::BuiltinMethod::VecPop | crate::value::BuiltinMethod::SequenceNext => {
                 Type::function(Vec::new(), Type::Option(Box::new(Type::Unknown)))
@@ -471,7 +497,10 @@ fn type_of_value(value: &Value) -> Option<Type> {
             name: instance.type_definition.name.clone(),
             arguments: instance.type_arguments.clone(),
         }),
-        Value::Range(_) => Some(Type::named("Range")),
+        Value::Range(range) => Some(Type::Named {
+            name: "Range".into(),
+            arguments: vec![range.element_type()],
+        }),
         Value::BuiltinFunction(_) => Some(Type::opaque_function()),
         Value::BuiltinType(_)
         | Value::Module(_)

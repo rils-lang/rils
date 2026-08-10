@@ -63,6 +63,7 @@ impl Builder {
         }
         Ok(MirFunction {
             name: function.name,
+            exported: function.exported,
             blocks: self.blocks,
             constants: self.constants,
             register_count: self.register_count,

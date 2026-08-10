@@ -35,6 +35,45 @@ pub fn parse_with_native_macros(
     Parser::new(expansion.tokens, expansion.macros).parse_program()
 }
 
+fn scalar_literal(kind: &TokenKind) -> Option<Literal> {
+    Some(match kind {
+        TokenKind::I8(value) => Literal::I8(*value),
+        TokenKind::I16(value) => Literal::I16(*value),
+        TokenKind::I32(value) => Literal::I32(*value),
+        TokenKind::I64(value) => Literal::I64(*value),
+        TokenKind::I128(value) => Literal::I128(*value),
+        TokenKind::Isize(value) => Literal::Isize(*value),
+        TokenKind::U8(value) => Literal::U8(*value),
+        TokenKind::U16(value) => Literal::U16(*value),
+        TokenKind::U32(value) => Literal::U32(*value),
+        TokenKind::U64(value) => Literal::U64(*value),
+        TokenKind::U128(value) => Literal::U128(*value),
+        TokenKind::Usize(value) => Literal::Usize(*value),
+        TokenKind::F32(value) => Literal::F32(*value),
+        TokenKind::F64(value) => Literal::F64(*value),
+        TokenKind::Char(value) => Literal::Char(*value),
+        TokenKind::Integer(value) => Literal::Integer(*value),
+        TokenKind::Float(value) => Literal::Float(*value),
+        _ => return None,
+    })
+}
+
+fn negated_scalar_literal(kind: &TokenKind) -> Option<Literal> {
+    Some(match kind {
+        TokenKind::I8(value) => Literal::I8(value.checked_neg()?),
+        TokenKind::I16(value) => Literal::I16(value.checked_neg()?),
+        TokenKind::I32(value) => Literal::I32(value.checked_neg()?),
+        TokenKind::I64(value) => Literal::I64(value.checked_neg()?),
+        TokenKind::I128(value) => Literal::I128(value.checked_neg()?),
+        TokenKind::Isize(value) => Literal::Isize(value.checked_neg()?),
+        TokenKind::F32(value) => Literal::F32(-value),
+        TokenKind::F64(value) => Literal::F64(-value),
+        TokenKind::Integer(value) => Literal::Integer(value.checked_neg()?),
+        TokenKind::Float(value) => Literal::Float(-value),
+        _ => return None,
+    })
+}
+
 pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
     if tokens.is_empty() || !has_balanced_delimiters(tokens) {
         return false;
@@ -86,7 +125,7 @@ fn mask_macro_invocations(tokens: &[Token]) -> Vec<Token> {
                         depth -= 1;
                         if depth == 0 {
                             let span = tokens[current].span.merge(tokens[end].span);
-                            output.push(Token::new(TokenKind::Integer(0), span));
+                            output.push(Token::new(TokenKind::I32(0), span));
                             current = end + 1;
                             break;
                         }
@@ -289,18 +328,27 @@ mod tests {
 
     #[test]
     fn only_functions_can_be_declared_inside_blocks() {
-        let error = parse(lex("fn outer() { struct Local { value: int } }").unwrap())
+        let error = parse(lex("fn outer() { struct Local { value: i32 } }").unwrap())
             .expect_err("local type items are not part of the language");
         assert!(error.message.contains("module scope"));
 
-        parse(lex("fn outer() { fn local() -> int { 1 } local() }").unwrap())
+        parse(lex("fn outer() { fn local() -> i32 { 1 } local() }").unwrap())
             .expect("nested functions remain valid");
     }
 
     #[test]
     fn recognizes_function_call_comparisons_as_macro_expression_fragments() {
-        let mut tokens = crate::lexer::lex("type_of(getter) == \"fn() -> int\"").unwrap();
+        let mut tokens = crate::lexer::lex("type_of(getter) == \"fn() -> i32\"").unwrap();
         tokens.pop();
         assert!(super::is_expression_fragment(&tokens));
+    }
+
+    #[test]
+    fn reports_removed_numeric_type_names() {
+        let integer = parse(lex("let value: int = 1;").unwrap()).unwrap_err();
+        assert!(integer.message.contains("`int` was removed"));
+
+        let float = parse(lex("let value: float = 1.0;").unwrap()).unwrap_err();
+        assert!(float.message.contains("`float` was removed"));
     }
 }

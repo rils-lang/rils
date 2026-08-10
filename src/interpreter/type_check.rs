@@ -592,7 +592,14 @@ pub(super) fn expand_type_aliases(
 
 fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
     match actual {
-        Type::Unit | Type::Bool | Type::Int | Type::Float | Type::Reference { .. } => true,
+        Type::Unit
+        | Type::Bool
+        | Type::Integer(_)
+        | Type::Float(_)
+        | Type::IntegerVariable(_)
+        | Type::FloatVariable(_)
+        | Type::Char
+        | Type::Reference { .. } => true,
         Type::Function { .. } => true,
         Type::String | Type::Unknown | Type::Variable(_) | Type::Associated { .. } => false,
         Type::Option(inner) => type_is_copy(inner, environment),

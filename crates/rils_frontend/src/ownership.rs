@@ -985,8 +985,11 @@ impl<'a> Checker<'a> {
         match ty {
             Type::Unit
             | Type::Bool
-            | Type::Int
-            | Type::Float
+            | Type::Integer(_)
+            | Type::Float(_)
+            | Type::IntegerVariable(_)
+            | Type::FloatVariable(_)
+            | Type::Char
             | Type::Reference { .. }
             | Type::Function { .. } => true,
             Type::Option(inner) => self.is_copy_inner(inner, visiting),

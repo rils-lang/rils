@@ -68,6 +68,51 @@ impl<'a> VirtualMachine<'a> {
         }
     }
 
+    pub(super) fn new_call(
+        module: &'a BytecodeModule,
+        imports: Vec<Rc<BytecodeHostHandler>>,
+        max_steps: usize,
+        function: usize,
+        arguments: Vec<Value>,
+    ) -> Result<Self, BytecodeError> {
+        let callee = &module.functions[function];
+        if callee.capture_count != 0 {
+            return Err(BytecodeError::new(
+                format!("function `{}` requires a closure environment", callee.name),
+                callee.span,
+            ));
+        }
+        if arguments.len() != callee.parameter_count {
+            return Err(BytecodeError::new(
+                format!(
+                    "function `{}` expects {} arguments, found {}",
+                    callee.name,
+                    callee.parameter_count,
+                    arguments.len()
+                ),
+                callee.span,
+            ));
+        }
+        let locals = new_local_storage(callee);
+        for (local, argument) in locals.iter().zip(arguments) {
+            local.borrow_mut().initialize(argument);
+        }
+        Ok(Self {
+            module,
+            imports,
+            frames: vec![Frame {
+                function,
+                registers: vec![None; callee.register_count],
+                locals,
+                instruction: 0,
+                return_action: ReturnAction::Complete,
+            }],
+            steps: 0,
+            max_steps,
+            max_frames: 1_024,
+        })
+    }
+
     pub(super) fn execute(mut self) -> Result<Value, BytecodeError> {
         loop {
             let frame = self.frames.last().expect("VM always has an active frame");
@@ -641,18 +686,12 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let value = self.take_register(value, instruction.span)?;
                     let count = self.take_register(count, instruction.span)?;
-                    let Value::Integer(count) = count else {
+                    let Value::Usize(count) = count else {
                         return Err(BytecodeError::new(
-                            "array repeat count must be int",
+                            "array repeat count must be usize",
                             instruction.span,
                         ));
                     };
-                    let count = usize::try_from(count).map_err(|_| {
-                        BytecodeError::new(
-                            "array repeat count cannot be negative",
-                            instruction.span,
-                        )
-                    })?;
                     if !value.is_copy() {
                         return Err(BytecodeError::new(
                             "array repeat syntax requires a Copy value",
@@ -676,16 +715,9 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let start = self.take_register(start, instruction.span)?;
                     let end = self.take_register(end, instruction.span)?;
-                    let (Value::Integer(start), Value::Integer(end)) = (start, end) else {
-                        return Err(BytecodeError::new(
-                            "range bounds must be int",
-                            instruction.span,
-                        ));
-                    };
-                    self.frame_mut().registers[destination] = Some(Value::Range(RangeValue {
-                        current: start,
-                        end,
-                    }));
+                    let range = RangeValue::new(start, end)
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    self.frame_mut().registers[destination] = Some(Value::Range(range));
                 }
                 Instruction::BuildOptionNone { destination } => {
                     self.frame_mut().registers[destination] = Some(Value::Option {
@@ -843,12 +875,9 @@ impl<'a> VirtualMachine<'a> {
                                     )
                                 })?;
                         match iterator {
-                            Value::Range(range) if range.current < range.end => {
-                                let value = range.current;
-                                range.current += 1;
-                                Some(Value::Integer(value))
-                            }
-                            Value::Range(_) => None,
+                            Value::Range(range) => range
+                                .next()
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
                             Value::SequenceIterator(iterator) => {
                                 iterator.items.borrow_mut().pop_front()
                             }
@@ -986,12 +1015,10 @@ impl<'a> VirtualMachine<'a> {
                 BytecodeProjection::Field(field) => ResolvedProjection::Field(field),
                 BytecodeProjection::Index(register) => {
                     let value = self.take_register(register, span)?;
-                    let Value::Integer(index) = value else {
-                        return Err(BytecodeError::new("collection index must be int", span));
+                    let Value::Usize(index) = value else {
+                        return Err(BytecodeError::new("collection index must be usize", span));
                     };
-                    ResolvedProjection::Index(usize::try_from(index).map_err(|_| {
-                        BytecodeError::new("collection index cannot be negative", span)
-                    })?)
+                    ResolvedProjection::Index(index)
                 }
             });
         }

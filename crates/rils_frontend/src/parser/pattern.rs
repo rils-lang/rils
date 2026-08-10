@@ -3,6 +3,12 @@ use super::*;
 impl Parser {
     pub(super) fn pattern(&mut self) -> Result<Pattern, ParseError> {
         let token = self.advance().clone();
+        if let Some(value) = scalar_literal(&token.kind) {
+            return Ok(Pattern::Literal {
+                value,
+                span: token.span,
+            });
+        }
         match token.kind {
             TokenKind::Identifier(name) if name == "_" => {
                 Ok(Pattern::Wildcard { span: token.span })
@@ -37,14 +43,6 @@ impl Parser {
                 }
             }
             TokenKind::Identifier(name) => self.named_pattern(name, token.span),
-            TokenKind::Integer(value) => Ok(Pattern::Literal {
-                value: Literal::Integer(value),
-                span: token.span,
-            }),
-            TokenKind::Float(value) => Ok(Pattern::Literal {
-                value: Literal::Float(value),
-                span: token.span,
-            }),
             TokenKind::String(value) => Ok(Pattern::Literal {
                 value: Literal::String(value),
                 span: token.span,
@@ -71,19 +69,12 @@ impl Parser {
             }
             TokenKind::Minus => {
                 let number = self.advance().clone();
-                match number.kind {
-                    TokenKind::Integer(value) => Ok(Pattern::Literal {
-                        value: Literal::Integer(value.checked_neg().ok_or_else(|| ParseError {
-                            message: "integer pattern is out of range".into(),
-                            span: token.span.merge(number.span),
-                        })?),
+                match negated_scalar_literal(&number.kind) {
+                    Some(value) => Ok(Pattern::Literal {
+                        value,
                         span: token.span.merge(number.span),
                     }),
-                    TokenKind::Float(value) => Ok(Pattern::Literal {
-                        value: Literal::Float(-value),
-                        span: token.span.merge(number.span),
-                    }),
-                    _ => Err(ParseError {
+                    None => Err(ParseError {
                         message: "expected number after `-` in pattern".into(),
                         span: number.span,
                     }),

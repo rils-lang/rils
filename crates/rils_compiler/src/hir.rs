@@ -234,6 +234,7 @@ impl<'a> FunctionLowerer<'a> {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(HirFunction {
             name: "<script>".into(),
+            exported: false,
             parameter_count: 0,
             capture_count: 0,
             local_count: self.mutable.len(),
@@ -260,6 +261,7 @@ impl<'a> FunctionLowerer<'a> {
         let statements = self.statements(&declaration.body.statements)?;
         Ok(HirFunction {
             name: declaration.qualified_name,
+            exported: declaration.exported,
             parameter_count: declaration.parameters.len(),
             capture_count: self.capture_count,
             local_count: self.mutable.len(),
@@ -401,6 +403,7 @@ impl<'a> FunctionLowerer<'a> {
                     parameters,
                     body,
                     span: *span,
+                    exported: false,
                 })?;
                 self.generated.borrow_mut().push((function, lowered));
                 Ok(HirStatement::DefineFunction {
@@ -420,13 +423,7 @@ impl<'a> FunctionLowerer<'a> {
     fn expression(&mut self, expression: &Expr) -> Result<HirExpression, CompileError> {
         match expression {
             Expr::Literal { value, span } => Ok(HirExpression::Literal {
-                value: match value {
-                    Literal::Unit => HirLiteral::Unit,
-                    Literal::Bool(value) => HirLiteral::Bool(*value),
-                    Literal::Integer(value) => HirLiteral::Integer(*value),
-                    Literal::Float(value) => HirLiteral::Float(*value),
-                    Literal::String(value) => HirLiteral::String(value.clone()),
-                },
+                value: lower_literal(value),
                 span: *span,
             }),
             Expr::Variable { name, span } if name == "None" => {
@@ -948,13 +945,7 @@ impl<'a> FunctionLowerer<'a> {
                 self.scopes.last_mut().unwrap().insert(name.clone(), local);
                 HirPattern::Binding(local)
             }
-            Pattern::Literal { value, .. } => HirPattern::Literal(match value {
-                Literal::Unit => HirLiteral::Unit,
-                Literal::Bool(value) => HirLiteral::Bool(*value),
-                Literal::Integer(value) => HirLiteral::Integer(*value),
-                Literal::Float(value) => HirLiteral::Float(*value),
-                Literal::String(value) => HirLiteral::String(value.clone()),
-            }),
+            Pattern::Literal { value, .. } => HirPattern::Literal(lower_literal(value)),
             Pattern::Some { inner, .. } => HirPattern::Some(Box::new(self.pattern(inner)?)),
             Pattern::None { .. } => HirPattern::None,
             Pattern::Ok { inner, .. } => HirPattern::Ok(Box::new(self.pattern(inner)?)),
@@ -987,9 +978,9 @@ impl<'a> FunctionLowerer<'a> {
             }),
             Expr::Member { object, name, span } => {
                 let mut place = self.place(object)?;
-                place.projections.push(match name.parse::<i64>() {
+                place.projections.push(match name.parse::<usize>() {
                     Ok(index) => HirProjection::Index(Box::new(HirExpression::Literal {
-                        value: HirLiteral::Integer(index),
+                        value: HirLiteral::Usize(index),
                         span: *span,
                     })),
                     Err(_) => HirProjection::Field(name.clone()),
@@ -1094,6 +1085,33 @@ impl<'a> FunctionLowerer<'a> {
             self.type_id(&path[..path.len() - 1].join("::"), span)?,
             path.last().unwrap().clone(),
         ))
+    }
+}
+
+fn lower_literal(value: &Literal) -> HirLiteral {
+    match value {
+        Literal::Unit => HirLiteral::Unit,
+        Literal::Bool(value) => HirLiteral::Bool(*value),
+        Literal::I8(value) => HirLiteral::I8(*value),
+        Literal::I16(value) => HirLiteral::I16(*value),
+        Literal::I32(value) => HirLiteral::I32(*value),
+        Literal::I64(value) => HirLiteral::I64(*value),
+        Literal::I128(value) => HirLiteral::I128(*value),
+        Literal::Isize(value) => HirLiteral::Isize(*value),
+        Literal::U8(value) => HirLiteral::U8(*value),
+        Literal::U16(value) => HirLiteral::U16(*value),
+        Literal::U32(value) => HirLiteral::U32(*value),
+        Literal::U64(value) => HirLiteral::U64(*value),
+        Literal::U128(value) => HirLiteral::U128(*value),
+        Literal::Usize(value) => HirLiteral::Usize(*value),
+        Literal::F32(value) => HirLiteral::F32(*value),
+        Literal::F64(value) => HirLiteral::F64(*value),
+        Literal::Char(value) => HirLiteral::Char(*value),
+        Literal::Integer(value) => HirLiteral::I32(
+            i32::try_from(*value).expect("unresolved integer literal must fit the i32 default"),
+        ),
+        Literal::Float(value) => HirLiteral::F64(*value),
+        Literal::String(value) => HirLiteral::String(value.clone()),
     }
 }
 

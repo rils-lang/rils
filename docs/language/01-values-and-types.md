@@ -8,8 +8,10 @@
 | --- | --- |
 | `()` | `()` |
 | `bool` | `true`、`false` |
-| `int` | `42`、`-7` |
-| `float` | `3.14` |
+| `i8`～`i128`、`isize` | `42i8`、`-7i64` |
+| `u8`～`u128`、`usize` | `42u8`、`1usize` |
+| `f32`、`f64` | `3.14f32`、`3.14` |
+| `char` | `'a'`、`'你'`、`'\n'` |
 | `string` | `"hello\n"` |
 | `&T` | 局部只读引用 |
 | `&mut T` | 局部可写引用，可同时存在多个 |
@@ -19,6 +21,20 @@
 | 名义类型 | 用户声明的 `struct` 和 `enum` |
 
 Rils 没有 `nil` 或隐式空引用。`()` 表示计算完成但没有产生有意义的值；值缺失必须显式使用 `Option<T>`。
+
+## 数值字面量与推导
+
+整数类型完整支持 `i8`、`i16`、`i32`、`i64`、`i128`、`isize`、`u8`、`u16`、`u32`、`u64`、`u128` 和 `usize`；浮点类型为 `f32` 与 `f64`。无后缀整数默认 `i32`，无后缀浮点数默认 `f64`。不同具体数值类型之间不会隐式转换。
+
+无后缀字面量会先保留为待推导类型，并接受变量标注、函数参数、运算另一侧和索引用法等后续约束。例如索引要求 `usize`，因此下面的 `index` 会推导为 `usize`：
+
+```rust
+let values = [10, 20, 30];
+let index = 1;
+values[index]
+```
+
+旧的 `int` 与 `float` 类型名已经移除；迁移时应根据实际语义明确选择具体类型。
 
 `nil` 是保留的迁移错误，不能作为值使用：
 
@@ -46,8 +62,8 @@ let result: () = log("hello");
 `Option<T>` 是内置的参数化类型：
 
 ```rust
-let present: Option<int> = Some(42);
-let missing: Option<int> = None;
+let present: Option<i32> = Some(42);
+let missing: Option<i32> = None;
 ```
 
 `None` 本身没有足够信息推断 `T`，因此变量初始化为 `None` 时必须标注类型：
@@ -68,7 +84,7 @@ count = None;
 `Some(value)` 可以推断元素类型：
 
 ```rust
-let inferred = Some(42); // Option<int>
+let inferred = Some(42); // Option<i32>
 ```
 
 当前内置操作如下：
@@ -98,7 +114,7 @@ match user {
 `Result<T, E>` 是内置的成功/失败类型，使用 `Ok(value)` 和 `Err(error)` 构造：
 
 ```rust
-fn load(success: bool) -> Result<int, string> {
+fn load(success: bool) -> Result<i32, string> {
     if success { Ok(42) } else { Err("load failed") }
 }
 ```
@@ -112,7 +128,7 @@ fn load(success: bool) -> Result<int, string> {
 返回标注决定，因此 `Result<string, E>` 可以在返回 `Result<(), E>` 的函数中使用 `?`：
 
 ```rust
-fn add_two(success: bool) -> Result<int, string> {
+fn add_two(success: bool) -> Result<i32, string> {
     let value = load(success)?;
     Ok(value + 2)
 }
@@ -126,9 +142,9 @@ fn add_two(success: bool) -> Result<int, string> {
 变量、参数和返回值支持可选类型标注：
 
 ```rust
-let mut count: int = 0;
+let mut count: i32 = 0;
 
-fn find_positive(value: int) -> Option<int> {
+fn find_positive(value: i32) -> Option<i32> {
     if value > 0 {
         Some(value)
     } else {
@@ -145,4 +161,4 @@ fn find_positive(value: int) -> Option<int> {
 - 函数返回
 - `Option<T>` 和 `Result<T, E>` 内部值
 
-没有标注的普通变量仍然是动态类型，但 Option 与普通值之间不会隐式转换。`Some(value)` 创建的变量会保留推断出的 `Option<T>` 类型。
+没有标注的绑定会从初始化值和后续受约束用法推断类型，但 Option 与普通值之间不会隐式转换。`Some(value)` 创建的变量会保留推断出的 `Option<T>` 类型。

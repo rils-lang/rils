@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn forwards_standard_native_macros_to_hidden_functions() {
-        let tokens = lexer::lex("assert!(type_of(getter) == \"fn() -> int\")").unwrap();
+        let tokens = lexer::lex("assert!(type_of(getter) == \"fn() -> i32\")").unwrap();
         let expanded = expand(tokens, STANDARD_NATIVE_MACROS).unwrap();
         assert!(matches!(
             &expanded.tokens[0].kind,

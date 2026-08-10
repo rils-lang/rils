@@ -116,10 +116,96 @@ pub struct TypeAliasType {
     pub target: Type,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RangeValue {
-    pub current: i64,
-    pub end: i64,
+    current: Box<Value>,
+    end: Box<Value>,
+    element_type: Type,
+}
+
+impl RangeValue {
+    pub fn new(current: Value, end: Value) -> Result<Self, String> {
+        let element_type = match (&current, &end) {
+            (Value::I8(_), Value::I8(_)) => Type::Integer(crate::IntegerType::I8),
+            (Value::I16(_), Value::I16(_)) => Type::Integer(crate::IntegerType::I16),
+            (Value::I32(_), Value::I32(_)) => Type::I32,
+            (Value::I64(_), Value::I64(_)) => Type::Integer(crate::IntegerType::I64),
+            (Value::I128(_), Value::I128(_)) => Type::Integer(crate::IntegerType::I128),
+            (Value::Isize(_), Value::Isize(_)) => Type::Integer(crate::IntegerType::Isize),
+            (Value::U8(_), Value::U8(_)) => Type::Integer(crate::IntegerType::U8),
+            (Value::U16(_), Value::U16(_)) => Type::Integer(crate::IntegerType::U16),
+            (Value::U32(_), Value::U32(_)) => Type::Integer(crate::IntegerType::U32),
+            (Value::U64(_), Value::U64(_)) => Type::Integer(crate::IntegerType::U64),
+            (Value::U128(_), Value::U128(_)) => Type::Integer(crate::IntegerType::U128),
+            (Value::Usize(_), Value::Usize(_)) => Type::USIZE,
+            _ => return Err("range bounds must have the same integer type".into()),
+        };
+        Ok(Self {
+            current: Box::new(current),
+            end: Box::new(end),
+            element_type,
+        })
+    }
+
+    pub fn element_type(&self) -> Type {
+        self.element_type.clone()
+    }
+
+    pub fn next(&mut self) -> Result<Option<Value>, String> {
+        fn advance<T: Copy + Ord>(
+            current: &mut T,
+            end: &T,
+            add_one: impl FnOnce(T) -> Option<T>,
+        ) -> Result<Option<T>, String> {
+            if *current >= *end {
+                Ok(None)
+            } else {
+                let value = *current;
+                *current =
+                    add_one(value).ok_or_else(|| "range iteration overflowed".to_string())?;
+                Ok(Some(value))
+            }
+        }
+        match (self.current.as_mut(), self.end.as_ref()) {
+            (Value::I8(a), Value::I8(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I8))
+            }
+            (Value::I16(a), Value::I16(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I16))
+            }
+            (Value::I32(a), Value::I32(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I32))
+            }
+            (Value::I64(a), Value::I64(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I64))
+            }
+            (Value::I128(a), Value::I128(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I128))
+            }
+            (Value::Isize(a), Value::Isize(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::Isize))
+            }
+            (Value::U8(a), Value::U8(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U8))
+            }
+            (Value::U16(a), Value::U16(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U16))
+            }
+            (Value::U32(a), Value::U32(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U32))
+            }
+            (Value::U64(a), Value::U64(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U64))
+            }
+            (Value::U128(a), Value::U128(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U128))
+            }
+            (Value::Usize(a), Value::Usize(b)) => {
+                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::Usize))
+            }
+            _ => Err("range bounds have incompatible types".into()),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -402,8 +488,21 @@ impl Drop for ReferenceValue {
 pub enum Value {
     Unit,
     Bool(bool),
-    Integer(i64),
-    Float(f64),
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    I128(i128),
+    Isize(isize),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+    U128(u128),
+    Usize(usize),
+    F32(f32),
+    F64(f64),
+    Char(char),
     String(Rc<str>),
     Tuple(Rc<SequenceValue>),
     Array(Rc<SequenceValue>),
@@ -446,7 +545,23 @@ pub enum Value {
 impl Value {
     pub fn is_copy(&self) -> bool {
         match self {
-            Self::Unit | Self::Bool(_) | Self::Integer(_) | Self::Float(_) => true,
+            Self::Unit
+            | Self::Bool(_)
+            | Self::I8(_)
+            | Self::I16(_)
+            | Self::I32(_)
+            | Self::I64(_)
+            | Self::I128(_)
+            | Self::Isize(_)
+            | Self::U8(_)
+            | Self::U16(_)
+            | Self::U32(_)
+            | Self::U64(_)
+            | Self::U128(_)
+            | Self::Usize(_)
+            | Self::F32(_)
+            | Self::F64(_)
+            | Self::Char(_) => true,
             Self::Reference(_) => true,
             Self::Option { value: None, .. } => true,
             Self::Option {
@@ -675,8 +790,21 @@ impl Value {
         match self {
             Self::Unit => "()".into(),
             Self::Bool(_) => "bool".into(),
-            Self::Integer(_) => "int".into(),
-            Self::Float(_) => "float".into(),
+            Self::I8(_) => "i8".into(),
+            Self::I16(_) => "i16".into(),
+            Self::I32(_) => "i32".into(),
+            Self::I64(_) => "i64".into(),
+            Self::I128(_) => "i128".into(),
+            Self::Isize(_) => "isize".into(),
+            Self::U8(_) => "u8".into(),
+            Self::U16(_) => "u16".into(),
+            Self::U32(_) => "u32".into(),
+            Self::U64(_) => "u64".into(),
+            Self::U128(_) => "u128".into(),
+            Self::Usize(_) => "usize".into(),
+            Self::F32(_) => "f32".into(),
+            Self::F64(_) => "f64".into(),
+            Self::Char(_) => "char".into(),
             Self::String(_) => "string".into(),
             Self::Tuple(_) => {
                 Type::of_value(self).map_or_else(|| "tuple".into(), |ty| ty.to_string())
@@ -746,10 +874,21 @@ impl PartialEq for Value {
         match (self, other) {
             (Self::Unit, Self::Unit) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,
-            (Self::Integer(left), Self::Integer(right)) => left == right,
-            (Self::Float(left), Self::Float(right)) => left == right,
-            (Self::Integer(left), Self::Float(right)) => *left as f64 == *right,
-            (Self::Float(left), Self::Integer(right)) => *left == *right as f64,
+            (Self::I8(left), Self::I8(right)) => left == right,
+            (Self::I16(left), Self::I16(right)) => left == right,
+            (Self::I32(left), Self::I32(right)) => left == right,
+            (Self::I64(left), Self::I64(right)) => left == right,
+            (Self::I128(left), Self::I128(right)) => left == right,
+            (Self::Isize(left), Self::Isize(right)) => left == right,
+            (Self::U8(left), Self::U8(right)) => left == right,
+            (Self::U16(left), Self::U16(right)) => left == right,
+            (Self::U32(left), Self::U32(right)) => left == right,
+            (Self::U64(left), Self::U64(right)) => left == right,
+            (Self::U128(left), Self::U128(right)) => left == right,
+            (Self::Usize(left), Self::Usize(right)) => left == right,
+            (Self::F32(left), Self::F32(right)) => left == right,
+            (Self::F64(left), Self::F64(right)) => left == right,
+            (Self::Char(left), Self::Char(right)) => left == right,
             (Self::String(left), Self::String(right)) => left == right,
             (Self::Tuple(left), Self::Tuple(right))
             | (Self::Array(left), Self::Array(right))
@@ -798,8 +937,21 @@ impl fmt::Display for Value {
         match self {
             Self::Unit => write!(f, "()"),
             Self::Bool(value) => write!(f, "{value}"),
-            Self::Integer(value) => write!(f, "{value}"),
-            Self::Float(value) => write!(f, "{value}"),
+            Self::I8(value) => write!(f, "{value}"),
+            Self::I16(value) => write!(f, "{value}"),
+            Self::I32(value) => write!(f, "{value}"),
+            Self::I64(value) => write!(f, "{value}"),
+            Self::I128(value) => write!(f, "{value}"),
+            Self::Isize(value) => write!(f, "{value}"),
+            Self::U8(value) => write!(f, "{value}"),
+            Self::U16(value) => write!(f, "{value}"),
+            Self::U32(value) => write!(f, "{value}"),
+            Self::U64(value) => write!(f, "{value}"),
+            Self::U128(value) => write!(f, "{value}"),
+            Self::Usize(value) => write!(f, "{value}"),
+            Self::F32(value) => write!(f, "{value}"),
+            Self::F64(value) => write!(f, "{value}"),
+            Self::Char(value) => write!(f, "{value}"),
             Self::String(value) => write!(f, "{value}"),
             Self::Tuple(sequence) => display_sequence(f, sequence, "(", ")", true),
             Self::Array(sequence) | Self::Vec(sequence) => {

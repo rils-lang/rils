@@ -7,7 +7,7 @@
 `match` 是表达式，返回被选中分支的值：
 
 ```rust
-fn value_or_zero(value: Option<int>) -> int {
+fn value_or_zero(value: Option<i32>) -> i32 {
     match value {
         Some(number) => number,
         None => 0,

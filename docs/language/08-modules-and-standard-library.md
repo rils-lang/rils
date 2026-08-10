@@ -24,9 +24,9 @@
 
 ```rust
 mod math {
-    fn normalize(value: int) -> int { value }
+    fn normalize(value: i32) -> i32 { value }
 
-    pub fn add(left: int, right: int) -> int {
+    pub fn add(left: i32, right: i32) -> i32 {
         normalize(left + right)
     }
 }

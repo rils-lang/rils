@@ -1,6 +1,6 @@
 // Rils 0.1 基础示例
 
-fn factorial(n: int) -> int {
+fn factorial(n: i32) -> i32 {
     let mut current = 2;
     let mut result = 1;
     while current <= n {

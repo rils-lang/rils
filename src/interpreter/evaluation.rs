@@ -30,8 +30,28 @@ impl Interpreter {
             Expr::Literal { value, .. } => Ok(match value {
                 Literal::Unit => Value::Unit,
                 Literal::Bool(value) => Value::Bool(*value),
-                Literal::Integer(value) => Value::Integer(*value),
-                Literal::Float(value) => Value::Float(*value),
+                Literal::I8(value) => Value::I8(*value),
+                Literal::I16(value) => Value::I16(*value),
+                Literal::I32(value) => Value::I32(*value),
+                Literal::I64(value) => Value::I64(*value),
+                Literal::I128(value) => Value::I128(*value),
+                Literal::Isize(value) => Value::Isize(*value),
+                Literal::U8(value) => Value::U8(*value),
+                Literal::U16(value) => Value::U16(*value),
+                Literal::U32(value) => Value::U32(*value),
+                Literal::U64(value) => Value::U64(*value),
+                Literal::U128(value) => Value::U128(*value),
+                Literal::Usize(value) => Value::Usize(*value),
+                Literal::F32(value) => Value::F32(*value),
+                Literal::F64(value) => Value::F64(*value),
+                Literal::Char(value) => Value::Char(*value),
+                Literal::Integer(value) => Value::I32(i32::try_from(*value).map_err(|_| {
+                    RuntimeError::new(
+                        "integer literal is outside the inferred i32 range",
+                        expression.span(),
+                    )
+                })?),
+                Literal::Float(value) => Value::F64(*value),
                 Literal::String(value) => Value::String(Rc::from(value.as_str())),
             }),
             Expr::Tuple { elements, span } => {
@@ -77,12 +97,9 @@ impl Interpreter {
                         ));
                     }
                     let count = self.evaluate(count, environment.clone())?;
-                    let Value::Integer(count) = count else {
-                        return Err(RuntimeError::new("array repeat count must be int", *span));
+                    let Value::Usize(count) = count else {
+                        return Err(RuntimeError::new("array repeat count must be usize", *span));
                     };
-                    let count = usize::try_from(count).map_err(|_| {
-                        RuntimeError::new("array repeat count cannot be negative", *span)
-                    })?;
                     for _ in 0..count {
                         values.push(
                             value
@@ -410,13 +427,9 @@ impl Interpreter {
             Expr::Range { start, end, span } => {
                 let start = self.evaluate(start, environment.clone())?;
                 let end = self.evaluate(end, environment)?;
-                let (Value::Integer(start), Value::Integer(end)) = (start, end) else {
-                    return Err(RuntimeError::new("range bounds must both be int", *span));
-                };
-                Ok(Value::Range(RangeValue {
-                    current: start,
-                    end,
-                }))
+                RangeValue::new(start, end)
+                    .map(Value::Range)
+                    .map_err(|message| RuntimeError::new(message, *span))
             }
             Expr::Call {
                 callee,

@@ -1,24 +1,117 @@
 use std::{
     env, fs,
     io::{self, Write},
+    path::{Path, PathBuf},
     process::ExitCode,
 };
 
-use rils::Engine;
+use rils::{BytecodeModule, Engine};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = env::args().skip(1).collect();
     match arguments.as_slice() {
         [] => repl(),
-        [path] => run_file(path),
+        [command, input] if command == "compile" => compile_file(input, None),
+        [command, input, option, output] if command == "compile" && option == "-o" => {
+            compile_file(input, Some(output))
+        }
+        [command, path] if command == "verify" => verify_bytecode(path),
+        [command, path] if command == "run" => run_bytecode(path),
+        [path]
+            if Path::new(path)
+                .extension()
+                .is_some_and(|extension| extension == "rilbc") =>
+        {
+            run_bytecode(path)
+        }
+        [path] => run_source_file(path),
         _ => {
-            eprintln!("usage: rils [script.rils]");
+            print_usage();
             ExitCode::from(2)
         }
     }
 }
 
-fn run_file(path: &str) -> ExitCode {
+fn print_usage() {
+    eprintln!("usage:");
+    eprintln!("  rils [script.rils]");
+    eprintln!("  rils compile <script.rils> [-o output.rilbc]");
+    eprintln!("  rils verify <module.rilbc>");
+    eprintln!("  rils run <module.rilbc>");
+}
+
+fn compile_file(input: &str, output: Option<&str>) -> ExitCode {
+    let source = match fs::read_to_string(input) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("failed to read `{input}`: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let module = match rils::compile_file(input) {
+        Ok(module) => module,
+        Err(error) => {
+            eprintln!("{}", error.render(input, &source));
+            return ExitCode::FAILURE;
+        }
+    };
+    let output = output.map_or_else(
+        || PathBuf::from(input).with_extension("rilbc"),
+        PathBuf::from,
+    );
+    match module.write_file(&output) {
+        Ok(()) => {
+            println!("wrote {}", output.display());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn verify_bytecode(path: &str) -> ExitCode {
+    match BytecodeModule::read_file(path) {
+        Ok(module) => {
+            println!(
+                "verified {path}: {} functions, {} instructions, {} imports",
+                module.function_count(),
+                module.instruction_count(),
+                module.imports().len()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_bytecode(path: &str) -> ExitCode {
+    let module = match BytecodeModule::read_file(path) {
+        Ok(module) => module,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match module.execute() {
+        Ok(value) => {
+            if value != rils::Value::Unit {
+                println!("{value}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_source_file(path: &str) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) => {

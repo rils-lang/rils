@@ -1,12 +1,12 @@
 struct CounterRange {
-    current: int,
-    end: int,
+    current: i32,
+    end: i32,
 }
 
 impl Iterator for CounterRange {
-    type Item = int;
+    type Item = i32;
 
-    fn next(&mut self) -> Option<int> {
+    fn next(&mut self) -> Option<i32> {
         if self.current < self.end {
             let value = self.current;
             self.current = self.current + 1;
@@ -18,7 +18,7 @@ impl Iterator for CounterRange {
 }
 
 struct CountTo {
-    end: int,
+    end: i32,
 }
 
 impl IntoIterator for CountTo {

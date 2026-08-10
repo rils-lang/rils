@@ -1,4 +1,4 @@
-fn describe(value: Option<Option<int>>) -> string {
+fn describe(value: Option<Option<i32>>) -> string {
     match value {
         Some(Some(number)) => {
             println!("nested value:", number);

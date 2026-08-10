@@ -731,19 +731,19 @@ impl Interpreter {
                 }
 
                 if let Value::Range(range) = &iterator {
-                    let mut current = range.current;
-                    while current < range.end {
+                    let mut range = range.clone();
+                    while let Some(current) = range
+                        .next()
+                        .map_err(|message| RuntimeError::new(message, *span))?
+                    {
                         self.tick(*span)?;
                         let iteration_environment = Environment::child(environment.clone());
                         iteration_environment.borrow_mut().define(
                             binding.clone(),
-                            Value::Integer(current),
+                            current,
                             false,
-                            Some(Type::Int),
+                            Some(range.element_type()),
                         );
-                        current = current.checked_add(1).ok_or_else(|| {
-                            RuntimeError::new("range iteration overflowed int", *span)
-                        })?;
                         match self.execute_block(body, iteration_environment)? {
                             Flow::Value(_) => {}
                             returned @ Flow::Return(_) => return Ok(returned),

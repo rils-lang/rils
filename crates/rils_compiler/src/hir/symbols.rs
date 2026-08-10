@@ -16,6 +16,7 @@ pub(super) struct FunctionDeclaration<'a> {
     pub(super) parameters: &'a [Parameter],
     pub(super) body: &'a Block,
     pub(super) span: Span,
+    pub(super) exported: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -31,6 +32,7 @@ pub(super) enum ReceiverMode {
 }
 
 pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclaration<'_>> {
+    let exported = matches!(statement, Stmt::Public { .. });
     let statement = match statement {
         Stmt::Public { statement, .. } => statement.as_ref(),
         statement => statement,
@@ -51,6 +53,7 @@ pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclarati
         parameters,
         body,
         span: *span,
+        exported,
     })
 }
 
@@ -303,6 +306,7 @@ pub(super) fn collect_method_declarations<'a>(
                             parameters: &method.parameters,
                             body: &method.body,
                             span: method.span,
+                            exported: false,
                         },
                     ));
                 }

@@ -1,4 +1,4 @@
-let mut pair: (int, string) = (20, "tuple");
+let mut pair: (i32, string) = (20, "tuple");
 pair.0 = 22;
 
 let mut fixed = [10, 20, 12];
@@ -9,7 +9,7 @@ fixed[0] = pair.0;
     *item = *item - 2;
 }
 
-let mut values: Vec<int> = Vec::from(fixed);
+let mut values: Vec<i32> = Vec::from(fixed);
 values.push(10);
 println!("length:", values.len());
 

@@ -50,6 +50,8 @@ struct Inferencer {
     types: HashMap<String, TypeDefinition>,
     variant_owners: HashMap<String, String>,
     result: InferenceResult,
+    numeric_parents: HashMap<Span, Span>,
+    numeric_fixed: HashMap<Span, Type>,
 }
 
 impl Inferencer {
@@ -80,6 +82,8 @@ impl Inferencer {
             types: HashMap::new(),
             variant_owners: HashMap::new(),
             result: InferenceResult::default(),
+            numeric_parents: HashMap::new(),
+            numeric_fixed: HashMap::new(),
         };
         inferencer.collect_type_definitions(&program.statements);
         inferencer
@@ -88,7 +92,155 @@ impl Inferencer {
     fn run(mut self, program: &Program) -> InferenceResult {
         let mut returns = Vec::new();
         self.statements(&program.statements, &mut returns);
+        let binding_spans = self
+            .result
+            .binding_types
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        for span in binding_spans {
+            if let Some(ty) = self.result.binding_types.get(&span).cloned() {
+                let resolved = self.resolve_type(&ty);
+                self.result.binding_types.insert(span, resolved);
+            }
+        }
+        let expression_spans = self
+            .result
+            .expression_types
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        for span in expression_spans {
+            if let Some(ty) = self.result.expression_types.get(&span).cloned() {
+                let resolved = self.resolve_type(&ty);
+                self.result.expression_types.insert(span, resolved);
+            }
+        }
+        for index in 0..self.result.hints.len() {
+            let ty = self.result.hints[index].ty.clone();
+            self.result.hints[index].ty = self.resolve_type(&ty);
+        }
         self.result
+    }
+
+    fn numeric_root(&mut self, span: Span) -> Span {
+        let parent = *self.numeric_parents.entry(span).or_insert(span);
+        if parent == span {
+            span
+        } else {
+            let root = self.numeric_root(parent);
+            self.numeric_parents.insert(span, root);
+            root
+        }
+    }
+
+    fn unify(&mut self, left: &Type, right: &Type) {
+        match (left, right) {
+            (Type::IntegerVariable(left), Type::IntegerVariable(right))
+            | (Type::FloatVariable(left), Type::FloatVariable(right)) => {
+                let left = self.numeric_root(*left);
+                let right = self.numeric_root(*right);
+                if left != right {
+                    let fixed = self
+                        .numeric_fixed
+                        .remove(&left)
+                        .or_else(|| self.numeric_fixed.remove(&right));
+                    self.numeric_parents.insert(right, left);
+                    if let Some(fixed) = fixed {
+                        self.numeric_fixed.insert(left, fixed);
+                    }
+                }
+            }
+            (Type::IntegerVariable(variable), fixed @ Type::Integer(_))
+            | (fixed @ Type::Integer(_), Type::IntegerVariable(variable))
+            | (Type::FloatVariable(variable), fixed @ Type::Float(_))
+            | (fixed @ Type::Float(_), Type::FloatVariable(variable)) => {
+                let root = self.numeric_root(*variable);
+                self.numeric_fixed
+                    .entry(root)
+                    .or_insert_with(|| fixed.clone());
+            }
+            (Type::Option(left), Type::Option(right)) => self.unify(left, right),
+            (Type::Result(left_ok, left_error), Type::Result(right_ok, right_error)) => {
+                self.unify(left_ok, right_ok);
+                self.unify(left_error, right_error);
+            }
+            (Type::Tuple(left), Type::Tuple(right)) if left.len() == right.len() => {
+                for (left, right) in left.iter().zip(right) {
+                    self.unify(left, right);
+                }
+            }
+            (Type::Array { element: left, .. }, Type::Array { element: right, .. }) => {
+                self.unify(left, right)
+            }
+            _ => {}
+        }
+    }
+
+    fn resolve_type(&mut self, ty: &Type) -> Type {
+        match ty {
+            Type::IntegerVariable(span) => {
+                let root = self.numeric_root(*span);
+                self.numeric_fixed.get(&root).cloned().unwrap_or(Type::I32)
+            }
+            Type::FloatVariable(span) => {
+                let root = self.numeric_root(*span);
+                self.numeric_fixed.get(&root).cloned().unwrap_or(Type::F64)
+            }
+            Type::Option(inner) => Type::Option(Box::new(self.resolve_type(inner))),
+            Type::Result(ok, error) => Type::Result(
+                Box::new(self.resolve_type(ok)),
+                Box::new(self.resolve_type(error)),
+            ),
+            Type::Tuple(elements) => Type::Tuple(
+                elements
+                    .iter()
+                    .map(|element| self.resolve_type(element))
+                    .collect(),
+            ),
+            Type::Array { element, length } => Type::Array {
+                element: Box::new(self.resolve_type(element)),
+                length: *length,
+            },
+            Type::Reference { mutable, inner } => Type::Reference {
+                mutable: *mutable,
+                inner: Box::new(self.resolve_type(inner)),
+            },
+            Type::Function {
+                parameters,
+                return_type,
+            } => Type::Function {
+                parameters: parameters.as_ref().map(|parameters| {
+                    parameters
+                        .iter()
+                        .map(|parameter| self.resolve_type(parameter))
+                        .collect()
+                }),
+                return_type: Box::new(self.resolve_type(return_type)),
+            },
+            Type::Named { name, arguments } => Type::Named {
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.resolve_type(argument))
+                    .collect(),
+            },
+            Type::Associated {
+                base,
+                trait_name,
+                name,
+                arguments,
+            } => Type::Associated {
+                base: Box::new(self.resolve_type(base)),
+                trait_name: trait_name.clone(),
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.resolve_type(argument))
+                    .collect(),
+            },
+            other => other.clone(),
+        }
     }
 
     fn collect_type_definitions(&mut self, statements: &[Stmt]) {
@@ -257,6 +409,9 @@ impl Inferencer {
                 ..
             } => {
                 let inferred = self.expression(initializer, returns);
+                if let Some(expected) = type_annotation {
+                    self.unify(&inferred, expected);
+                }
                 let ty = type_annotation.clone().unwrap_or(inferred);
                 self.define_binding(name, *name_span, Binding { ty: ty.clone() });
                 if type_annotation.is_none() {
@@ -456,7 +611,7 @@ impl Inferencer {
 
     fn expression_inner(&mut self, expression: &Expr, returns: &mut Vec<Type>) -> Type {
         match expression {
-            Expr::Literal { value, .. } => literal_type(value),
+            Expr::Literal { value, span } => literal_type(value, *span),
             Expr::Variable { name, .. } => self
                 .lookup(name)
                 .map_or(Type::Unknown, |binding| binding.ty.clone()),
@@ -490,7 +645,8 @@ impl Inferencer {
             }
             Expr::Index { object, index, .. } => {
                 let object = self.expression(object, returns);
-                self.expression(index, returns);
+                let index_type = self.expression(index, returns);
+                self.unify(&index_type, &Type::USIZE);
                 match object {
                     Type::Array { element, .. } => *element,
                     Type::Named { name, arguments } if name == "Vec" => {
@@ -517,14 +673,23 @@ impl Inferencer {
                     .as_ref()
                     .and_then(|repeat| match repeat.as_ref() {
                         Expr::Literal {
+                            value: Literal::I32(value),
+                            ..
+                        } => usize::try_from(*value).ok(),
+                        Expr::Literal {
                             value: Literal::Integer(value),
                             ..
                         } => usize::try_from(*value).ok(),
+                        Expr::Literal {
+                            value: Literal::Usize(value),
+                            ..
+                        } => Some(*value),
                         _ => None,
                     })
                     .unwrap_or(elements.len());
                 if let Some(repeat) = repeat {
-                    self.expression(repeat, returns);
+                    let repeat_type = self.expression(repeat, returns);
+                    self.unify(&repeat_type, &Type::USIZE);
                 }
                 Type::Array {
                     element: Box::new(element_type),
@@ -578,8 +743,9 @@ impl Inferencer {
                 }
             }
             Expr::Assign { target, value, .. } => {
-                self.expression(target, returns);
-                self.expression(value, returns);
+                let target = self.expression(target, returns);
+                let value = self.expression(value, returns);
+                self.unify(&target, &value);
                 Type::Unit
             }
             Expr::Borrow {
@@ -609,6 +775,7 @@ impl Inferencer {
             } => {
                 let left = self.expression(left, returns);
                 let right = self.expression(right, returns);
+                self.unify(&left, &right);
                 match operator {
                     BinaryOp::Equal
                     | BinaryOp::NotEqual
@@ -625,9 +792,13 @@ impl Inferencer {
                 Type::Bool
             }
             Expr::Range { start, end, .. } => {
-                self.expression(start, returns);
-                self.expression(end, returns);
-                Type::named("Range")
+                let start = self.expression(start, returns);
+                let end = self.expression(end, returns);
+                self.unify(&start, &end);
+                Type::Named {
+                    name: "Range".into(),
+                    arguments: vec![merge_types(&start, &end).unwrap_or(start)],
+                }
             }
             Expr::Call {
                 callee, arguments, ..
@@ -637,6 +808,36 @@ impl Inferencer {
                     .iter()
                     .map(|argument| self.expression(argument, returns))
                     .collect::<Vec<_>>();
+                if let Type::Function {
+                    parameters: Some(parameters),
+                    ..
+                } = &callee_type
+                {
+                    for (parameter, argument) in parameters.iter().zip(&argument_types) {
+                        self.unify(parameter, argument);
+                    }
+                }
+                if let Expr::Path { segments, .. } = callee.as_ref() {
+                    match segments.join("::").as_str() {
+                        "Vec::new" | "std::collections::Vec::new" => {
+                            return Type::Named {
+                                name: "Vec".into(),
+                                arguments: vec![Type::Unknown],
+                            };
+                        }
+                        "Vec::from" | "std::collections::Vec::from" => {
+                            let item = match argument_types.first() {
+                                Some(Type::Array { element, .. }) => (**element).clone(),
+                                _ => Type::Unknown,
+                            };
+                            return Type::Named {
+                                name: "Vec".into(),
+                                arguments: vec![item],
+                            };
+                        }
+                        _ => {}
+                    }
+                }
                 if let Expr::Variable { name, .. } = callee.as_ref() {
                     return match name.as_str() {
                         "Some" => Type::Option(Box::new(
@@ -793,14 +994,14 @@ impl Inferencer {
                 .unwrap_or(Type::Unknown);
         }
         if matches!(object_type, Type::Array { .. }) && field == "len" {
-            return Type::function(Vec::new(), Type::Int);
+            return Type::function(Vec::new(), Type::USIZE);
         }
         if let Type::Named { name, arguments } = object_type
             && name == "Vec"
         {
             let item = arguments.first().cloned().unwrap_or(Type::Unknown);
             return match field {
-                "len" => Type::function(Vec::new(), Type::Int),
+                "len" => Type::function(Vec::new(), Type::USIZE),
                 "push" => Type::function(vec![item.clone()], Type::Unit),
                 "pop" => Type::function(Vec::new(), Type::Option(Box::new(item))),
                 _ => Type::Unknown,
@@ -850,12 +1051,27 @@ impl Inferencer {
     }
 }
 
-fn literal_type(literal: &Literal) -> Type {
+fn literal_type(literal: &Literal, span: Span) -> Type {
     match literal {
         Literal::Unit => Type::Unit,
         Literal::Bool(_) => Type::Bool,
-        Literal::Integer(_) => Type::Int,
-        Literal::Float(_) => Type::Float,
+        Literal::I8(_) => Type::Integer(crate::types::IntegerType::I8),
+        Literal::I16(_) => Type::Integer(crate::types::IntegerType::I16),
+        Literal::I32(_) => Type::I32,
+        Literal::I64(_) => Type::Integer(crate::types::IntegerType::I64),
+        Literal::I128(_) => Type::Integer(crate::types::IntegerType::I128),
+        Literal::Isize(_) => Type::Integer(crate::types::IntegerType::Isize),
+        Literal::U8(_) => Type::Integer(crate::types::IntegerType::U8),
+        Literal::U16(_) => Type::Integer(crate::types::IntegerType::U16),
+        Literal::U32(_) => Type::Integer(crate::types::IntegerType::U32),
+        Literal::U64(_) => Type::Integer(crate::types::IntegerType::U64),
+        Literal::U128(_) => Type::Integer(crate::types::IntegerType::U128),
+        Literal::Usize(_) => Type::USIZE,
+        Literal::F32(_) => Type::Float(crate::types::FloatType::F32),
+        Literal::F64(_) => Type::F64,
+        Literal::Char(_) => Type::Char,
+        Literal::Integer(_) => Type::IntegerVariable(span),
+        Literal::Float(_) => Type::FloatVariable(span),
         Literal::String(_) => Type::String,
     }
 }

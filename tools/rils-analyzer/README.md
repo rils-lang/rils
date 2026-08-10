@@ -27,6 +27,6 @@ The executable is written to `target/debug/rils-analyzer` (or
 - workspace `.rils` indexing with cross-file definition and reference locations
 - module declarations, imports, visibility symbols, and namespace semantic tokens
 - inferred return, local binding, and pattern binding type hints
-- complete higher-order function signatures such as `fn() -> fn() -> int`
+- complete higher-order function signatures such as `fn() -> fn() -> i32`
 
 Richer module-aware type inference and rename support remain future work.

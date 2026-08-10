@@ -133,6 +133,7 @@ impl<'a> Lexer<'a> {
             '/' => self.add(TokenKind::Slash),
             ' ' | '\r' | '\t' | '\n' => {}
             '"' => self.string()?,
+            '\'' => self.character()?,
             ch if ch.is_ascii_digit() => self.number()?,
             ch if is_identifier_start(ch) => self.identifier(),
             _ => {
@@ -166,6 +167,30 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
+    fn character(&mut self) -> Result<(), LexError> {
+        let value = match self.advance() {
+            Some('\\') => match self.advance() {
+                Some('n') => '\n',
+                Some('r') => '\r',
+                Some('t') => '\t',
+                Some('0') => '\0',
+                Some('\'') => '\'',
+                Some('\\') => '\\',
+                Some(other) => {
+                    return Err(self.error(format!("unsupported escape sequence `\\{other}`")));
+                }
+                None => return Err(self.error("unterminated character literal".into())),
+            },
+            Some('\'') | None => return Err(self.error("empty character literal".into())),
+            Some(value) => value,
+        };
+        if self.advance() != Some('\'') {
+            return Err(self.error("character literal must contain exactly one character".into()));
+        }
+        self.add(TokenKind::Char(value));
+        Ok(())
+    }
+
     fn number(&mut self) -> Result<(), LexError> {
         while self.peek().is_some_and(|ch| ch.is_ascii_digit()) {
             self.advance();
@@ -180,17 +205,54 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let text = &self.source[self.start..self.current];
-        let kind = if is_float {
-            TokenKind::Float(
+        let number_end = self.current;
+        while self.peek().is_some_and(is_identifier_continue) {
+            self.advance();
+        }
+        let text = &self.source[self.start..number_end];
+        let suffix = &self.source[number_end..self.current];
+        let invalid = || self.error(format!("invalid numeric literal suffix `{suffix}`"));
+        let kind = match (is_float, suffix) {
+            (true, "") => TokenKind::Float(
                 text.parse()
-                    .map_err(|_| self.error("invalid floating-point number".into()))?,
-            )
-        } else {
-            TokenKind::Integer(
+                    .map_err(|_| self.error("invalid f64 literal".into()))?,
+            ),
+            (true, "f64") => TokenKind::F64(
                 text.parse()
-                    .map_err(|_| self.error("integer is out of range".into()))?,
-            )
+                    .map_err(|_| self.error("invalid f64 literal".into()))?,
+            ),
+            (true, "f32") => TokenKind::F32(
+                text.parse()
+                    .map_err(|_| self.error("invalid f32 literal".into()))?,
+            ),
+            (false, "f64") => TokenKind::F64(
+                text.parse()
+                    .map_err(|_| self.error("invalid f64 literal".into()))?,
+            ),
+            (false, "f32") => TokenKind::F32(
+                text.parse()
+                    .map_err(|_| self.error("invalid f32 literal".into()))?,
+            ),
+            (false, "") => TokenKind::Integer(
+                text.parse()
+                    .map_err(|_| self.error("integer literal is out of range".into()))?,
+            ),
+            (false, "i32") => TokenKind::I32(
+                text.parse()
+                    .map_err(|_| self.error("i32 literal is out of range".into()))?,
+            ),
+            (false, "i8") => TokenKind::I8(text.parse().map_err(|_| invalid())?),
+            (false, "i16") => TokenKind::I16(text.parse().map_err(|_| invalid())?),
+            (false, "i64") => TokenKind::I64(text.parse().map_err(|_| invalid())?),
+            (false, "i128") => TokenKind::I128(text.parse().map_err(|_| invalid())?),
+            (false, "isize") => TokenKind::Isize(text.parse().map_err(|_| invalid())?),
+            (false, "u8") => TokenKind::U8(text.parse().map_err(|_| invalid())?),
+            (false, "u16") => TokenKind::U16(text.parse().map_err(|_| invalid())?),
+            (false, "u32") => TokenKind::U32(text.parse().map_err(|_| invalid())?),
+            (false, "u64") => TokenKind::U64(text.parse().map_err(|_| invalid())?),
+            (false, "u128") => TokenKind::U128(text.parse().map_err(|_| invalid())?),
+            (false, "usize") => TokenKind::Usize(text.parse().map_err(|_| invalid())?),
+            _ => return Err(invalid()),
         };
         self.add(kind);
         Ok(())

@@ -1,6 +1,7 @@
 pub mod bytecode;
 mod environment;
 mod interpreter;
+mod numeric;
 mod runtime_type;
 mod standard_library;
 mod value;
@@ -53,10 +54,12 @@ use std::{
 };
 
 pub use bytecode::{
-    BYTECODE_HOST_ABI_VERSION, BytecodeError, BytecodeHost, BytecodeImport, BytecodeModule,
-    CompileError,
+    BYTECODE_FORMAT_VERSION, BYTECODE_HOST_ABI_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeError,
+    BytecodeFormatError, BytecodeHost, BytecodeImport, BytecodeModule, CompileError,
 };
-pub use rils_frontend::{FrontendError, FunctionSignature, RuntimeValue, Span, Type};
+pub use rils_frontend::{
+    FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, Span, Type,
+};
 pub use value::Value;
 
 pub type NativeFunctionHandler = fn(&[Value]) -> Result<Value, String>;
@@ -352,8 +355,9 @@ impl Engine {
 
     pub fn eval(&mut self, source: &str) -> Result<Value, RilsError> {
         let tokens = lexer::lex(source).map_err(RilsError::Lex)?;
-        let program = parser::parse_with_native_macros(tokens, &self.native_macros)
+        let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
             .map_err(RilsError::Parse)?;
+        rils_frontend::resolve_numeric_literals(&mut program).map_err(numeric_resolution_error)?;
         self.interpreter
             .execute(&program)
             .map_err(RilsError::Runtime)
@@ -376,6 +380,7 @@ impl Engine {
             &self.native_macros,
             &mut loading,
         )?;
+        rils_frontend::resolve_numeric_literals(&mut program).map_err(numeric_resolution_error)?;
         self.interpreter
             .execute(&program)
             .map_err(RilsError::Runtime)
@@ -474,6 +479,14 @@ fn module_message(message: String) -> RilsError {
     RilsError::Runtime(RuntimeError {
         message,
         span: Span::default(),
+        stack: Vec::new(),
+    })
+}
+
+fn numeric_resolution_error(error: rils_frontend::NumericResolutionError) -> RilsError {
+    RilsError::Runtime(RuntimeError {
+        message: error.message,
+        span: error.span,
         stack: Vec::new(),
     })
 }

@@ -226,6 +226,7 @@ impl Parser {
                 let (name, member_span) = match token.kind {
                     TokenKind::Identifier(name) => (name, token.span),
                     TokenKind::Integer(index) if index >= 0 => (index.to_string(), token.span),
+                    TokenKind::Usize(index) => (index.to_string(), token.span),
                     _ => {
                         return Err(ParseError {
                             message: "expected member name or tuple index after `.`".into(),
@@ -299,15 +300,13 @@ impl Parser {
 
     pub(super) fn primary(&mut self) -> Result<Expr, ParseError> {
         let token = self.advance().clone();
+        if let Some(value) = scalar_literal(&token.kind) {
+            return Ok(Expr::Literal {
+                value,
+                span: token.span,
+            });
+        }
         let expression = match token.kind {
-            TokenKind::Integer(value) => Expr::Literal {
-                value: Literal::Integer(value),
-                span: token.span,
-            },
-            TokenKind::Float(value) => Expr::Literal {
-                value: Literal::Float(value),
-                span: token.span,
-            },
             TokenKind::String(value) => Expr::Literal {
                 value: Literal::String(value),
                 span: token.span,

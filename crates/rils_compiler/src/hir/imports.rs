@@ -85,7 +85,7 @@ pub(super) fn collection_method_import(
     Some(match name {
         "len" => (
             "core::sequence::len",
-            FunctionSignature::fixed(vec![shared()], Type::Int),
+            FunctionSignature::fixed(vec![shared()], Type::USIZE),
             ReceiverMode::Reference { mutable: false },
         ),
         "push" => (

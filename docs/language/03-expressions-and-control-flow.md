@@ -7,7 +7,7 @@
 代码块最后一个没有分号的表达式是该块的值：
 
 ```rust
-let value: int = {
+let value: i32 = {
     let left = 20;
     let right = 22;
     left + right
@@ -66,8 +66,8 @@ for value in Range { current: 1, end: 4 } {
 
 循环变量在每次迭代的新局部作用域中创建。当前还没有 `break` 和 `continue`。
 
-两个 `int` 之间可以使用半开区间语法 `start..end`。结果是内置 `Range`，实现了
-`Iterator<Item = int>`，包含起点、不包含终点：
+两个相同具体整数类型的值之间可以使用半开区间语法 `start..end`。结果是内置 `Range<T>`，实现了
+`Iterator<Item = T>`，包含起点、不包含终点：
 
 ```rust
 let mut total = 0;
@@ -77,7 +77,7 @@ for value in 0..5 {
 // total == 10
 ```
 
-区间两端都必须是 `int`；起点大于或等于终点时产生空区间。
+区间两端必须是同一种整数类型；起点大于或等于终点时产生空区间。
 
 `false` 是假值；数字、字符串和函数保留动态语言的真值语义。`()` 与 `Option` 禁止作为条件，以避免把“没有结果”或“可选值”隐式解释为空。
 

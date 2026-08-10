@@ -36,7 +36,7 @@ parameters  = parameter ("," parameter)* ;
 parameter   = receiver | "mut"? IDENT (":" type)? ;
 receiver    = "self" | "mut" "self" | "&" "self" | "&" "mut" "self" ;
 type        = "&" "mut"? type
-            | "()" | "bool" | "int" | "float" | "string"
+            | "()" | "bool" | "char" | integerType | floatType | "string"
             | "function" | "Option" "<" type ">"
             | "Result" "<" type "," type ">"
             | "(" type "," (type ",")* ")"
@@ -45,6 +45,9 @@ type        = "&" "mut"? type
             | IDENT ("::" IDENT)* ("<" type ("," type)* ">")?
             | "<" type "as" IDENT ">" "::" IDENT
               ("<" type ("," type)* ">")? ;
+integerType = "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+            | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" ;
+floatType   = "f32" | "f64" ;
 typeAlias   = "type" IDENT genericParams? "=" type ";" ;
 structDecl  = "struct" IDENT genericParams? "{" namedFields "}" ;
 enumDecl    = "enum" IDENT genericParams? "{"
