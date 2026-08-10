@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rils Scripting"
+  short_description: "Write, package, and embed Rils scripts and bytecode"
+  default_prompt: "Use $rils-scripting to implement, precompile, and validate embedded Rils gameplay logic."
