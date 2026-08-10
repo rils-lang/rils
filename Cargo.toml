@@ -25,6 +25,7 @@ members = [
     ".",
     "crates/rils_compiler",
     "crates/rils_frontend",
+    "crates/rils_capi",
     "tools/rils-analyzer"
 ]
 resolver = "3"

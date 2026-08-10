@@ -1,0 +1,15 @@
+[package]
+name = "rils_capi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Experimental host-neutral C ABI facade for embedding Rils"
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rils = { path = "../..", version = "0.1.0" }

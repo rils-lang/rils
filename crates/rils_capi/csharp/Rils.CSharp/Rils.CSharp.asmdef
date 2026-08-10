@@ -1,0 +1,8 @@
+{
+  "name": "Rils.CSharp",
+  "rootNamespace": "Rils.CSharp",
+  "allowUnsafeCode": true,
+  "autoReferenced": true,
+  "overrideReferences": false,
+  "noEngineReferences": true
+}

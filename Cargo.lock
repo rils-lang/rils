@@ -84,6 +84,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rils_capi"
+version = "0.1.0"
+dependencies = [
+ "rils",
+]
+
+[[package]]
 name = "rils_compiler"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,42 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "crates", "crates", "{0831A136-015D-79DC-48C9-239783299D57}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "rils_capi", "rils_capi", "{D9DBEDE4-731E-CB0E-385C-52A74EB3B331}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "csharp", "csharp", "{72C0686C-DFFA-9AB6-17CB-7BEAA26EA8D4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rils.CSharp", "crates\rils_capi\csharp\Rils.CSharp\Rils.CSharp.csproj", "{9AC90A09-3C37-FB9E-0A63-A25CB875D187}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Rils.CSharp.SmokeTests", "crates\rils_capi\csharp\Rils.CSharp.SmokeTests\Rils.CSharp.SmokeTests.csproj", "{157BF5E8-A822-1BB9-B89D-FC766B413E13}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9AC90A09-3C37-FB9E-0A63-A25CB875D187}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9AC90A09-3C37-FB9E-0A63-A25CB875D187}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9AC90A09-3C37-FB9E-0A63-A25CB875D187}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9AC90A09-3C37-FB9E-0A63-A25CB875D187}.Release|Any CPU.Build.0 = Release|Any CPU
+		{157BF5E8-A822-1BB9-B89D-FC766B413E13}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{157BF5E8-A822-1BB9-B89D-FC766B413E13}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{157BF5E8-A822-1BB9-B89D-FC766B413E13}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{157BF5E8-A822-1BB9-B89D-FC766B413E13}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D9DBEDE4-731E-CB0E-385C-52A74EB3B331} = {0831A136-015D-79DC-48C9-239783299D57}
+		{72C0686C-DFFA-9AB6-17CB-7BEAA26EA8D4} = {D9DBEDE4-731E-CB0E-385C-52A74EB3B331}
+		{9AC90A09-3C37-FB9E-0A63-A25CB875D187} = {72C0686C-DFFA-9AB6-17CB-7BEAA26EA8D4}
+		{157BF5E8-A822-1BB9-B89D-FC766B413E13} = {72C0686C-DFFA-9AB6-17CB-7BEAA26EA8D4}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {12682415-7C39-425C-BDA4-4A9DEDD12544}
+	EndGlobalSection
+EndGlobal
