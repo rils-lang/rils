@@ -15,10 +15,35 @@ The grammar also recognizes tuple fields, fixed-array/`Vec<T>` types, collection
 field/index place syntax such as `value.0`, `value.field`, and `value[index]`.
 The language server resolves explicit UFCS calls to their trait method declarations and traverses
 both the owner and index expressions for diagnostics, references, hover, and semantic tokens.
-It also indexes `.rils` files under every VS Code workspace folder for cross-file module navigation.
+It discovers `rils.toml`, indexes only its configured `script_paths`, and maps files to stable module paths for
+cross-file navigation and completion. Without a project file it falls back to workspace-wide `.rils` indexing.
 Language intelligence is provided by `rils-analyzer`. Static diagnostics cover names, basic type
 compatibility, match/control flow, ownership, moves, mutability, and local-reference escape rules.
 Definite semantic failures are errors; unreachable statements and match arms are warnings.
+
+## Host Manifest and completion
+
+Set `rils.hostManifest.path` to a verified binary `.rilhm` file, using either an absolute path or a path relative
+to the workspace folder. When the setting is empty, the Analyzer reads `[host].manifest` from `rils.toml`, then
+checks conventional names at the project and configured script roots. Reload the VS Code window after changing
+the path or replacing the manifest.
+
+The project convention is `.rils/manifests/**/*.rilhm`. Every fragment is verified and merged into one logical
+contract; an explicitly configured `rils.hostManifest.path` remains a single-file override.
+
+The Analyzer uses the contract for diagnostics and type checking. Typing a qualified module path followed by
+`::`, for example `unity_engine::math::`, lists its accessible host functions and child modules. Completion items
+show the function signature and required capability. Module aliases such as
+`use unity_engine::math as math; math::` are supported.
+
+Project modules use the same completion flow. After `crate::`, `self::`, `super::`, a module path, or a
+`use` alias, the Analyzer lists child modules and public declarations from the target `.rils` file.
+
+Generate the runtime manifest explicitly from a JSON tool input when needed:
+
+```console
+rils host-manifest compile host-contract.json -o rils-host.rilhm
+```
 
 ## Development
 

@@ -51,6 +51,22 @@ function resolveServer(context) {
   return "rils-analyzer";
 }
 
+function resolveHostManifestPaths() {
+  const paths = new Set();
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    const configured = vscode.workspace
+      .getConfiguration("rils", folder.uri)
+      .get("hostManifest.path", "")
+      .trim();
+    if (configured) {
+      paths.add(path.isAbsolute(configured)
+        ? configured
+        : path.join(folder.uri.fsPath, configured));
+    }
+  }
+  return [...paths];
+}
+
 async function activate(context) {
   const serverOptions = {
     command: resolveServer(context),
@@ -64,6 +80,9 @@ async function activate(context) {
     ],
     synchronize: {
       configurationSection: "rils",
+    },
+    initializationOptions: {
+      hostManifestPaths: resolveHostManifestPaths(),
     },
   };
 

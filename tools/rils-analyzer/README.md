@@ -24,8 +24,16 @@ The executable is written to `target/debug/rils-analyzer` (or
 - generic type aliases, trait associated types and fully qualified projections
 - UFCS method symbols with go-to-definition for `Trait::method` and `<Type as Trait>::method`
 - tuple fields, fixed arrays, `Vec<T>`, nested place borrowing and concrete index-expression analysis
-- workspace `.rils` indexing with cross-file definition and reference locations
+- `rils.toml` project discovery and `script_paths` workspace indexing with cross-file locations
 - module declarations, imports, visibility symbols, and namespace semantic tokens
+- verified `.rilhm` Host Manifest loading through the LSP `initializationOptions.hostManifestPaths`
+- recursive `.rils/manifests` discovery and deterministic multi-fragment contract merging
+- host module/member completion after `::`, including `use ... as ...` module aliases, signatures, and capabilities
+- project module and public-item completion after `crate::`, `self::`, `super::`, or a `use` alias
+
+Host manifests are binary runtime contracts. Each configured file is verified before its symbols are added to
+diagnostics, type inference, hover, semantic tokens, and completion. Multiple manifests must use the same host ABI
+and contract version and cannot contain conflicting declarations.
 - inferred return, local binding, and pattern binding type hints
 - complete higher-order function signatures such as `fn() -> fn() -> i32`
 
