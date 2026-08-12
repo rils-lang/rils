@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "host_abi_version": 1,
+  "contract_version": 1,
+  "modules": [
+    {
+      "name": "unity_engine::math",
+      "version": 1,
+      "functions": [
+        {
+          "id": "0x0000000000000064",
+          "name": "add",
+          "parameters": ["i32", "i32"],
+          "return": "i32",
+          "capability": "unity.math",
+          "call_kind": "direct",
+          "thread_affinity": "main_thread"
+        }
+      ]
+    }
+  ]
+}

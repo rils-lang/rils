@@ -5,7 +5,7 @@ use std::{
     process::ExitCode,
 };
 
-use rils::{BytecodeModule, Engine};
+use rils::{BytecodeModule, Engine, HostContract};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = env::args().skip(1).collect();
@@ -17,6 +17,27 @@ fn main() -> ExitCode {
         }
         [command, path] if command == "verify" => verify_bytecode(path),
         [command, path] if command == "run" => run_bytecode(path),
+        [command, action, input] if command == "host-manifest" && action == "compile" => {
+            compile_host_manifest(input, None)
+        }
+        [command, action, input, option, output]
+            if command == "host-manifest" && action == "compile" && option == "-o" =>
+        {
+            compile_host_manifest(input, Some(output))
+        }
+        [command, action, input] if command == "host-manifest" && action == "export-json" => {
+            export_host_manifest_json(input, None)
+        }
+        [command, action, input, option, output]
+            if command == "host-manifest" && action == "export-json" && option == "-o" =>
+        {
+            export_host_manifest_json(input, Some(output))
+        }
+        [command, action, input, option, output]
+            if command == "host-manifest" && action == "link" && option == "-o" =>
+        {
+            link_host_manifests(input, output)
+        }
         [path]
             if Path::new(path)
                 .extension()
@@ -38,6 +59,165 @@ fn print_usage() {
     eprintln!("  rils compile <script.rils> [-o output.rilbc]");
     eprintln!("  rils verify <module.rilbc>");
     eprintln!("  rils run <module.rilbc>");
+    eprintln!("  rils host-manifest compile <contract.json> [-o contract.rilhm]");
+    eprintln!("  rils host-manifest export-json <contract.rilhm> [-o contract.json]");
+    eprintln!("  rils host-manifest link <directory|rils.toml> -o contract.rilhm");
+}
+
+fn link_host_manifests(input: &str, output: &str) -> ExitCode {
+    let input = Path::new(input);
+    let paths = if input.is_file() && input.file_name().is_some_and(|name| name == "rils.toml") {
+        rils::Project::from_file(input).map(|project| project.host_manifests().to_vec())
+    } else if input.is_dir() {
+        let configured = input.join("rils.toml");
+        if configured.is_file() {
+            rils::Project::from_file(configured).map(|project| project.host_manifests().to_vec())
+        } else {
+            rils::Project::discover_manifest_directory(input)
+        }
+    } else {
+        Err(rils::ProjectError {
+            message: format!(
+                "`{}` is not a manifest directory or rils.toml",
+                input.display()
+            ),
+        })
+    };
+    let paths = match paths {
+        Ok(paths) => paths,
+        Err(error) => {
+            eprintln!("failed to discover host manifest fragments: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if paths.is_empty() {
+        eprintln!("no .rilhm fragments found for `{}`", input.display());
+        return ExitCode::FAILURE;
+    }
+    let mut linked: Option<HostContract> = None;
+    for path in &paths {
+        let bytes = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                eprintln!("failed to read `{}`: {error}", path.display());
+                return ExitCode::FAILURE;
+            }
+        };
+        let fragment = match HostContract::from_manifest_bytes(&bytes) {
+            Ok(fragment) => fragment,
+            Err(error) => {
+                eprintln!("invalid host manifest `{}`: {error}", path.display());
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Some(linked) = &mut linked {
+            if let Err(error) = linked.merge(&fragment) {
+                eprintln!("cannot merge host manifest `{}`: {error}", path.display());
+                return ExitCode::FAILURE;
+            }
+        } else {
+            linked = Some(fragment);
+        }
+    }
+    let linked = linked.expect("non-empty fragment list");
+    let bytes = match linked.to_manifest_bytes() {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("failed to encode linked host manifest: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match fs::write(output, bytes) {
+        Ok(()) => {
+            println!(
+                "linked {} fragments into {} ({})",
+                paths.len(),
+                output,
+                linked.contract_hash()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("failed to write `{output}`: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn compile_host_manifest(input: &str, output: Option<&str>) -> ExitCode {
+    let json = match fs::read_to_string(input) {
+        Ok(json) => json,
+        Err(error) => {
+            eprintln!("failed to read `{input}`: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let contract = match HostContract::from_manifest_json(&json) {
+        Ok(contract) => contract,
+        Err(error) => {
+            eprintln!("invalid JSON host manifest `{input}`: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let manifest = match contract.to_manifest_bytes() {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("failed to encode host manifest: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let output = output.map_or_else(
+        || PathBuf::from(input).with_extension("rilhm"),
+        PathBuf::from,
+    );
+    match fs::write(&output, manifest) {
+        Ok(()) => {
+            println!("wrote {}", output.display());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("failed to write `{}`: {error}", output.display());
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn export_host_manifest_json(input: &str, output: Option<&str>) -> ExitCode {
+    let bytes = match fs::read(input) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("failed to read `{input}`: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let contract = match HostContract::from_manifest_bytes(&bytes) {
+        Ok(contract) => contract,
+        Err(error) => {
+            eprintln!("invalid binary host manifest `{input}`: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let json = match contract.to_manifest_json() {
+        Ok(json) => json,
+        Err(error) => {
+            eprintln!("failed to encode JSON host manifest: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let output = output.map_or_else(
+        || PathBuf::from(input).with_extension("json"),
+        PathBuf::from,
+    );
+    match fs::write(&output, json) {
+        Ok(()) => {
+            println!("wrote {}", output.display());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("failed to write `{}`: {error}", output.display());
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn compile_file(input: &str, output: Option<&str>) -> ExitCode {

@@ -1,13 +1,13 @@
 [package]
-name = "rils_frontend"
+name = "rils_project"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = ["crates-io"]
-description = "Syntax and type model for the Rils scripting language"
+description = "Project discovery and module catalog for Rils"
 license.workspace = true
 repository.workspace = true
-include = ["/Cargo.toml", "/src/**"]
 
 [dependencies]
-rils_builtins.workspace = true
+serde.workspace = true
+toml.workspace = true

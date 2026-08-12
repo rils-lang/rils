@@ -7,6 +7,7 @@ use std::{
 use crate::{
     ast::{Block, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
     bytecode::CompileError,
+    host::{HostContract, HostFunctionDeclaration},
     source::Span,
 };
 
@@ -18,8 +19,56 @@ use imports::*;
 pub use ir::*;
 use symbols::*;
 
-pub(crate) fn lower(program: &Program) -> Result<HirProgram, CompileError> {
-    ProgramLowerer::new(program)?.lower(program)
+fn collect_host_use_aliases(
+    statements: &[Stmt],
+    prefix: &mut Vec<String>,
+    functions: &mut HashMap<String, HostFunctionDeclaration>,
+) {
+    for statement in statements {
+        let statement = match statement {
+            Stmt::Public { statement, .. } => statement.as_ref(),
+            statement => statement,
+        };
+        match statement {
+            Stmt::Use { path, alias, .. } => {
+                let absolute = path.join("::");
+                let anchored = resolve_anchored_path(prefix, path);
+                let relative = if prefix.is_empty() {
+                    absolute.clone()
+                } else {
+                    format!("{}::{absolute}", prefix.join("::"))
+                };
+                let declaration = functions
+                    .get(anchored.as_deref().unwrap_or(&absolute))
+                    .or_else(|| functions.get(&relative))
+                    .cloned();
+                if let Some(declaration) = declaration {
+                    let alias = alias
+                        .as_deref()
+                        .or_else(|| path.last().map(String::as_str))
+                        .expect("use paths are non-empty");
+                    functions.insert(qualified_name(prefix, alias), declaration);
+                }
+            }
+            Stmt::Module {
+                name,
+                statements: Some(module_statements),
+                ..
+            } => {
+                prefix.push(name.clone());
+                collect_host_use_aliases(module_statements, prefix, functions);
+                prefix.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(crate) fn lower_with_host(
+    program: &Program,
+    host: &HostContract,
+) -> Result<HirProgram, CompileError> {
+    ProgramLowerer::new(program, host)?.lower(program)
 }
 
 struct ProgramLowerer {
@@ -28,10 +77,11 @@ struct ProgramLowerer {
     method_names: HashMap<String, Option<MethodInfo>>,
     types: HashMap<String, TypeId>,
     type_definitions: Vec<HirTypeDefinition>,
+    host_functions: HashMap<String, HostFunctionDeclaration>,
 }
 
 impl ProgramLowerer {
-    fn new(program: &Program) -> Result<Self, CompileError> {
+    fn new(program: &Program, host: &HostContract) -> Result<Self, CompileError> {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
         let mut type_definitions = Vec::new();
@@ -105,12 +155,18 @@ impl ProgramLowerer {
             &mut functions,
             &mut types,
         );
+        let mut host_functions = host
+            .functions()
+            .map(|function| (function.name.clone(), function.clone()))
+            .collect::<HashMap<_, _>>();
+        collect_host_use_aliases(&program.statements, &mut Vec::new(), &mut host_functions);
         Ok(Self {
             functions,
             methods,
             method_names,
             types,
             type_definitions,
+            host_functions,
         })
     }
 
@@ -137,6 +193,7 @@ impl ProgramLowerer {
                 &self.methods,
                 &self.method_names,
                 &self.types,
+                &self.host_functions,
                 next_function_id.clone(),
                 generated.clone(),
             )
@@ -169,6 +226,7 @@ impl ProgramLowerer {
                     &self.methods,
                     &self.method_names,
                     &self.types,
+                    &self.host_functions,
                     next_function_id.clone(),
                     generated.clone(),
                 )
@@ -192,6 +250,7 @@ struct FunctionLowerer<'a> {
     methods: &'a HashMap<String, MethodInfo>,
     method_names: &'a HashMap<String, Option<MethodInfo>>,
     types: &'a HashMap<String, TypeId>,
+    host_functions: &'a HashMap<String, HostFunctionDeclaration>,
     namespace: String,
     scopes: Vec<HashMap<String, LocalId>>,
     mutable: Vec<bool>,
@@ -208,6 +267,7 @@ impl<'a> FunctionLowerer<'a> {
         methods: &'a HashMap<String, MethodInfo>,
         method_names: &'a HashMap<String, Option<MethodInfo>>,
         types: &'a HashMap<String, TypeId>,
+        host_functions: &'a HashMap<String, HostFunctionDeclaration>,
         next_function_id: Rc<Cell<FunctionId>>,
         generated: Rc<RefCell<Vec<(FunctionId, HirFunction)>>>,
     ) -> Self {
@@ -216,6 +276,7 @@ impl<'a> FunctionLowerer<'a> {
             methods,
             method_names,
             types,
+            host_functions,
             namespace: String::new(),
             scopes: vec![HashMap::new()],
             mutable: Vec::new(),
@@ -385,6 +446,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.methods,
                     self.method_names,
                     self.types,
+                    self.host_functions,
                     self.next_function_id.clone(),
                     self.generated.clone(),
                 );
@@ -553,6 +615,23 @@ impl<'a> FunctionLowerer<'a> {
                 operand: Box::new(self.expression(operand)?),
                 span: *span,
             }),
+            Expr::Cast {
+                operand,
+                target,
+                span,
+            } => {
+                let crate::types::Type::Integer(target) = target else {
+                    return Err(CompileError::unsupported(
+                        "`as` currently supports concrete integer target types only",
+                        *span,
+                    ));
+                };
+                Ok(HirExpression::Cast {
+                    operand: Box::new(self.expression(operand)?),
+                    target: *target,
+                    span: *span,
+                })
+            }
             Expr::Borrow {
                 mutable,
                 target,
@@ -640,7 +719,22 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
-                    let key = segments.join("::");
+                    let raw_key = segments.join("::");
+                    if let [type_name, member] = segments.as_slice()
+                        && let Some(target) = crate::types::IntegerType::from_name(type_name)
+                        && let Some(intrinsic) = rils_builtins::integer_associated_function(member)
+                    {
+                        return Ok(HirExpression::CallIntrinsic {
+                            intrinsic: intrinsic.id,
+                            target: Some(target),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    let key = self.anchored_name(&raw_key);
                     if let Some((name, signature)) = collection_import_signature(&key) {
                         return Ok(HirExpression::CallImport {
                             name: name.into(),
@@ -665,6 +759,18 @@ impl<'a> FunctionLowerer<'a> {
                             name: key,
                             signature,
                             capability: capability.into(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    if let Some(function) = self.host_function(&key).cloned() {
+                        return Ok(HirExpression::CallImport {
+                            name: function.name,
+                            signature: function.signature,
+                            capability: function.capability,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -704,6 +810,24 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if let Expr::Member { object, name, .. } = callee.as_ref() {
+                    if self.method_names.get(name).is_none()
+                        && let Some(intrinsic) = rils_builtins::integer_method(name)
+                    {
+                        let mut lowered = Vec::with_capacity(arguments.len() + 1);
+                        lowered.push(self.expression(object)?);
+                        lowered.extend(
+                            arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        );
+                        return Ok(HirExpression::CallIntrinsic {
+                            intrinsic: intrinsic.id,
+                            target: None,
+                            arguments: lowered,
+                            span: *span,
+                        });
+                    }
                     if self.method_names.get(name).is_none()
                         && let Some((import_name, signature, receiver)) =
                             collection_method_import(name)
@@ -768,6 +892,21 @@ impl<'a> FunctionLowerer<'a> {
                         "Ok" => HirExpression::ResultOk { value, span: *span },
                         "Err" => HirExpression::ResultErr { value, span: *span },
                         _ => unreachable!(),
+                    });
+                }
+                if let Expr::Variable { name, .. } = callee.as_ref()
+                    && self.lookup(name).is_none()
+                    && let Some(function) = self.host_function(name).cloned()
+                {
+                    return Ok(HirExpression::CallImport {
+                        name: function.name,
+                        signature: function.signature,
+                        capability: function.capability,
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
                     });
                 }
                 if let Expr::Variable { name, .. } = callee.as_ref()
@@ -1052,7 +1191,22 @@ impl<'a> FunctionLowerer<'a> {
         self.symbol_id(self.functions, name)
     }
 
+    fn host_function(&self, name: &str) -> Option<&HostFunctionDeclaration> {
+        let name = self.anchored_name(name);
+        if !self.namespace.is_empty() {
+            let relative = format!("{}::{name}", self.namespace);
+            if let Some(function) = self.host_functions.get(&relative) {
+                return Some(function);
+            }
+        }
+        self.host_functions.get(&name)
+    }
+
     fn scoped_name(&self, name: &str) -> String {
+        let anchored = self.anchored_name(name);
+        if anchored != name {
+            return anchored;
+        }
         if self.namespace.is_empty() || name.contains("::") {
             name.to_string()
         } else {
@@ -1061,6 +1215,10 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn symbol_id<T: Copy>(&self, symbols: &HashMap<String, T>, name: &str) -> Option<T> {
+        let anchored = self.anchored_name(name);
+        if anchored != name {
+            return symbols.get(&anchored).copied();
+        }
         if !self.namespace.is_empty() {
             let relative = format!("{}::{name}", self.namespace);
             if let Some(id) = symbols.get(&relative).copied() {
@@ -1068,6 +1226,17 @@ impl<'a> FunctionLowerer<'a> {
             }
         }
         symbols.get(name).copied()
+    }
+
+    fn anchored_name(&self, name: &str) -> String {
+        let path = name.split("::").map(str::to_owned).collect::<Vec<_>>();
+        let prefix = self
+            .namespace
+            .split("::")
+            .filter(|segment| !segment.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        resolve_anchored_path(&prefix, &path).unwrap_or_else(|| name.to_owned())
     }
 
     fn enum_variant_path(

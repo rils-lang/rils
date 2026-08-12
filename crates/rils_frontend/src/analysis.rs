@@ -5,7 +5,7 @@ use crate::{
     ast::{Block, EnumVariant, Expr, Pattern, Program, Stmt},
     source::Span,
     type_inference,
-    types::Type,
+    types::{FunctionSignature, Type},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,24 +92,44 @@ struct TypeAliasDefinition {
 
 #[doc(hidden)]
 pub fn analyze_program(program: &Program) -> DocumentAnalysis {
-    Analyzer::new().analyze(program)
+    analyze_program_with_host_functions(program, &HashMap::new())
+}
+
+#[doc(hidden)]
+pub fn analyze_program_with_host_functions(
+    program: &Program,
+    host_functions: &HashMap<String, FunctionSignature>,
+) -> DocumentAnalysis {
+    Analyzer::new(host_functions).analyze(program)
 }
 
 pub fn analyze(source: &str) -> Result<DocumentAnalysis, FrontendError> {
+    analyze_with_host_functions(source, &HashMap::new())
+}
+
+#[doc(hidden)]
+pub fn analyze_with_host_functions(
+    source: &str,
+    host_functions: &HashMap<String, FunctionSignature>,
+) -> Result<DocumentAnalysis, FrontendError> {
     let tokens = crate::lexer::lex(source).map_err(FrontendError::Lex)?;
     let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
-    Ok(analyze_program(&program))
+    Ok(analyze_program_with_host_functions(
+        &program,
+        host_functions,
+    ))
 }
 
 struct Analyzer {
     scopes: Vec<HashMap<String, Definition>>,
     trait_members: HashMap<(String, String), Span>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
+    host_functions: HashMap<String, FunctionSignature>,
     result: DocumentAnalysis,
 }
 
 impl Analyzer {
-    fn new() -> Self {
+    fn new(host_functions: &HashMap<String, FunctionSignature>) -> Self {
         let mut globals = HashMap::new();
         for name in [
             "#rils_native_print",
@@ -136,30 +156,30 @@ impl Analyzer {
                 },
             );
         }
-        for name in ["Copy", "Clone", "Iterator", "IntoIterator"] {
+        for builtin in rils_builtins::BUILTINS {
+            if builtin.path.contains("::") || builtin.kind == rils_builtins::BuiltinKind::Function {
+                continue;
+            }
+            let kind = match builtin.kind {
+                rils_builtins::BuiltinKind::Module => SymbolKind::Module,
+                rils_builtins::BuiltinKind::Trait => SymbolKind::Trait,
+                rils_builtins::BuiltinKind::Primitive
+                | rils_builtins::BuiltinKind::Struct
+                | rils_builtins::BuiltinKind::Enum => SymbolKind::Type,
+                rils_builtins::BuiltinKind::Function => unreachable!(),
+            };
+            globals.insert(builtin.path.into(), Definition { span: None, kind });
+        }
+        for integer in crate::types::IntegerType::ALL {
             globals.insert(
-                name.into(),
+                integer.name().into(),
                 Definition {
                     span: None,
-                    kind: SymbolKind::Trait,
+                    kind: SymbolKind::Type,
                 },
             );
         }
-        globals.insert(
-            "Range".into(),
-            Definition {
-                span: None,
-                kind: SymbolKind::Type,
-            },
-        );
-        globals.insert(
-            "Vec".into(),
-            Definition {
-                span: None,
-                kind: SymbolKind::Type,
-            },
-        );
-        for name in ["core", "std", "prelude"] {
+        for name in ["core", "std", "prelude", "crate", "self", "super"] {
             globals.insert(
                 name.into(),
                 Definition {
@@ -168,10 +188,24 @@ impl Analyzer {
                 },
             );
         }
+        for name in host_functions.keys() {
+            let Some(root) = name.split("::").next() else {
+                continue;
+            };
+            globals.entry(root.into()).or_insert(Definition {
+                span: None,
+                kind: if name.contains("::") {
+                    SymbolKind::Module
+                } else {
+                    SymbolKind::Function
+                },
+            });
+        }
         Self {
             scopes: vec![globals],
             trait_members: HashMap::new(),
             type_aliases: HashMap::new(),
+            host_functions: host_functions.clone(),
             result: DocumentAnalysis::default(),
         }
     }
@@ -182,7 +216,7 @@ impl Analyzer {
         self.macros(program);
         self.statements(&program.statements);
         self.type_references(program);
-        let inference = type_inference::infer(program);
+        let inference = type_inference::infer_with_host_functions(program, &self.host_functions);
         self.result.diagnostics.extend(crate::control_flow::analyze(
             program,
             &inference.expression_types,
@@ -560,6 +594,34 @@ impl Analyzer {
                         SymbolKind::Type,
                     );
                 }
+                let qualified_name = segments.join("::");
+                if let (Some(member), Some(signature)) =
+                    (segments.last(), self.host_functions.get(&qualified_name))
+                {
+                    let parameters = signature
+                        .parameters
+                        .as_ref()
+                        .map(|parameters| {
+                            parameters
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_else(|| "...".into());
+                    self.result.symbols.push(SymbolOccurrence {
+                        name: member.clone(),
+                        span: member_name_span(*span, member),
+                        definition_span: None,
+                        kind: SymbolKind::Function,
+                        is_definition: false,
+                        inferred_type: Some(signature.as_type()),
+                        detail: Some(format!(
+                            "host fn {qualified_name}({parameters}) -> {}",
+                            signature.return_type
+                        )),
+                    });
+                }
                 if let [trait_name, member] = segments.as_slice() {
                     let definition_span = self
                         .trait_members
@@ -649,6 +711,7 @@ impl Analyzer {
             }
             Expr::Borrow { target, .. } => self.expression(target),
             Expr::Unary { operand, .. } => self.expression(operand),
+            Expr::Cast { operand, .. } => self.expression(operand),
             Expr::Binary { left, right, .. }
             | Expr::Logical { left, right, .. }
             | Expr::Range {

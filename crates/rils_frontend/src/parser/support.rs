@@ -63,6 +63,22 @@ impl Parser {
         }
     }
 
+    pub(super) fn expect_path_segment(
+        &mut self,
+        message: &str,
+    ) -> Result<(String, Span), ParseError> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) => Ok((name, token.span)),
+            TokenKind::Crate => Ok(("crate".into(), token.span)),
+            TokenKind::Super => Ok(("super".into(), token.span)),
+            _ => Err(ParseError {
+                message: message.into(),
+                span: token.span,
+            }),
+        }
+    }
+
     pub(super) fn expect(&mut self, kind: &TokenKind, message: &str) -> Result<Token, ParseError> {
         self.take(kind).ok_or_else(|| self.error_here(message))
     }

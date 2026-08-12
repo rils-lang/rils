@@ -214,6 +214,15 @@ fn encode_function(
                         operator,
                         operand,
                     },
+                    MirInstruction::Cast {
+                        destination,
+                        source,
+                        target,
+                    } => Instruction::Cast {
+                        destination,
+                        source,
+                        target,
+                    },
                     MirInstruction::Binary {
                         destination,
                         left,
@@ -277,6 +286,17 @@ fn encode_function(
                             arguments,
                         }
                     }
+                    MirInstruction::CallIntrinsic {
+                        destination,
+                        intrinsic,
+                        target,
+                        arguments,
+                    } => Instruction::CallIntrinsic {
+                        destination,
+                        intrinsic,
+                        target,
+                        arguments,
+                    },
                     MirInstruction::ConstructRecord {
                         destination,
                         type_id,

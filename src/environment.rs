@@ -111,6 +111,7 @@ impl StorageSlot {
 pub struct Environment {
     values: HashMap<String, StorageRef>,
     parent: Option<EnvironmentRef>,
+    module: bool,
 }
 
 impl Environment {
@@ -118,6 +119,7 @@ impl Environment {
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
             parent: None,
+            module: false,
         }))
     }
 
@@ -125,7 +127,50 @@ impl Environment {
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
             parent: Some(parent),
+            module: false,
         }))
+    }
+
+    pub fn module_child(parent: EnvironmentRef) -> EnvironmentRef {
+        Rc::new(RefCell::new(Self {
+            values: HashMap::new(),
+            parent: Some(parent),
+            module: true,
+        }))
+    }
+
+    pub fn root(environment: &EnvironmentRef) -> EnvironmentRef {
+        let mut current = environment.clone();
+        loop {
+            let parent = current.borrow().parent.clone();
+            let Some(parent) = parent else {
+                return current;
+            };
+            current = parent;
+        }
+    }
+
+    pub fn current_module(environment: &EnvironmentRef) -> Option<EnvironmentRef> {
+        let mut current = Some(environment.clone());
+        while let Some(candidate) = current {
+            if candidate.borrow().module {
+                return Some(candidate);
+            }
+            current = candidate.borrow().parent.clone();
+        }
+        None
+    }
+
+    pub fn parent_module(environment: &EnvironmentRef) -> Option<EnvironmentRef> {
+        let current = Self::current_module(environment)?;
+        let mut candidate = current.borrow().parent.clone();
+        while let Some(environment) = candidate {
+            if environment.borrow().module {
+                return Some(environment);
+            }
+            candidate = environment.borrow().parent.clone();
+        }
+        Some(Self::root(&current))
     }
 
     pub fn define(

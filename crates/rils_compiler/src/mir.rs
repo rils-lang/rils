@@ -387,6 +387,23 @@ impl Builder {
                 }
                 Ok(destination)
             }
+            HirExpression::Cast {
+                operand,
+                target,
+                span,
+            } => {
+                let source = self.expression(operand)?;
+                let destination = self.register();
+                self.emit(
+                    MirInstruction::Cast {
+                        destination,
+                        source,
+                        target: *target,
+                    },
+                    *span,
+                );
+                Ok(destination)
+            }
             HirExpression::Binary {
                 left,
                 operator,
@@ -472,6 +489,28 @@ impl Builder {
                         name: name.clone(),
                         signature: signature.clone(),
                         capability: capability.clone(),
+                        arguments,
+                    },
+                    *span,
+                );
+                Ok(destination)
+            }
+            HirExpression::CallIntrinsic {
+                intrinsic,
+                target,
+                arguments,
+                span,
+            } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.expression(argument))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let destination = self.register();
+                self.emit(
+                    MirInstruction::CallIntrinsic {
+                        destination,
+                        intrinsic: *intrinsic,
+                        target: *target,
                         arguments,
                     },
                     *span,

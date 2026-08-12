@@ -4,7 +4,7 @@ use crate::{
     ast::{Block, Expr, Literal, Program, Stmt},
     source::Span,
     type_inference,
-    types::{FloatType, IntegerType, Type},
+    types::{FloatType, FunctionSignature, IntegerType, Type},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,7 +14,15 @@ pub struct NumericResolutionError {
 }
 
 pub fn resolve_numeric_literals(program: &mut Program) -> Result<(), NumericResolutionError> {
-    let types = type_inference::infer(program).expression_types;
+    resolve_numeric_literals_with_host_functions(program, &HashMap::new())
+}
+
+#[doc(hidden)]
+pub fn resolve_numeric_literals_with_host_functions(
+    program: &mut Program,
+    host_functions: &HashMap<String, FunctionSignature>,
+) -> Result<(), NumericResolutionError> {
+    let types = type_inference::infer_with_host_functions(program, host_functions).expression_types;
     resolve_statements(&mut program.statements, &types)
 }
 
@@ -88,6 +96,9 @@ fn resolve_expression(
         Expr::Literal { value, .. } => resolve_literal(value, types.get(&span), span)?,
         Expr::Member { object, .. }
         | Expr::Try {
+            operand: object, ..
+        }
+        | Expr::Cast {
             operand: object, ..
         }
         | Expr::Borrow { target: object, .. }

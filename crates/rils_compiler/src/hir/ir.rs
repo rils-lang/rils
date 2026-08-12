@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use crate::{
     ast::{BinaryOp, EnumVariant, GenericParameter, LogicalOp, NamedField, UnaryOp},
     source::Span,
-    types::FunctionSignature,
+    types::{FunctionSignature, IntegerType},
 };
+use rils_builtins::IntrinsicId;
 
 pub type LocalId = usize;
 pub type FunctionId = usize;
@@ -168,6 +169,11 @@ pub enum HirExpression {
         operand: Box<HirExpression>,
         span: Span,
     },
+    Cast {
+        operand: Box<HirExpression>,
+        target: IntegerType,
+        span: Span,
+    },
     Binary {
         left: Box<HirExpression>,
         operator: BinaryOp,
@@ -194,6 +200,12 @@ pub enum HirExpression {
         name: String,
         signature: FunctionSignature,
         capability: String,
+        arguments: Vec<HirExpression>,
+        span: Span,
+    },
+    CallIntrinsic {
+        intrinsic: IntrinsicId,
+        target: Option<IntegerType>,
         arguments: Vec<HirExpression>,
         span: Span,
     },

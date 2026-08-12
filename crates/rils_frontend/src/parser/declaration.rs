@@ -26,10 +26,10 @@ impl Parser {
     }
 
     pub(super) fn use_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
-        let (first, _) = self.expect_identifier("expected path after `use`")?;
+        let (first, _) = self.expect_path_segment("expected path after `use`")?;
         let mut path = vec![first];
         while self.take(&TokenKind::ColonColon).is_some() {
-            let (segment, _) = self.expect_identifier("expected name after `::`")?;
+            let (segment, _) = self.expect_path_segment("expected name after `::`")?;
             path.push(segment);
         }
         let (alias, alias_span) = if self.take(&TokenKind::As).is_some() {

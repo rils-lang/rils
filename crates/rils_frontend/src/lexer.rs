@@ -210,8 +210,12 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         let text = &self.source[self.start..number_end];
-        let suffix = &self.source[number_end..self.current];
-        let invalid = || self.error(format!("invalid numeric literal suffix `{suffix}`"));
+        let raw_suffix = &self.source[number_end..self.current];
+        let suffix = match raw_suffix.strip_prefix('_') {
+            Some("") | None => raw_suffix,
+            Some(suffix) => suffix,
+        };
+        let invalid = || self.error(format!("invalid numeric literal suffix `{raw_suffix}`"));
         let kind = match (is_float, suffix) {
             (true, "") => TokenKind::Float(
                 text.parse()
@@ -286,6 +290,8 @@ impl<'a> Lexer<'a> {
             "continue" => TokenKind::Continue,
             "mod" => TokenKind::Mod,
             "use" => TokenKind::Use,
+            "crate" => TokenKind::Crate,
+            "super" => TokenKind::Super,
             "pub" => TokenKind::Pub,
             "true" => TokenKind::True,
             "false" => TokenKind::False,

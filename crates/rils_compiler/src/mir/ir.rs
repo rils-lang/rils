@@ -4,7 +4,9 @@ use crate::{
         FunctionId, HirIteratorMethods, HirLiteral, HirPattern, HirTypeDefinition, LocalId, TypeId,
     },
     source::Span,
+    types::IntegerType,
 };
+use rils_builtins::IntrinsicId;
 
 pub type BlockId = usize;
 pub type Register = usize;
@@ -133,6 +135,11 @@ pub enum MirInstruction {
         operator: UnaryOp,
         operand: Register,
     },
+    Cast {
+        destination: Register,
+        source: Register,
+        target: IntegerType,
+    },
     Binary {
         destination: Register,
         left: Register,
@@ -154,6 +161,12 @@ pub enum MirInstruction {
         name: String,
         signature: crate::types::FunctionSignature,
         capability: String,
+        arguments: Vec<Register>,
+    },
+    CallIntrinsic {
+        destination: Register,
+        intrinsic: IntrinsicId,
+        target: Option<IntegerType>,
         arguments: Vec<Register>,
     },
     ConstructRecord {

@@ -386,6 +386,11 @@ pub enum Expr {
         operand: Box<Expr>,
         span: Span,
     },
+    Cast {
+        operand: Box<Expr>,
+        target: Type,
+        span: Span,
+    },
     Binary {
         left: Box<Expr>,
         operator: BinaryOp,
@@ -438,6 +443,7 @@ impl Expr {
             | Self::Assign { span, .. }
             | Self::Borrow { span, .. }
             | Self::Unary { span, .. }
+            | Self::Cast { span, .. }
             | Self::Binary { span, .. }
             | Self::Logical { span, .. }
             | Self::Range { span, .. }

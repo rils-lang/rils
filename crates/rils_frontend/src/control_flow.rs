@@ -173,6 +173,9 @@ impl<'a> Checker<'a> {
             | Expr::Borrow { target: object, .. }
             | Expr::Unary {
                 operand: object, ..
+            }
+            | Expr::Cast {
+                operand: object, ..
             } => {
                 self.expression(object);
                 true

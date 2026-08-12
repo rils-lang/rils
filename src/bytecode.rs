@@ -12,7 +12,7 @@ use crate::{
     hir::{HirLiteral, HirPattern, HirTypeDefinition},
     mir::{MirFunction, MirInstruction, MirProgram, MirTerminator},
     source::{Span, format_diagnostic},
-    types::{FunctionSignature, Type},
+    types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
         FieldSlot, RangeValue, ReferenceValue, SequenceIteratorValue, SequenceValue,
@@ -31,7 +31,13 @@ pub use format::{BYTECODE_FORMAT_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeFor
 pub use host::{BYTECODE_HOST_ABI_VERSION, BytecodeHost, BytecodeHostHandler, BytecodeImport};
 use vm::VirtualMachine;
 
-pub use rils_compiler::CompileError;
+pub use rils_compiler::{
+    CompileError, HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM,
+    HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION,
+    HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES,
+    HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS,
+    HostCallKind, HostContract, HostFunctionDeclaration, HostModuleDeclaration, HostThreadAffinity,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BytecodeError {
@@ -163,6 +169,13 @@ impl BytecodeModule {
 
     pub fn imports(&self) -> &[BytecodeImport] {
         &self.imports
+    }
+
+    /// Verifies the bytecode and resolves every import against `host` without
+    /// executing module code.
+    pub fn validate_host(&self, host: &BytecodeHost) -> Result<(), BytecodeError> {
+        self.verify()?;
+        self.link(host).map(|_| ())
     }
 
     pub fn instruction_count(&self) -> usize {
@@ -321,10 +334,34 @@ pub fn compile(source: &str) -> Result<BytecodeModule, CompileError> {
     encode(rils_compiler::compile(source)?)
 }
 
-pub(crate) fn compile_program(
-    program: &crate::ast::Program,
+pub fn compile_with_host(
+    source: &str,
+    host: &HostContract,
 ) -> Result<BytecodeModule, CompileError> {
-    encode(rils_compiler::compile_program(program)?)
+    validate_contract_abi(host)?;
+    encode(rils_compiler::compile_with_host(source, host)?)
+}
+
+pub(crate) fn compile_program_with_host(
+    program: &crate::ast::Program,
+    host: &HostContract,
+) -> Result<BytecodeModule, CompileError> {
+    validate_contract_abi(host)?;
+    encode(rils_compiler::compile_program_with_host(program, host)?)
+}
+
+fn validate_contract_abi(host: &HostContract) -> Result<(), CompileError> {
+    if host.host_abi_version() != BYTECODE_HOST_ABI_VERSION {
+        return Err(CompileError {
+            message: format!(
+                "host contract ABI {} is incompatible with bytecode host ABI {}",
+                host.host_abi_version(),
+                BYTECODE_HOST_ABI_VERSION
+            ),
+            span: Span::default(),
+        });
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -476,6 +513,11 @@ enum Instruction {
         operator: UnaryOp,
         operand: usize,
     },
+    Cast {
+        destination: usize,
+        source: usize,
+        target: IntegerType,
+    },
     Binary {
         destination: usize,
         left: usize,
@@ -495,6 +537,12 @@ enum Instruction {
     CallImport {
         destination: usize,
         import: usize,
+        arguments: Vec<usize>,
+    },
+    CallIntrinsic {
+        destination: usize,
+        intrinsic: rils_builtins::IntrinsicId,
+        target: Option<IntegerType>,
         arguments: Vec<usize>,
     },
     ConstructRecord {

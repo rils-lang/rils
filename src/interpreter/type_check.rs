@@ -333,9 +333,11 @@ pub(super) fn expand_type_aliases(
     environment: &EnvironmentRef,
     span: Span,
 ) -> Result<Type, RuntimeError> {
-    fn resolve_type_path(environment: &EnvironmentRef, name: &str) -> Option<Value> {
-        let mut segments = name.split("::");
-        let first = segments.next()?;
+    fn resolve_type_path(environment: &EnvironmentRef, name: &str, span: Span) -> Option<Value> {
+        let path = name.split("::").map(str::to_owned).collect::<Vec<_>>();
+        let (environment, path) =
+            super::execution::anchored_environment(&path, environment, span).ok()?;
+        let (first, segments) = path.split_first()?;
         let mut value = environment.borrow().get(first)?;
         for segment in segments {
             let Value::Module(module) = value else {
@@ -494,7 +496,7 @@ pub(super) fn expand_type_aliases(
                     .iter()
                     .map(|argument| expand(argument, environment, span, stack))
                     .collect::<Result<Vec<_>, _>>()?;
-                let resolved = resolve_type_path(environment, name);
+                let resolved = resolve_type_path(environment, name, span);
                 match resolved {
                     Some(Value::StructType(definition)) => {
                         return Ok(Type::Named {

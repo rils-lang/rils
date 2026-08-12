@@ -476,6 +476,70 @@ fn type_of_value(value: &Value) -> Option<Type> {
                 };
                 Type::function(vec![return_type.clone()], return_type)
             }
+            crate::value::BuiltinMethod::IntegerIntrinsic(id) => {
+                let Some(intrinsic) = rils_builtins::INTEGER_INTRINSICS
+                    .iter()
+                    .find(|item| item.id == id)
+                else {
+                    return Some(Type::opaque_function());
+                };
+                let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
+                fn resolve(kind: rils_builtins::TypePattern, receiver: &Type) -> Type {
+                    use rils_builtins::TypePattern;
+                    match kind {
+                        TypePattern::SelfType => receiver.clone(),
+                        TypePattern::AnyInteger | TypePattern::Unknown => Type::Unknown,
+                        TypePattern::Generic(name) => Type::Variable(name.into()),
+                        TypePattern::Unit => Type::Unit,
+                        TypePattern::Bool => Type::Bool,
+                        TypePattern::String => Type::String,
+                        TypePattern::F32 => Type::Float(crate::FloatType::F32),
+                        TypePattern::F64 => Type::Float(crate::FloatType::F64),
+                        TypePattern::Usize => Type::USIZE,
+                        TypePattern::Named { path, arguments } => Type::Named {
+                            name: path.into(),
+                            arguments: arguments
+                                .iter()
+                                .map(|value| resolve(*value, receiver))
+                                .collect(),
+                        },
+                        TypePattern::Option(inner) => {
+                            Type::Option(Box::new(resolve(*inner, receiver)))
+                        }
+                        TypePattern::Result { ok, error } => Type::Result(
+                            Box::new(resolve(*ok, receiver)),
+                            Box::new(resolve(*error, receiver)),
+                        ),
+                        TypePattern::Tuple(values) => Type::Tuple(
+                            values
+                                .iter()
+                                .map(|value| resolve(*value, receiver))
+                                .collect(),
+                        ),
+                        TypePattern::Function { parameters, result } => Type::function(
+                            parameters
+                                .iter()
+                                .map(|value| resolve(*value, receiver))
+                                .collect(),
+                            resolve(*result, receiver),
+                        ),
+                        TypePattern::Reference { mutable, inner } => Type::Reference {
+                            mutable,
+                            inner: Box::new(resolve(*inner, receiver)),
+                        },
+                    }
+                }
+                Type::function(
+                    intrinsic
+                        .signature
+                        .parameters
+                        .iter()
+                        .copied()
+                        .map(|value| resolve(value, &receiver))
+                        .collect(),
+                    resolve(intrinsic.signature.result, &receiver),
+                )
+            }
         }),
         Value::TraitMethodSelector(_) => Some(Type::opaque_function()),
         Value::Option { element_type, .. } => Some(Type::Option(Box::new(

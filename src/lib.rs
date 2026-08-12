@@ -22,6 +22,18 @@ pub mod analysis {
     pub fn analyze(source: &str) -> Result<DocumentAnalysis, crate::RilsError> {
         rils_frontend::analysis::analyze(source).map_err(Into::into)
     }
+
+    pub fn analyze_with_host(
+        source: &str,
+        host: &crate::HostContract,
+    ) -> Result<DocumentAnalysis, crate::RilsError> {
+        let signatures = host
+            .functions()
+            .map(|function| (function.name.clone(), function.signature.clone()))
+            .collect();
+        rils_frontend::analysis::analyze_with_host_functions(source, &signatures)
+            .map_err(Into::into)
+    }
 }
 
 mod ast {
@@ -47,7 +59,7 @@ mod types {
 }
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     error::Error,
     fmt, fs,
     path::{Path, PathBuf},
@@ -56,10 +68,16 @@ use std::{
 pub use bytecode::{
     BYTECODE_FORMAT_VERSION, BYTECODE_HOST_ABI_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeError,
     BytecodeFormatError, BytecodeHost, BytecodeImport, BytecodeModule, CompileError,
+    HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_MANIFEST_FORMAT_VERSION,
+    HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
+    HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
+    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
+    HostFunctionDeclaration, HostModuleDeclaration, HostThreadAffinity,
 };
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, Span, Type,
 };
+pub use rils_project::{Project, ProjectError, ProjectFile};
 pub use value::Value;
 
 pub type NativeFunctionHandler = fn(&[Value]) -> Result<Value, String>;
@@ -365,21 +383,13 @@ impl Engine {
 
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value, RilsError> {
         let path = path.as_ref();
+        let project =
+            discover_entry_project(path).map_err(|error| module_message(error.to_string()))?;
         let source = fs::read_to_string(path).map_err(|error| module_load_error(path, error))?;
         let tokens = lexer::lex(&source).map_err(RilsError::Lex)?;
         let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
             .map_err(RilsError::Parse)?;
-        let base = path.parent().unwrap_or_else(|| Path::new("."));
-        let mut loading = HashSet::new();
-        if let Ok(canonical) = path.canonicalize() {
-            loading.insert(canonical);
-        }
-        load_external_modules(
-            &mut program.statements,
-            base,
-            &self.native_macros,
-            &mut loading,
-        )?;
+        load_file_modules(&mut program.statements, path, &project, &self.native_macros)?;
         rils_frontend::resolve_numeric_literals(&mut program).map_err(numeric_resolution_error)?;
         self.interpreter
             .execute(&program)
@@ -468,6 +478,201 @@ fn load_external_modules(
     Ok(())
 }
 
+#[derive(Default)]
+struct ProjectModuleNode {
+    statements: Vec<ast::Stmt>,
+    children: BTreeMap<String, ProjectModuleNode>,
+}
+
+fn load_file_modules(
+    statements: &mut Vec<ast::Stmt>,
+    entry_path: &Path,
+    project: &Project,
+    native_macros: &[macros::NativeMacroDefinition],
+) -> Result<(), RilsError> {
+    if project.manifest_path().is_none() {
+        let base = entry_path.parent().unwrap_or_else(|| Path::new("."));
+        let mut loading = HashSet::new();
+        if let Ok(canonical) = entry_path.canonicalize() {
+            loading.insert(canonical);
+        }
+        return load_external_modules(statements, base, native_macros, &mut loading);
+    }
+    let entry = project.module_for_file(entry_path).ok_or_else(|| {
+        module_message(format!(
+            "entry script `{}` is outside the script_paths configured by `{}`",
+            entry_path.display(),
+            project.manifest_path().unwrap().display()
+        ))
+    })?;
+    let entry_statements = prepare_project_entry(std::mem::take(statements))?;
+    let mut root = ProjectModuleNode::default();
+    for file in project.modules() {
+        let module_statements = if file.module_path == entry.module_path {
+            entry_statements.clone()
+        } else {
+            let source = fs::read_to_string(&file.path)
+                .map_err(|error| module_load_error(&file.path, error))?;
+            let tokens = lexer::lex(&source).map_err(RilsError::Lex)?;
+            let program = parser::parse_with_native_macros(tokens, native_macros)
+                .map_err(RilsError::Parse)?;
+            reject_external_module_declarations(&program.statements)?;
+            program.statements
+        };
+        insert_project_module(&mut root, &file.module_path, module_statements);
+    }
+    *statements = project_module_statements(root);
+    let mut entry_path = entry
+        .module_path
+        .split("::")
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    entry_path.push("main".into());
+    statements.push(ast::Stmt::Expr {
+        expression: ast::Expr::Call {
+            callee: Box::new(ast::Expr::Path {
+                segments: entry_path,
+                span: Span::default(),
+            }),
+            arguments: Vec::new(),
+            span: Span::default(),
+        },
+        terminated: false,
+    });
+    Ok(())
+}
+
+fn prepare_project_entry(statements: Vec<ast::Stmt>) -> Result<Vec<ast::Stmt>, RilsError> {
+    reject_external_module_declarations(&statements)?;
+    let mut found = false;
+    let mut prepared = Vec::with_capacity(statements.len());
+    for statement in statements {
+        match statement {
+            ast::Stmt::Function {
+                ref name,
+                ref parameters,
+                span,
+                ..
+            } if name == "main" => {
+                if found {
+                    return Err(RilsError::Runtime(RuntimeError {
+                        message: "project entry contains more than one `fn main()`".into(),
+                        span,
+                        stack: Vec::new(),
+                    }));
+                }
+                if !parameters.is_empty() {
+                    return Err(RilsError::Runtime(RuntimeError {
+                        message: "project entry `fn main()` must not have parameters".into(),
+                        span,
+                        stack: Vec::new(),
+                    }));
+                }
+                found = true;
+                prepared.push(ast::Stmt::Public {
+                    statement: Box::new(statement),
+                    span,
+                });
+            }
+            ast::Stmt::Public { statement, span } => {
+                if let ast::Stmt::Function {
+                    name,
+                    parameters,
+                    span: function_span,
+                    ..
+                } = statement.as_ref()
+                    && name == "main"
+                {
+                    if found {
+                        return Err(RilsError::Runtime(RuntimeError {
+                            message: "project entry contains more than one `fn main()`".into(),
+                            span: *function_span,
+                            stack: Vec::new(),
+                        }));
+                    }
+                    if !parameters.is_empty() {
+                        return Err(RilsError::Runtime(RuntimeError {
+                            message: "project entry `fn main()` must not have parameters".into(),
+                            span: *function_span,
+                            stack: Vec::new(),
+                        }));
+                    }
+                    found = true;
+                }
+                prepared.push(ast::Stmt::Public { statement, span });
+            }
+            statement => prepared.push(statement),
+        }
+    }
+    if !found {
+        return Err(module_message(
+            "a rils.toml project entry must define a zero-parameter `fn main()`".into(),
+        ));
+    }
+    Ok(prepared)
+}
+
+fn reject_external_module_declarations(statements: &[ast::Stmt]) -> Result<(), RilsError> {
+    for statement in statements {
+        let statement = match statement {
+            ast::Stmt::Public { statement, .. } => statement.as_ref(),
+            statement => statement,
+        };
+        if let ast::Stmt::Module {
+            name,
+            statements: None,
+            span,
+            ..
+        } = statement
+        {
+            return Err(RilsError::Runtime(RuntimeError {
+                message: format!(
+                    "external `mod {name};` declarations are not used in rils.toml projects; reference the module with `use` or a qualified path"
+                ),
+                span: *span,
+                stack: Vec::new(),
+            }));
+        }
+        if let ast::Stmt::Module {
+            statements: Some(statements),
+            ..
+        } = statement
+        {
+            reject_external_module_declarations(statements)?;
+        }
+    }
+    Ok(())
+}
+
+fn insert_project_module(
+    root: &mut ProjectModuleNode,
+    module_path: &str,
+    statements: Vec<ast::Stmt>,
+) {
+    let mut node = root;
+    for segment in module_path.split("::") {
+        node = node.children.entry(segment.to_owned()).or_default();
+    }
+    node.statements = statements;
+}
+
+fn project_module_statements(node: ProjectModuleNode) -> Vec<ast::Stmt> {
+    let mut statements = node.statements;
+    for (name, child) in node.children {
+        let module = ast::Stmt::Module {
+            name: name.clone(),
+            name_span: Span::default(),
+            statements: Some(project_module_statements(child)),
+            span: Span::default(),
+        };
+        statements.push(ast::Stmt::Public {
+            statement: Box::new(module),
+            span: Span::default(),
+        });
+    }
+    statements
+}
+
 fn module_load_error(path: &Path, error: impl fmt::Display) -> RilsError {
     module_message(format!(
         "failed to load module `{}`: {error}",
@@ -513,10 +718,76 @@ pub fn compile(source: &str) -> Result<BytecodeModule, CompileError> {
     bytecode::compile(source)
 }
 
+/// Compiles Rils source using declarations supplied by a host contract.
+pub fn compile_with_host(
+    source: &str,
+    host: &HostContract,
+) -> Result<BytecodeModule, CompileError> {
+    bytecode::compile_with_host(source, host)
+}
+
 /// Loads a Rils source file and its external modules, then compiles them into a
 /// reusable in-memory bytecode module.
 pub fn compile_file(path: impl AsRef<Path>) -> Result<BytecodeModule, CompileError> {
     let path = path.as_ref();
+    let project = discover_entry_project(path).map_err(|error| CompileError {
+        message: error.to_string(),
+        span: Span::default(),
+    })?;
+    let mut host: Option<HostContract> = None;
+    for manifest in project.host_manifests() {
+        let bytes = fs::read(manifest).map_err(|error| CompileError {
+            message: format!(
+                "failed to read host manifest `{}`: {error}",
+                manifest.display()
+            ),
+            span: Span::default(),
+        })?;
+        let fragment =
+            HostContract::from_manifest_bytes(&bytes).map_err(|message| CompileError {
+                message: format!("invalid host manifest `{}`: {message}", manifest.display()),
+                span: Span::default(),
+            })?;
+        if let Some(host) = &mut host {
+            host.merge(&fragment).map_err(|message| CompileError {
+                message: format!(
+                    "cannot merge host manifest `{}`: {message}",
+                    manifest.display()
+                ),
+                span: Span::default(),
+            })?;
+        } else {
+            host = Some(fragment);
+        }
+    }
+    let host = host.unwrap_or_default();
+    compile_project_file_with_host(path, &project, &host)
+}
+
+/// Loads and compiles a Rils module tree using declarations supplied by a host contract.
+pub fn compile_file_with_host(
+    path: impl AsRef<Path>,
+    host: &HostContract,
+) -> Result<BytecodeModule, CompileError> {
+    let path = path.as_ref();
+    let project = discover_entry_project(path).map_err(|error| CompileError {
+        message: error.to_string(),
+        span: Span::default(),
+    })?;
+    compile_project_file_with_host(path, &project, host)
+}
+
+fn discover_entry_project(path: &Path) -> Result<Project, ProjectError> {
+    Project::discover_configured(path, None)?
+        .map(Ok)
+        .unwrap_or_else(|| Project::for_legacy_entry(path))
+}
+
+fn compile_project_file_with_host(
+    path: &Path,
+    project: &Project,
+    host: &HostContract,
+) -> Result<BytecodeModule, CompileError> {
     let source = fs::read_to_string(path).map_err(|error| CompileError {
         message: format!("failed to load `{}`: {error}", path.display()),
         span: Span::default(),
@@ -529,18 +800,13 @@ pub fn compile_file(path: impl AsRef<Path>) -> Result<BytecodeModule, CompileErr
         message: error.message,
         span: error.span,
     })?;
-    let base = path.parent().unwrap_or_else(|| Path::new("."));
-    let mut loading = HashSet::new();
-    if let Ok(canonical) = path.canonicalize() {
-        loading.insert(canonical);
-    }
-    load_external_modules(&mut program.statements, base, &[], &mut loading).map_err(|error| {
+    load_file_modules(&mut program.statements, path, project, &[]).map_err(|error| {
         CompileError {
             message: error.to_string(),
             span: error.span(),
         }
     })?;
-    bytecode::compile_program(&program)
+    bytecode::compile_program_with_host(&program, host)
 }
 
 #[cfg(test)]

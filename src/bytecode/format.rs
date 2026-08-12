@@ -23,7 +23,7 @@ use super::{
 };
 
 const MAGIC: &[u8; 8] = b"RILBC\0\0\0";
-pub const BYTECODE_FORMAT_VERSION: u16 = 1;
+pub const BYTECODE_FORMAT_VERSION: u16 = 3;
 pub const BYTECODE_LANGUAGE_VERSION: (u16, u16, u16) = (0, 1, 0);
 
 const HEADER_LEN: usize = 32;
@@ -1543,6 +1543,16 @@ fn write_instruction(writer: &mut Writer, value: &SpannedInstruction) -> Result<
             writer.u8(write_unary(*operator));
             writer.index(*operand, "operand")?;
         }
+        Instruction::Cast {
+            destination,
+            source,
+            target,
+        } => {
+            writer.u8(42);
+            writer.index(*destination, "destination")?;
+            writer.index(*source, "source")?;
+            writer.u8(write_integer_type(*target));
+        }
         Instruction::Binary {
             destination,
             left,
@@ -1583,6 +1593,21 @@ fn write_instruction(writer: &mut Writer, value: &SpannedInstruction) -> Result<
             writer.u8(22);
             writer.index(*destination, "destination")?;
             writer.index(*import, "import")?;
+            writer.indices(arguments)?;
+        }
+        Instruction::CallIntrinsic {
+            destination,
+            intrinsic,
+            target,
+            arguments,
+        } => {
+            writer.u8(43);
+            writer.index(*destination, "destination")?;
+            writer.u16(*intrinsic as u16);
+            writer.bool(target.is_some());
+            if let Some(target) = target {
+                writer.u8(write_integer_type(*target));
+            }
             writer.indices(arguments)?;
         }
         Instruction::ConstructRecord {
@@ -1940,6 +1965,32 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruction> {
             source: reader.index()?,
         },
         41 => Instruction::MatchFail,
+        42 => Instruction::Cast {
+            destination: reader.index()?,
+            source: reader.index()?,
+            target: read_integer_type(reader.u8()?)?,
+        },
+        43 => {
+            let destination = reader.index()?;
+            let raw_intrinsic = reader.u16()?;
+            let intrinsic = rils_builtins::INTEGER_INTRINSICS
+                .iter()
+                .find(|item| item.id as u16 == raw_intrinsic)
+                .map(|item| item.id)
+                .ok_or_else(|| {
+                    BytecodeFormatError::new(format!("invalid intrinsic id {raw_intrinsic}"))
+                })?;
+            let target = reader
+                .bool()?
+                .then(|| read_integer_type(reader.u8()?))
+                .transpose()?;
+            Instruction::CallIntrinsic {
+                destination,
+                intrinsic,
+                target,
+                arguments: reader.indices()?,
+            }
+        }
         value => {
             return Err(BytecodeFormatError::new(format!(
                 "invalid instruction opcode {value}"

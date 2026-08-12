@@ -1,5 +1,14 @@
 pub mod hir;
+mod host;
 pub mod mir;
+
+pub use host::{
+    HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_MANIFEST_FORMAT_VERSION,
+    HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
+    HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
+    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
+    HostFunctionDeclaration, HostModuleDeclaration, HostThreadAffinity,
+};
 
 mod ast {
     pub(crate) use rils_frontend::ast::*;
@@ -16,11 +25,7 @@ mod types {
 
 use std::{error::Error, fmt};
 
-use rils_frontend::{
-    analysis::{DiagnosticSeverity, analyze_program},
-    ast::Program,
-    source::Span,
-};
+use rils_frontend::{analysis::DiagnosticSeverity, ast::Program, source::Span};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompileError {
@@ -55,6 +60,13 @@ impl fmt::Display for CompileError {
 impl Error for CompileError {}
 
 pub fn compile(source: &str) -> Result<mir::MirProgram, CompileError> {
+    compile_with_host(source, &HostContract::new())
+}
+
+pub fn compile_with_host(
+    source: &str,
+    host: &HostContract,
+) -> Result<mir::MirProgram, CompileError> {
     let tokens = rils_frontend::lexer::lex(source).map_err(|error| CompileError {
         message: error.message,
         span: error.span,
@@ -63,26 +75,36 @@ pub fn compile(source: &str) -> Result<mir::MirProgram, CompileError> {
         message: error.message,
         span: error.span,
     })?;
-    compile_program(&program)
+    compile_program_with_host(&program, host)
 }
 
 pub fn compile_program(program: &Program) -> Result<mir::MirProgram, CompileError> {
+    compile_program_with_host(program, &HostContract::new())
+}
+
+pub fn compile_program_with_host(
+    program: &Program,
+    host: &HostContract,
+) -> Result<mir::MirProgram, CompileError> {
     let mut program = program.clone();
-    rils_frontend::resolve_numeric_literals(&mut program).map_err(|error| CompileError {
-        message: error.message,
-        span: error.span,
-    })?;
-    if let Some(diagnostic) = analyze_program(&program)
-        .diagnostics
-        .into_iter()
-        .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+    let signatures = host.signatures();
+    rils_frontend::resolve_numeric_literals_with_host_functions(&mut program, &signatures)
+        .map_err(|error| CompileError {
+            message: error.message,
+            span: error.span,
+        })?;
+    if let Some(diagnostic) =
+        rils_frontend::analysis::analyze_program_with_host_functions(&program, &signatures)
+            .diagnostics
+            .into_iter()
+            .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
     {
         return Err(CompileError {
             message: diagnostic.message,
             span: diagnostic.span,
         });
     }
-    mir::lower(hir::lower(&program)?)
+    mir::lower(hir::lower_with_host(&program, host)?)
 }
 
 #[cfg(test)]

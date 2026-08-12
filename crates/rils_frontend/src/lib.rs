@@ -17,6 +17,12 @@ pub mod types;
 pub use error::FrontendError;
 pub use lexer::{LexError, lex};
 pub use parser::{ParseError, parse};
-pub use resolution::{NumericResolutionError, resolve_numeric_literals};
+pub use resolution::{
+    NumericResolutionError, resolve_numeric_literals, resolve_numeric_literals_with_host_functions,
+};
+pub use rils_builtins::{
+    INTEGER_INTRINSICS, IntrinsicDeclaration, IntrinsicId, IntrinsicKind, TypePattern,
+    integer_associated_function, integer_method,
+};
 pub use source::Span;
 pub use types::{FloatType, FunctionSignature, IntegerType, RuntimeValue, Type};

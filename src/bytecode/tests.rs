@@ -1,4 +1,5 @@
 use super::*;
+use crate::FloatType;
 
 fn assert_matches_interpreter(source: &str) {
     let interpreted = crate::eval(source).expect("source should interpret");
@@ -416,6 +417,95 @@ fn rejects_unlinked_unauthorized_and_incompatible_imports() {
     wrong_abi.allow_capability("core");
     let error = module.execute_with_host(&wrong_abi).unwrap_err();
     assert!(error.message.contains("requires host ABI"));
+}
+
+#[test]
+fn compiles_validates_and_executes_custom_host_contract_imports() {
+    let mut contract = HostContract::new();
+    contract
+        .register_function(
+            100,
+            "unity_engine::math::add",
+            FunctionSignature::fixed(vec![Type::I32, Type::I32], Type::I32),
+            "unity.math",
+        )
+        .unwrap();
+
+    let module = compile_with_host("use unity_engine::math::add; add(20, 22)", &contract).unwrap();
+    assert_eq!(module.imports().len(), 1);
+    assert_eq!(module.imports()[0].name, "unity_engine::math::add");
+    assert_eq!(module.imports()[0].capability, "unity.math");
+
+    let mut host = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION);
+    host.allow_capability("unity.math");
+    host.register_function(
+        "unity_engine::math::add",
+        FunctionSignature::fixed(vec![Type::I32, Type::I32], Type::I32),
+        "unity.math",
+        |arguments| match arguments {
+            [Value::I32(left), Value::I32(right)] => Ok(Value::I32(left + right)),
+            _ => Err("unexpected arguments".into()),
+        },
+    )
+    .unwrap();
+
+    module.validate_host(&host).unwrap();
+    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(42));
+
+    let image = module.to_bytes().unwrap();
+    let loaded = BytecodeModule::from_bytes(&image).unwrap();
+    loaded.validate_host(&host).unwrap();
+    assert_eq!(loaded.execute_with_host(&host).unwrap(), Value::I32(42));
+}
+
+#[test]
+fn custom_host_contract_participates_in_static_type_checking() {
+    let mut contract = HostContract::new();
+    contract
+        .register_function(
+            101,
+            "unity_engine::time::scale",
+            FunctionSignature::fixed(
+                vec![Type::Float(FloatType::F32)],
+                Type::Float(FloatType::F32),
+            ),
+            "unity.time",
+        )
+        .unwrap();
+
+    let module = compile_with_host("unity_engine::time::scale(2.5)", &contract).unwrap();
+    let mut host = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION);
+    host.allow_capability("unity.time");
+    host.register_function(
+        "unity_engine::time::scale",
+        FunctionSignature::fixed(
+            vec![Type::Float(FloatType::F32)],
+            Type::Float(FloatType::F32),
+        ),
+        "unity.time",
+        |arguments| match arguments {
+            [Value::F32(value)] => Ok(Value::F32(value * 2.0)),
+            _ => Err("unexpected arguments".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(module.execute_with_host(&host).unwrap(), Value::F32(5.0));
+
+    let error = match compile_with_host("unity_engine::time::scale(true)", &contract) {
+        Ok(_) => panic!("host argument type mismatch should fail"),
+        Err(error) => error,
+    };
+    assert!(error.message.contains("argument"));
+}
+
+#[test]
+fn rejects_host_contract_with_incompatible_abi_before_lowering() {
+    let contract = HostContract::with_versions(BYTECODE_HOST_ABI_VERSION + 1, 1).unwrap();
+    let error = match compile_with_host("40 + 2", &contract) {
+        Ok(_) => panic!("incompatible host ABI should fail"),
+        Err(error) => error,
+    };
+    assert!(error.message.contains("incompatible"));
 }
 
 #[test]

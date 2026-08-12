@@ -179,6 +179,7 @@ pub(super) fn collect_use_aliases(
         match unwrapped_statement(statement) {
             Stmt::Use { path, alias, .. } => {
                 let absolute = path.join("::");
+                let anchored = resolve_anchored_path(prefix, path);
                 let relative = if prefix.is_empty() {
                     absolute.clone()
                 } else {
@@ -190,14 +191,14 @@ pub(super) fn collect_use_aliases(
                     .expect("use paths are non-empty")
                     .to_string();
                 if let Some(id) = functions
-                    .get(&absolute)
+                    .get(anchored.as_deref().unwrap_or(&absolute))
                     .or_else(|| functions.get(&relative))
                     .copied()
                 {
                     functions.insert(qualified_name(prefix, &alias), id);
                 }
                 if let Some(id) = types
-                    .get(&absolute)
+                    .get(anchored.as_deref().unwrap_or(&absolute))
                     .or_else(|| types.get(&relative))
                     .copied()
                 {
@@ -216,6 +217,34 @@ pub(super) fn collect_use_aliases(
             _ => {}
         }
     }
+}
+
+pub(super) fn resolve_anchored_path(prefix: &[String], path: &[String]) -> Option<String> {
+    let first = path.first()?.as_str();
+    if !matches!(first, "crate" | "self" | "super") {
+        return None;
+    }
+    let mut output = match first {
+        "crate" => Vec::new(),
+        "self" => prefix.to_vec(),
+        "super" => {
+            let mut output = prefix.to_vec();
+            output.pop()?;
+            output
+        }
+        _ => unreachable!(),
+    };
+    for segment in path.iter().skip(1) {
+        match segment.as_str() {
+            "crate" => output.clear(),
+            "self" => {}
+            "super" => {
+                output.pop()?;
+            }
+            _ => output.push(segment.clone()),
+        }
+    }
+    Some(output.join("::"))
 }
 
 pub(super) fn collect_method_symbols(

@@ -241,6 +241,18 @@ impl BytecodeModule {
                         ));
                     }
                 }
+                Instruction::Cast {
+                    destination,
+                    source,
+                    ..
+                } => {
+                    if invalid_register(*destination) || invalid_register(*source) {
+                        return Err(BytecodeError::new(
+                            "invalid integer cast operands",
+                            instruction.span,
+                        ));
+                    }
+                }
                 Instruction::Binary {
                     destination,
                     left,
@@ -305,6 +317,34 @@ impl BytecodeModule {
                     {
                         return Err(BytecodeError::new(
                             "invalid import call operands",
+                            instruction.span,
+                        ));
+                    }
+                }
+                Instruction::CallIntrinsic {
+                    destination,
+                    intrinsic,
+                    target,
+                    arguments,
+                } => {
+                    let declaration = rils_builtins::INTEGER_INTRINSICS
+                        .iter()
+                        .find(|item| item.id == *intrinsic);
+                    if invalid_register(*destination)
+                        || arguments.iter().any(|register| invalid_register(*register))
+                        || declaration.is_none()
+                        || declaration.is_some_and(|item| {
+                            arguments.len()
+                                != item.signature.parameters.len()
+                                    + usize::from(item.kind == rils_builtins::IntrinsicKind::Method)
+                        })
+                        || (target.is_some()
+                            != declaration.is_some_and(|item| {
+                                item.kind == rils_builtins::IntrinsicKind::AssociatedFunction
+                            }))
+                    {
+                        return Err(BytecodeError::new(
+                            "invalid intrinsic call operands",
                             instruction.span,
                         ));
                     }

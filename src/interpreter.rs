@@ -199,7 +199,7 @@ impl Interpreter {
                     ));
                 }
                 None => {
-                    let members = Environment::child(environment.clone());
+                    let members = Environment::module_child(environment.clone());
                     let module = Rc::new(ModuleValue {
                         name: segment.clone(),
                         members,

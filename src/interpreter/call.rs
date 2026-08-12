@@ -1,3 +1,4 @@
+use super::execution::anchored_environment;
 use super::*;
 use crate::environment::StorageSlot;
 
@@ -38,6 +39,11 @@ impl Interpreter {
                         elements: RefCell::new(elements),
                         element_type: RefCell::new(array.element_type.borrow().clone()),
                     })))
+                }
+                BuiltinFunction::IntegerIntrinsic { id, target } => {
+                    check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
+                    crate::numeric::execute_integer_intrinsic(id, Some(target), arguments)
+                        .map_err(|message| RuntimeError::new(message, span))
                 }
             },
             Value::NativeFunction(function) => {
@@ -212,8 +218,22 @@ impl Interpreter {
                     method.method,
                     BuiltinMethod::VecPush | BuiltinMethod::ResultUnwrapOr
                 ));
+                let arity = match method.method {
+                    BuiltinMethod::IntegerIntrinsic(id) => rils_builtins::INTEGER_INTRINSICS
+                        .iter()
+                        .find(|item| item.id == id)
+                        .map_or(arity, |item| item.signature.parameters.len()),
+                    _ => arity,
+                };
                 check_arity("builtin method", arity, arity, arguments.len(), span)?;
                 match method.method {
+                    BuiltinMethod::IntegerIntrinsic(id) => {
+                        let mut values = Vec::with_capacity(arguments.len() + 1);
+                        values.push((*method.receiver).clone());
+                        values.extend_from_slice(arguments);
+                        crate::numeric::execute_integer_intrinsic(id, None, &values)
+                            .map_err(|message| RuntimeError::new(message, span))
+                    }
                     BuiltinMethod::RangeIntoIter => Ok((*method.receiver).clone()),
                     BuiltinMethod::Clone => {
                         let value = match method.receiver.as_ref() {
@@ -713,6 +733,7 @@ impl Interpreter {
         environment: &EnvironmentRef,
         span: Span,
     ) -> Result<Value, RuntimeError> {
+        let (environment, segments) = anchored_environment(segments, environment, span)?;
         let Some(first) = segments.first() else {
             return Err(RuntimeError::new("empty path", span));
         };
@@ -765,6 +786,19 @@ impl Interpreter {
                     span,
                 )),
             },
+            Value::BuiltinType(BuiltinType::Integer(target)) => {
+                let intrinsic =
+                    rils_builtins::integer_associated_function(member).ok_or_else(|| {
+                        RuntimeError::new(
+                            format!("{target} has no associated function `{member}`"),
+                            span,
+                        )
+                    })?;
+                Ok(Value::BuiltinFunction(BuiltinFunction::IntegerIntrinsic {
+                    id: intrinsic.id,
+                    target,
+                }))
+            }
             Value::StructType(definition) => definition
                 .methods
                 .borrow()
@@ -878,6 +912,29 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         match &object {
+            Value::I8(_)
+            | Value::I16(_)
+            | Value::I32(_)
+            | Value::I64(_)
+            | Value::I128(_)
+            | Value::Isize(_)
+            | Value::U8(_)
+            | Value::U16(_)
+            | Value::U32(_)
+            | Value::U64(_)
+            | Value::U128(_)
+            | Value::Usize(_) => {
+                let intrinsic = rils_builtins::integer_method(name).ok_or_else(|| {
+                    RuntimeError::new(
+                        format!("{} has no method `{name}`", object.type_name()),
+                        span,
+                    )
+                })?;
+                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                    receiver: Rc::new(object.clone()),
+                    method: BuiltinMethod::IntegerIntrinsic(intrinsic.id),
+                })))
+            }
             Value::HostObject(instance) => instance
                 .type_definition
                 .methods

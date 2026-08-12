@@ -574,6 +574,11 @@ impl<'a> Checker<'a> {
                 self.discard(value);
                 self.typed_value(expression)
             }
+            Expr::Cast { operand, .. } => {
+                let value = self.expression(operand);
+                self.discard(value);
+                self.typed_value(expression)
+            }
             Expr::Binary { left, right, .. }
             | Expr::Logical { left, right, .. }
             | Expr::Range {

@@ -77,7 +77,7 @@ impl Interpreter {
                         *span,
                     ));
                 };
-                let members = Environment::child(environment.clone());
+                let members = Environment::module_child(environment.clone());
                 self.execute_statements(statements, members.clone())?;
                 let public = statements
                     .iter()
@@ -881,6 +881,7 @@ pub(super) fn resolve_visible_path(
     environment: &EnvironmentRef,
     span: Span,
 ) -> Result<Value, RuntimeError> {
+    let (environment, path) = anchored_environment(path, environment, span)?;
     let Some((first, rest)) = path.split_first() else {
         return Err(RuntimeError::new("empty path", span));
     };
@@ -909,4 +910,34 @@ pub(super) fn resolve_visible_path(
         })?;
     }
     Ok(value)
+}
+
+pub(super) fn anchored_environment<'a>(
+    path: &'a [String],
+    environment: &EnvironmentRef,
+    span: Span,
+) -> Result<(EnvironmentRef, &'a [String]), RuntimeError> {
+    let mut target = environment.clone();
+    let mut index = 0;
+    while let Some(segment) = path.get(index) {
+        match segment.as_str() {
+            "crate" => {
+                target = Environment::root(environment);
+                index += 1;
+            }
+            "self" => {
+                target = Environment::current_module(environment)
+                    .unwrap_or_else(|| Environment::root(environment));
+                index += 1;
+            }
+            "super" => {
+                target = Environment::parent_module(&target).ok_or_else(|| {
+                    RuntimeError::new("`super` cannot escape the crate root", span)
+                })?;
+                index += 1;
+            }
+            _ => break,
+        }
+    }
+    Ok((target, &path[index..]))
 }

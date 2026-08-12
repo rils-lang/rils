@@ -21,6 +21,35 @@ fn reports_undefined_names_without_executing() {
 }
 
 #[test]
+fn exposes_host_function_symbols_with_signatures() {
+    let functions = HashMap::from([(
+        "unity_engine::math::add".to_owned(),
+        FunctionSignature::fixed(vec![Type::I32, Type::I32], Type::I32),
+    )]);
+    let analysis =
+        analyze_with_host_functions("unity_engine::math::add(20, 22)", &functions).unwrap();
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "{:?}",
+        analysis.diagnostics
+    );
+    let symbol = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.name == "add")
+        .unwrap();
+    assert_eq!(symbol.kind, SymbolKind::Function);
+    assert_eq!(
+        symbol.inferred_type,
+        Some(functions.values().next().unwrap().as_type())
+    );
+    assert_eq!(
+        symbol.detail.as_deref(),
+        Some("host fn unity_engine::math::add(i32, i32) -> i32")
+    );
+}
+
+#[test]
 fn pattern_bindings_are_scoped() {
     let analysis = analyze("match Some(1) { Some(value) => value, None => 0 }; value").unwrap();
     assert_eq!(analysis.diagnostics.len(), 1);
@@ -758,4 +787,41 @@ fn merges_moves_from_all_loop_break_paths() {
         .filter(|diagnostic| diagnostic.message.contains("use of moved value `text`"))
         .count();
     assert_eq!(moved, 1, "{:?}", analysis.diagnostics);
+}
+
+#[test]
+fn reports_integer_casts_that_can_lose_information() {
+    let accepted = analyze("let index = 1_i32; index as usize").unwrap();
+    assert!(
+        accepted.diagnostics.is_empty(),
+        "{:?}",
+        accepted.diagnostics
+    );
+
+    let rejected = analyze("let value = 1usize; value as i32").unwrap();
+    assert!(rejected.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("cannot losslessly cast `usize` to `i32`")
+    }));
+}
+
+#[test]
+fn types_integer_intrinsics_and_rejects_them_on_other_values() {
+    let accepted = analyze(
+        "let value: i32 = 1; let checked = value.checked_add(2i32); i16::try_from(1usize);",
+    )
+    .unwrap();
+    assert!(
+        accepted.diagnostics.is_empty(),
+        "{:?}",
+        accepted.diagnostics
+    );
+
+    let rejected = analyze(r#""text".checked_add("other")"#).unwrap();
+    assert!(rejected.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("integer intrinsic `checked_add` is not available on `string`")
+    }));
 }

@@ -414,6 +414,17 @@ impl<'a> VirtualMachine<'a> {
                     self.frame_mut().registers[destination] =
                         Some(unary(operator, operand, instruction.span)?);
                 }
+                Instruction::Cast {
+                    destination,
+                    source,
+                    target,
+                } => {
+                    let source = self.take_register(source, instruction.span)?;
+                    self.frame_mut().registers[destination] = Some(
+                        crate::numeric::cast_integer(source, target)
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                    );
+                }
                 Instruction::Binary {
                     destination,
                     left,
@@ -560,6 +571,21 @@ impl<'a> VirtualMachine<'a> {
                             instruction.span,
                         ));
                     }
+                    self.frame_mut().registers[destination] = Some(value);
+                }
+                Instruction::CallIntrinsic {
+                    destination,
+                    intrinsic,
+                    target,
+                    arguments,
+                } => {
+                    let arguments = arguments
+                        .into_iter()
+                        .map(|register| self.take_register(register, instruction.span))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let value =
+                        crate::numeric::execute_integer_intrinsic(intrinsic, target, &arguments)
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::ConstructRecord {

@@ -128,7 +128,7 @@ impl Parser {
     }
 
     pub(super) fn factor(&mut self) -> Result<Expr, ParseError> {
-        let mut expression = self.unary()?;
+        let mut expression = self.cast()?;
         loop {
             let operator = if self.take(&TokenKind::Star).is_some() {
                 BinaryOp::Multiply
@@ -139,7 +139,27 @@ impl Parser {
             } else {
                 break;
             };
-            expression = self.binary(expression, operator, Self::unary)?;
+            expression = self.binary(expression, operator, Self::cast)?;
+        }
+        Ok(expression)
+    }
+
+    pub(super) fn cast(&mut self) -> Result<Expr, ParseError> {
+        let mut expression = self.unary()?;
+        while self.take(&TokenKind::As).is_some() {
+            let target = self.type_annotation()?;
+            if !matches!(target, Type::Integer(_)) {
+                return Err(ParseError {
+                    message: "`as` currently supports concrete integer target types only".into(),
+                    span: expression.span(),
+                });
+            }
+            let span = expression.span().merge(self.previous().span);
+            expression = Expr::Cast {
+                operand: Box::new(expression),
+                target,
+                span,
+            };
         }
         Ok(expression)
     }
@@ -330,7 +350,7 @@ impl Parser {
                 let mut span = token.span;
                 while self.take(&TokenKind::ColonColon).is_some() {
                     let (segment, segment_span) =
-                        self.expect_identifier("expected name after `::`")?;
+                        self.expect_path_segment("expected name after `::`")?;
                     segments.push(segment);
                     span = span.merge(segment_span);
                 }
@@ -342,6 +362,21 @@ impl Parser {
                 } else {
                     Expr::Path { segments, span }
                 }
+            }
+            kind @ (TokenKind::Crate | TokenKind::Super) => {
+                let mut segments = vec![match kind {
+                    TokenKind::Crate => "crate".into(),
+                    TokenKind::Super => "super".into(),
+                    _ => unreachable!(),
+                }];
+                let mut span = token.span;
+                while self.take(&TokenKind::ColonColon).is_some() {
+                    let (segment, segment_span) =
+                        self.expect_path_segment("expected name after `::`")?;
+                    segments.push(segment);
+                    span = span.merge(segment_span);
+                }
+                Expr::Path { segments, span }
             }
             TokenKind::Less => {
                 let target = self.type_annotation()?;

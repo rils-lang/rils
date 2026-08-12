@@ -279,6 +279,23 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            Expr::Cast {
+                operand,
+                target,
+                span,
+            } => {
+                self.expression(operand);
+                let source = self.ty(operand);
+                match (&source, target) {
+                    (Type::Integer(source), Type::Integer(target))
+                        if source.can_cast_losslessly_to(*target) => {}
+                    (Type::Unknown | Type::IntegerVariable(_), Type::Integer(_)) => {}
+                    _ => self.diagnostic(
+                        format!("cannot losslessly cast `{source}` to `{target}`"),
+                        *span,
+                    ),
+                }
+            }
             Expr::Binary {
                 left,
                 operator,
@@ -324,6 +341,21 @@ impl<'a> Checker<'a> {
                 self.expression(callee);
                 for argument in arguments {
                     self.expression(argument);
+                }
+                if let Expr::Member { object, name, .. } = callee.as_ref()
+                    && rils_builtins::integer_method(name).is_some()
+                {
+                    let receiver = self.ty(object);
+                    if !matches!(
+                        receiver,
+                        Type::Integer(_) | Type::IntegerVariable(_) | Type::Unknown
+                    ) {
+                        self.diagnostic(
+                            format!("integer intrinsic `{name}` is not available on `{receiver}`"),
+                            *span,
+                        );
+                        return;
+                    }
                 }
                 if self.check_builtin_call(callee, arguments, *span) {
                     return;

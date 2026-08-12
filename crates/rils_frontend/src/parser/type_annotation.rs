@@ -111,7 +111,7 @@ impl Parser {
             return Ok(Type::function(parameters, return_type));
         }
 
-        let (name, name_span) = self.expect_identifier("expected type name")?;
+        let (name, name_span) = self.expect_path_segment("expected type name")?;
         let generic_definition = self
             .generic_scopes
             .iter()
@@ -231,7 +231,7 @@ impl Parser {
                 let mut path = vec![name];
                 while self.take(&TokenKind::ColonColon).is_some() {
                     let (segment, span) =
-                        self.expect_identifier("expected type name after `::`")?;
+                        self.expect_path_segment("expected type name after `::`")?;
                     let builtin_path = matches!(
                         path.first().map(String::as_str),
                         Some("core" | "std" | "prelude")

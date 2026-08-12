@@ -308,6 +308,14 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     environment
         .borrow_mut()
         .define("Vec", Value::BuiltinType(BuiltinType::Vec), false, None);
+    for integer in crate::IntegerType::ALL {
+        environment.borrow_mut().define(
+            integer.name(),
+            Value::BuiltinType(BuiltinType::Integer(integer)),
+            false,
+            None,
+        );
+    }
     environment.borrow_mut().define(
         "Range",
         Value::StructType(Rc::new(StructType {
@@ -361,7 +369,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
 
 fn install_builtin_modules(environment: &EnvironmentRef) {
     let module = |name: &str, values: Vec<(&str, Value)>| {
-        let members = Environment::child(environment.clone());
+        let members = Environment::module_child(environment.clone());
         let mut public = std::collections::HashSet::new();
         for (member, value) in values {
             public.insert(member.to_string());

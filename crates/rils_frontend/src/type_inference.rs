@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{BinaryOp, Block, EnumVariant, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
     source::Span,
-    types::{Type, merge_types},
+    types::{FunctionSignature, Type, merge_types},
 };
 
 #[derive(Clone, Debug)]
@@ -41,8 +41,11 @@ enum VariantDefinition {
     Record(HashMap<String, Type>),
 }
 
-pub(crate) fn infer(program: &Program) -> InferenceResult {
-    Inferencer::new(program).run(program)
+pub(crate) fn infer_with_host_functions(
+    program: &Program,
+    host_functions: &HashMap<String, FunctionSignature>,
+) -> InferenceResult {
+    Inferencer::new(program, host_functions).run(program)
 }
 
 struct Inferencer {
@@ -52,10 +55,11 @@ struct Inferencer {
     result: InferenceResult,
     numeric_parents: HashMap<Span, Span>,
     numeric_fixed: HashMap<Span, Type>,
+    host_functions: HashMap<String, FunctionSignature>,
 }
 
 impl Inferencer {
-    fn new(program: &Program) -> Self {
+    fn new(program: &Program, host_functions: &HashMap<String, FunctionSignature>) -> Self {
         let mut globals = HashMap::new();
         for (name, return_type) in [
             ("#rils_native_print", Type::Unit),
@@ -76,6 +80,24 @@ impl Inferencer {
                 },
             );
         }
+        for (name, signature) in host_functions {
+            if !name.contains("::") {
+                globals.insert(
+                    name.clone(),
+                    Binding {
+                        ty: signature.as_type(),
+                    },
+                );
+            }
+        }
+        for integer in crate::types::IntegerType::ALL {
+            globals.insert(
+                integer.name().into(),
+                Binding {
+                    ty: Type::Integer(integer),
+                },
+            );
+        }
 
         let mut inferencer = Self {
             scopes: vec![globals],
@@ -84,6 +106,7 @@ impl Inferencer {
             result: InferenceResult::default(),
             numeric_parents: HashMap::new(),
             numeric_fixed: HashMap::new(),
+            host_functions: host_functions.clone(),
         };
         inferencer.collect_type_definitions(&program.statements);
         inferencer
@@ -387,7 +410,11 @@ impl Inferencer {
                 let name_span = alias_span
                     .unwrap_or_else(|| Span::new(span.end - 1 - name.len(), span.end - 1));
                 let path_name = path.join("::");
-                let ty = crate::standard_library::standard_function_signature(&path_name)
+                let ty = self
+                    .host_functions
+                    .get(&path_name)
+                    .cloned()
+                    .or_else(|| crate::standard_library::standard_function_signature(&path_name))
                     .map_or_else(
                         || {
                             if name.chars().next().is_some_and(char::is_uppercase) {
@@ -615,30 +642,48 @@ impl Inferencer {
             Expr::Variable { name, .. } => self
                 .lookup(name)
                 .map_or(Type::Unknown, |binding| binding.ty.clone()),
-            Expr::Path { segments, .. } => {
-                crate::standard_library::standard_function_signature(&segments.join("::"))
-                    .map(|signature| signature.as_type())
-                    .or_else(|| {
-                        segments
-                            .first()
-                            .and_then(|name| {
-                                self.types.contains_key(name).then(|| Type::Named {
-                                    name: name.clone(),
+            Expr::Path { segments, .. } => self
+                .host_functions
+                .get(&segments.join("::"))
+                .cloned()
+                .or_else(|| {
+                    crate::standard_library::standard_function_signature(&segments.join("::"))
+                })
+                .map(|signature| signature.as_type())
+                .or_else(|| {
+                    segments
+                        .first()
+                        .and_then(|name| {
+                            self.types.contains_key(name).then(|| Type::Named {
+                                name: name.clone(),
+                                arguments: Vec::new(),
+                            })
+                        })
+                        .or_else(|| {
+                            segments.last().and_then(|variant| {
+                                self.variant_owners.get(variant).map(|owner| Type::Named {
+                                    name: owner.clone(),
                                     arguments: Vec::new(),
                                 })
                             })
-                            .or_else(|| {
-                                segments.last().and_then(|variant| {
-                                    self.variant_owners.get(variant).map(|owner| Type::Named {
-                                        name: owner.clone(),
-                                        arguments: Vec::new(),
-                                    })
-                                })
-                            })
-                    })
-                    .unwrap_or(Type::Unknown)
-            }
+                        })
+                })
+                .or_else(|| {
+                    let [type_name, member] = segments.as_slice() else {
+                        return None;
+                    };
+                    let integer = crate::types::IntegerType::from_name(type_name)?;
+                    let intrinsic = rils_builtins::integer_associated_function(member)?;
+                    Some(integer_intrinsic_type(intrinsic, integer))
+                })
+                .unwrap_or(Type::Unknown),
             Expr::QualifiedPath { .. } => Type::opaque_function(),
+            Expr::Cast {
+                operand, target, ..
+            } => {
+                self.expression(operand, returns);
+                target.clone()
+            }
             Expr::Member { object, name, .. } => {
                 let object_type = self.expression(object, returns);
                 self.field_type(&object_type, name)
@@ -985,6 +1030,11 @@ impl Inferencer {
     }
 
     fn field_type(&self, object_type: &Type, field: &str) -> Type {
+        if let Type::Integer(integer) = object_type
+            && let Some(intrinsic) = rils_builtins::integer_method(field)
+        {
+            return integer_intrinsic_type(intrinsic, *integer);
+        }
         if let Type::Tuple(elements) = object_type {
             return field
                 .parse::<usize>()
@@ -1049,6 +1099,66 @@ impl Inferencer {
         self.scopes.pop();
         result
     }
+}
+
+fn integer_intrinsic_type(
+    intrinsic: &rils_builtins::IntrinsicDeclaration,
+    integer: crate::types::IntegerType,
+) -> Type {
+    use rils_builtins::TypePattern;
+    let self_type = Type::Integer(integer);
+    fn resolve(ty: TypePattern, self_type: &Type) -> Type {
+        match ty {
+            TypePattern::SelfType => self_type.clone(),
+            TypePattern::AnyInteger | TypePattern::Unknown => Type::Unknown,
+            TypePattern::Generic(name) => Type::Variable(name.into()),
+            TypePattern::Unit => Type::Unit,
+            TypePattern::Bool => Type::Bool,
+            TypePattern::String => Type::String,
+            TypePattern::F32 => Type::Float(crate::types::FloatType::F32),
+            TypePattern::F64 => Type::Float(crate::types::FloatType::F64),
+            TypePattern::Usize => Type::USIZE,
+            TypePattern::Named { path, arguments } => Type::Named {
+                name: path.into(),
+                arguments: arguments
+                    .iter()
+                    .map(|value| resolve(*value, self_type))
+                    .collect(),
+            },
+            TypePattern::Option(inner) => Type::Option(Box::new(resolve(*inner, self_type))),
+            TypePattern::Result { ok, error } => Type::Result(
+                Box::new(resolve(*ok, self_type)),
+                Box::new(resolve(*error, self_type)),
+            ),
+            TypePattern::Tuple(elements) => Type::Tuple(
+                elements
+                    .iter()
+                    .map(|value| resolve(*value, self_type))
+                    .collect(),
+            ),
+            TypePattern::Function { parameters, result } => Type::function(
+                parameters
+                    .iter()
+                    .map(|value| resolve(*value, self_type))
+                    .collect(),
+                resolve(*result, self_type),
+            ),
+            TypePattern::Reference { mutable, inner } => Type::Reference {
+                mutable,
+                inner: Box::new(resolve(*inner, self_type)),
+            },
+        }
+    }
+    Type::function(
+        intrinsic
+            .signature
+            .parameters
+            .iter()
+            .copied()
+            .map(|value| resolve(value, &self_type))
+            .collect(),
+        resolve(intrinsic.signature.result, &self_type),
+    )
 }
 
 fn literal_type(literal: &Literal, span: Span) -> Type {

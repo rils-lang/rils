@@ -43,6 +43,8 @@ impl Parser {
                 }
             }
             TokenKind::Identifier(name) => self.named_pattern(name, token.span),
+            TokenKind::Crate => self.named_pattern("crate".into(), token.span),
+            TokenKind::Super => self.named_pattern("super".into(), token.span),
             TokenKind::String(value) => Ok(Pattern::Literal {
                 value: Literal::String(value),
                 span: token.span,
@@ -96,7 +98,7 @@ impl Parser {
         let mut span = start;
         while self.take(&TokenKind::ColonColon).is_some() {
             let (segment, segment_span) =
-                self.expect_identifier("expected variant name after `::`")?;
+                self.expect_path_segment("expected variant name after `::`")?;
             path.push(segment);
             span = span.merge(segment_span);
         }

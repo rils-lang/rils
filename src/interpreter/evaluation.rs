@@ -400,6 +400,21 @@ impl Interpreter {
                 }
                 self.unary(*operator, value, *span)
             }
+            Expr::Cast {
+                operand,
+                target,
+                span,
+            } => {
+                let value = self.evaluate(operand, environment)?;
+                let Type::Integer(target) = target else {
+                    return Err(RuntimeError::new(
+                        "`as` currently supports concrete integer target types only",
+                        *span,
+                    ));
+                };
+                crate::numeric::cast_integer(value, *target)
+                    .map_err(|message| RuntimeError::new(message, *span))
+            }
             Expr::Binary {
                 left,
                 operator,

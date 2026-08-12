@@ -36,6 +36,58 @@ fn supports_concrete_numeric_types_char_and_contextual_usize_inference() {
 }
 
 #[test]
+fn casts_integers_without_silent_information_loss() {
+    let source = r#"
+        let values = [20, 22];
+        let index = 1_i32;
+        values[index as usize]
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(22));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(22));
+
+    let narrowing = match compile("let value = 1usize; value as i32") {
+        Ok(_) => panic!("lossy cast unexpectedly compiled"),
+        Err(error) => error,
+    };
+    assert!(
+        narrowing
+            .to_string()
+            .contains("cannot losslessly cast `usize` to `i32`"),
+        "{narrowing}"
+    );
+
+    let negative = eval("let value = -1i32; value as usize").unwrap_err();
+    assert!(negative.to_string().contains("without losing information"));
+    let negative = compile("let value = -1i32; value as usize")
+        .unwrap()
+        .execute()
+        .unwrap_err();
+    assert!(negative.to_string().contains("without losing information"));
+}
+
+#[test]
+fn integer_intrinsics_cover_fallible_conversion_and_overflow_modes() {
+    let source = r#"
+        let narrowed = i16::try_from(123usize);
+        assert!(is_ok(narrowed));
+        assert!(is_err(i16::try_from(100000usize)));
+        assert!(255u8.checked_add(1u8) == None);
+        assert!(255u8.wrapping_add(1u8) == 0u8);
+        assert!(255u8.saturating_add(1u8) == 255u8);
+        let overflowed = 255u8.overflowing_add(1u8);
+        assert!(overflowed.0 == 0u8);
+        assert!(overflowed.1);
+        assert!(type_of(42i32.to_f32()) == "f32");
+        42i32.to_f64()
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::F64(42.0));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::F64(42.0)
+    );
+}
+
+#[test]
 fn integer_ranges_preserve_their_concrete_type() {
     let source = r#"
         let mut total: u16 = 0u16;
@@ -2297,4 +2349,73 @@ fn bundled_examples_match_interpreter_and_vm() {
             path.display()
         );
     }
+}
+
+#[test]
+fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-project-runtime-test-{}-{unique}",
+        std::process::id()
+    ));
+    let scripts = root.join("Assets/Res/rils-script");
+    std::fs::create_dir_all(scripts.join("feature")).unwrap();
+    std::fs::write(
+        root.join("rils.toml"),
+        r#"
+            [project]
+            name = "unity_game"
+            script_paths = ["Assets/Res/rils-script"]
+        "#,
+    )
+    .unwrap();
+    std::fs::write(scripts.join("math.rils"), "pub fn answer() -> i32 { 41 }").unwrap();
+    let entry = scripts.join("feature/mod.rils");
+    std::fs::write(
+        &entry,
+        r#"
+            fn local() -> i32 { 1 }
+            fn main() -> i32 { self::local() + super::math::answer() }
+        "#,
+    )
+    .unwrap();
+
+    let interpreted = Engine::new().eval_file(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+    assert_eq!(interpreted, Value::I32(42));
+    assert_eq!(compiled, interpreted);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_entry_requires_main_but_legacy_files_do_not() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-project-main-test-{}-{unique}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(root.join("scripts")).unwrap();
+    std::fs::write(
+        root.join("rils.toml"),
+        "[project]\nname = \"game\"\nscript_paths = [\"scripts\"]\n",
+    )
+    .unwrap();
+    let entry = root.join("scripts/no_main.rils");
+    std::fs::write(&entry, "pub fn value() -> i32 { 42 }").unwrap();
+    let error = match compile_file(&entry) {
+        Ok(_) => panic!("project entry without main should fail"),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .message
+            .contains("must define a zero-parameter `fn main()`")
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -351,4 +351,17 @@ mod tests {
         let float = parse(lex("let value: float = 1.0;").unwrap()).unwrap_err();
         assert!(float.message.contains("`float` was removed"));
     }
+
+    #[test]
+    fn parses_crate_self_and_super_paths() {
+        let source = r#"
+            use crate::math::Value;
+            fn read(value: self::Value) {
+                crate::math::make();
+                self::helper();
+                super::super::shared::run();
+            }
+        "#;
+        parse(lex(source).unwrap()).unwrap();
+    }
 }

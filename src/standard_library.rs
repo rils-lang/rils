@@ -57,7 +57,7 @@ pub(super) fn install(
 
     let fs_module = Rc::new(ModuleValue {
         name: "fs".into(),
-        members: Environment::child(environment.clone()),
+        members: Environment::module_child(environment.clone()),
         public: RefCell::new(HashSet::new()),
     });
     install_fs_functions(&fs_module, error, error_kind);
@@ -300,12 +300,12 @@ pub(crate) fn bytecode_host_functions() -> Vec<(String, Rc<HostFunction>)> {
     let environment = Environment::global();
     let io = Rc::new(ModuleValue {
         name: "io".into(),
-        members: Environment::child(environment.clone()),
+        members: Environment::module_child(environment.clone()),
         public: RefCell::new(HashSet::new()),
     });
     let std = Rc::new(ModuleValue {
         name: "std".into(),
-        members: Environment::child(environment),
+        members: Environment::module_child(environment),
         public: RefCell::new(HashSet::new()),
     });
     install(&Environment::global(), &std, &io);
