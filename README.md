@@ -3,6 +3,9 @@
 Rils（Rust-Inspired Lightweight Script）是一门面向嵌入场景的轻量脚本语言。它采用熟悉的
 Rust 风格语法和显式所有权，同时保留脚本语言所需的快速验证与宿主集成能力。
 
+具体整数类型之间可用 `as` 显式转换，例如 `values[index as usize]`；静态检查会拒绝
+`usize as i32` 等可能缩小可表示范围的转换，有符号转无符号还会在运行时拒绝负值。
+
 ```rust
 struct Counter { value: i32 }
 
@@ -69,7 +72,7 @@ let value = engine.eval("total = total + 2; total")?;
 let module = rils::compile("let value = 40; value + 2")?;
 let value = module.execute()?;
 
-// 加载入口文件及其依赖的模块
+// 加载入口文件及其项目模块
 let module = rils::compile_file("scripts/main.rils")?;
 
 // 生成/加载实验性磁盘字节码；加载时会校验容器、版本、校验和和全部指令索引
@@ -79,12 +82,36 @@ let value = module.execute()?;
 ```
 
 CLI 同样支持 `rils compile scripts/main.rils -o scripts/main.rilbc`、
-`rils verify scripts/main.rilbc` 和 `rils run scripts/main.rilbc`。`compile_file` 会先递归解析
-`mod`，因此产物是无需源码文件布局即可加载的单个模块。
+`rils verify scripts/main.rilbc` 和 `rils run scripts/main.rilbc`。推荐在项目根目录提供
+`rils.toml`：
+
+```toml
+[project]
+name = "game_scripts"
+script_paths = ["Assets/Res/rils-script"]
+
+[host]
+manifest_dirs = [".rils/manifests"]
+```
+
+项目内文件会自动映射为模块并支持 `crate::`、`self::`、`super::`；作为入口的脚本定义
+零参数 `fn main()`。`compile_file` 输出无需保留源码目录的单一字节码模块。没有 `rils.toml` 时
+继续支持旧的 `mod name;` 文件加载规则。
+
+Host Manifest 可以按 Unity 模块或项目生成来源拆分到 `.rils/manifests/**/*.rilhm`。Analyzer 和
+Editor 编译会确定性合并 fragments；发布前可运行
+`rils host-manifest link .rils/manifests -o host.rilhm` 生成 Player 使用的单文件契约。
 
 字节码模块还可以按名称重复调用公开函数；宿主无关的实验性 C ABI 已放在
 [`crates/rils_capi`](crates/rils_capi)，当前提供 Windows DLL 与独立 C# facade。接口范围和限制见
 [`docs/capi`](docs/capi)。
+
+自定义字节码宿主 API 通过 `HostContract` 在编译期提供名称、固定签名和 capability，再由
+`BytecodeHost` 或 C ABI dispatcher 提供运行时实现。`compile_with_host` 生成普通 imports，
+`validate_host` 可在创建实例前显式完成预链接检查。运行时契约使用经过严格校验的 `.rilhm` 二进制
+格式；JSON 仅通过 `rils host-manifest compile/export-json` 显式转换，不在 Player 默认路径生成。
+VS Code 插件可通过 `rils.hostManifest.path` 加载同一契约；在宿主模块路径后输入 `::` 会补全可访问
+的子模块和函数，并显示签名及 capability。
 
 独立的 `.NET Standard 2.1` 封装位于 [`crates/rils_capi/csharp/Rils.CSharp`](crates/rils_capi/csharp/Rils.CSharp)，
 不依赖 Unity。运行 `python tools/build-capi.py` 会生成低层 P/Invoke，并一起输出 `rils_capi.dll`、
@@ -103,5 +130,5 @@ CLI 同样支持 `rils compile scripts/main.rils -o scripts/main.rilbc`、
 - [VS Code 插件](editors/vscode-rils)
 - [Unity 接入计划](docs/unity/rils-for-unity-plan.md)
 
-当前代码处于 `0.1.0` 候选阶段，适合语言实验、工具开发和受控宿主嵌入。`.rilbc` v1 已可实验
+当前代码处于 `0.1.0` 候选阶段，适合语言实验、工具开发和受控宿主嵌入。`.rilbc` v3 已可实验
 使用，但尚未承诺跨版本稳定；HashMap/HashSet 和完整的不可信脚本资源限制留待后续版本。

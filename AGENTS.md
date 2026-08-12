@@ -36,9 +36,11 @@
 # 标准库结构
 
 - 标准库采用 Rust 风格的分层路径：语言无关的基础能力放在 `core`，需要宿主或平台能力的内容放在 `std`，常用名称由 prelude 引入。
+- `rils_builtins` 是内建声明的唯一事实来源。内建类型、函数、成员、签名、文档、稳定 intrinsic ID 和实现后端不能在运行时、frontend、Analyzer 或 C API 中另建彼此独立的手写目录；新增能力应增加声明到实现、类型检查和编辑器可见性的自动一致性测试。
 - IO 和文件系统分别通过 `std::io`、`std::fs` 等明确路径访问；可失败操作返回结构化 `Result<T, E>`，不要用隐式异常替代。
 - 集合以数组、`Vec<T>`、`HashMap<K, V>`、`HashSet<T>` 等拥有型类型为基础，并通过 `Iterator` / `IntoIterator` 接入 `for`。
 - 新增标准库模块时，同步维护运行时签名、类型推断、Analyzer 可见符号和语言文档，避免解释器与编辑器各自维护不一致的接口。
+- 参考 Rust 基础类型 API 时必须适配 Rils 的引用约束；不能直接加入会把局部引用返回、存入 `Option`/容器或提升生命周期的方法。必要时提供 Copy、Clone 或消费式替代接口。
 
 # 编译器与字节码
 
@@ -55,6 +57,8 @@
 
 - `rils_capi` 保持宿主无关，不直接依赖 Unity API。Unity 特化逻辑留在 C# 项目或 Unity 工程，原生层只提供稳定 C ABI。
 - C ABI 不跨边界暴露 Rust enum、`String`、`Vec`、trait object 或 Rust 分配器所有权。可变长度输出优先使用“查询长度 + 写入调用方 buffer”或调用方明确提供的文件路径。
+- 核心 C ABI 的能力面以 Rils 运行时和宿主扩展模型为准，不能因当前 C#、Unity 或单一业务暂时不用而只暴露示例所需子集；C# 与 Unity facade 可以有意选择较小的高层封装面。复杂值应使用带明确所有权和销毁规则的 opaque handle 或调用方 buffer，不能暴露内部布局。
+- Host Manifest、内建声明和 Analyzer 的类型/成员描述应复用兼容的共享模型；新增 host type、method、constant、enum 等扩展点时，不要为各入口设计互不兼容的元数据体系。
 - `crates/rils_capi/include/rils.h` 是 ABI 与绑定生成器的输入，不是 Unity 运行时产物；修改后运行 `python tools/generate-csharp-bindings.py`，并用 `--check` 验证生成代码同步。
 - `Rils.CSharp` 保持 `.NET Standard 2.1`、不依赖 Unity API。业务项目通过该 facade 使用 P/Invoke，不要重复声明原生入口。
 - Unity drop-in 包固定为 `Rils.CSharp/` 根目录放 C# 源码和 asmdef，原生库放 `Internal/<architecture>/`；当前只支持 `Internal/x86_64/rils_capi.dll`。
@@ -66,6 +70,8 @@
 - 名称解析、类型/trait 检查、控制流、所有权和引用逃逸规则应尽量放在可由 CLI、字节码编译器和 Analyzer 共用的独立阶段。
 - 新增或修改语法时，同步更新 Analyzer、VS Code TextMate/语言配置以及对应测试；仅运行时内部优化不需要制造编辑器版本变更。
 - 保留准确源码 Span。跨文件能力应尽量保留文件身份，确保 Analyzer 定义/引用和诊断能指向正确 URI。
+- 项目级编译和分析必须为源码与声明保留稳定的 `SourceId`/`ModuleId`/`SymbolId`（或等价身份）；跨文件定义和引用不能只按符号文本与大致种类匹配，依赖文件诊断也不能借用入口文件的源码位置。
+- 类型成员补全应从解析后的 receiver 类型和共享声明表产生，覆盖内建、用户定义、trait 与宿主类型；只对简单变量名或少数硬编码类型特殊处理只能作为过渡实现。
 
 # 测试与文档
 
@@ -75,6 +81,7 @@
 - 文档中的“当前支持”“暂不支持”和后续计划必须与实现一致。已经完成的能力要及时从待办列表移除。
 - 用户可见升级同时更新根 `CHANGELOG.md` 的 `Unreleased`；破坏性类型、语法、ABI 或格式变化必须给出迁移说明。
 - C API/C# 改动至少运行绑定生成 `--check`、对应 Rust 测试、C# build 和真实动态库冒烟测试；Unity 导出改动还要核对导出源码与原生库和源产物一致。
+- 数值、容器、Manifest、C ABI 和项目模型等具有组合边界的能力应使用表驱动或矩阵测试覆盖类型、边界值、失败路径和多文件场景，不能只验证单个 happy path。性能目标应有可重复的 release benchmark；冻结为发布门槛后再设置能阻止显著回退的宽松 CI 阈值。
 
 # 编辑器插件
 
