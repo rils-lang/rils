@@ -49,13 +49,17 @@ def return_type(c_type: str) -> str:
 def parameter(c_parameter: str) -> str:
     value = " ".join(c_parameter.split())
     patterns = [
+        (r"const RilsHostFunction \*(\w+)", lambda name: f"NativeHostFunction* {name}"),
         (r"RilsHandle \*(\w+)", lambda name: f"out ulong {name}"),
         (r"RilsValue \*(\w+)", lambda name: f"out NativeValue {name}"),
+        (r"RilsSlice \*(\w+)", lambda name: f"NativeSlice* {name}"),
         (r"size_t \*(\w+)", lambda name: f"out UIntPtr {name}"),
         (r"const RilsValue \*(\w+)", lambda name: f"NativeValue* {name}"),
         (r"uint8_t \*(\w+)", lambda name: f"byte* {name}"),
         (r"RilsHandle (\w+)", lambda name: f"ulong {name}"),
         (r"RilsSlice (\w+)", lambda name: f"NativeSlice {name}"),
+        (r"RilsHostDispatcher (\w+)", lambda name: f"NativeHostDispatcher {name}"),
+        (r"void \*(\w+)", lambda name: f"IntPtr {name}"),
         (r"uint64_t (\w+)", lambda name: f"ulong {name}"),
         (r"size_t (\w+)", lambda name: f"UIntPtr {name}"),
     ]
@@ -117,6 +121,27 @@ internal struct NativeValue
     internal ulong Low;
     internal ulong High;
 }}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHostFunction
+{{
+    internal ulong FunctionId;
+    internal NativeSlice Name;
+    internal NativeSlice Capability;
+    internal uint* ParameterTags;
+    internal UIntPtr ParameterCount;
+    internal RilsValueTag ReturnTag;
+    internal uint Reserved;
+}}
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal unsafe delegate int NativeHostDispatcher(
+    IntPtr userData,
+    ulong functionId,
+    NativeValue* arguments,
+    UIntPtr argumentCount,
+    NativeValue* outValue,
+    NativeSlice* outError);
 
 internal static unsafe class NativeMethods
 {{

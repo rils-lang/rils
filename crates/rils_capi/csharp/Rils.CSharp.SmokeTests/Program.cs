@@ -10,6 +10,22 @@ static void Equal<T>(T expected, T actual, string label)
 
 Equal(1U, RilsRuntime.NativeAbiVersion, "ABI version");
 
+byte[] emptyHostManifest;
+using (var runtime = new RilsRuntime())
+{
+    emptyHostManifest = runtime.GetHostManifest();
+    Equal(true, emptyHostManifest.Length >= 64, "binary host manifest header size");
+    Equal((byte)'R', emptyHostManifest[0], "binary host manifest magic");
+}
+using (var runtime = new RilsRuntime())
+{
+    runtime.RegisterHostManifest(emptyHostManifest);
+    Equal(
+        true,
+        emptyHostManifest.SequenceEqual(runtime.GetHostManifest()),
+        "binary host manifest round trip");
+}
+
 using (var runtime = new RilsRuntime())
 {
     runtime.SetMaxSteps(100_000);

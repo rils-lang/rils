@@ -60,7 +60,11 @@ python tools/generate-csharp-bindings.py
 python tools/generate-csharp-bindings.py --check
 ```
 
-当前封装支持 C ABI 已开放的全部标量。`RilsInt128`/`RilsUInt128` 使用高低 64 位保存，`RilsChar` 保存完整 Unicode scalar value；字符串、集合、Option/Result 和宿主回调等待原生值协议扩展。
+当前高层封装支持 C ABI 已开放的全部普通调用标量。`RilsInt128`/`RilsUInt128` 使用高低 64 位保存，
+`RilsChar` 保存完整 Unicode scalar value。`RilsRuntime.RegisterHostManifest(byte[])` 和
+`GetHostManifest()` 注册、导出 `.rilhm` 二进制契约，不使用 JSON。生成的低层 P/Invoke 已包含标量
+HostContract dispatcher 入口；高层静态 dispatcher/Attribute 注册、字符串、集合和 Option/Result
+等待后续扩展。
 
 ## 导出到 Unity
 

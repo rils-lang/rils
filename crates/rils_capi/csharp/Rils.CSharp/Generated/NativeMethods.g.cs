@@ -55,6 +55,27 @@ internal struct NativeValue
     internal ulong High;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHostFunction
+{
+    internal ulong FunctionId;
+    internal NativeSlice Name;
+    internal NativeSlice Capability;
+    internal uint* ParameterTags;
+    internal UIntPtr ParameterCount;
+    internal RilsValueTag ReturnTag;
+    internal uint Reserved;
+}
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal unsafe delegate int NativeHostDispatcher(
+    IntPtr userData,
+    ulong functionId,
+    NativeValue* arguments,
+    UIntPtr argumentCount,
+    NativeValue* outValue,
+    NativeSlice* outError);
+
 internal static unsafe class NativeMethods
 {
     internal const string LibraryName = "rils_capi";
@@ -71,6 +92,27 @@ internal static unsafe class NativeMethods
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_max_steps")]
     internal static extern int RuntimeSetMaxSteps(ulong runtime, ulong max_steps);
 
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_functions")]
+    internal static extern int RuntimeRegisterHostFunctions(ulong runtime, NativeHostFunction* functions, UIntPtr function_count);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_manifest")]
+    internal static extern int RuntimeRegisterHostManifest(ulong runtime, NativeSlice manifest);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_host_manifest_size")]
+    internal static extern int RuntimeHostManifestSize(ulong runtime, out UIntPtr out_size);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_write_host_manifest")]
+    internal static extern int RuntimeWriteHostManifest(ulong runtime, byte* buffer, UIntPtr buffer_capacity, out UIntPtr out_written);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_host_dispatcher")]
+    internal static extern int RuntimeSetHostDispatcher(ulong runtime, NativeHostDispatcher dispatcher, IntPtr user_data);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_allow_capability")]
+    internal static extern int RuntimeAllowCapability(ulong runtime, NativeSlice capability);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_freeze_host_registry")]
+    internal static extern int RuntimeFreezeHostRegistry(ulong runtime);
+
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_compile")]
     internal static extern int ModuleCompile(ulong runtime, NativeSlice source_name, NativeSlice source, out ulong out_module);
 
@@ -82,6 +124,9 @@ internal static unsafe class NativeMethods
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_load_bytecode_file")]
     internal static extern int ModuleLoadBytecodeFile(ulong runtime, NativeSlice path, out ulong out_module);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_validate_host")]
+    internal static extern int ModuleValidateHost(ulong runtime, ulong module);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_bytecode_size")]
     internal static extern int ModuleBytecodeSize(ulong runtime, ulong module, out UIntPtr out_size);

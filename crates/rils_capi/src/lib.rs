@@ -5,13 +5,18 @@
 //! current non-`Send` bytecode representation without exposing Rust layouts.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
+    collections::HashSet,
+    ffi::c_void,
     panic::{AssertUnwindSafe, catch_unwind},
     ptr, slice,
     sync::atomic::{AtomicU16, Ordering},
 };
 
-use rils::{BytecodeModule, Span, Value};
+use rils::{
+    BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostContract, IntegerType, Span,
+    Type, Value,
+};
 
 pub const RILS_ABI_VERSION: u32 = 1;
 pub const RILS_STATUS_OK: i32 = 0;
@@ -68,6 +73,27 @@ pub struct RilsValue {
     pub high: u64,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RilsHostFunction {
+    pub function_id: u64,
+    pub name: RilsSlice,
+    pub capability: RilsSlice,
+    pub parameter_tags: *const u32,
+    pub parameter_count: usize,
+    pub return_tag: u32,
+    pub reserved: u32,
+}
+
+pub type RilsHostDispatcher = unsafe extern "C" fn(
+    user_data: *mut c_void,
+    function_id: u64,
+    arguments: *const RilsValue,
+    argument_count: usize,
+    out_value: *mut RilsValue,
+    out_error: *mut RilsSlice,
+) -> i32;
+
 #[derive(Default)]
 struct LastError {
     code: i32,
@@ -81,6 +107,12 @@ struct Runtime {
     max_steps: usize,
     modules: Vec<Handle>,
     instances: Vec<Handle>,
+    host_contract: HostContract,
+    host: BytecodeHost,
+    allowed_capabilities: HashSet<String>,
+    dispatcher: Option<RilsHostDispatcher>,
+    dispatcher_user_data: *mut c_void,
+    host_frozen: bool,
 }
 
 #[derive(Clone)]
@@ -181,6 +213,7 @@ thread_local! {
     static THREAD_ID: u16 = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed).max(1);
     static STATE: RefCell<State> = RefCell::new(State::default());
     static LAST_ERROR: RefCell<LastError> = RefCell::new(LastError::default());
+    static HOST_CALLBACK_ACTIVE: Cell<bool> = const { Cell::new(false) };
 }
 
 fn encode_handle(index: usize, generation: u32, kind: u8) -> Handle {
@@ -215,6 +248,14 @@ fn fail(code: i32, message: impl Into<String>, source_name: &str, span: Span) ->
 }
 
 fn status_entry(function: impl FnOnce() -> i32) -> i32 {
+    if HOST_CALLBACK_ACTIVE.with(Cell::get) {
+        return fail(
+            RILS_STATUS_INVALID_ARGUMENT,
+            "reentrant C API calls from a host dispatcher are not allowed",
+            "",
+            Span::default(),
+        );
+    }
     clear_error();
     match catch_unwind(AssertUnwindSafe(function)) {
         Ok(status) => status,
@@ -228,6 +269,15 @@ fn status_entry(function: impl FnOnce() -> i32) -> i32 {
 }
 
 fn handle_entry(function: impl FnOnce() -> Handle) -> Handle {
+    if HOST_CALLBACK_ACTIVE.with(Cell::get) {
+        fail(
+            RILS_STATUS_INVALID_ARGUMENT,
+            "reentrant C API calls from a host dispatcher are not allowed",
+            "",
+            Span::default(),
+        );
+        return 0;
+    }
     clear_error();
     match catch_unwind(AssertUnwindSafe(function)) {
         Ok(handle) => handle,
@@ -240,6 +290,26 @@ fn handle_entry(function: impl FnOnce() -> Handle) -> Handle {
             );
             0
         }
+    }
+}
+
+struct HostCallbackGuard;
+
+impl HostCallbackGuard {
+    fn enter() -> Result<Self, String> {
+        HOST_CALLBACK_ACTIVE.with(|active| {
+            if active.replace(true) {
+                Err("nested host dispatcher calls are not allowed".into())
+            } else {
+                Ok(Self)
+            }
+        })
+    }
+}
+
+impl Drop for HostCallbackGuard {
+    fn drop(&mut self) {
+        HOST_CALLBACK_ACTIVE.with(|active| active.set(false));
     }
 }
 
@@ -267,6 +337,29 @@ fn clone_module(runtime: Handle, module: Handle) -> Result<Module, i32> {
                     Span::default(),
                 )
             })
+    })
+}
+
+fn runtime_host_snapshot(runtime: Handle) -> Result<(HostContract, BytecodeHost), i32> {
+    STATE.with(|state| {
+        let state = state.borrow();
+        let runtime = state.runtimes.get(runtime).ok_or_else(|| {
+            fail(
+                RILS_STATUS_INVALID_HANDLE,
+                "invalid runtime handle",
+                "",
+                Span::default(),
+            )
+        })?;
+        if !runtime.host_contract.is_empty() && !runtime.host_frozen {
+            return Err(fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host registry must be frozen before module creation",
+                "",
+                Span::default(),
+            ));
+        }
+        Ok((runtime.host_contract.clone(), runtime.host.clone()))
     })
 }
 
@@ -461,6 +554,177 @@ fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue, i32> {
     Ok(value)
 }
 
+fn current_error_message() -> String {
+    LAST_ERROR.with(|error| error.borrow().message.clone())
+}
+
+fn portable_type_from_tag(tag: u32, allow_unit: bool) -> Result<Type, String> {
+    match tag {
+        RILS_VALUE_UNIT if allow_unit => Ok(Type::Unit),
+        RILS_VALUE_BOOL => Ok(Type::Bool),
+        RILS_VALUE_I32 => Ok(Type::Integer(IntegerType::I32)),
+        RILS_VALUE_I64 => Ok(Type::Integer(IntegerType::I64)),
+        RILS_VALUE_U32 => Ok(Type::Integer(IntegerType::U32)),
+        RILS_VALUE_U64 => Ok(Type::Integer(IntegerType::U64)),
+        RILS_VALUE_F32 => Ok(Type::Float(FloatType::F32)),
+        RILS_VALUE_F64 => Ok(Type::Float(FloatType::F64)),
+        _ => Err(format!(
+            "value tag {tag} is not supported by the portable host contract"
+        )),
+    }
+}
+
+fn portable_tag_from_type(ty: &Type, allow_unit: bool) -> Result<u32, String> {
+    match ty {
+        Type::Unit if allow_unit => Ok(RILS_VALUE_UNIT),
+        Type::Bool => Ok(RILS_VALUE_BOOL),
+        Type::Integer(IntegerType::I32) => Ok(RILS_VALUE_I32),
+        Type::Integer(IntegerType::I64) => Ok(RILS_VALUE_I64),
+        Type::Integer(IntegerType::U32) => Ok(RILS_VALUE_U32),
+        Type::Integer(IntegerType::U64) => Ok(RILS_VALUE_U64),
+        Type::Float(FloatType::F32) => Ok(RILS_VALUE_F32),
+        Type::Float(FloatType::F64) => Ok(RILS_VALUE_F64),
+        _ => Err(format!(
+            "host manifest type `{ty}` is not supported by the current C dispatcher ABI"
+        )),
+    }
+}
+
+fn validate_c_dispatcher_contract(contract: &HostContract) -> Result<(), String> {
+    if contract.host_abi_version() != rils::BYTECODE_HOST_ABI_VERSION {
+        return Err(format!(
+            "host manifest ABI {} is incompatible with runtime ABI {}",
+            contract.host_abi_version(),
+            rils::BYTECODE_HOST_ABI_VERSION
+        ));
+    }
+    for function in contract.functions() {
+        let parameters = function
+            .signature
+            .parameters
+            .as_ref()
+            .expect("host contract signatures are fixed");
+        for parameter in parameters {
+            portable_tag_from_type(parameter, false)?;
+        }
+        portable_tag_from_type(&function.signature.return_type, true)?;
+    }
+    Ok(())
+}
+
+fn copy_callback_error(error: RilsSlice) -> String {
+    if error.length == 0 {
+        return "host dispatcher returned an error".into();
+    }
+    if error.data.is_null() {
+        return "host dispatcher returned an invalid error slice".into();
+    }
+    // SAFETY: The dispatcher contract keeps this slice readable until the callback returns.
+    let bytes = unsafe { slice::from_raw_parts(error.data, error.length) };
+    std::str::from_utf8(bytes).map_or_else(
+        |_| "host dispatcher returned a non-UTF-8 error message".into(),
+        str::to_owned,
+    )
+}
+
+fn invoke_host_dispatcher(
+    dispatcher: RilsHostDispatcher,
+    user_data: *mut c_void,
+    function_id: u64,
+    function_name: &str,
+    signature: &FunctionSignature,
+    arguments: &[Value],
+) -> Result<Value, String> {
+    let parameters = signature
+        .parameters
+        .as_ref()
+        .ok_or_else(|| format!("host function `{function_name}` is variadic"))?;
+    if parameters.len() != arguments.len() {
+        return Err(format!(
+            "host function `{function_name}` expects {} arguments, found {}",
+            parameters.len(),
+            arguments.len()
+        ));
+    }
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        if parameter.constrain(argument).is_none() {
+            return Err(format!(
+                "host function `{function_name}` received `{}` for parameter type `{parameter}`",
+                argument.type_name()
+            ));
+        }
+    }
+    let encoded = arguments
+        .iter()
+        .cloned()
+        .map(|value| to_ffi_value(value, "").map_err(|_| current_error_message()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut result = RilsValue::default();
+    let mut error = RilsSlice::default();
+    let _callback_guard = HostCallbackGuard::enter()?;
+    // SAFETY: All pointers remain valid for the callback duration. The callback may only borrow
+    // them and must initialize `out_value` on success.
+    let status = unsafe {
+        dispatcher(
+            user_data,
+            function_id,
+            encoded.as_ptr(),
+            encoded.len(),
+            &mut result,
+            &mut error,
+        )
+    };
+    if status != RILS_STATUS_OK {
+        return Err(format!(
+            "host function `{function_name}` failed with status {status}: {}",
+            copy_callback_error(error)
+        ));
+    }
+    let result = from_ffi_value(result).map_err(|_| current_error_message())?;
+    signature.return_type.constrain(&result).ok_or_else(|| {
+        format!(
+            "host function `{function_name}` returned `{}`, expected `{}`",
+            result.type_name(),
+            signature.return_type
+        )
+    })
+}
+
+fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
+    let mut host = BytecodeHost::standard();
+    for capability in &runtime.allowed_capabilities {
+        host.allow_capability(capability.clone());
+    }
+    let dispatcher = runtime.dispatcher;
+    for function in runtime.host_contract.functions() {
+        let dispatcher = dispatcher.ok_or_else(|| {
+            "a host dispatcher must be set before freezing a non-empty host contract".to_string()
+        })?;
+        let user_data = runtime.dispatcher_user_data;
+        let function_id = function.function_id;
+        let function_name = function.name.clone();
+        let signature = function.signature.clone();
+        let callback_name = function_name.clone();
+        let callback_signature = signature.clone();
+        host.register_function(
+            function_name,
+            signature,
+            function.capability.clone(),
+            move |arguments| {
+                invoke_host_dispatcher(
+                    dispatcher,
+                    user_data,
+                    function_id,
+                    &callback_name,
+                    &callback_signature,
+                    arguments,
+                )
+            },
+        )?;
+    }
+    Ok(host)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn rils_abi_version() -> u32 {
     RILS_ABI_VERSION
@@ -474,6 +738,12 @@ pub extern "C" fn rils_runtime_create() -> Handle {
                 max_steps: 1_000_000,
                 modules: Vec::new(),
                 instances: Vec::new(),
+                host_contract: HostContract::new(),
+                host: BytecodeHost::standard(),
+                allowed_capabilities: HashSet::new(),
+                dispatcher: None,
+                dispatcher_user_data: ptr::null_mut(),
+                host_frozen: false,
             })
         })
     })
@@ -539,6 +809,424 @@ pub extern "C" fn rils_runtime_set_max_steps(runtime: Handle, max_steps: u64) ->
 }
 
 #[unsafe(no_mangle)]
+/// Registers a batch of host function declarations. Input data is copied.
+///
+/// # Safety
+///
+/// `functions` and every non-empty nested slice must remain readable for this call.
+pub unsafe extern "C" fn rils_runtime_register_host_functions(
+    runtime: Handle,
+    functions: *const RilsHostFunction,
+    function_count: usize,
+) -> i32 {
+    status_entry(|| {
+        if function_count != 0 && functions.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host function array is null",
+                "",
+                Span::default(),
+            );
+        }
+        let descriptors = if function_count == 0 {
+            &[]
+        } else {
+            // SAFETY: The caller promises a readable array for this call.
+            unsafe { slice::from_raw_parts(functions, function_count) }
+        };
+        let mut declarations = Vec::with_capacity(descriptors.len());
+        for descriptor in descriptors {
+            if descriptor.reserved != 0 || descriptor.function_id == 0 {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host function reserved fields must be zero and function id must be non-zero",
+                    "",
+                    Span::default(),
+                );
+            }
+            // SAFETY: Nested slices follow the same call-scoped input contract.
+            let name = match unsafe { read_utf8(descriptor.name, "host function name") } {
+                Ok(value) => value.to_owned(),
+                Err(status) => return status,
+            };
+            // SAFETY: Nested slices follow the same call-scoped input contract.
+            let capability =
+                match unsafe { read_utf8(descriptor.capability, "host function capability") } {
+                    Ok(value) => value.to_owned(),
+                    Err(status) => return status,
+                };
+            if descriptor.parameter_count != 0 && descriptor.parameter_tags.is_null() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host function parameter tag array is null",
+                    "",
+                    Span::default(),
+                );
+            }
+            let tags = if descriptor.parameter_count == 0 {
+                &[]
+            } else {
+                // SAFETY: The caller promises a readable tag array for this call.
+                unsafe {
+                    slice::from_raw_parts(descriptor.parameter_tags, descriptor.parameter_count)
+                }
+            };
+            let parameters = match tags
+                .iter()
+                .map(|tag| portable_type_from_tag(*tag, false))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(value) => value,
+                Err(message) => {
+                    return fail(RILS_STATUS_UNSUPPORTED_VALUE, message, "", Span::default());
+                }
+            };
+            let return_type = match portable_type_from_tag(descriptor.return_tag, true) {
+                Ok(value) => value,
+                Err(message) => {
+                    return fail(RILS_STATUS_UNSUPPORTED_VALUE, message, "", Span::default());
+                }
+            };
+            declarations.push((
+                descriptor.function_id,
+                name,
+                FunctionSignature::fixed(parameters, return_type),
+                capability,
+            ));
+        }
+
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host registry cannot change after freeze or module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            let mut contract = runtime.host_contract.clone();
+            for (function_id, name, signature, capability) in declarations {
+                if let Err(message) =
+                    contract.register_function(function_id, name, signature, capability)
+                {
+                    return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+                }
+            }
+            runtime.host_contract = contract;
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Registers a complete versioned binary host manifest. Input data is copied.
+///
+/// # Safety
+///
+/// A non-empty manifest slice must remain readable for this call.
+pub unsafe extern "C" fn rils_runtime_register_host_manifest(
+    runtime: Handle,
+    manifest: RilsSlice,
+) -> i32 {
+    status_entry(|| {
+        // SAFETY: The caller promises a readable call-scoped byte slice.
+        let manifest = match unsafe { read_bytes(manifest) } {
+            Ok(value) if !value.is_empty() => value,
+            Ok(_) => {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host manifest cannot be empty",
+                    "",
+                    Span::default(),
+                );
+            }
+            Err(status) => return status,
+        };
+        let contract = match HostContract::from_manifest_bytes(manifest) {
+            Ok(contract) => contract,
+            Err(message) => {
+                return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+            }
+        };
+        if let Err(message) = validate_c_dispatcher_contract(&contract) {
+            return fail(RILS_STATUS_UNSUPPORTED_VALUE, message, "", Span::default());
+        }
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host manifest cannot change after freeze or module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            if !runtime.host_contract.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host manifest must be registered before individual host functions",
+                    "",
+                    Span::default(),
+                );
+            }
+            runtime.host_contract = contract;
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Returns the canonical binary host manifest size for `runtime`.
+///
+/// # Safety
+///
+/// `out_size` must point to writable storage for one `size_t` value.
+pub unsafe extern "C" fn rils_runtime_host_manifest_size(
+    runtime: Handle,
+    out_size: *mut usize,
+) -> i32 {
+    status_entry(|| {
+        if out_size.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "out_size is null",
+                "",
+                Span::default(),
+            );
+        }
+        let manifest = STATE.with(|state| {
+            state
+                .borrow()
+                .runtimes
+                .get(runtime)
+                .map(|runtime| runtime.host_contract.to_manifest_bytes())
+        });
+        let Some(manifest) = manifest else {
+            return fail(
+                RILS_STATUS_INVALID_HANDLE,
+                "invalid runtime handle",
+                "",
+                Span::default(),
+            );
+        };
+        let manifest = match manifest {
+            Ok(manifest) => manifest,
+            Err(message) => {
+                return fail(RILS_STATUS_PANIC, message, "", Span::default());
+            }
+        };
+        // SAFETY: The pointer was checked and the caller promises writable storage.
+        unsafe { out_size.write(manifest.len()) };
+        RILS_STATUS_OK
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Writes the canonical binary host manifest into caller-owned memory.
+///
+/// # Safety
+///
+/// `out_written` must be writable. A non-empty buffer must be writable for
+/// `buffer_capacity` bytes.
+pub unsafe extern "C" fn rils_runtime_write_host_manifest(
+    runtime: Handle,
+    buffer: *mut u8,
+    buffer_capacity: usize,
+    out_written: *mut usize,
+) -> i32 {
+    status_entry(|| {
+        if out_written.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "out_written is null",
+                "",
+                Span::default(),
+            );
+        }
+        let manifest = STATE.with(|state| {
+            state
+                .borrow()
+                .runtimes
+                .get(runtime)
+                .map(|runtime| runtime.host_contract.to_manifest_bytes())
+        });
+        let Some(manifest) = manifest else {
+            return fail(
+                RILS_STATUS_INVALID_HANDLE,
+                "invalid runtime handle",
+                "",
+                Span::default(),
+            );
+        };
+        let manifest = match manifest {
+            Ok(manifest) => manifest,
+            Err(message) => {
+                return fail(RILS_STATUS_PANIC, message, "", Span::default());
+            }
+        };
+        // SAFETY: The pointer was checked and the caller promises writable storage.
+        unsafe { out_written.write(manifest.len()) };
+        if buffer_capacity < manifest.len() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                format!(
+                    "host manifest buffer is too small: requires {}, received {buffer_capacity}",
+                    manifest.len()
+                ),
+                "",
+                Span::default(),
+            );
+        }
+        if !manifest.is_empty() && buffer.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host manifest buffer is null",
+                "",
+                Span::default(),
+            );
+        }
+        // SAFETY: The destination is writable for at least `manifest.len()` bytes and cannot
+        // overlap the Rust-owned source buffer.
+        unsafe { ptr::copy_nonoverlapping(manifest.as_ptr(), buffer, manifest.len()) };
+        RILS_STATUS_OK
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rils_runtime_set_host_dispatcher(
+    runtime: Handle,
+    dispatcher: Option<RilsHostDispatcher>,
+    user_data: *mut c_void,
+) -> i32 {
+    status_entry(|| {
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host dispatcher cannot change after freeze or module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            runtime.dispatcher = dispatcher;
+            runtime.dispatcher_user_data = user_data;
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Grants one capability to bytecode executed by `runtime`. The name is copied.
+///
+/// # Safety
+///
+/// A non-empty capability slice must remain readable for this call.
+pub unsafe extern "C" fn rils_runtime_allow_capability(
+    runtime: Handle,
+    capability: RilsSlice,
+) -> i32 {
+    status_entry(|| {
+        // SAFETY: The caller promises a readable call-scoped slice.
+        let capability = match unsafe { read_utf8(capability, "host capability") } {
+            Ok(value) if !value.is_empty() => value.to_owned(),
+            Ok(_) => {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host capability cannot be empty",
+                    "",
+                    Span::default(),
+                );
+            }
+            Err(status) => return status,
+        };
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host capabilities cannot change after freeze or module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            runtime.allowed_capabilities.insert(capability);
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rils_runtime_freeze_host_registry(runtime: Handle) -> i32 {
+    status_entry(|| {
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen {
+                return RILS_STATUS_OK;
+            }
+            if !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host registry must be frozen before module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            let host = match build_runtime_host(runtime) {
+                Ok(host) => host,
+                Err(message) => {
+                    return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+                }
+            };
+            runtime.host = host;
+            runtime.host_frozen = true;
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
 /// Compiles a UTF-8 source slice into a module owned by `runtime`.
 ///
 /// # Safety
@@ -570,7 +1258,11 @@ pub unsafe extern "C" fn rils_module_compile(
             Ok(value) => value,
             Err(status) => return status,
         };
-        let bytecode = match rils::compile(source) {
+        let (contract, host) = match runtime_host_snapshot(runtime) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let bytecode = match rils::compile_with_host(source, &contract) {
             Ok(module) => module,
             Err(error) => {
                 return fail(
@@ -581,6 +1273,14 @@ pub unsafe extern "C" fn rils_module_compile(
                 );
             }
         };
+        if let Err(error) = bytecode.validate_host(&host) {
+            return fail(
+                RILS_STATUS_BYTECODE_ERROR,
+                error.message,
+                source_name,
+                error.span,
+            );
+        }
         STATE.with(|state| {
             let mut state = state.borrow_mut();
             if state.runtimes.get(runtime).is_none() {
@@ -643,12 +1343,19 @@ pub unsafe extern "C" fn rils_module_compile_file(
             Ok(value) => value,
             Err(status) => return status,
         };
-        let bytecode = match rils::compile_file(path) {
+        let (contract, host) = match runtime_host_snapshot(runtime) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let bytecode = match rils::compile_file_with_host(path, &contract) {
             Ok(module) => module,
             Err(error) => {
                 return fail(RILS_STATUS_COMPILE_ERROR, error.message, path, error.span);
             }
         };
+        if let Err(error) = bytecode.validate_host(&host) {
+            return fail(RILS_STATUS_BYTECODE_ERROR, error.message, path, error.span);
+        }
         STATE.with(|state| {
             let mut state = state.borrow_mut();
             if state.runtimes.get(runtime).is_none() {
@@ -714,6 +1421,18 @@ pub unsafe extern "C" fn rils_module_load_bytecode(
                 );
             }
         };
+        let (_, host) = match runtime_host_snapshot(runtime) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        if let Err(error) = bytecode.validate_host(&host) {
+            return fail(
+                RILS_STATUS_BYTECODE_ERROR,
+                error.message,
+                "<bytecode>",
+                error.span,
+            );
+        }
         STATE.with(|state| {
             let mut state = state.borrow_mut();
             if state.runtimes.get(runtime).is_none() {
@@ -787,6 +1506,13 @@ pub unsafe extern "C" fn rils_module_load_bytecode_file(
                 );
             }
         };
+        let (_, host) = match runtime_host_snapshot(runtime) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        if let Err(error) = bytecode.validate_host(&host) {
+            return fail(RILS_STATUS_BYTECODE_ERROR, error.message, path, error.span);
+        }
         STATE.with(|state| {
             let mut state = state.borrow_mut();
             if state.runtimes.get(runtime).is_none() {
@@ -812,6 +1538,29 @@ pub unsafe extern "C" fn rils_module_load_bytecode_file(
             unsafe { out_module.write(module) };
             RILS_STATUS_OK
         })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rils_module_validate_host(runtime: Handle, module: Handle) -> i32 {
+    status_entry(|| {
+        let module = match clone_module(runtime, module) {
+            Ok(module) => module,
+            Err(status) => return status,
+        };
+        let (_, host) = match runtime_host_snapshot(runtime) {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        match module.bytecode.validate_host(&host) {
+            Ok(()) => RILS_STATUS_OK,
+            Err(error) => fail(
+                RILS_STATUS_BYTECODE_ERROR,
+                error.message,
+                &module.source_name,
+                error.span,
+            ),
+        }
     })
 }
 
@@ -1133,9 +1882,9 @@ pub unsafe extern "C" fn rils_instance_execute(
             }
             let runtime_value = state.runtimes.get(runtime)?;
             let module = state.modules.get(instance_value.module)?.clone();
-            Some((runtime_value.max_steps, module))
+            Some((runtime_value.max_steps, runtime_value.host.clone(), module))
         });
-        let Some((max_steps, module)) = resolved else {
+        let Some((max_steps, host, module)) = resolved else {
             return fail(
                 RILS_STATUS_INVALID_HANDLE,
                 "invalid runtime or instance handle",
@@ -1145,7 +1894,7 @@ pub unsafe extern "C" fn rils_instance_execute(
         };
         let value = match module
             .bytecode
-            .execute_with_host_and_limit(&rils::BytecodeHost::standard(), max_steps)
+            .execute_with_host_and_limit(&host, max_steps)
         {
             Ok(value) => value,
             Err(error) => {
@@ -1219,9 +1968,9 @@ pub unsafe extern "C" fn rils_instance_call(
             }
             let runtime_value = state.runtimes.get(runtime)?;
             let module = state.modules.get(instance_value.module)?.clone();
-            Some((runtime_value.max_steps, module))
+            Some((runtime_value.max_steps, runtime_value.host.clone(), module))
         });
-        let Some((max_steps, module)) = resolved else {
+        let Some((max_steps, host, module)) = resolved else {
             return fail(
                 RILS_STATUS_INVALID_HANDLE,
                 "invalid runtime or instance handle",
@@ -1232,7 +1981,7 @@ pub unsafe extern "C" fn rils_instance_call(
         let value = match module.bytecode.call_with_host_and_limit(
             function_name,
             arguments,
-            &rils::BytecodeHost::standard(),
+            &host,
             max_steps,
         ) {
             Ok(value) => value,
@@ -1291,6 +2040,34 @@ pub extern "C" fn rils_last_error_span_end() -> u64 {
 mod tests {
     use super::*;
 
+    unsafe extern "C" fn add_dispatcher(
+        _user_data: *mut c_void,
+        function_id: u64,
+        arguments: *const RilsValue,
+        argument_count: usize,
+        out_value: *mut RilsValue,
+        _out_error: *mut RilsSlice,
+    ) -> i32 {
+        if function_id != 100 || argument_count != 2 || arguments.is_null() || out_value.is_null() {
+            return RILS_STATUS_INVALID_ARGUMENT;
+        }
+        // SAFETY: The native caller provides two readable arguments for this callback.
+        let arguments = unsafe { slice::from_raw_parts(arguments, argument_count) };
+        if arguments[0].tag != RILS_VALUE_I32 || arguments[1].tag != RILS_VALUE_I32 {
+            return RILS_STATUS_INVALID_ARGUMENT;
+        }
+        // SAFETY: The native caller provides writable output storage for this callback.
+        unsafe {
+            out_value.write(RilsValue {
+                tag: RILS_VALUE_I32,
+                reserved: 0,
+                low: (arguments[0].low as i64 + arguments[1].low as i64) as u64,
+                high: 0,
+            });
+        }
+        RILS_STATUS_OK
+    }
+
     fn bytes(value: &str) -> RilsSlice {
         RilsSlice {
             data: value.as_ptr(),
@@ -1303,6 +2080,126 @@ mod tests {
             data: value.as_ptr(),
             length: value.len(),
         }
+    }
+
+    #[test]
+    fn registers_freezes_and_dispatches_custom_host_functions() {
+        let runtime = rils_runtime_create();
+        let parameter_tags = [RILS_VALUE_I32, RILS_VALUE_I32];
+        let descriptor = RilsHostFunction {
+            function_id: 100,
+            name: bytes("unity_engine::math::add"),
+            capability: bytes("unity.math"),
+            parameter_tags: parameter_tags.as_ptr(),
+            parameter_count: parameter_tags.len(),
+            return_tag: RILS_VALUE_I32,
+            reserved: 0,
+        };
+        // SAFETY: All descriptor pointers remain readable for the registration call.
+        assert_eq!(
+            unsafe { rils_runtime_register_host_functions(runtime, &descriptor, 1) },
+            RILS_STATUS_OK
+        );
+        assert_eq!(
+            rils_runtime_set_host_dispatcher(runtime, Some(add_dispatcher), ptr::null_mut()),
+            RILS_STATUS_OK
+        );
+        // SAFETY: The capability slice remains readable for the call.
+        assert_eq!(
+            unsafe { rils_runtime_allow_capability(runtime, bytes("unity.math")) },
+            RILS_STATUS_OK
+        );
+        assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+
+        let source = "unity_engine::math::add(20, 22)";
+        let mut module = 0;
+        // SAFETY: Source slices and output storage remain valid for the call.
+        assert_eq!(
+            unsafe { rils_module_compile(runtime, bytes("host.rils"), bytes(source), &mut module) },
+            RILS_STATUS_OK
+        );
+        assert_eq!(rils_module_validate_host(runtime, module), RILS_STATUS_OK);
+        let mut instance = 0;
+        assert_eq!(
+            unsafe { rils_instance_create(runtime, module, &mut instance) },
+            RILS_STATUS_OK
+        );
+        let mut result = RilsValue::default();
+        // SAFETY: Output storage remains valid for the call.
+        assert_eq!(
+            unsafe { rils_instance_execute(runtime, instance, &mut result) },
+            RILS_STATUS_OK
+        );
+        assert_eq!(result.tag, RILS_VALUE_I32);
+        assert_eq!(result.low, 42);
+        assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+    }
+
+    #[test]
+    fn registers_and_exports_canonical_host_manifest() {
+        let mut contract = HostContract::new();
+        contract.register_module("unity_engine::math", 3).unwrap();
+        contract
+            .register_function(
+                100,
+                "unity_engine::math::add",
+                FunctionSignature::fixed(vec![Type::I32, Type::I32], Type::I32),
+                "unity.math",
+            )
+            .unwrap();
+        let manifest = contract.to_manifest_bytes().unwrap();
+        let runtime = rils_runtime_create();
+        // SAFETY: The manifest bytes remain readable for the registration call.
+        assert_eq!(
+            unsafe { rils_runtime_register_host_manifest(runtime, raw_bytes(&manifest)) },
+            RILS_STATUS_OK
+        );
+
+        let mut size = 0;
+        // SAFETY: The output size remains writable for the call.
+        assert_eq!(
+            unsafe { rils_runtime_host_manifest_size(runtime, &mut size) },
+            RILS_STATUS_OK
+        );
+        let mut exported = vec![0; size];
+        let mut written = 0;
+        // SAFETY: The output buffer and count remain writable for the call.
+        assert_eq!(
+            unsafe {
+                rils_runtime_write_host_manifest(
+                    runtime,
+                    exported.as_mut_ptr(),
+                    exported.len(),
+                    &mut written,
+                )
+            },
+            RILS_STATUS_OK
+        );
+        assert_eq!(written, size);
+        assert_eq!(exported, manifest);
+        assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+    }
+
+    #[test]
+    fn rejects_manifest_types_not_yet_supported_by_c_dispatcher() {
+        let mut contract = HostContract::new();
+        contract
+            .register_function(
+                200,
+                "unity_engine::debug::log",
+                FunctionSignature::fixed(vec![Type::String], Type::Unit),
+                "unity.debug",
+            )
+            .unwrap();
+        let manifest = contract.to_manifest_bytes().unwrap();
+        let runtime = rils_runtime_create();
+        // SAFETY: The manifest bytes remain readable for the call.
+        assert_eq!(
+            unsafe { rils_runtime_register_host_manifest(runtime, raw_bytes(&manifest)) },
+            RILS_STATUS_UNSUPPORTED_VALUE
+        );
+        assert!(current_error_message().contains("string"));
+        assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
     }
 
     #[test]

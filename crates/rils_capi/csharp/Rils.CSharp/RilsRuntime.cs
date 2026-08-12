@@ -82,6 +82,45 @@ namespace Rils.CSharp
             NativeInterop.Check(NativeMethods.RuntimeSetMaxSteps(_handle, maxSteps));
         }
 
+        public unsafe void RegisterHostManifest(byte[] manifest)
+        {
+            if (manifest == null) throw new ArgumentNullException(nameof(manifest));
+            EnsureUsable();
+
+            fixed (byte* manifestPointer = manifest)
+            {
+                NativeInterop.Check(NativeMethods.RuntimeRegisterHostManifest(
+                    _handle,
+                    NativeInterop.Slice(manifestPointer, manifest.Length)));
+            }
+        }
+
+        public unsafe byte[] GetHostManifest()
+        {
+            EnsureUsable();
+            NativeInterop.Check(NativeMethods.RuntimeHostManifestSize(_handle, out UIntPtr nativeSize));
+            ulong size = nativeSize.ToUInt64();
+            if (size > int.MaxValue)
+            {
+                throw new InvalidOperationException("Serialized Rils host manifest exceeds the managed array limit.");
+            }
+
+            byte[] manifest = new byte[checked((int)size)];
+            fixed (byte* manifestPointer = manifest)
+            {
+                NativeInterop.Check(NativeMethods.RuntimeWriteHostManifest(
+                    _handle,
+                    manifestPointer,
+                    new UIntPtr(checked((uint)manifest.Length)),
+                    out UIntPtr nativeWritten));
+                if (nativeWritten.ToUInt64() != size)
+                {
+                    throw new InvalidOperationException("Native Rils host manifest size changed while serializing.");
+                }
+            }
+            return manifest;
+        }
+
         public unsafe RilsModule Compile(string source, string sourceName = "<memory>")
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
