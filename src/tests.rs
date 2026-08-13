@@ -1258,6 +1258,81 @@ fn option_supports_or_xor_and_replace() {
 }
 
 #[test]
+fn option_and_result_support_lazy_combinators() {
+    assert_eq!(
+        integer(
+            r#"
+                fn double(value: i32) -> i32 { value * 2 }
+                fn maybe(value: i32) -> Option<i32> {
+                    if value > 0 { Some(value + 1) } else { None }
+                }
+                fn fallback() -> Option<i32> { Some(9) }
+                assert!(Some(20).map(double).unwrap() == 40);
+                assert!(Some(4).and_then(maybe).unwrap() == 5);
+                let missing: Option<i32> = None;
+                assert!(missing.or_else(fallback).unwrap() == 9);
+
+                fn ok_double(value: i32) -> Result<i32, string> { Ok(value * 2) }
+                fn error_len(value: string) -> usize { value.len() }
+                fn recover(value: string) -> Result<i32, usize> { Err(value.len()) }
+                let ok: Result<i32, string> = Ok(10);
+                assert!(ok.map(double).unwrap() == 20);
+                let failed: Result<i32, string> = Err("bad");
+                assert!(failed.map_err(error_len).unwrap_err() == 3usize);
+                let chained: Result<i32, string> = Ok(11);
+                assert!(chained.and_then(ok_double).unwrap() == 22);
+                let recovered: Result<i32, string> = Err("oops");
+                assert!(recovered.or_else(recover).unwrap_err() == 4usize);
+                4
+            "#,
+        ),
+        4
+    );
+}
+
+#[test]
+fn option_result_combinators_are_lazy_and_type_checked() {
+    assert_eq!(
+        integer(
+            r#"
+                fn fail_value(value: i32) -> i32 {
+                    let missing: Option<i32> = None;
+                    missing.unwrap()
+                }
+                fn fail_option() -> Option<i32> {
+                    let missing: Option<i32> = None;
+                    missing.unwrap();
+                    None
+                }
+                fn fail_error(value: string) -> usize {
+                    let missing: Option<usize> = None;
+                    missing.unwrap()
+                }
+                let none: Option<i32> = None;
+                assert!(none.map(fail_value).is_none());
+                assert!(Some(7).or_else(fail_option).unwrap() == 7);
+                let ok: Result<i32, string> = Ok(21);
+                ok.map_err(fail_error).unwrap() * 2
+            "#,
+        ),
+        42
+    );
+
+    for source in [
+        "fn wrong(value: i32) -> i32 { value } let value = Some(1); value.and_then(wrong)",
+        "fn wrong() -> i32 { 1 } let value: Option<i32> = None; value.or_else(wrong)",
+        "fn wrong(value: i32) -> Option<i32> { Some(value) } let value: Result<i32, string> = Ok(1); value.and_then(wrong)",
+    ] {
+        let error = eval(source).unwrap_err();
+        assert!(
+            error.to_string().contains("type mismatch")
+                || error.to_string().contains("callback must return"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn annotations_check_initializers_assignments_parameters_and_returns() {
     for source in [
         "let value: i32 = None;",

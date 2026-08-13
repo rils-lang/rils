@@ -100,6 +100,24 @@ fn provides_signature_help_for_builtin_methods() {
 }
 
 #[test]
+fn provides_generic_signature_help_for_option_map() {
+    let text = "fn double(value: i32) -> usize { 2usize }\nlet value = Some(1);\nvalue.map(";
+    let uri = "file:///builtin-generic-signature.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 2, "character": 10 }
+        }))
+        .unwrap();
+    assert_eq!(
+        help["signatures"][0]["label"],
+        "fn map(fn(i32) -> U) -> Option<U>"
+    );
+}
+
+#[test]
 fn provides_signature_help_for_integer_intrinsics() {
     let text = "let value: i32 = 1;\nvalue.checked_add(";
     let uri = "file:///integer-signature.rils".to_owned();
@@ -354,7 +372,7 @@ text.st"#;
         "{string_items}"
     );
 
-    let expression_text = "Some(1).un";
+    let expression_text = "Some(1).";
     let expression_uri = "file:///builtin-expression.rils".to_owned();
     let (connection, _client) = Connection::memory();
     let mut documents = HashMap::new();
@@ -382,13 +400,16 @@ text.st"#;
     let option_items = expression_server
         .completion(&json!({
             "textDocument": { "uri": expression_uri },
-            "position": { "line": 0, "character": 10 }
+            "position": { "line": 0, "character": 8 }
         }))
         .unwrap();
     assert!(
         option_items.as_array().is_some_and(|items| {
             items.iter().any(|item| item["label"] == "unwrap")
                 && items.iter().any(|item| item["label"] == "unwrap_or")
+                && items.iter().any(|item| item["label"] == "map")
+                && items.iter().any(|item| item["label"] == "and_then")
+                && items.iter().any(|item| item["label"] == "or_else")
         }),
         "{option_items}"
     );

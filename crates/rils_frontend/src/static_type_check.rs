@@ -357,6 +357,9 @@ impl<'a> Checker<'a> {
                         return;
                     }
                 }
+                if self.check_builtin_member_call(callee, arguments, *span) {
+                    return;
+                }
                 if self.check_builtin_call(callee, arguments, *span) {
                     return;
                 }
@@ -475,6 +478,37 @@ impl<'a> Checker<'a> {
                     "default argument",
                 );
             }
+        }
+        true
+    }
+
+    fn check_builtin_member_call(&mut self, callee: &Expr, arguments: &[Expr], span: Span) -> bool {
+        let Expr::Member { object, name, .. } = callee else {
+            return false;
+        };
+        if crate::standard_library::builtin_receiver_mode(&self.ty(object), name).is_none() {
+            return false;
+        }
+        let Type::Function {
+            parameters: Some(parameters),
+            ..
+        } = self.ty(callee)
+        else {
+            return false;
+        };
+        if parameters.len() != arguments.len() {
+            self.diagnostic(
+                format!(
+                    "method expects {} arguments, found {}",
+                    parameters.len(),
+                    arguments.len()
+                ),
+                span,
+            );
+            return true;
+        }
+        for (expected, argument) in parameters.iter().zip(arguments) {
+            self.expect(expected, self.ty(argument), argument.span(), "argument");
         }
         true
     }

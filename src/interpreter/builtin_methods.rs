@@ -450,7 +450,11 @@ impl Interpreter {
                 | rils_builtins::RuntimeMemberId::ResultUnwrapOr
                 | rils_builtins::RuntimeMemberId::ResultExpect
                 | rils_builtins::RuntimeMemberId::ResultOk
-                | rils_builtins::RuntimeMemberId::ResultErr),
+                | rils_builtins::RuntimeMemberId::ResultErr
+                | rils_builtins::RuntimeMemberId::ResultMap
+                | rils_builtins::RuntimeMemberId::ResultMapErr
+                | rils_builtins::RuntimeMemberId::ResultAndThen
+                | rils_builtins::RuntimeMemberId::ResultOrElse),
             )
             | BuiltinMethod::Runtime(
                 id @ (rils_builtins::RuntimeMemberId::ResultUnwrapErr
@@ -464,7 +468,10 @@ impl Interpreter {
                 | rils_builtins::RuntimeMemberId::OptionExpect
                 | rils_builtins::RuntimeMemberId::OptionTake
                 | rils_builtins::RuntimeMemberId::OptionOr
-                | rils_builtins::RuntimeMemberId::OptionXor),
+                | rils_builtins::RuntimeMemberId::OptionXor
+                | rils_builtins::RuntimeMemberId::OptionMap
+                | rils_builtins::RuntimeMemberId::OptionAndThen
+                | rils_builtins::RuntimeMemberId::OptionOrElse),
             )
             | BuiltinMethod::Runtime(id @ rils_builtins::RuntimeMemberId::OptionReplace) => {
                 self.call_option_result_method(id, method.receiver.as_ref(), arguments, span)

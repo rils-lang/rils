@@ -53,6 +53,10 @@ pub enum RuntimeMemberId {
     ResultErr = 54,
     ResultUnwrapErr = 55,
     ResultExpectErr = 56,
+    ResultMap = 57,
+    ResultMapErr = 58,
+    ResultAndThen = 59,
+    ResultOrElse = 60,
     OptionIsSome = 64,
     OptionIsNone = 65,
     OptionUnwrap = 66,
@@ -62,6 +66,9 @@ pub enum RuntimeMemberId {
     OptionOr = 70,
     OptionXor = 71,
     OptionReplace = 72,
+    OptionMap = 73,
+    OptionAndThen = 74,
+    OptionOrElse = 75,
     StringLen = 80,
     StringIsEmpty = 81,
     StringContains = 82,
@@ -108,7 +115,17 @@ impl RuntimeMemberId {
             Self::StringEndsWith => "core::string::ends_with",
             Self::StringFind => "core::string::find",
             Self::StringTrim => "core::string::trim",
-            Self::SequenceIntoIter | Self::IteratorNext | Self::RangeNext | Self::RangeIntoIter => {
+            Self::SequenceIntoIter
+            | Self::IteratorNext
+            | Self::RangeNext
+            | Self::RangeIntoIter
+            | Self::ResultMap
+            | Self::ResultMapErr
+            | Self::ResultAndThen
+            | Self::ResultOrElse
+            | Self::OptionMap
+            | Self::OptionAndThen
+            | Self::OptionOrElse => {
                 return None;
             }
         })
@@ -140,6 +157,7 @@ pub struct BuiltinMember {
     pub value_type: Option<TypePattern>,
     pub receiver: Option<ReceiverMode>,
     pub runtime: Option<RuntimeMemberId>,
+    pub type_parameters: &'static [&'static str],
     pub documentation: &'static str,
 }
 
@@ -163,6 +181,7 @@ macro_rules! member {
             value_type: Some($type),
             receiver: None,
             runtime: None,
+            type_parameters: &[],
             documentation: $documentation,
         }
     };
@@ -174,6 +193,19 @@ macro_rules! member {
             value_type: None,
             receiver: Some(ReceiverMode::$receiver),
             runtime: Some(RuntimeMemberId::$runtime),
+            type_parameters: &[],
+            documentation: $documentation,
+        }
+    };
+    ($name:literal, generic [$($generic:literal),+ $(,)?] method $receiver:ident [$($parameter:expr),* $(,)?] -> $result:expr, $runtime:ident, $documentation:literal) => {
+        BuiltinMember {
+            name: $name,
+            kind: BuiltinMemberKind::Method,
+            signature: Some(BuiltinSignature { parameters: &[$($parameter),*], result: $result, variadic: false }),
+            value_type: None,
+            receiver: Some(ReceiverMode::$receiver),
+            runtime: Some(RuntimeMemberId::$runtime),
+            type_parameters: &[$($generic),+],
             documentation: $documentation,
         }
     };
@@ -185,6 +217,7 @@ macro_rules! member {
             value_type: None,
             receiver: None,
             runtime: None,
+            type_parameters: &[],
             documentation: $documentation,
         }
     };
@@ -203,6 +236,32 @@ macro_rules! builtin {
 
 const T: TypePattern = TypePattern::Generic("T");
 const E: TypePattern = TypePattern::Generic("E");
+const U: TypePattern = TypePattern::Generic("U");
+const F: TypePattern = TypePattern::Generic("F");
+const FN_T_U: TypePattern = TypePattern::Function {
+    parameters: &[T],
+    result: &U,
+};
+const FN_T_OPTION_U: TypePattern = TypePattern::Function {
+    parameters: &[T],
+    result: &TypePattern::Option(&U),
+};
+const FN_OPTION_T: TypePattern = TypePattern::Function {
+    parameters: &[],
+    result: &TypePattern::Option(&T),
+};
+const FN_E_F: TypePattern = TypePattern::Function {
+    parameters: &[E],
+    result: &F,
+};
+const FN_T_RESULT_U_E: TypePattern = TypePattern::Function {
+    parameters: &[T],
+    result: &TypePattern::Result { ok: &U, error: &E },
+};
+const FN_E_RESULT_T_F: TypePattern = TypePattern::Function {
+    parameters: &[E],
+    result: &TypePattern::Result { ok: &T, error: &F },
+};
 const OPTION_MEMBERS: &[BuiltinMember] = &[
     member!(
         "None",
@@ -220,6 +279,9 @@ const OPTION_MEMBERS: &[BuiltinMember] = &[
     member!("or", method Owned [TypePattern::SelfType] -> TypePattern::SelfType, OptionOr, "Returns this Option when present, otherwise the supplied Option."),
     member!("xor", method Owned [TypePattern::SelfType] -> TypePattern::SelfType, OptionXor, "Returns the present Option only when exactly one operand is present."),
     member!("replace", method Mutable [T] -> TypePattern::SelfType, OptionReplace, "Replaces the contained value and returns the previous Option."),
+    member!("map", generic ["U"] method Owned [FN_T_U] -> TypePattern::Option(&U), OptionMap, "Maps a present value with the supplied function."),
+    member!("and_then", generic ["U"] method Owned [FN_T_OPTION_U] -> TypePattern::Option(&U), OptionAndThen, "Calls the supplied function for a present value and flattens its Option result."),
+    member!("or_else", method Owned [FN_OPTION_T] -> TypePattern::SelfType, OptionOrElse, "Calls the supplied fallback only when the Option is None."),
 ];
 const RESULT_MEMBERS: &[BuiltinMember] = &[
     member!("Ok", Variant, T, "A successful result."),
@@ -233,6 +295,10 @@ const RESULT_MEMBERS: &[BuiltinMember] = &[
     member!("err", method Owned [] -> TypePattern::Option(&E), ResultErr, "Converts Result<T, E> to Option<E>."),
     member!("unwrap_err", method Owned [] -> E, ResultUnwrapErr, "Returns the Err value or fails when the Result is Ok."),
     member!("expect_err", method Owned [STRING] -> E, ResultExpectErr, "Returns the Err value or fails with the supplied message when the Result is Ok."),
+    member!("map", generic ["U"] method Owned [FN_T_U] -> TypePattern::Result { ok: &U, error: &E }, ResultMap, "Maps an Ok value while preserving Err."),
+    member!("map_err", generic ["F"] method Owned [FN_E_F] -> TypePattern::Result { ok: &T, error: &F }, ResultMapErr, "Maps an Err value while preserving Ok."),
+    member!("and_then", generic ["U"] method Owned [FN_T_RESULT_U_E] -> TypePattern::Result { ok: &U, error: &E }, ResultAndThen, "Calls the supplied function for Ok and flattens its Result."),
+    member!("or_else", generic ["F"] method Owned [FN_E_RESULT_T_F] -> TypePattern::Result { ok: &T, error: &F }, ResultOrElse, "Calls the supplied fallback for Err and flattens its Result."),
 ];
 const ITERATOR_MEMBERS: &[BuiltinMember] = &[
     member!(
@@ -582,6 +648,10 @@ mod tests {
             RuntimeMemberId::ResultErr,
             RuntimeMemberId::ResultUnwrapErr,
             RuntimeMemberId::ResultExpectErr,
+            RuntimeMemberId::ResultMap,
+            RuntimeMemberId::ResultMapErr,
+            RuntimeMemberId::ResultAndThen,
+            RuntimeMemberId::ResultOrElse,
             RuntimeMemberId::OptionIsSome,
             RuntimeMemberId::OptionIsNone,
             RuntimeMemberId::OptionUnwrap,
@@ -591,6 +661,9 @@ mod tests {
             RuntimeMemberId::OptionOr,
             RuntimeMemberId::OptionXor,
             RuntimeMemberId::OptionReplace,
+            RuntimeMemberId::OptionMap,
+            RuntimeMemberId::OptionAndThen,
+            RuntimeMemberId::OptionOrElse,
             RuntimeMemberId::StringLen,
             RuntimeMemberId::StringIsEmpty,
             RuntimeMemberId::StringContains,

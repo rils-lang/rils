@@ -26,9 +26,12 @@ pub fn standard_function_signature(name: &str) -> Option<FunctionSignature> {
 }
 
 pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
-    let (owner, self_type, generics) = builtin_owner(object)?;
+    let (owner, self_type, mut generics) = builtin_owner(object)?;
     let member = rils_builtins::builtin_member(owner, name)?;
     let signature = member.signature?;
+    for parameter in member.type_parameters {
+        generics.insert(parameter, Type::Variable((*parameter).into()));
+    }
     Some(Type::function(
         signature
             .parameters
@@ -280,5 +283,29 @@ mod tests {
         let signature = erased_builtin_import_signature("core::value::replace").unwrap();
         assert!(signature.parameters.is_none());
         assert_eq!(signature.return_type, Type::Unknown);
+    }
+
+    #[test]
+    fn builtin_method_generics_preserve_callback_result_types() {
+        assert_eq!(
+            builtin_member_type(&Type::Option(Box::new(Type::I32)), "map"),
+            Some(Type::function(
+                vec![Type::function(vec![Type::I32], Type::Variable("U".into()))],
+                Type::Option(Box::new(Type::Variable("U".into()))),
+            ))
+        );
+        assert_eq!(
+            builtin_member_type(
+                &Type::Result(Box::new(Type::I32), Box::new(Type::String)),
+                "map_err",
+            ),
+            Some(Type::function(
+                vec![Type::function(
+                    vec![Type::String],
+                    Type::Variable("F".into()),
+                )],
+                Type::Result(Box::new(Type::I32), Box::new(Type::Variable("F".into()))),
+            ))
+        );
     }
 }

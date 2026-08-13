@@ -12,6 +12,7 @@ use crate::{
     types::Type,
 };
 
+mod combinators;
 mod imports;
 mod ir;
 mod symbols;
@@ -852,6 +853,11 @@ impl<'a> FunctionLowerer<'a> {
                             .expression_types
                             .get(&object.span())
                             .and_then(rils_frontend::standard_library::builtin_owner_name);
+                        if let Some(expression) =
+                            self.builtin_combinator(owner, name, object, arguments, *span)?
+                        {
+                            return Ok(expression);
+                        }
                         if let Some((import_name, signature, receiver)) =
                             builtin_method_import(owner, name)
                         {

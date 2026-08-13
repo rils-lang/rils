@@ -153,6 +153,61 @@ fn result_error_extraction_matches_interpreter() {
 }
 
 #[test]
+fn option_result_combinators_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            fn double(value: i32) -> i32 { value * 2 }
+            fn maybe(value: i32) -> Option<i32> {
+                if value > 0 { Some(value + 1) } else { None }
+            }
+            fn fallback() -> Option<i32> { Some(9) }
+            assert!(Some(20).map(double).unwrap() == 40);
+            assert!(Some(4).and_then(maybe).unwrap() == 5);
+            let missing: Option<i32> = None;
+            assert!(missing.or_else(fallback).unwrap() == 9);
+
+            fn ok_double(value: i32) -> Result<i32, string> { Ok(value * 2) }
+            fn error_len(value: string) -> usize { value.len() }
+            fn recover(value: string) -> Result<i32, usize> { Err(value.len()) }
+            let ok: Result<i32, string> = Ok(10);
+            assert!(ok.map(double).unwrap() == 20);
+            let failed: Result<i32, string> = Err("bad");
+            assert!(failed.map_err(error_len).unwrap_err() == 3usize);
+            let chained: Result<i32, string> = Ok(11);
+            assert!(chained.and_then(ok_double).unwrap() == 22);
+            let recovered: Result<i32, string> = Err("oops");
+            recovered.or_else(recover).unwrap_err()
+        "#,
+    );
+}
+
+#[test]
+fn option_result_combinators_skip_unselected_callbacks() {
+    assert_matches_interpreter(
+        r#"
+            fn fail_value(value: i32) -> i32 {
+                let missing: Option<i32> = None;
+                missing.unwrap()
+            }
+            fn fail_option() -> Option<i32> {
+                let missing: Option<i32> = None;
+                missing.unwrap();
+                None
+            }
+            fn fail_error(value: string) -> usize {
+                let missing: Option<usize> = None;
+                missing.unwrap()
+            }
+            let none: Option<i32> = None;
+            assert!(none.map(fail_value).is_none());
+            assert!(Some(7).or_else(fail_option).unwrap() == 7);
+            let ok: Result<i32, string> = Ok(21);
+            ok.map_err(fail_error).unwrap()
+        "#,
+    );
+}
+
+#[test]
 fn compiles_while_break_and_continue() {
     assert_matches_interpreter(
         r#"
