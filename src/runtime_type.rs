@@ -471,6 +471,7 @@ fn type_of_value(value: &Value) -> Option<Type> {
                         TypePattern::String => Type::String,
                         TypePattern::F32 => Type::Float(crate::FloatType::F32),
                         TypePattern::F64 => Type::Float(crate::FloatType::F64),
+                        TypePattern::U32 => Type::Integer(crate::IntegerType::U32),
                         TypePattern::Usize => Type::USIZE,
                         TypePattern::Named { path, arguments } => Type::Named {
                             name: path.into(),

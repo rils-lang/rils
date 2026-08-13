@@ -1,5 +1,7 @@
 use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
+mod integer_methods;
+
 pub(crate) fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> {
     enum IntegerValue {
         Signed(i128),
@@ -80,6 +82,9 @@ pub(crate) fn execute_integer_intrinsic(
     values: &[Value],
 ) -> Result<Value, String> {
     use rils_builtins::IntrinsicId::*;
+    if integer_methods::handles(id) {
+        return integer_methods::execute(id, values);
+    }
     if id == IntegerTryFrom {
         let target =
             target.ok_or_else(|| "integer try_from is missing its target type".to_string())?;
@@ -109,6 +114,7 @@ pub(crate) fn execute_integer_intrinsic(
         | IntegerOverflowingSub
         | IntegerOverflowingMul => integer_intrinsic_binary(id, &values[0], &values[1]),
         IntegerTryFrom => unreachable!(),
+        _ => unreachable!("extended integer intrinsic was handled before dispatch"),
     }
 }
 

@@ -47,6 +47,9 @@
   标准模块签名和 Analyzer 符号开始复用编译期静态表，不依赖外部标准库文件。
 - 增加 `Target::try_from(integer)`、`to_f32/to_f64`，以及整数的 `checked_*`、`wrapping_*`、
   `saturating_*` 和 `overflowing_*` 加减乘方法；checked 除法和余数也已提供。
+- 整数增加位计数、前导/尾随零、旋转、`pow`、`div_euclid/rem_euclid` 和 `abs`；同时补齐
+  neg/abs/pow 的 checked、wrapping、saturating、overflowing 模式，并覆盖 signed MIN、除零和
+  幂溢出边界。
 - 增加 Rust 风格整数 `as` 表达式以及 `1_i32` 形式的分隔后缀。静态检查只接受不会缩小类型范围
   的转换；`i32 as usize` 对负值运行时报错，`usize as i32` 等潜在有损转换直接拒绝。解释器、
   HIR/MIR、字节码 VM 和 Analyzer 使用同一规则。

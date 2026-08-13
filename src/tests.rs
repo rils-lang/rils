@@ -88,6 +88,51 @@ fn integer_intrinsics_cover_fallible_conversion_and_overflow_modes() {
 }
 
 #[test]
+fn integer_intrinsics_cover_bits_powers_euclidean_and_unary_overflow() {
+    assert_eq!(
+        integer(
+            r#"
+                let min = -127i8 - 1i8;
+                assert!(min.checked_abs().is_none());
+                assert!(min.saturating_abs() == 127i8);
+                let absolute = min.overflowing_abs();
+                assert!(absolute.0 == min && absolute.1);
+                assert!(0u8.checked_neg().unwrap() == 0u8);
+                assert!(1u8.checked_neg().is_none());
+
+                assert!(15u8.count_ones() == 4u32);
+                assert!(15u8.count_zeros() == 4u32);
+                assert!(1u8.leading_zeros() == 7u32);
+                assert!(8u8.trailing_zeros() == 3u32);
+                assert!(129u8.rotate_left(1u32) == 3u8);
+                assert!(3u8.rotate_right(1u32) == 129u8);
+
+                assert!(3i32.pow(4u32) == 81);
+                assert!(20i8.checked_pow(2u32).is_none());
+                assert!(20i8.wrapping_pow(2u32) == -112i8);
+                assert!(20i8.saturating_pow(2u32) == 127i8);
+                let powered = 20i8.overflowing_pow(2u32);
+                assert!(powered.0 == -112i8 && powered.1);
+
+                assert!((-5i32).div_euclid(2) == -3);
+                assert!((-5i32).rem_euclid(2) == 1);
+                42
+            "#,
+        ),
+        42
+    );
+
+    for source in ["20i8.pow(2u32)", "1i32.div_euclid(0)", "1i32.rem_euclid(0)"] {
+        let error = eval(source).unwrap_err();
+        assert!(
+            error.to_string().contains("overflow")
+                || error.to_string().contains("division by zero"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn integer_ranges_preserve_their_concrete_type() {
     let source = r#"
         let mut total: u16 = 0u16;

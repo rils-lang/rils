@@ -102,6 +102,7 @@ pub enum TypePattern {
     String,
     F32,
     F64,
+    U32,
     Usize,
     Named {
         path: &'static str,
@@ -141,15 +142,36 @@ pub enum IntrinsicId {
     IntegerCheckedMul = 18,
     IntegerCheckedDiv = 19,
     IntegerCheckedRem = 20,
+    IntegerCheckedNeg = 21,
+    IntegerCheckedAbs = 22,
+    IntegerCheckedPow = 23,
     IntegerWrappingAdd = 32,
     IntegerWrappingSub = 33,
     IntegerWrappingMul = 34,
+    IntegerWrappingNeg = 35,
+    IntegerWrappingPow = 36,
     IntegerSaturatingAdd = 48,
     IntegerSaturatingSub = 49,
     IntegerSaturatingMul = 50,
+    IntegerSaturatingNeg = 51,
+    IntegerSaturatingAbs = 52,
+    IntegerSaturatingPow = 53,
     IntegerOverflowingAdd = 64,
     IntegerOverflowingSub = 65,
     IntegerOverflowingMul = 66,
+    IntegerOverflowingNeg = 67,
+    IntegerOverflowingAbs = 68,
+    IntegerOverflowingPow = 69,
+    IntegerCountOnes = 80,
+    IntegerCountZeros = 81,
+    IntegerLeadingZeros = 82,
+    IntegerTrailingZeros = 83,
+    IntegerRotateLeft = 84,
+    IntegerRotateRight = 85,
+    IntegerPow = 86,
+    IntegerDivEuclid = 87,
+    IntegerRemEuclid = 88,
+    IntegerAbs = 89,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,6 +191,7 @@ pub struct IntrinsicDeclaration {
 
 const SELF: TypePattern = TypePattern::SelfType;
 const BOOL: TypePattern = TypePattern::Bool;
+const U32: TypePattern = TypePattern::U32;
 const STRING: TypePattern = TypePattern::String;
 const OPTION_SELF: TypePattern = TypePattern::Option(&SELF);
 const RESULT_SELF_STRING: TypePattern = TypePattern::Result {
@@ -200,15 +223,36 @@ pub const INTEGER_INTRINSICS: &[IntrinsicDeclaration] = &[
     intrinsic!(IntegerCheckedMul, "checked_mul", Method, [SELF] -> OPTION_SELF, "Returns None on overflow."),
     intrinsic!(IntegerCheckedDiv, "checked_div", Method, [SELF] -> OPTION_SELF, "Returns None on division failure or overflow."),
     intrinsic!(IntegerCheckedRem, "checked_rem", Method, [SELF] -> OPTION_SELF, "Returns None on remainder failure or overflow."),
+    intrinsic!(IntegerCheckedNeg, "checked_neg", Method, [] -> OPTION_SELF, "Returns the negated value, or None when it cannot be represented."),
+    intrinsic!(IntegerCheckedAbs, "checked_abs", Method, [] -> OPTION_SELF, "Returns the absolute value, or None on signed minimum overflow."),
+    intrinsic!(IntegerCheckedPow, "checked_pow", Method, [U32] -> OPTION_SELF, "Raises to a power, returning None on overflow."),
     intrinsic!(IntegerWrappingAdd, "wrapping_add", Method, [SELF] -> SELF, "Adds with two's-complement wrapping."),
     intrinsic!(IntegerWrappingSub, "wrapping_sub", Method, [SELF] -> SELF, "Subtracts with two's-complement wrapping."),
     intrinsic!(IntegerWrappingMul, "wrapping_mul", Method, [SELF] -> SELF, "Multiplies with two's-complement wrapping."),
+    intrinsic!(IntegerWrappingNeg, "wrapping_neg", Method, [] -> SELF, "Negates with two's-complement wrapping."),
+    intrinsic!(IntegerWrappingPow, "wrapping_pow", Method, [U32] -> SELF, "Raises to a power with wrapping arithmetic."),
     intrinsic!(IntegerSaturatingAdd, "saturating_add", Method, [SELF] -> SELF, "Adds while saturating at the numeric bounds."),
     intrinsic!(IntegerSaturatingSub, "saturating_sub", Method, [SELF] -> SELF, "Subtracts while saturating at the numeric bounds."),
     intrinsic!(IntegerSaturatingMul, "saturating_mul", Method, [SELF] -> SELF, "Multiplies while saturating at the numeric bounds."),
+    intrinsic!(IntegerSaturatingNeg, "saturating_neg", Method, [] -> SELF, "Negates while saturating at the numeric bounds."),
+    intrinsic!(IntegerSaturatingAbs, "saturating_abs", Method, [] -> SELF, "Returns the absolute value, saturating signed minimum at MAX."),
+    intrinsic!(IntegerSaturatingPow, "saturating_pow", Method, [U32] -> SELF, "Raises to a power while saturating at the numeric bounds."),
     intrinsic!(IntegerOverflowingAdd, "overflowing_add", Method, [SELF] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped sum and whether overflow occurred."),
     intrinsic!(IntegerOverflowingSub, "overflowing_sub", Method, [SELF] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped difference and whether overflow occurred."),
     intrinsic!(IntegerOverflowingMul, "overflowing_mul", Method, [SELF] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped product and whether overflow occurred."),
+    intrinsic!(IntegerOverflowingNeg, "overflowing_neg", Method, [] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped negation and whether overflow occurred."),
+    intrinsic!(IntegerOverflowingAbs, "overflowing_abs", Method, [] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped absolute value and whether overflow occurred."),
+    intrinsic!(IntegerOverflowingPow, "overflowing_pow", Method, [U32] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped power and whether overflow occurred."),
+    intrinsic!(IntegerCountOnes, "count_ones", Method, [] -> U32, "Returns the number of one bits."),
+    intrinsic!(IntegerCountZeros, "count_zeros", Method, [] -> U32, "Returns the number of zero bits."),
+    intrinsic!(IntegerLeadingZeros, "leading_zeros", Method, [] -> U32, "Returns the number of leading zero bits."),
+    intrinsic!(IntegerTrailingZeros, "trailing_zeros", Method, [] -> U32, "Returns the number of trailing zero bits."),
+    intrinsic!(IntegerRotateLeft, "rotate_left", Method, [U32] -> SELF, "Rotates bits to the left."),
+    intrinsic!(IntegerRotateRight, "rotate_right", Method, [U32] -> SELF, "Rotates bits to the right."),
+    intrinsic!(IntegerPow, "pow", Method, [U32] -> SELF, "Raises to a non-negative integer power, failing on overflow."),
+    intrinsic!(IntegerDivEuclid, "div_euclid", Method, [SELF] -> SELF, "Computes Euclidean division, failing on zero or overflow."),
+    intrinsic!(IntegerRemEuclid, "rem_euclid", Method, [SELF] -> SELF, "Computes the least non-negative remainder, failing on zero or overflow."),
+    intrinsic!(IntegerAbs, "abs", Method, [] -> SELF, "Returns the absolute value, failing on signed minimum overflow."),
 ];
 
 pub fn integer_method(name: &str) -> Option<&'static IntrinsicDeclaration> {

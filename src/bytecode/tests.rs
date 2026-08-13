@@ -29,6 +29,28 @@ fn compiles_arithmetic_blocks_and_short_circuiting() {
 }
 
 #[test]
+fn integer_intrinsic_expansion_matches_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            let min = -127i8 - 1i8;
+            assert!(min.checked_abs().is_none());
+            assert!(min.saturating_abs() == 127i8);
+            let absolute = min.overflowing_abs();
+            assert!(absolute.0 == min && absolute.1);
+            assert!(15u8.count_ones() == 4u32);
+            assert!(1u8.leading_zeros() == 7u32);
+            assert!(8u8.trailing_zeros() == 3u32);
+            assert!(129u8.rotate_left(1u32) == 3u8);
+            assert!(3i32.pow(4u32) == 81);
+            assert!(20i8.checked_pow(2u32).is_none());
+            assert!(20i8.saturating_pow(2u32) == 127i8);
+            assert!((-5i32).div_euclid(2) == -3);
+            (-5i32).rem_euclid(2)
+        "#,
+    );
+}
+
+#[test]
 fn core_string_and_vec_helpers_match_interpreter() {
     assert_matches_interpreter(
         r#"

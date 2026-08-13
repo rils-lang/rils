@@ -314,9 +314,11 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
         }))
         .unwrap();
     assert!(
-        methods
-            .as_array()
-            .is_some_and(|items| { items.iter().any(|item| item["label"] == "checked_add") })
+        methods.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "checked_add")
+                && items.iter().any(|item| item["label"] == "checked_pow")
+        }),
+        "{methods}"
     );
 
     let associated = server
