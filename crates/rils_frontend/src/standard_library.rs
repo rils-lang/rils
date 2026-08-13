@@ -78,6 +78,24 @@ pub fn erased_builtin_member_signature(
     ))
 }
 
+pub fn integer_intrinsic_type(
+    intrinsic: &rils_builtins::IntrinsicDeclaration,
+    integer: crate::types::IntegerType,
+) -> Type {
+    let self_type = Type::Integer(integer);
+    let generics = HashMap::new();
+    Type::function(
+        intrinsic
+            .signature
+            .parameters
+            .iter()
+            .copied()
+            .map(|pattern| resolve_member_pattern(pattern, &self_type, &generics))
+            .collect(),
+        resolve_member_pattern(intrinsic.signature.result, &self_type, &generics),
+    )
+}
+
 pub fn builtin_owner_name(object: &Type) -> Option<&'static str> {
     builtin_owner(object).map(|(owner, _, _)| owner)
 }
@@ -119,11 +137,36 @@ fn resolve_member_pattern(
     self_type: &Type,
     generics: &HashMap<&'static str, Type>,
 ) -> Type {
+    use rils_builtins::TypePattern;
     match pattern {
-        rils_builtins::TypePattern::SelfType => self_type.clone(),
-        rils_builtins::TypePattern::Generic(name) => {
-            generics.get(name).cloned().unwrap_or(Type::Unknown)
-        }
+        TypePattern::SelfType => self_type.clone(),
+        TypePattern::Generic(name) => generics.get(name).cloned().unwrap_or(Type::Unknown),
+        TypePattern::Option(inner) => Type::Option(Box::new(resolve_member_pattern(
+            *inner, self_type, generics,
+        ))),
+        TypePattern::Result { ok, error } => Type::Result(
+            Box::new(resolve_member_pattern(*ok, self_type, generics)),
+            Box::new(resolve_member_pattern(*error, self_type, generics)),
+        ),
+        TypePattern::Tuple(elements) => Type::Tuple(
+            elements
+                .iter()
+                .copied()
+                .map(|element| resolve_member_pattern(element, self_type, generics))
+                .collect(),
+        ),
+        TypePattern::Function { parameters, result } => Type::function(
+            parameters
+                .iter()
+                .copied()
+                .map(|parameter| resolve_member_pattern(parameter, self_type, generics))
+                .collect(),
+            resolve_member_pattern(*result, self_type, generics),
+        ),
+        TypePattern::Reference { mutable, inner } => Type::Reference {
+            mutable,
+            inner: Box::new(resolve_member_pattern(*inner, self_type, generics)),
+        },
         other => resolve_type_pattern(other),
     }
 }
@@ -167,5 +210,19 @@ pub(crate) fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type 
             mutable,
             inner: Box::new(resolve_type_pattern(*inner)),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn integer_intrinsic_types_replace_nested_self_patterns() {
+        let intrinsic = rils_builtins::integer_method("checked_add").unwrap();
+        assert_eq!(
+            integer_intrinsic_type(intrinsic, crate::types::IntegerType::I32),
+            Type::function(vec![Type::I32], Type::Option(Box::new(Type::I32)))
+        );
     }
 }

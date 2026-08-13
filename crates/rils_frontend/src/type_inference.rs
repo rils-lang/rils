@@ -688,7 +688,9 @@ impl Inferencer {
                     };
                     let integer = crate::types::IntegerType::from_name(type_name)?;
                     let intrinsic = rils_builtins::integer_associated_function(member)?;
-                    Some(integer_intrinsic_type(intrinsic, integer))
+                    Some(crate::standard_library::integer_intrinsic_type(
+                        intrinsic, integer,
+                    ))
                 })
                 .unwrap_or(Type::Unknown),
             Expr::QualifiedPath { .. } => Type::opaque_function(),
@@ -1047,7 +1049,7 @@ impl Inferencer {
         if let Type::Integer(integer) = object_type
             && let Some(intrinsic) = rils_builtins::integer_method(field)
         {
-            return integer_intrinsic_type(intrinsic, *integer);
+            return crate::standard_library::integer_intrinsic_type(intrinsic, *integer);
         }
         if let Type::Tuple(elements) = object_type {
             return field
@@ -1102,66 +1104,6 @@ impl Inferencer {
         self.scopes.pop();
         result
     }
-}
-
-fn integer_intrinsic_type(
-    intrinsic: &rils_builtins::IntrinsicDeclaration,
-    integer: crate::types::IntegerType,
-) -> Type {
-    use rils_builtins::TypePattern;
-    let self_type = Type::Integer(integer);
-    fn resolve(ty: TypePattern, self_type: &Type) -> Type {
-        match ty {
-            TypePattern::SelfType => self_type.clone(),
-            TypePattern::AnyInteger | TypePattern::Unknown => Type::Unknown,
-            TypePattern::Generic(name) => Type::Variable(name.into()),
-            TypePattern::Unit => Type::Unit,
-            TypePattern::Bool => Type::Bool,
-            TypePattern::String => Type::String,
-            TypePattern::F32 => Type::Float(crate::types::FloatType::F32),
-            TypePattern::F64 => Type::Float(crate::types::FloatType::F64),
-            TypePattern::Usize => Type::USIZE,
-            TypePattern::Named { path, arguments } => Type::Named {
-                name: path.into(),
-                arguments: arguments
-                    .iter()
-                    .map(|value| resolve(*value, self_type))
-                    .collect(),
-            },
-            TypePattern::Option(inner) => Type::Option(Box::new(resolve(*inner, self_type))),
-            TypePattern::Result { ok, error } => Type::Result(
-                Box::new(resolve(*ok, self_type)),
-                Box::new(resolve(*error, self_type)),
-            ),
-            TypePattern::Tuple(elements) => Type::Tuple(
-                elements
-                    .iter()
-                    .map(|value| resolve(*value, self_type))
-                    .collect(),
-            ),
-            TypePattern::Function { parameters, result } => Type::function(
-                parameters
-                    .iter()
-                    .map(|value| resolve(*value, self_type))
-                    .collect(),
-                resolve(*result, self_type),
-            ),
-            TypePattern::Reference { mutable, inner } => Type::Reference {
-                mutable,
-                inner: Box::new(resolve(*inner, self_type)),
-            },
-        }
-    }
-    Type::function(
-        intrinsic
-            .signature
-            .parameters
-            .iter()
-            .copied()
-            .map(|value| resolve(value, &self_type))
-            .collect(),
-        resolve(intrinsic.signature.result, &self_type),
-    )
 }
 
 fn literal_type(literal: &Literal, span: Span) -> Type {

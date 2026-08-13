@@ -31,8 +31,50 @@ pub fn parse_with_native_macros(
     tokens: Vec<Token>,
     native_macros: &[crate::macros::NativeMacroDefinition],
 ) -> Result<Program, ParseError> {
+    validate_delimiters(&tokens)?;
     let expansion = crate::macros::expand(tokens, native_macros)?;
     Parser::new(expansion.tokens, expansion.macros).parse_program()
+}
+
+fn validate_delimiters(tokens: &[Token]) -> Result<(), ParseError> {
+    let mut stack = Vec::new();
+    for token in tokens {
+        let expected = match token.kind {
+            TokenKind::LeftParen => Some(TokenKind::RightParen),
+            TokenKind::LeftBracket => Some(TokenKind::RightBracket),
+            TokenKind::LeftBrace => Some(TokenKind::RightBrace),
+            _ => None,
+        };
+        if let Some(expected) = expected {
+            stack.push((expected, token.span));
+            continue;
+        }
+        if matches!(
+            token.kind,
+            TokenKind::RightParen | TokenKind::RightBracket | TokenKind::RightBrace
+        ) {
+            let Some((expected, _)) = stack.pop() else {
+                return Err(ParseError {
+                    message: format!("unexpected {}", token.kind.name()),
+                    span: token.span,
+                });
+            };
+            if discriminant(&expected) != discriminant(&token.kind) {
+                return Err(ParseError {
+                    message: format!("expected {}, found {}", expected.name(), token.kind.name()),
+                    span: token.span,
+                });
+            }
+        }
+    }
+    if let Some((expected, open)) = stack.pop() {
+        let eof = tokens.last().map_or(open, |token| token.span);
+        return Err(ParseError {
+            message: format!("expected {} after delimiter", expected.name()),
+            span: eof,
+        });
+    }
+    Ok(())
 }
 
 fn scalar_literal(kind: &TokenKind) -> Option<Literal> {
@@ -324,6 +366,23 @@ mod tests {
     fn rejects_invalid_assignment_target() {
         let error = parse(lex("(1 + 2) = 3;").unwrap()).unwrap_err();
         assert_eq!(error.message, "invalid assignment target");
+    }
+
+    #[test]
+    fn rejects_unclosed_delimiters_before_macro_fragment_matching() {
+        for source in [
+            "call(",
+            "call([1, 2",
+            "call({ let value = 1;",
+            "call([1, 2})",
+        ] {
+            let error = parse(lex(source).unwrap()).expect_err("delimiter must be rejected");
+            assert!(
+                error.message.contains("expected") || error.message.contains("unexpected"),
+                "unexpected error for `{source}`: {}",
+                error.message
+            );
+        }
     }
 
     #[test]
