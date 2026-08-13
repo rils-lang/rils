@@ -830,7 +830,7 @@ impl<'a> FunctionLowerer<'a> {
                     }
                     if self.method_names.get(name).is_none()
                         && let Some((import_name, signature, receiver)) =
-                            collection_method_import(name)
+                            builtin_method_import(name)
                     {
                         let receiver = self.method_receiver(object, receiver)?;
                         let mut lowered = Vec::with_capacity(arguments.len() + 1);

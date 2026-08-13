@@ -62,6 +62,41 @@ pub enum RuntimeMemberId {
     StringReplace = 87,
 }
 
+impl RuntimeMemberId {
+    /// Returns the stable core import used by the bytecode backend, when this
+    /// runtime member is available to compiled programs.
+    pub const fn bytecode_import(self) -> Option<&'static str> {
+        Some(match self {
+            Self::Clone => "clone",
+            Self::SequenceLen | Self::StringLen => "core::sequence::len",
+            Self::SequenceIsEmpty | Self::StringIsEmpty => "core::value::is_empty",
+            Self::VecPush => "core::vec::push",
+            Self::VecPop => "core::vec::pop",
+            Self::VecClear => "core::vec::clear",
+            Self::VecTruncate => "core::vec::truncate",
+            Self::ResultIsOk => "core::result::is_ok",
+            Self::ResultIsErr => "core::result::is_err",
+            Self::ResultUnwrap | Self::OptionUnwrap => "unwrap",
+            Self::ResultUnwrapOr | Self::OptionUnwrapOr => "unwrap_or",
+            Self::ResultExpect | Self::OptionExpect => "core::value::expect",
+            Self::ResultOk => "core::result::ok",
+            Self::ResultErr => "core::result::err",
+            Self::OptionIsSome => "core::option::is_some",
+            Self::OptionIsNone => "core::option::is_none",
+            Self::OptionTake => "core::option::take",
+            Self::StringContains => "core::string::contains",
+            Self::StringStartsWith => "core::string::starts_with",
+            Self::StringEndsWith => "core::string::ends_with",
+            Self::StringFind => "core::string::find",
+            Self::StringTrim => "core::string::trim",
+            Self::StringReplace => "core::string::replace",
+            Self::SequenceIntoIter | Self::IteratorNext | Self::RangeNext | Self::RangeIntoIter => {
+                return None;
+            }
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReceiverMode {
     Owned,
@@ -463,6 +498,28 @@ mod tests {
                         left.path,
                         member.name
                     );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bytecode_imports_are_consistent_for_shared_method_names() {
+        for declaration in BUILTINS {
+            for member in declaration.members {
+                let Some(import) = member.runtime.and_then(RuntimeMemberId::bytecode_import) else {
+                    continue;
+                };
+                for other in BUILTINS
+                    .iter()
+                    .flat_map(|declaration| declaration.members)
+                    .filter(|other| other.name == member.name)
+                {
+                    if let Some(other_import) =
+                        other.runtime.and_then(RuntimeMemberId::bytecode_import)
+                    {
+                        assert_eq!(import, other_import, "method `{}`", member.name);
+                    }
                 }
             }
         }

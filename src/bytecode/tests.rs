@@ -74,6 +74,26 @@ fn option_and_result_helpers_match_interpreter() {
 }
 
 #[test]
+fn established_option_and_result_methods_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            let present = Some(40);
+            assert!(present.is_some());
+            let missing: Option<i32> = None;
+            assert!(missing.is_none());
+            assert!(missing.unwrap_or(2) == 2);
+
+            let ok: Result<i32, string> = Ok(42);
+            assert!(ok.is_ok());
+            assert!(ok.unwrap() == 42);
+            let err: Result<i32, string> = Err("failed");
+            assert!(err.is_err());
+            err.unwrap_or(7)
+        "#,
+    );
+}
+
+#[test]
 fn compiles_while_break_and_continue() {
     assert_matches_interpreter(
         r#"

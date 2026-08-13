@@ -1,28 +1,10 @@
 use super::*;
 
 pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
-    let shared = || Type::Reference {
-        mutable: false,
-        inner: Box::new(Type::Unknown),
-    };
-    let mutable = || Type::Reference {
-        mutable: true,
-        inner: Box::new(Type::Unknown),
-    };
-    vec![
+    let mut imports = vec![
         (
             "type_of",
             FunctionSignature::fixed(vec![Type::Unknown], Type::String),
-        ),
-        (
-            "clone",
-            FunctionSignature::fixed(
-                vec![Type::Reference {
-                    mutable: false,
-                    inner: Box::new(Type::Unknown),
-                }],
-                Type::Unknown,
-            ),
         ),
         (
             "is_ok",
@@ -39,14 +21,6 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
         (
             "is_none",
             FunctionSignature::fixed(vec![Type::Unknown], Type::Bool),
-        ),
-        (
-            "unwrap",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Unknown),
-        ),
-        (
-            "unwrap_or",
-            FunctionSignature::fixed(vec![Type::Unknown, Type::Unknown], Type::Unknown),
         ),
         ("core::assert", FunctionSignature::variadic(Type::Unit)),
         (
@@ -69,74 +43,26 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
                 },
             ),
         ),
-        (
-            "core::sequence::len",
-            FunctionSignature::fixed(vec![shared()], Type::USIZE),
-        ),
-        (
-            "core::value::is_empty",
-            FunctionSignature::fixed(vec![shared()], Type::Bool),
-        ),
-        (
-            "core::vec::push",
-            FunctionSignature::fixed(vec![mutable(), Type::Unknown], Type::Unit),
-        ),
-        (
-            "core::vec::pop",
-            FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
-        ),
-        (
-            "core::vec::clear",
-            FunctionSignature::fixed(vec![mutable()], Type::Unit),
-        ),
-        (
-            "core::vec::truncate",
-            FunctionSignature::fixed(vec![mutable(), Type::USIZE], Type::Unit),
-        ),
-        (
-            "core::string::contains",
-            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
-        ),
-        (
-            "core::string::starts_with",
-            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
-        ),
-        (
-            "core::string::ends_with",
-            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
-        ),
-        (
-            "core::string::find",
-            FunctionSignature::fixed(
-                vec![shared(), Type::String],
-                Type::Option(Box::new(Type::USIZE)),
-            ),
-        ),
-        (
-            "core::string::trim",
-            FunctionSignature::fixed(vec![shared()], Type::String),
-        ),
-        (
-            "core::string::replace",
-            FunctionSignature::fixed(vec![shared(), Type::String, Type::String], Type::String),
-        ),
-        (
-            "core::value::expect",
-            FunctionSignature::fixed(vec![Type::Unknown, Type::String], Type::Unknown),
-        ),
-        (
-            "core::result::ok",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
-        ),
-        (
-            "core::result::err",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
-        ),
-        (
-            "core::option::take",
-            FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
-        ),
-    ]
+    ];
+    for member in rils_builtins::BUILTINS
+        .iter()
+        .flat_map(|declaration| declaration.members)
+    {
+        let Some(name) = member
+            .runtime
+            .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
+        else {
+            continue;
+        };
+        let signature = rils_frontend::standard_library::erased_builtin_member_signature(member)
+            .expect("runtime method has a signature and receiver");
+        if let Some((_, existing)) = imports.iter().find(|(existing, _)| *existing == name) {
+            assert_eq!(existing, &signature, "conflicting core import `{name}`");
+        } else {
+            imports.push((name, signature));
+        }
+    }
+    imports
 }
 
 pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
@@ -149,28 +75,28 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                 value.type_name()
             )),
         },
-        "is_ok" => match &arguments[0] {
+        "is_ok" | "core::result::is_ok" => match import_receiver(&arguments[0])? {
             Value::Result { value, .. } => Ok(Value::Bool(value.is_ok())),
             value => Err(format!(
                 "`is_ok` expects Result, found {}",
                 value.type_name()
             )),
         },
-        "is_err" => match &arguments[0] {
+        "is_err" | "core::result::is_err" => match import_receiver(&arguments[0])? {
             Value::Result { value, .. } => Ok(Value::Bool(value.is_err())),
             value => Err(format!(
                 "`is_err` expects Result, found {}",
                 value.type_name()
             )),
         },
-        "is_some" => match &arguments[0] {
+        "is_some" | "core::option::is_some" => match import_receiver(&arguments[0])? {
             Value::Option { value, .. } => Ok(Value::Bool(value.is_some())),
             value => Err(format!(
                 "`is_some` expects Option, found {}",
                 value.type_name()
             )),
         },
-        "is_none" => match &arguments[0] {
+        "is_none" | "core::option::is_none" => match import_receiver(&arguments[0])? {
             Value::Option { value, .. } => Ok(Value::Bool(value.is_none())),
             value => Err(format!(
                 "`is_none` expects Option, found {}",
@@ -481,5 +407,12 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
             })
         }
         _ => Err(format!("unknown core import `{name}`")),
+    }
+}
+
+fn import_receiver(value: &Value) -> Result<Value, String> {
+    match value {
+        Value::Reference(reference) => reference.read(),
+        value => Ok(value.clone()),
     }
 }

@@ -87,7 +87,8 @@
   Vec、Option、Result 等成员；LSP 同时声明 `.` 为补全触发字符，并能在成员名尚未输入完整时恢复分析。
 - 内建目录现在统一描述现有 Option、Result、数组、Vec、Range、Iterator 与 Clone 成员的签名、receiver
   所有权和稳定运行时 ID；frontend 的成员类型、所有权分析、内建 arity、Analyzer 全局符号与解释器
-  分派开始直接读取同一目录。Option 的 `is_some/is_none/unwrap/unwrap_or` 方法调用同步补齐。
+  分派开始直接读取同一目录。编译器和 VM 的 core import 签名也由该目录生成，Option/Result 的
+  `is_some/is_none/is_ok/is_err/unwrap/unwrap_or` 方法现已与解释器保持一致。
 - `Vec::len()` 和相关集合长度接口返回 `usize`。
 - 解释器、静态分析、HIR、MIR、字节码 VM、Analyzer、VS Code 语法高亮、示例和语言文档同步使用
   具体数值类型。

@@ -45,6 +45,39 @@ pub fn builtin_receiver_mode(object: &Type, name: &str) -> Option<rils_builtins:
     rils_builtins::builtin_member(owner, name)?.receiver
 }
 
+/// Builds the type-erased ABI signature used when a built-in member is
+/// lowered without retaining its concrete receiver type.
+pub fn erased_builtin_member_signature(
+    member: &rils_builtins::BuiltinMember,
+) -> Option<FunctionSignature> {
+    let signature = member.signature?;
+    let receiver = match member.receiver? {
+        rils_builtins::ReceiverMode::Owned => Type::Unknown,
+        rils_builtins::ReceiverMode::Shared => Type::Reference {
+            mutable: false,
+            inner: Box::new(Type::Unknown),
+        },
+        rils_builtins::ReceiverMode::Mutable => Type::Reference {
+            mutable: true,
+            inner: Box::new(Type::Unknown),
+        },
+    };
+    let generics = HashMap::new();
+    let mut parameters = Vec::with_capacity(signature.parameters.len() + 1);
+    parameters.push(receiver);
+    parameters.extend(
+        signature
+            .parameters
+            .iter()
+            .copied()
+            .map(|pattern| resolve_member_pattern(pattern, &Type::Unknown, &generics)),
+    );
+    Some(FunctionSignature::fixed(
+        parameters,
+        resolve_member_pattern(signature.result, &Type::Unknown, &generics),
+    ))
+}
+
 pub fn builtin_owner_name(object: &Type) -> Option<&'static str> {
     builtin_owner(object).map(|(owner, _, _)| owner)
 }

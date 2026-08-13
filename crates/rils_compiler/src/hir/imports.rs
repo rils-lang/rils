@@ -71,101 +71,29 @@ pub(super) fn collection_import_signature(name: &str) -> Option<(&'static str, F
     })
 }
 
-pub(super) fn collection_method_import(
+pub(super) fn builtin_method_import(
     name: &str,
 ) -> Option<(&'static str, FunctionSignature, ReceiverMode)> {
-    let shared = || Type::Reference {
-        mutable: false,
-        inner: Box::new(Type::Unknown),
+    let member = rils_builtins::BUILTINS
+        .iter()
+        .flat_map(|declaration| declaration.members)
+        .find(|member| {
+            member.name == name
+                && member
+                    .runtime
+                    .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
+                    .is_some()
+        })?;
+    let runtime = member.runtime?;
+    let import = runtime.bytecode_import()?;
+    let receiver = match member.receiver? {
+        rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
+        rils_builtins::ReceiverMode::Shared => ReceiverMode::Reference { mutable: false },
+        rils_builtins::ReceiverMode::Mutable => ReceiverMode::Reference { mutable: true },
     };
-    let mutable = || Type::Reference {
-        mutable: true,
-        inner: Box::new(Type::Unknown),
-    };
-    Some(match name {
-        "len" => (
-            "core::sequence::len",
-            FunctionSignature::fixed(vec![shared()], Type::USIZE),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "is_empty" => (
-            "core::value::is_empty",
-            FunctionSignature::fixed(vec![shared()], Type::Bool),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "push" => (
-            "core::vec::push",
-            FunctionSignature::fixed(vec![mutable(), Type::Unknown], Type::Unit),
-            ReceiverMode::Reference { mutable: true },
-        ),
-        "pop" => (
-            "core::vec::pop",
-            FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
-            ReceiverMode::Reference { mutable: true },
-        ),
-        "clear" => (
-            "core::vec::clear",
-            FunctionSignature::fixed(vec![mutable()], Type::Unit),
-            ReceiverMode::Reference { mutable: true },
-        ),
-        "truncate" => (
-            "core::vec::truncate",
-            FunctionSignature::fixed(vec![mutable(), Type::USIZE], Type::Unit),
-            ReceiverMode::Reference { mutable: true },
-        ),
-        "contains" => (
-            "core::string::contains",
-            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "starts_with" => (
-            "core::string::starts_with",
-            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "ends_with" => (
-            "core::string::ends_with",
-            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "find" => (
-            "core::string::find",
-            FunctionSignature::fixed(
-                vec![shared(), Type::String],
-                Type::Option(Box::new(Type::USIZE)),
-            ),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "trim" => (
-            "core::string::trim",
-            FunctionSignature::fixed(vec![shared()], Type::String),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "replace" => (
-            "core::string::replace",
-            FunctionSignature::fixed(vec![shared(), Type::String, Type::String], Type::String),
-            ReceiverMode::Reference { mutable: false },
-        ),
-        "expect" => (
-            "core::value::expect",
-            FunctionSignature::fixed(vec![Type::Unknown, Type::String], Type::Unknown),
-            ReceiverMode::Owned,
-        ),
-        "ok" => (
-            "core::result::ok",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
-            ReceiverMode::Owned,
-        ),
-        "err" => (
-            "core::result::err",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
-            ReceiverMode::Owned,
-        ),
-        "take" => (
-            "core::option::take",
-            FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
-            ReceiverMode::Reference { mutable: true },
-        ),
-        _ => return None,
-    })
+    Some((
+        import,
+        rils_frontend::standard_library::erased_builtin_member_signature(member)?,
+        receiver,
+    ))
 }
