@@ -146,6 +146,26 @@ pub(super) fn collection_method_import(
             FunctionSignature::fixed(vec![shared(), Type::String, Type::String], Type::String),
             ReceiverMode::Reference { mutable: false },
         ),
+        "expect" => (
+            "core::value::expect",
+            FunctionSignature::fixed(vec![Type::Unknown, Type::String], Type::Unknown),
+            ReceiverMode::Owned,
+        ),
+        "ok" => (
+            "core::result::ok",
+            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
+            ReceiverMode::Owned,
+        ),
+        "err" => (
+            "core::result::err",
+            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
+            ReceiverMode::Owned,
+        ),
+        "take" => (
+            "core::option::take",
+            FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
+            ReceiverMode::Reference { mutable: true },
+        ),
         _ => return None,
     })
 }

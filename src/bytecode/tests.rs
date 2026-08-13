@@ -56,6 +56,24 @@ fn core_string_and_vec_helpers_match_interpreter() {
 }
 
 #[test]
+fn option_and_result_helpers_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            let mut option = Some(40);
+            let taken = option.take();
+            assert!(is_none(option));
+            assert!(taken.expect("expected a value") == 40);
+
+            let ok: Result<i32, string> = Ok(2);
+            let err: Result<i32, string> = Err("failed");
+            assert!(ok.ok().expect("expected Ok") == 2);
+            assert!(err.err().expect("expected Err") == "failed");
+            true
+        "#,
+    );
+}
+
+#[test]
 fn compiles_while_break_and_continue() {
     assert_matches_interpreter(
         r#"

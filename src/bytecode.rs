@@ -1045,6 +1045,22 @@ fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
             "core::string::replace",
             FunctionSignature::fixed(vec![shared(), Type::String, Type::String], Type::String),
         ),
+        (
+            "core::value::expect",
+            FunctionSignature::fixed(vec![Type::Unknown, Type::String], Type::Unknown),
+        ),
+        (
+            "core::result::ok",
+            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
+        ),
+        (
+            "core::result::err",
+            FunctionSignature::fixed(vec![Type::Unknown], Type::Option(Box::new(Type::Unknown))),
+        ),
+        (
+            "core::option::take",
+            FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
+        ),
     ]
 }
 
@@ -1321,6 +1337,73 @@ fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 ))),
                 _ => Err(format!("unknown string import `{name}`")),
             }
+        }
+        "core::value::expect" => {
+            let Value::String(message) = &arguments[1] else {
+                return Err("expect message must be string".into());
+            };
+            match &arguments[0] {
+                Value::Option {
+                    value: Some(value), ..
+                }
+                | Value::Result {
+                    value: Ok(value), ..
+                } => value.clone_owned(),
+                Value::Option { value: None, .. } => Err(message.to_string()),
+                Value::Result {
+                    value: Err(value), ..
+                } => Err(format!("{message}: {value}")),
+                value => Err(format!(
+                    "expect requires Option or Result, found {}",
+                    value.type_name()
+                )),
+            }
+        }
+        "core::result::ok" | "core::result::err" => {
+            let Value::Result {
+                value,
+                ok_type,
+                error_type,
+            } = &arguments[0]
+            else {
+                return Err("Result conversion receiver is not Result".into());
+            };
+            let (value, element_type) = match (name, value) {
+                ("core::result::ok", Ok(value)) => (Some(value.clone()), ok_type.clone()),
+                ("core::result::err", Err(value)) => (Some(value.clone()), error_type.clone()),
+                ("core::result::ok", Err(_)) => (None, ok_type.clone()),
+                ("core::result::err", Ok(_)) => (None, error_type.clone()),
+                _ => unreachable!(),
+            };
+            Ok(Value::Option {
+                value,
+                element_type,
+            })
+        }
+        "core::option::take" => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Option::take requires a mutable binding".into());
+            };
+            if !reference.mutable {
+                return Err("Option::take requires `&mut self`".into());
+            }
+            let Value::Option {
+                value,
+                element_type,
+            } = reference.read()?
+            else {
+                return Err("Option::take receiver is not Option".into());
+            };
+            reference
+                .write(Value::Option {
+                    value: None,
+                    element_type: element_type.clone(),
+                })
+                .map_err(|error| assign_error(error, Span::default()).message)?;
+            Ok(Value::Option {
+                value,
+                element_type,
+            })
         }
         _ => Err(format!("unknown core import `{name}`")),
     }

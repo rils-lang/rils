@@ -533,7 +533,8 @@ impl Interpreter {
                     }
                     BuiltinMethod::Runtime(
                         id @ (rils_builtins::RuntimeMemberId::ResultUnwrap
-                        | rils_builtins::RuntimeMemberId::ResultUnwrapOr),
+                        | rils_builtins::RuntimeMemberId::ResultUnwrapOr
+                        | rils_builtins::RuntimeMemberId::ResultExpect),
                     ) => {
                         let Value::Result { value, ok_type, .. } = method.receiver.as_ref() else {
                             return Err(RuntimeError::new(
@@ -561,11 +562,57 @@ impl Interpreter {
                         }
                         match value {
                             Ok(value) => Ok((**value).clone()),
-                            Err(value) => Err(RuntimeError::new(
-                                format!("called `unwrap` on Err({value})"),
-                                span,
-                            )),
+                            Err(value) => {
+                                let message = if id == rils_builtins::RuntimeMemberId::ResultExpect
+                                {
+                                    let Value::String(message) = &arguments[0] else {
+                                        return Err(RuntimeError::new(
+                                            "Result::expect message must be string",
+                                            span,
+                                        ));
+                                    };
+                                    format!("{message}: {value}")
+                                } else {
+                                    format!("called `unwrap` on Err({value})")
+                                };
+                                Err(RuntimeError::new(message, span))
+                            }
                         }
+                    }
+                    BuiltinMethod::Runtime(
+                        id @ (rils_builtins::RuntimeMemberId::ResultOk
+                        | rils_builtins::RuntimeMemberId::ResultErr),
+                    ) => {
+                        let Value::Result {
+                            value,
+                            ok_type,
+                            error_type,
+                        } = method.receiver.as_ref()
+                        else {
+                            return Err(RuntimeError::new(
+                                "Result method receiver is not Result",
+                                span,
+                            ));
+                        };
+                        let (value, element_type) = match (id, value) {
+                            (rils_builtins::RuntimeMemberId::ResultOk, Ok(value)) => {
+                                (Some(value.clone()), ok_type.clone())
+                            }
+                            (rils_builtins::RuntimeMemberId::ResultErr, Err(value)) => {
+                                (Some(value.clone()), error_type.clone())
+                            }
+                            (rils_builtins::RuntimeMemberId::ResultOk, Err(_)) => {
+                                (None, ok_type.clone())
+                            }
+                            (rils_builtins::RuntimeMemberId::ResultErr, Ok(_)) => {
+                                (None, error_type.clone())
+                            }
+                            _ => unreachable!(),
+                        };
+                        Ok(Value::Option {
+                            value,
+                            element_type,
+                        })
                     }
                     BuiltinMethod::Runtime(
                         id @ (rils_builtins::RuntimeMemberId::OptionIsSome
@@ -591,7 +638,8 @@ impl Interpreter {
                     }
                     BuiltinMethod::Runtime(
                         id @ (rils_builtins::RuntimeMemberId::OptionUnwrap
-                        | rils_builtins::RuntimeMemberId::OptionUnwrapOr),
+                        | rils_builtins::RuntimeMemberId::OptionUnwrapOr
+                        | rils_builtins::RuntimeMemberId::OptionExpect),
                     ) => {
                         let Value::Option {
                             value,
@@ -623,7 +671,59 @@ impl Interpreter {
                         value
                             .as_ref()
                             .map(|value| (**value).clone())
-                            .ok_or_else(|| RuntimeError::new("called `unwrap` on `None`", span))
+                            .ok_or_else(|| {
+                                if id == rils_builtins::RuntimeMemberId::OptionExpect {
+                                    match &arguments[0] {
+                                        Value::String(message) => {
+                                            RuntimeError::new(message.to_string(), span)
+                                        }
+                                        _ => RuntimeError::new(
+                                            "Option::expect message must be string",
+                                            span,
+                                        ),
+                                    }
+                                } else {
+                                    RuntimeError::new("called `unwrap` on `None`", span)
+                                }
+                            })
+                    }
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::OptionTake) => {
+                        let Value::Reference(reference) = method.receiver.as_ref() else {
+                            return Err(RuntimeError::new(
+                                "Option::take requires a mutable binding",
+                                span,
+                            ));
+                        };
+                        if !reference.mutable {
+                            return Err(RuntimeError::new(
+                                "Option::take requires `&mut self`",
+                                span,
+                            ));
+                        }
+                        let Value::Option {
+                            value,
+                            element_type,
+                        } = reference
+                            .read()
+                            .map_err(|message| RuntimeError::new(message, span))?
+                        else {
+                            return Err(RuntimeError::new(
+                                "Option::take receiver is not Option",
+                                span,
+                            ));
+                        };
+                        reference
+                            .write(Value::Option {
+                                value: None,
+                                element_type: element_type.clone(),
+                            })
+                            .map_err(|error| {
+                                super::evaluation::assignment_error(error, "Option", span)
+                            })?;
+                        Ok(Value::Option {
+                            value,
+                            element_type,
+                        })
                     }
                     BuiltinMethod::Runtime(
                         id @ (rils_builtins::RuntimeMemberId::StringLen
