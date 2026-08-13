@@ -8,8 +8,8 @@ use std::{
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use rils_compiler::{HOST_CONTRACT_ABI_VERSION, HostContract};
 use rils_frontend::{
-    FrontendError, FunctionSignature, Span, Type,
-    analysis::{DiagnosticSeverity, DocumentAnalysis, SymbolKind, analyze_with_host_functions},
+    FrontendError, FunctionSignature, SourceId, Span, Type,
+    analysis::{DiagnosticSeverity, DocumentAnalysis, SymbolKind, analyze_with_source_id},
     ast::Stmt,
     lexer::lex,
     parser::parse,
@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 type AnyError = Box<dyn Error + Send + Sync>;
 
 struct Document {
+    source_id: SourceId,
     text: String,
     analysis: Result<DocumentAnalysis, FrontendError>,
 }
@@ -56,6 +57,7 @@ fn main() -> Result<(), AnyError> {
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
         projects: Vec::new(),
+        next_source_id: 1,
     };
     server.load_projects(&initialization)?;
     server.load_host_manifests(&initialization)?;
@@ -72,6 +74,7 @@ struct Server {
     host_contract: HostContract,
     host_functions: HashMap<String, FunctionSignature>,
     projects: Vec<Project>,
+    next_source_id: u32,
 }
 
 impl Server {
@@ -138,11 +141,31 @@ impl Server {
     }
 
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
-        let analysis = analyze_with_host_functions(&text, &self.host_functions);
+        let source_id = self.source_id_for_uri(&uri);
+        let analysis = analyze_with_source_id(&text, source_id, &self.host_functions);
         let diagnostics = diagnostics(&text, &analysis);
-        self.documents
-            .insert(uri.clone(), Document { text, analysis });
+        self.documents.insert(
+            uri.clone(),
+            Document {
+                source_id,
+                text,
+                analysis,
+            },
+        );
+        self.refresh_project_symbol_links();
         self.publish_diagnostics(&uri, diagnostics)
+    }
+
+    fn source_id_for_uri(&mut self, uri: &str) -> SourceId {
+        if let Some(document) = self.documents.get(uri) {
+            return document.source_id;
+        }
+        let source_id = SourceId::new(self.next_source_id);
+        self.next_source_id = self
+            .next_source_id
+            .checked_add(1)
+            .expect("source id overflow");
+        source_id
     }
 
     fn load_host_manifests(&mut self, initialization: &Value) -> Result<(), AnyError> {
@@ -196,24 +219,61 @@ impl Server {
     }
 
     fn load_workspace(&mut self) -> Result<(), AnyError> {
-        for project in &self.projects {
-            for project_file in project.modules() {
-                let path = &project_file.path;
-                let Ok(text) = fs::read_to_string(path) else {
+        let files = self
+            .projects
+            .iter()
+            .flat_map(|project| project.modules().cloned())
+            .collect::<Vec<_>>();
+        for project_file in files {
+            let path = &project_file.path;
+            let Ok(text) = fs::read_to_string(path) else {
+                continue;
+            };
+            let uri = path_to_file_uri(path);
+            let source_id = self.source_id_for_uri(&uri);
+            self.workspace_documents.insert(uri.clone());
+            self.documents.insert(
+                uri,
+                Document {
+                    source_id,
+                    analysis: analyze_with_source_id(&text, source_id, &self.host_functions),
+                    text,
+                },
+            );
+        }
+        self.refresh_project_symbol_links();
+        Ok(())
+    }
+
+    fn refresh_project_symbol_links(&mut self) {
+        let mut links = Vec::new();
+        for (uri, document) in &self.documents {
+            let Some(document_analysis) = analysis(document) else {
+                continue;
+            };
+            for (index, symbol) in document_analysis.symbols.iter().enumerate() {
+                if symbol.is_definition || symbol.definition_id.is_some() {
                     continue;
-                };
-                let uri = path_to_file_uri(path);
-                self.workspace_documents.insert(uri.clone());
-                self.documents.insert(
-                    uri,
-                    Document {
-                        analysis: analyze_with_host_functions(&text, &self.host_functions),
-                        text,
-                    },
-                );
+                }
+                if let Some(target) =
+                    self.project_symbol_id(uri, document, symbol.span.start, symbol.kind)
+                {
+                    links.push((uri.clone(), index, target));
+                }
             }
         }
-        Ok(())
+        for (uri, index, target) in links {
+            let Some(Ok(analysis)) = self
+                .documents
+                .get_mut(&uri)
+                .map(|document| &mut document.analysis)
+            else {
+                continue;
+            };
+            if let Some(symbol) = analysis.symbols.get_mut(index) {
+                symbol.definition_id = Some(target);
+            }
+        }
     }
 
     fn publish_diagnostics(&self, uri: &str, diagnostics: Vec<Value>) -> Result<(), AnyError> {
@@ -271,29 +331,26 @@ impl Server {
                 .project_definition(&uri, document, offset)
                 .unwrap_or(Value::Null));
         };
-        if let Some(definition_span) = symbol.definition_span {
-            return Ok(json!({
-                "uri": uri,
-                "range": range(&document.text, definition_span)
-            }));
+        let target_id = symbol.symbol_id.or(symbol.definition_id);
+        if let Some(target_id) = target_id {
+            for (candidate_uri, candidate_document) in &self.documents {
+                let Some(candidate_analysis) = analysis(candidate_document) else {
+                    continue;
+                };
+                if let Some(definition) = candidate_analysis
+                    .symbols
+                    .iter()
+                    .find(|candidate| candidate.symbol_id == Some(target_id))
+                {
+                    return Ok(json!({
+                        "uri": candidate_uri,
+                        "range": range(&candidate_document.text, definition.span)
+                    }));
+                }
+            }
         }
         if let Some(definition) = self.project_definition(&uri, document, offset) {
             return Ok(definition);
-        }
-        for (candidate_uri, candidate_document) in &self.documents {
-            let Some(candidate_analysis) = analysis(candidate_document) else {
-                continue;
-            };
-            if let Some(definition) = candidate_analysis.symbols.iter().find(|candidate| {
-                candidate.is_definition
-                    && candidate.name == symbol.name
-                    && compatible_symbol_kinds(candidate.kind, symbol.kind)
-            }) {
-                return Ok(json!({
-                    "uri": candidate_uri,
-                    "range": range(&candidate_document.text, definition.span)
-                }));
-            }
         }
         Ok(Value::Null)
     }
@@ -332,7 +389,7 @@ impl Server {
     }
 
     fn references(&self, params: &Value) -> Result<Value, AnyError> {
-        let (_uri, document, offset) = self.document_and_offset(params)?;
+        let (uri, document, offset) = self.document_and_offset(params)?;
         let Some(current_analysis) = analysis(document) else {
             return Ok(json!([]));
         };
@@ -347,6 +404,13 @@ impl Server {
             .pointer("/context/includeDeclaration")
             .and_then(Value::as_bool)
             .unwrap_or(true);
+        let target_id = symbol
+            .symbol_id
+            .or(symbol.definition_id)
+            .or_else(|| self.project_symbol_id(&uri, document, offset, symbol.kind));
+        let Some(target_id) = target_id else {
+            return Ok(json!([]));
+        };
         let locations = self
             .documents
             .iter()
@@ -355,8 +419,8 @@ impl Server {
                     .into_iter()
                     .flat_map(|analysis| analysis.symbols.iter())
                     .filter(|candidate| {
-                        candidate.name == symbol.name
-                            && compatible_symbol_kinds(candidate.kind, symbol.kind)
+                        (candidate.symbol_id == Some(target_id)
+                            || candidate.definition_id == Some(target_id))
                             && (include_declaration || !candidate.is_definition)
                     })
                     .map(|candidate| {
@@ -369,6 +433,45 @@ impl Server {
             })
             .collect::<Vec<_>>();
         Ok(json!(locations))
+    }
+
+    fn project_symbol_id(
+        &self,
+        uri: &str,
+        document: &Document,
+        offset: usize,
+        expected_kind: SymbolKind,
+    ) -> Option<rils_frontend::SymbolId> {
+        let path = file_uri_to_path(uri)?;
+        let project = self
+            .projects
+            .iter()
+            .find(|project| project.module_for_file(&path).is_some())?;
+        let current = &project.module_for_file(&path)?.module_path;
+        let qualified = qualified_path_at(&document.text, offset)?;
+        let (qualifier, member) = qualified.rsplit_once("::")?;
+        let qualifier = resolve_path_alias(&document.text, qualifier);
+        let module_path = resolve_project_path(current, &qualifier)?;
+        let file = project.module(&module_path)?;
+        let target_uri = path_to_file_uri(&file.path);
+        let target_document = self.documents.get(&target_uri)?;
+        let program = parse(lex(&target_document.text).ok()?).ok()?;
+        let public_span = program.statements.iter().find_map(|statement| {
+            let Stmt::Public { statement, .. } = statement else {
+                return None;
+            };
+            declaration_name_span(statement, member)
+        })?;
+        analysis(target_document)?
+            .symbols
+            .iter()
+            .find(|candidate| {
+                candidate.is_definition
+                    && candidate.span == public_span
+                    && candidate.name == member
+                    && compatible_symbol_kinds(candidate.kind, expected_kind)
+            })?
+            .symbol_id
     }
 
     fn hover(&self, params: &Value) -> Result<Value, AnyError> {
@@ -1202,7 +1305,7 @@ fn hex(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Document, Project, Server, Type, analysis, diagnostics, file_uri_to_path,
+        Document, Project, Server, SourceId, Type, analysis, diagnostics, file_uri_to_path,
         function_declaration, offset, path_to_file_uri, position,
     };
     use lsp_server::Connection;
@@ -1241,6 +1344,7 @@ mod tests {
         documents.insert(
             uri.clone(),
             Document {
+                source_id: SourceId::UNKNOWN,
                 text: text.into(),
                 analysis: rils_frontend::analysis::analyze(text),
             },
@@ -1252,6 +1356,7 @@ mod tests {
             host_contract: HostContract::new(),
             host_functions: HashMap::new(),
             projects: Vec::new(),
+            next_source_id: 1,
         };
 
         let hover = server
@@ -1309,6 +1414,7 @@ mod tests {
         documents.insert(
             uri.clone(),
             Document {
+                source_id: SourceId::UNKNOWN,
                 text: text.into(),
                 analysis: rils_frontend::analysis::analyze_with_host_functions(
                     text,
@@ -1323,6 +1429,7 @@ mod tests {
             host_contract: contract,
             host_functions,
             projects: Vec::new(),
+            next_source_id: 1,
         };
 
         let functions = server
@@ -1363,6 +1470,7 @@ mod tests {
         documents.insert(
             uri.clone(),
             Document {
+                source_id: SourceId::UNKNOWN,
                 text: text.into(),
                 analysis: rils_frontend::analysis::analyze(text),
             },
@@ -1374,6 +1482,7 @@ mod tests {
             host_contract: HostContract::new(),
             host_functions: HashMap::new(),
             projects: Vec::new(),
+            next_source_id: 1,
         };
 
         let methods = server
@@ -1423,24 +1532,18 @@ mod tests {
         let text = "use crate::math as math;\nfn main() { math::add(1, 2); }";
         fs::write(&entry, text).unwrap();
         let project = Project::from_file(root.join("rils.toml")).unwrap();
-        let uri = path_to_file_uri(&entry);
         let (connection, _client) = Connection::memory();
-        let mut documents = HashMap::new();
-        documents.insert(
-            uri.clone(),
-            Document {
-                text: text.into(),
-                analysis: rils_frontend::analysis::analyze(text),
-            },
-        );
-        let server = Server {
+        let mut server = Server {
             connection,
-            documents,
+            documents: HashMap::new(),
             workspace_documents: HashSet::new(),
             host_contract: HostContract::new(),
             host_functions: HashMap::new(),
             projects: vec![project],
+            next_source_id: 1,
         };
+        server.load_workspace().unwrap();
+        let uri = path_to_file_uri(&entry);
         let completion = server
             .completion(&json!({
                 "textDocument": { "uri": uri },
@@ -1459,6 +1562,14 @@ mod tests {
             .unwrap();
         let expected_uri = path_to_file_uri(&scripts.join("math.rils"));
         assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
+        let references = server
+            .references(&json!({
+                "textDocument": { "uri": expected_uri },
+                "position": { "line": 0, "character": 8 },
+                "context": { "includeDeclaration": true }
+            }))
+            .unwrap();
+        assert_eq!(references.as_array().map(Vec::len), Some(2));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1486,6 +1597,7 @@ mod tests {
             host_contract: HostContract::new(),
             host_functions: HashMap::new(),
             projects: Vec::new(),
+            next_source_id: 1,
         };
         let result = server.load_host_manifests(&json!({
             "initializationOptions": {
@@ -1512,6 +1624,7 @@ mod tests {
         let text = "let =";
         let result = rils_frontend::analysis::analyze(text);
         let document = Document {
+            source_id: SourceId::UNKNOWN,
             text: text.into(),
             analysis: result,
         };

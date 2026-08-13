@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     FrontendError,
     ast::{Block, EnumVariant, Expr, Pattern, Program, Stmt},
-    source::Span,
+    source::{SourceId, Span, SymbolId},
     type_inference,
     types::{FunctionSignature, Type},
 };
@@ -27,6 +27,8 @@ pub struct SymbolOccurrence {
     pub name: String,
     pub span: Span,
     pub definition_span: Option<Span>,
+    pub symbol_id: Option<SymbolId>,
+    pub definition_id: Option<SymbolId>,
     pub kind: SymbolKind,
     pub is_definition: bool,
     pub inferred_type: Option<Type>,
@@ -81,6 +83,7 @@ pub struct InlayTypeHint {
 #[derive(Clone)]
 struct Definition {
     span: Option<Span>,
+    id: Option<SymbolId>,
     kind: SymbolKind,
 }
 
@@ -100,7 +103,7 @@ pub fn analyze_program_with_host_functions(
     program: &Program,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> DocumentAnalysis {
-    Analyzer::new(host_functions).analyze(program)
+    Analyzer::new(SourceId::UNKNOWN, host_functions).analyze(program)
 }
 
 pub fn analyze(source: &str) -> Result<DocumentAnalysis, FrontendError> {
@@ -112,15 +115,22 @@ pub fn analyze_with_host_functions(
     source: &str,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> Result<DocumentAnalysis, FrontendError> {
+    analyze_with_source_id(source, SourceId::UNKNOWN, host_functions)
+}
+
+pub fn analyze_with_source_id(
+    source: &str,
+    source_id: SourceId,
+    host_functions: &HashMap<String, FunctionSignature>,
+) -> Result<DocumentAnalysis, FrontendError> {
     let tokens = crate::lexer::lex(source).map_err(FrontendError::Lex)?;
     let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
-    Ok(analyze_program_with_host_functions(
-        &program,
-        host_functions,
-    ))
+    Ok(Analyzer::new(source_id, host_functions).analyze(&program))
 }
 
 struct Analyzer {
+    source_id: SourceId,
+    next_symbol: u32,
     scopes: Vec<HashMap<String, Definition>>,
     trait_members: HashMap<(String, String), Span>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
@@ -129,7 +139,7 @@ struct Analyzer {
 }
 
 impl Analyzer {
-    fn new(host_functions: &HashMap<String, FunctionSignature>) -> Self {
+    fn new(source_id: SourceId, host_functions: &HashMap<String, FunctionSignature>) -> Self {
         let mut globals = HashMap::new();
         for name in [
             "#rils_native_print",
@@ -142,6 +152,7 @@ impl Analyzer {
                 name.into(),
                 Definition {
                     span: None,
+                    id: None,
                     kind: SymbolKind::Function,
                 },
             );
@@ -158,13 +169,21 @@ impl Analyzer {
                 | rils_builtins::BuiltinKind::Enum => SymbolKind::Type,
                 rils_builtins::BuiltinKind::Function => SymbolKind::Function,
             };
-            globals.insert(builtin.path.into(), Definition { span: None, kind });
+            globals.insert(
+                builtin.path.into(),
+                Definition {
+                    span: None,
+                    id: None,
+                    kind,
+                },
+            );
         }
         for integer in crate::types::IntegerType::ALL {
             globals.insert(
                 integer.name().into(),
                 Definition {
                     span: None,
+                    id: None,
                     kind: SymbolKind::Type,
                 },
             );
@@ -174,6 +193,7 @@ impl Analyzer {
                 name.into(),
                 Definition {
                     span: None,
+                    id: None,
                     kind: SymbolKind::Module,
                 },
             );
@@ -184,6 +204,7 @@ impl Analyzer {
             };
             globals.entry(root.into()).or_insert(Definition {
                 span: None,
+                id: None,
                 kind: if name.contains("::") {
                     SymbolKind::Module
                 } else {
@@ -192,6 +213,8 @@ impl Analyzer {
             });
         }
         Self {
+            source_id,
+            next_symbol: 1,
             scopes: vec![globals],
             trait_members: HashMap::new(),
             type_aliases: HashMap::new(),
@@ -315,12 +338,15 @@ impl Analyzer {
 
     fn macros(&mut self, program: &Program) {
         for definition in &program.macros {
-            self.definition_only(&definition.name, definition.name_span, SymbolKind::Macro);
+            let definition_id =
+                self.definition_only(&definition.name, definition.name_span, SymbolKind::Macro);
             for span in &definition.references {
                 self.result.symbols.push(SymbolOccurrence {
                     name: definition.name.clone(),
                     span: *span,
                     definition_span: Some(definition.name_span),
+                    symbol_id: None,
+                    definition_id: Some(definition_id),
                     kind: SymbolKind::Macro,
                     is_definition: false,
                     inferred_type: None,
@@ -373,6 +399,8 @@ impl Analyzer {
                         name: segment.clone(),
                         span: Span::new(offset, offset + segment.len()),
                         definition_span: None,
+                        symbol_id: None,
+                        definition_id: None,
                         kind: if index + 1 == path.len() {
                             SymbolKind::Function
                         } else {
@@ -603,6 +631,8 @@ impl Analyzer {
                         name: member.clone(),
                         span: member_name_span(*span, member),
                         definition_span: None,
+                        symbol_id: None,
+                        definition_id: None,
                         kind: SymbolKind::Function,
                         is_definition: false,
                         inferred_type: Some(signature.as_type()),
@@ -626,6 +656,8 @@ impl Analyzer {
                             name: member.clone(),
                             span: member_name_span(*span, member),
                             definition_span,
+                            symbol_id: None,
+                            definition_id: None,
                             kind: SymbolKind::Method,
                             is_definition: false,
                             inferred_type: None,
@@ -646,6 +678,8 @@ impl Analyzer {
                     .trait_members
                     .get(&(trait_name.clone(), member.clone()))
                     .copied(),
+                symbol_id: None,
+                definition_id: None,
                 kind: SymbolKind::Method,
                 is_definition: false,
                 inferred_type: None,
@@ -657,6 +691,8 @@ impl Analyzer {
                     name: name.clone(),
                     span: member_name_span(*span, name),
                     definition_span: None,
+                    symbol_id: None,
+                    definition_id: None,
                     kind: SymbolKind::Field,
                     is_definition: false,
                     inferred_type: None,
@@ -721,6 +757,8 @@ impl Analyzer {
                         name: name.clone(),
                         span: member_name_span(*span, name),
                         definition_span: None,
+                        symbol_id: None,
+                        definition_id: None,
                         kind: SymbolKind::Method,
                         is_definition: false,
                         inferred_type: None,
@@ -728,6 +766,30 @@ impl Analyzer {
                     });
                 } else {
                     self.expression(callee);
+                    if let Expr::Path { segments, span } = callee.as_ref()
+                        && segments.len() > 1
+                        && let Some(member) = segments.last()
+                    {
+                        let member_span = member_name_span(*span, member);
+                        if !self
+                            .result
+                            .symbols
+                            .iter()
+                            .any(|symbol| symbol.span == member_span && symbol.name == *member)
+                        {
+                            self.result.symbols.push(SymbolOccurrence {
+                                name: member.clone(),
+                                span: member_span,
+                                definition_span: None,
+                                symbol_id: None,
+                                definition_id: None,
+                                kind: SymbolKind::Function,
+                                is_definition: false,
+                                inferred_type: None,
+                                detail: None,
+                            });
+                        }
+                    }
                 }
                 for argument in arguments {
                     self.expression(argument);
@@ -801,26 +863,35 @@ impl Analyzer {
                 span,
             ));
         }
+        let id = self.definition_only(name, span, kind);
         self.scopes.last_mut().expect("scope exists").insert(
             name.into(),
             Definition {
                 span: Some(span),
+                id: Some(id),
                 kind,
             },
         );
-        self.definition_only(name, span, kind);
     }
 
-    fn definition_only(&mut self, name: &str, span: Span, kind: SymbolKind) {
+    fn definition_only(&mut self, name: &str, span: Span, kind: SymbolKind) -> SymbolId {
+        let id = SymbolId {
+            source: self.source_id,
+            local: self.next_symbol,
+        };
+        self.next_symbol = self.next_symbol.checked_add(1).expect("symbol id overflow");
         self.result.symbols.push(SymbolOccurrence {
             name: name.into(),
             span,
             definition_span: Some(span),
+            symbol_id: Some(id),
+            definition_id: Some(id),
             kind,
             is_definition: true,
             inferred_type: None,
             detail: None,
         });
+        id
     }
 
     fn reference(&mut self, name: &str, span: Span, fallback_kind: SymbolKind) {
@@ -829,6 +900,8 @@ impl Analyzer {
                 name: name.into(),
                 span,
                 definition_span: definition.span,
+                symbol_id: None,
+                definition_id: definition.id,
                 kind: definition.kind,
                 is_definition: false,
                 inferred_type: None,
@@ -843,6 +916,8 @@ impl Analyzer {
                 name: name.into(),
                 span,
                 definition_span: None,
+                symbol_id: None,
+                definition_id: None,
                 kind: fallback_kind,
                 is_definition: false,
                 inferred_type: None,
@@ -864,6 +939,16 @@ impl Analyzer {
                     })
                     .map(|symbol| symbol.span)
             });
+            let definition_id = self
+                .result
+                .symbols
+                .iter()
+                .find(|symbol| {
+                    symbol.is_definition
+                        && symbol.name == reference.name
+                        && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
+                })
+                .and_then(|symbol| symbol.symbol_id);
             if resolved.is_none() && !reference.is_builtin {
                 self.result.diagnostics.push(AnalysisDiagnostic::error(
                     format!("undefined type or trait `{}`", reference.name),
@@ -874,6 +959,8 @@ impl Analyzer {
                 name: reference.name.clone(),
                 span: reference.span,
                 definition_span: resolved,
+                symbol_id: None,
+                definition_id,
                 kind: SymbolKind::Type,
                 is_definition: false,
                 inferred_type: None,

@@ -24,5 +24,5 @@ pub use rils_builtins::{
     INTEGER_INTRINSICS, IntrinsicDeclaration, IntrinsicId, IntrinsicKind, TypePattern,
     integer_associated_function, integer_method,
 };
-pub use source::Span;
+pub use source::{SourceId, Span, SymbolId};
 pub use types::{FloatType, FunctionSignature, IntegerType, RuntimeValue, Type};

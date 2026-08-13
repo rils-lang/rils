@@ -1,5 +1,22 @@
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SourceId(pub u32);
+
+impl SourceId {
+    pub const UNKNOWN: Self = Self(0);
+
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct SymbolId {
+    pub source: SourceId,
+    pub local: u32,
+}
+
 #[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,

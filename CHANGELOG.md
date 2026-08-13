@@ -77,6 +77,8 @@
 
 ### Changed
 
+- Analyzer 为每个工作区文件分配稳定 `SourceId`，并以 `SymbolId` 关联定义和引用；定义跳转与查找引用
+  不再通过名称猜测，能够区分局部遮蔽、不同文件的同名声明，并追踪项目模块中的公开函数引用。
 - 内建目录现在统一描述现有 Option、Result、数组、Vec、Range、Iterator 与 Clone 成员的签名、receiver
   所有权和稳定运行时 ID；frontend 的成员类型、所有权分析、内建 arity、Analyzer 全局符号与解释器
   分派开始直接读取同一目录。Option 的 `is_some/is_none/unwrap/unwrap_or` 方法调用同步补齐。

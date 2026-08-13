@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn resolves_local_definitions_and_references() {
     let source = "let value = 42; value";
-    let analysis = analyze(source).unwrap();
+    let analysis = analyze_with_source_id(source, SourceId::new(7), &HashMap::new()).unwrap();
     assert!(analysis.diagnostics.is_empty());
     let reference = analysis
         .symbols
@@ -11,6 +11,34 @@ fn resolves_local_definitions_and_references() {
         .find(|symbol| !symbol.is_definition && symbol.name == "value")
         .unwrap();
     assert_eq!(reference.definition_span, Some(Span::new(4, 9)));
+    assert_eq!(
+        reference.definition_id,
+        Some(SymbolId {
+            source: SourceId::new(7),
+            local: 1,
+        })
+    );
+}
+
+#[test]
+fn symbol_ids_distinguish_shadowed_bindings() {
+    let source = "let value = 1; { let value = 2; value } value";
+    let analysis = analyze_with_source_id(source, SourceId::new(11), &HashMap::new()).unwrap();
+    let definitions = analysis
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.is_definition && symbol.name == "value")
+        .collect::<Vec<_>>();
+    let references = analysis
+        .symbols
+        .iter()
+        .filter(|symbol| !symbol.is_definition && symbol.name == "value")
+        .collect::<Vec<_>>();
+    assert_eq!(definitions.len(), 2);
+    assert_eq!(references.len(), 2);
+    assert_ne!(definitions[0].symbol_id, definitions[1].symbol_id);
+    assert_eq!(references[0].definition_id, definitions[1].symbol_id);
+    assert_eq!(references[1].definition_id, definitions[0].symbol_id);
 }
 
 #[test]
