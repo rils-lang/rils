@@ -93,7 +93,7 @@ pub(super) fn builtin_method_import(
     };
     Some((
         import,
-        rils_frontend::standard_library::erased_builtin_member_signature(member)?,
+        rils_frontend::standard_library::erased_builtin_import_signature(import)?,
         receiver,
     ))
 }

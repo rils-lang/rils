@@ -2056,6 +2056,43 @@ fn vec_from_array_preserves_element_type_and_iteration() {
 }
 
 #[test]
+fn collections_support_search_and_owned_vec_mutation() {
+    assert_eq!(
+        eval(
+            r#"
+                let values = [1, 2, 3];
+                let two = 2;
+                let seven = 7;
+                assert!(values.contains(&two));
+                let mut first = Vec::from([1, 3, 4]);
+                first.insert(1usize, 2);
+                assert!(first.remove(3usize) == 4);
+                first.push(5);
+                assert!(first.swap_remove(0usize) == 1);
+                first.extend(Vec::from([6, 7]));
+                assert!(first.contains(&seven));
+                first.len()
+            "#
+        )
+        .unwrap(),
+        Value::Usize(5)
+    );
+
+    let error = eval("let mut values = Vec::from([1, 2]); values.insert(3usize, 4);")
+        .expect_err("out-of-bounds insertion must fail");
+    assert!(error.to_string().contains("out of bounds"));
+
+    let error = eval(
+        "fn mutate() { let mut values = Vec::from([1, 2]); let item = &values[0usize]; values.remove(0usize); } mutate();",
+    )
+    .expect_err("reordering with an active element reference must fail");
+    assert!(
+        error.to_string().contains("referenced"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn collection_iterators_support_trait_qualified_calls() {
     assert_eq!(
         integer(

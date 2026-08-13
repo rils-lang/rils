@@ -56,6 +56,31 @@ fn core_string_and_vec_helpers_match_interpreter() {
 }
 
 #[test]
+fn collection_search_and_owned_mutation_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            let values = [1, 2, 3];
+            let two = 2;
+            let seven = 7;
+            assert!(values.contains(&two));
+            assert!(!values.contains(&seven));
+            assert!("alpha".contains("ph"));
+
+            let mut first = Vec::from([1, 3, 4]);
+            first.insert(1usize, 2);
+            assert!(first.remove(3usize) == 4);
+            first.push(5);
+            assert!(first.swap_remove(0usize) == 1);
+            let second = Vec::from([6, 7]);
+            first.extend(second);
+            assert!(first.len() == 5usize);
+            assert!(first.contains(&seven));
+            first[0usize] + first[4usize]
+        "#,
+    );
+}
+
+#[test]
 fn option_and_result_helpers_match_interpreter() {
     assert_matches_interpreter(
         r#"

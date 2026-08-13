@@ -54,7 +54,7 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
         else {
             continue;
         };
-        let signature = rils_frontend::standard_library::erased_builtin_member_signature(member)
+        let signature = rils_frontend::standard_library::erased_builtin_import_signature(name)
             .expect("runtime method has a signature and receiver");
         if let Some((_, existing)) = imports.iter().find(|(existing, _)| *existing == name) {
             assert_eq!(existing, &signature, "conflicting core import `{name}`");
@@ -220,6 +220,29 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
             };
             Ok(Value::Bool(empty))
         }
+        "core::value::contains" => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("contains receiver must be a reference".into());
+            };
+            match reference.read()? {
+                Value::Array(sequence) | Value::Vec(sequence) => {
+                    let needle = import_receiver(&arguments[1])?;
+                    let contains = sequence
+                        .elements
+                        .borrow()
+                        .iter()
+                        .any(|slot| slot.value.as_ref() == Some(&needle));
+                    Ok(Value::Bool(contains))
+                }
+                Value::String(value) => {
+                    let Value::String(needle) = &arguments[1] else {
+                        return Err("string contains argument must be string".into());
+                    };
+                    Ok(Value::Bool(value.contains(needle.as_ref())))
+                }
+                _ => Err("contains receiver is not a collection".into()),
+            }
+        }
         "core::vec::push" => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("Vec::push requires a mutable binding".into());
@@ -307,6 +330,102 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
             elements.truncate(length);
             Ok(Value::Unit)
         }
+        "core::vec::insert" | "core::vec::remove" | "core::vec::swap_remove" => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Vec mutation requires a mutable binding".into());
+            };
+            if !reference.mutable {
+                return Err("Vec mutation requires `&mut self`".into());
+            }
+            let Value::Vec(sequence) = reference.read()? else {
+                return Err("receiver is not Vec".into());
+            };
+            let Value::Usize(index) = arguments[1] else {
+                return Err("Vec index must be usize".into());
+            };
+            let mut elements = sequence.elements.borrow_mut();
+            if elements.iter().any(|slot| slot.references > 0) {
+                return Err("cannot reorder a Vec while an element is referenced".into());
+            }
+            if name == "core::vec::insert" {
+                if index > elements.len() {
+                    return Err(format!("index {index} is out of bounds for insertion"));
+                }
+                let value = &arguments[2];
+                if value.contains_reference() {
+                    return Err("Vec cannot own local references".into());
+                }
+                let expected = sequence
+                    .element_type
+                    .borrow()
+                    .clone()
+                    .unwrap_or(Type::Unknown);
+                let actual = Type::of_value(value).unwrap_or(Type::Unknown);
+                let element_type = crate::types::merge_types(&expected, &actual)
+                    .ok_or_else(|| format!("Vec element type is `{expected}`, found `{actual}`"))?;
+                *sequence.element_type.borrow_mut() = Some(element_type.clone());
+                elements.insert(
+                    index,
+                    FieldSlot {
+                        value: Some(value.clone()),
+                        type_annotation: element_type,
+                        references: 0,
+                    },
+                );
+                return Ok(Value::Unit);
+            }
+            if index >= elements.len() {
+                return Err(format!("index {index} is out of bounds"));
+            }
+            let slot = if name == "core::vec::remove" {
+                elements.remove(index)
+            } else {
+                elements.swap_remove(index)
+            };
+            slot.value
+                .ok_or_else(|| format!("element at index {index} has been moved"))
+        }
+        "core::vec::extend" => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Vec::extend requires a mutable binding".into());
+            };
+            if !reference.mutable {
+                return Err("Vec::extend requires `&mut self`".into());
+            }
+            let Value::Vec(destination) = reference.read()? else {
+                return Err("extend receiver is not Vec".into());
+            };
+            let Value::Vec(source) = &arguments[1] else {
+                return Err("Vec::extend source must be Vec".into());
+            };
+            if Rc::ptr_eq(&destination, source) {
+                return Err("Vec cannot extend itself".into());
+            }
+            let mut source_elements = source.elements.borrow_mut();
+            if source_elements.iter().any(|slot| slot.references > 0) {
+                return Err("cannot move from a Vec while an element is referenced".into());
+            }
+            let destination_type = destination
+                .element_type
+                .borrow()
+                .clone()
+                .unwrap_or(Type::Unknown);
+            let source_type = source
+                .element_type
+                .borrow()
+                .clone()
+                .unwrap_or(Type::Unknown);
+            let element_type = crate::types::merge_types(&destination_type, &source_type)
+                .ok_or_else(|| {
+                    format!("Vec element type is `{destination_type}`, found `{source_type}`")
+                })?;
+            *destination.element_type.borrow_mut() = Some(element_type);
+            destination
+                .elements
+                .borrow_mut()
+                .extend(source_elements.drain(..));
+            Ok(Value::Unit)
+        }
         name if name.starts_with("core::string::") => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("string method receiver must be a reference".into());
@@ -323,7 +442,6 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                 None => Err("missing string argument".into()),
             };
             match name {
-                "core::string::contains" => Ok(Value::Bool(value.contains(argument(1)?))),
                 "core::string::starts_with" => Ok(Value::Bool(value.starts_with(argument(1)?))),
                 "core::string::ends_with" => Ok(Value::Bool(value.ends_with(argument(1)?))),
                 "core::string::find" => Ok(Value::Option {

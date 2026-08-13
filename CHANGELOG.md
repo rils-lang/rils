@@ -33,6 +33,8 @@
 
 - string 增加 `len/is_empty/contains/starts_with/ends_with/find/trim/replace`；数组和 Vec 增加
   `is_empty`，Vec 增加 `clear/truncate`。这些方法共享内建声明，并已贯通解释器与字节码 VM。
+- 数组和 Vec 增加不移动查询值的 `contains(&T)`；Vec 增加拥有型 `insert/remove/swap_remove/extend`，
+  并在元素仍被引用时拒绝会使索引失效的重排操作。
 - Option 增加 `expect/take`，Result 增加 `expect/ok/err`，以便在不手写 match 的情况下提供上下文错误、
   取出可选值或在 Result 与 Option 之间转换。
 - 增加共享 `rils_builtins` crate，通过声明宏和递归类型表达式集中描述内建 module、primitive、

@@ -78,6 +78,55 @@ pub fn erased_builtin_member_signature(
     ))
 }
 
+pub fn erased_builtin_import_signature(import: &str) -> Option<FunctionSignature> {
+    let mut signatures = rils_builtins::BUILTINS
+        .iter()
+        .flat_map(|declaration| declaration.members)
+        .filter(|member| {
+            member
+                .runtime
+                .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
+                == Some(import)
+        })
+        .filter_map(erased_builtin_member_signature);
+    let mut merged = signatures.next()?;
+    for signature in signatures {
+        let (Some(left), Some(right)) = (&mut merged.parameters, signature.parameters) else {
+            merged.parameters = None;
+            continue;
+        };
+        if left.len() != right.len() {
+            merged.parameters = None;
+            continue;
+        }
+        for (left, right) in left.iter_mut().zip(right) {
+            *left = erase_type_conflict(left, &right);
+        }
+        merged.return_type = erase_type_conflict(&merged.return_type, &signature.return_type);
+    }
+    Some(merged)
+}
+
+fn erase_type_conflict(left: &Type, right: &Type) -> Type {
+    match (left, right) {
+        (
+            Type::Reference {
+                mutable: left_mutable,
+                inner: left_inner,
+            },
+            Type::Reference {
+                mutable: right_mutable,
+                inner: right_inner,
+            },
+        ) if left_mutable == right_mutable => Type::Reference {
+            mutable: *left_mutable,
+            inner: Box::new(erase_type_conflict(left_inner, right_inner)),
+        },
+        (left, right) if left == right => left.clone(),
+        _ => Type::Unknown,
+    }
+}
+
 pub fn integer_intrinsic_type(
     intrinsic: &rils_builtins::IntrinsicDeclaration,
     integer: crate::types::IntegerType,
