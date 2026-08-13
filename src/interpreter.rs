@@ -1,6 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 mod builtin_methods;
+#[path = "interpreter/builtin_methods/option_result.rs"]
+mod builtin_option_result;
 mod builtins;
 mod call;
 mod construction;
