@@ -57,6 +57,9 @@ pub enum RuntimeMemberId {
     OptionUnwrapOr = 67,
     OptionExpect = 68,
     OptionTake = 69,
+    OptionOr = 70,
+    OptionXor = 71,
+    OptionReplace = 72,
     StringLen = 80,
     StringIsEmpty = 81,
     StringContains = 82,
@@ -94,11 +97,13 @@ impl RuntimeMemberId {
             Self::OptionIsSome => "core::option::is_some",
             Self::OptionIsNone => "core::option::is_none",
             Self::OptionTake => "core::option::take",
+            Self::OptionOr => "core::option::or",
+            Self::OptionXor => "core::option::xor",
+            Self::OptionReplace | Self::StringReplace => "core::value::replace",
             Self::StringStartsWith => "core::string::starts_with",
             Self::StringEndsWith => "core::string::ends_with",
             Self::StringFind => "core::string::find",
             Self::StringTrim => "core::string::trim",
-            Self::StringReplace => "core::string::replace",
             Self::SequenceIntoIter | Self::IteratorNext | Self::RangeNext | Self::RangeIntoIter => {
                 return None;
             }
@@ -208,6 +213,9 @@ const OPTION_MEMBERS: &[BuiltinMember] = &[
     member!("unwrap_or", method Owned [T] -> T, OptionUnwrapOr, "Returns the present value or the supplied default."),
     member!("expect", method Owned [STRING] -> T, OptionExpect, "Returns the present value or fails with the supplied message."),
     member!("take", method Mutable [] -> TypePattern::SelfType, OptionTake, "Moves the value out, leaving None."),
+    member!("or", method Owned [TypePattern::SelfType] -> TypePattern::SelfType, OptionOr, "Returns this Option when present, otherwise the supplied Option."),
+    member!("xor", method Owned [TypePattern::SelfType] -> TypePattern::SelfType, OptionXor, "Returns the present Option only when exactly one operand is present."),
+    member!("replace", method Mutable [T] -> TypePattern::SelfType, OptionReplace, "Replaces the contained value and returns the previous Option."),
 ];
 const RESULT_MEMBERS: &[BuiltinMember] = &[
     member!("Ok", Variant, T, "A successful result."),
@@ -572,6 +580,9 @@ mod tests {
             RuntimeMemberId::OptionUnwrapOr,
             RuntimeMemberId::OptionExpect,
             RuntimeMemberId::OptionTake,
+            RuntimeMemberId::OptionOr,
+            RuntimeMemberId::OptionXor,
+            RuntimeMemberId::OptionReplace,
             RuntimeMemberId::StringLen,
             RuntimeMemberId::StringIsEmpty,
             RuntimeMemberId::StringContains,

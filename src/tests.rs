@@ -1219,6 +1219,26 @@ fn option_methods_follow_shared_builtin_declarations() {
 }
 
 #[test]
+fn option_supports_or_xor_and_replace() {
+    assert_eq!(
+        integer(
+            r#"
+                let left = Some(2);
+                let missing: Option<i32> = None;
+                assert!(left.or(Some(7)).unwrap() == 2);
+                assert!(missing.or(Some(7)).unwrap() == 7);
+                assert!(Some(3).xor(None).unwrap() == 3);
+                assert!(Some(3).xor(Some(4)).is_none());
+                let mut value = Some(10);
+                assert!(value.replace(20).unwrap() == 10);
+                value.unwrap()
+            "#
+        ),
+        20
+    );
+}
+
+#[test]
 fn annotations_check_initializers_assignments_parameters_and_returns() {
     for source in [
         "let value: i32 = None;",

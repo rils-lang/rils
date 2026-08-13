@@ -9,6 +9,7 @@ use crate::{
     bytecode::CompileError,
     host::{HostContract, HostFunctionDeclaration},
     source::Span,
+    types::Type,
 };
 
 mod imports;
@@ -67,8 +68,9 @@ fn collect_host_use_aliases(
 pub(crate) fn lower_with_host(
     program: &Program,
     host: &HostContract,
+    expression_types: &HashMap<Span, Type>,
 ) -> Result<HirProgram, CompileError> {
-    ProgramLowerer::new(program, host)?.lower(program)
+    ProgramLowerer::new(program, host, expression_types)?.lower(program)
 }
 
 struct ProgramLowerer {
@@ -78,10 +80,15 @@ struct ProgramLowerer {
     types: HashMap<String, TypeId>,
     type_definitions: Vec<HirTypeDefinition>,
     host_functions: HashMap<String, HostFunctionDeclaration>,
+    expression_types: HashMap<Span, Type>,
 }
 
 impl ProgramLowerer {
-    fn new(program: &Program, host: &HostContract) -> Result<Self, CompileError> {
+    fn new(
+        program: &Program,
+        host: &HostContract,
+        expression_types: &HashMap<Span, Type>,
+    ) -> Result<Self, CompileError> {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
         let mut type_definitions = Vec::new();
@@ -167,20 +174,23 @@ impl ProgramLowerer {
             types,
             type_definitions,
             host_functions,
+            expression_types: expression_types.clone(),
         })
     }
 
     fn lower(self, program: &Program) -> Result<HirProgram, CompileError> {
-        let next_function_id = Rc::new(Cell::new(
-            self.methods
-                .values()
-                .map(|method| method.function)
-                .chain(self.functions.values().copied())
-                .max()
-                .unwrap_or(0)
-                + 1,
-        ));
-        let generated = Rc::new(RefCell::new(Vec::new()));
+        let generated = GeneratedFunctions {
+            next_id: Rc::new(Cell::new(
+                self.methods
+                    .values()
+                    .map(|method| method.function)
+                    .chain(self.functions.values().copied())
+                    .max()
+                    .unwrap_or(0)
+                    + 1,
+            )),
+            functions: Rc::new(RefCell::new(Vec::new())),
+        };
         let mut lowered = Vec::with_capacity(self.functions.len() + 1);
         let entry_statements = program
             .statements
@@ -194,7 +204,7 @@ impl ProgramLowerer {
                 &self.method_names,
                 &self.types,
                 &self.host_functions,
-                next_function_id.clone(),
+                &self.expression_types,
                 generated.clone(),
             )
             .lower_entry(&entry_statements)?,
@@ -227,15 +237,15 @@ impl ProgramLowerer {
                     &self.method_names,
                     &self.types,
                     &self.host_functions,
-                    next_function_id.clone(),
+                    &self.expression_types,
                     generated.clone(),
                 )
                 .lower_function(declaration)?,
             );
         }
-        let mut generated = generated.borrow_mut();
-        generated.sort_by_key(|(id, _)| *id);
-        lowered.extend(generated.drain(..).map(|(_, function)| function));
+        let mut generated_functions = generated.functions.borrow_mut();
+        generated_functions.sort_by_key(|(id, _)| *id);
+        lowered.extend(generated_functions.drain(..).map(|(_, function)| function));
         Ok(HirProgram {
             functions: lowered,
             types: self.type_definitions,
@@ -245,19 +255,25 @@ impl ProgramLowerer {
     }
 }
 
+#[derive(Clone)]
+struct GeneratedFunctions {
+    next_id: Rc<Cell<FunctionId>>,
+    functions: Rc<RefCell<Vec<(FunctionId, HirFunction)>>>,
+}
+
 struct FunctionLowerer<'a> {
     functions: &'a HashMap<String, FunctionId>,
     methods: &'a HashMap<String, MethodInfo>,
     method_names: &'a HashMap<String, Option<MethodInfo>>,
     types: &'a HashMap<String, TypeId>,
     host_functions: &'a HashMap<String, HostFunctionDeclaration>,
+    expression_types: &'a HashMap<Span, Type>,
     namespace: String,
     scopes: Vec<HashMap<String, LocalId>>,
     mutable: Vec<bool>,
     in_function: bool,
     capture_count: usize,
-    next_function_id: Rc<Cell<FunctionId>>,
-    generated: Rc<RefCell<Vec<(FunctionId, HirFunction)>>>,
+    generated: GeneratedFunctions,
     captured: HashSet<LocalId>,
 }
 
@@ -268,8 +284,8 @@ impl<'a> FunctionLowerer<'a> {
         method_names: &'a HashMap<String, Option<MethodInfo>>,
         types: &'a HashMap<String, TypeId>,
         host_functions: &'a HashMap<String, HostFunctionDeclaration>,
-        next_function_id: Rc<Cell<FunctionId>>,
-        generated: Rc<RefCell<Vec<(FunctionId, HirFunction)>>>,
+        expression_types: &'a HashMap<Span, Type>,
+        generated: GeneratedFunctions,
     ) -> Self {
         Self {
             functions,
@@ -277,12 +293,12 @@ impl<'a> FunctionLowerer<'a> {
             method_names,
             types,
             host_functions,
+            expression_types,
             namespace: String::new(),
             scopes: vec![HashMap::new()],
             mutable: Vec::new(),
             in_function: false,
             capture_count: 0,
-            next_function_id,
             generated,
             captured: HashSet::new(),
         }
@@ -439,15 +455,15 @@ impl<'a> FunctionLowerer<'a> {
                 let captures = captured.iter().map(|(_, local)| *local).collect::<Vec<_>>();
                 self.captured.extend(captures.iter().copied());
 
-                let function = self.next_function_id.get();
-                self.next_function_id.set(function + 1);
+                let function = self.generated.next_id.get();
+                self.generated.next_id.set(function + 1);
                 let mut child = FunctionLowerer::new(
                     self.functions,
                     self.methods,
                     self.method_names,
                     self.types,
                     self.host_functions,
-                    self.next_function_id.clone(),
+                    self.expression_types,
                     self.generated.clone(),
                 );
                 child.in_function = true;
@@ -467,7 +483,10 @@ impl<'a> FunctionLowerer<'a> {
                     span: *span,
                     exported: false,
                 })?;
-                self.generated.borrow_mut().push((function, lowered));
+                self.generated
+                    .functions
+                    .borrow_mut()
+                    .push((function, lowered));
                 Ok(HirStatement::DefineFunction {
                     local,
                     function,
@@ -828,26 +847,31 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    if self.method_names.get(name).is_none()
-                        && let Some((import_name, signature, receiver)) =
-                            builtin_method_import(name)
-                    {
-                        let receiver = self.method_receiver(object, receiver)?;
-                        let mut lowered = Vec::with_capacity(arguments.len() + 1);
-                        lowered.push(receiver);
-                        lowered.extend(
-                            arguments
-                                .iter()
-                                .map(|argument| self.expression(argument))
-                                .collect::<Result<Vec<_>, _>>()?,
-                        );
-                        return Ok(HirExpression::CallImport {
-                            name: import_name.into(),
-                            signature,
-                            capability: "core".into(),
-                            arguments: lowered,
-                            span: *span,
-                        });
+                    if self.method_names.get(name).is_none() {
+                        let owner = self
+                            .expression_types
+                            .get(&object.span())
+                            .and_then(rils_frontend::standard_library::builtin_owner_name);
+                        if let Some((import_name, signature, receiver)) =
+                            builtin_method_import(owner, name)
+                        {
+                            let receiver = self.method_receiver(object, receiver)?;
+                            let mut lowered = Vec::with_capacity(arguments.len() + 1);
+                            lowered.push(receiver);
+                            lowered.extend(
+                                arguments
+                                    .iter()
+                                    .map(|argument| self.expression(argument))
+                                    .collect::<Result<Vec<_>, _>>()?,
+                            );
+                            return Ok(HirExpression::CallImport {
+                                name: import_name.into(),
+                                signature,
+                                capability: "core".into(),
+                                arguments: lowered,
+                                span: *span,
+                            });
+                        }
                     }
                     let method = self
                         .method_names

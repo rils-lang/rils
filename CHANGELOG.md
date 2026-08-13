@@ -37,6 +37,8 @@
   并在元素仍被引用时拒绝会使索引失效的重排操作。
 - Option 增加 `expect/take`，Result 增加 `expect/ok/err`，以便在不手写 match 的情况下提供上下文错误、
   取出可选值或在 Result 与 Option 之间转换。
+- Option 增加 `or/xor/replace`，覆盖备用值选择、互斥存在判断和原地替换；编译器 lowering 现在保留
+  receiver 的静态类型，用于可靠区分不同内建类型上的同名方法。
 - 增加共享 `rils_builtins` crate，通过声明宏和递归类型表达式集中描述内建 module、primitive、
   struct、enum、trait、function、成员、稳定 intrinsic ID、实现后端和文档。首批整数 intrinsic、
   标准模块签名和 Analyzer 符号开始复用编译期静态表，不依赖外部标准库文件。

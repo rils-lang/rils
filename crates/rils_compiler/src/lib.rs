@@ -93,18 +93,23 @@ pub fn compile_program_with_host(
             message: error.message,
             span: error.span,
         })?;
-    if let Some(diagnostic) =
-        rils_frontend::analysis::analyze_program_with_host_functions(&program, &signatures)
-            .diagnostics
-            .into_iter()
-            .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+    let analysis =
+        rils_frontend::analysis::analyze_program_with_host_functions(&program, &signatures);
+    if let Some(diagnostic) = analysis
+        .diagnostics
+        .into_iter()
+        .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
     {
         return Err(CompileError {
             message: diagnostic.message,
             span: diagnostic.span,
         });
     }
-    mir::lower(hir::lower_with_host(&program, host)?)
+    mir::lower(hir::lower_with_host(
+        &program,
+        host,
+        &analysis.expression_types,
+    )?)
 }
 
 #[cfg(test)]

@@ -99,6 +99,28 @@ fn option_and_result_helpers_match_interpreter() {
 }
 
 #[test]
+fn option_state_operations_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            let left = Some(2);
+            let missing: Option<i32> = None;
+            assert!(left.or(Some(7)).unwrap() == 2);
+            assert!(missing.or(Some(7)).unwrap() == 7);
+            assert!(Some(3).xor(None).unwrap() == 3);
+            assert!(None.xor(Some(4)).unwrap() == 4);
+            assert!(Some(3).xor(Some(4)).is_none());
+
+            let mut value = Some(10);
+            assert!(value.replace(20).unwrap() == 10);
+            assert!(value.unwrap() == 20);
+            let mut empty: Option<i32> = None;
+            assert!(empty.replace(30).is_none());
+            empty.unwrap()
+        "#,
+    );
+}
+
+#[test]
 fn established_option_and_result_methods_match_interpreter() {
     assert_matches_interpreter(
         r#"

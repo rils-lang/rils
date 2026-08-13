@@ -91,6 +91,7 @@ pub fn erased_builtin_import_signature(import: &str) -> Option<FunctionSignature
         .filter_map(erased_builtin_member_signature);
     let mut merged = signatures.next()?;
     for signature in signatures {
+        merged.return_type = erase_type_conflict(&merged.return_type, &signature.return_type);
         let (Some(left), Some(right)) = (&mut merged.parameters, signature.parameters) else {
             merged.parameters = None;
             continue;
@@ -102,7 +103,6 @@ pub fn erased_builtin_import_signature(import: &str) -> Option<FunctionSignature
         for (left, right) in left.iter_mut().zip(right) {
             *left = erase_type_conflict(left, &right);
         }
-        merged.return_type = erase_type_conflict(&merged.return_type, &signature.return_type);
     }
     Some(merged)
 }
@@ -273,5 +273,12 @@ mod tests {
             integer_intrinsic_type(intrinsic, crate::types::IntegerType::I32),
             Type::function(vec![Type::I32], Type::Option(Box::new(Type::I32)))
         );
+    }
+
+    #[test]
+    fn overloaded_imports_erase_parameter_and_return_conflicts() {
+        let signature = erased_builtin_import_signature("core::value::replace").unwrap();
+        assert!(signature.parameters.is_none());
+        assert_eq!(signature.return_type, Type::Unknown);
     }
 }

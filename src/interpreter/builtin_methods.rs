@@ -651,6 +651,95 @@ impl Interpreter {
                 })
             }
             BuiltinMethod::Runtime(
+                id @ (rils_builtins::RuntimeMemberId::OptionOr
+                | rils_builtins::RuntimeMemberId::OptionXor),
+            ) => {
+                let Value::Option {
+                    value: left,
+                    element_type: left_type,
+                } = method.receiver.as_ref()
+                else {
+                    return Err(RuntimeError::new(
+                        "Option operation receiver is not Option",
+                        span,
+                    ));
+                };
+                let Value::Option {
+                    value: right,
+                    element_type: right_type,
+                } = &arguments[0]
+                else {
+                    return Err(RuntimeError::new("Option operand must be Option", span));
+                };
+                let element_type = merge_types(
+                    left_type.as_ref().unwrap_or(&Type::Unknown),
+                    right_type.as_ref().unwrap_or(&Type::Unknown),
+                )
+                .ok_or_else(|| RuntimeError::new("Option operand types do not match", span))?;
+                let value = match id {
+                    rils_builtins::RuntimeMemberId::OptionOr => {
+                        left.as_ref().or(right.as_ref()).cloned()
+                    }
+                    rils_builtins::RuntimeMemberId::OptionXor => match (left, right) {
+                        (Some(value), None) | (None, Some(value)) => Some(value.clone()),
+                        _ => None,
+                    },
+                    _ => unreachable!(),
+                };
+                Ok(Value::Option {
+                    value,
+                    element_type: Some(element_type),
+                })
+            }
+            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::OptionReplace) => {
+                let Value::Reference(reference) = method.receiver.as_ref() else {
+                    return Err(RuntimeError::new(
+                        "Option::replace requires a mutable binding",
+                        span,
+                    ));
+                };
+                if !reference.mutable {
+                    return Err(RuntimeError::new(
+                        "Option::replace requires `&mut self`",
+                        span,
+                    ));
+                }
+                let Value::Option {
+                    value: previous,
+                    element_type,
+                } = reference
+                    .read()
+                    .map_err(|message| RuntimeError::new(message, span))?
+                else {
+                    return Err(RuntimeError::new("replace receiver is not Option", span));
+                };
+                let value = &arguments[0];
+                if value.contains_reference() {
+                    return Err(RuntimeError::new(
+                        "Option cannot own local references",
+                        span,
+                    ));
+                }
+                let expected = element_type.clone().unwrap_or(Type::Unknown);
+                let actual = Type::of_value(value).unwrap_or(Type::Unknown);
+                let resolved = merge_types(&expected, &actual).ok_or_else(|| {
+                    RuntimeError::new(
+                        format!("Option element type is `{expected}`, found `{actual}`"),
+                        span,
+                    )
+                })?;
+                reference
+                    .write(Value::Option {
+                        value: Some(Rc::new(value.clone())),
+                        element_type: Some(resolved.clone()),
+                    })
+                    .map_err(|error| super::evaluation::assignment_error(error, "Option", span))?;
+                Ok(Value::Option {
+                    value: previous,
+                    element_type: Some(resolved),
+                })
+            }
+            BuiltinMethod::Runtime(
                 id @ (rils_builtins::RuntimeMemberId::StringLen
                 | rils_builtins::RuntimeMemberId::StringIsEmpty
                 | rils_builtins::RuntimeMemberId::StringContains

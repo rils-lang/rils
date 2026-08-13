@@ -451,9 +451,6 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                     element_type: Some(Type::USIZE),
                 }),
                 "core::string::trim" => Ok(Value::String(Rc::from(value.trim()))),
-                "core::string::replace" => Ok(Value::String(Rc::from(
-                    value.replace(argument(1)?, argument(2)?),
-                ))),
                 _ => Err(format!("unknown string import `{name}`")),
             }
         }
@@ -522,6 +519,83 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
             Ok(Value::Option {
                 value,
                 element_type,
+            })
+        }
+        "core::option::or" | "core::option::xor" => {
+            let Value::Option {
+                value: left,
+                element_type: left_type,
+            } = &arguments[0]
+            else {
+                return Err("Option operation receiver is not Option".into());
+            };
+            let Value::Option {
+                value: right,
+                element_type: right_type,
+            } = &arguments[1]
+            else {
+                return Err("Option operand must be Option".into());
+            };
+            let element_type = crate::types::merge_types(
+                left_type.as_ref().unwrap_or(&Type::Unknown),
+                right_type.as_ref().unwrap_or(&Type::Unknown),
+            )
+            .ok_or_else(|| "Option operand types do not match".to_string())?;
+            let value = if name == "core::option::or" {
+                left.as_ref().or(right.as_ref()).cloned()
+            } else {
+                match (left, right) {
+                    (Some(value), None) | (None, Some(value)) => Some(value.clone()),
+                    _ => None,
+                }
+            };
+            Ok(Value::Option {
+                value,
+                element_type: Some(element_type),
+            })
+        }
+        "core::value::replace" => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("replace receiver must be a reference".into());
+            };
+            let receiver = reference.read()?;
+            if let Value::String(value) = receiver {
+                let (Value::String(pattern), Value::String(replacement)) =
+                    (&arguments[1], &arguments[2])
+                else {
+                    return Err("string replace arguments must be string".into());
+                };
+                return Ok(Value::String(Rc::from(
+                    value.replace(pattern.as_ref(), replacement.as_ref()),
+                )));
+            }
+            if !reference.mutable {
+                return Err("Option::replace requires `&mut self`".into());
+            }
+            let Value::Option {
+                value: previous,
+                element_type,
+            } = receiver
+            else {
+                return Err("replace receiver is not Option".into());
+            };
+            let value = &arguments[1];
+            if value.contains_reference() {
+                return Err("Option cannot own local references".into());
+            }
+            let expected = element_type.clone().unwrap_or(Type::Unknown);
+            let actual = Type::of_value(value).unwrap_or(Type::Unknown);
+            let resolved = crate::types::merge_types(&expected, &actual)
+                .ok_or_else(|| format!("Option element type is `{expected}`, found `{actual}`"))?;
+            reference
+                .write(Value::Option {
+                    value: Some(Rc::new(value.clone())),
+                    element_type: Some(resolved.clone()),
+                })
+                .map_err(|error| assign_error(error, Span::default()).message)?;
+            Ok(Value::Option {
+                value: previous,
+                element_type: Some(resolved),
             })
         }
         _ => Err(format!("unknown core import `{name}`")),
