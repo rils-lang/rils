@@ -253,6 +253,9 @@ pub enum RuntimeMemberId {
     VecPop = 18,
     SequenceIntoIter = 19,
     IteratorNext = 20,
+    SequenceIsEmpty = 21,
+    VecClear = 22,
+    VecTruncate = 23,
     RangeNext = 32,
     RangeIntoIter = 33,
     ResultIsOk = 48,
@@ -263,6 +266,14 @@ pub enum RuntimeMemberId {
     OptionIsNone = 65,
     OptionUnwrap = 66,
     OptionUnwrapOr = 67,
+    StringLen = 80,
+    StringIsEmpty = 81,
+    StringContains = 82,
+    StringStartsWith = 83,
+    StringEndsWith = 84,
+    StringFind = 85,
+    StringTrim = 86,
+    StringReplace = 87,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -399,13 +410,27 @@ const VEC_MEMBERS: &[BuiltinMember] = &[
     member!("new", associated [] -> TypePattern::SelfType, "Creates an empty Vec."),
     member!("from", associated [TypePattern::Unknown] -> TypePattern::SelfType, "Creates a Vec from an owned array."),
     member!("len", method Shared [] -> TypePattern::Usize, SequenceLen, "Returns the element count."),
+    member!("is_empty", method Shared [] -> TypePattern::Bool, SequenceIsEmpty, "Returns true when the Vec has no elements."),
     member!("push", method Mutable [T] -> TypePattern::Unit, VecPush, "Appends one element."),
     member!("pop", method Mutable [] -> TypePattern::Option(&T), VecPop, "Removes and returns the last element."),
+    member!("clear", method Mutable [] -> TypePattern::Unit, VecClear, "Removes all elements."),
+    member!("truncate", method Mutable [TypePattern::Usize] -> TypePattern::Unit, VecTruncate, "Shortens the Vec to at most the supplied length."),
     member!("into_iter", method Owned [] -> TypePattern::Unknown, SequenceIntoIter, "Consumes the Vec and creates an iterator."),
 ];
 const ARRAY_MEMBERS: &[BuiltinMember] = &[
     member!("len", method Shared [] -> TypePattern::Usize, SequenceLen, "Returns the element count."),
+    member!("is_empty", method Shared [] -> TypePattern::Bool, SequenceIsEmpty, "Returns true when the array has no elements."),
     member!("into_iter", method Owned [] -> TypePattern::Unknown, SequenceIntoIter, "Consumes the array and creates an iterator."),
+];
+const STRING_MEMBERS: &[BuiltinMember] = &[
+    member!("len", method Shared [] -> TypePattern::Usize, StringLen, "Returns the UTF-8 byte length."),
+    member!("is_empty", method Shared [] -> TypePattern::Bool, StringIsEmpty, "Returns true when the string has no bytes."),
+    member!("contains", method Shared [STRING] -> TypePattern::Bool, StringContains, "Returns true when the substring is present."),
+    member!("starts_with", method Shared [STRING] -> TypePattern::Bool, StringStartsWith, "Tests the string prefix."),
+    member!("ends_with", method Shared [STRING] -> TypePattern::Bool, StringEndsWith, "Tests the string suffix."),
+    member!("find", method Shared [STRING] -> TypePattern::Option(&TypePattern::Usize), StringFind, "Returns the byte offset of the first match."),
+    member!("trim", method Shared [] -> STRING, StringTrim, "Returns a string without leading or trailing whitespace."),
+    member!("replace", method Shared [STRING, STRING] -> STRING, StringReplace, "Replaces every matching substring."),
 ];
 const RANGE_MEMBERS: &[BuiltinMember] = &[
     member!("next", method Mutable [] -> TypePattern::Option(&T), RangeNext, "Advances the range."),
@@ -468,6 +493,14 @@ pub const BUILTINS: &[BuiltinDeclaration] = &[
         &[],
         BuiltinBackend::Metadata,
         "Names imported into every script."
+    ),
+    builtin!(
+        "string",
+        Primitive,
+        [],
+        STRING_MEMBERS,
+        BuiltinBackend::Runtime,
+        "An owned UTF-8 string."
     ),
     builtin!(
         "Option",
@@ -650,6 +683,9 @@ mod tests {
             RuntimeMemberId::SequenceLen,
             RuntimeMemberId::VecPush,
             RuntimeMemberId::VecPop,
+            RuntimeMemberId::SequenceIsEmpty,
+            RuntimeMemberId::VecClear,
+            RuntimeMemberId::VecTruncate,
             RuntimeMemberId::SequenceIntoIter,
             RuntimeMemberId::IteratorNext,
             RuntimeMemberId::RangeNext,
@@ -662,6 +698,14 @@ mod tests {
             RuntimeMemberId::OptionIsNone,
             RuntimeMemberId::OptionUnwrap,
             RuntimeMemberId::OptionUnwrapOr,
+            RuntimeMemberId::StringLen,
+            RuntimeMemberId::StringIsEmpty,
+            RuntimeMemberId::StringContains,
+            RuntimeMemberId::StringStartsWith,
+            RuntimeMemberId::StringEndsWith,
+            RuntimeMemberId::StringFind,
+            RuntimeMemberId::StringTrim,
+            RuntimeMemberId::StringReplace,
         ] {
             assert!(
                 runtime_member(id).is_some(),

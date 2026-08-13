@@ -88,6 +88,11 @@ pub(super) fn collection_method_import(
             FunctionSignature::fixed(vec![shared()], Type::USIZE),
             ReceiverMode::Reference { mutable: false },
         ),
+        "is_empty" => (
+            "core::value::is_empty",
+            FunctionSignature::fixed(vec![shared()], Type::Bool),
+            ReceiverMode::Reference { mutable: false },
+        ),
         "push" => (
             "core::vec::push",
             FunctionSignature::fixed(vec![mutable(), Type::Unknown], Type::Unit),
@@ -97,6 +102,49 @@ pub(super) fn collection_method_import(
             "core::vec::pop",
             FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
             ReceiverMode::Reference { mutable: true },
+        ),
+        "clear" => (
+            "core::vec::clear",
+            FunctionSignature::fixed(vec![mutable()], Type::Unit),
+            ReceiverMode::Reference { mutable: true },
+        ),
+        "truncate" => (
+            "core::vec::truncate",
+            FunctionSignature::fixed(vec![mutable(), Type::USIZE], Type::Unit),
+            ReceiverMode::Reference { mutable: true },
+        ),
+        "contains" => (
+            "core::string::contains",
+            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
+            ReceiverMode::Reference { mutable: false },
+        ),
+        "starts_with" => (
+            "core::string::starts_with",
+            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
+            ReceiverMode::Reference { mutable: false },
+        ),
+        "ends_with" => (
+            "core::string::ends_with",
+            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
+            ReceiverMode::Reference { mutable: false },
+        ),
+        "find" => (
+            "core::string::find",
+            FunctionSignature::fixed(
+                vec![shared(), Type::String],
+                Type::Option(Box::new(Type::USIZE)),
+            ),
+            ReceiverMode::Reference { mutable: false },
+        ),
+        "trim" => (
+            "core::string::trim",
+            FunctionSignature::fixed(vec![shared()], Type::String),
+            ReceiverMode::Reference { mutable: false },
+        ),
+        "replace" => (
+            "core::string::replace",
+            FunctionSignature::fixed(vec![shared(), Type::String, Type::String], Type::String),
+            ReceiverMode::Reference { mutable: false },
         ),
         _ => return None,
     })

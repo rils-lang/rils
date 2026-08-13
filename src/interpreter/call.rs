@@ -300,6 +300,26 @@ impl Interpreter {
                         };
                         Ok(Value::Usize(length))
                     }
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceIsEmpty) => {
+                        let value = match method.receiver.as_ref() {
+                            Value::Reference(reference) => reference
+                                .read()
+                                .map_err(|message| RuntimeError::new(message, span))?,
+                            value => value.clone(),
+                        };
+                        let empty = match value {
+                            Value::Array(sequence) | Value::Vec(sequence) => {
+                                sequence.elements.borrow().is_empty()
+                            }
+                            _ => {
+                                return Err(RuntimeError::new(
+                                    "is_empty receiver is not a collection",
+                                    span,
+                                ));
+                            }
+                        };
+                        Ok(Value::Bool(empty))
+                    }
                     BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::VecPush) => {
                         let Value::Reference(reference) = method.receiver.as_ref() else {
                             return Err(RuntimeError::new(
@@ -377,6 +397,52 @@ impl Interpreter {
                             value,
                             element_type: Some(element_type),
                         })
+                    }
+                    BuiltinMethod::Runtime(
+                        id @ (rils_builtins::RuntimeMemberId::VecClear
+                        | rils_builtins::RuntimeMemberId::VecTruncate),
+                    ) => {
+                        let Value::Reference(reference) = method.receiver.as_ref() else {
+                            return Err(RuntimeError::new(
+                                "Vec mutation requires a mutable binding",
+                                span,
+                            ));
+                        };
+                        if !reference.mutable {
+                            return Err(RuntimeError::new(
+                                "Vec mutation requires `&mut self`",
+                                span,
+                            ));
+                        }
+                        let Value::Vec(sequence) = reference
+                            .read()
+                            .map_err(|message| RuntimeError::new(message, span))?
+                        else {
+                            return Err(RuntimeError::new("receiver is not Vec", span));
+                        };
+                        let length = if id == rils_builtins::RuntimeMemberId::VecClear {
+                            0
+                        } else {
+                            let Value::Usize(length) = arguments[0] else {
+                                return Err(RuntimeError::new(
+                                    "Vec::truncate length must be usize",
+                                    span,
+                                ));
+                            };
+                            length
+                        };
+                        let mut elements = sequence.elements.borrow_mut();
+                        if elements
+                            .get(length..)
+                            .is_some_and(|tail| tail.iter().any(|slot| slot.references > 0))
+                        {
+                            return Err(RuntimeError::new(
+                                "cannot remove a referenced Vec element",
+                                span,
+                            ));
+                        }
+                        elements.truncate(length);
+                        Ok(Value::Unit)
                     }
                     BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceIntoIter) => {
                         let sequence = match method.receiver.as_ref() {
@@ -558,6 +624,70 @@ impl Interpreter {
                             .as_ref()
                             .map(|value| (**value).clone())
                             .ok_or_else(|| RuntimeError::new("called `unwrap` on `None`", span))
+                    }
+                    BuiltinMethod::Runtime(
+                        id @ (rils_builtins::RuntimeMemberId::StringLen
+                        | rils_builtins::RuntimeMemberId::StringIsEmpty
+                        | rils_builtins::RuntimeMemberId::StringContains
+                        | rils_builtins::RuntimeMemberId::StringStartsWith
+                        | rils_builtins::RuntimeMemberId::StringEndsWith
+                        | rils_builtins::RuntimeMemberId::StringFind
+                        | rils_builtins::RuntimeMemberId::StringTrim
+                        | rils_builtins::RuntimeMemberId::StringReplace),
+                    ) => {
+                        let receiver = match method.receiver.as_ref() {
+                            Value::Reference(reference) => reference
+                                .read()
+                                .map_err(|message| RuntimeError::new(message, span))?,
+                            value => value.clone(),
+                        };
+                        let Value::String(value) = receiver else {
+                            return Err(RuntimeError::new(
+                                "string method receiver is not string",
+                                span,
+                            ));
+                        };
+                        let string_argument = |index: usize| match arguments.get(index) {
+                            Some(Value::String(value)) => Ok(value.as_ref()),
+                            Some(value) => Err(RuntimeError::new(
+                                format!(
+                                    "string argument must be string, found {}",
+                                    value.type_name()
+                                ),
+                                span,
+                            )),
+                            None => Err(RuntimeError::new("missing string argument", span)),
+                        };
+                        match id {
+                            rils_builtins::RuntimeMemberId::StringLen => {
+                                Ok(Value::Usize(value.len()))
+                            }
+                            rils_builtins::RuntimeMemberId::StringIsEmpty => {
+                                Ok(Value::Bool(value.is_empty()))
+                            }
+                            rils_builtins::RuntimeMemberId::StringContains => {
+                                Ok(Value::Bool(value.contains(string_argument(0)?)))
+                            }
+                            rils_builtins::RuntimeMemberId::StringStartsWith => {
+                                Ok(Value::Bool(value.starts_with(string_argument(0)?)))
+                            }
+                            rils_builtins::RuntimeMemberId::StringEndsWith => {
+                                Ok(Value::Bool(value.ends_with(string_argument(0)?)))
+                            }
+                            rils_builtins::RuntimeMemberId::StringFind => Ok(Value::Option {
+                                value: value
+                                    .find(string_argument(0)?)
+                                    .map(|offset| Rc::new(Value::Usize(offset))),
+                                element_type: Some(Type::USIZE),
+                            }),
+                            rils_builtins::RuntimeMemberId::StringTrim => {
+                                Ok(Value::String(Rc::from(value.trim())))
+                            }
+                            rils_builtins::RuntimeMemberId::StringReplace => Ok(Value::String(
+                                Rc::from(value.replace(string_argument(0)?, string_argument(1)?)),
+                            )),
+                            _ => unreachable!(),
+                        }
                     }
                 }
             }
@@ -1292,6 +1422,7 @@ pub(super) fn builtin_runtime_member(
 ) -> Option<(rils_builtins::RuntimeMemberId, rils_builtins::ReceiverMode)> {
     let owner = match value {
         Value::Array(_) => "Array",
+        Value::String(_) => "string",
         Value::Vec(_) => "Vec",
         Value::Range(_) => "Range",
         Value::Option { .. } => "Option",

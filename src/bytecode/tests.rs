@@ -29,6 +29,33 @@ fn compiles_arithmetic_blocks_and_short_circuiting() {
 }
 
 #[test]
+fn core_string_and_vec_helpers_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            let text = "  alpha beta alpha  ";
+            let trimmed = text.trim();
+            assert!(text.len() == 20usize);
+            assert!(!text.is_empty());
+            assert!(text.contains("beta"));
+            assert!(text.starts_with("  alpha"));
+            assert!(text.ends_with("alpha  "));
+            assert!(unwrap(text.find("beta")) == 8usize);
+            assert!(is_none("missing".find("x")));
+            assert!(trimmed.replace("alpha", "rils") == "rils beta rils");
+            assert!(trimmed == "alpha beta alpha");
+
+            let empty: [i32; 0] = [];
+            assert!(empty.is_empty());
+            let mut values = Vec::from([1, 2, 3, 4]);
+            values.truncate(2usize);
+            assert!(values.len() == 2usize);
+            values.clear();
+            values.is_empty()
+        "#,
+    );
+}
+
+#[test]
 fn compiles_while_break_and_continue() {
     assert_matches_interpreter(
         r#"

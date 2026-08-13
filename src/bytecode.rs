@@ -999,12 +999,51 @@ fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
             FunctionSignature::fixed(vec![shared()], Type::USIZE),
         ),
         (
+            "core::value::is_empty",
+            FunctionSignature::fixed(vec![shared()], Type::Bool),
+        ),
+        (
             "core::vec::push",
             FunctionSignature::fixed(vec![mutable(), Type::Unknown], Type::Unit),
         ),
         (
             "core::vec::pop",
             FunctionSignature::fixed(vec![mutable()], Type::Option(Box::new(Type::Unknown))),
+        ),
+        (
+            "core::vec::clear",
+            FunctionSignature::fixed(vec![mutable()], Type::Unit),
+        ),
+        (
+            "core::vec::truncate",
+            FunctionSignature::fixed(vec![mutable(), Type::USIZE], Type::Unit),
+        ),
+        (
+            "core::string::contains",
+            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
+        ),
+        (
+            "core::string::starts_with",
+            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
+        ),
+        (
+            "core::string::ends_with",
+            FunctionSignature::fixed(vec![shared(), Type::String], Type::Bool),
+        ),
+        (
+            "core::string::find",
+            FunctionSignature::fixed(
+                vec![shared(), Type::String],
+                Type::Option(Box::new(Type::USIZE)),
+            ),
+        ),
+        (
+            "core::string::trim",
+            FunctionSignature::fixed(vec![shared()], Type::String),
+        ),
+        (
+            "core::string::replace",
+            FunctionSignature::fixed(vec![shared(), Type::String, Type::String], Type::String),
         ),
     ]
 }
@@ -1140,6 +1179,7 @@ fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
             let value = reference.read()?;
             let length = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => sequence.elements.borrow().len(),
+                Value::String(value) => value.len(),
                 value => {
                     return Err(format!(
                         "len receiver is not a collection: {}",
@@ -1148,6 +1188,20 @@ fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 }
             };
             Ok(Value::Usize(length))
+        }
+        "core::value::is_empty" => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("is_empty receiver must be a reference".into());
+            };
+            let value = reference.read()?;
+            let empty = match value {
+                Value::Array(sequence) | Value::Vec(sequence) => {
+                    sequence.elements.borrow().is_empty()
+                }
+                Value::String(value) => value.is_empty(),
+                value => return Err(format!("{} has no is_empty method", value.type_name())),
+            };
+            Ok(Value::Bool(empty))
         }
         "core::vec::push" => {
             let Value::Reference(reference) = &arguments[0] else {
@@ -1207,6 +1261,66 @@ fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 value,
                 element_type: Some(element_type),
             })
+        }
+        "core::vec::clear" | "core::vec::truncate" => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Vec mutation requires a mutable binding".into());
+            };
+            if !reference.mutable {
+                return Err("Vec mutation requires `&mut self`".into());
+            }
+            let Value::Vec(sequence) = reference.read()? else {
+                return Err("receiver is not Vec".into());
+            };
+            let length = if name == "core::vec::clear" {
+                0
+            } else {
+                let Value::Usize(length) = arguments[1] else {
+                    return Err("Vec::truncate length must be usize".into());
+                };
+                length
+            };
+            let mut elements = sequence.elements.borrow_mut();
+            if elements
+                .get(length..)
+                .is_some_and(|tail| tail.iter().any(|slot| slot.references > 0))
+            {
+                return Err("cannot remove a referenced Vec element".into());
+            }
+            elements.truncate(length);
+            Ok(Value::Unit)
+        }
+        name if name.starts_with("core::string::") => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("string method receiver must be a reference".into());
+            };
+            let Value::String(value) = reference.read()? else {
+                return Err("string method receiver is not string".into());
+            };
+            let argument = |index: usize| match arguments.get(index) {
+                Some(Value::String(value)) => Ok(value.as_ref()),
+                Some(value) => Err(format!(
+                    "string argument must be string, found {}",
+                    value.type_name()
+                )),
+                None => Err("missing string argument".into()),
+            };
+            match name {
+                "core::string::contains" => Ok(Value::Bool(value.contains(argument(1)?))),
+                "core::string::starts_with" => Ok(Value::Bool(value.starts_with(argument(1)?))),
+                "core::string::ends_with" => Ok(Value::Bool(value.ends_with(argument(1)?))),
+                "core::string::find" => Ok(Value::Option {
+                    value: value
+                        .find(argument(1)?)
+                        .map(|offset| Rc::new(Value::Usize(offset))),
+                    element_type: Some(Type::USIZE),
+                }),
+                "core::string::trim" => Ok(Value::String(Rc::from(value.trim()))),
+                "core::string::replace" => Ok(Value::String(Rc::from(
+                    value.replace(argument(1)?, argument(2)?),
+                ))),
+                _ => Err(format!("unknown string import `{name}`")),
+            }
         }
         _ => Err(format!("unknown core import `{name}`")),
     }

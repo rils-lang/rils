@@ -31,6 +31,8 @@
 
 ### Added
 
+- string 增加 `len/is_empty/contains/starts_with/ends_with/find/trim/replace`；数组和 Vec 增加
+  `is_empty`，Vec 增加 `clear/truncate`。这些方法共享内建声明，并已贯通解释器与字节码 VM。
 - 增加共享 `rils_builtins` crate，通过声明宏和递归类型表达式集中描述内建 module、primitive、
   struct、enum、trait、function、成员、稳定 intrinsic ID、实现后端和文档。首批整数 intrinsic、
   标准模块签名和 Analyzer 符号开始复用编译期静态表，不依赖外部标准库文件。
