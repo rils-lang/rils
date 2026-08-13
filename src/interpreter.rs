@@ -1,5 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+mod builtin_methods;
 mod builtins;
 mod call;
 mod construction;
