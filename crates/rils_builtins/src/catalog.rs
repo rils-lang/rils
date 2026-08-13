@@ -51,6 +51,8 @@ pub enum RuntimeMemberId {
     ResultExpect = 52,
     ResultOk = 53,
     ResultErr = 54,
+    ResultUnwrapErr = 55,
+    ResultExpectErr = 56,
     OptionIsSome = 64,
     OptionIsNone = 65,
     OptionUnwrap = 66,
@@ -94,6 +96,8 @@ impl RuntimeMemberId {
             Self::ResultExpect | Self::OptionExpect => "core::value::expect",
             Self::ResultOk => "core::result::ok",
             Self::ResultErr => "core::result::err",
+            Self::ResultUnwrapErr => "core::result::unwrap_err",
+            Self::ResultExpectErr => "core::result::expect_err",
             Self::OptionIsSome => "core::option::is_some",
             Self::OptionIsNone => "core::option::is_none",
             Self::OptionTake => "core::option::take",
@@ -227,6 +231,8 @@ const RESULT_MEMBERS: &[BuiltinMember] = &[
     member!("expect", method Owned [STRING] -> T, ResultExpect, "Returns the Ok value or fails with the supplied message."),
     member!("ok", method Owned [] -> TypePattern::Option(&T), ResultOk, "Converts Result<T, E> to Option<T>."),
     member!("err", method Owned [] -> TypePattern::Option(&E), ResultErr, "Converts Result<T, E> to Option<E>."),
+    member!("unwrap_err", method Owned [] -> E, ResultUnwrapErr, "Returns the Err value or fails when the Result is Ok."),
+    member!("expect_err", method Owned [STRING] -> E, ResultExpectErr, "Returns the Err value or fails with the supplied message when the Result is Ok."),
 ];
 const ITERATOR_MEMBERS: &[BuiltinMember] = &[
     member!(
@@ -574,6 +580,8 @@ mod tests {
             RuntimeMemberId::ResultExpect,
             RuntimeMemberId::ResultOk,
             RuntimeMemberId::ResultErr,
+            RuntimeMemberId::ResultUnwrapErr,
+            RuntimeMemberId::ResultExpectErr,
             RuntimeMemberId::OptionIsSome,
             RuntimeMemberId::OptionIsNone,
             RuntimeMemberId::OptionUnwrap,

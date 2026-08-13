@@ -141,6 +141,18 @@ fn established_option_and_result_methods_match_interpreter() {
 }
 
 #[test]
+fn result_error_extraction_matches_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            let first: Result<i32, string> = Err("missing");
+            assert!(first.unwrap_err() == "missing");
+            let second: Result<i32, string> = Err("invalid");
+            second.expect_err("expected failure")
+        "#,
+    );
+}
+
+#[test]
 fn compiles_while_break_and_continue() {
     assert_matches_interpreter(
         r#"

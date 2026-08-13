@@ -39,6 +39,7 @@
   取出可选值或在 Result 与 Option 之间转换。
 - Option 增加 `or/xor/replace`，覆盖备用值选择、互斥存在判断和原地替换；编译器 lowering 现在保留
   receiver 的静态类型，用于可靠区分不同内建类型上的同名方法。
+- Result 增加 `unwrap_err/expect_err`，使错误侧提取与现有成功侧 `unwrap/expect` 保持对称。
 - 增加共享 `rils_builtins` crate，通过声明宏和递归类型表达式集中描述内建 module、primitive、
   struct、enum、trait、function、成员、稳定 intrinsic ID、实现后端和文档。首批整数 intrinsic、
   标准模块签名和 Analyzer 符号开始复用编译期静态表，不依赖外部标准库文件。

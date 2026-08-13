@@ -496,6 +496,24 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                 element_type,
             })
         }
+        "core::result::unwrap_err" | "core::result::expect_err" => {
+            let Value::Result { value, .. } = &arguments[0] else {
+                return Err("Result error extraction receiver is not Result".into());
+            };
+            match value {
+                Err(value) => value.clone_owned(),
+                Ok(value) => {
+                    if name == "core::result::expect_err" {
+                        let Value::String(message) = &arguments[1] else {
+                            return Err("expect_err message must be string".into());
+                        };
+                        Err(format!("{message}: {value}"))
+                    } else {
+                        Err(format!("called `unwrap_err` on Ok({value})"))
+                    }
+                }
+            }
+        }
         "core::option::take" => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("Option::take requires a mutable binding".into());

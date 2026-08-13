@@ -546,6 +546,37 @@ impl Interpreter {
                 })
             }
             BuiltinMethod::Runtime(
+                id @ (rils_builtins::RuntimeMemberId::ResultUnwrapErr
+                | rils_builtins::RuntimeMemberId::ResultExpectErr),
+            ) => {
+                let Value::Result { value, .. } = method.receiver.as_ref() else {
+                    return Err(RuntimeError::new(
+                        "Result error extraction receiver is not Result",
+                        span,
+                    ));
+                };
+                match value {
+                    Err(value) => value
+                        .as_ref()
+                        .clone_owned()
+                        .map_err(|message| RuntimeError::new(message, span)),
+                    Ok(value) => {
+                        let message = if id == rils_builtins::RuntimeMemberId::ResultExpectErr {
+                            let Value::String(message) = &arguments[0] else {
+                                return Err(RuntimeError::new(
+                                    "expect_err message must be string",
+                                    span,
+                                ));
+                            };
+                            format!("{message}: {value}")
+                        } else {
+                            format!("called `unwrap_err` on Ok({value})")
+                        };
+                        Err(RuntimeError::new(message, span))
+                    }
+                }
+            }
+            BuiltinMethod::Runtime(
                 id @ (rils_builtins::RuntimeMemberId::OptionIsSome
                 | rils_builtins::RuntimeMemberId::OptionIsNone),
             ) => {

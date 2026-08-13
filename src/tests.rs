@@ -143,6 +143,25 @@ fn builtin_result_constructs_matches_and_unwraps_values() {
 }
 
 #[test]
+fn result_supports_error_side_extraction() {
+    assert_eq!(
+        eval(
+            r#"
+                let first: Result<i32, string> = Err("missing");
+                assert!(first.unwrap_err() == "missing");
+                let second: Result<i32, string> = Err("invalid");
+                second.expect_err("expected failure")
+            "#
+        )
+        .unwrap(),
+        Value::String("invalid".into())
+    );
+    let error = eval("let value: Result<i32, string> = Ok(42); value.unwrap_err();")
+        .expect_err("unwrap_err on Ok must fail");
+    assert!(error.to_string().contains("Ok(42)"));
+}
+
+#[test]
 fn standard_fs_uses_result_and_structured_io_errors() {
     let unique = format!(
         "rils-std-fs-{}-{}",
