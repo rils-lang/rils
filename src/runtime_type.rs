@@ -440,41 +440,17 @@ fn type_of_value(value: &Value) -> Option<Type> {
             Some(signature)
         }
         Value::BuiltinBoundMethod(method) => Some(match method.method {
-            crate::value::BuiltinMethod::RangeNext => {
-                Type::function(Vec::new(), Type::Option(Box::new(Type::Unknown)))
-            }
-            crate::value::BuiltinMethod::RangeIntoIter => {
-                Type::function(Vec::new(), Type::named("Range"))
-            }
-            crate::value::BuiltinMethod::Clone => Type::function(Vec::new(), Type::Unknown),
-            crate::value::BuiltinMethod::SequenceLen => Type::function(Vec::new(), Type::USIZE),
-            crate::value::BuiltinMethod::VecPush => Type::function(vec![Type::Unknown], Type::Unit),
-            crate::value::BuiltinMethod::VecPop | crate::value::BuiltinMethod::SequenceNext => {
-                Type::function(Vec::new(), Type::Option(Box::new(Type::Unknown)))
-            }
-            crate::value::BuiltinMethod::SequenceIntoIter => Type::function(
-                Vec::new(),
-                Type::Named {
-                    name: "SequenceIterator".into(),
-                    arguments: vec![Type::Unknown],
-                },
-            ),
-            crate::value::BuiltinMethod::ResultIsOk | crate::value::BuiltinMethod::ResultIsErr => {
-                Type::function(Vec::new(), Type::Bool)
-            }
-            crate::value::BuiltinMethod::ResultUnwrap => {
-                let return_type = match method.receiver.as_ref() {
-                    Value::Result { ok_type, .. } => ok_type.clone().unwrap_or(Type::Unknown),
-                    _ => Type::Unknown,
+            crate::value::BuiltinMethod::Runtime(id) => {
+                let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
+                let receiver = match receiver {
+                    Type::Reference { inner, .. } => *inner,
+                    receiver => receiver,
                 };
-                Type::function(Vec::new(), return_type)
-            }
-            crate::value::BuiltinMethod::ResultUnwrapOr => {
-                let return_type = match method.receiver.as_ref() {
-                    Value::Result { ok_type, .. } => ok_type.clone().unwrap_or(Type::Unknown),
-                    _ => Type::Unknown,
-                };
-                Type::function(vec![return_type.clone()], return_type)
+                rils_frontend::standard_library::builtin_member_type(
+                    &receiver,
+                    rils_builtins::runtime_member(id)?.1.name,
+                )
+                .unwrap_or_else(Type::opaque_function)
             }
             crate::value::BuiltinMethod::IntegerIntrinsic(id) => {
                 let Some(intrinsic) = rils_builtins::INTEGER_INTRINSICS

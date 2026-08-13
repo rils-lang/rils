@@ -135,18 +135,8 @@ impl Analyzer {
             "#rils_native_print",
             "#rils_native_println",
             "type_of",
-            "clone",
             "#rils_native_assert",
-            "Some",
             "None",
-            "Ok",
-            "Err",
-            "is_ok",
-            "is_err",
-            "is_some",
-            "is_none",
-            "unwrap",
-            "unwrap_or",
         ] {
             globals.insert(
                 name.into(),
@@ -157,7 +147,7 @@ impl Analyzer {
             );
         }
         for builtin in rils_builtins::BUILTINS {
-            if builtin.path.contains("::") || builtin.kind == rils_builtins::BuiltinKind::Function {
+            if builtin.path.contains("::") {
                 continue;
             }
             let kind = match builtin.kind {
@@ -166,7 +156,7 @@ impl Analyzer {
                 rils_builtins::BuiltinKind::Primitive
                 | rils_builtins::BuiltinKind::Struct
                 | rils_builtins::BuiltinKind::Enum => SymbolKind::Type,
-                rils_builtins::BuiltinKind::Function => unreachable!(),
+                rils_builtins::BuiltinKind::Function => SymbolKind::Function,
             };
             globals.insert(builtin.path.into(), Definition { span: None, kind });
         }

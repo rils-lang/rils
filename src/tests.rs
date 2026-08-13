@@ -1203,6 +1203,22 @@ fn option_represents_present_and_absent_values() {
 }
 
 #[test]
+fn option_methods_follow_shared_builtin_declarations() {
+    assert_eq!(
+        integer("let value = Some(42); if value.is_some() { value.unwrap() } else { 0 }"),
+        42
+    );
+    assert_eq!(
+        integer(
+            "let value: Option<i32> = None; if value.is_none() { value.unwrap_or(7) } else { 0 }"
+        ),
+        7
+    );
+    let error = eval("let value: Option<i32> = None; value.unwrap()").unwrap_err();
+    assert!(error.to_string().contains("called `unwrap` on `None`"));
+}
+
+#[test]
 fn annotations_check_initializers_assignments_parameters_and_returns() {
     for source in [
         "let value: i32 = None;",

@@ -80,6 +80,20 @@ impl Inferencer {
                 },
             );
         }
+        for builtin in rils_builtins::BUILTINS.iter().filter(|builtin| {
+            builtin.kind == rils_builtins::BuiltinKind::Function && !builtin.path.contains("::")
+        }) {
+            if let Some(signature) =
+                crate::standard_library::standard_function_signature(builtin.path)
+            {
+                globals.insert(
+                    builtin.path.into(),
+                    Binding {
+                        ty: signature.as_type(),
+                    },
+                );
+            }
+        }
         for (name, signature) in host_functions {
             if !name.contains("::") {
                 globals.insert(
@@ -1043,19 +1057,8 @@ impl Inferencer {
                 .cloned()
                 .unwrap_or(Type::Unknown);
         }
-        if matches!(object_type, Type::Array { .. }) && field == "len" {
-            return Type::function(Vec::new(), Type::USIZE);
-        }
-        if let Type::Named { name, arguments } = object_type
-            && name == "Vec"
-        {
-            let item = arguments.first().cloned().unwrap_or(Type::Unknown);
-            return match field {
-                "len" => Type::function(Vec::new(), Type::USIZE),
-                "push" => Type::function(vec![item.clone()], Type::Unit),
-                "pop" => Type::function(Vec::new(), Type::Option(Box::new(item))),
-                _ => Type::Unknown,
-            };
+        if let Some(member) = crate::standard_library::builtin_member_type(object_type, field) {
+            return member;
         }
         let Type::Named { name, .. } = object_type else {
             return Type::Unknown;

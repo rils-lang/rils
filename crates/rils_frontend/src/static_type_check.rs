@@ -436,16 +436,14 @@ impl<'a> Checker<'a> {
         let Expr::Variable { name, .. } = callee else {
             return false;
         };
-        let arity = match name.as_str() {
-            "Some" | "Ok" | "Err" | "unwrap" | "is_some" | "is_none" | "is_ok" | "is_err" => {
-                Some(1)
-            }
-            "unwrap_or" => Some(2),
-            _ => None,
-        };
-        let Some(arity) = arity else {
+        let Some(signature) = rils_builtins::builtin_function(name).and_then(|item| item.signature)
+        else {
             return false;
         };
+        if signature.variadic {
+            return true;
+        }
+        let arity = signature.parameters.len();
         if arguments.len() != arity {
             self.diagnostic(
                 format!(

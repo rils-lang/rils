@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::types::{FunctionSignature, Type};
 
 pub fn standard_function_signature(name: &str) -> Option<FunctionSignature> {
@@ -6,54 +8,88 @@ pub fn standard_function_signature(name: &str) -> Option<FunctionSignature> {
             .signature
             .expect("function declaration has a signature");
         let return_type = resolve_type_pattern(signature.result);
-        return Some(
-            if signature.variadic || matches!(name, "std::io::print" | "std::io::println") {
-                FunctionSignature::variadic(return_type)
-            } else {
-                FunctionSignature::fixed(
-                    signature
-                        .parameters
-                        .iter()
-                        .copied()
-                        .map(resolve_type_pattern)
-                        .collect(),
-                    return_type,
-                )
-            },
-        );
+        return Some(if signature.variadic {
+            FunctionSignature::variadic(return_type)
+        } else {
+            FunctionSignature::fixed(
+                signature
+                    .parameters
+                    .iter()
+                    .copied()
+                    .map(resolve_type_pattern)
+                    .collect(),
+                return_type,
+            )
+        });
     }
-    let error = Type::named("std::io::Error");
-    let result = |ok| Type::Result(Box::new(ok), Box::new(error.clone()));
-    let signature = match name {
-        "std::io::print" | "std::io::println" => FunctionSignature::variadic(Type::Unit),
-        "std::io::read_line" => FunctionSignature::fixed(Vec::new(), result(Type::String)),
-        "std::io::write" | "std::io::write_line" => {
-            FunctionSignature::fixed(vec![Type::Unknown], result(Type::Unit))
-        }
-        "std::io::flush" => FunctionSignature::fixed(Vec::new(), result(Type::Unit)),
-        "std::fs::read_to_string" => {
-            FunctionSignature::fixed(vec![Type::String], result(Type::String))
-        }
-        "std::fs::write" | "std::fs::append" => {
-            FunctionSignature::fixed(vec![Type::String, Type::String], result(Type::Unit))
-        }
-        "std::fs::try_exists" => FunctionSignature::fixed(vec![Type::String], result(Type::Bool)),
-        "std::fs::create_dir_all" | "std::fs::remove_file" | "std::fs::remove_dir" => {
-            FunctionSignature::fixed(vec![Type::String], result(Type::Unit))
-        }
-        "std::fs::read_dir" => FunctionSignature::fixed(
-            vec![Type::String],
-            result(Type::Named {
-                name: "Vec".into(),
-                arguments: vec![Type::String],
-            }),
-        ),
-        _ => return None,
-    };
-    Some(signature)
+    None
 }
 
-fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type {
+pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
+    let (owner, self_type, generics) = builtin_owner(object)?;
+    let member = rils_builtins::builtin_member(owner, name)?;
+    let signature = member.signature?;
+    Some(Type::function(
+        signature
+            .parameters
+            .iter()
+            .copied()
+            .map(|pattern| resolve_member_pattern(pattern, &self_type, &generics))
+            .collect(),
+        resolve_member_pattern(signature.result, &self_type, &generics),
+    ))
+}
+
+pub fn builtin_receiver_mode(object: &Type, name: &str) -> Option<rils_builtins::ReceiverMode> {
+    let (owner, _, _) = builtin_owner(object)?;
+    rils_builtins::builtin_member(owner, name)?.receiver
+}
+
+fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static str, Type>)> {
+    let mut generics = HashMap::new();
+    match object {
+        Type::Array { element, .. } => {
+            generics.insert("T", (**element).clone());
+            Some(("Array", object.clone(), generics))
+        }
+        Type::Option(inner) => {
+            generics.insert("T", (**inner).clone());
+            Some(("Option", object.clone(), generics))
+        }
+        Type::Result(ok, error) => {
+            generics.insert("T", (**ok).clone());
+            generics.insert("E", (**error).clone());
+            Some(("Result", object.clone(), generics))
+        }
+        Type::Named { name, arguments } if matches!(name.as_str(), "Vec" | "Range") => {
+            if let Some(item) = arguments.first() {
+                generics.insert("T", item.clone());
+            }
+            Some((
+                if name == "Vec" { "Vec" } else { "Range" },
+                object.clone(),
+                generics,
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn resolve_member_pattern(
+    pattern: rils_builtins::TypePattern,
+    self_type: &Type,
+    generics: &HashMap<&'static str, Type>,
+) -> Type {
+    match pattern {
+        rils_builtins::TypePattern::SelfType => self_type.clone(),
+        rils_builtins::TypePattern::Generic(name) => {
+            generics.get(name).cloned().unwrap_or(Type::Unknown)
+        }
+        other => resolve_type_pattern(other),
+    }
+}
+
+pub(crate) fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type {
     use rils_builtins::TypePattern;
     match pattern {
         TypePattern::SelfType | TypePattern::AnyInteger | TypePattern::Unknown => Type::Unknown,

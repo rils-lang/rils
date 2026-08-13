@@ -264,18 +264,7 @@ pub struct BoundMethod {
 
 #[derive(Clone, Copy)]
 pub enum BuiltinMethod {
-    RangeNext,
-    RangeIntoIter,
-    Clone,
-    SequenceLen,
-    VecPush,
-    VecPop,
-    SequenceIntoIter,
-    SequenceNext,
-    ResultIsOk,
-    ResultIsErr,
-    ResultUnwrap,
-    ResultUnwrapOr,
+    Runtime(rils_builtins::RuntimeMemberId),
     IntegerIntrinsic(rils_builtins::IntrinsicId),
 }
 

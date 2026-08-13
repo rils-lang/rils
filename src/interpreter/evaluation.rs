@@ -218,13 +218,12 @@ impl Interpreter {
                     {
                         return self.resolve_member(value, name, *span);
                     }
-                    let builtin_borrow = match (&value, name.as_str()) {
-                        (Value::Array(_) | Value::Vec(_), "len") => Some(false),
-                        (Value::Vec(_), "push" | "pop") => Some(true),
-                        (Value::SequenceIterator(_), "next") => Some(true),
-                        (Value::Result { .. }, "is_ok" | "is_err") => Some(false),
-                        _ => None,
-                    };
+                    let builtin_borrow = super::call::builtin_runtime_member(&value, name)
+                        .and_then(|(_, receiver)| match receiver {
+                            rils_builtins::ReceiverMode::Shared => Some(false),
+                            rils_builtins::ReceiverMode::Mutable => Some(true),
+                            rils_builtins::ReceiverMode::Owned => None,
+                        });
                     if let Some(mutable) = builtin_borrow {
                         let receiver =
                             self.reference_variable(variable_name, mutable, &environment, *span)?;
@@ -261,11 +260,6 @@ impl Interpreter {
                         })?,
                         _ => None,
                     };
-                    if matches!(&value, Value::Range(_)) && name == "next" {
-                        let receiver =
-                            self.reference_variable(variable_name, true, &environment, *span)?;
-                        return self.resolve_member(receiver, name, *span);
-                    }
                     if let Some(mutable) = method.as_ref().and_then(|method| {
                         match method.parameters.first()?.type_annotation.as_ref()? {
                             Type::Reference { mutable, .. } => Some(*mutable),

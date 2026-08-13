@@ -746,25 +746,14 @@ impl<'a> Checker<'a> {
             Type::Reference { inner, .. } => inner.as_ref(),
             ty => ty,
         };
+        if let Some(mode) = crate::standard_library::builtin_receiver_mode(ty, method) {
+            return Some(match mode {
+                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
+                rils_builtins::ReceiverMode::Shared => ReceiverMode::Borrowed { mutable: false },
+                rils_builtins::ReceiverMode::Mutable => ReceiverMode::Borrowed { mutable: true },
+            });
+        }
         match ty {
-            Type::Named { name, .. } if name == "Vec" => match method {
-                "len" => Some(ReceiverMode::Borrowed { mutable: false }),
-                "push" | "pop" => Some(ReceiverMode::Borrowed { mutable: true }),
-                "into_iter" => Some(ReceiverMode::Owned),
-                _ => None,
-            },
-            Type::Named { name, .. } if name == "Range" => match method {
-                "next" => Some(ReceiverMode::Borrowed { mutable: true }),
-                "into_iter" => Some(ReceiverMode::Owned),
-                _ => None,
-            },
-            Type::Option(_) | Type::Result(_, _) => match method {
-                "is_some" | "is_none" | "is_ok" | "is_err" => {
-                    Some(ReceiverMode::Borrowed { mutable: false })
-                }
-                "unwrap" | "unwrap_or" => Some(ReceiverMode::Owned),
-                _ => None,
-            },
             Type::Named { name, .. } => self
                 .receivers
                 .get(&(name.clone(), method.into()))

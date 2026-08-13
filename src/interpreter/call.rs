@@ -214,16 +214,14 @@ impl Interpreter {
                 )
             }
             Value::BuiltinBoundMethod(method) => {
-                let arity = usize::from(matches!(
-                    method.method,
-                    BuiltinMethod::VecPush | BuiltinMethod::ResultUnwrapOr
-                ));
                 let arity = match method.method {
                     BuiltinMethod::IntegerIntrinsic(id) => rils_builtins::INTEGER_INTRINSICS
                         .iter()
                         .find(|item| item.id == id)
-                        .map_or(arity, |item| item.signature.parameters.len()),
-                    _ => arity,
+                        .map_or(0, |item| item.signature.parameters.len()),
+                    BuiltinMethod::Runtime(id) => rils_builtins::runtime_member(id)
+                        .and_then(|(_, member)| member.signature)
+                        .map_or(0, |signature| signature.parameters.len()),
                 };
                 check_arity("builtin method", arity, arity, arguments.len(), span)?;
                 match method.method {
@@ -234,8 +232,10 @@ impl Interpreter {
                         crate::numeric::execute_integer_intrinsic(id, None, &values)
                             .map_err(|message| RuntimeError::new(message, span))
                     }
-                    BuiltinMethod::RangeIntoIter => Ok((*method.receiver).clone()),
-                    BuiltinMethod::Clone => {
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeIntoIter) => {
+                        Ok((*method.receiver).clone())
+                    }
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone) => {
                         let value = match method.receiver.as_ref() {
                             Value::Reference(reference) => reference
                                 .read()
@@ -246,7 +246,7 @@ impl Interpreter {
                             .clone_owned()
                             .map_err(|message| RuntimeError::new(message, span))
                     }
-                    BuiltinMethod::RangeNext => {
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeNext) => {
                         let Value::Reference(reference) = method.receiver.as_ref() else {
                             return Err(RuntimeError::new(
                                 "Range::next requires a mutable range binding",
@@ -280,7 +280,7 @@ impl Interpreter {
                             element_type: Some(element_type),
                         })
                     }
-                    BuiltinMethod::SequenceLen => {
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceLen) => {
                         let value = match method.receiver.as_ref() {
                             Value::Reference(reference) => reference
                                 .read()
@@ -300,7 +300,7 @@ impl Interpreter {
                         };
                         Ok(Value::Usize(length))
                     }
-                    BuiltinMethod::VecPush => {
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::VecPush) => {
                         let Value::Reference(reference) = method.receiver.as_ref() else {
                             return Err(RuntimeError::new(
                                 "Vec::push requires a mutable binding",
@@ -342,7 +342,7 @@ impl Interpreter {
                         });
                         Ok(Value::Unit)
                     }
-                    BuiltinMethod::VecPop => {
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::VecPop) => {
                         let Value::Reference(reference) = method.receiver.as_ref() else {
                             return Err(RuntimeError::new(
                                 "Vec::pop requires a mutable binding",
@@ -378,7 +378,7 @@ impl Interpreter {
                             element_type: Some(element_type),
                         })
                     }
-                    BuiltinMethod::SequenceIntoIter => {
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceIntoIter) => {
                         let sequence = match method.receiver.as_ref() {
                             Value::Array(sequence) | Value::Vec(sequence) => sequence,
                             _ => {
@@ -415,7 +415,7 @@ impl Interpreter {
                             element_type,
                         })))
                     }
-                    BuiltinMethod::SequenceNext => {
+                    BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::IteratorNext) => {
                         let Value::Reference(reference) = method.receiver.as_ref() else {
                             return Err(RuntimeError::new(
                                 "Iterator::next requires a mutable binding",
@@ -443,7 +443,10 @@ impl Interpreter {
                             element_type: Some(iterator.element_type.clone()),
                         })
                     }
-                    BuiltinMethod::ResultIsOk | BuiltinMethod::ResultIsErr => {
+                    BuiltinMethod::Runtime(
+                        id @ (rils_builtins::RuntimeMemberId::ResultIsOk
+                        | rils_builtins::RuntimeMemberId::ResultIsErr),
+                    ) => {
                         let receiver = match method.receiver.as_ref() {
                             Value::Reference(reference) => reference
                                 .read()
@@ -456,20 +459,23 @@ impl Interpreter {
                                 span,
                             ));
                         };
-                        Ok(Value::Bool(match method.method {
-                            BuiltinMethod::ResultIsOk => value.is_ok(),
-                            BuiltinMethod::ResultIsErr => value.is_err(),
+                        Ok(Value::Bool(match id {
+                            rils_builtins::RuntimeMemberId::ResultIsOk => value.is_ok(),
+                            rils_builtins::RuntimeMemberId::ResultIsErr => value.is_err(),
                             _ => unreachable!(),
                         }))
                     }
-                    BuiltinMethod::ResultUnwrap | BuiltinMethod::ResultUnwrapOr => {
+                    BuiltinMethod::Runtime(
+                        id @ (rils_builtins::RuntimeMemberId::ResultUnwrap
+                        | rils_builtins::RuntimeMemberId::ResultUnwrapOr),
+                    ) => {
                         let Value::Result { value, ok_type, .. } = method.receiver.as_ref() else {
                             return Err(RuntimeError::new(
                                 "Result method receiver is not Result",
                                 span,
                             ));
                         };
-                        if matches!(method.method, BuiltinMethod::ResultUnwrapOr) {
+                        if id == rils_builtins::RuntimeMemberId::ResultUnwrapOr {
                             let default = &arguments[0];
                             if let Some(expected) = ok_type
                                 && !expected.accepts(default)
@@ -494,6 +500,64 @@ impl Interpreter {
                                 span,
                             )),
                         }
+                    }
+                    BuiltinMethod::Runtime(
+                        id @ (rils_builtins::RuntimeMemberId::OptionIsSome
+                        | rils_builtins::RuntimeMemberId::OptionIsNone),
+                    ) => {
+                        let receiver = match method.receiver.as_ref() {
+                            Value::Reference(reference) => reference
+                                .read()
+                                .map_err(|message| RuntimeError::new(message, span))?,
+                            value => value.clone(),
+                        };
+                        let Value::Option { value, .. } = receiver else {
+                            return Err(RuntimeError::new(
+                                "Option method receiver is not Option",
+                                span,
+                            ));
+                        };
+                        Ok(Value::Bool(match id {
+                            rils_builtins::RuntimeMemberId::OptionIsSome => value.is_some(),
+                            rils_builtins::RuntimeMemberId::OptionIsNone => value.is_none(),
+                            _ => unreachable!(),
+                        }))
+                    }
+                    BuiltinMethod::Runtime(
+                        id @ (rils_builtins::RuntimeMemberId::OptionUnwrap
+                        | rils_builtins::RuntimeMemberId::OptionUnwrapOr),
+                    ) => {
+                        let Value::Option {
+                            value,
+                            element_type,
+                        } = method.receiver.as_ref()
+                        else {
+                            return Err(RuntimeError::new(
+                                "Option method receiver is not Option",
+                                span,
+                            ));
+                        };
+                        if id == rils_builtins::RuntimeMemberId::OptionUnwrapOr {
+                            let default = &arguments[0];
+                            if let Some(expected) = element_type
+                                && !expected.accepts(default)
+                            {
+                                return Err(RuntimeError::new(
+                                    format!(
+                                        "`unwrap_or` default must be {expected}, found {}",
+                                        default.type_name()
+                                    ),
+                                    span,
+                                ));
+                            }
+                            return Ok(value
+                                .as_ref()
+                                .map_or_else(|| default.clone(), |value| (**value).clone()));
+                        }
+                        value
+                            .as_ref()
+                            .map(|value| (**value).clone())
+                            .ok_or_else(|| RuntimeError::new("called `unwrap` on `None`", span))
                     }
                 }
             }
@@ -556,7 +620,7 @@ impl Interpreter {
                     return self.call(
                         Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(receiver.clone()),
-                            method: BuiltinMethod::Clone,
+                            method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
                         })),
                         &arguments[1..],
                         span,
@@ -566,8 +630,12 @@ impl Interpreter {
                 {
                     let method = match (selector.trait_name.as_str(), selector.method_name.as_str())
                     {
-                        ("Iterator", "next") => BuiltinMethod::RangeNext,
-                        ("IntoIterator", "into_iter") => BuiltinMethod::RangeIntoIter,
+                        ("Iterator", "next") => {
+                            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeNext)
+                        }
+                        ("IntoIterator", "into_iter") => {
+                            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeIntoIter)
+                        }
                         _ => {
                             return Err(RuntimeError::new(
                                 format!(
@@ -592,18 +660,22 @@ impl Interpreter {
                     selector.method_name.as_str(),
                     actual_target,
                 ) {
-                    ("IntoIterator", "into_iter", Type::Array { .. }) => {
-                        Some(BuiltinMethod::SequenceIntoIter)
-                    }
+                    ("IntoIterator", "into_iter", Type::Array { .. }) => Some(
+                        BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceIntoIter),
+                    ),
                     ("IntoIterator", "into_iter", Type::Named { name, arguments })
                         if name == "Vec" && arguments.len() == 1 =>
                     {
-                        Some(BuiltinMethod::SequenceIntoIter)
+                        Some(BuiltinMethod::Runtime(
+                            rils_builtins::RuntimeMemberId::SequenceIntoIter,
+                        ))
                     }
                     ("Iterator", "next", Type::Named { name, arguments })
                         if name == "SequenceIterator" && arguments.len() == 1 =>
                     {
-                        Some(BuiltinMethod::SequenceNext)
+                        Some(BuiltinMethod::Runtime(
+                            rils_builtins::RuntimeMemberId::IteratorNext,
+                        ))
                     }
                     _ => None,
                 };
@@ -956,28 +1028,11 @@ impl Interpreter {
                         span,
                     )
                 }),
-            Value::Array(_) | Value::Vec(_) if name == "into_iter" => {
+            value if builtin_runtime_member(value, name).is_some() => {
+                let (id, _) = builtin_runtime_member(value, name).expect("member was checked");
                 Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::SequenceIntoIter,
-                })))
-            }
-            Value::Result { .. } => {
-                let method = match name {
-                    "is_ok" => BuiltinMethod::ResultIsOk,
-                    "is_err" => BuiltinMethod::ResultIsErr,
-                    "unwrap" => BuiltinMethod::ResultUnwrap,
-                    "unwrap_or" => BuiltinMethod::ResultUnwrapOr,
-                    _ => {
-                        return Err(RuntimeError::new(
-                            format!("Result has no method `{name}`"),
-                            span,
-                        ));
-                    }
-                };
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method,
+                    method: BuiltinMethod::Runtime(id),
                 })))
             }
             Value::Tuple(sequence) => {
@@ -1004,16 +1059,6 @@ impl Interpreter {
                 }
                 Ok(slot.value.take().expect("tuple field value was checked"))
             }
-            Value::Range(_) if name == "into_iter" => {
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::RangeIntoIter,
-                })))
-            }
-            Value::Range(_) if name == "next" => Err(RuntimeError::new(
-                "Range::next requires a mutable range binding",
-                span,
-            )),
             Value::Struct(instance) => {
                 if instance.fields.borrow().contains_key(name) {
                     let mut fields = instance.fields.borrow_mut();
@@ -1066,17 +1111,19 @@ impl Interpreter {
                 let borrowed = reference
                     .read()
                     .map_err(|message| RuntimeError::new(message, span))?;
-                match borrowed {
-                    Value::Result { .. } if name == "is_ok" || name == "is_err" => {
-                        Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            method: if name == "is_ok" {
-                                BuiltinMethod::ResultIsOk
-                            } else {
-                                BuiltinMethod::ResultIsErr
-                            },
-                        })))
+                if let Some((id, receiver)) = builtin_runtime_member(&borrowed, name) {
+                    if receiver == rils_builtins::ReceiverMode::Mutable && !reference.mutable {
+                        return Err(RuntimeError::new(
+                            format!("{}::{name} requires `&mut self`", borrowed.type_name()),
+                            span,
+                        ));
                     }
+                    return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                        receiver: Rc::new(object.clone()),
+                        method: BuiltinMethod::Runtime(id),
+                    })));
+                }
+                match borrowed {
                     Value::HostObject(instance) => instance
                         .type_definition
                         .methods
@@ -1098,42 +1145,6 @@ impl Interpreter {
                                 span,
                             )
                         }),
-                    Value::Array(_) | Value::Vec(_) if name == "len" => {
-                        Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::SequenceLen,
-                        })))
-                    }
-                    Value::Vec(_) if name == "push" => {
-                        if !reference.mutable {
-                            return Err(RuntimeError::new("Vec::push requires `&mut self`", span));
-                        }
-                        Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::VecPush,
-                        })))
-                    }
-                    Value::Vec(_) if name == "pop" => {
-                        if !reference.mutable {
-                            return Err(RuntimeError::new("Vec::pop requires `&mut self`", span));
-                        }
-                        Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::VecPop,
-                        })))
-                    }
-                    Value::SequenceIterator(_) if name == "next" => {
-                        if !reference.mutable {
-                            return Err(RuntimeError::new(
-                                "Iterator::next requires `&mut self`",
-                                span,
-                            ));
-                        }
-                        Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::SequenceNext,
-                        })))
-                    }
                     Value::Tuple(sequence) => {
                         let index = name.parse::<usize>().map_err(|_| {
                             RuntimeError::new(format!("tuple has no field `{name}`"), span)
@@ -1192,19 +1203,10 @@ impl Interpreter {
                         name,
                         span,
                     ),
-                    Value::Range(_) if name == "next" && reference.mutable => {
-                        Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::RangeNext,
-                        })))
-                    }
-                    Value::Range(_) if name == "next" => {
-                        Err(RuntimeError::new("Range::next requires `&mut self`", span))
-                    }
                     _ if name == "clone" => {
                         Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::Clone,
+                            method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
                         })))
                     }
                     value => Err(RuntimeError::new(
@@ -1215,7 +1217,7 @@ impl Interpreter {
             }
             _ if name == "clone" => Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(object),
-                method: BuiltinMethod::Clone,
+                method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
             }))),
             _ => Err(RuntimeError::new(
                 format!("{} has no member `{name}`", object.type_name()),
@@ -1246,7 +1248,7 @@ impl Interpreter {
             if name == "clone" {
                 return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(receiver),
-                    method: BuiltinMethod::Clone,
+                    method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
                 })));
             }
             return Err(RuntimeError::new(
@@ -1282,6 +1284,23 @@ impl Interpreter {
             function,
         })))
     }
+}
+
+pub(super) fn builtin_runtime_member(
+    value: &Value,
+    name: &str,
+) -> Option<(rils_builtins::RuntimeMemberId, rils_builtins::ReceiverMode)> {
+    let owner = match value {
+        Value::Array(_) => "Array",
+        Value::Vec(_) => "Vec",
+        Value::Range(_) => "Range",
+        Value::Option { .. } => "Option",
+        Value::Result { .. } => "Result",
+        Value::SequenceIterator(_) => "Iterator",
+        _ => return None,
+    };
+    let member = rils_builtins::builtin_member(owner, name)?;
+    Some((member.runtime?, member.receiver?))
 }
 
 fn validate_native_arguments(
