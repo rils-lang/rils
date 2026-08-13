@@ -45,9 +45,14 @@ pub fn builtin_receiver_mode(object: &Type, name: &str) -> Option<rils_builtins:
     rils_builtins::builtin_member(owner, name)?.receiver
 }
 
+pub fn builtin_owner_name(object: &Type) -> Option<&'static str> {
+    builtin_owner(object).map(|(owner, _, _)| owner)
+}
+
 fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static str, Type>)> {
     let mut generics = HashMap::new();
     match object {
+        Type::Reference { inner, .. } => builtin_owner(inner),
         Type::String => Some(("string", object.clone(), generics)),
         Type::Array { element, .. } => {
             generics.insert("T", (**element).clone());

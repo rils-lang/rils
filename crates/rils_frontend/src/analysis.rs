@@ -71,6 +71,7 @@ pub struct DocumentAnalysis {
     pub diagnostics: Vec<AnalysisDiagnostic>,
     pub symbols: Vec<SymbolOccurrence>,
     pub inlay_hints: Vec<InlayTypeHint>,
+    pub expression_types: HashMap<Span, Type>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -265,6 +266,7 @@ impl Analyzer {
                 label: format!("{}{ty}", hint.prefix, ty = hint.ty),
             })
             .collect();
+        self.result.expression_types = inference.expression_types;
         self.result
     }
 

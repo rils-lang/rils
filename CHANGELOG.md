@@ -83,6 +83,8 @@
 
 - Analyzer 为每个工作区文件分配稳定 `SourceId`，并以 `SymbolId` 关联定义和引用；定义跳转与查找引用
   不再通过名称猜测，能够区分局部遮蔽、不同文件的同名声明，并追踪项目模块中的公开函数引用。
+- Analyzer 的 `.` 补全现在基于 receiver 表达式推断类型，并直接枚举共享内建目录中的 string、数组、
+  Vec、Option、Result 等成员；LSP 同时声明 `.` 为补全触发字符，并能在成员名尚未输入完整时恢复分析。
 - 内建目录现在统一描述现有 Option、Result、数组、Vec、Range、Iterator 与 Clone 成员的签名、receiver
   所有权和稳定运行时 ID；frontend 的成员类型、所有权分析、内建 arity、Analyzer 全局符号与解释器
   分派开始直接读取同一目录。Option 的 `is_some/is_none/unwrap/unwrap_or` 方法调用同步补齐。

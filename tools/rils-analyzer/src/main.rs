@@ -33,7 +33,7 @@ fn main() -> Result<(), AnyError> {
         "referencesProvider": true,
         "hoverProvider": true,
         "completionProvider": {
-            "triggerCharacters": [":"]
+            "triggerCharacters": [":", "."]
         },
         "inlayHintProvider": true,
         "documentSymbolProvider": true,
@@ -512,22 +512,65 @@ impl Server {
 
     fn completion(&self, params: &Value) -> Result<Value, AnyError> {
         let (uri, document, offset) = self.document_and_offset(params)?;
-        if let Some((receiver, member_prefix)) = method_completion_target(&document.text, offset)
-            && let Some(analysis) = analysis(document)
-            && analysis.symbols.iter().any(|symbol| {
-                symbol.name == receiver
-                    && symbol.inferred_type.as_ref().is_some_and(Type::is_integer)
-            })
+        if let Some((dot_offset, member_prefix)) = method_completion_target(&document.text, offset)
         {
-            let items = rils_builtins::INTEGER_INTRINSICS
-                .iter()
-                .filter(|item| {
-                    item.kind == rils_builtins::IntrinsicKind::Method
-                        && item.name.starts_with(&member_prefix)
-                })
-                .map(integer_intrinsic_completion)
-                .collect::<Vec<_>>();
-            return Ok(json!(items));
+            let recovered;
+            let current_analysis = if let Some(analysis) = analysis(document) {
+                Some(analysis)
+            } else {
+                let mut source = document.text.clone();
+                source.insert_str(offset, "__rils_completion");
+                recovered =
+                    analyze_with_source_id(&source, document.source_id, &self.host_functions).ok();
+                recovered.as_ref()
+            };
+            if let Some(receiver_type) = current_analysis.and_then(|analysis| {
+                analysis
+                    .expression_types
+                    .iter()
+                    .filter(|(span, _)| span.end == dot_offset)
+                    .max_by_key(|(span, _)| span.start)
+                    .map(|(_, ty)| ty)
+                    .or_else(|| {
+                        let receiver = identifier_before(&document.text, dot_offset)?;
+                        analysis
+                            .symbols
+                            .iter()
+                            .filter(|symbol| {
+                                symbol.name == receiver
+                                    && symbol.span.start < offset
+                                    && symbol.inferred_type.is_some()
+                            })
+                            .max_by_key(|symbol| symbol.span.start)
+                            .and_then(|symbol| symbol.inferred_type.as_ref())
+                    })
+            }) {
+                if receiver_type.is_integer() {
+                    let items = rils_builtins::INTEGER_INTRINSICS
+                        .iter()
+                        .filter(|item| {
+                            item.kind == rils_builtins::IntrinsicKind::Method
+                                && item.name.starts_with(&member_prefix)
+                        })
+                        .map(integer_intrinsic_completion)
+                        .collect::<Vec<_>>();
+                    return Ok(json!(items));
+                }
+                if let Some(owner) =
+                    rils_frontend::standard_library::builtin_owner_name(receiver_type)
+                {
+                    let items = rils_builtins::builtin(owner)
+                        .into_iter()
+                        .flat_map(|declaration| declaration.members)
+                        .filter(|member| {
+                            member.kind == rils_builtins::BuiltinMemberKind::Method
+                                && member.name.starts_with(&member_prefix)
+                        })
+                        .map(|member| builtin_member_completion(receiver_type, member))
+                        .collect::<Vec<_>>();
+                    return Ok(json!(items));
+                }
+            }
         }
         let Some((qualifier, member_prefix)) = completion_target(&document.text, offset) else {
             return Ok(json!([]));
@@ -826,23 +869,46 @@ fn integer_intrinsic_completion(item: &rils_builtins::IntrinsicDeclaration) -> V
     })
 }
 
-fn method_completion_target(text: &str, byte_offset: usize) -> Option<(String, String)> {
+fn builtin_member_completion(ty: &Type, member: &rils_builtins::BuiltinMember) -> Value {
+    let detail = rils_frontend::standard_library::builtin_member_type(ty, member.name)
+        .map(|member_type| function_declaration(member.name, &member_type))
+        .unwrap_or_else(|| format!("fn {}(...) ", member.name));
+    json!({
+        "label": member.name,
+        "kind": 2,
+        "detail": detail,
+        "documentation": { "kind": "markdown", "value": member.documentation },
+        "sortText": format!("0_{}", member.name)
+    })
+}
+
+fn method_completion_target(text: &str, byte_offset: usize) -> Option<(usize, String)> {
     let end = floor_char_boundary(text, byte_offset.min(text.len()));
     let before = &text[..end];
+    let mut prefix_start = before.len();
+    for (index, character) in before.char_indices().rev() {
+        if character == '_' || character.is_alphanumeric() {
+            prefix_start = index;
+        } else {
+            break;
+        }
+    }
+    let dot_offset = prefix_start.checked_sub(1)?;
+    (text.as_bytes().get(dot_offset) == Some(&b'.'))
+        .then(|| (dot_offset, before[prefix_start..].to_owned()))
+}
+
+fn identifier_before(text: &str, end: usize) -> Option<&str> {
+    let before = &text[..floor_char_boundary(text, end.min(text.len()))];
     let mut start = before.len();
     for (index, character) in before.char_indices().rev() {
-        if character == '.' || character == '_' || character.is_alphanumeric() {
+        if character == '_' || character.is_alphanumeric() {
             start = index;
         } else {
             break;
         }
     }
-    let token = &before[start..];
-    let (receiver, prefix) = token.rsplit_once('.')?;
-    (!receiver.is_empty()
-        && receiver.chars().all(|ch| ch == '_' || ch.is_alphanumeric())
-        && prefix.chars().all(|ch| ch == '_' || ch.is_alphanumeric()))
-    .then(|| (receiver.to_owned(), prefix.to_owned()))
+    (start < before.len()).then(|| &before[start..])
 }
 
 fn analysis(document: &Document) -> Option<&DocumentAnalysis> {
@@ -1504,6 +1570,90 @@ mod tests {
             }))
             .unwrap();
         assert_eq!(associated[0]["label"], "try_from");
+    }
+
+    #[test]
+    fn completes_builtin_members_for_values_and_expressions() {
+        let text = r#"let text = "alpha";
+text.st"#;
+        let uri = "file:///builtin-members.rils".to_owned();
+        let (connection, _client) = Connection::memory();
+        let mut documents = HashMap::new();
+        documents.insert(
+            uri.clone(),
+            Document {
+                source_id: SourceId::new(1),
+                text: text.into(),
+                analysis: rils_frontend::analysis::analyze_with_source_id(
+                    text,
+                    SourceId::new(1),
+                    &HashMap::new(),
+                ),
+            },
+        );
+        let server = Server {
+            connection,
+            documents,
+            workspace_documents: HashSet::new(),
+            host_contract: HostContract::new(),
+            host_functions: HashMap::new(),
+            projects: Vec::new(),
+            next_source_id: 2,
+        };
+        let complete = |line, character| {
+            server
+                .completion(&json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": line, "character": character }
+                }))
+                .unwrap()
+        };
+        let string_items = complete(1, 7);
+        assert!(
+            string_items
+                .as_array()
+                .is_some_and(|items| { items.iter().any(|item| item["label"] == "starts_with") }),
+            "{string_items}"
+        );
+
+        let expression_text = "Some(1).un";
+        let expression_uri = "file:///builtin-expression.rils".to_owned();
+        let (connection, _client) = Connection::memory();
+        let mut documents = HashMap::new();
+        documents.insert(
+            expression_uri.clone(),
+            Document {
+                source_id: SourceId::new(2),
+                text: expression_text.into(),
+                analysis: rils_frontend::analysis::analyze_with_source_id(
+                    expression_text,
+                    SourceId::new(2),
+                    &HashMap::new(),
+                ),
+            },
+        );
+        let expression_server = Server {
+            connection,
+            documents,
+            workspace_documents: HashSet::new(),
+            host_contract: HostContract::new(),
+            host_functions: HashMap::new(),
+            projects: Vec::new(),
+            next_source_id: 3,
+        };
+        let option_items = expression_server
+            .completion(&json!({
+                "textDocument": { "uri": expression_uri },
+                "position": { "line": 0, "character": 10 }
+            }))
+            .unwrap();
+        assert!(
+            option_items.as_array().is_some_and(|items| {
+                items.iter().any(|item| item["label"] == "unwrap")
+                    && items.iter().any(|item| item["label"] == "unwrap_or")
+            }),
+            "{option_items}"
+        );
     }
 
     #[test]
