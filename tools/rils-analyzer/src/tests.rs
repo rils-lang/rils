@@ -30,6 +30,122 @@ fn formats_higher_order_function_declarations() {
 }
 
 #[test]
+fn provides_signature_help_for_incomplete_user_calls() {
+    let text = "fn add(left: i32, right: i32) -> i32 { left + right }\nadd(1, ";
+    let uri = "file:///signature.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 7 }
+        }))
+        .unwrap();
+    assert_eq!(help["signatures"][0]["label"], "fn add(i32, i32) -> i32");
+    assert_eq!(help["activeParameter"], 1);
+}
+
+#[test]
+fn provides_signature_help_for_host_functions() {
+    let mut contract = HostContract::new();
+    contract
+        .register_function(
+            100,
+            "unity_engine::math::add",
+            FunctionSignature::fixed(
+                vec![
+                    Type::Float(rils_frontend::FloatType::F32),
+                    Type::Float(rils_frontend::FloatType::F32),
+                ],
+                Type::Float(rils_frontend::FloatType::F32),
+            ),
+            "unity.math",
+        )
+        .unwrap();
+    let host_functions = contract
+        .functions()
+        .map(|function| (function.name.clone(), function.signature.clone()))
+        .collect::<HashMap<_, _>>();
+    let text = "use unity_engine::math as math;\nmath::add(1f32, ";
+    let uri = "file:///host-signature.rils".to_owned();
+    let server = test_server(&uri, text, host_functions, contract);
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 16 }
+        }))
+        .unwrap();
+    assert_eq!(help["signatures"][0]["label"], "fn add(f32, f32) -> f32");
+    assert_eq!(help["activeParameter"], 1);
+}
+
+#[test]
+fn provides_signature_help_for_builtin_methods() {
+    let text = "let text = \"alpha\";\ntext.replace(\"a\", ";
+    let uri = "file:///builtin-signature.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 18 }
+        }))
+        .unwrap();
+    assert_eq!(
+        help["signatures"][0]["label"],
+        "fn replace(string, string) -> string"
+    );
+    assert_eq!(help["activeParameter"], 1);
+}
+
+#[test]
+fn provides_signature_help_for_integer_intrinsics() {
+    let text = "let value: i32 = 1;\nvalue.checked_add(";
+    let uri = "file:///integer-signature.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 18 }
+        }))
+        .unwrap();
+    assert_eq!(
+        help["signatures"][0]["label"],
+        "fn checked_add(i32) -> Option<i32>"
+    );
+    assert_eq!(help["activeParameter"], 0);
+}
+
+fn test_server(
+    uri: &str,
+    text: &str,
+    host_functions: HashMap<String, FunctionSignature>,
+    host_contract: HostContract,
+) -> Server {
+    let (connection, _client) = Connection::memory();
+    let mut documents = HashMap::new();
+    documents.insert(
+        uri.to_owned(),
+        Document {
+            source_id: SourceId::UNKNOWN,
+            text: text.into(),
+            analysis: rils_frontend::analysis::analyze_with_host_functions(text, &host_functions),
+        },
+    );
+    Server {
+        connection,
+        documents,
+        workspace_documents: HashSet::new(),
+        host_contract,
+        host_functions,
+        projects: Vec::new(),
+        next_source_id: 1,
+    }
+}
+
+#[test]
 fn hover_shows_expanded_type_aliases() {
     let text = "struct Box<T> { value: T }\ntype ValueBox<T> = Box<T>;\ntype IntBox = ValueBox<i32>;\nlet value: IntBox = Box { value: 1 };";
     let uri = "file:///aliases.rils".to_owned();

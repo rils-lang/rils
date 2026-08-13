@@ -32,6 +32,9 @@ fn main() -> Result<(), AnyError> {
         "definitionProvider": true,
         "referencesProvider": true,
         "hoverProvider": true,
+        "signatureHelpProvider": {
+            "triggerCharacters": ["(", ","]
+        },
         "completionProvider": {
             "triggerCharacters": [":", "."]
         },
@@ -291,6 +294,7 @@ impl Server {
             "textDocument/definition" => self.definition(&request.params),
             "textDocument/references" => self.references(&request.params),
             "textDocument/hover" => self.hover(&request.params),
+            "textDocument/signatureHelp" => self.signature_help(&request.params),
             "textDocument/completion" => self.completion(&request.params),
             "textDocument/inlayHint" => self.inlay_hints(&request.params),
             "textDocument/documentSymbol" => self.document_symbols(&request.params),
@@ -338,6 +342,7 @@ impl Server {
 
 mod completion;
 mod navigation;
+mod signature_help;
 mod support;
 mod symbols;
 
