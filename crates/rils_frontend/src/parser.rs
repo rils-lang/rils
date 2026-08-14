@@ -130,6 +130,7 @@ pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
 fn has_balanced_delimiters(tokens: &[Token]) -> bool {
     let mut parens = 0usize;
     let mut braces = 0usize;
+    let mut brackets = 0usize;
     for token in tokens {
         match token.kind {
             TokenKind::LeftParen => parens += 1,
@@ -138,10 +139,13 @@ fn has_balanced_delimiters(tokens: &[Token]) -> bool {
             TokenKind::LeftBrace => braces += 1,
             TokenKind::RightBrace if braces > 0 => braces -= 1,
             TokenKind::RightBrace => return false,
+            TokenKind::LeftBracket => brackets += 1,
+            TokenKind::RightBracket if brackets > 0 => brackets -= 1,
+            TokenKind::RightBracket => return false,
             _ => {}
         }
     }
-    parens == 0 && braces == 0
+    parens == 0 && braces == 0 && brackets == 0
 }
 
 fn mask_macro_invocations(tokens: &[Token]) -> Vec<Token> {

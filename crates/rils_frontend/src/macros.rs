@@ -159,6 +159,16 @@ mod tests {
     }
 
     #[test]
+    fn forwards_index_comparisons_without_recursive_matching() {
+        let tokens = lexer::lex("assert!(values[0usize] == \"expected\")").unwrap();
+        let expanded = expand(tokens, STANDARD_NATIVE_MACROS).unwrap();
+        assert!(matches!(
+            &expanded.tokens[0].kind,
+            TokenKind::Identifier(name) if name == "#rils_native_assert"
+        ));
+    }
+
+    #[test]
     fn selects_fragment_specific_branches() {
         for (invocation, expected) in [
             ("classify!(42)", "literal"),

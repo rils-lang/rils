@@ -97,6 +97,11 @@
 - Analyzer 和 VS Code 插件可加载经过 verifier 的 `.rilhm`，宿主函数参与诊断、类型推断、hover 与
   语义符号；在模块路径的 `::` 后提供子模块/函数补全，并展示签名和 capability，支持模块 `use` 别名。
 
+### Fixed
+
+- 修复宏表达式片段对未闭合 `[]` 前缀执行解析时可能栈溢出的问题；`assert!(values[index] == text)`
+  现在会稳定展开，并由所有权检查报告非 Copy 索引移出错误。
+
 ### Changed
 
 - Analyzer 为每个工作区文件分配稳定 `SourceId`，并以 `SymbolId` 关联定义和引用；定义跳转与查找引用

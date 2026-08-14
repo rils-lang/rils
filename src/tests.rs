@@ -2376,6 +2376,25 @@ fn strings_expose_unicode_and_owned_iterator_workflows() {
 }
 
 #[test]
+fn assert_macro_reports_non_copy_string_index_moves_without_overflowing() {
+    let error = match compile(
+        r#"
+            let values = ["first", "second"];
+            assert!(values[0usize] == "first");
+        "#,
+    ) {
+        Ok(_) => panic!("moving a string through indexing should be rejected"),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("cannot move a non-Copy value out through indexing"),
+        "{error}"
+    );
+}
+
+#[test]
 fn collection_mutation_respects_active_element_references() {
     let assign = eval(
         r#"
