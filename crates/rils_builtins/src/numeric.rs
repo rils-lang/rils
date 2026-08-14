@@ -99,10 +99,12 @@ pub enum TypePattern {
     Unknown,
     Unit,
     Bool,
+    Char,
     String,
     F32,
     F64,
     U32,
+    U8,
     Usize,
     Named {
         path: &'static str,

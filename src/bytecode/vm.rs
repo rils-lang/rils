@@ -350,6 +350,7 @@ impl<'a> VirtualMachine<'a> {
                     let source = self.take_register(source, instruction.span)?;
                     let iterator = match source {
                         Value::Range(range) => Value::Range(range),
+                        Value::SequenceIterator(iterator) => Value::SequenceIterator(iterator),
                         Value::Array(sequence) | Value::Vec(sequence) => {
                             let element_type = sequence
                                 .element_type

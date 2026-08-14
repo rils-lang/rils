@@ -426,6 +426,84 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                 .extend(source_elements.drain(..));
             Ok(Value::Unit)
         }
+        name if name.starts_with("core::iterator::") => {
+            let Value::SequenceIterator(iterator) = import_receiver(&arguments[0])? else {
+                return Err("iterator method receiver is not a built-in iterator".into());
+            };
+            let element_type = iterator.element_type.clone();
+            let mut items = iterator.items.borrow_mut();
+            let count = || match arguments.get(1) {
+                Some(Value::Usize(value)) => Ok(*value),
+                Some(value) => Err(format!(
+                    "iterator count must be usize, found {}",
+                    value.type_name()
+                )),
+                None => Err("missing iterator count".into()),
+            };
+            match name {
+                "core::iterator::next" => Ok(Value::Option {
+                    value: items.pop_front().map(Rc::new),
+                    element_type: Some(element_type),
+                }),
+                "core::iterator::count" => {
+                    let count = items.len();
+                    items.clear();
+                    Ok(Value::Usize(count))
+                }
+                "core::iterator::last" => {
+                    let value = items.pop_back().map(Rc::new);
+                    items.clear();
+                    Ok(Value::Option {
+                        value,
+                        element_type: Some(element_type),
+                    })
+                }
+                "core::iterator::nth" => {
+                    let count = count()?;
+                    let skipped = count.min(items.len());
+                    items.drain(..skipped);
+                    let value = (skipped == count)
+                        .then(|| items.pop_front())
+                        .flatten()
+                        .map(Rc::new);
+                    Ok(Value::Option {
+                        value,
+                        element_type: Some(element_type),
+                    })
+                }
+                "core::iterator::collect_vec" => {
+                    let elements = items
+                        .drain(..)
+                        .map(|value| FieldSlot {
+                            value: Some(value),
+                            type_annotation: element_type.clone(),
+                            references: 0,
+                        })
+                        .collect();
+                    Ok(Value::Vec(Rc::new(SequenceValue {
+                        elements: RefCell::new(elements),
+                        element_type: RefCell::new(Some(element_type)),
+                    })))
+                }
+                "core::iterator::take" | "core::iterator::skip" => {
+                    let count = count()?.min(items.len());
+                    let selected = if name == "core::iterator::take" {
+                        let selected = items.drain(..count).collect();
+                        items.clear();
+                        selected
+                    } else {
+                        items.drain(..count);
+                        items.drain(..).collect()
+                    };
+                    Ok(sequence_iterator_value(selected, element_type))
+                }
+                "core::iterator::rev" => Ok(sequence_iterator_value(
+                    items.drain(..).rev().collect(),
+                    element_type,
+                )),
+                _ => Err(format!("unknown iterator import `{name}`")),
+            }
+        }
         name if name.starts_with("core::string::") => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("string method receiver must be a reference".into());
@@ -451,6 +529,56 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                     element_type: Some(Type::USIZE),
                 }),
                 "core::string::trim" => Ok(Value::String(Rc::from(value.trim()))),
+                "core::string::trim_start" => Ok(Value::String(Rc::from(value.trim_start()))),
+                "core::string::trim_end" => Ok(Value::String(Rc::from(value.trim_end()))),
+                "core::string::to_lowercase" => Ok(Value::String(Rc::from(value.to_lowercase()))),
+                "core::string::to_uppercase" => Ok(Value::String(Rc::from(value.to_uppercase()))),
+                "core::string::repeat" => {
+                    let Some(Value::Usize(count)) = arguments.get(1) else {
+                        return Err("string repeat count must be usize".into());
+                    };
+                    Ok(Value::String(Rc::from(value.repeat(*count))))
+                }
+                "core::string::rfind" => Ok(Value::Option {
+                    value: value
+                        .rfind(argument(1)?)
+                        .map(|offset| Rc::new(Value::Usize(offset))),
+                    element_type: Some(Type::USIZE),
+                }),
+                "core::string::strip_prefix" | "core::string::strip_suffix" => {
+                    let pattern = argument(1)?;
+                    let stripped = if name == "core::string::strip_prefix" {
+                        value.strip_prefix(pattern)
+                    } else {
+                        value.strip_suffix(pattern)
+                    };
+                    Ok(Value::Option {
+                        value: stripped.map(|text| Rc::new(Value::String(Rc::from(text)))),
+                        element_type: Some(Type::String),
+                    })
+                }
+                "core::string::chars" => Ok(sequence_iterator_value(
+                    value.chars().map(Value::Char).collect(),
+                    Type::Char,
+                )),
+                "core::string::bytes" => Ok(sequence_iterator_value(
+                    value.bytes().map(Value::U8).collect(),
+                    Type::Integer(IntegerType::U8),
+                )),
+                "core::string::lines" => Ok(sequence_iterator_value(
+                    value
+                        .lines()
+                        .map(|line| Value::String(Rc::from(line)))
+                        .collect(),
+                    Type::String,
+                )),
+                "core::string::split" => Ok(sequence_iterator_value(
+                    value
+                        .split(argument(1)?)
+                        .map(|part| Value::String(Rc::from(part)))
+                        .collect(),
+                    Type::String,
+                )),
                 _ => Err(format!("unknown string import `{name}`")),
             }
         }
@@ -618,6 +746,13 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
         }
         _ => Err(format!("unknown core import `{name}`")),
     }
+}
+
+fn sequence_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value {
+    Value::SequenceIterator(Rc::new(SequenceIteratorValue {
+        items: RefCell::new(items),
+        element_type,
+    }))
 }
 
 fn import_receiver(value: &Value) -> Result<Value, String> {

@@ -400,7 +400,7 @@ fn completes_float_intrinsic_methods() {
 #[test]
 fn completes_builtin_members_for_values_and_expressions() {
     let text = r#"let text = "alpha";
-text.st"#;
+text."#;
     let uri = "file:///builtin-members.rils".to_owned();
     let (connection, _client) = Connection::memory();
     let mut documents = HashMap::new();
@@ -433,11 +433,14 @@ text.st"#;
             }))
             .unwrap()
     };
-    let string_items = complete(1, 7);
+    let string_items = complete(1, 5);
     assert!(
-        string_items
-            .as_array()
-            .is_some_and(|items| { items.iter().any(|item| item["label"] == "starts_with") }),
+        string_items.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "starts_with")
+                && items.iter().any(|item| item["label"] == "chars")
+                && items.iter().any(|item| item["label"] == "split")
+                && items.iter().any(|item| item["label"] == "to_uppercase")
+        }),
         "{string_items}"
     );
 
@@ -481,6 +484,52 @@ text.st"#;
                 && items.iter().any(|item| item["label"] == "or_else")
         }),
         "{option_items}"
+    );
+}
+
+#[test]
+fn completes_built_in_iterator_consumers_and_adapters() {
+    let text = r#"let iterator = "abc".chars();
+iterator."#;
+    let uri = "file:///iterator-members.rils".to_owned();
+    let (connection, _client) = Connection::memory();
+    let mut documents = HashMap::new();
+    documents.insert(
+        uri.clone(),
+        Document {
+            source_id: SourceId::new(1),
+            text: text.into(),
+            analysis: rils_frontend::analysis::analyze_with_source_id(
+                text,
+                SourceId::new(1),
+                &HashMap::new(),
+            ),
+        },
+    );
+    let server = Server {
+        connection,
+        documents,
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        projects: Vec::new(),
+        next_source_id: 2,
+    };
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 9 }
+        }))
+        .unwrap();
+    assert!(
+        items.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "next")
+                && items.iter().any(|item| item["label"] == "count")
+                && items.iter().any(|item| item["label"] == "collect_vec")
+                && items.iter().any(|item| item["label"] == "take")
+                && items.iter().any(|item| item["label"] == "rev")
+        }),
+        "{items}"
     );
 }
 

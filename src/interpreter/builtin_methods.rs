@@ -34,6 +34,9 @@ impl Interpreter {
             BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeIntoIter) => {
                 Ok((*method.receiver).clone())
             }
+            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::IteratorIntoIter) => {
+                Ok((*method.receiver).clone())
+            }
             BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone) => {
                 let value = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference
@@ -450,6 +453,93 @@ impl Interpreter {
                 })
             }
             BuiltinMethod::Runtime(
+                id @ (rils_builtins::RuntimeMemberId::IteratorCount
+                | rils_builtins::RuntimeMemberId::IteratorLast
+                | rils_builtins::RuntimeMemberId::IteratorNth
+                | rils_builtins::RuntimeMemberId::IteratorCollectVec
+                | rils_builtins::RuntimeMemberId::IteratorTake
+                | rils_builtins::RuntimeMemberId::IteratorSkip
+                | rils_builtins::RuntimeMemberId::IteratorRev),
+            ) => {
+                let iterator = sequence_iterator(method.receiver.as_ref(), span)?;
+                let element_type = iterator.element_type.clone();
+                let mut items = iterator.items.borrow_mut();
+                let count_argument = || match arguments.first() {
+                    Some(Value::Usize(value)) => Ok(*value),
+                    Some(value) => Err(RuntimeError::new(
+                        format!("iterator count must be usize, found {}", value.type_name()),
+                        span,
+                    )),
+                    None => Err(RuntimeError::new("missing iterator count", span)),
+                };
+                match id {
+                    rils_builtins::RuntimeMemberId::IteratorCount => {
+                        let count = items.len();
+                        items.clear();
+                        Ok(Value::Usize(count))
+                    }
+                    rils_builtins::RuntimeMemberId::IteratorLast => {
+                        let value = items.pop_back().map(Rc::new);
+                        items.clear();
+                        Ok(Value::Option {
+                            value,
+                            element_type: Some(element_type),
+                        })
+                    }
+                    rils_builtins::RuntimeMemberId::IteratorNth => {
+                        let count = count_argument()?;
+                        let skipped = count.min(items.len());
+                        items.drain(..skipped);
+                        let value = (skipped == count)
+                            .then(|| items.pop_front())
+                            .flatten()
+                            .map(Rc::new);
+                        Ok(Value::Option {
+                            value,
+                            element_type: Some(element_type),
+                        })
+                    }
+                    rils_builtins::RuntimeMemberId::IteratorCollectVec => {
+                        let elements = items
+                            .drain(..)
+                            .map(|value| FieldSlot {
+                                value: Some(value),
+                                type_annotation: element_type.clone(),
+                                references: 0,
+                            })
+                            .collect();
+                        Ok(Value::Vec(Rc::new(SequenceValue {
+                            elements: RefCell::new(elements),
+                            element_type: RefCell::new(Some(element_type)),
+                        })))
+                    }
+                    rils_builtins::RuntimeMemberId::IteratorTake
+                    | rils_builtins::RuntimeMemberId::IteratorSkip => {
+                        let count = count_argument()?.min(items.len());
+                        let selected = if id == rils_builtins::RuntimeMemberId::IteratorTake {
+                            let selected = items.drain(..count).collect();
+                            items.clear();
+                            selected
+                        } else {
+                            items.drain(..count);
+                            items.drain(..).collect()
+                        };
+                        Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
+                            items: RefCell::new(selected),
+                            element_type,
+                        })))
+                    }
+                    rils_builtins::RuntimeMemberId::IteratorRev => {
+                        let selected = items.drain(..).rev().collect();
+                        Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
+                            items: RefCell::new(selected),
+                            element_type,
+                        })))
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            BuiltinMethod::Runtime(
                 id @ (rils_builtins::RuntimeMemberId::ResultIsOk
                 | rils_builtins::RuntimeMemberId::ResultIsErr
                 | rils_builtins::RuntimeMemberId::ResultUnwrap
@@ -490,7 +580,19 @@ impl Interpreter {
                 | rils_builtins::RuntimeMemberId::StringEndsWith
                 | rils_builtins::RuntimeMemberId::StringFind
                 | rils_builtins::RuntimeMemberId::StringTrim
-                | rils_builtins::RuntimeMemberId::StringReplace),
+                | rils_builtins::RuntimeMemberId::StringReplace
+                | rils_builtins::RuntimeMemberId::StringTrimStart
+                | rils_builtins::RuntimeMemberId::StringTrimEnd
+                | rils_builtins::RuntimeMemberId::StringToLowercase
+                | rils_builtins::RuntimeMemberId::StringToUppercase
+                | rils_builtins::RuntimeMemberId::StringRepeat
+                | rils_builtins::RuntimeMemberId::StringRfind
+                | rils_builtins::RuntimeMemberId::StringStripPrefix
+                | rils_builtins::RuntimeMemberId::StringStripSuffix
+                | rils_builtins::RuntimeMemberId::StringChars
+                | rils_builtins::RuntimeMemberId::StringBytes
+                | rils_builtins::RuntimeMemberId::StringLines
+                | rils_builtins::RuntimeMemberId::StringSplit),
             ) => {
                 let receiver = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference
@@ -538,6 +640,68 @@ impl Interpreter {
                     rils_builtins::RuntimeMemberId::StringTrim => {
                         Ok(Value::String(Rc::from(value.trim())))
                     }
+                    rils_builtins::RuntimeMemberId::StringTrimStart => {
+                        Ok(Value::String(Rc::from(value.trim_start())))
+                    }
+                    rils_builtins::RuntimeMemberId::StringTrimEnd => {
+                        Ok(Value::String(Rc::from(value.trim_end())))
+                    }
+                    rils_builtins::RuntimeMemberId::StringToLowercase => {
+                        Ok(Value::String(Rc::from(value.to_lowercase())))
+                    }
+                    rils_builtins::RuntimeMemberId::StringToUppercase => {
+                        Ok(Value::String(Rc::from(value.to_uppercase())))
+                    }
+                    rils_builtins::RuntimeMemberId::StringRepeat => {
+                        let Some(Value::Usize(count)) = arguments.first() else {
+                            return Err(RuntimeError::new(
+                                "string repeat count must be usize",
+                                span,
+                            ));
+                        };
+                        Ok(Value::String(Rc::from(value.repeat(*count))))
+                    }
+                    rils_builtins::RuntimeMemberId::StringRfind => Ok(Value::Option {
+                        value: value
+                            .rfind(string_argument(0)?)
+                            .map(|offset| Rc::new(Value::Usize(offset))),
+                        element_type: Some(Type::USIZE),
+                    }),
+                    rils_builtins::RuntimeMemberId::StringStripPrefix
+                    | rils_builtins::RuntimeMemberId::StringStripSuffix => {
+                        let pattern = string_argument(0)?;
+                        let stripped = if id == rils_builtins::RuntimeMemberId::StringStripPrefix {
+                            value.strip_prefix(pattern)
+                        } else {
+                            value.strip_suffix(pattern)
+                        };
+                        Ok(Value::Option {
+                            value: stripped.map(|text| Rc::new(Value::String(Rc::from(text)))),
+                            element_type: Some(Type::String),
+                        })
+                    }
+                    rils_builtins::RuntimeMemberId::StringChars => Ok(string_iterator(
+                        value.chars().map(Value::Char).collect(),
+                        Type::Char,
+                    )),
+                    rils_builtins::RuntimeMemberId::StringBytes => Ok(string_iterator(
+                        value.bytes().map(Value::U8).collect(),
+                        Type::Integer(crate::IntegerType::U8),
+                    )),
+                    rils_builtins::RuntimeMemberId::StringLines => Ok(string_iterator(
+                        value
+                            .lines()
+                            .map(|line| Value::String(Rc::from(line)))
+                            .collect(),
+                        Type::String,
+                    )),
+                    rils_builtins::RuntimeMemberId::StringSplit => Ok(string_iterator(
+                        value
+                            .split(string_argument(0)?)
+                            .map(|part| Value::String(Rc::from(part)))
+                            .collect(),
+                        Type::String,
+                    )),
                     rils_builtins::RuntimeMemberId::StringReplace => Ok(Value::String(Rc::from(
                         value.replace(string_argument(0)?, string_argument(1)?),
                     ))),
@@ -555,4 +719,22 @@ fn read_builtin_receiver(value: &Value, span: Span) -> Result<Value, RuntimeErro
             .map_err(|message| RuntimeError::new(message, span)),
         value => Ok(value.clone()),
     }
+}
+
+fn sequence_iterator(value: &Value, span: Span) -> Result<Rc<SequenceIteratorValue>, RuntimeError> {
+    let value = read_builtin_receiver(value, span)?;
+    let Value::SequenceIterator(iterator) = value else {
+        return Err(RuntimeError::new(
+            "receiver is not a built-in iterator",
+            span,
+        ));
+    };
+    Ok(iterator)
+}
+
+fn string_iterator(items: std::collections::VecDeque<Value>, element_type: Type) -> Value {
+    Value::SequenceIterator(Rc::new(SequenceIteratorValue {
+        items: RefCell::new(items),
+        element_type,
+    }))
 }

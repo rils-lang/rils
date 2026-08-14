@@ -2337,6 +2337,45 @@ fn collection_iterators_support_trait_qualified_calls() {
 }
 
 #[test]
+fn strings_expose_unicode_and_owned_iterator_workflows() {
+    let source = r#"
+        let text = "  Rils,世界\r\nsecond  ";
+        assert!(text.trim_start().starts_with("Rils"));
+        assert!(text.trim_end().ends_with("second"));
+        assert!("Straße".to_uppercase() == "STRASSE");
+        assert!("RILS".to_lowercase() == "rils");
+        assert!("ab".repeat(3usize) == "ababab");
+        assert!(unwrap("éaé".rfind("é")) == 3usize);
+        assert!(unwrap("prefix".strip_prefix("pre")) == "fix");
+        assert!(unwrap("suffix".strip_suffix("fix")) == "suf");
+        assert!("value".strip_prefix("x").is_none());
+
+        let mut chars = "R世".chars();
+        assert!(unwrap(chars.nth(1usize)) == '世');
+        assert!(chars.next().is_none());
+        assert!("R世".chars().count() == 2usize);
+        assert!("R世".bytes().count() == 4usize);
+        assert!(unwrap("abc".chars().last()) == 'c');
+
+        let mut pieces = "a,b,c,d".split(",").skip(1usize).take(2usize).collect_vec();
+        assert!(pieces.len() == 2usize);
+        assert!(pieces.remove(0usize) == "b");
+        assert!(pieces.remove(0usize) == "c");
+        let mut reversed = "abc".chars().rev().collect_vec();
+        assert!(reversed.remove(0usize) == 'c');
+        assert!(reversed.remove(1usize) == 'a');
+
+        let mut lines = 0usize;
+        for line in text.lines() {
+            lines = lines + 1usize;
+        }
+        lines
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::Usize(2));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::Usize(2));
+}
+
+#[test]
 fn collection_mutation_respects_active_element_references() {
     let assign = eval(
         r#"

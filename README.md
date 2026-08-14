@@ -29,9 +29,9 @@ Rils 目前提供解释器和字节码 VM 两条执行路径，并带有静态�
 - 非 Copy 值默认 move，复制非 Copy 值需要显式 Clone。
 - 词法局部 `&T` / `&mut T`，不采用 Rust 的唯一可变借用限制。
 - struct、enum、trait、impl、泛型、模块、模式匹配和函数式宏。
-- tuple、数组、`Vec<T>`、Range、Option、Result 与 `?` 错误传播。
+- UTF-8 string、tuple、数组、`Vec<T>`、Range、Option、Result 与 `?` 错误传播。
 - Rust 风格的定宽数值类型、`usize` 索引、`char`，以及受用法约束的无后缀数值字面量推导。
-- 函数值、闭包、递归、UFCS 和自定义 Iterator/IntoIterator。
+- 函数值、闭包、递归、UFCS，以及字符串/集合和自定义 Iterator/IntoIterator。
 - 可注册宿主模块、函数、原生类型和方法。
 
 ## 快速开始

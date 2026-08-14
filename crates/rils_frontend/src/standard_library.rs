@@ -180,12 +180,19 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
             generics.insert("E", (**error).clone());
             Some(("Result", object.clone(), generics))
         }
-        Type::Named { name, arguments } if matches!(name.as_str(), "Vec" | "Range") => {
+        Type::Named { name, arguments }
+            if matches!(name.as_str(), "Vec" | "Range" | "SequenceIterator") =>
+        {
             if let Some(item) = arguments.first() {
                 generics.insert("T", item.clone());
             }
             Some((
-                if name == "Vec" { "Vec" } else { "Range" },
+                match name.as_str() {
+                    "Vec" => "Vec",
+                    "Range" => "Range",
+                    "SequenceIterator" => "Iterator",
+                    _ => unreachable!(),
+                },
                 object.clone(),
                 generics,
             ))
@@ -240,10 +247,12 @@ pub(crate) fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type 
         TypePattern::Generic(name) => Type::Variable(name.into()),
         TypePattern::Unit => Type::Unit,
         TypePattern::Bool => Type::Bool,
+        TypePattern::Char => Type::Char,
         TypePattern::String => Type::String,
         TypePattern::F32 => Type::Float(crate::types::FloatType::F32),
         TypePattern::F64 => Type::Float(crate::types::FloatType::F64),
         TypePattern::U32 => Type::Integer(crate::types::IntegerType::U32),
+        TypePattern::U8 => Type::Integer(crate::types::IntegerType::U8),
         TypePattern::Usize => Type::USIZE,
         TypePattern::Named { path, arguments } => Type::Named {
             name: path.into(),

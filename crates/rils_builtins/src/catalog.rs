@@ -42,8 +42,16 @@ pub enum RuntimeMemberId {
     VecRemove = 26,
     VecSwapRemove = 27,
     VecExtend = 28,
+    IteratorCount = 29,
+    IteratorLast = 30,
+    IteratorNth = 31,
     RangeNext = 32,
     RangeIntoIter = 33,
+    IteratorCollectVec = 34,
+    IteratorTake = 35,
+    IteratorSkip = 36,
+    IteratorRev = 37,
+    IteratorIntoIter = 38,
     ResultIsOk = 48,
     ResultIsErr = 49,
     ResultUnwrap = 50,
@@ -77,6 +85,18 @@ pub enum RuntimeMemberId {
     StringFind = 85,
     StringTrim = 86,
     StringReplace = 87,
+    StringTrimStart = 88,
+    StringTrimEnd = 89,
+    StringToLowercase = 90,
+    StringToUppercase = 91,
+    StringRepeat = 92,
+    StringRfind = 93,
+    StringStripPrefix = 94,
+    StringStripSuffix = 95,
+    StringChars = 96,
+    StringBytes = 97,
+    StringLines = 98,
+    StringSplit = 99,
 }
 
 impl RuntimeMemberId {
@@ -115,8 +135,28 @@ impl RuntimeMemberId {
             Self::StringEndsWith => "core::string::ends_with",
             Self::StringFind => "core::string::find",
             Self::StringTrim => "core::string::trim",
+            Self::StringTrimStart => "core::string::trim_start",
+            Self::StringTrimEnd => "core::string::trim_end",
+            Self::StringToLowercase => "core::string::to_lowercase",
+            Self::StringToUppercase => "core::string::to_uppercase",
+            Self::StringRepeat => "core::string::repeat",
+            Self::StringRfind => "core::string::rfind",
+            Self::StringStripPrefix => "core::string::strip_prefix",
+            Self::StringStripSuffix => "core::string::strip_suffix",
+            Self::StringChars => "core::string::chars",
+            Self::StringBytes => "core::string::bytes",
+            Self::StringLines => "core::string::lines",
+            Self::StringSplit => "core::string::split",
+            Self::IteratorCount => "core::iterator::count",
+            Self::IteratorNext => "core::iterator::next",
+            Self::IteratorLast => "core::iterator::last",
+            Self::IteratorNth => "core::iterator::nth",
+            Self::IteratorCollectVec => "core::iterator::collect_vec",
+            Self::IteratorTake => "core::iterator::take",
+            Self::IteratorSkip => "core::iterator::skip",
+            Self::IteratorRev => "core::iterator::rev",
             Self::SequenceIntoIter
-            | Self::IteratorNext
+            | Self::IteratorIntoIter
             | Self::RangeNext
             | Self::RangeIntoIter
             | Self::ResultMap
@@ -308,6 +348,14 @@ const ITERATOR_MEMBERS: &[BuiltinMember] = &[
         "The yielded item type."
     ),
     member!("next", method Mutable [] -> TypePattern::Option(&T), IteratorNext, "Advances the iterator."),
+    member!("count", method Owned [] -> TypePattern::Usize, IteratorCount, "Consumes the iterator and returns the remaining item count."),
+    member!("last", method Owned [] -> TypePattern::Option(&T), IteratorLast, "Consumes the iterator and returns its final item."),
+    member!("nth", method Mutable [TypePattern::Usize] -> TypePattern::Option(&T), IteratorNth, "Advances to and returns the nth remaining item."),
+    member!("collect_vec", method Owned [] -> TypePattern::Named { path: "Vec", arguments: &[T] }, IteratorCollectVec, "Consumes the iterator and collects its items into a Vec."),
+    member!("take", method Owned [TypePattern::Usize] -> TypePattern::SelfType, IteratorTake, "Returns an iterator over at most the first n remaining items."),
+    member!("skip", method Owned [TypePattern::Usize] -> TypePattern::SelfType, IteratorSkip, "Returns an iterator after discarding the first n remaining items."),
+    member!("rev", method Owned [] -> TypePattern::SelfType, IteratorRev, "Reverses the remaining items of this double-ended built-in iterator."),
+    member!("into_iter", method Owned [] -> TypePattern::SelfType, IteratorIntoIter, "Returns this iterator unchanged."),
 ];
 const INTO_ITERATOR_MEMBERS: &[BuiltinMember] = &[
     member!(
@@ -352,6 +400,18 @@ const STRING_MEMBERS: &[BuiltinMember] = &[
     member!("find", method Shared [STRING] -> TypePattern::Option(&TypePattern::Usize), StringFind, "Returns the byte offset of the first match."),
     member!("trim", method Shared [] -> STRING, StringTrim, "Returns a string without leading or trailing whitespace."),
     member!("replace", method Shared [STRING, STRING] -> STRING, StringReplace, "Replaces every matching substring."),
+    member!("trim_start", method Shared [] -> STRING, StringTrimStart, "Returns a string without leading whitespace."),
+    member!("trim_end", method Shared [] -> STRING, StringTrimEnd, "Returns a string without trailing whitespace."),
+    member!("to_lowercase", method Shared [] -> STRING, StringToLowercase, "Returns the Unicode lowercase mapping."),
+    member!("to_uppercase", method Shared [] -> STRING, StringToUppercase, "Returns the Unicode uppercase mapping."),
+    member!("repeat", method Shared [TypePattern::Usize] -> STRING, StringRepeat, "Repeats the string n times."),
+    member!("rfind", method Shared [STRING] -> TypePattern::Option(&TypePattern::Usize), StringRfind, "Returns the byte offset of the final match."),
+    member!("strip_prefix", method Shared [STRING] -> TypePattern::Option(&STRING), StringStripPrefix, "Removes one matching prefix."),
+    member!("strip_suffix", method Shared [STRING] -> TypePattern::Option(&STRING), StringStripSuffix, "Removes one matching suffix."),
+    member!("chars", method Shared [] -> TypePattern::Named { path: "SequenceIterator", arguments: &[TypePattern::Char] }, StringChars, "Iterates over Unicode scalar values."),
+    member!("bytes", method Shared [] -> TypePattern::Named { path: "SequenceIterator", arguments: &[TypePattern::U8] }, StringBytes, "Iterates over UTF-8 bytes."),
+    member!("lines", method Shared [] -> TypePattern::Named { path: "SequenceIterator", arguments: &[STRING] }, StringLines, "Iterates over lines without their terminators."),
+    member!("split", method Shared [STRING] -> TypePattern::Named { path: "SequenceIterator", arguments: &[STRING] }, StringSplit, "Iterates over substrings separated by the pattern."),
 ];
 const RANGE_MEMBERS: &[BuiltinMember] = &[
     member!("next", method Mutable [] -> TypePattern::Option(&T), RangeNext, "Advances the range."),
@@ -607,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn bytecode_imports_are_consistent_for_shared_method_names() {
+    fn overloaded_runtime_methods_use_owner_qualified_imports() {
         for declaration in BUILTINS {
             for member in declaration.members {
                 let Some(import) = member.runtime.and_then(RuntimeMemberId::bytecode_import) else {
@@ -621,7 +681,13 @@ mod tests {
                     if let Some(other_import) =
                         other.runtime.and_then(RuntimeMemberId::bytecode_import)
                     {
-                        assert_eq!(import, other_import, "method `{}`", member.name);
+                        if import != other_import {
+                            assert!(
+                                import.starts_with("core::") && other_import.starts_with("core::"),
+                                "overloaded method `{}` must use owner-qualified imports",
+                                member.name
+                            );
+                        }
                     }
                 }
             }
@@ -643,6 +709,14 @@ mod tests {
             RuntimeMemberId::VecRemove,
             RuntimeMemberId::VecSwapRemove,
             RuntimeMemberId::VecExtend,
+            RuntimeMemberId::IteratorCount,
+            RuntimeMemberId::IteratorLast,
+            RuntimeMemberId::IteratorNth,
+            RuntimeMemberId::IteratorCollectVec,
+            RuntimeMemberId::IteratorTake,
+            RuntimeMemberId::IteratorSkip,
+            RuntimeMemberId::IteratorRev,
+            RuntimeMemberId::IteratorIntoIter,
             RuntimeMemberId::SequenceIntoIter,
             RuntimeMemberId::IteratorNext,
             RuntimeMemberId::RangeNext,
@@ -680,6 +754,18 @@ mod tests {
             RuntimeMemberId::StringFind,
             RuntimeMemberId::StringTrim,
             RuntimeMemberId::StringReplace,
+            RuntimeMemberId::StringTrimStart,
+            RuntimeMemberId::StringTrimEnd,
+            RuntimeMemberId::StringToLowercase,
+            RuntimeMemberId::StringToUppercase,
+            RuntimeMemberId::StringRepeat,
+            RuntimeMemberId::StringRfind,
+            RuntimeMemberId::StringStripPrefix,
+            RuntimeMemberId::StringStripSuffix,
+            RuntimeMemberId::StringChars,
+            RuntimeMemberId::StringBytes,
+            RuntimeMemberId::StringLines,
+            RuntimeMemberId::StringSplit,
         ] {
             assert!(
                 runtime_member(id).is_some(),

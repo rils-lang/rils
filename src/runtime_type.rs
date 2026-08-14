@@ -71,6 +71,11 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                         .is_some_and(|value| arguments[0].accepts(value))
                 })
         }
+        (Type::Named { name, arguments }, Value::SequenceIterator(iterator))
+            if name == "SequenceIterator" =>
+        {
+            arguments.len() == 1 && merge_types(&arguments[0], &iterator.element_type).is_some()
+        }
         (
             Type::Reference {
                 mutable: expected_mutable,
@@ -466,10 +471,12 @@ fn type_of_value(value: &Value) -> Option<Type> {
                         TypePattern::Generic(name) => Type::Variable(name.into()),
                         TypePattern::Unit => Type::Unit,
                         TypePattern::Bool => Type::Bool,
+                        TypePattern::Char => Type::Char,
                         TypePattern::String => Type::String,
                         TypePattern::F32 => Type::Float(crate::FloatType::F32),
                         TypePattern::F64 => Type::Float(crate::FloatType::F64),
                         TypePattern::U32 => Type::Integer(crate::IntegerType::U32),
+                        TypePattern::U8 => Type::Integer(crate::IntegerType::U8),
                         TypePattern::Usize => Type::USIZE,
                         TypePattern::Named { path, arguments } => Type::Named {
                             name: path.into(),

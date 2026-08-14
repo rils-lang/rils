@@ -113,6 +113,26 @@ fn core_string_and_vec_helpers_match_interpreter() {
 }
 
 #[test]
+fn string_and_iterator_expansion_matches_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            assert!("Straße".to_uppercase() == "STRASSE");
+            assert!("éaé".rfind("é").unwrap() == 3usize);
+            assert!("R世".chars().count() == 2usize);
+            assert!("R世".bytes().count() == 4usize);
+            let mut values = "a,b,c".split(",").skip(1usize).collect_vec();
+            assert!(values.remove(0usize) == "b");
+            assert!(values.remove(0usize) == "c");
+            let mut count = 0usize;
+            for character in "Rils".chars() {
+                count = count + 1usize;
+            }
+            count
+        "#,
+    );
+}
+
+#[test]
 fn collection_search_and_owned_mutation_match_interpreter() {
     assert_matches_interpreter(
         r#"
