@@ -145,11 +145,15 @@ pub enum IntrinsicId {
     IntegerCheckedNeg = 21,
     IntegerCheckedAbs = 22,
     IntegerCheckedPow = 23,
+    IntegerCheckedShl = 24,
+    IntegerCheckedShr = 25,
     IntegerWrappingAdd = 32,
     IntegerWrappingSub = 33,
     IntegerWrappingMul = 34,
     IntegerWrappingNeg = 35,
     IntegerWrappingPow = 36,
+    IntegerWrappingShl = 37,
+    IntegerWrappingShr = 38,
     IntegerSaturatingAdd = 48,
     IntegerSaturatingSub = 49,
     IntegerSaturatingMul = 50,
@@ -162,6 +166,8 @@ pub enum IntrinsicId {
     IntegerOverflowingNeg = 67,
     IntegerOverflowingAbs = 68,
     IntegerOverflowingPow = 69,
+    IntegerOverflowingShl = 70,
+    IntegerOverflowingShr = 71,
     IntegerCountOnes = 80,
     IntegerCountZeros = 81,
     IntegerLeadingZeros = 82,
@@ -172,6 +178,8 @@ pub enum IntrinsicId {
     IntegerDivEuclid = 87,
     IntegerRemEuclid = 88,
     IntegerAbs = 89,
+    IntegerSwapBytes = 90,
+    IntegerReverseBits = 91,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,6 +194,21 @@ pub struct IntrinsicDeclaration {
     pub name: &'static str,
     pub kind: IntrinsicKind,
     pub signature: BuiltinSignature,
+    pub documentation: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum IntegerConstantId {
+    Min,
+    Max,
+    Bits,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct IntegerConstantDeclaration {
+    pub id: IntegerConstantId,
+    pub name: &'static str,
+    pub value_type: TypePattern,
     pub documentation: &'static str,
 }
 
@@ -226,11 +249,15 @@ pub const INTEGER_INTRINSICS: &[IntrinsicDeclaration] = &[
     intrinsic!(IntegerCheckedNeg, "checked_neg", Method, [] -> OPTION_SELF, "Returns the negated value, or None when it cannot be represented."),
     intrinsic!(IntegerCheckedAbs, "checked_abs", Method, [] -> OPTION_SELF, "Returns the absolute value, or None on signed minimum overflow."),
     intrinsic!(IntegerCheckedPow, "checked_pow", Method, [U32] -> OPTION_SELF, "Raises to a power, returning None on overflow."),
+    intrinsic!(IntegerCheckedShl, "checked_shl", Method, [U32] -> OPTION_SELF, "Shifts left, returning None when the shift is at least the bit width."),
+    intrinsic!(IntegerCheckedShr, "checked_shr", Method, [U32] -> OPTION_SELF, "Shifts right, returning None when the shift is at least the bit width."),
     intrinsic!(IntegerWrappingAdd, "wrapping_add", Method, [SELF] -> SELF, "Adds with two's-complement wrapping."),
     intrinsic!(IntegerWrappingSub, "wrapping_sub", Method, [SELF] -> SELF, "Subtracts with two's-complement wrapping."),
     intrinsic!(IntegerWrappingMul, "wrapping_mul", Method, [SELF] -> SELF, "Multiplies with two's-complement wrapping."),
     intrinsic!(IntegerWrappingNeg, "wrapping_neg", Method, [] -> SELF, "Negates with two's-complement wrapping."),
     intrinsic!(IntegerWrappingPow, "wrapping_pow", Method, [U32] -> SELF, "Raises to a power with wrapping arithmetic."),
+    intrinsic!(IntegerWrappingShl, "wrapping_shl", Method, [U32] -> SELF, "Shifts left after reducing the shift modulo the bit width."),
+    intrinsic!(IntegerWrappingShr, "wrapping_shr", Method, [U32] -> SELF, "Shifts right after reducing the shift modulo the bit width."),
     intrinsic!(IntegerSaturatingAdd, "saturating_add", Method, [SELF] -> SELF, "Adds while saturating at the numeric bounds."),
     intrinsic!(IntegerSaturatingSub, "saturating_sub", Method, [SELF] -> SELF, "Subtracts while saturating at the numeric bounds."),
     intrinsic!(IntegerSaturatingMul, "saturating_mul", Method, [SELF] -> SELF, "Multiplies while saturating at the numeric bounds."),
@@ -243,6 +270,8 @@ pub const INTEGER_INTRINSICS: &[IntrinsicDeclaration] = &[
     intrinsic!(IntegerOverflowingNeg, "overflowing_neg", Method, [] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped negation and whether overflow occurred."),
     intrinsic!(IntegerOverflowingAbs, "overflowing_abs", Method, [] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped absolute value and whether overflow occurred."),
     intrinsic!(IntegerOverflowingPow, "overflowing_pow", Method, [U32] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped power and whether overflow occurred."),
+    intrinsic!(IntegerOverflowingShl, "overflowing_shl", Method, [U32] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped left shift and whether the shift exceeded the bit width."),
+    intrinsic!(IntegerOverflowingShr, "overflowing_shr", Method, [U32] -> TypePattern::Tuple(SELF_BOOL), "Returns the wrapped right shift and whether the shift exceeded the bit width."),
     intrinsic!(IntegerCountOnes, "count_ones", Method, [] -> U32, "Returns the number of one bits."),
     intrinsic!(IntegerCountZeros, "count_zeros", Method, [] -> U32, "Returns the number of zero bits."),
     intrinsic!(IntegerLeadingZeros, "leading_zeros", Method, [] -> U32, "Returns the number of leading zero bits."),
@@ -253,7 +282,34 @@ pub const INTEGER_INTRINSICS: &[IntrinsicDeclaration] = &[
     intrinsic!(IntegerDivEuclid, "div_euclid", Method, [SELF] -> SELF, "Computes Euclidean division, failing on zero or overflow."),
     intrinsic!(IntegerRemEuclid, "rem_euclid", Method, [SELF] -> SELF, "Computes the least non-negative remainder, failing on zero or overflow."),
     intrinsic!(IntegerAbs, "abs", Method, [] -> SELF, "Returns the absolute value, failing on signed minimum overflow."),
+    intrinsic!(IntegerSwapBytes, "swap_bytes", Method, [] -> SELF, "Reverses the byte order."),
+    intrinsic!(IntegerReverseBits, "reverse_bits", Method, [] -> SELF, "Reverses the order of bits."),
 ];
+
+pub const INTEGER_CONSTANTS: &[IntegerConstantDeclaration] = &[
+    IntegerConstantDeclaration {
+        id: IntegerConstantId::Min,
+        name: "MIN",
+        value_type: TypePattern::SelfType,
+        documentation: "The smallest value representable by this integer type.",
+    },
+    IntegerConstantDeclaration {
+        id: IntegerConstantId::Max,
+        name: "MAX",
+        value_type: TypePattern::SelfType,
+        documentation: "The largest value representable by this integer type.",
+    },
+    IntegerConstantDeclaration {
+        id: IntegerConstantId::Bits,
+        name: "BITS",
+        value_type: TypePattern::U32,
+        documentation: "The width of this integer type in bits.",
+    },
+];
+
+pub fn integer_constant(name: &str) -> Option<&'static IntegerConstantDeclaration> {
+    INTEGER_CONSTANTS.iter().find(|item| item.name == name)
+}
 
 pub fn integer_method(name: &str) -> Option<&'static IntrinsicDeclaration> {
     INTEGER_INTRINSICS

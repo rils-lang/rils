@@ -687,6 +687,15 @@ impl Inferencer {
                         return None;
                     };
                     let integer = crate::types::IntegerType::from_name(type_name)?;
+                    if let Some(constant) = rils_builtins::integer_constant(member) {
+                        return Some(match constant.value_type {
+                            rils_builtins::TypePattern::SelfType => Type::Integer(integer),
+                            rils_builtins::TypePattern::U32 => {
+                                Type::Integer(crate::types::IntegerType::U32)
+                            }
+                            _ => Type::Unknown,
+                        });
+                    }
                     let intrinsic = rils_builtins::integer_associated_function(member)?;
                     Some(crate::standard_library::integer_intrinsic_type(
                         intrinsic, integer,

@@ -527,6 +527,15 @@ impl<'a> FunctionLowerer<'a> {
                 }
             }
             Expr::Path { segments, span } => {
+                if let [type_name, member] = segments.as_slice()
+                    && let Some(target) = crate::types::IntegerType::from_name(type_name)
+                    && let Some(constant) = rils_builtins::integer_constant(member)
+                {
+                    return Ok(HirExpression::Literal {
+                        value: integer_constant_literal(target, constant.id),
+                        span: *span,
+                    });
+                }
                 if let Some(function) = self.function_id(&segments.join("::")) {
                     return Ok(HirExpression::Function {
                         function,
@@ -1311,6 +1320,44 @@ fn lower_literal(value: &Literal) -> HirLiteral {
         ),
         Literal::Float(value) => HirLiteral::F64(*value),
         Literal::String(value) => HirLiteral::String(value.clone()),
+    }
+}
+
+fn integer_constant_literal(
+    target: crate::types::IntegerType,
+    constant: rils_builtins::IntegerConstantId,
+) -> HirLiteral {
+    use crate::types::IntegerType::*;
+    use rils_builtins::IntegerConstantId::*;
+    if constant == Bits {
+        return HirLiteral::U32(target.bits());
+    }
+    match (target, constant) {
+        (I8, Min) => HirLiteral::I8(i8::MIN),
+        (I8, Max) => HirLiteral::I8(i8::MAX),
+        (I16, Min) => HirLiteral::I16(i16::MIN),
+        (I16, Max) => HirLiteral::I16(i16::MAX),
+        (I32, Min) => HirLiteral::I32(i32::MIN),
+        (I32, Max) => HirLiteral::I32(i32::MAX),
+        (I64, Min) => HirLiteral::I64(i64::MIN),
+        (I64, Max) => HirLiteral::I64(i64::MAX),
+        (I128, Min) => HirLiteral::I128(i128::MIN),
+        (I128, Max) => HirLiteral::I128(i128::MAX),
+        (Isize, Min) => HirLiteral::Isize(isize::MIN),
+        (Isize, Max) => HirLiteral::Isize(isize::MAX),
+        (U8, Min) => HirLiteral::U8(u8::MIN),
+        (U8, Max) => HirLiteral::U8(u8::MAX),
+        (U16, Min) => HirLiteral::U16(u16::MIN),
+        (U16, Max) => HirLiteral::U16(u16::MAX),
+        (U32, Min) => HirLiteral::U32(u32::MIN),
+        (U32, Max) => HirLiteral::U32(u32::MAX),
+        (U64, Min) => HirLiteral::U64(u64::MIN),
+        (U64, Max) => HirLiteral::U64(u64::MAX),
+        (U128, Min) => HirLiteral::U128(u128::MIN),
+        (U128, Max) => HirLiteral::U128(u128::MAX),
+        (Usize, Min) => HirLiteral::Usize(usize::MIN),
+        (Usize, Max) => HirLiteral::Usize(usize::MAX),
+        (_, Bits) => unreachable!(),
     }
 }
 

@@ -285,7 +285,7 @@ fn completes_host_modules_functions_and_aliases() {
 
 #[test]
 fn completes_integer_intrinsic_methods_and_associated_functions() {
-    let text = "let value: i32 = 1;\nvalue.checked_add(1i32);\ni16::try_from(1usize);";
+    let text = "let value: i32 = 1;\nvalue.checked_add(1i32);\ni16::try_from(1usize);\ni16::M;";
     let uri = "file:///intrinsics.rils".to_owned();
     let (connection, _client) = Connection::memory();
     let mut documents = HashMap::new();
@@ -328,6 +328,19 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
         }))
         .unwrap();
     assert_eq!(associated[0]["label"], "try_from");
+
+    let constants = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 3, "character": 6 }
+        }))
+        .unwrap();
+    assert!(constants.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item["label"] == "MIN" && item["kind"] == 21)
+            && items.iter().any(|item| item["label"] == "MAX")
+    }));
 }
 
 #[test]

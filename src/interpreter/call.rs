@@ -512,6 +512,9 @@ impl Interpreter {
                 )),
             },
             Value::BuiltinType(BuiltinType::Integer(target)) => {
+                if let Some(constant) = rils_builtins::integer_constant(member) {
+                    return Ok(crate::numeric::integer_constant(target, constant.id));
+                }
                 let intrinsic =
                     rils_builtins::integer_associated_function(member).ok_or_else(|| {
                         RuntimeError::new(

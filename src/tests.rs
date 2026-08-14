@@ -106,6 +106,15 @@ fn integer_intrinsics_cover_bits_powers_euclidean_and_unary_overflow() {
                 assert!(8u8.trailing_zeros() == 3u32);
                 assert!(129u8.rotate_left(1u32) == 3u8);
                 assert!(3u8.rotate_right(1u32) == 129u8);
+                assert!(1u8.checked_shl(7u32).unwrap() == 128u8);
+                assert!(1u8.checked_shl(u8::BITS).is_none());
+                assert!(128u8.checked_shr(7u32).unwrap() == 1u8);
+                assert!(1u8.wrapping_shl(9u32) == 2u8);
+                assert!(128u8.wrapping_shr(9u32) == 64u8);
+                let shifted = 1u8.overflowing_shl(8u32);
+                assert!(shifted.0 == 1u8 && shifted.1);
+                assert!(1u16.swap_bytes() == 256u16);
+                assert!(1u8.reverse_bits() == 128u8);
 
                 assert!(3i32.pow(4u32) == 81);
                 assert!(20i8.checked_pow(2u32).is_none());
@@ -130,6 +139,24 @@ fn integer_intrinsics_cover_bits_powers_euclidean_and_unary_overflow() {
             "{error}"
         );
     }
+}
+
+#[test]
+fn integer_associated_constants_preserve_type_and_width() {
+    assert_eq!(
+        integer(
+            r#"
+                assert!(i8::MIN == -127i8 - 1i8);
+                assert!(i8::MAX == 127i8);
+                assert!(u8::MIN == 0u8);
+                assert!(u8::MAX == 255u8);
+                assert!(i128::BITS == 128u32);
+                assert!(usize::BITS == isize::BITS);
+                42
+            "#,
+        ),
+        42
+    );
 }
 
 #[test]

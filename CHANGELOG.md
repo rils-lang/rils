@@ -50,6 +50,8 @@
 - 整数增加位计数、前导/尾随零、旋转、`pow`、`div_euclid/rem_euclid` 和 `abs`；同时补齐
   neg/abs/pow 的 checked、wrapping、saturating、overflowing 模式，并覆盖 signed MIN、除零和
   幂溢出边界。
+- 整数增加 `MIN/MAX/BITS` 关联常量、`swap_bytes/reverse_bits`，以及 shift 的 checked、wrapping、
+  overflowing 模式；共享声明同步驱动类型推断、解释器、字节码 VM 和 Analyzer 补全。
 - 增加 Rust 风格整数 `as` 表达式以及 `1_i32` 形式的分隔后缀。静态检查只接受不会缩小类型范围
   的转换；`i32 as usize` 对负值运行时报错，`usize as i32` 等潜在有损转换直接拒绝。解释器、
   HIR/MIR、字节码 VM 和 Analyzer 使用同一规则。

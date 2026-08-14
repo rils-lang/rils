@@ -2,6 +2,13 @@ use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
 mod integer_methods;
 
+pub(crate) fn integer_constant(
+    target: IntegerType,
+    constant: rils_builtins::IntegerConstantId,
+) -> Value {
+    integer_methods::constant(target, constant)
+}
+
 pub(crate) fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> {
     enum IntegerValue {
         Signed(i128),

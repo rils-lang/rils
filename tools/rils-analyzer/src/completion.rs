@@ -67,14 +67,20 @@ impl Server {
             return Ok(json!([]));
         };
         if rils_builtins::IntegerType::from_name(&qualifier).is_some() {
-            let items = rils_builtins::INTEGER_INTRINSICS
+            let mut items = rils_builtins::INTEGER_CONSTANTS
                 .iter()
-                .filter(|item| {
-                    item.kind == rils_builtins::IntrinsicKind::AssociatedFunction
-                        && item.name.starts_with(&member_prefix)
-                })
-                .map(integer_intrinsic_completion)
+                .filter(|item| item.name.starts_with(&member_prefix))
+                .map(integer_constant_completion)
                 .collect::<Vec<_>>();
+            items.extend(
+                rils_builtins::INTEGER_INTRINSICS
+                    .iter()
+                    .filter(|item| {
+                        item.kind == rils_builtins::IntrinsicKind::AssociatedFunction
+                            && item.name.starts_with(&member_prefix)
+                    })
+                    .map(integer_intrinsic_completion),
+            );
             return Ok(json!(items));
         }
         let qualifier = resolve_path_alias(&document.text, &qualifier);

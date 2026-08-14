@@ -1,5 +1,43 @@
 use crate::{Type, Value};
 
+pub(super) fn constant(
+    target: crate::IntegerType,
+    constant: rils_builtins::IntegerConstantId,
+) -> Value {
+    use crate::IntegerType::*;
+    use rils_builtins::IntegerConstantId::*;
+    if constant == Bits {
+        return Value::U32(target.bits());
+    }
+    match (target, constant) {
+        (I8, Min) => Value::I8(i8::MIN),
+        (I8, Max) => Value::I8(i8::MAX),
+        (I16, Min) => Value::I16(i16::MIN),
+        (I16, Max) => Value::I16(i16::MAX),
+        (I32, Min) => Value::I32(i32::MIN),
+        (I32, Max) => Value::I32(i32::MAX),
+        (I64, Min) => Value::I64(i64::MIN),
+        (I64, Max) => Value::I64(i64::MAX),
+        (I128, Min) => Value::I128(i128::MIN),
+        (I128, Max) => Value::I128(i128::MAX),
+        (Isize, Min) => Value::Isize(isize::MIN),
+        (Isize, Max) => Value::Isize(isize::MAX),
+        (U8, Min) => Value::U8(u8::MIN),
+        (U8, Max) => Value::U8(u8::MAX),
+        (U16, Min) => Value::U16(u16::MIN),
+        (U16, Max) => Value::U16(u16::MAX),
+        (U32, Min) => Value::U32(u32::MIN),
+        (U32, Max) => Value::U32(u32::MAX),
+        (U64, Min) => Value::U64(u64::MIN),
+        (U64, Max) => Value::U64(u64::MAX),
+        (U128, Min) => Value::U128(u128::MIN),
+        (U128, Max) => Value::U128(u128::MAX),
+        (Usize, Min) => Value::Usize(usize::MIN),
+        (Usize, Max) => Value::Usize(usize::MAX),
+        (_, Bits) => unreachable!(),
+    }
+}
+
 pub(super) fn handles(id: rils_builtins::IntrinsicId) -> bool {
     use rils_builtins::IntrinsicId::*;
     matches!(
@@ -7,14 +45,20 @@ pub(super) fn handles(id: rils_builtins::IntrinsicId) -> bool {
         IntegerCheckedNeg
             | IntegerCheckedAbs
             | IntegerCheckedPow
+            | IntegerCheckedShl
+            | IntegerCheckedShr
             | IntegerWrappingNeg
             | IntegerWrappingPow
+            | IntegerWrappingShl
+            | IntegerWrappingShr
             | IntegerSaturatingNeg
             | IntegerSaturatingAbs
             | IntegerSaturatingPow
             | IntegerOverflowingNeg
             | IntegerOverflowingAbs
             | IntegerOverflowingPow
+            | IntegerOverflowingShl
+            | IntegerOverflowingShr
             | IntegerCountOnes
             | IntegerCountZeros
             | IntegerLeadingZeros
@@ -25,6 +69,8 @@ pub(super) fn handles(id: rils_builtins::IntrinsicId) -> bool {
             | IntegerDivEuclid
             | IntegerRemEuclid
             | IntegerAbs
+            | IntegerSwapBytes
+            | IntegerReverseBits
     )
 }
 
@@ -62,6 +108,34 @@ macro_rules! common {
             IntegerRotateRight => {
                 exponent($values).map(|amount| $ctor($value.rotate_right(amount)))
             }
+            IntegerSwapBytes => Ok($ctor($value.swap_bytes())),
+            IntegerReverseBits => Ok($ctor($value.reverse_bits())),
+            IntegerCheckedShl => exponent($values).map(|amount| {
+                option(
+                    $value.checked_shl(amount).map($ctor),
+                    Type::of_value(&$ctor($value)),
+                )
+            }),
+            IntegerCheckedShr => exponent($values).map(|amount| {
+                option(
+                    $value.checked_shr(amount).map($ctor),
+                    Type::of_value(&$ctor($value)),
+                )
+            }),
+            IntegerWrappingShl => {
+                exponent($values).map(|amount| $ctor($value.wrapping_shl(amount)))
+            }
+            IntegerWrappingShr => {
+                exponent($values).map(|amount| $ctor($value.wrapping_shr(amount)))
+            }
+            IntegerOverflowingShl => exponent($values).map(|amount| {
+                let (value, overflowed) = $value.overflowing_shl(amount);
+                overflowing($ctor(value), overflowed)
+            }),
+            IntegerOverflowingShr => exponent($values).map(|amount| {
+                let (value, overflowed) = $value.overflowing_shr(amount);
+                overflowing($ctor(value), overflowed)
+            }),
             IntegerPow => exponent($values).and_then(|power| {
                 $value
                     .checked_pow(power)
