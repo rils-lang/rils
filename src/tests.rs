@@ -2877,6 +2877,92 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
 }
 
 #[test]
+fn project_source_ids_survive_bytecode_round_trip_and_locate_runtime_errors() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-source-id-bytecode-test-{}-{unique}",
+        std::process::id()
+    ));
+    let scripts = root.join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(
+        root.join("rils.toml"),
+        "[project]\nname = \"source_ids\"\nscript_paths = [\"scripts\"]\n",
+    )
+    .unwrap();
+    let entry = scripts.join("entry.rils");
+    let dependency = scripts.join("math.rils");
+    std::fs::write(&entry, "fn main() -> i32 { crate::math::fail() }").unwrap();
+    std::fs::write(&dependency, "pub fn fail() -> i32 { 1 / 0 }").unwrap();
+
+    let module = compile_file(&entry).unwrap();
+    assert_eq!(module.sources().len(), 2);
+    assert!(
+        module
+            .sources()
+            .iter()
+            .all(|source| source.id != SourceId::UNKNOWN)
+    );
+    let bytes = module.to_bytes().unwrap();
+    let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
+    assert_eq!(loaded.sources(), module.sources());
+    let error = loaded.execute().unwrap_err();
+    assert_eq!(
+        loaded.source_name(error.span.source),
+        Some(dependency.to_string_lossy().as_ref())
+    );
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_compile_and_interpreter_errors_retain_dependency_source() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-source-id-diagnostic-test-{}-{unique}",
+        std::process::id()
+    ));
+    let scripts = root.join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(
+        root.join("rils.toml"),
+        "[project]\nname = \"source_diagnostics\"\nscript_paths = [\"scripts\"]\n",
+    )
+    .unwrap();
+    let entry = scripts.join("entry.rils");
+    let dependency = scripts.join("broken.rils");
+    std::fs::write(&entry, "fn main() -> i32 { 42 }").unwrap();
+    std::fs::write(&dependency, "pub fn broken() -> i32 { missing }").unwrap();
+
+    let error = match compile_file(&entry) {
+        Ok(_) => panic!("dependency analysis should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error.source_name(),
+        Some(dependency.to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        error.source_text(),
+        Some("pub fn broken() -> i32 { missing }")
+    );
+
+    std::fs::write(&dependency, "pub fn broken() -> i32 { @ }").unwrap();
+    let error = Engine::new().eval_file(&entry).unwrap_err();
+    let rendered = error.render(entry.to_string_lossy().as_ref(), "");
+    assert!(rendered.contains(dependency.to_string_lossy().as_ref()));
+    assert!(rendered.contains("pub fn broken() -> i32 { @ }"));
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn project_entry_requires_main_but_legacy_files_do_not() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

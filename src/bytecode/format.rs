@@ -11,7 +11,7 @@ use crate::{
     FloatType, IntegerType,
     ast::{BinaryOp, EnumVariant, GenericParameter, NamedField, UnaryOp},
     hir::{HirLiteral, HirPattern},
-    source::Span,
+    source::{SourceFile, SourceId, Span},
     types::{FunctionSignature, Type},
     value::{EnumType, StructType},
 };
@@ -23,7 +23,7 @@ use super::{
 };
 
 const MAGIC: &[u8; 8] = b"RILBC\0\0\0";
-pub const BYTECODE_FORMAT_VERSION: u16 = 3;
+pub const BYTECODE_FORMAT_VERSION: u16 = 4;
 pub const BYTECODE_LANGUAGE_VERSION: (u16, u16, u16) = (0, 1, 0);
 
 const HEADER_LEN: usize = 32;
@@ -33,6 +33,7 @@ const SECTION_IMPORTS: u16 = 2;
 const SECTION_TYPES: u16 = 3;
 const SECTION_ITERATORS: u16 = 4;
 const SECTION_FUNCTIONS: u16 = 5;
+const SECTION_SOURCES: u16 = 6;
 const REQUIRED_SECTION: u16 = 1;
 const MAX_FILE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_STRING_BYTES: usize = 1024 * 1024;
@@ -90,6 +91,7 @@ impl BytecodeModule {
         ensure_limit(self.functions.len(), MAX_FUNCTIONS, "function table")?;
         ensure_limit(self.imports.len(), MAX_IMPORTS, "import table")?;
         ensure_limit(self.types.len(), MAX_TYPES, "type table")?;
+        ensure_limit(self.sources.len(), MAX_COLLECTION_ITEMS, "source table")?;
         ensure_limit(
             self.instruction_count(),
             MAX_INSTRUCTIONS,
@@ -125,6 +127,8 @@ impl BytecodeModule {
         }
         let mut functions = Writer::default();
         functions.collection(&self.functions, write_function)?;
+        let mut sources = Writer::default();
+        sources.collection(&self.sources, write_source_file)?;
 
         encode_container([
             (SECTION_MODULE, module.finish()),
@@ -132,6 +136,7 @@ impl BytecodeModule {
             (SECTION_TYPES, types.finish()),
             (SECTION_ITERATORS, iterators.finish()),
             (SECTION_FUNCTIONS, functions.finish()),
+            (SECTION_SOURCES, sources.finish()),
         ])
     }
 
@@ -174,6 +179,13 @@ impl BytecodeModule {
         let functions =
             functions_reader.collection_limited(read_function, MAX_FUNCTIONS, "function table")?;
         functions_reader.finish()?;
+        let mut sources_reader = section_reader(&sections, SECTION_SOURCES, "sources")?;
+        let sources = sources_reader.collection_limited(
+            read_source_file,
+            MAX_COLLECTION_ITEMS,
+            "source table",
+        )?;
+        sources_reader.finish()?;
 
         let instruction_count = functions.iter().try_fold(0usize, |total, function| {
             total
@@ -183,6 +195,7 @@ impl BytecodeModule {
         ensure_limit(instruction_count, MAX_INSTRUCTIONS, "instruction table")?;
 
         let module = Self {
+            sources,
             functions,
             types,
             imports,
@@ -343,6 +356,7 @@ fn decode_container(bytes: &[u8]) -> Result<HashMap<u16, &[u8]>> {
                 | SECTION_TYPES
                 | SECTION_ITERATORS
                 | SECTION_FUNCTIONS
+                | SECTION_SOURCES
         );
         if !known && flags & REQUIRED_SECTION != 0 {
             return Err(BytecodeFormatError::new(format!(
@@ -383,6 +397,7 @@ fn decode_container(bytes: &[u8]) -> Result<HashMap<u16, &[u8]>> {
         SECTION_TYPES,
         SECTION_ITERATORS,
         SECTION_FUNCTIONS,
+        SECTION_SOURCES,
     ] {
         if !sections.contains_key(&id) {
             return Err(BytecodeFormatError::new(format!(
@@ -480,6 +495,7 @@ impl Writer {
         Ok(())
     }
     fn span(&mut self, span: Span) -> Result<()> {
+        self.u32(span.source.0);
         self.u64(
             u64::try_from(span.start)
                 .map_err(|_| BytecodeFormatError::new("span start exceeds u64"))?,
@@ -615,6 +631,7 @@ impl<'a> Reader<'a> {
             .map_err(|_| BytecodeFormatError::new("string is not valid UTF-8"))
     }
     fn span(&mut self) -> Result<Span> {
+        let source = SourceId::new(self.u32()?);
         let start = usize::try_from(self.u64()?)
             .map_err(|_| BytecodeFormatError::new("span start exceeds usize"))?;
         let end = usize::try_from(self.u64()?)
@@ -622,7 +639,7 @@ impl<'a> Reader<'a> {
         if start > end {
             return Err(BytecodeFormatError::new("span start exceeds end"));
         }
-        Ok(Span::new(start, end))
+        Ok(Span::in_source(source, start, end))
     }
     fn collection<T>(&mut self, read: fn(&mut Self) -> Result<T>) -> Result<Vec<T>> {
         let count = self.len()?;
@@ -2055,6 +2072,29 @@ fn read_function(reader: &mut Reader<'_>) -> Result<BytecodeFunction> {
     })
 }
 
+fn write_source_file(writer: &mut Writer, source: &SourceFile) -> Result<()> {
+    if source.id == SourceId::UNKNOWN {
+        return Err(BytecodeFormatError::new(
+            "source table cannot contain the unknown source id",
+        ));
+    }
+    writer.u32(source.id.0);
+    writer.string(&source.name)
+}
+
+fn read_source_file(reader: &mut Reader<'_>) -> Result<SourceFile> {
+    let id = SourceId::new(reader.u32()?);
+    if id == SourceId::UNKNOWN {
+        return Err(BytecodeFormatError::new(
+            "source table cannot contain the unknown source id",
+        ));
+    }
+    Ok(SourceFile {
+        id,
+        name: reader.string()?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2099,6 +2139,59 @@ mod tests {
         let loaded = BytecodeModule::from_bytes(&bytes).expect("module loads");
         let value = loaded.execute().expect("module runs");
         assert_eq!(value, crate::Value::I32(16));
+    }
+
+    #[test]
+    fn round_trip_preserves_source_ids_and_rejects_unknown_span_sources() {
+        let source_id = SourceId::new(9);
+        let tokens = crate::lexer::lex_with_source_id("1 / 0", source_id).unwrap();
+        let program = crate::parser::parse(tokens).unwrap();
+        let module = crate::bytecode::compile_program_with_host_and_sources(
+            &program,
+            &crate::HostContract::new(),
+            vec![SourceFile {
+                id: source_id,
+                name: "math.rils".into(),
+            }],
+        )
+        .unwrap();
+        let mut bytes = module.to_bytes().unwrap();
+        let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
+        let error = loaded.execute().unwrap_err();
+        assert_eq!(error.span.source, source_id);
+        assert_eq!(loaded.source_name(source_id), Some("math.rils"));
+
+        let section_count = u16::from_le_bytes(bytes[22..24].try_into().unwrap()) as usize;
+        let directory_end = HEADER_LEN + section_count * DIRECTORY_ENTRY_LEN;
+        let functions_entry = (0..section_count)
+            .find_map(|index| {
+                let start = HEADER_LEN + index * DIRECTORY_ENTRY_LEN;
+                (u16::from_le_bytes(bytes[start..start + 2].try_into().unwrap())
+                    == SECTION_FUNCTIONS)
+                    .then_some(start)
+            })
+            .unwrap();
+        let functions_offset = u32::from_le_bytes(
+            bytes[functions_entry + 4..functions_entry + 8]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let mut reader = Reader::new(&bytes[functions_offset..]);
+        let _function_count = reader.index().unwrap();
+        let _name = reader.string().unwrap();
+        let _exported = reader.bool().unwrap();
+        let _constants = reader.collection(read_constant).unwrap();
+        let _instruction_count = reader.index().unwrap();
+        let instruction_source_offset = functions_offset + reader.position;
+        bytes[instruction_source_offset..instruction_source_offset + 4]
+            .copy_from_slice(&999_u32.to_le_bytes());
+        let checksum = crc32(&bytes[directory_end..]);
+        bytes[28..32].copy_from_slice(&checksum.to_le_bytes());
+        let error = match BytecodeModule::from_bytes(&bytes) {
+            Ok(_) => panic!("unknown span source should be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.message.contains("unknown source"));
     }
 
     #[test]

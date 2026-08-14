@@ -23,6 +23,7 @@ pub(super) fn encode(program: MirProgram) -> Result<BytecodeModule, CompileError
         functions.push(encode_function(function, &mut imports, &mut import_ids)?);
     }
     let module = BytecodeModule {
+        sources: program.sources,
         functions,
         types,
         imports,
@@ -41,10 +42,9 @@ pub(super) fn encode(program: MirProgram) -> Result<BytecodeModule, CompileError
             .collect(),
         entry: program.entry,
     };
-    module.verify().map_err(|error| CompileError {
-        message: error.message,
-        span: error.span,
-    })?;
+    module
+        .verify()
+        .map_err(|error| CompileError::new(error.message, error.span))?;
     Ok(module)
 }
 

@@ -122,6 +122,13 @@ struct Module {
     source_name: String,
 }
 
+fn module_source_name(module: &Module, span: Span) -> &str {
+    module
+        .bytecode
+        .source_name(span.source)
+        .unwrap_or(&module.source_name)
+}
+
 #[derive(Clone, Copy)]
 struct Instance {
     runtime: Handle,

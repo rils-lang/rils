@@ -1,5 +1,5 @@
 use crate::{
-    source::Span,
+    source::{SourceId, Span},
     token::{Token, TokenKind},
 };
 
@@ -10,20 +10,26 @@ pub struct LexError {
 }
 
 pub fn lex(source: &str) -> Result<Vec<Token>, LexError> {
-    Lexer::new(source).scan_tokens()
+    lex_with_source_id(source, SourceId::UNKNOWN)
+}
+
+pub fn lex_with_source_id(source: &str, source_id: SourceId) -> Result<Vec<Token>, LexError> {
+    Lexer::new(source, source_id).scan_tokens()
 }
 
 struct Lexer<'a> {
     source: &'a str,
+    source_id: SourceId,
     start: usize,
     current: usize,
     tokens: Vec<Token>,
 }
 
 impl<'a> Lexer<'a> {
-    fn new(source: &'a str) -> Self {
+    fn new(source: &'a str, source_id: SourceId) -> Self {
         Self {
             source,
+            source_id,
             start: 0,
             current: 0,
             tokens: Vec::new(),
@@ -37,9 +43,13 @@ impl<'a> Lexer<'a> {
         }
         self.tokens.push(Token::new(
             TokenKind::Eof,
-            Span::new(self.current, self.current),
+            self.span(self.current, self.current),
         ));
         Ok(self.tokens)
+    }
+
+    fn span(&self, start: usize, end: usize) -> Span {
+        Span::in_source(self.source_id, start, end)
     }
 
     fn scan_token(&mut self) -> Result<(), LexError> {
@@ -303,13 +313,13 @@ impl<'a> Lexer<'a> {
 
     fn add(&mut self, kind: TokenKind) {
         self.tokens
-            .push(Token::new(kind, Span::new(self.start, self.current)));
+            .push(Token::new(kind, self.span(self.start, self.current)));
     }
 
     fn error(&self, message: String) -> LexError {
         LexError {
             message,
-            span: Span::new(self.start, self.current),
+            span: self.span(self.start, self.current),
         }
     }
 

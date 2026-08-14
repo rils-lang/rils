@@ -3,7 +3,7 @@ use crate::{
     hir::{
         FunctionId, HirIteratorMethods, HirLiteral, HirPattern, HirTypeDefinition, LocalId, TypeId,
     },
-    source::Span,
+    source::{SourceFile, Span},
     types::IntegerType,
 };
 use rils_builtins::IntrinsicId;
@@ -23,6 +23,7 @@ pub enum MirProjection {
 }
 
 pub struct MirProgram {
+    pub sources: Vec<SourceFile>,
     pub functions: Vec<MirFunction>,
     pub types: Vec<HirTypeDefinition>,
     pub iterators: std::collections::HashMap<String, HirIteratorMethods>,

@@ -285,7 +285,14 @@ fn run_bytecode(path: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("{error}");
+            if let Some(source_name) = module.source_name(error.span.source) {
+                eprintln!(
+                    "{error} at {source_name}:{}..{}",
+                    error.span.start, error.span.end
+                );
+            } else {
+                eprintln!("{error}");
+            }
             ExitCode::FAILURE
         }
     }

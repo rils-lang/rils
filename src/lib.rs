@@ -60,7 +60,7 @@ mod types {
 }
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     error::Error,
     fmt, fs,
     path::{Path, PathBuf},
@@ -76,7 +76,8 @@ pub use bytecode::{
     HostFunctionDeclaration, HostModuleDeclaration, HostThreadAffinity,
 };
 pub use rils_frontend::{
-    FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, Span, Type,
+    FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
+    Span, Type,
 };
 pub use rils_project::{Project, ProjectError, ProjectFile};
 pub use value::Value;
@@ -169,6 +170,11 @@ pub enum RilsError {
     Lex(LexError),
     Parse(ParseError),
     Runtime(RuntimeError),
+    Located {
+        error: Box<RilsError>,
+        source_name: String,
+        source: String,
+    },
 }
 
 impl From<FrontendError> for RilsError {
@@ -186,11 +192,17 @@ impl RilsError {
             Self::Lex(error) => error.span,
             Self::Parse(error) => error.span,
             Self::Runtime(error) => error.span,
+            Self::Located { error, .. } => error.span(),
         }
     }
 
     pub fn render(&self, source_name: &str, source: &str) -> String {
         match self {
+            Self::Located {
+                error,
+                source_name,
+                source,
+            } => error.render(source_name, source),
             Self::Lex(error) => format_diagnostic(
                 source_name,
                 source,
@@ -228,6 +240,7 @@ impl fmt::Display for RilsError {
             Self::Lex(error) => write!(f, "lex error: {}", error.message),
             Self::Parse(error) => write!(f, "parse error: {}", error.message),
             Self::Runtime(error) => write!(f, "runtime error: {}", error.message),
+            Self::Located { error, .. } => error.fmt(f),
         }
     }
 }
@@ -384,17 +397,108 @@ impl Engine {
 
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value, RilsError> {
         let path = path.as_ref();
-        let project =
-            discover_entry_project(path).map_err(|error| module_message(error.to_string()))?;
-        let source = fs::read_to_string(path).map_err(|error| module_load_error(path, error))?;
-        let tokens = lexer::lex(&source).map_err(RilsError::Lex)?;
-        let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
-            .map_err(RilsError::Parse)?;
-        load_file_modules(&mut program.statements, path, &project, &self.native_macros)?;
-        rils_frontend::resolve_numeric_literals(&mut program).map_err(numeric_resolution_error)?;
-        self.interpreter
-            .execute(&program)
-            .map_err(RilsError::Runtime)
+        let mut sources = SourceRegistry::default();
+        let result = (|| {
+            let project =
+                discover_entry_project(path).map_err(|error| module_message(error.to_string()))?;
+            sources.register_project(&project);
+            let source =
+                fs::read_to_string(path).map_err(|error| module_load_error(path, error))?;
+            let source_id = sources.register_source(path, &source);
+            let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
+            let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
+                .map_err(RilsError::Parse)?;
+            load_file_modules(
+                &mut program.statements,
+                path,
+                &project,
+                &self.native_macros,
+                &mut sources,
+            )?;
+            rils_frontend::resolve_numeric_literals(&mut program)
+                .map_err(numeric_resolution_error)?;
+            self.interpreter
+                .execute(&program)
+                .map_err(RilsError::Runtime)
+        })();
+        result.map_err(|error| locate_rils_error(error, &sources))
+    }
+}
+
+#[derive(Default)]
+struct SourceRegistry {
+    next_id: u32,
+    by_path: HashMap<PathBuf, SourceId>,
+    records: BTreeMap<SourceId, SourceRecord>,
+}
+
+struct SourceRecord {
+    file: SourceFile,
+    source: Option<String>,
+}
+
+impl SourceRegistry {
+    fn register_project(&mut self, project: &Project) {
+        for file in project.modules() {
+            self.register_path(&file.path);
+        }
+    }
+
+    fn register_path(&mut self, path: &Path) -> SourceId {
+        let key = source_path_key(path);
+        if let Some(id) = self.by_path.get(&key) {
+            return *id;
+        }
+        self.next_id += 1;
+        let id = SourceId::new(self.next_id);
+        self.by_path.insert(key, id);
+        self.records.insert(
+            id,
+            SourceRecord {
+                file: SourceFile {
+                    id,
+                    name: path.to_string_lossy().into_owned(),
+                },
+                source: None,
+            },
+        );
+        id
+    }
+
+    fn register_source(&mut self, path: &Path, source: &str) -> SourceId {
+        let id = self.register_path(path);
+        self.records.get_mut(&id).expect("registered source").source = Some(source.into());
+        id
+    }
+
+    fn source_files(&self) -> Vec<SourceFile> {
+        self.records
+            .values()
+            .map(|record| record.file.clone())
+            .collect()
+    }
+
+    fn location(&self, id: SourceId) -> Option<(&str, &str)> {
+        let record = self.records.get(&id)?;
+        Some((&record.file.name, record.source.as_deref()?))
+    }
+}
+
+fn source_path_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn locate_rils_error(error: RilsError, sources: &SourceRegistry) -> RilsError {
+    if matches!(error, RilsError::Located { .. }) {
+        return error;
+    }
+    let Some((source_name, source)) = sources.location(error.span().source) else {
+        return error;
+    };
+    RilsError::Located {
+        error: Box::new(error),
+        source_name: source_name.into(),
+        source: source.into(),
     }
 }
 
@@ -424,6 +528,7 @@ fn load_external_modules(
     base: &Path,
     native_macros: &[macros::NativeMacroDefinition],
     loading: &mut HashSet<PathBuf>,
+    sources: &mut SourceRegistry,
 ) -> Result<(), RilsError> {
     for statement in statements {
         let statement = match statement {
@@ -437,7 +542,7 @@ fn load_external_modules(
             continue;
         };
         if let Some(statements) = statements {
-            load_external_modules(statements, base, native_macros, loading)?;
+            load_external_modules(statements, base, native_macros, loading, sources)?;
             continue;
         }
 
@@ -464,7 +569,8 @@ fn load_external_modules(
             )));
         }
         let source = fs::read_to_string(&path).map_err(|error| module_load_error(&path, error))?;
-        let tokens = lexer::lex(&source).map_err(RilsError::Lex)?;
+        let source_id = sources.register_source(&path, &source);
+        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
         let mut module =
             parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
         load_external_modules(
@@ -472,6 +578,7 @@ fn load_external_modules(
             path.parent().unwrap_or(base),
             native_macros,
             loading,
+            sources,
         )?;
         loading.remove(&canonical);
         *statements = Some(module.statements);
@@ -490,6 +597,7 @@ fn load_file_modules(
     entry_path: &Path,
     project: &Project,
     native_macros: &[macros::NativeMacroDefinition],
+    sources: &mut SourceRegistry,
 ) -> Result<(), RilsError> {
     if project.manifest_path().is_none() {
         let base = entry_path.parent().unwrap_or_else(|| Path::new("."));
@@ -497,7 +605,7 @@ fn load_file_modules(
         if let Ok(canonical) = entry_path.canonicalize() {
             loading.insert(canonical);
         }
-        return load_external_modules(statements, base, native_macros, &mut loading);
+        return load_external_modules(statements, base, native_macros, &mut loading, sources);
     }
     let entry = project.module_for_file(entry_path).ok_or_else(|| {
         module_message(format!(
@@ -514,7 +622,8 @@ fn load_file_modules(
         } else {
             let source = fs::read_to_string(&file.path)
                 .map_err(|error| module_load_error(&file.path, error))?;
-            let tokens = lexer::lex(&source).map_err(RilsError::Lex)?;
+            let source_id = sources.register_source(&file.path, &source);
+            let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
             let program = parser::parse_with_native_macros(tokens, native_macros)
                 .map_err(RilsError::Parse)?;
             reject_external_module_declarations(&program.statements)?;
@@ -731,31 +840,34 @@ pub fn compile_with_host(
 /// reusable in-memory bytecode module.
 pub fn compile_file(path: impl AsRef<Path>) -> Result<BytecodeModule, CompileError> {
     let path = path.as_ref();
-    let project = discover_entry_project(path).map_err(|error| CompileError {
-        message: error.to_string(),
-        span: Span::default(),
-    })?;
+    let project = discover_entry_project(path)
+        .map_err(|error| CompileError::new(error.to_string(), Span::default()))?;
     let mut host: Option<HostContract> = None;
     for manifest in project.host_manifests() {
-        let bytes = fs::read(manifest).map_err(|error| CompileError {
-            message: format!(
-                "failed to read host manifest `{}`: {error}",
-                manifest.display()
-            ),
-            span: Span::default(),
-        })?;
-        let fragment =
-            HostContract::from_manifest_bytes(&bytes).map_err(|message| CompileError {
-                message: format!("invalid host manifest `{}`: {message}", manifest.display()),
-                span: Span::default(),
-            })?;
-        if let Some(host) = &mut host {
-            host.merge(&fragment).map_err(|message| CompileError {
-                message: format!(
-                    "cannot merge host manifest `{}`: {message}",
+        let bytes = fs::read(manifest).map_err(|error| {
+            CompileError::new(
+                format!(
+                    "failed to read host manifest `{}`: {error}",
                     manifest.display()
                 ),
-                span: Span::default(),
+                Span::default(),
+            )
+        })?;
+        let fragment = HostContract::from_manifest_bytes(&bytes).map_err(|message| {
+            CompileError::new(
+                format!("invalid host manifest `{}`: {message}", manifest.display()),
+                Span::default(),
+            )
+        })?;
+        if let Some(host) = &mut host {
+            host.merge(&fragment).map_err(|message| {
+                CompileError::new(
+                    format!(
+                        "cannot merge host manifest `{}`: {message}",
+                        manifest.display()
+                    ),
+                    Span::default(),
+                )
             })?;
         } else {
             host = Some(fragment);
@@ -771,10 +883,8 @@ pub fn compile_file_with_host(
     host: &HostContract,
 ) -> Result<BytecodeModule, CompileError> {
     let path = path.as_ref();
-    let project = discover_entry_project(path).map_err(|error| CompileError {
-        message: error.to_string(),
-        span: Span::default(),
-    })?;
+    let project = discover_entry_project(path)
+        .map_err(|error| CompileError::new(error.to_string(), Span::default()))?;
     compile_project_file_with_host(path, &project, host)
 }
 
@@ -789,25 +899,35 @@ fn compile_project_file_with_host(
     project: &Project,
     host: &HostContract,
 ) -> Result<BytecodeModule, CompileError> {
-    let source = fs::read_to_string(path).map_err(|error| CompileError {
-        message: format!("failed to load `{}`: {error}", path.display()),
-        span: Span::default(),
-    })?;
-    let tokens = lexer::lex(&source).map_err(|error| CompileError {
-        message: error.message,
-        span: error.span,
-    })?;
-    let mut program = parser::parse(tokens).map_err(|error| CompileError {
-        message: error.message,
-        span: error.span,
-    })?;
-    load_file_modules(&mut program.statements, path, project, &[]).map_err(|error| {
-        CompileError {
-            message: error.to_string(),
-            span: error.span(),
-        }
-    })?;
-    bytecode::compile_program_with_host(&program, host)
+    let mut sources = SourceRegistry::default();
+    sources.register_project(project);
+    let result = (|| {
+        let source = fs::read_to_string(path).map_err(|error| {
+            CompileError::new(
+                format!("failed to load `{}`: {error}", path.display()),
+                Span::default(),
+            )
+        })?;
+        let source_id = sources.register_source(path, &source);
+        let tokens = lexer::lex_with_source_id(&source, source_id)
+            .map_err(|error| CompileError::new(error.message, error.span))?;
+        let mut program =
+            parser::parse(tokens).map_err(|error| CompileError::new(error.message, error.span))?;
+        load_file_modules(&mut program.statements, path, project, &[], &mut sources)
+            .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
+        bytecode::compile_program_with_host_and_sources(&program, host, sources.source_files())
+    })();
+    result.map_err(|error| locate_compile_error(error, &sources))
+}
+
+fn locate_compile_error(error: CompileError, sources: &SourceRegistry) -> CompileError {
+    if error.source_name().is_some() {
+        return error;
+    }
+    let Some((source_name, source)) = sources.location(error.span.source) else {
+        return error;
+    };
+    error.with_source(source_name, source)
 }
 
 #[cfg(test)]

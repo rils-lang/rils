@@ -10,7 +10,10 @@ fn resolves_local_definitions_and_references() {
         .iter()
         .find(|symbol| !symbol.is_definition && symbol.name == "value")
         .unwrap();
-    assert_eq!(reference.definition_span, Some(Span::new(4, 9)));
+    assert_eq!(
+        reference.definition_span,
+        Some(Span::in_source(SourceId::new(7), 4, 9))
+    );
     assert_eq!(
         reference.definition_id,
         Some(SymbolId {

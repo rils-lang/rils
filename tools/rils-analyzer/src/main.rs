@@ -11,7 +11,7 @@ use rils_frontend::{
     FrontendError, FunctionSignature, SourceId, Span, Type,
     analysis::{DiagnosticSeverity, DocumentAnalysis, SymbolKind, analyze_with_source_id},
     ast::Stmt,
-    lexer::lex,
+    lexer::{lex, lex_with_source_id},
     parser::parse,
 };
 use rils_project::Project;

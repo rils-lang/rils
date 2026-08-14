@@ -11,7 +11,7 @@ use crate::{
     environment::{AccessError, AssignError, StorageRef, StorageSlot},
     hir::{HirLiteral, HirPattern, HirTypeDefinition},
     mir::{MirFunction, MirInstruction, MirProgram, MirTerminator},
-    source::{Span, format_diagnostic},
+    source::{SourceFile, SourceId, Span, format_diagnostic},
     types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
@@ -75,6 +75,7 @@ impl Error for BytecodeError {}
 
 #[derive(Clone)]
 pub struct BytecodeModule {
+    sources: Vec<SourceFile>,
     functions: Vec<BytecodeFunction>,
     types: Vec<RuntimeType>,
     imports: Vec<BytecodeImport>,
@@ -109,6 +110,17 @@ struct BytecodeFunction {
 }
 
 impl BytecodeModule {
+    pub fn sources(&self) -> &[SourceFile] {
+        &self.sources
+    }
+
+    pub fn source_name(&self, source: SourceId) -> Option<&str> {
+        self.sources
+            .iter()
+            .find(|file| file.id == source)
+            .map(|file| file.name.as_str())
+    }
+
     pub fn execute(&self) -> Result<Value, BytecodeError> {
         self.execute_with_limit(1_000_000)
     }
@@ -344,24 +356,27 @@ pub fn compile_with_host(
     encode(rils_compiler::compile_with_host(source, host)?)
 }
 
-pub(crate) fn compile_program_with_host(
+pub(crate) fn compile_program_with_host_and_sources(
     program: &crate::ast::Program,
     host: &HostContract,
+    sources: Vec<SourceFile>,
 ) -> Result<BytecodeModule, CompileError> {
     validate_contract_abi(host)?;
-    encode(rils_compiler::compile_program_with_host(program, host)?)
+    encode(rils_compiler::compile_program_with_host_and_sources(
+        program, host, sources,
+    )?)
 }
 
 fn validate_contract_abi(host: &HostContract) -> Result<(), CompileError> {
     if host.host_abi_version() != BYTECODE_HOST_ABI_VERSION {
-        return Err(CompileError {
-            message: format!(
+        return Err(CompileError::new(
+            format!(
                 "host contract ABI {} is incompatible with bytecode host ABI {}",
                 host.host_abi_version(),
                 BYTECODE_HOST_ABI_VERSION
             ),
-            span: Span::default(),
-        });
+            Span::default(),
+        ));
     }
     Ok(())
 }

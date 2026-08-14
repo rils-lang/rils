@@ -15,7 +15,7 @@ mod type_inference;
 pub mod types;
 
 pub use error::FrontendError;
-pub use lexer::{LexError, lex};
+pub use lexer::{LexError, lex, lex_with_source_id};
 pub use parser::{ParseError, parse};
 pub use resolution::{
     NumericResolutionError, resolve_numeric_literals, resolve_numeric_literals_with_host_functions,
@@ -25,5 +25,5 @@ pub use rils_builtins::{
     TypePattern, float_constant, float_method, integer_associated_function, integer_constant,
     integer_method,
 };
-pub use source::{SourceId, Span, SymbolId};
+pub use source::{SourceFile, SourceId, Span, SymbolId};
 pub use types::{FloatType, FunctionSignature, IntegerType, RuntimeValue, Type};

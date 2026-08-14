@@ -8,7 +8,7 @@ use crate::{
     ast::{Block, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
     bytecode::CompileError,
     host::{HostContract, HostFunctionDeclaration},
-    source::Span,
+    source::{SourceFile, Span},
     types::Type,
 };
 
@@ -71,8 +71,9 @@ pub(crate) fn lower_with_host(
     program: &Program,
     host: &HostContract,
     expression_types: &HashMap<Span, Type>,
+    sources: Vec<SourceFile>,
 ) -> Result<HirProgram, CompileError> {
-    ProgramLowerer::new(program, host, expression_types)?.lower(program)
+    ProgramLowerer::new(program, host, expression_types)?.lower(program, sources)
 }
 
 struct ProgramLowerer {
@@ -180,7 +181,11 @@ impl ProgramLowerer {
         })
     }
 
-    fn lower(self, program: &Program) -> Result<HirProgram, CompileError> {
+    fn lower(
+        self,
+        program: &Program,
+        sources: Vec<SourceFile>,
+    ) -> Result<HirProgram, CompileError> {
         let generated = GeneratedFunctions {
             next_id: Rc::new(Cell::new(
                 self.methods
@@ -249,6 +254,7 @@ impl ProgramLowerer {
         generated_functions.sort_by_key(|(id, _)| *id);
         lowered.extend(generated_functions.drain(..).map(|(_, function)| function));
         Ok(HirProgram {
+            sources,
             functions: lowered,
             types: self.type_definitions,
             iterators: iterator_methods(&self.methods),

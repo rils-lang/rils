@@ -122,10 +122,11 @@ pub unsafe extern "C" fn rils_instance_execute(
         {
             Ok(value) => value,
             Err(error) => {
+                let source_name = module_source_name(&module, error.span).to_owned();
                 return fail(
                     RILS_STATUS_EXECUTION_ERROR,
                     error.message,
-                    &module.source_name,
+                    &source_name,
                     error.span,
                 );
             }
@@ -209,10 +210,11 @@ pub unsafe extern "C" fn rils_instance_call(
         ) {
             Ok(value) => value,
             Err(error) => {
+                let source_name = module_source_name(&module, error.span).to_owned();
                 return fail(
                     RILS_STATUS_EXECUTION_ERROR,
                     error.message,
-                    &module.source_name,
+                    &source_name,
                     error.span,
                 );
             }

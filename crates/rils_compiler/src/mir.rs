@@ -19,6 +19,7 @@ pub(crate) fn lower(program: HirProgram) -> Result<MirProgram, CompileError> {
         .map(|function| Builder::new(function.local_count).function(function))
         .collect::<Result<_, _>>()?;
     Ok(MirProgram {
+        sources: program.sources,
         functions,
         types: program.types,
         iterators: program.iterators,

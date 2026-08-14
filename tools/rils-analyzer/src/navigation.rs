@@ -141,7 +141,9 @@ impl Server {
         let file = project.module(&module_path)?;
         let target_uri = path_to_file_uri(&file.path);
         let target_document = self.documents.get(&target_uri)?;
-        let program = parse(lex(&target_document.text).ok()?).ok()?;
+        let program =
+            parse(lex_with_source_id(&target_document.text, target_document.source_id).ok()?)
+                .ok()?;
         let public_span = program.statements.iter().find_map(|statement| {
             let Stmt::Public { statement, .. } = statement else {
                 return None;

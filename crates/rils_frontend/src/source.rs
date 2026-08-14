@@ -11,6 +11,12 @@ impl SourceId {
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct SourceFile {
+    pub id: SourceId,
+    pub name: String,
+}
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SymbolId {
     pub source: SourceId,
@@ -19,17 +25,33 @@ pub struct SymbolId {
 
 #[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Span {
+    pub source: SourceId,
     pub start: usize,
     pub end: usize,
 }
 
 impl Span {
     pub const fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
+        Self::in_source(SourceId::UNKNOWN, start, end)
+    }
+
+    pub const fn in_source(source: SourceId, start: usize, end: usize) -> Self {
+        Self { source, start, end }
+    }
+
+    pub const fn with_source(self, source: SourceId) -> Self {
+        Self { source, ..self }
     }
 
     pub const fn merge(self, other: Self) -> Self {
-        Self::new(self.start, other.end)
+        let source = if self.source.0 == 0 {
+            other.source
+        } else if other.source.0 == 0 || self.source.0 == other.source.0 {
+            self.source
+        } else {
+            SourceId::UNKNOWN
+        };
+        Self::in_source(source, self.start, other.end)
     }
 }
 
@@ -78,6 +100,10 @@ pub fn format_diagnostic(source_name: &str, source: &str, span: Span, message: &
 
 impl fmt::Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}..{}", self.start, self.end)
+        if self.source == SourceId::UNKNOWN {
+            write!(f, "{}..{}", self.start, self.end)
+        } else {
+            write!(f, "source#{}:{}..{}", self.source.0, self.start, self.end)
+        }
     }
 }

@@ -124,14 +124,14 @@ pub fn analyze_with_source_id(
     source_id: SourceId,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> Result<DocumentAnalysis, FrontendError> {
-    let tokens = crate::lexer::lex(source).map_err(FrontendError::Lex)?;
+    let tokens = crate::lexer::lex_with_source_id(source, source_id).map_err(FrontendError::Lex)?;
     let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
     Ok(Analyzer::new(source_id, host_functions).analyze(&program))
 }
 
 struct Analyzer {
     source_id: SourceId,
-    next_symbol: u32,
+    next_symbol: HashMap<SourceId, u32>,
     scopes: Vec<HashMap<String, Definition>>,
     trait_members: HashMap<(String, String), Span>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
@@ -225,7 +225,7 @@ impl Analyzer {
         }
         Self {
             source_id,
-            next_symbol: 1,
+            next_symbol: HashMap::new(),
             scopes: vec![globals],
             trait_members: HashMap::new(),
             type_aliases: HashMap::new(),
@@ -887,11 +887,17 @@ impl Analyzer {
     }
 
     fn definition_only(&mut self, name: &str, span: Span, kind: SymbolKind) -> SymbolId {
-        let id = SymbolId {
-            source: self.source_id,
-            local: self.next_symbol,
+        let source = if span.source == SourceId::UNKNOWN {
+            self.source_id
+        } else {
+            span.source
         };
-        self.next_symbol = self.next_symbol.checked_add(1).expect("symbol id overflow");
+        let next_symbol = self.next_symbol.entry(source).or_insert(1);
+        let id = SymbolId {
+            source,
+            local: *next_symbol,
+        };
+        *next_symbol = next_symbol.checked_add(1).expect("symbol id overflow");
         self.result.symbols.push(SymbolOccurrence {
             name: name.into(),
             span,

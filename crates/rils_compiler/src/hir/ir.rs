@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{BinaryOp, EnumVariant, GenericParameter, LogicalOp, NamedField, UnaryOp},
-    source::Span,
+    source::{SourceFile, Span},
     types::{FunctionSignature, IntegerType},
 };
 use rils_builtins::IntrinsicId;
@@ -22,6 +22,7 @@ pub enum HirProjection {
 }
 
 pub struct HirProgram {
+    pub sources: Vec<SourceFile>,
     pub functions: Vec<HirFunction>,
     pub types: Vec<HirTypeDefinition>,
     pub iterators: HashMap<String, HirIteratorMethods>,

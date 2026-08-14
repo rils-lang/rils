@@ -394,6 +394,37 @@ fn compiles_executes_file_and_loads_external_modules() {
 }
 
 #[test]
+fn compile_file_reports_the_dependency_source_name() {
+    let directory = std::env::temp_dir().join(format!(
+        "rils-capi-source-id-test-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let entry = directory.join("main.rils");
+    let dependency = directory.join("broken.rils");
+    std::fs::write(&entry, "mod broken; 42").unwrap();
+    std::fs::write(&dependency, "pub fn value() -> i32 { missing }").unwrap();
+
+    let runtime = rils_runtime_create();
+    let mut module = 0;
+    let entry_text = entry.to_str().unwrap();
+    // SAFETY: The path and output pointer remain valid for the duration of the call.
+    assert_eq!(
+        unsafe { rils_module_compile_file(runtime, bytes(entry_text), &mut module) },
+        RILS_STATUS_COMPILE_ERROR
+    );
+    let name = rils_last_error_source_name();
+    // SAFETY: Error strings remain borrowed until the next non-getter ABI call.
+    let name =
+        unsafe { std::str::from_utf8_unchecked(slice::from_raw_parts(name.data, name.length)) };
+    assert_eq!(name, dependency.to_string_lossy());
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn rejects_stale_handles_and_reports_compile_spans() {
     let runtime = rils_runtime_create();
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);

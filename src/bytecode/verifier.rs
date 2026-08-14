@@ -2,6 +2,34 @@ use super::*;
 
 impl BytecodeModule {
     pub(super) fn verify(&self) -> Result<(), BytecodeError> {
+        let mut source_ids = HashSet::new();
+        let mut source_names = HashSet::new();
+        for source in &self.sources {
+            if source.id == SourceId::UNKNOWN
+                || source.name.is_empty()
+                || !source_ids.insert(source.id)
+                || !source_names.insert(source.name.as_str())
+            {
+                return Err(BytecodeError::new(
+                    "bytecode module has an invalid source table",
+                    Span::default(),
+                ));
+            }
+        }
+        if self
+            .types
+            .iter()
+            .any(|runtime_type| !self.valid_runtime_type(runtime_type))
+            || self
+                .imports
+                .iter()
+                .any(|import| !self.valid_signature(&import.signature))
+        {
+            return Err(BytecodeError::new(
+                "bytecode module type metadata references an unknown source",
+                Span::default(),
+            ));
+        }
         if self.functions.is_empty() || self.entry >= self.functions.len() {
             return Err(BytecodeError::new(
                 "bytecode module has no valid entry function",
@@ -40,6 +68,17 @@ impl BytecodeModule {
     }
 
     fn verify_function(&self, function: &BytecodeFunction) -> Result<(), BytecodeError> {
+        if !self.valid_span(function.span)
+            || function
+                .instructions
+                .iter()
+                .any(|instruction| !self.valid_span(instruction.span))
+        {
+            return Err(BytecodeError::new(
+                format!("function `{}` references an unknown source", function.name),
+                function.span,
+            ));
+        }
         if function.instructions.is_empty()
             || function.parameter_count + function.capture_count > function.local_count
             || function.local_mutability.len() != function.local_count
@@ -555,5 +594,74 @@ impl BytecodeModule {
             ));
         }
         Ok(())
+    }
+
+    fn valid_span(&self, span: Span) -> bool {
+        span.source == SourceId::UNKNOWN
+            || self.sources.iter().any(|source| source.id == span.source)
+    }
+
+    fn valid_signature(&self, signature: &FunctionSignature) -> bool {
+        signature
+            .parameters
+            .as_ref()
+            .is_none_or(|parameters| parameters.iter().all(|ty| self.valid_type(ty)))
+            && self.valid_type(&signature.return_type)
+    }
+
+    fn valid_runtime_type(&self, runtime_type: &RuntimeType) -> bool {
+        let valid_parameter =
+            |parameter: &crate::ast::GenericParameter| self.valid_span(parameter.span);
+        let valid_field = |field: &crate::ast::NamedField| {
+            self.valid_span(field.span) && self.valid_type(&field.type_annotation)
+        };
+        match runtime_type {
+            RuntimeType::Struct(value) => {
+                value.generic_parameters.iter().all(valid_parameter)
+                    && value.fields.iter().all(valid_field)
+            }
+            RuntimeType::Enum(value) => {
+                value.generic_parameters.iter().all(valid_parameter)
+                    && value.variants.iter().all(|variant| match variant {
+                        crate::ast::EnumVariant::Unit { span, .. } => self.valid_span(*span),
+                        crate::ast::EnumVariant::Tuple { fields, span, .. } => {
+                            self.valid_span(*span)
+                                && fields.iter().all(|field| self.valid_type(field))
+                        }
+                        crate::ast::EnumVariant::Record { fields, span, .. } => {
+                            self.valid_span(*span) && fields.iter().all(valid_field)
+                        }
+                    })
+            }
+        }
+    }
+
+    fn valid_type(&self, ty: &Type) -> bool {
+        match ty {
+            Type::IntegerVariable(span) | Type::FloatVariable(span) => self.valid_span(*span),
+            Type::Tuple(elements) => elements.iter().all(|element| self.valid_type(element)),
+            Type::Array { element, .. }
+            | Type::Reference { inner: element, .. }
+            | Type::Option(element) => self.valid_type(element),
+            Type::Function {
+                parameters,
+                return_type,
+            } => {
+                parameters
+                    .as_ref()
+                    .is_none_or(|parameters| parameters.iter().all(|ty| self.valid_type(ty)))
+                    && self.valid_type(return_type)
+            }
+            Type::Result(ok, error) => self.valid_type(ok) && self.valid_type(error),
+            Type::Named { arguments, .. } => {
+                arguments.iter().all(|argument| self.valid_type(argument))
+            }
+            Type::Associated {
+                base, arguments, ..
+            } => {
+                self.valid_type(base) && arguments.iter().all(|argument| self.valid_type(argument))
+            }
+            _ => true,
+        }
     }
 }

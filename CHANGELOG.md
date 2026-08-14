@@ -7,7 +7,8 @@
 
 ### Breaking Changes
 
-- `.rilbc` 格式由 v1 提升为 v3，以编码显式整数转换和稳定 ID 的 intrinsic 调用指令。已有 `.rilbc`/Unity `.bytes` 需要从
+- `.rilbc` 格式由 v1 提升为 v4：除显式整数转换和稳定 ID 的 intrinsic 调用指令外，v4
+  增加来源文件表，并让所有持久化 Span 携带 `SourceId`。已有 `.rilbc`/Unity `.bytes` 需要从
   源码重新生成。
 
 - 移除原有的 `int` 和 `float` 类型名。整数与浮点数现在使用明确的 Rust 风格类型：
@@ -26,11 +27,14 @@
 - 更新宿主函数签名、Analyzer 断言和序列化代码，使其保留具体数值类型，不再执行隐式整数/浮点
   扩宽。
 - Unity 发布流程应在 Editor 或构建阶段生成 `.rilbc`/`.bytes`，Player 通过
-  `RilsRuntime.LoadBytecode(byte[])` 加载。`.rilbc` v3 包含 `usize/isize` 时与目标指针宽度相关，
+  `RilsRuntime.LoadBytecode(byte[])` 加载。`.rilbc` v4 包含 `usize/isize` 时与目标指针宽度相关，
   32 位和 64 位产物不能混用。
 
 ### Added
 
+- SourceId 已贯通 lexer/parser、静态分析、HIR/MIR、字节码格式与 verifier、解释器、Analyzer、
+  CLI 和 C API。项目及兼容模块加载会为每个脚本分配确定的来源标识，跨文件编译和运行错误可报告
+  实际依赖文件；Analyzer 的符号 ID、定义与引用也保留文件身份。
 - 增加 `HashMap<K, V>` 与 `HashSet<T>` 的拥有型运行时实现、共享内建声明和字节码 core imports。
   首版支持标量 `Eq + Hash` 键、CRUD、Map 的拥有型查询/键值迭代、Set 集合代数以及消费式 `for`；
   Analyzer 同步补全 `std::collections`、构造函数和实例方法。
@@ -88,8 +92,8 @@
   `i32/u32/i64/u64` 和 `f32/f64`，并拒绝 dispatcher 重入 C API。
 - 增加全部定宽整数、`isize`/`usize`、`f32`/`f64` 和 `char`，并支持根据标注、参数、返回值、
   运算及索引用法约束无后缀字面量。
-- 增加实验性 `.rilbc` 显式磁盘格式，当前为 v3，包含独立的格式版本、语言版本、宿主 ABI、目标指针宽度、
-  section 目录、CRC32、严格资源上限和加载后 verifier。
+- 增加实验性 `.rilbc` 显式磁盘格式，当前为 v4，包含独立的格式版本、语言版本、宿主 ABI、目标指针宽度、
+  来源文件表、section 目录、CRC32、严格资源上限和加载后 verifier。
 - 增加 `BytecodeModule::to_bytes/from_bytes/write_file/read_file`，以及 CLI 的 `compile`、`verify` 和
   `run` 子命令。
 - 增加 `compile_file` 的递归外部模块编译，以及按名称调用公开字节码函数的宿主入口。

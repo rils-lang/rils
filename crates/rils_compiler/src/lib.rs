@@ -25,23 +25,55 @@ mod types {
 
 use std::{error::Error, fmt};
 
-use rils_frontend::{analysis::DiagnosticSeverity, ast::Program, source::Span};
+use rils_frontend::{
+    analysis::DiagnosticSeverity,
+    ast::Program,
+    source::{SourceFile, Span},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompileError {
     pub message: String,
     pub span: Span,
+    source_name: Option<String>,
+    source: Option<String>,
 }
 
 impl CompileError {
-    pub fn unsupported(message: impl Into<String>, span: Span) -> Self {
+    pub fn new(message: impl Into<String>, span: Span) -> Self {
         Self {
             message: message.into(),
             span,
+            source_name: None,
+            source: None,
         }
     }
 
+    pub fn unsupported(message: impl Into<String>, span: Span) -> Self {
+        Self::new(message, span)
+    }
+
+    pub fn with_source(
+        mut self,
+        source_name: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Self {
+        self.source_name = Some(source_name.into());
+        self.source = Some(source.into());
+        self
+    }
+
+    pub fn source_name(&self) -> Option<&str> {
+        self.source_name.as_deref()
+    }
+
+    pub fn source_text(&self) -> Option<&str> {
+        self.source.as_deref()
+    }
+
     pub fn render(&self, source_name: &str, source: &str) -> String {
+        let source_name = self.source_name().unwrap_or(source_name);
+        let source = self.source_text().unwrap_or(source);
         rils_frontend::source::format_diagnostic(
             source_name,
             source,
@@ -67,14 +99,10 @@ pub fn compile_with_host(
     source: &str,
     host: &HostContract,
 ) -> Result<mir::MirProgram, CompileError> {
-    let tokens = rils_frontend::lexer::lex(source).map_err(|error| CompileError {
-        message: error.message,
-        span: error.span,
-    })?;
-    let program = rils_frontend::parser::parse(tokens).map_err(|error| CompileError {
-        message: error.message,
-        span: error.span,
-    })?;
+    let tokens = rils_frontend::lexer::lex(source)
+        .map_err(|error| CompileError::new(error.message, error.span))?;
+    let program = rils_frontend::parser::parse(tokens)
+        .map_err(|error| CompileError::new(error.message, error.span))?;
     compile_program_with_host(&program, host)
 }
 
@@ -86,13 +114,18 @@ pub fn compile_program_with_host(
     program: &Program,
     host: &HostContract,
 ) -> Result<mir::MirProgram, CompileError> {
+    compile_program_with_host_and_sources(program, host, Vec::new())
+}
+
+pub fn compile_program_with_host_and_sources(
+    program: &Program,
+    host: &HostContract,
+    sources: Vec<SourceFile>,
+) -> Result<mir::MirProgram, CompileError> {
     let mut program = program.clone();
     let signatures = host.signatures();
     rils_frontend::resolve_numeric_literals_with_host_functions(&mut program, &signatures)
-        .map_err(|error| CompileError {
-            message: error.message,
-            span: error.span,
-        })?;
+        .map_err(|error| CompileError::new(error.message, error.span))?;
     let analysis =
         rils_frontend::analysis::analyze_program_with_host_functions(&program, &signatures);
     if let Some(diagnostic) = analysis
@@ -100,15 +133,13 @@ pub fn compile_program_with_host(
         .into_iter()
         .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
     {
-        return Err(CompileError {
-            message: diagnostic.message,
-            span: diagnostic.span,
-        });
+        return Err(CompileError::new(diagnostic.message, diagnostic.span));
     }
     mir::lower(hir::lower_with_host(
         &program,
         host,
         &analysis.expression_types,
+        sources,
     )?)
 }
 

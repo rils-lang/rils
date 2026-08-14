@@ -124,11 +124,26 @@ pub unsafe extern "C" fn rils_module_compile_file(
         let bytecode = match rils::compile_file_with_host(path, &contract) {
             Ok(module) => module,
             Err(error) => {
-                return fail(RILS_STATUS_COMPILE_ERROR, error.message, path, error.span);
+                let source_name = error.source_name().unwrap_or(path).to_owned();
+                return fail(
+                    RILS_STATUS_COMPILE_ERROR,
+                    error.message,
+                    &source_name,
+                    error.span,
+                );
             }
         };
         if let Err(error) = bytecode.validate_host(&host) {
-            return fail(RILS_STATUS_BYTECODE_ERROR, error.message, path, error.span);
+            let source_name = bytecode
+                .source_name(error.span.source)
+                .unwrap_or(path)
+                .to_owned();
+            return fail(
+                RILS_STATUS_BYTECODE_ERROR,
+                error.message,
+                &source_name,
+                error.span,
+            );
         }
         STATE.with(|state| {
             let mut state = state.borrow_mut();
@@ -200,10 +215,14 @@ pub unsafe extern "C" fn rils_module_load_bytecode(
             Err(status) => return status,
         };
         if let Err(error) = bytecode.validate_host(&host) {
+            let source_name = bytecode
+                .source_name(error.span.source)
+                .unwrap_or("<bytecode>")
+                .to_owned();
             return fail(
                 RILS_STATUS_BYTECODE_ERROR,
                 error.message,
-                "<bytecode>",
+                &source_name,
                 error.span,
             );
         }
@@ -285,7 +304,16 @@ pub unsafe extern "C" fn rils_module_load_bytecode_file(
             Err(status) => return status,
         };
         if let Err(error) = bytecode.validate_host(&host) {
-            return fail(RILS_STATUS_BYTECODE_ERROR, error.message, path, error.span);
+            let source_name = bytecode
+                .source_name(error.span.source)
+                .unwrap_or(path)
+                .to_owned();
+            return fail(
+                RILS_STATUS_BYTECODE_ERROR,
+                error.message,
+                &source_name,
+                error.span,
+            );
         }
         STATE.with(|state| {
             let mut state = state.borrow_mut();
@@ -328,12 +356,15 @@ pub extern "C" fn rils_module_validate_host(runtime: Handle, module: Handle) -> 
         };
         match module.bytecode.validate_host(&host) {
             Ok(()) => RILS_STATUS_OK,
-            Err(error) => fail(
-                RILS_STATUS_BYTECODE_ERROR,
-                error.message,
-                &module.source_name,
-                error.span,
-            ),
+            Err(error) => {
+                let source_name = module_source_name(&module, error.span).to_owned();
+                fail(
+                    RILS_STATUS_BYTECODE_ERROR,
+                    error.message,
+                    &source_name,
+                    error.span,
+                )
+            }
         }
     })
 }
