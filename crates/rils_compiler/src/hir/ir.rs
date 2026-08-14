@@ -209,6 +209,10 @@ pub enum HirExpression {
         arguments: Vec<HirExpression>,
         span: Span,
     },
+    IntoIterator {
+        value: Box<HirExpression>,
+        span: Span,
+    },
     ConstructRecord {
         type_id: TypeId,
         variant: Option<String>,

@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+#[path = "interpreter/builtin_methods/iterator.rs"]
+mod builtin_iterator;
 mod builtin_methods;
 #[path = "interpreter/builtin_methods/option_result.rs"]
 mod builtin_option_result;

@@ -52,6 +52,16 @@ pub enum RuntimeMemberId {
     IteratorSkip = 36,
     IteratorRev = 37,
     IteratorIntoIter = 38,
+    IteratorMap = 100,
+    IteratorFilter = 101,
+    IteratorFilterMap = 102,
+    IteratorFold = 103,
+    IteratorForEach = 104,
+    IteratorAny = 105,
+    IteratorAll = 106,
+    IteratorFind = 107,
+    IteratorPosition = 108,
+    IteratorEnumerate = 109,
     ResultIsOk = 48,
     ResultIsErr = 49,
     ResultUnwrap = 50,
@@ -157,6 +167,16 @@ impl RuntimeMemberId {
             Self::IteratorRev => "core::iterator::rev",
             Self::SequenceIntoIter
             | Self::IteratorIntoIter
+            | Self::IteratorMap
+            | Self::IteratorFilter
+            | Self::IteratorFilterMap
+            | Self::IteratorFold
+            | Self::IteratorForEach
+            | Self::IteratorAny
+            | Self::IteratorAll
+            | Self::IteratorFind
+            | Self::IteratorPosition
+            | Self::IteratorEnumerate
             | Self::RangeNext
             | Self::RangeIntoIter
             | Self::ResultMap
@@ -282,6 +302,39 @@ const FN_T_U: TypePattern = TypePattern::Function {
     parameters: &[T],
     result: &U,
 };
+const FN_REF_T_BOOL: TypePattern = TypePattern::Function {
+    parameters: &[REF_T],
+    result: &TypePattern::Bool,
+};
+const FN_T_BOOL: TypePattern = TypePattern::Function {
+    parameters: &[T],
+    result: &TypePattern::Bool,
+};
+const FN_T_OPTION_U_ITERATOR: TypePattern = TypePattern::Function {
+    parameters: &[T],
+    result: &TypePattern::Option(&U),
+};
+const FN_U_T_U: TypePattern = TypePattern::Function {
+    parameters: &[U, T],
+    result: &U,
+};
+const FN_T_UNIT: TypePattern = TypePattern::Function {
+    parameters: &[T],
+    result: &TypePattern::Unit,
+};
+const ITERATOR_T: TypePattern = TypePattern::Named {
+    path: "SequenceIterator",
+    arguments: &[T],
+};
+const ITERATOR_U: TypePattern = TypePattern::Named {
+    path: "SequenceIterator",
+    arguments: &[U],
+};
+const INDEXED_T: TypePattern = TypePattern::Tuple(&[TypePattern::Usize, T]);
+const ITERATOR_INDEXED_T: TypePattern = TypePattern::Named {
+    path: "SequenceIterator",
+    arguments: &[INDEXED_T],
+};
 const FN_T_OPTION_U: TypePattern = TypePattern::Function {
     parameters: &[T],
     result: &TypePattern::Option(&U),
@@ -355,6 +408,16 @@ const ITERATOR_MEMBERS: &[BuiltinMember] = &[
     member!("take", method Owned [TypePattern::Usize] -> TypePattern::SelfType, IteratorTake, "Returns an iterator over at most the first n remaining items."),
     member!("skip", method Owned [TypePattern::Usize] -> TypePattern::SelfType, IteratorSkip, "Returns an iterator after discarding the first n remaining items."),
     member!("rev", method Owned [] -> TypePattern::SelfType, IteratorRev, "Reverses the remaining items of this double-ended built-in iterator."),
+    member!("map", generic ["U"] method Owned [FN_T_U] -> ITERATOR_U, IteratorMap, "Transforms every remaining item with the supplied function."),
+    member!("filter", method Owned [FN_REF_T_BOOL] -> ITERATOR_T, IteratorFilter, "Keeps items for which the predicate returns true."),
+    member!("filter_map", generic ["U"] method Owned [FN_T_OPTION_U_ITERATOR] -> ITERATOR_U, IteratorFilterMap, "Transforms and keeps items for which the function returns Some."),
+    member!("fold", generic ["U"] method Owned [U, FN_U_T_U] -> U, IteratorFold, "Accumulates all remaining items from an initial value."),
+    member!("for_each", method Owned [FN_T_UNIT] -> TypePattern::Unit, IteratorForEach, "Calls a function for every remaining item."),
+    member!("any", method Owned [FN_T_BOOL] -> TypePattern::Bool, IteratorAny, "Returns true when any item satisfies the predicate."),
+    member!("all", method Owned [FN_T_BOOL] -> TypePattern::Bool, IteratorAll, "Returns true when every item satisfies the predicate."),
+    member!("find", method Owned [FN_REF_T_BOOL] -> TypePattern::Option(&T), IteratorFind, "Returns the first item satisfying the predicate."),
+    member!("position", method Owned [FN_T_BOOL] -> TypePattern::Option(&TypePattern::Usize), IteratorPosition, "Returns the index of the first item satisfying the predicate."),
+    member!("enumerate", method Owned [] -> ITERATOR_INDEXED_T, IteratorEnumerate, "Yields each remaining item together with its zero-based index."),
     member!("into_iter", method Owned [] -> TypePattern::SelfType, IteratorIntoIter, "Returns this iterator unchanged."),
 ];
 const INTO_ITERATOR_MEMBERS: &[BuiltinMember] = &[
@@ -383,13 +446,13 @@ const VEC_MEMBERS: &[BuiltinMember] = &[
     member!("remove", method Mutable [TypePattern::Usize] -> T, VecRemove, "Removes and returns the element at the supplied index."),
     member!("swap_remove", method Mutable [TypePattern::Usize] -> T, VecSwapRemove, "Removes an element by replacing it with the final element."),
     member!("extend", method Mutable [TypePattern::SelfType] -> TypePattern::Unit, VecExtend, "Moves every element from another Vec into this Vec."),
-    member!("into_iter", method Owned [] -> TypePattern::Unknown, SequenceIntoIter, "Consumes the Vec and creates an iterator."),
+    member!("into_iter", method Owned [] -> ITERATOR_T, SequenceIntoIter, "Consumes the Vec and creates an iterator."),
 ];
 const ARRAY_MEMBERS: &[BuiltinMember] = &[
     member!("len", method Shared [] -> TypePattern::Usize, SequenceLen, "Returns the element count."),
     member!("is_empty", method Shared [] -> TypePattern::Bool, SequenceIsEmpty, "Returns true when the array has no elements."),
     member!("contains", method Shared [TypePattern::Reference { mutable: false, inner: &T }] -> TypePattern::Bool, SequenceContains, "Returns true when an equal element is present."),
-    member!("into_iter", method Owned [] -> TypePattern::Unknown, SequenceIntoIter, "Consumes the array and creates an iterator."),
+    member!("into_iter", method Owned [] -> ITERATOR_T, SequenceIntoIter, "Consumes the array and creates an iterator."),
 ];
 const STRING_MEMBERS: &[BuiltinMember] = &[
     member!("len", method Shared [] -> TypePattern::Usize, StringLen, "Returns the UTF-8 byte length."),
@@ -595,6 +658,28 @@ pub fn builtin_member(owner: &str, name: &str) -> Option<&'static BuiltinMember>
         .find(|member| member.name == name)
 }
 
+pub fn is_iterator_default_method(name: &str) -> bool {
+    matches!(
+        name,
+        "count"
+            | "last"
+            | "collect_vec"
+            | "take"
+            | "skip"
+            | "rev"
+            | "map"
+            | "filter"
+            | "filter_map"
+            | "fold"
+            | "for_each"
+            | "any"
+            | "all"
+            | "find"
+            | "position"
+            | "enumerate"
+    )
+}
+
 pub fn runtime_member(id: RuntimeMemberId) -> Option<(&'static str, &'static BuiltinMember)> {
     BUILTINS.iter().find_map(|owner| {
         owner
@@ -717,6 +802,16 @@ mod tests {
             RuntimeMemberId::IteratorSkip,
             RuntimeMemberId::IteratorRev,
             RuntimeMemberId::IteratorIntoIter,
+            RuntimeMemberId::IteratorMap,
+            RuntimeMemberId::IteratorFilter,
+            RuntimeMemberId::IteratorFilterMap,
+            RuntimeMemberId::IteratorFold,
+            RuntimeMemberId::IteratorForEach,
+            RuntimeMemberId::IteratorAny,
+            RuntimeMemberId::IteratorAll,
+            RuntimeMemberId::IteratorFind,
+            RuntimeMemberId::IteratorPosition,
+            RuntimeMemberId::IteratorEnumerate,
             RuntimeMemberId::SequenceIntoIter,
             RuntimeMemberId::IteratorNext,
             RuntimeMemberId::RangeNext,

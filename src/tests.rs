@@ -2395,6 +2395,107 @@ fn assert_macro_reports_non_copy_string_index_moves_without_overflowing() {
 }
 
 #[test]
+fn iterator_default_methods_cover_transform_query_and_fold_workflows() {
+    let source = r#"
+        fn double(value: i32) -> i32 { value * 2 }
+        fn larger_than_four(value: &i32) -> bool { *value > 4 }
+        fn even(value: i32) -> bool { value % 2 == 0 }
+        fn positive(value: i32) -> bool { value > 0 }
+        fn maybe_even(value: i32) -> Option<i32> {
+            if value % 2 == 0 { Some(value * 10) } else { None }
+        }
+        fn sum(total: i32, value: i32) -> i32 { total + value }
+
+        let mut mapped = [1, 2, 3, 4]
+            .into_iter()
+            .map(double)
+            .filter(larger_than_four)
+            .enumerate()
+            .collect_vec();
+        assert!(mapped.len() == 2usize);
+        let first_mapped = mapped.remove(0usize);
+        assert!(first_mapped.0 == 0usize);
+
+        let mut selected = [1, 2, 3, 4].into_iter().filter_map(maybe_even).collect_vec();
+        assert!(selected.remove(0usize) == 20);
+        assert!(selected.remove(0usize) == 40);
+        assert!([1, 2, 3, 4].into_iter().fold(0, sum) == 10);
+        assert!([1, 3, 4].into_iter().any(even));
+        assert!([1, 3, 4].into_iter().all(positive));
+        assert!([1, 3, 4].into_iter().find(larger_than_four).is_none());
+        assert!([1, 3, 4].into_iter().position(even).unwrap() == 2usize);
+
+        fn validate_positive(value: i32) { assert!(value > 0); }
+        [1, 2, 3].into_iter().for_each(validate_positive);
+        6
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(6));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(6));
+}
+
+#[test]
+fn custom_iterators_inherit_iterator_default_methods() {
+    let source = r#"
+        struct Counter { current: i32, end: i32 }
+
+        impl Iterator for Counter {
+            type Item = i32;
+
+            fn next(&mut self) -> Option<i32> {
+                if self.current < self.end {
+                    let value = self.current;
+                    let end = self.end;
+                    *self = Counter { current: value + 1, end: end };
+                    Some(value)
+                } else {
+                    None
+                }
+            }
+        }
+
+        fn square(value: i32) -> i32 { value * value }
+        fn add(total: i32, value: i32) -> i32 { total + value }
+        assert!(Counter { current: 1, end: 5 }.count() == 4usize);
+        assert!(Counter { current: 1, end: 5 }.last().unwrap() == 4);
+        assert!(Counter { current: 1, end: 5 }.take(2usize).fold(0, add) == 3);
+        assert!(Counter { current: 1, end: 5 }.skip(2usize).fold(0, add) == 7);
+        assert!(Counter { current: 1, end: 5 }.rev().fold(0, add) == 10);
+        let collected = Counter { current: 1, end: 5 }.collect_vec();
+        assert!(collected.len() == 4usize);
+        Counter { current: 1, end: 5 }.map(square).fold(0, add)
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(30));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(30));
+}
+
+#[test]
+fn iterator_predicates_short_circuit_and_filter_owned_values_by_reference() {
+    let source = r#"
+        fn run() -> i32 {
+            let mut calls = 0;
+            fn is_two(value: i32) -> bool {
+                calls = calls + 1;
+                value == 2
+            }
+            assert!([1, 2, 3, 4].into_iter().any(is_two));
+            assert!(calls == 2);
+
+            fn non_empty(value: &string) -> bool { !value.is_empty() }
+            let mut values = ["first", "", "last"]
+                .into_iter()
+                .filter(non_empty)
+                .collect_vec();
+            assert!(values.remove(0usize) == "first");
+            assert!(values.remove(0usize) == "last");
+            calls
+        }
+        run()
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(2));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(2));
+}
+
+#[test]
 fn collection_mutation_respects_active_element_references() {
     let assign = eval(
         r#"

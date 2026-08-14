@@ -36,6 +36,9 @@
 - string 增加 Unicode 大小写、首尾裁剪、重复、反向查找、前后缀剥离，以及
   `chars/bytes/lines/split` 拥有型迭代；内建迭代器增加 `count/last/nth/collect_vec/take/skip/rev`，
   可链式使用并直接进入 `for`。Analyzer 补全和解释器/字节码 VM 使用同一声明。
+- `Iterator` 增加通用默认方法 `map/filter/filter_map/fold/for_each/any/all/find/position/enumerate`；
+  现有消费与适配方法也可由自定义 `Iterator` 实现复用。谓词查询支持短路，`filter/find` 通过
+  `&Item` 检查非 Copy 元素。Analyzer 同步提供内建和自定义迭代器的方法补全。
 - 数组和 Vec 增加不移动查询值的 `contains(&T)`；Vec 增加拥有型 `insert/remove/swap_remove/extend`，
   并在元素仍被引用时拒绝会使索引失效的重排操作。
 - Option 增加 `expect/take`，Result 增加 `expect/ok/err`，以便在不手写 match 的情况下提供上下文错误、

@@ -55,15 +55,24 @@ impl Server {
                         .collect::<Vec<_>>();
                     return Ok(json!(items));
                 }
-                if let Some(owner) =
-                    rils_frontend::standard_library::builtin_owner_name(receiver_type)
-                {
+                let owner = rils_frontend::standard_library::builtin_owner_name(receiver_type)
+                    .or_else(|| {
+                        implements_iterator_at_completion(&document.text, offset, receiver_type)
+                            .then_some("Iterator")
+                    });
+                if let Some(owner) = owner {
                     let items = rils_builtins::builtin(owner)
                         .into_iter()
                         .flat_map(|declaration| declaration.members)
                         .filter(|member| {
                             member.kind == rils_builtins::BuiltinMemberKind::Method
                                 && member.name.starts_with(&member_prefix)
+                                && (owner != "Iterator"
+                                    || rils_frontend::standard_library::builtin_owner_name(
+                                        receiver_type,
+                                    )
+                                    .is_some()
+                                    || rils_builtins::is_iterator_default_method(member.name))
                         })
                         .map(|member| builtin_member_completion(receiver_type, member))
                         .collect::<Vec<_>>();
@@ -232,4 +241,40 @@ impl Server {
             }
         }
     }
+}
+
+fn implements_iterator_at_completion(text: &str, offset: usize, receiver: &Type) -> bool {
+    let Type::Named { name, .. } = receiver else {
+        return false;
+    };
+    let mut source = text.to_owned();
+    source.insert_str(offset, "__rils_completion");
+    let Ok(tokens) = lex(&source) else {
+        return false;
+    };
+    let Ok(program) = parse(tokens) else {
+        return false;
+    };
+    statements_implement_iterator(&program.statements, name)
+}
+
+fn statements_implement_iterator(statements: &[Stmt], target_name: &str) -> bool {
+    statements.iter().any(|statement| {
+        let statement = match statement {
+            Stmt::Public { statement, .. } => statement.as_ref(),
+            statement => statement,
+        };
+        match statement {
+            Stmt::Impl {
+                trait_name: Some(trait_name),
+                target: Type::Named { name, .. },
+                ..
+            } => trait_name == "Iterator" && name == target_name,
+            Stmt::Module {
+                statements: Some(statements),
+                ..
+            } => statements_implement_iterator(statements, target_name),
+            _ => false,
+        }
+    })
 }

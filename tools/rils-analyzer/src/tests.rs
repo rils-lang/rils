@@ -528,6 +528,60 @@ iterator."#;
                 && items.iter().any(|item| item["label"] == "collect_vec")
                 && items.iter().any(|item| item["label"] == "take")
                 && items.iter().any(|item| item["label"] == "rev")
+                && items.iter().any(|item| item["label"] == "map")
+                && items.iter().any(|item| item["label"] == "filter")
+                && items.iter().any(|item| item["label"] == "fold")
+                && items.iter().any(|item| item["label"] == "any")
+                && items.iter().any(|item| item["label"] == "enumerate")
+        }),
+        "{items}"
+    );
+}
+
+#[test]
+fn completes_iterator_defaults_for_custom_iterator_implementations() {
+    let text = r#"struct Counter { value: i32 }
+impl Iterator for Counter {
+    type Item = i32;
+    fn next(&mut self) -> Option<i32> { None }
+}
+let iterator = Counter { value: 0 };
+iterator."#;
+    let uri = "file:///custom-iterator-members.rils".to_owned();
+    let (connection, _client) = Connection::memory();
+    let mut documents = HashMap::new();
+    documents.insert(
+        uri.clone(),
+        Document {
+            source_id: SourceId::new(1),
+            text: text.into(),
+            analysis: rils_frontend::analysis::analyze_with_source_id(
+                text,
+                SourceId::new(1),
+                &HashMap::new(),
+            ),
+        },
+    );
+    let server = Server {
+        connection,
+        documents,
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        projects: Vec::new(),
+        next_source_id: 2,
+    };
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 6, "character": 9 }
+        }))
+        .unwrap();
+    assert!(
+        items.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "map")
+                && items.iter().any(|item| item["label"] == "fold")
+                && items.iter().any(|item| item["label"] == "position")
         }),
         "{items}"
     );

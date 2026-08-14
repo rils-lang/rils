@@ -517,6 +517,18 @@ impl Builder {
                 );
                 Ok(destination)
             }
+            HirExpression::IntoIterator { value, span } => {
+                let source = self.expression(value)?;
+                let destination = self.register();
+                self.emit(
+                    MirInstruction::IntoIterator {
+                        destination,
+                        source,
+                    },
+                    *span,
+                );
+                Ok(destination)
+            }
             HirExpression::ConstructRecord {
                 type_id,
                 variant,

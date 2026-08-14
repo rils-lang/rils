@@ -459,86 +459,18 @@ impl Interpreter {
                 | rils_builtins::RuntimeMemberId::IteratorCollectVec
                 | rils_builtins::RuntimeMemberId::IteratorTake
                 | rils_builtins::RuntimeMemberId::IteratorSkip
-                | rils_builtins::RuntimeMemberId::IteratorRev),
-            ) => {
-                let iterator = sequence_iterator(method.receiver.as_ref(), span)?;
-                let element_type = iterator.element_type.clone();
-                let mut items = iterator.items.borrow_mut();
-                let count_argument = || match arguments.first() {
-                    Some(Value::Usize(value)) => Ok(*value),
-                    Some(value) => Err(RuntimeError::new(
-                        format!("iterator count must be usize, found {}", value.type_name()),
-                        span,
-                    )),
-                    None => Err(RuntimeError::new("missing iterator count", span)),
-                };
-                match id {
-                    rils_builtins::RuntimeMemberId::IteratorCount => {
-                        let count = items.len();
-                        items.clear();
-                        Ok(Value::Usize(count))
-                    }
-                    rils_builtins::RuntimeMemberId::IteratorLast => {
-                        let value = items.pop_back().map(Rc::new);
-                        items.clear();
-                        Ok(Value::Option {
-                            value,
-                            element_type: Some(element_type),
-                        })
-                    }
-                    rils_builtins::RuntimeMemberId::IteratorNth => {
-                        let count = count_argument()?;
-                        let skipped = count.min(items.len());
-                        items.drain(..skipped);
-                        let value = (skipped == count)
-                            .then(|| items.pop_front())
-                            .flatten()
-                            .map(Rc::new);
-                        Ok(Value::Option {
-                            value,
-                            element_type: Some(element_type),
-                        })
-                    }
-                    rils_builtins::RuntimeMemberId::IteratorCollectVec => {
-                        let elements = items
-                            .drain(..)
-                            .map(|value| FieldSlot {
-                                value: Some(value),
-                                type_annotation: element_type.clone(),
-                                references: 0,
-                            })
-                            .collect();
-                        Ok(Value::Vec(Rc::new(SequenceValue {
-                            elements: RefCell::new(elements),
-                            element_type: RefCell::new(Some(element_type)),
-                        })))
-                    }
-                    rils_builtins::RuntimeMemberId::IteratorTake
-                    | rils_builtins::RuntimeMemberId::IteratorSkip => {
-                        let count = count_argument()?.min(items.len());
-                        let selected = if id == rils_builtins::RuntimeMemberId::IteratorTake {
-                            let selected = items.drain(..count).collect();
-                            items.clear();
-                            selected
-                        } else {
-                            items.drain(..count);
-                            items.drain(..).collect()
-                        };
-                        Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-                            items: RefCell::new(selected),
-                            element_type,
-                        })))
-                    }
-                    rils_builtins::RuntimeMemberId::IteratorRev => {
-                        let selected = items.drain(..).rev().collect();
-                        Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-                            items: RefCell::new(selected),
-                            element_type,
-                        })))
-                    }
-                    _ => unreachable!(),
-                }
-            }
+                | rils_builtins::RuntimeMemberId::IteratorRev
+                | rils_builtins::RuntimeMemberId::IteratorMap
+                | rils_builtins::RuntimeMemberId::IteratorFilter
+                | rils_builtins::RuntimeMemberId::IteratorFilterMap
+                | rils_builtins::RuntimeMemberId::IteratorFold
+                | rils_builtins::RuntimeMemberId::IteratorForEach
+                | rils_builtins::RuntimeMemberId::IteratorAny
+                | rils_builtins::RuntimeMemberId::IteratorAll
+                | rils_builtins::RuntimeMemberId::IteratorFind
+                | rils_builtins::RuntimeMemberId::IteratorPosition
+                | rils_builtins::RuntimeMemberId::IteratorEnumerate),
+            ) => self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span),
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::RuntimeMemberId::ResultIsOk
                 | rils_builtins::RuntimeMemberId::ResultIsErr
@@ -719,17 +651,6 @@ fn read_builtin_receiver(value: &Value, span: Span) -> Result<Value, RuntimeErro
             .map_err(|message| RuntimeError::new(message, span)),
         value => Ok(value.clone()),
     }
-}
-
-fn sequence_iterator(value: &Value, span: Span) -> Result<Rc<SequenceIteratorValue>, RuntimeError> {
-    let value = read_builtin_receiver(value, span)?;
-    let Value::SequenceIterator(iterator) = value else {
-        return Err(RuntimeError::new(
-            "receiver is not a built-in iterator",
-            span,
-        ));
-    };
-    Ok(iterator)
 }
 
 fn string_iterator(items: std::collections::VecDeque<Value>, element_type: Type) -> Value {

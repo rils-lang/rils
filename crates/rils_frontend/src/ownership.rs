@@ -151,11 +151,38 @@ impl<'a> Checker<'a> {
                     );
                 }
                 Stmt::Impl {
-                    target, methods, ..
+                    target,
+                    trait_name,
+                    methods,
+                    ..
                 } => {
                     let Type::Named { name, .. } = target else {
                         continue;
                     };
+                    if trait_name.as_deref() == Some("Iterator") {
+                        for member in rils_builtins::builtin("Iterator")
+                            .into_iter()
+                            .flat_map(|declaration| declaration.members)
+                        {
+                            if !rils_builtins::is_iterator_default_method(member.name) {
+                                continue;
+                            }
+                            let Some(receiver) = member.receiver else {
+                                continue;
+                            };
+                            let mode = match receiver {
+                                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
+                                rils_builtins::ReceiverMode::Shared => {
+                                    ReceiverMode::Borrowed { mutable: false }
+                                }
+                                rils_builtins::ReceiverMode::Mutable => {
+                                    ReceiverMode::Borrowed { mutable: true }
+                                }
+                            };
+                            self.receivers
+                                .insert((name.clone(), member.name.into()), mode);
+                        }
+                    }
                     for method in methods {
                         let Some(receiver) = method
                             .parameters

@@ -43,6 +43,29 @@ pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
     ))
 }
 
+pub fn builtin_trait_member_type(trait_name: &str, object: &Type, name: &str) -> Option<Type> {
+    let member = rils_builtins::builtin_member(trait_name, name)?;
+    let signature = member.signature?;
+    let mut generics = HashMap::new();
+    let item = match object {
+        Type::Named { arguments, .. } => arguments.first().cloned().unwrap_or(Type::Unknown),
+        _ => Type::Unknown,
+    };
+    generics.insert("T", item);
+    for parameter in member.type_parameters {
+        generics.insert(parameter, Type::Variable((*parameter).into()));
+    }
+    Some(Type::function(
+        signature
+            .parameters
+            .iter()
+            .copied()
+            .map(|pattern| resolve_member_pattern(pattern, object, &generics))
+            .collect(),
+        resolve_member_pattern(signature.result, object, &generics),
+    ))
+}
+
 pub fn builtin_receiver_mode(object: &Type, name: &str) -> Option<rils_builtins::ReceiverMode> {
     let (owner, _, _) = builtin_owner(object)?;
     rils_builtins::builtin_member(owner, name)?.receiver

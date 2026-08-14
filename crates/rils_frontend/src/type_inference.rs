@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{BinaryOp, Block, EnumVariant, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
@@ -32,6 +32,7 @@ struct TypeDefinition {
     fields: HashMap<String, Type>,
     variants: HashMap<String, VariantDefinition>,
     methods: HashMap<String, Type>,
+    implemented_traits: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -318,6 +319,7 @@ impl Inferencer {
                                 .collect(),
                             variants: HashMap::new(),
                             methods: HashMap::new(),
+                            implemented_traits: HashSet::new(),
                         },
                     );
                 }
@@ -359,7 +361,10 @@ impl Inferencer {
                     self.types.insert(name.clone(), definition);
                 }
                 Stmt::Impl {
-                    target, methods, ..
+                    target,
+                    trait_name,
+                    methods,
+                    ..
                 } => {
                     let Type::Named { name, .. } = target else {
                         continue;
@@ -367,6 +372,9 @@ impl Inferencer {
                     let Some(definition) = self.types.get_mut(name) else {
                         continue;
                     };
+                    if let Some(trait_name) = trait_name {
+                        definition.implemented_traits.insert(trait_name.clone());
+                    }
                     for method in methods {
                         let parameters = method
                             .parameters
@@ -1096,6 +1104,18 @@ impl Inferencer {
                 .get(field)
                 .or_else(|| definition.methods.get(field))
                 .cloned()
+                .or_else(|| {
+                    (definition.implemented_traits.contains("Iterator")
+                        && rils_builtins::is_iterator_default_method(field))
+                    .then(|| {
+                        crate::standard_library::builtin_trait_member_type(
+                            "Iterator",
+                            object_type,
+                            field,
+                        )
+                    })
+                    .flatten()
+                })
                 .unwrap_or(Type::Unknown)
         })
     }

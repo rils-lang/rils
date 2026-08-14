@@ -9,6 +9,13 @@ impl FunctionLowerer<'_> {
         arguments: &[Expr],
         span: Span,
     ) -> Result<Option<HirExpression>, CompileError> {
+        if rils_builtins::is_iterator_default_method(name)
+            && matches!(owner, Some("Iterator" | "Range") | None)
+        {
+            return self
+                .iterator_default(name, object, arguments, span)
+                .map(Some);
+        }
         let family = match (owner, name) {
             (Some("Option"), "map" | "and_then" | "or_else") => "option",
             (Some("Result"), "map" | "map_err" | "and_then" | "or_else") => "result",
@@ -105,7 +112,7 @@ impl FunctionLowerer<'_> {
         }))
     }
 
-    fn allocate_combinator_local(&mut self) -> LocalId {
+    pub(super) fn allocate_combinator_local(&mut self) -> LocalId {
         let local = self.mutable.len();
         self.mutable.push(false);
         local

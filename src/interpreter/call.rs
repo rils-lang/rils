@@ -922,6 +922,16 @@ impl Interpreter {
             )
         })?;
         let Some(function) = function else {
+            if trait_methods.borrow().contains_key("Iterator")
+                && rils_builtins::is_iterator_default_method(name)
+                && let Some(member) = rils_builtins::builtin_member("Iterator", name)
+                && let (Some(method), Some(_)) = (member.runtime, member.receiver)
+            {
+                return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                    receiver: Rc::new(receiver),
+                    method: BuiltinMethod::Runtime(method),
+                })));
+            }
             if name == "clone" {
                 return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(receiver),

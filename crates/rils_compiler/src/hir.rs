@@ -15,6 +15,7 @@ use crate::{
 mod combinators;
 mod imports;
 mod ir;
+mod iterator_defaults;
 mod symbols;
 
 use imports::*;
@@ -882,6 +883,15 @@ impl<'a> FunctionLowerer<'a> {
                             .expression_types
                             .get(&object.span())
                             .and_then(rils_frontend::standard_library::builtin_owner_name);
+                        if name == "into_iter"
+                            && arguments.is_empty()
+                            && matches!(owner, Some("Array" | "Vec" | "Range" | "Iterator"))
+                        {
+                            return Ok(HirExpression::IntoIterator {
+                                value: Box::new(self.expression(object)?),
+                                span: *span,
+                            });
+                        }
                         if let Some(expression) =
                             self.builtin_combinator(owner, name, object, arguments, *span)?
                         {
@@ -1211,6 +1221,18 @@ impl<'a> FunctionLowerer<'a> {
     ) -> Result<HirExpression, CompileError> {
         match receiver {
             ReceiverMode::Owned => self.expression(expression),
+            ReceiverMode::Reference { mutable }
+                if matches!(
+                    self.expression_types.get(&expression.span()),
+                    Some(Type::Reference { .. })
+                ) =>
+            {
+                Ok(HirExpression::Reborrow {
+                    reference: Box::new(self.expression(expression)?),
+                    mutable,
+                    span: expression.span(),
+                })
+            }
             ReceiverMode::Reference { mutable } => match expression {
                 Expr::Variable { name, span } => Ok(HirExpression::BorrowLocal {
                     local: self.lookup(name).ok_or_else(|| {
