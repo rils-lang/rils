@@ -316,6 +316,14 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             None,
         );
     }
+    for float in [crate::FloatType::F32, crate::FloatType::F64] {
+        environment.borrow_mut().define(
+            float.name(),
+            Value::BuiltinType(BuiltinType::Float(float)),
+            false,
+            None,
+        );
+    }
     environment.borrow_mut().define(
         "Range",
         Value::StructType(Rc::new(StructType {

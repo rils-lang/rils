@@ -327,9 +327,7 @@ impl BytecodeModule {
                     target,
                     arguments,
                 } => {
-                    let declaration = rils_builtins::INTEGER_INTRINSICS
-                        .iter()
-                        .find(|item| item.id == *intrinsic);
+                    let declaration = rils_builtins::intrinsic(*intrinsic);
                     if invalid_register(*destination)
                         || arguments.iter().any(|register| invalid_register(*register))
                         || declaration.is_none()

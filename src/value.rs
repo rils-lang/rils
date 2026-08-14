@@ -266,12 +266,14 @@ pub struct BoundMethod {
 pub enum BuiltinMethod {
     Runtime(rils_builtins::RuntimeMemberId),
     IntegerIntrinsic(rils_builtins::IntrinsicId),
+    FloatIntrinsic(rils_builtins::IntrinsicId),
 }
 
 #[derive(Clone, Copy)]
 pub enum BuiltinType {
     Vec,
     Integer(crate::IntegerType),
+    Float(crate::FloatType),
 }
 
 #[derive(Clone, Copy)]
@@ -841,6 +843,7 @@ impl Value {
             Self::StructType(definition) => format!("type {}", definition.name),
             Self::BuiltinType(BuiltinType::Vec) => "type Vec".into(),
             Self::BuiltinType(BuiltinType::Integer(kind)) => format!("type {kind}"),
+            Self::BuiltinType(BuiltinType::Float(kind)) => format!("type {kind}"),
             Self::HostType(definition) => format!("type {}", definition.name),
             Self::HostObject(object) => object.type_definition.name.clone(),
             Self::Module(module) => format!("module {}", module.name),
@@ -976,6 +979,7 @@ impl fmt::Display for Value {
             Self::HostBoundMethod(method) => write!(f, "<bound host fn {}>", method.function.name),
             Self::BuiltinType(BuiltinType::Vec) => write!(f, "<type Vec>"),
             Self::BuiltinType(BuiltinType::Integer(kind)) => write!(f, "<type {kind}>"),
+            Self::BuiltinType(BuiltinType::Float(kind)) => write!(f, "<type {kind}>"),
             Self::BuiltinFunction(_) => write!(f, "<builtin function>"),
             Self::Module(module) => write!(f, "<module {}>", module.name),
             Self::StructType(definition) => write!(f, "<struct {}>", definition.name),

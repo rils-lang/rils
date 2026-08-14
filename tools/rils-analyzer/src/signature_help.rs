@@ -96,6 +96,14 @@ fn builtin_signature_at_call(
             rils_frontend::standard_library::integer_intrinsic_type(intrinsic, *integer),
         );
     }
+    if let Type::Float(float) = receiver_type
+        && let Some(intrinsic) = rils_builtins::float_method(&name)
+    {
+        return function_signature(
+            name,
+            rils_frontend::standard_library::float_intrinsic_type(intrinsic, *float),
+        );
+    }
     let member_type = rils_frontend::standard_library::builtin_member_type(receiver_type, &name)?;
     function_signature(name, member_type)
 }

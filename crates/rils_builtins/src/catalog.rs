@@ -548,20 +548,28 @@ pub fn runtime_member(id: RuntimeMemberId) -> Option<(&'static str, &'static Bui
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::INTEGER_INTRINSICS;
+    use crate::{FLOAT_INTRINSICS, INTEGER_INTRINSICS};
     #[test]
     fn declarations_have_unique_stable_identity() {
-        for (index, left) in INTEGER_INTRINSICS.iter().enumerate() {
+        let intrinsics = INTEGER_INTRINSICS
+            .iter()
+            .chain(FLOAT_INTRINSICS)
+            .collect::<Vec<_>>();
+        for (index, left) in intrinsics.iter().enumerate() {
             assert!(
-                INTEGER_INTRINSICS[index + 1..]
+                intrinsics[index + 1..]
                     .iter()
                     .all(|right| left.id != right.id)
             );
-            assert!(
-                INTEGER_INTRINSICS[index + 1..]
-                    .iter()
-                    .all(|right| left.kind != right.kind || left.name != right.name)
-            );
+        }
+        for declarations in [INTEGER_INTRINSICS, FLOAT_INTRINSICS] {
+            for (index, left) in declarations.iter().enumerate() {
+                assert!(
+                    declarations[index + 1..]
+                        .iter()
+                        .all(|right| left.kind != right.kind || left.name != right.name)
+                );
+            }
         }
         for (index, left) in BUILTINS.iter().enumerate() {
             assert!(

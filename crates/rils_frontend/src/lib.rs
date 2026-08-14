@@ -21,8 +21,9 @@ pub use resolution::{
     NumericResolutionError, resolve_numeric_literals, resolve_numeric_literals_with_host_functions,
 };
 pub use rils_builtins::{
-    INTEGER_INTRINSICS, IntrinsicDeclaration, IntrinsicId, IntrinsicKind, TypePattern,
-    integer_associated_function, integer_constant, integer_method,
+    FLOAT_INTRINSICS, INTEGER_INTRINSICS, IntrinsicDeclaration, IntrinsicId, IntrinsicKind,
+    TypePattern, float_constant, float_method, integer_associated_function, integer_constant,
+    integer_method,
 };
 pub use source::{SourceId, Span, SymbolId};
 pub use types::{FloatType, FunctionSignature, IntegerType, RuntimeValue, Type};

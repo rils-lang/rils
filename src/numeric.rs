@@ -1,5 +1,6 @@
 use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
+mod float_methods;
 mod integer_methods;
 
 pub(crate) fn integer_constant(
@@ -7,6 +8,13 @@ pub(crate) fn integer_constant(
     constant: rils_builtins::IntegerConstantId,
 ) -> Value {
     integer_methods::constant(target, constant)
+}
+
+pub(crate) fn float_constant(
+    target: crate::FloatType,
+    constant: rils_builtins::FloatConstantId,
+) -> Value {
+    float_methods::constant(target, constant)
 }
 
 pub(crate) fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> {
@@ -123,6 +131,20 @@ pub(crate) fn execute_integer_intrinsic(
         IntegerTryFrom => unreachable!(),
         _ => unreachable!("extended integer intrinsic was handled before dispatch"),
     }
+}
+
+pub(crate) fn execute_intrinsic(
+    id: rils_builtins::IntrinsicId,
+    target: Option<IntegerType>,
+    values: &[Value],
+) -> Result<Value, String> {
+    if float_methods::handles(id) {
+        if target.is_some() {
+            return Err("float intrinsic cannot have an integer target".into());
+        }
+        return float_methods::execute(id, values);
+    }
+    execute_integer_intrinsic(id, target, values)
 }
 
 fn integer_to_float(value: Value, f32_target: bool) -> Result<Value, String> {

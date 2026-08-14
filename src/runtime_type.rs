@@ -452,11 +452,9 @@ fn type_of_value(value: &Value) -> Option<Type> {
                 )
                 .unwrap_or_else(Type::opaque_function)
             }
-            crate::value::BuiltinMethod::IntegerIntrinsic(id) => {
-                let Some(intrinsic) = rils_builtins::INTEGER_INTRINSICS
-                    .iter()
-                    .find(|item| item.id == id)
-                else {
+            crate::value::BuiltinMethod::IntegerIntrinsic(id)
+            | crate::value::BuiltinMethod::FloatIntrinsic(id) => {
+                let Some(intrinsic) = rils_builtins::intrinsic(id) else {
                     return Some(Type::opaque_function());
                 };
                 let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);

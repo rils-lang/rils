@@ -70,6 +70,22 @@ fn integer_associated_constants_match_interpreter() {
 }
 
 #[test]
+fn float_intrinsics_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            assert!((-3.5f64).abs() == 3.5f64);
+            assert!((-3.5f64).floor() == -4f64);
+            assert!(4f64.sqrt() == 2f64);
+            assert!(5f64.clamp(0f64, 4f64) == 4f64);
+            assert!((-1f64).sqrt().is_nan());
+            assert!(f32::NAN.is_nan());
+            assert!(f64::INFINITY.is_infinite());
+            2f32.mul_add(3f32, 4f32)
+        "#,
+    );
+}
+
+#[test]
 fn core_string_and_vec_helpers_match_interpreter() {
     assert_matches_interpreter(
         r#"

@@ -349,9 +349,26 @@ impl<'a> Checker<'a> {
                     if !matches!(
                         receiver,
                         Type::Integer(_) | Type::IntegerVariable(_) | Type::Unknown
-                    ) {
+                    ) && rils_builtins::float_method(name).is_none()
+                    {
                         self.diagnostic(
                             format!("integer intrinsic `{name}` is not available on `{receiver}`"),
+                            *span,
+                        );
+                        return;
+                    }
+                }
+                if let Expr::Member { object, name, .. } = callee.as_ref()
+                    && rils_builtins::float_method(name).is_some()
+                {
+                    let receiver = self.ty(object);
+                    if !matches!(
+                        receiver,
+                        Type::Float(_) | Type::FloatVariable(_) | Type::Unknown
+                    ) && rils_builtins::integer_method(name).is_none()
+                    {
+                        self.diagnostic(
+                            format!("float intrinsic `{name}` is not available on `{receiver}`"),
                             *span,
                         );
                         return;

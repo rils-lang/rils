@@ -8,10 +8,9 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         let arity = match method.method {
-            BuiltinMethod::IntegerIntrinsic(id) => rils_builtins::INTEGER_INTRINSICS
-                .iter()
-                .find(|item| item.id == id)
-                .map_or(0, |item| item.signature.parameters.len()),
+            BuiltinMethod::IntegerIntrinsic(id) | BuiltinMethod::FloatIntrinsic(id) => {
+                rils_builtins::intrinsic(id).map_or(0, |item| item.signature.parameters.len())
+            }
             BuiltinMethod::Runtime(id) => rils_builtins::runtime_member(id)
                 .and_then(|(_, member)| member.signature)
                 .map_or(0, |signature| signature.parameters.len()),
@@ -23,6 +22,13 @@ impl Interpreter {
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
                 crate::numeric::execute_integer_intrinsic(id, None, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
+            BuiltinMethod::FloatIntrinsic(id) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::numeric::execute_intrinsic(id, None, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeIntoIter) => {

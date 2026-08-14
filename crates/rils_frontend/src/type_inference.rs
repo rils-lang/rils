@@ -112,6 +112,14 @@ impl Inferencer {
                 },
             );
         }
+        for float in [crate::types::FloatType::F32, crate::types::FloatType::F64] {
+            globals.insert(
+                float.name().into(),
+                Binding {
+                    ty: Type::Float(float),
+                },
+            );
+        }
 
         let mut inferencer = Self {
             scopes: vec![globals],
@@ -686,20 +694,23 @@ impl Inferencer {
                     let [type_name, member] = segments.as_slice() else {
                         return None;
                     };
-                    let integer = crate::types::IntegerType::from_name(type_name)?;
-                    if let Some(constant) = rils_builtins::integer_constant(member) {
-                        return Some(match constant.value_type {
-                            rils_builtins::TypePattern::SelfType => Type::Integer(integer),
-                            rils_builtins::TypePattern::U32 => {
-                                Type::Integer(crate::types::IntegerType::U32)
-                            }
-                            _ => Type::Unknown,
-                        });
+                    if let Some(integer) = crate::types::IntegerType::from_name(type_name) {
+                        if let Some(constant) = rils_builtins::integer_constant(member) {
+                            return Some(match constant.value_type {
+                                rils_builtins::TypePattern::SelfType => Type::Integer(integer),
+                                rils_builtins::TypePattern::U32 => {
+                                    Type::Integer(crate::types::IntegerType::U32)
+                                }
+                                _ => Type::Unknown,
+                            });
+                        }
+                        let intrinsic = rils_builtins::integer_associated_function(member)?;
+                        return Some(crate::standard_library::integer_intrinsic_type(
+                            intrinsic, integer,
+                        ));
                     }
-                    let intrinsic = rils_builtins::integer_associated_function(member)?;
-                    Some(crate::standard_library::integer_intrinsic_type(
-                        intrinsic, integer,
-                    ))
+                    let float = crate::types::FloatType::from_name(type_name)?;
+                    rils_builtins::float_constant(member).map(|_| Type::Float(float))
                 })
                 .unwrap_or(Type::Unknown),
             Expr::QualifiedPath { .. } => Type::opaque_function(),
@@ -1059,6 +1070,11 @@ impl Inferencer {
             && let Some(intrinsic) = rils_builtins::integer_method(field)
         {
             return crate::standard_library::integer_intrinsic_type(intrinsic, *integer);
+        }
+        if let Type::Float(float) = object_type
+            && let Some(intrinsic) = rils_builtins::float_method(field)
+        {
+            return crate::standard_library::float_intrinsic_type(intrinsic, *float);
         }
         if let Type::Tuple(elements) = object_type {
             return field

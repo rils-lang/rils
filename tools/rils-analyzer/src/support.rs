@@ -30,6 +30,16 @@ pub(super) fn integer_constant_completion(
     })
 }
 
+pub(super) fn float_constant_completion(item: &rils_builtins::FloatConstantDeclaration) -> Value {
+    json!({
+        "label": item.name,
+        "kind": 21,
+        "detail": format!("const {}: Self", item.name),
+        "documentation": { "kind": "markdown", "value": item.documentation },
+        "sortText": format!("0_{}", item.name)
+    })
+}
+
 pub(super) fn builtin_member_completion(ty: &Type, member: &rils_builtins::BuiltinMember) -> Value {
     let detail = rils_frontend::standard_library::builtin_member_type(ty, member.name)
         .map(|member_type| function_declaration(member.name, &member_type))

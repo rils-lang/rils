@@ -1975,6 +1975,7 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruction> {
             let raw_intrinsic = reader.u16()?;
             let intrinsic = rils_builtins::INTEGER_INTRINSICS
                 .iter()
+                .chain(rils_builtins::FLOAT_INTRINSICS)
                 .find(|item| item.id as u16 == raw_intrinsic)
                 .map(|item| item.id)
                 .ok_or_else(|| {

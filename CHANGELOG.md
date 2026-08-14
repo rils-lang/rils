@@ -52,6 +52,9 @@
   幂溢出边界。
 - 整数增加 `MIN/MAX/BITS` 关联常量、`swap_bytes/reverse_bits`，以及 shift 的 checked、wrapping、
   overflowing 模式；共享声明同步驱动类型推断、解释器、字节码 VM 和 Analyzer 补全。
+- f32/f64 增加分类与符号判断、取整、`abs/signum/copysign`、`sqrt/recip`、`min/max/clamp` 和
+  `mul_add`，并提供 `MIN/MAX/EPSILON/MIN_POSITIVE/NAN/INFINITY/NEG_INFINITY` 关联常量；解释器、
+  字节码 VM、类型检查和 Analyzer 复用同一浮点 intrinsic 目录。
 - 增加 Rust 风格整数 `as` 表达式以及 `1_i32` 形式的分隔后缀。静态检查只接受不会缩小类型范围
   的转换；`i32 as usize` 对负值运行时报错，`usize as i32` 等潜在有损转换直接拒绝。解释器、
   HIR/MIR、字节码 VM 和 Analyzer 使用同一规则。

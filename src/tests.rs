@@ -160,6 +160,48 @@ fn integer_associated_constants_preserve_type_and_width() {
 }
 
 #[test]
+fn float_intrinsics_cover_classification_rounding_and_bounds() {
+    let source = r#"
+        let value = -3.5f64;
+        assert!(value.abs() == 3.5f64);
+        assert!(value.floor() == -4f64);
+        assert!(value.ceil() == -3f64);
+        assert!(value.round() == -4f64);
+        assert!(value.trunc() == -3f64);
+        assert!(value.fract() == -0.5f64);
+        assert!(4f64.sqrt() == 2f64);
+        assert!(4f64.recip() == 0.25f64);
+        assert!(2f64.mul_add(3f64, 4f64) == 10f64);
+        assert!(5f64.clamp(0f64, 4f64) == 4f64);
+        assert!(5f64.min(2f64) == 2f64);
+        assert!(5f64.max(8f64) == 8f64);
+        assert!((-0f64).is_sign_negative());
+        assert!(0f64.is_sign_positive());
+
+        let nan = (-1f64).sqrt();
+        assert!(nan.is_nan());
+        assert!(!nan.is_finite());
+        let infinity = 0f64.recip();
+        assert!(infinity.is_infinite());
+        assert!(!infinity.is_normal());
+        assert!(type_of(2f32.sqrt()) == "f32");
+        assert!(f32::NAN.is_nan());
+        assert!(f64::INFINITY.is_infinite());
+        assert!(f64::NEG_INFINITY.is_sign_negative());
+        assert!(f32::MIN < 0f32);
+        assert!(f32::MAX > 0f32);
+        assert!(f32::EPSILON > 0f32);
+        assert!(f32::MIN_POSITIVE.is_normal());
+        42
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+
+    let error = eval("1f64.clamp(2f64, 0f64)").unwrap_err();
+    assert!(error.to_string().contains("min <= max"), "{error}");
+}
+
+#[test]
 fn integer_ranges_preserve_their_concrete_type() {
     let source = r#"
         let mut total: u16 = 0u16;

@@ -536,6 +536,15 @@ impl<'a> FunctionLowerer<'a> {
                         span: *span,
                     });
                 }
+                if let [type_name, member] = segments.as_slice()
+                    && let Some(target) = crate::types::FloatType::from_name(type_name)
+                    && let Some(constant) = rils_builtins::float_constant(member)
+                {
+                    return Ok(HirExpression::Literal {
+                        value: float_constant_literal(target, constant.id),
+                        span: *span,
+                    });
+                }
                 if let Some(function) = self.function_id(&segments.join("::")) {
                     return Ok(HirExpression::Function {
                         function,
@@ -839,8 +848,19 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if let Expr::Member { object, name, .. } = callee.as_ref() {
+                    let intrinsic = self.expression_types.get(&object.span()).and_then(
+                        |receiver| match receiver {
+                            Type::Integer(_) | Type::IntegerVariable(_) => {
+                                rils_builtins::integer_method(name)
+                            }
+                            Type::Float(_) | Type::FloatVariable(_) => {
+                                rils_builtins::float_method(name)
+                            }
+                            _ => None,
+                        },
+                    );
                     if self.method_names.get(name).is_none()
-                        && let Some(intrinsic) = rils_builtins::integer_method(name)
+                        && let Some(intrinsic) = intrinsic
                     {
                         let mut lowered = Vec::with_capacity(arguments.len() + 1);
                         lowered.push(self.expression(object)?);
@@ -1358,6 +1378,30 @@ fn integer_constant_literal(
         (Usize, Min) => HirLiteral::Usize(usize::MIN),
         (Usize, Max) => HirLiteral::Usize(usize::MAX),
         (_, Bits) => unreachable!(),
+    }
+}
+
+fn float_constant_literal(
+    target: crate::types::FloatType,
+    constant: rils_builtins::FloatConstantId,
+) -> HirLiteral {
+    use crate::types::FloatType::*;
+    use rils_builtins::FloatConstantId::*;
+    match (target, constant) {
+        (F32, Min) => HirLiteral::F32(f32::MIN),
+        (F32, Max) => HirLiteral::F32(f32::MAX),
+        (F32, Epsilon) => HirLiteral::F32(f32::EPSILON),
+        (F32, MinPositive) => HirLiteral::F32(f32::MIN_POSITIVE),
+        (F32, Nan) => HirLiteral::F32(f32::NAN),
+        (F32, Infinity) => HirLiteral::F32(f32::INFINITY),
+        (F32, NegInfinity) => HirLiteral::F32(f32::NEG_INFINITY),
+        (F64, Min) => HirLiteral::F64(f64::MIN),
+        (F64, Max) => HirLiteral::F64(f64::MAX),
+        (F64, Epsilon) => HirLiteral::F64(f64::EPSILON),
+        (F64, MinPositive) => HirLiteral::F64(f64::MIN_POSITIVE),
+        (F64, Nan) => HirLiteral::F64(f64::NAN),
+        (F64, Infinity) => HirLiteral::F64(f64::INFINITY),
+        (F64, NegInfinity) => HirLiteral::F64(f64::NEG_INFINITY),
     }
 }
 

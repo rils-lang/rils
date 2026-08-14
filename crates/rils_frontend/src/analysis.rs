@@ -189,6 +189,16 @@ impl Analyzer {
                 },
             );
         }
+        for float in [crate::types::FloatType::F32, crate::types::FloatType::F64] {
+            globals.insert(
+                float.name().into(),
+                Definition {
+                    span: None,
+                    id: None,
+                    kind: SymbolKind::Type,
+                },
+            );
+        }
         for name in ["core", "std", "prelude", "crate", "self", "super"] {
             globals.insert(
                 name.into(),

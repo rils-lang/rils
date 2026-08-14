@@ -583,9 +583,8 @@ impl<'a> VirtualMachine<'a> {
                         .into_iter()
                         .map(|register| self.take_register(register, instruction.span))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let value =
-                        crate::numeric::execute_integer_intrinsic(intrinsic, target, &arguments)
-                            .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    let value = crate::numeric::execute_intrinsic(intrinsic, target, &arguments)
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::ConstructRecord {

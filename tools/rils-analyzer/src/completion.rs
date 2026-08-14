@@ -47,6 +47,14 @@ impl Server {
                         .collect::<Vec<_>>();
                     return Ok(json!(items));
                 }
+                if receiver_type.is_float() {
+                    let items = rils_builtins::FLOAT_INTRINSICS
+                        .iter()
+                        .filter(|item| item.name.starts_with(&member_prefix))
+                        .map(integer_intrinsic_completion)
+                        .collect::<Vec<_>>();
+                    return Ok(json!(items));
+                }
                 if let Some(owner) =
                     rils_frontend::standard_library::builtin_owner_name(receiver_type)
                 {
@@ -81,6 +89,14 @@ impl Server {
                     })
                     .map(integer_intrinsic_completion),
             );
+            return Ok(json!(items));
+        }
+        if rils_frontend::FloatType::from_name(&qualifier).is_some() {
+            let items = rils_builtins::FLOAT_CONSTANTS
+                .iter()
+                .filter(|item| item.name.starts_with(&member_prefix))
+                .map(float_constant_completion)
+                .collect::<Vec<_>>();
             return Ok(json!(items));
         }
         let qualifier = resolve_path_alias(&document.text, &qualifier);

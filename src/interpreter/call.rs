@@ -527,6 +527,15 @@ impl Interpreter {
                     target,
                 }))
             }
+            Value::BuiltinType(BuiltinType::Float(target)) => {
+                let constant = rils_builtins::float_constant(member).ok_or_else(|| {
+                    RuntimeError::new(
+                        format!("{target} has no associated constant `{member}`"),
+                        span,
+                    )
+                })?;
+                Ok(crate::numeric::float_constant(target, constant.id))
+            }
             Value::StructType(definition) => definition
                 .methods
                 .borrow()
@@ -661,6 +670,18 @@ impl Interpreter {
                 Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(object.clone()),
                     method: BuiltinMethod::IntegerIntrinsic(intrinsic.id),
+                })))
+            }
+            Value::F32(_) | Value::F64(_) => {
+                let intrinsic = rils_builtins::float_method(name).ok_or_else(|| {
+                    RuntimeError::new(
+                        format!("{} has no method `{name}`", object.type_name()),
+                        span,
+                    )
+                })?;
+                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                    receiver: Rc::new(object.clone()),
+                    method: BuiltinMethod::FloatIntrinsic(intrinsic.id),
                 })))
             }
             Value::HostObject(instance) => instance

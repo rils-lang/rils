@@ -344,6 +344,60 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
 }
 
 #[test]
+fn completes_float_intrinsic_methods() {
+    let text = "let value: f32 = 1f32;\nvalue.s;\nf32::INFINITY;";
+    let uri = "file:///float-intrinsics.rils".to_owned();
+    let (connection, _client) = Connection::memory();
+    let mut documents = HashMap::new();
+    let document_analysis =
+        rils_frontend::analysis::analyze_with_source_id(text, SourceId::new(1), &HashMap::new());
+    assert!(document_analysis.is_ok(), "{document_analysis:?}");
+    documents.insert(
+        uri.clone(),
+        Document {
+            source_id: SourceId::new(1),
+            text: text.into(),
+            analysis: document_analysis,
+        },
+    );
+    let server = Server {
+        connection,
+        documents,
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        projects: Vec::new(),
+        next_source_id: 2,
+    };
+
+    let completion = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 7 }
+        }))
+        .unwrap();
+    assert!(
+        completion.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "sqrt")
+                && items.iter().any(|item| item["label"] == "signum")
+        }),
+        "{completion}"
+    );
+
+    let constants = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 2, "character": 7 }
+        }))
+        .unwrap();
+    assert!(constants.as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item["label"] == "INFINITY" && item["kind"] == 21)
+    }));
+}
+
+#[test]
 fn completes_builtin_members_for_values_and_expressions() {
     let text = r#"let text = "alpha";
 text.st"#;

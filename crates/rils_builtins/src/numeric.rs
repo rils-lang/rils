@@ -180,6 +180,26 @@ pub enum IntrinsicId {
     IntegerAbs = 89,
     IntegerSwapBytes = 90,
     IntegerReverseBits = 91,
+    FloatIsNan = 128,
+    FloatIsInfinite = 129,
+    FloatIsFinite = 130,
+    FloatIsNormal = 131,
+    FloatIsSignPositive = 132,
+    FloatIsSignNegative = 133,
+    FloatAbs = 134,
+    FloatSignum = 135,
+    FloatCopySign = 136,
+    FloatFloor = 137,
+    FloatCeil = 138,
+    FloatRound = 139,
+    FloatTrunc = 140,
+    FloatFract = 141,
+    FloatSqrt = 142,
+    FloatRecip = 143,
+    FloatMin = 144,
+    FloatMax = 145,
+    FloatClamp = 146,
+    FloatMulAdd = 147,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -209,6 +229,24 @@ pub struct IntegerConstantDeclaration {
     pub id: IntegerConstantId,
     pub name: &'static str,
     pub value_type: TypePattern,
+    pub documentation: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum FloatConstantId {
+    Min,
+    Max,
+    Epsilon,
+    MinPositive,
+    Nan,
+    Infinity,
+    NegInfinity,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FloatConstantDeclaration {
+    pub id: FloatConstantId,
+    pub name: &'static str,
     pub documentation: &'static str,
 }
 
@@ -286,6 +324,29 @@ pub const INTEGER_INTRINSICS: &[IntrinsicDeclaration] = &[
     intrinsic!(IntegerReverseBits, "reverse_bits", Method, [] -> SELF, "Reverses the order of bits."),
 ];
 
+pub const FLOAT_INTRINSICS: &[IntrinsicDeclaration] = &[
+    intrinsic!(FloatIsNan, "is_nan", Method, [] -> BOOL, "Returns whether the value is NaN."),
+    intrinsic!(FloatIsInfinite, "is_infinite", Method, [] -> BOOL, "Returns whether the value is positive or negative infinity."),
+    intrinsic!(FloatIsFinite, "is_finite", Method, [] -> BOOL, "Returns whether the value is neither infinite nor NaN."),
+    intrinsic!(FloatIsNormal, "is_normal", Method, [] -> BOOL, "Returns whether the value is neither zero, subnormal, infinite nor NaN."),
+    intrinsic!(FloatIsSignPositive, "is_sign_positive", Method, [] -> BOOL, "Returns whether the sign is positive, including positive zero and positive NaN."),
+    intrinsic!(FloatIsSignNegative, "is_sign_negative", Method, [] -> BOOL, "Returns whether the sign is negative, including negative zero and negative NaN."),
+    intrinsic!(FloatAbs, "abs", Method, [] -> SELF, "Returns the absolute value."),
+    intrinsic!(FloatSignum, "signum", Method, [] -> SELF, "Returns 1 or -1 according to the sign, preserving NaN."),
+    intrinsic!(FloatCopySign, "copysign", Method, [SELF] -> SELF, "Returns the magnitude of self with the sign of the argument."),
+    intrinsic!(FloatFloor, "floor", Method, [] -> SELF, "Returns the greatest integer less than or equal to the value."),
+    intrinsic!(FloatCeil, "ceil", Method, [] -> SELF, "Returns the smallest integer greater than or equal to the value."),
+    intrinsic!(FloatRound, "round", Method, [] -> SELF, "Rounds to the nearest integer, with halfway cases away from zero."),
+    intrinsic!(FloatTrunc, "trunc", Method, [] -> SELF, "Returns the integer part of the value."),
+    intrinsic!(FloatFract, "fract", Method, [] -> SELF, "Returns the fractional part of the value."),
+    intrinsic!(FloatSqrt, "sqrt", Method, [] -> SELF, "Returns the square root, or NaN for a negative value."),
+    intrinsic!(FloatRecip, "recip", Method, [] -> SELF, "Returns the reciprocal."),
+    intrinsic!(FloatMin, "min", Method, [SELF] -> SELF, "Returns the minimum, ignoring NaN when exactly one operand is NaN."),
+    intrinsic!(FloatMax, "max", Method, [SELF] -> SELF, "Returns the maximum, ignoring NaN when exactly one operand is NaN."),
+    intrinsic!(FloatClamp, "clamp", Method, [SELF, SELF] -> SELF, "Restricts the value to the inclusive interval, failing for invalid bounds."),
+    intrinsic!(FloatMulAdd, "mul_add", Method, [SELF, SELF] -> SELF, "Computes self * a + b with one rounding operation."),
+];
+
 pub const INTEGER_CONSTANTS: &[IntegerConstantDeclaration] = &[
     IntegerConstantDeclaration {
         id: IntegerConstantId::Min,
@@ -307,6 +368,44 @@ pub const INTEGER_CONSTANTS: &[IntegerConstantDeclaration] = &[
     },
 ];
 
+pub const FLOAT_CONSTANTS: &[FloatConstantDeclaration] = &[
+    FloatConstantDeclaration {
+        id: FloatConstantId::Min,
+        name: "MIN",
+        documentation: "The smallest finite value.",
+    },
+    FloatConstantDeclaration {
+        id: FloatConstantId::Max,
+        name: "MAX",
+        documentation: "The largest finite value.",
+    },
+    FloatConstantDeclaration {
+        id: FloatConstantId::Epsilon,
+        name: "EPSILON",
+        documentation: "The difference between 1 and the next representable value.",
+    },
+    FloatConstantDeclaration {
+        id: FloatConstantId::MinPositive,
+        name: "MIN_POSITIVE",
+        documentation: "The smallest positive normal value.",
+    },
+    FloatConstantDeclaration {
+        id: FloatConstantId::Nan,
+        name: "NAN",
+        documentation: "A not-a-number value.",
+    },
+    FloatConstantDeclaration {
+        id: FloatConstantId::Infinity,
+        name: "INFINITY",
+        documentation: "Positive infinity.",
+    },
+    FloatConstantDeclaration {
+        id: FloatConstantId::NegInfinity,
+        name: "NEG_INFINITY",
+        documentation: "Negative infinity.",
+    },
+];
+
 pub fn integer_constant(name: &str) -> Option<&'static IntegerConstantDeclaration> {
     INTEGER_CONSTANTS.iter().find(|item| item.name == name)
 }
@@ -320,4 +419,19 @@ pub fn integer_associated_function(name: &str) -> Option<&'static IntrinsicDecla
     INTEGER_INTRINSICS
         .iter()
         .find(|item| item.kind == IntrinsicKind::AssociatedFunction && item.name == name)
+}
+
+pub fn float_method(name: &str) -> Option<&'static IntrinsicDeclaration> {
+    FLOAT_INTRINSICS.iter().find(|item| item.name == name)
+}
+
+pub fn float_constant(name: &str) -> Option<&'static FloatConstantDeclaration> {
+    FLOAT_CONSTANTS.iter().find(|item| item.name == name)
+}
+
+pub fn intrinsic(id: IntrinsicId) -> Option<&'static IntrinsicDeclaration> {
+    INTEGER_INTRINSICS
+        .iter()
+        .chain(FLOAT_INTRINSICS)
+        .find(|item| item.id == id)
 }

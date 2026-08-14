@@ -116,6 +116,10 @@ impl Type {
         matches!(self, Self::Integer(_) | Self::IntegerVariable(_))
     }
 
+    pub const fn is_float(&self) -> bool {
+        matches!(self, Self::Float(_) | Self::FloatVariable(_))
+    }
+
     pub const fn is_numeric(&self) -> bool {
         matches!(
             self,

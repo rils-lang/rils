@@ -134,7 +134,17 @@ pub fn integer_intrinsic_type(
     intrinsic: &rils_builtins::IntrinsicDeclaration,
     integer: crate::types::IntegerType,
 ) -> Type {
-    let self_type = Type::Integer(integer);
+    intrinsic_type(intrinsic, Type::Integer(integer))
+}
+
+pub fn float_intrinsic_type(
+    intrinsic: &rils_builtins::IntrinsicDeclaration,
+    float: crate::types::FloatType,
+) -> Type {
+    intrinsic_type(intrinsic, Type::Float(float))
+}
+
+fn intrinsic_type(intrinsic: &rils_builtins::IntrinsicDeclaration, self_type: Type) -> Type {
     let generics = HashMap::new();
     Type::function(
         intrinsic
@@ -276,6 +286,16 @@ mod tests {
         assert_eq!(
             integer_intrinsic_type(intrinsic, crate::types::IntegerType::I32),
             Type::function(vec![Type::I32], Type::Option(Box::new(Type::I32)))
+        );
+    }
+
+    #[test]
+    fn float_intrinsic_types_preserve_concrete_float_type() {
+        let intrinsic = rils_builtins::float_method("clamp").unwrap();
+        let float = Type::Float(crate::types::FloatType::F32);
+        assert_eq!(
+            float_intrinsic_type(intrinsic, crate::types::FloatType::F32),
+            Type::function(vec![float.clone(), float.clone()], float)
         );
     }
 
