@@ -48,6 +48,42 @@ impl Interpreter {
                     .clone_owned()
                     .map_err(|message| RuntimeError::new(message, span))
             }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::RuntimeMemberId::HashMapLen
+                | rils_builtins::RuntimeMemberId::HashMapIsEmpty
+                | rils_builtins::RuntimeMemberId::HashMapClear
+                | rils_builtins::RuntimeMemberId::HashMapContainsKey
+                | rils_builtins::RuntimeMemberId::HashMapInsert
+                | rils_builtins::RuntimeMemberId::HashMapGetCloned
+                | rils_builtins::RuntimeMemberId::HashMapRemove
+                | rils_builtins::RuntimeMemberId::HashMapKeysCloned
+                | rils_builtins::RuntimeMemberId::HashMapValuesCloned
+                | rils_builtins::RuntimeMemberId::HashMapIntoIter
+                | rils_builtins::RuntimeMemberId::HashSetLen
+                | rils_builtins::RuntimeMemberId::HashSetIsEmpty
+                | rils_builtins::RuntimeMemberId::HashSetClear
+                | rils_builtins::RuntimeMemberId::HashSetContains
+                | rils_builtins::RuntimeMemberId::HashSetInsert
+                | rils_builtins::RuntimeMemberId::HashSetRemove
+                | rils_builtins::RuntimeMemberId::HashSetIsSubset
+                | rils_builtins::RuntimeMemberId::HashSetIsSuperset
+                | rils_builtins::RuntimeMemberId::HashSetIsDisjoint
+                | rils_builtins::RuntimeMemberId::HashSetUnion
+                | rils_builtins::RuntimeMemberId::HashSetIntersection
+                | rils_builtins::RuntimeMemberId::HashSetDifference
+                | rils_builtins::RuntimeMemberId::HashSetSymmetricDifference
+                | rils_builtins::RuntimeMemberId::HashSetIntoIter),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::hash_collections::call(
+                    id.bytecode_import()
+                        .expect("hash methods have core imports"),
+                    &values,
+                )
+                .map_err(|message| RuntimeError::new(message, span))
+            }
             BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeNext) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(

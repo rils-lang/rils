@@ -108,10 +108,64 @@ impl Server {
                 .collect::<Vec<_>>();
             return Ok(json!(items));
         }
+        let builtin_qualifier = qualifier.rsplit_once("::").map_or_else(
+            || Some(qualifier.as_str()),
+            |(module, name)| {
+                rils_builtins::builtin_module_members(module)
+                    .contains(&name)
+                    .then_some(name)
+            },
+        );
+        if let Some((builtin_name, declaration)) = builtin_qualifier
+            .and_then(|name| rils_builtins::builtin(name).map(|declaration| (name, declaration)))
+            && matches!(
+                declaration.kind,
+                rils_builtins::BuiltinKind::Primitive
+                    | rils_builtins::BuiltinKind::Struct
+                    | rils_builtins::BuiltinKind::Enum
+            )
+        {
+            let ty = Type::Named {
+                name: builtin_name.into(),
+                arguments: declaration
+                    .type_parameters
+                    .iter()
+                    .map(|_| Type::Unknown)
+                    .collect(),
+            };
+            let items = declaration
+                .members
+                .iter()
+                .filter(|member| {
+                    member.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
+                        && member.name.starts_with(&member_prefix)
+                })
+                .map(|member| builtin_member_completion(&ty, member))
+                .collect::<Vec<_>>();
+            return Ok(json!(items));
+        }
         let qualifier = resolve_path_alias(&document.text, &qualifier);
         let nested_prefix = format!("{qualifier}::");
         let mut module_names = HashSet::new();
         let mut items = Vec::new();
+
+        for child in rils_builtins::builtin_module_members(&qualifier) {
+            if child.starts_with(&member_prefix) && module_names.insert((*child).to_owned()) {
+                let kind = rils_builtins::builtin(child).map_or(9, |declaration| {
+                    if declaration.kind == rils_builtins::BuiltinKind::Module {
+                        9
+                    } else {
+                        7
+                    }
+                });
+                items.push(json!({
+                    "label": child,
+                    "kind": kind,
+                    "detail": format!("built-in {}::{child}", qualifier),
+                    "sortText": format!("0_{child}")
+                }));
+            }
+        }
 
         for module in self.host_contract.modules() {
             let Some(remainder) = module.name.strip_prefix(&nested_prefix) else {

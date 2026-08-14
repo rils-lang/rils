@@ -914,6 +914,18 @@ impl Inferencer {
                                 arguments: vec![Type::Unknown],
                             };
                         }
+                        "HashMap::new" | "std::collections::HashMap::new" => {
+                            return Type::Named {
+                                name: "HashMap".into(),
+                                arguments: vec![Type::Unknown, Type::Unknown],
+                            };
+                        }
+                        "HashSet::new" | "std::collections::HashSet::new" => {
+                            return Type::Named {
+                                name: "HashSet".into(),
+                                arguments: vec![Type::Unknown],
+                            };
+                        }
                         "Vec::from" | "std::collections::Vec::from" => {
                             let item = match argument_types.first() {
                                 Some(Type::Array { element, .. }) => (**element).clone(),

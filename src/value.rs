@@ -14,6 +14,11 @@ use crate::{
     types::{FunctionSignature, Type},
 };
 
+#[path = "value/hash.rs"]
+mod hash;
+pub use hash::{HashKey, HashMapValue, HashSetValue};
+use hash::{clone_hash_map, display_hash_map, display_hash_set, hash_maps_equal};
+
 pub type HostFunctionHandler = dyn Fn(&[Value]) -> Result<Value, String>;
 
 #[derive(Clone)]
@@ -272,6 +277,8 @@ pub enum BuiltinMethod {
 #[derive(Clone, Copy)]
 pub enum BuiltinType {
     Vec,
+    HashMap,
+    HashSet,
     Integer(crate::IntegerType),
     Float(crate::FloatType),
 }
@@ -280,6 +287,8 @@ pub enum BuiltinType {
 pub enum BuiltinFunction {
     VecNew,
     VecFrom,
+    HashMapNew,
+    HashSetNew,
     IntegerIntrinsic {
         id: rils_builtins::IntrinsicId,
         target: crate::IntegerType,
@@ -504,6 +513,8 @@ pub enum Value {
     Tuple(Rc<SequenceValue>),
     Array(Rc<SequenceValue>),
     Vec(Rc<SequenceValue>),
+    HashMap(Rc<HashMapValue>),
+    HashSet(Rc<HashSetValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
@@ -602,6 +613,8 @@ impl Value {
             Self::String(_)
             | Self::Range(_)
             | Self::Vec(_)
+            | Self::HashMap(_)
+            | Self::HashSet(_)
             | Self::SequenceIterator(_)
             | Self::BytecodeIterator(_)
             | Self::HostObject(_) => false,
@@ -638,6 +651,12 @@ impl Value {
                 .elements
                 .borrow()
                 .iter()
+                .filter_map(|slot| slot.value.as_ref())
+                .any(Value::contains_reference),
+            Self::HashMap(map) => map
+                .entries
+                .borrow()
+                .values()
                 .filter_map(|slot| slot.value.as_ref())
                 .any(Value::contains_reference),
             Self::Struct(instance) => instance
@@ -679,6 +698,13 @@ impl Value {
                             .is_some_and(Value::has_active_references)
                 })
             }
+            Self::HashMap(map) => map.entries.borrow().values().any(|slot| {
+                slot.references > 0
+                    || slot
+                        .value
+                        .as_ref()
+                        .is_some_and(Value::has_active_references)
+            }),
             _ => false,
         }
     }
@@ -694,6 +720,11 @@ impl Value {
                 .elements
                 .borrow()
                 .iter()
+                .any(|slot| slot.value.is_none()),
+            Self::HashMap(map) => map
+                .entries
+                .borrow()
+                .values()
                 .any(|slot| slot.value.is_none()),
             _ => false,
         }
@@ -727,6 +758,11 @@ impl Value {
             Self::Tuple(sequence) => Self::Tuple(Rc::new(clone_sequence(sequence)?)),
             Self::Array(sequence) => Self::Array(Rc::new(clone_sequence(sequence)?)),
             Self::Vec(sequence) => Self::Vec(Rc::new(clone_sequence(sequence)?)),
+            Self::HashMap(map) => Self::HashMap(Rc::new(clone_hash_map(map)?)),
+            Self::HashSet(set) => Self::HashSet(Rc::new(HashSetValue {
+                entries: RefCell::new(set.entries.borrow().clone()),
+                element_type: RefCell::new(set.element_type.borrow().clone()),
+            })),
             Self::SequenceIterator(_) => return Err("iterators cannot be cloned".into()),
             Self::BytecodeIterator(_) => return Err("iterators cannot be cloned".into()),
             Self::Struct(instance) => {
@@ -810,6 +846,12 @@ impl Value {
                 Type::of_value(self).map_or_else(|| "array".into(), |ty| ty.to_string())
             }
             Self::Vec(_) => Type::of_value(self).map_or_else(|| "Vec".into(), |ty| ty.to_string()),
+            Self::HashMap(_) => {
+                Type::of_value(self).map_or_else(|| "HashMap".into(), |ty| ty.to_string())
+            }
+            Self::HashSet(_) => {
+                Type::of_value(self).map_or_else(|| "HashSet".into(), |ty| ty.to_string())
+            }
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())
             }
@@ -842,6 +884,8 @@ impl Value {
             }
             Self::StructType(definition) => format!("type {}", definition.name),
             Self::BuiltinType(BuiltinType::Vec) => "type Vec".into(),
+            Self::BuiltinType(BuiltinType::HashMap) => "type HashMap".into(),
+            Self::BuiltinType(BuiltinType::HashSet) => "type HashSet".into(),
             Self::BuiltinType(BuiltinType::Integer(kind)) => format!("type {kind}"),
             Self::BuiltinType(BuiltinType::Float(kind)) => format!("type {kind}"),
             Self::HostType(definition) => format!("type {}", definition.name),
@@ -908,6 +952,10 @@ impl PartialEq for Value {
                     _ => false,
                 }
             }
+            (Self::HashMap(left), Self::HashMap(right)) => hash_maps_equal(left, right),
+            (Self::HashSet(left), Self::HashSet(right)) => {
+                *left.entries.borrow() == *right.entries.borrow()
+            }
             (Self::Struct(left), Self::Struct(right)) => {
                 let left_fields = left.fields.borrow();
                 let right_fields = right.fields.borrow();
@@ -956,6 +1004,8 @@ impl fmt::Display for Value {
             Self::Array(sequence) | Self::Vec(sequence) => {
                 display_sequence(f, sequence, "[", "]", false)
             }
+            Self::HashMap(map) => display_hash_map(f, map),
+            Self::HashSet(set) => display_hash_set(f, set),
             Self::SequenceIterator(_) => write!(f, "<sequence iterator>"),
             Self::BytecodeIterator(_) => write!(f, "<bytecode iterator>"),
             Self::Reference(reference) => match reference.read() {
@@ -978,6 +1028,8 @@ impl fmt::Display for Value {
             Self::HostObject(object) => write!(f, "<{}>", object.type_definition.name),
             Self::HostBoundMethod(method) => write!(f, "<bound host fn {}>", method.function.name),
             Self::BuiltinType(BuiltinType::Vec) => write!(f, "<type Vec>"),
+            Self::BuiltinType(BuiltinType::HashMap) => write!(f, "<type HashMap>"),
+            Self::BuiltinType(BuiltinType::HashSet) => write!(f, "<type HashSet>"),
             Self::BuiltinType(BuiltinType::Integer(kind)) => write!(f, "<type {kind}>"),
             Self::BuiltinType(BuiltinType::Float(kind)) => write!(f, "<type {kind}>"),
             Self::BuiltinFunction(_) => write!(f, "<builtin function>"),

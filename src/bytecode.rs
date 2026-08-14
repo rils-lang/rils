@@ -15,8 +15,8 @@ use crate::{
     types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
-        FieldSlot, RangeValue, ReferenceValue, SequenceIteratorValue, SequenceValue,
-        StructInstance, StructType, Value,
+        FieldSlot, HashMapValue, HashSetValue, RangeValue, ReferenceValue, SequenceIteratorValue,
+        SequenceValue, StructInstance, StructType, Value,
     },
 };
 

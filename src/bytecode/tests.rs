@@ -582,6 +582,84 @@ fn compiles_vec_construction_methods_and_owned_iteration() {
 }
 
 #[test]
+fn compiles_hash_collections_with_interpreter_parity() {
+    assert_matches_interpreter(
+        r#"
+            let mut inferred = std::collections::HashMap::new();
+            let key = "answer";
+            inferred.insert(key.clone(), 42);
+            inferred.get_cloned(&key).unwrap()
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            let mut values: HashMap<string, i32> = HashMap::new();
+            let key = "answer";
+            values.insert(key.clone(), 40);
+            values.insert(key.clone(), 42);
+            assert!(values.contains_key(&key));
+            let result = values.get_cloned(&key).unwrap();
+            assert!(values.remove(&key).unwrap() == 42);
+            result
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            let mut left: HashSet<i32> = HashSet::new();
+            let mut right: HashSet<i32> = HashSet::new();
+            left.insert(1);
+            left.insert(2);
+            right.insert(2);
+            right.insert(3);
+            left.union(&right).len()
+                + left.intersection(&right).len()
+                + left.difference(&right).len()
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            let mut map: HashMap<i32, i32> = HashMap::new();
+            map.insert(1, 20);
+            map.insert(2, 22);
+            let mut total = 0;
+            for entry in map {
+                total = total + entry.1;
+            }
+            let mut set: HashSet<i32> = HashSet::new();
+            set.insert(3);
+            set.insert(4);
+            for value in set {
+                total = total + value;
+            }
+            total
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            fn add(total: i32, value: i32) -> i32 { total + value }
+            let mut map: HashMap<i32, i32> = HashMap::new();
+            map.insert(1, 10);
+            map.insert(2, 20);
+            let value_total = map.values_cloned().fold(0, add);
+            let key_total = map.keys_cloned().fold(0, add);
+            value_total + key_total
+        "#,
+    );
+}
+
+#[test]
+fn rejects_non_hashable_collection_keys_during_analysis() {
+    let error = match compile("let values: HashMap<f32, i32> = HashMap::new(); values.len()") {
+        Ok(_) => panic!("floating-point HashMap keys should be rejected"),
+        Err(error) => error,
+    };
+    assert!(
+        error.message.contains("does not implement Eq + Hash"),
+        "{error}"
+    );
+}
+
+#[test]
 fn compiles_custom_iterator_and_into_iterator_traits() {
     assert_matches_interpreter(
         r#"

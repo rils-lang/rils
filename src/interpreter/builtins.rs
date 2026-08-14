@@ -308,6 +308,18 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     environment
         .borrow_mut()
         .define("Vec", Value::BuiltinType(BuiltinType::Vec), false, None);
+    environment.borrow_mut().define(
+        "HashMap",
+        Value::BuiltinType(BuiltinType::HashMap),
+        false,
+        None,
+    );
+    environment.borrow_mut().define(
+        "HashSet",
+        Value::BuiltinType(BuiltinType::HashSet),
+        false,
+        None,
+    );
     for integer in crate::IntegerType::ALL {
         environment.borrow_mut().define(
             integer.name(),
@@ -434,6 +446,8 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
             ("clone", get("clone")),
         ],
     );
+    let hash = module("hash", vec![("Hash", get("Hash"))]);
+    let cmp = module("cmp", vec![("Eq", get("Eq"))]);
     let core = module(
         "core",
         vec![
@@ -441,10 +455,19 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
             ("result", result),
             ("iter", iter),
             ("clone", clone),
+            ("hash", hash),
+            ("cmp", cmp),
         ],
     );
 
-    let collections = module("collections", vec![("Vec", get("Vec"))]);
+    let collections = module(
+        "collections",
+        vec![
+            ("Vec", get("Vec")),
+            ("HashMap", get("HashMap")),
+            ("HashSet", get("HashSet")),
+        ],
+    );
     let io = module(
         "io",
         vec![
@@ -470,8 +493,12 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
             ("Ok", get("Ok")),
             ("Err", get("Err")),
             ("Vec", get("Vec")),
+            ("HashMap", get("HashMap")),
+            ("HashSet", get("HashSet")),
             ("Copy", get("Copy")),
             ("Clone", get("Clone")),
+            ("Eq", get("Eq")),
+            ("Hash", get("Hash")),
             ("Iterator", get("Iterator")),
             ("IntoIterator", get("IntoIterator")),
         ],
@@ -516,6 +543,16 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                 return_type: Some(self_type.clone()),
                 span,
             }],
+        },
+        TraitType {
+            name: "Eq".into(),
+            associated_types: Vec::new(),
+            methods: Vec::new(),
+        },
+        TraitType {
+            name: "Hash".into(),
+            associated_types: Vec::new(),
+            methods: Vec::new(),
         },
         TraitType {
             name: "Iterator".into(),

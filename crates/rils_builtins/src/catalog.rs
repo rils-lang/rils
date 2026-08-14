@@ -62,6 +62,30 @@ pub enum RuntimeMemberId {
     IteratorFind = 107,
     IteratorPosition = 108,
     IteratorEnumerate = 109,
+    HashMapLen = 120,
+    HashMapIsEmpty = 121,
+    HashMapClear = 122,
+    HashMapContainsKey = 123,
+    HashMapInsert = 124,
+    HashMapGetCloned = 125,
+    HashMapRemove = 126,
+    HashMapKeysCloned = 127,
+    HashMapValuesCloned = 128,
+    HashMapIntoIter = 129,
+    HashSetLen = 140,
+    HashSetIsEmpty = 141,
+    HashSetClear = 142,
+    HashSetContains = 143,
+    HashSetInsert = 144,
+    HashSetRemove = 145,
+    HashSetIsSubset = 146,
+    HashSetIsSuperset = 147,
+    HashSetIsDisjoint = 148,
+    HashSetUnion = 149,
+    HashSetIntersection = 150,
+    HashSetDifference = 151,
+    HashSetSymmetricDifference = 152,
+    HashSetIntoIter = 153,
     ResultIsOk = 48,
     ResultIsErr = 49,
     ResultUnwrap = 50,
@@ -165,6 +189,30 @@ impl RuntimeMemberId {
             Self::IteratorTake => "core::iterator::take",
             Self::IteratorSkip => "core::iterator::skip",
             Self::IteratorRev => "core::iterator::rev",
+            Self::HashMapLen => "core::hash_map::len",
+            Self::HashMapIsEmpty => "core::hash_map::is_empty",
+            Self::HashMapClear => "core::hash_map::clear",
+            Self::HashMapContainsKey => "core::hash_map::contains_key",
+            Self::HashMapInsert => "core::hash_map::insert",
+            Self::HashMapGetCloned => "core::hash_map::get_cloned",
+            Self::HashMapRemove => "core::hash_map::remove",
+            Self::HashMapKeysCloned => "core::hash_map::keys_cloned",
+            Self::HashMapValuesCloned => "core::hash_map::values_cloned",
+            Self::HashMapIntoIter => "core::hash_map::into_iter",
+            Self::HashSetLen => "core::hash_set::len",
+            Self::HashSetIsEmpty => "core::hash_set::is_empty",
+            Self::HashSetClear => "core::hash_set::clear",
+            Self::HashSetContains => "core::hash_set::contains",
+            Self::HashSetInsert => "core::hash_set::insert",
+            Self::HashSetRemove => "core::hash_set::remove",
+            Self::HashSetIsSubset => "core::hash_set::is_subset",
+            Self::HashSetIsSuperset => "core::hash_set::is_superset",
+            Self::HashSetIsDisjoint => "core::hash_set::is_disjoint",
+            Self::HashSetUnion => "core::hash_set::union",
+            Self::HashSetIntersection => "core::hash_set::intersection",
+            Self::HashSetDifference => "core::hash_set::difference",
+            Self::HashSetSymmetricDifference => "core::hash_set::symmetric_difference",
+            Self::HashSetIntoIter => "core::hash_set::into_iter",
             Self::SequenceIntoIter
             | Self::IteratorIntoIter
             | Self::IteratorMap
@@ -298,6 +346,8 @@ const T: TypePattern = TypePattern::Generic("T");
 const E: TypePattern = TypePattern::Generic("E");
 const U: TypePattern = TypePattern::Generic("U");
 const F: TypePattern = TypePattern::Generic("F");
+const K: TypePattern = TypePattern::Generic("K");
+const V: TypePattern = TypePattern::Generic("V");
 const FN_T_U: TypePattern = TypePattern::Function {
     parameters: &[T],
     result: &U,
@@ -454,6 +504,9 @@ const ARRAY_MEMBERS: &[BuiltinMember] = &[
     member!("contains", method Shared [TypePattern::Reference { mutable: false, inner: &T }] -> TypePattern::Bool, SequenceContains, "Returns true when an equal element is present."),
     member!("into_iter", method Owned [] -> ITERATOR_T, SequenceIntoIter, "Consumes the array and creates an iterator."),
 ];
+#[path = "catalog/hash_collections.rs"]
+mod hash_collections;
+use hash_collections::{HASH_MAP_MEMBERS, HASH_SET_MEMBERS};
 const STRING_MEMBERS: &[BuiltinMember] = &[
     member!("len", method Shared [] -> TypePattern::Usize, StringLen, "Returns the UTF-8 byte length."),
     member!("is_empty", method Shared [] -> TypePattern::Bool, StringIsEmpty, "Returns true when the string has no bytes."),
@@ -571,6 +624,22 @@ pub const BUILTINS: &[BuiltinDeclaration] = &[
         "A growable owned sequence."
     ),
     builtin!(
+        "HashMap",
+        Struct,
+        ["K", "V"],
+        HASH_MAP_MEMBERS,
+        BuiltinBackend::Runtime,
+        "An owned hash map."
+    ),
+    builtin!(
+        "HashSet",
+        Struct,
+        ["T"],
+        HASH_SET_MEMBERS,
+        BuiltinBackend::Runtime,
+        "An owned hash set."
+    ),
+    builtin!(
         "Array",
         Primitive,
         ["T"],
@@ -601,6 +670,22 @@ pub const BUILTINS: &[BuiltinDeclaration] = &[
         CLONE_MEMBERS,
         BuiltinBackend::Metadata,
         "Explicit owned duplication."
+    ),
+    builtin!(
+        "Eq",
+        Trait,
+        [],
+        &[],
+        BuiltinBackend::Metadata,
+        "Values with reflexive equality suitable for hashed collections."
+    ),
+    builtin!(
+        "Hash",
+        Trait,
+        [],
+        &[],
+        BuiltinBackend::Metadata,
+        "Values that can be used as hash collection keys."
     ),
     builtin!(
         "Iterator",
@@ -656,6 +741,21 @@ pub fn builtin_member(owner: &str, name: &str) -> Option<&'static BuiltinMember>
         .members
         .iter()
         .find(|member| member.name == name)
+}
+
+pub fn builtin_module_members(path: &str) -> &'static [&'static str] {
+    match path {
+        "std" => &["collections", "io", "fs"],
+        "std::collections" => &["Vec", "HashMap", "HashSet"],
+        "core" => &["option", "result", "iter", "clone", "cmp", "hash"],
+        "core::option" => &["Option", "Some", "None"],
+        "core::result" => &["Result", "Ok", "Err"],
+        "core::iter" => &["Iterator", "IntoIterator", "Range"],
+        "core::clone" => &["Copy", "Clone", "clone"],
+        "core::cmp" => &["Eq"],
+        "core::hash" => &["Hash"],
+        _ => &[],
+    }
 }
 
 pub fn is_iterator_default_method(name: &str) -> bool {
@@ -861,6 +961,30 @@ mod tests {
             RuntimeMemberId::StringBytes,
             RuntimeMemberId::StringLines,
             RuntimeMemberId::StringSplit,
+            RuntimeMemberId::HashMapLen,
+            RuntimeMemberId::HashMapIsEmpty,
+            RuntimeMemberId::HashMapClear,
+            RuntimeMemberId::HashMapContainsKey,
+            RuntimeMemberId::HashMapInsert,
+            RuntimeMemberId::HashMapGetCloned,
+            RuntimeMemberId::HashMapRemove,
+            RuntimeMemberId::HashMapKeysCloned,
+            RuntimeMemberId::HashMapValuesCloned,
+            RuntimeMemberId::HashMapIntoIter,
+            RuntimeMemberId::HashSetLen,
+            RuntimeMemberId::HashSetIsEmpty,
+            RuntimeMemberId::HashSetClear,
+            RuntimeMemberId::HashSetContains,
+            RuntimeMemberId::HashSetInsert,
+            RuntimeMemberId::HashSetRemove,
+            RuntimeMemberId::HashSetIsSubset,
+            RuntimeMemberId::HashSetIsSuperset,
+            RuntimeMemberId::HashSetIsDisjoint,
+            RuntimeMemberId::HashSetUnion,
+            RuntimeMemberId::HashSetIntersection,
+            RuntimeMemberId::HashSetDifference,
+            RuntimeMemberId::HashSetSymmetricDifference,
+            RuntimeMemberId::HashSetIntoIter,
         ] {
             assert!(
                 runtime_member(id).is_some(),

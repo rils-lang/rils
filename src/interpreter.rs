@@ -1,4 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 #[path = "interpreter/builtin_methods/iterator.rs"]
 mod builtin_iterator;
@@ -31,10 +35,11 @@ use crate::{
     types::{FunctionSignature, Type, merge_types},
     value::{
         BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance,
-        EnumPayload, EnumType, FieldSlot, HostBoundMethod, HostFunction, HostFunctionHandler,
-        HostType, ModuleValue, NativeFunction, RangeValue, ReferenceValue, SequenceIteratorValue,
-        SequenceValue, StructInstance, StructType, TraitMethodSelector, TraitType, TypeAliasType,
-        UserFunction, Value, VariantConstructor, enum_variant_name,
+        EnumPayload, EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod,
+        HostFunction, HostFunctionHandler, HostType, ModuleValue, NativeFunction, RangeValue,
+        ReferenceValue, SequenceIteratorValue, SequenceValue, StructInstance, StructType,
+        TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value, VariantConstructor,
+        enum_variant_name,
     },
 };
 

@@ -204,14 +204,31 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
             Some(("Result", object.clone(), generics))
         }
         Type::Named { name, arguments }
-            if matches!(name.as_str(), "Vec" | "Range" | "SequenceIterator") =>
+            if matches!(
+                name.as_str(),
+                "Vec" | "HashMap" | "HashSet" | "Range" | "SequenceIterator"
+            ) =>
         {
-            if let Some(item) = arguments.first() {
-                generics.insert("T", item.clone());
+            match name.as_str() {
+                "HashMap" => {
+                    if let Some(key) = arguments.first() {
+                        generics.insert("K", key.clone());
+                    }
+                    if let Some(value) = arguments.get(1) {
+                        generics.insert("V", value.clone());
+                    }
+                }
+                _ => {
+                    if let Some(item) = arguments.first() {
+                        generics.insert("T", item.clone());
+                    }
+                }
             }
             Some((
                 match name.as_str() {
                     "Vec" => "Vec",
+                    "HashMap" => "HashMap",
+                    "HashSet" => "HashSet",
                     "Range" => "Range",
                     "SequenceIterator" => "Iterator",
                     _ => unreachable!(),

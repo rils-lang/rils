@@ -488,6 +488,68 @@ text."#;
 }
 
 #[test]
+fn completes_hash_collection_types_constructors_and_members() {
+    let module_uri = "file:///hash-module.rils";
+    let module_server = test_server(
+        module_uri,
+        "std::collections::",
+        HashMap::new(),
+        HostContract::new(),
+    );
+    let module_items = module_server
+        .completion(&json!({
+            "textDocument": { "uri": module_uri },
+            "position": { "line": 0, "character": 18 }
+        }))
+        .unwrap();
+    assert!(
+        module_items.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "HashMap")
+                && items.iter().any(|item| item["label"] == "HashSet")
+        }),
+        "{module_items}"
+    );
+
+    let constructor_uri = "file:///hash-constructor.rils";
+    let constructor_server = test_server(
+        constructor_uri,
+        "HashMap::",
+        HashMap::new(),
+        HostContract::new(),
+    );
+    let constructor_items = constructor_server
+        .completion(&json!({
+            "textDocument": { "uri": constructor_uri },
+            "position": { "line": 0, "character": 9 }
+        }))
+        .unwrap();
+    assert!(
+        constructor_items
+            .as_array()
+            .is_some_and(|items| { items.iter().any(|item| item["label"] == "new") }),
+        "{constructor_items}"
+    );
+
+    let member_uri = "file:///hash-members.rils";
+    let member_text = "let mut map: HashMap<string, i32> = HashMap::new();\nmap.";
+    let member_server = test_server(member_uri, member_text, HashMap::new(), HostContract::new());
+    let member_items = member_server
+        .completion(&json!({
+            "textDocument": { "uri": member_uri },
+            "position": { "line": 1, "character": 4 }
+        }))
+        .unwrap();
+    assert!(
+        member_items.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "contains_key")
+                && items.iter().any(|item| item["label"] == "get_cloned")
+                && items.iter().any(|item| item["label"] == "values_cloned")
+        }),
+        "{member_items}"
+    );
+}
+
+#[test]
 fn completes_built_in_iterator_consumers_and_adapters() {
     let text = r#"let iterator = "abc".chars();
 iterator."#;

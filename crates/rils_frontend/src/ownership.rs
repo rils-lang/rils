@@ -773,6 +773,9 @@ impl<'a> Checker<'a> {
             Type::Reference { inner, .. } => inner.as_ref(),
             ty => ty,
         };
+        if method == "clone" {
+            return Some(ReceiverMode::Borrowed { mutable: false });
+        }
         if let Some(mode) = crate::standard_library::builtin_receiver_mode(ty, method) {
             return Some(match mode {
                 rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
@@ -781,13 +784,7 @@ impl<'a> Checker<'a> {
             });
         }
         match ty {
-            Type::Named { name, .. } => self
-                .receivers
-                .get(&(name.clone(), method.into()))
-                .copied()
-                .or_else(|| {
-                    (method == "clone").then_some(ReceiverMode::Borrowed { mutable: false })
-                }),
+            Type::Named { name, .. } => self.receivers.get(&(name.clone(), method.into())).copied(),
             _ => None,
         }
     }

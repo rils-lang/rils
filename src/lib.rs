@@ -1,5 +1,6 @@
 pub mod bytecode;
 mod environment;
+mod hash_collections;
 mod interpreter;
 mod numeric;
 mod runtime_type;

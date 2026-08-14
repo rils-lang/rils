@@ -31,6 +31,9 @@
 
 ### Added
 
+- 增加 `HashMap<K, V>` 与 `HashSet<T>` 的拥有型运行时实现、共享内建声明和字节码 core imports。
+  首版支持标量 `Eq + Hash` 键、CRUD、Map 的拥有型查询/键值迭代、Set 集合代数以及消费式 `for`；
+  Analyzer 同步补全 `std::collections`、构造函数和实例方法。
 - string 增加 `len/is_empty/contains/starts_with/ends_with/find/trim/replace`；数组和 Vec 增加
   `is_empty`，Vec 增加 `clear/truncate`。这些方法共享内建声明，并已贯通解释器与字节码 VM。
 - string 增加 Unicode 大小写、首尾裁剪、重复、反向查找、前后缀剥离，以及

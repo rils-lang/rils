@@ -967,6 +967,19 @@ impl Analyzer {
                     reference.span,
                 ));
             }
+            let key_type = match reference.name.as_str() {
+                "HashMap" => reference.arguments.first(),
+                "HashSet" => reference.arguments.first(),
+                _ => None,
+            };
+            if let Some(key_type) = key_type
+                && !hash_key_type_supported(&self.expand_type(key_type, &mut HashSet::new()))
+            {
+                self.result.diagnostics.push(AnalysisDiagnostic::error(
+                    format!("type `{key_type}` does not implement Eq + Hash"),
+                    reference.span,
+                ));
+            }
             self.result.symbols.push(SymbolOccurrence {
                 name: reference.name.clone(),
                 span: reference.span,
@@ -1098,6 +1111,19 @@ impl Analyzer {
 
 fn member_name_span(span: Span, name: &str) -> Span {
     Span::new(span.end.saturating_sub(name.len()), span.end)
+}
+
+fn hash_key_type_supported(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Bool
+            | Type::Char
+            | Type::String
+            | Type::Integer(_)
+            | Type::IntegerVariable(_)
+            | Type::Variable(_)
+            | Type::Unknown
+    )
 }
 
 #[cfg(test)]

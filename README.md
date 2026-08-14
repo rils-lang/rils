@@ -29,7 +29,8 @@ Rils 目前提供解释器和字节码 VM 两条执行路径，并带有静态�
 - 非 Copy 值默认 move，复制非 Copy 值需要显式 Clone。
 - 词法局部 `&T` / `&mut T`，不采用 Rust 的唯一可变借用限制。
 - struct、enum、trait、impl、泛型、模块、模式匹配和函数式宏。
-- UTF-8 string、tuple、数组、`Vec<T>`、Range、Option、Result 与 `?` 错误传播。
+- UTF-8 string、tuple、数组、`Vec<T>`、`HashMap<K, V>`、`HashSet<T>`、Range、Option、Result 与
+  `?` 错误传播。
 - Rust 风格的定宽数值类型、`usize` 索引、`char`，以及受用法约束的无后缀数值字面量推导。
 - 函数值、闭包、递归、UFCS，以及带常用转换、筛选、聚合方法的自定义 Iterator/IntoIterator。
 - 可注册宿主模块、函数、原生类型和方法。
@@ -131,4 +132,4 @@ VS Code 插件可通过 `rils.hostManifest.path` 加载同一契约；在宿主�
 - [Unity 接入计划](docs/unity/rils-for-unity-plan.md)
 
 当前代码处于 `0.1.0` 候选阶段，适合语言实验、工具开发和受控宿主嵌入。`.rilbc` v3 已可实验
-使用，但尚未承诺跨版本稳定；HashMap/HashSet 和完整的不可信脚本资源限制留待后续版本。
+使用，但尚未承诺跨版本稳定；完整的不可信脚本资源限制留待后续版本。

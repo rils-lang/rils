@@ -40,6 +40,21 @@ impl Interpreter {
                         element_type: RefCell::new(array.element_type.borrow().clone()),
                     })))
                 }
+                BuiltinFunction::HashMapNew => {
+                    check_arity("HashMap::new", 0, 0, arguments.len(), span)?;
+                    Ok(Value::HashMap(Rc::new(HashMapValue {
+                        entries: RefCell::new(HashMap::new()),
+                        key_type: RefCell::new(Type::Unknown),
+                        value_type: RefCell::new(Type::Unknown),
+                    })))
+                }
+                BuiltinFunction::HashSetNew => {
+                    check_arity("HashSet::new", 0, 0, arguments.len(), span)?;
+                    Ok(Value::HashSet(Rc::new(HashSetValue {
+                        entries: RefCell::new(HashSet::new()),
+                        element_type: RefCell::new(Type::Unknown),
+                    })))
+                }
                 BuiltinFunction::IntegerIntrinsic { id, target } => {
                     check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
                     crate::numeric::execute_integer_intrinsic(id, Some(target), arguments)
@@ -508,6 +523,20 @@ impl Interpreter {
                 "from" => Ok(Value::BuiltinFunction(BuiltinFunction::VecFrom)),
                 _ => Err(RuntimeError::new(
                     format!("Vec has no associated function `{member}`"),
+                    span,
+                )),
+            },
+            Value::BuiltinType(BuiltinType::HashMap) => match member.as_str() {
+                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashMapNew)),
+                _ => Err(RuntimeError::new(
+                    format!("HashMap has no associated function `{member}`"),
+                    span,
+                )),
+            },
+            Value::BuiltinType(BuiltinType::HashSet) => match member.as_str() {
+                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashSetNew)),
+                _ => Err(RuntimeError::new(
+                    format!("HashSet has no associated function `{member}`"),
                     span,
                 )),
             },
@@ -981,6 +1010,8 @@ pub(super) fn builtin_runtime_member(
         Value::Array(_) => "Array",
         Value::String(_) => "string",
         Value::Vec(_) => "Vec",
+        Value::HashMap(_) => "HashMap",
+        Value::HashSet(_) => "HashSet",
         Value::Range(_) => "Range",
         Value::Option { .. } => "Option",
         Value::Result { .. } => "Result",

@@ -375,6 +375,16 @@ impl<'a> VirtualMachine<'a> {
                                 element_type,
                             }))
                         }
+                        Value::HashMap(map) => crate::hash_collections::call(
+                            "core::hash_map::into_iter",
+                            &[Value::HashMap(map)],
+                        )
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                        Value::HashSet(set) => crate::hash_collections::call(
+                            "core::hash_set::into_iter",
+                            &[Value::HashSet(set)],
+                        )
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
                         value => {
                             let methods = self.iterator_methods(&value).ok_or_else(|| {
                                 BytecodeError::new(

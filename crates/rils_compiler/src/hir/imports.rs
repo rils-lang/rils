@@ -67,6 +67,26 @@ pub(super) fn collection_import_signature(name: &str) -> Option<(&'static str, F
                 },
             ),
         ),
+        "HashMap::new" | "std::collections::HashMap::new" => (
+            "core::hash_map::new",
+            FunctionSignature::fixed(
+                Vec::new(),
+                Type::Named {
+                    name: "HashMap".into(),
+                    arguments: vec![Type::Unknown, Type::Unknown],
+                },
+            ),
+        ),
+        "HashSet::new" | "std::collections::HashSet::new" => (
+            "core::hash_set::new",
+            FunctionSignature::fixed(
+                Vec::new(),
+                Type::Named {
+                    name: "HashSet".into(),
+                    arguments: vec![Type::Unknown],
+                },
+            ),
+        ),
         _ => return None,
     })
 }
@@ -80,7 +100,11 @@ pub(super) fn builtin_method_import(
         .filter(|declaration| owner.is_none_or(|owner| declaration.path == owner))
         .flat_map(|declaration| declaration.members)
         .filter(|member| member.name == name && member.runtime.is_some());
-    let member = candidates.next()?;
+    let member = candidates.next().or_else(|| {
+        (name == "clone")
+            .then(|| rils_builtins::builtin_member("Clone", "clone"))
+            .flatten()
+    })?;
     let runtime = member.runtime?;
     let import = runtime.bytecode_import()?;
     let receiver_mode = member.receiver?;

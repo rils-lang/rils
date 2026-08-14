@@ -71,6 +71,14 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                         .is_some_and(|value| arguments[0].accepts(value))
                 })
         }
+        (Type::Named { name, arguments }, Value::HashMap(map)) if name == "HashMap" => {
+            arguments.len() == 2
+                && merge_types(&arguments[0], &map.key_type.borrow()).is_some()
+                && merge_types(&arguments[1], &map.value_type.borrow()).is_some()
+        }
+        (Type::Named { name, arguments }, Value::HashSet(set)) if name == "HashSet" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &set.element_type.borrow()).is_some()
+        }
         (Type::Named { name, arguments }, Value::SequenceIterator(iterator))
             if name == "SequenceIterator" =>
         {
@@ -375,6 +383,17 @@ fn type_of_value(value: &Value) -> Option<Type> {
                     .clone()
                     .unwrap_or(Type::Unknown),
             ],
+        }),
+        Value::HashMap(map) => Some(Type::Named {
+            name: "HashMap".into(),
+            arguments: vec![
+                map.key_type.borrow().clone(),
+                map.value_type.borrow().clone(),
+            ],
+        }),
+        Value::HashSet(set) => Some(Type::Named {
+            name: "HashSet".into(),
+            arguments: vec![set.element_type.borrow().clone()],
         }),
         Value::SequenceIterator(iterator) => Some(Type::Named {
             name: "SequenceIterator".into(),

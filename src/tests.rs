@@ -2284,6 +2284,52 @@ fn vec_from_array_preserves_element_type_and_iteration() {
 }
 
 #[test]
+fn hash_map_supports_owned_lookup_replacement_and_removal() {
+    assert_eq!(
+        integer(
+            r#"
+                let mut scores: HashMap<string, i32> = HashMap::new();
+                let alice = "alice";
+                assert!(scores.is_empty());
+                assert!(scores.insert(alice.clone(), 20).is_none());
+                assert!(scores.insert(alice.clone(), 40).unwrap() == 20);
+                assert!(scores.contains_key(&alice));
+                let copied = scores.get_cloned(&alice).unwrap();
+                assert!(scores.len() == 1usize);
+                copied + scores.remove(&alice).unwrap()
+            "#,
+        ),
+        80
+    );
+}
+
+#[test]
+fn hash_set_supports_membership_and_set_algebra() {
+    assert_eq!(
+        integer(
+            r#"
+                let mut left: HashSet<i32> = HashSet::new();
+                let mut right: HashSet<i32> = HashSet::new();
+                assert!(left.insert(1));
+                assert!(left.insert(2));
+                assert!(!left.insert(2));
+                right.insert(2);
+                right.insert(3);
+                let one = 1;
+                assert!(left.contains(&one));
+                assert!(left.intersection(&right).len() == 1usize);
+                assert!(left.union(&right).len() == 3usize);
+                assert!(left.difference(&right).len() == 1usize);
+                assert!(left.symmetric_difference(&right).len() == 2usize);
+                assert!(!left.is_disjoint(&right));
+                if left.len() + right.len() == 4usize { 4 } else { 0 }
+            "#,
+        ),
+        4
+    );
+}
+
+#[test]
 fn collections_support_search_and_owned_vec_mutation() {
     assert_eq!(
         eval(

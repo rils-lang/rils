@@ -43,6 +43,26 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
                 },
             ),
         ),
+        (
+            "core::hash_map::new",
+            FunctionSignature::fixed(
+                Vec::new(),
+                Type::Named {
+                    name: "HashMap".into(),
+                    arguments: vec![Type::Unknown, Type::Unknown],
+                },
+            ),
+        ),
+        (
+            "core::hash_set::new",
+            FunctionSignature::fixed(
+                Vec::new(),
+                Type::Named {
+                    name: "HashSet".into(),
+                    arguments: vec![Type::Unknown],
+                },
+            ),
+        ),
     ];
     for member in rils_builtins::BUILTINS
         .iter()
@@ -170,6 +190,15 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
         "core::vec::new" => Ok(Value::Vec(Rc::new(SequenceValue {
             elements: RefCell::new(Vec::new()),
             element_type: RefCell::new(Some(Type::Unknown)),
+        }))),
+        "core::hash_map::new" => Ok(Value::HashMap(Rc::new(HashMapValue {
+            entries: RefCell::new(HashMap::new()),
+            key_type: RefCell::new(Type::Unknown),
+            value_type: RefCell::new(Type::Unknown),
+        }))),
+        "core::hash_set::new" => Ok(Value::HashSet(Rc::new(HashSetValue {
+            entries: RefCell::new(HashSet::new()),
+            element_type: RefCell::new(Type::Unknown),
         }))),
         "core::vec::from" => {
             let Value::Array(array) = &arguments[0] else {
@@ -425,6 +454,9 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                 .borrow_mut()
                 .extend(source_elements.drain(..));
             Ok(Value::Unit)
+        }
+        name if name.starts_with("core::hash_map::") || name.starts_with("core::hash_set::") => {
+            crate::hash_collections::call(name, arguments)
         }
         name if name.starts_with("core::iterator::") => {
             let Value::SequenceIterator(iterator) = import_receiver(&arguments[0])? else {

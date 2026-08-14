@@ -303,6 +303,12 @@ pub(super) fn type_implements_trait(
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Vec" && arguments.len() == 1) => {
             true
         }
+        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashMap" && arguments.len() == 2) => {
+            true
+        }
+        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashSet" && arguments.len() == 1) => {
+            true
+        }
         "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "SequenceIterator" && arguments.len() == 1) => {
             true
         }
@@ -311,6 +317,10 @@ pub(super) fn type_implements_trait(
         }
         "Copy" => type_is_copy(actual, environment),
         "Clone" => type_is_clone(actual, environment),
+        "Eq" | "Hash" => matches!(
+            actual,
+            Type::Bool | Type::Char | Type::String | Type::Integer(_)
+        ),
         _ => {
             let Type::Named { name, .. } = actual else {
                 return false;
