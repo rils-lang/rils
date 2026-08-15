@@ -90,7 +90,7 @@ dependencies = [
 
 [[package]]
 name = "rils"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rils_builtins",
  "rils_compiler",
@@ -100,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "rils_analyzer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "lsp-server",
  "rils_builtins",
@@ -112,18 +112,18 @@ dependencies = [
 
 [[package]]
 name = "rils_builtins"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "rils_capi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rils",
 ]
 
 [[package]]
 name = "rils_compiler"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rils_builtins",
  "rils_frontend",
@@ -132,14 +132,14 @@ dependencies = [
 
 [[package]]
 name = "rils_frontend"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rils_builtins",
 ]
 
 [[package]]
 name = "rils_project"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "toml",

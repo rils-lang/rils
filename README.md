@@ -131,5 +131,5 @@ VS Code 插件可通过 `rils.hostManifest.path` 加载同一契约；在宿主�
 - [VS Code 插件](editors/vscode-rils)
 - [Unity 接入计划](docs/unity/rils-for-unity-plan.md)
 
-当前代码处于 `0.1.0` 候选阶段，适合语言实验、工具开发和受控宿主嵌入。`.rilbc` v4 已可实验
+当前代码处于 `0.2.0` 测试阶段，适合语言实验、工具开发和受控宿主嵌入。`.rilbc` v4 已可实验
 使用，但尚未承诺跨版本稳定；完整的不可信脚本资源限制留待后续版本。
