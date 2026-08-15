@@ -236,7 +236,7 @@ impl<T> Describe for Wrapper<T> {
 }
 ```
 
-0.1 暂不支持：
+当前暂不支持：
 
 - 默认 trait 方法体
 - 泛型 trait 本身

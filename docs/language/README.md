@@ -1,6 +1,6 @@
 # Rils 语言手册
 
-本手册描述 Rils `0.1` 当前已经实现的语法与语义。示例默认可以由解释器执行；属于当前字节码
+本手册描述 Rils `0.2` 当前已经实现的语法与语义。示例默认可以由解释器执行；属于当前字节码
 能力矩阵的语法也应在 VM 中得到相同结果。
 
 Rils 借用 Rust 风格的表达式、所有权、trait 和模块结构，但面向脚本与宿主嵌入场景，不机械复制
@@ -16,7 +16,7 @@ Rust 的生命周期和唯一可变借用限制。
 6. [Impl、泛型与 Trait](06-impl-generics-and-traits.md)
 7. [模式匹配与宏](07-patterns-and-macros.md)
 8. [标准能力、模块与 IO](08-modules-and-standard-library.md)
-9. [语法摘要与后续候选](09-grammar-and-roadmap.md)
+9. [语法摘要](09-grammar-and-roadmap.md)
 
 ## 核心语义
 
@@ -29,6 +29,6 @@ Rust 的生命周期和唯一可变借用限制。
 
 ## 文档状态
 
-语言手册属于仓库开发文档，暂不包含在 crate 发布包中。路线规划和字节码内部设计分别记录在
-[implementation-roadmap](../implementation-roadmap.md) 与 [bytecode](../bytecode.md)；它们不是
+语言手册属于仓库开发文档，暂不包含在 crate 发布包中。项目模型、Analyzer 和字节码内部设计分别记录在
+[project](../project.md)、[analyzer](../analyzer.md) 与 [bytecode](../bytecode.md)；它们不是
 语言规范的一部分。

@@ -1,4 +1,4 @@
-# 语法摘要与后续候选
+# 语法摘要
 
 [← 返回语言手册目录](README.md)
 
@@ -13,10 +13,15 @@ blockStatement = letDecl | fnDecl | whileStmt | loopStmt | forStmt
                | returnStmt | breakStmt | continueStmt | exprStmt ;
 letDecl     = "let" "mut"? IDENT (":" type)? "=" expression ";" ;
 moduleDecl  = "mod" IDENT (";" | "{" moduleStatement* "}") ;
-useDecl     = "use" path ("as" IDENT)? ";" ;
+useDecl     = "use" useTree ";" ;
+useTree     = path ("as" IDENT)?
+            | path "::" "*"
+            | path? "::"? "{" useTree ("," useTree)* ","? "}" ;
 publicDecl  = "pub" (fnDecl | structDecl | enumDecl | traitDecl
             | typeAlias | moduleDecl | useDecl) ;
-path        = IDENT ("::" IDENT)* ;
+path        = pathRoot? IDENT ("::" pathSegment)* ;
+pathRoot    = ("crate" | "self" | "super") "::" ;
+pathSegment = IDENT | "self" | "super" ;
 fnDecl      = "fn" IDENT genericParams?
               "(" parameters? ")" ("->" type)? block ;
 macroDecl   = legacyMacroDecl | branchingMacroDecl ;
@@ -71,6 +76,7 @@ returnStmt  = "return" expression? ";"? ;
 breakStmt   = "break" expression? ";"? ;
 continueStmt = "continue" ";" ;
 block       = "{" blockStatement* "}" ;
+castExpr    = unaryExpr ("as" integerType)* ;
 
 expression  = assignment ;
 assignment  = range ("=" assignment)? ;
@@ -106,18 +112,3 @@ pattern     = "_" | IDENT | literal | "()"
             | path "{" recordPatterns "}"
             | "(" pattern ")" ;
 ```
-
-## 后续候选
-
-- 模式守卫、或模式与 `@` 绑定
-- tuple struct、unit struct 和 record 模式中的 `..`
-- 默认 trait 方法、trait 对象和条件 impl
-- `where`、显式类型实参和 const 泛型
-- HashMap/HashSet 以及借用形式的容器迭代器
-- 带标签的循环控制
-- 通配/分组导入以及 `crate`、`self`、`super` 模块路径
-- 宿主原生类型的属性、可写接收者和静态方法元数据
-- 卫生宏、更多片段类型、嵌套重复与过程宏
-- 字节码自定义宿主注册整合和稳定磁盘格式
-- 静态分析的循环固定点、动态索引 place 精度和跨文件增量缓存
-- 可选的 Rust AOT 代码生成

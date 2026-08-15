@@ -36,6 +36,45 @@ values[index]
 
 旧的 `int` 与 `float` 类型名已经移除；迁移时应根据实际语义明确选择具体类型。
 
+## 显式整数转换
+
+整数可以使用 `expression as Target` 显式转换。当前只允许不会缩小可表示范围的整数转换；同符号
+类型可以等宽或扩宽，无符号转有符号时目标必须更宽。例如：
+
+```rust
+let values = [10, 20, 30];
+let index = 1_i32;
+values[index as usize]
+```
+
+有符号整数转到等宽或更宽的无符号整数是允许的，但负值会产生带源码位置的运行时错误。
+`usize as i32`、`i64 as i32` 等可能丢失信息的转换在静态检查阶段拒绝，即使某次运行中的具体值
+碰巧可以放入目标类型。当前不支持整数与浮点数之间的 `as` 转换。
+
+潜在缩窄转换使用返回 `Result<T, string>` 的关联函数，浮点近似转换使用明确命名的方法：
+
+```rust
+let narrowed = i16::try_from(100usize);
+let approximate = 16_777_217i32.to_f32();
+```
+
+整数还提供 `checked_add/sub/mul/div/rem`、`wrapping_add/sub/mul`、`saturating_add/sub/mul` 和
+`overflowing_add/sub/mul`。普通运算符始终检查溢出；这些方法用于显式选择其他 Rust 风格行为。
+
+整数也支持 `count_ones/count_zeros/leading_zeros/trailing_zeros`、`rotate_left/rotate_right`、
+`pow`、`div_euclid/rem_euclid` 和有符号整数的 `abs`。`neg/abs/pow` 分别提供适用的
+`checked_*`、`wrapping_*`、`saturating_*` 与 `overflowing_*` 形式；幂和旋转量使用 `u32`。
+普通 `pow/abs/div_euclid/rem_euclid` 在溢出或除零时报告运行时错误。
+
+每个整数类型提供 `MIN`、`MAX` 和返回 `u32` 的 `BITS` 关联常量，并支持
+`swap_bytes/reverse_bits`。左移和右移可显式选择 `checked_shl/shr`、`wrapping_shl/shr` 或
+`overflowing_shl/shr`；移位量统一使用 `u32`，checked 形式在移位量不小于位宽时返回 `None`。
+
+`f32` 和 `f64` 提供 `is_nan/is_infinite/is_finite/is_normal` 与符号判断，支持
+`floor/ceil/round/trunc/fract`、`abs/signum/copysign`、`sqrt/recip`、`min/max/clamp` 和
+`mul_add`。`clamp` 的边界包含 NaN 或 `min > max` 时报告运行时错误。浮点类型还提供
+`MIN/MAX/EPSILON/MIN_POSITIVE/NAN/INFINITY/NEG_INFINITY` 关联常量。
+
 `nil` 是保留的迁移错误，不能作为值使用：
 
 ```rust
@@ -97,6 +136,13 @@ let inferred = Some(42); // Option<i32>
 | `is_none(option)` | 是否为空 |
 | `unwrap(option)` | 取出值，None 时产生错误 |
 | `unwrap_or(option, fallback)` | 取出值或返回同类型默认值 |
+| `option.expect(message)` | 取出值，None 时使用给定消息报错 |
+| `option.take()` | 移出值并将原 Option 置为 None |
+| `option.or(other)` / `option.xor(other)` | 选择备用 Option 或仅保留恰好一个 Some |
+| `option.replace(value)` | 替换值并返回替换前的 Option |
+| `option.map(fn)` | 仅对 Some 中的值执行转换 |
+| `option.and_then(fn)` | 仅对 Some 调用返回 Option 的函数，并展平结果 |
+| `option.or_else(fn)` | 仅对 None 调用零参数备用函数 |
 
 Option 不参与隐式真值转换。推荐使用模式匹配：
 
@@ -122,6 +168,11 @@ fn load(success: bool) -> Result<i32, string> {
 可以用 `Ok(pattern)` / `Err(pattern)` 解构，也可以使用函数或方法形式的
 `is_ok`、`is_err`、`unwrap`、`unwrap_or`。`is_ok()` 与 `is_err()` 共享借用变量，
 不会移动 Result；`unwrap()` 与 `unwrap_or()` 消费接收者。
+
+Result 还提供 `expect/ok/err/unwrap_err/expect_err`，以及拥有型高阶方法
+`map/map_err/and_then/or_else`。`map` 与 `and_then` 只在 Ok 分支调用回调，`map_err` 与
+`or_else` 只在 Err 分支调用回调；未选中的回调不会执行。方法级泛型会从回调参数和返回类型推断，
+例如 `Result<i32, string>.map(fn(i32) -> usize)` 的结果是 `Result<usize, string>`。
 
 `?` 只能在函数内使用。操作数为 `Ok(value)` 时表达式结果是内部值；操作数为 `Err(error)`
 时立即从当前函数返回错误分支，后续表达式不会执行。传播只保留错误类型，成功类型由当前函数的

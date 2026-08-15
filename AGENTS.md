@@ -78,7 +78,7 @@
 
 - 语言语义、编译后端或 Analyzer 改动完成后，至少运行 `cargo fmt --check`、`cargo test --workspace` 和 `cargo clippy --workspace --all-targets -- -D warnings`。
 - VS Code 插件改动后运行其 `npm run check`；需要生成安装包时，从仓库根目录运行 `python tools/release-vscode.py`。
-- 用户可见语法或语义同步更新 `docs/language/` 中对应章节及目录；当前能力和使用入口同步更新 `README.md`；实施状态和后续顺序同步更新 `docs/implementation-roadmap.md`；字节码边界和格式设计同步更新 `docs/bytecode.md`。
+- 用户可见语法或语义同步更新 `docs/language/` 中对应章节及目录；当前能力和使用入口同步更新 `README.md`；未来优化和新需求统一记录在根目录 `TODO.md`；字节码边界和格式设计同步更新 `docs/bytecode.md`。
 - 文档中的“当前支持”“暂不支持”和后续计划必须与实现一致。已经完成的能力要及时从待办列表移除。
 - 用户可见升级同时更新根 `CHANGELOG.md` 的 `Unreleased`；破坏性类型、语法、ABI 或格式变化必须给出迁移说明。
 - C API/C# 改动至少运行绑定生成 `--check`、对应 Rust 测试、C# build 和真实动态库冒烟测试；Unity 导出改动还要核对导出源码与原生库和源产物一致。

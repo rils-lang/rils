@@ -35,13 +35,46 @@ use math::add as sum;
 let answer = sum(20, 22);
 ```
 
-文件模块写作 `mod name;`。`Engine::eval_file`、`rils::compile_file` 和 CLI 文件模式会依次查找
-当前目录的 `name.rils` 与 `name/mod.rils`。字符串形式的 `Engine::eval` 和 `rils::compile` 不进行
-隐式文件访问。加载器递归处理子模块并拒绝循环加载；`compile_file` 会把加载后的模块链接进同一个
-内存字节码模块。
+推荐使用项目模式。在项目根目录放置 `rils.toml`，文件名自动映射为模块路径，不需要再写
+`mod name;`：
 
-`use path::item;` 以最后一段作为本地名字，`use path::item as alias;` 可显式改名；`pub use`
-可以从模块重新导出公开成员。当前暂不支持通配导入、分组导入以及 `crate`、`self`、`super`。
+```toml
+[project]
+name = "unity_game"
+script_paths = ["Assets/Res/rils-script"]
+
+[host]
+manifest_dirs = [".rils/manifests"] # 可选；未配置时也是默认目录
+manifests = ["generated/extra.rilhm"] # 可选的额外 fragment
+```
+
+`player.rils` 映射为 `player`，`gameplay/player.rils` 映射为 `gameplay::player`，
+`gameplay/mod.rils` 映射为 `gameplay`。同一模块路径出现两个文件会直接报错。项目中的任意脚本都
+可以作为构建入口，但被选中的入口必须定义零参数 `fn main()`；入口的返回值就是脚本执行结果。
+项目加载器把脚本根目录中的模块链接进同一个字节码产物。
+
+项目路径支持 Rust 风格锚点：`crate::` 从当前项目根开始，`self::` 从当前文件模块开始，
+`super::` 返回父模块且可以重复。`use crate::gameplay::player as player;` 与完整限定调用都可使用。
+`project.name` 是稳定的 crate 标识，为后续外部项目依赖预留；当前项目内部应使用 `crate::`。
+
+`.rils/manifests/**/*.rilhm` 会按规范化路径排序并合并成一个逻辑 Host Contract。相同声明可以在
+多个 fragment 中幂等出现；ABI/contract/module 版本、函数名称、签名或全局 function ID 冲突都会
+使整个项目加载失败。旧的 `[host].manifest` 单文件配置继续兼容。
+
+没有 `rils.toml` 时保留旧的单文件兼容模式：`mod name;` 依次查找同目录的 `name.rils` 与
+`name/mod.rils`。项目模式只保留 `mod name { ... }` 作为局部内联模块，外部 `mod name;` 会给出
+迁移诊断。字符串形式的 `Engine::eval` 和 `rils::compile` 始终不进行隐式文件访问。
+
+`use path::item;` 以最后一段作为本地名字，`use path::item as alias;` 可显式改名。通配导入只引入
+目标模块的公开直接成员，分组可以递归嵌套并在叶子处改名：
+
+```rust
+use crate::api::*;
+use crate::model::{User, Role as UserRole, nested::{Config, Error}};
+```
+
+同一作用域中导入重名会报告冲突，不会按照书写顺序静默覆盖；私有成员不会由 `*` 暴露。
+`pub use path::item;` 可以从模块重新导出单个公开成员；通配重新导出的完整静态链接支持仍属于后续增强。
 
 当前内置模块骨架为：
 
