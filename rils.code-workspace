@@ -1,0 +1,39 @@
+{
+  "folders": [
+    {
+      "name": "Rils",
+      "path": "."
+    },
+    {
+      "name": "RilsForUnity",
+      "path": "integrations/RilsForUnity"
+    }
+  ],
+  "settings": {
+    "rust-analyzer.linkedProjects": [
+      "${workspaceFolder:Rils}/Cargo.toml"
+    ],
+    "dotnet.defaultSolution": "${workspaceFolder:RilsForUnity}/RilsForUnity.sln",
+    "files.exclude": {
+      "integrations/RilsForUnity": true,
+      "**/Library": true,
+      "**/Temp": true,
+      "**/Logs": true,
+      "**/UserSettings": true,
+      "**/obj": true
+    },
+    "search.exclude": {
+      "integrations/RilsForUnity": true,
+      "**/Library/**": true,
+      "**/Temp/**": true,
+      "**/Logs/**": true,
+      "**/UserSettings/**": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "rust-lang.rust-analyzer",
+      "visualstudiotoolsforunity.vstuc"
+    ]
+  }
+}
