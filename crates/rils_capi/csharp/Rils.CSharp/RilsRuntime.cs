@@ -261,6 +261,12 @@ namespace Rils.CSharp
             return result;
         }
 
+        public void ValidateHost()
+        {
+            EnsureUsable();
+            NativeInterop.Check(NativeMethods.ModuleValidateHost(_runtime.Handle, _handle));
+        }
+
         public unsafe byte[] GetBytecode()
         {
             EnsureUsable();
