@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export a Unity-ready Rils.CSharp source package for Windows x86_64."""
+"""Export the Unity runtime facade and native library into RilsForUnity."""
 
 from __future__ import annotations
 
@@ -16,10 +16,11 @@ def resolve_output(repository_root: Path, value: str | None) -> Path:
         Path(value)
         if value is not None
         else repository_root
-        / "crates"
-        / "rils_capi"
-        / "dist"
-        / "unity"
+        / "integrations"
+        / "RilsForUnity"
+        / "Packages"
+        / "com.rils-lang.rils-for-unity"
+        / "Runtime"
         / "Rils.CSharp"
     )
     if not output.is_absolute():
@@ -62,7 +63,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output",
-        help="destination Rils.CSharp directory; defaults to crates/rils_capi/dist/unity/Rils.CSharp",
+        help=(
+            "destination Rils.CSharp directory; defaults to "
+            "integrations/RilsForUnity/Packages/com.rils-lang.rils-for-unity/"
+            "Runtime/Rils.CSharp"
+        ),
     )
     parser.add_argument(
         "--debug",
@@ -111,6 +116,20 @@ def main() -> None:
     staging = Path(
         tempfile.mkdtemp(prefix=".rils-csharp-unity-", dir=output_directory.parent)
     )
+    preserved_meta: dict[Path, Path] = {}
+    if output_directory.is_dir():
+        generated_files = {
+            source.name for source in sources
+        } | {asmdef.name, native_library.name}
+        for meta in output_directory.rglob("*.meta"):
+            relative = meta.relative_to(output_directory)
+            target = relative.with_suffix("")
+            if target.name in generated_files or relative in {
+                Path("Internal.meta"),
+                Path("Internal/x86_64.meta"),
+            }:
+                preserved_meta[relative] = meta
+
     try:
         for source in sources:
             shutil.copy2(source, staging / source.name)
@@ -119,6 +138,11 @@ def main() -> None:
         architecture_directory = staging / "Internal" / "x86_64"
         architecture_directory.mkdir(parents=True)
         shutil.copy2(native_library, architecture_directory / native_library.name)
+
+        for relative, meta in preserved_meta.items():
+            destination = staging / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(meta, destination)
 
         if output_directory.exists():
             if not output_directory.is_dir():

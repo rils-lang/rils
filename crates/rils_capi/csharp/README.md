@@ -74,9 +74,10 @@ HostContract dispatcher 入口；高层静态 dispatcher/Attribute 注册、字�
 python tools/export-unity-package.py
 ```
 
-生成的 `crates/rils_capi/dist/unity/Rils.CSharp` 可以整体复制到 Unity 的 `Assets`。其中 C# 源码位于
-根目录，`Internal/x86_64/rils_capi.dll` 是当前 Windows x86_64 原生运行库，asmdef 已启用 unsafe
-代码。也可以直接指定目标：
+默认会直接更新独立的 `integrations/RilsForUnity` 工程，将文件写入
+`Packages/com.rils-lang.rils-for-unity/Runtime/Rils.CSharp`。其中 C# 源码位于该目录根部，
+`Internal/x86_64/rils_capi.dll` 是当前 Windows x86_64 原生运行库，asmdef 已启用 unsafe 代码。
+导出会保留已有 Unity `.meta` 文件，避免重复导出导致资源 GUID 变化。也可以直接指定目标：
 
 ```console
 python tools/export-unity-package.py --output D:/Game/Assets/Rils.CSharp

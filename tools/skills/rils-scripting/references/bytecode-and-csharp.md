@@ -82,7 +82,9 @@ The Windows package contains `rils_capi.dll` and `Rils.CSharp.dll`; the C header
 and is not staged as a runtime artifact. Do not change crate, analyzer, or plugin versions merely to rebuild these
 files.
 
-The Unity exporter produces a drop-in `Rils.CSharp` directory with flattened C# source files and an unsafe-enabled
-asmdef. Native libraries live under `Internal/<architecture>/`; the current exporter provides
-`Internal/x86_64/rils_capi.dll`. Use `--output <UnityProject>/Assets/Rils.CSharp` when exporting directly into a
-project. The exporter replaces that complete directory, so keep application scripts and custom bindings elsewhere.
+The Unity exporter updates the embedded package at
+`integrations/RilsForUnity/Packages/com.rils-lang.rils-for-unity/Runtime/Rils.CSharp` by default. It contains
+flattened C# source files, an unsafe-enabled asmdef, and native libraries under `Internal/<architecture>/`; the
+current exporter provides `Internal/x86_64/rils_capi.dll`. Use `--output <UnityProject>/Assets/Rils.CSharp` when
+exporting to another project. The exporter replaces the generated runtime directory while preserving Unity
+`.meta` files, so keep application scripts and custom bindings elsewhere.

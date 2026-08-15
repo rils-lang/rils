@@ -121,8 +121,9 @@ VS Code 插件可通过 `rils.hostManifest.path` 加载同一契约；在宿主�
 `WriteBytecodeFile()` 生成供 Addressables 使用的字节码产物。
 
 需要源码形式的 Unity drop-in 包时运行 `python tools/export-unity-package.py`。默认生成
-`crates/rils_capi/dist/unity/Rils.CSharp`，其中 C# facade 位于根目录，Windows x86_64 原生库位于
-`Internal/x86_64/`。
+`integrations/RilsForUnity/Packages/com.rils-lang.rils-for-unity/Runtime/Rils.CSharp`，其中 C# facade
+位于运行时包目录，Windows x86_64 原生库位于 `Internal/x86_64/`。导出会保留已有 Unity `.meta`
+文件；也可以使用 `--output` 指定其他目标目录。
 
 ## 文档
 
