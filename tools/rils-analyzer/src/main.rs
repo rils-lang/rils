@@ -9,7 +9,10 @@ use lsp_server::{Connection, Message, Notification, Request, Response};
 use rils_compiler::{HOST_CONTRACT_ABI_VERSION, HostContract};
 use rils_frontend::{
     FrontendError, FunctionSignature, SourceId, Span, Type,
-    analysis::{DiagnosticSeverity, DocumentAnalysis, SymbolKind, analyze_with_source_id},
+    analysis::{
+        DiagnosticSeverity, DocumentAnalysis, SymbolKind, analyze_with_source_id,
+        analyze_with_source_id_and_external_exports,
+    },
     ast::Stmt,
     lexer::{lex, lex_with_source_id},
     parser::parse,
@@ -18,6 +21,8 @@ use rils_project::Project;
 use serde_json::{Value, json};
 
 type AnyError = Box<dyn Error + Send + Sync>;
+
+mod project_index;
 
 struct Document {
     source_id: SourceId,
@@ -145,18 +150,17 @@ impl Server {
 
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         let source_id = self.source_id_for_uri(&uri);
-        let analysis = analyze_with_source_id(&text, source_id, &self.host_functions);
-        let diagnostics = diagnostics(&text, &analysis);
         self.documents.insert(
             uri.clone(),
             Document {
                 source_id,
                 text,
-                analysis,
+                analysis: analyze_with_source_id("", source_id, &self.host_functions),
             },
         );
+        self.reanalyze_documents();
         self.refresh_project_symbol_links();
-        self.publish_diagnostics(&uri, diagnostics)
+        self.publish_all_diagnostics()
     }
 
     fn source_id_for_uri(&mut self, uri: &str) -> SourceId {
@@ -244,7 +248,32 @@ impl Server {
                 },
             );
         }
+        self.reanalyze_documents();
         self.refresh_project_symbol_links();
+        Ok(())
+    }
+
+    fn reanalyze_documents(&mut self) {
+        let exports = project_index::collect_external_exports(self);
+        for document in self.documents.values_mut() {
+            document.analysis = analyze_with_source_id_and_external_exports(
+                &document.text,
+                document.source_id,
+                &self.host_functions,
+                &exports,
+            );
+        }
+    }
+
+    fn publish_all_diagnostics(&mut self) -> Result<(), AnyError> {
+        let diagnostics = self
+            .documents
+            .iter()
+            .map(|(uri, document)| (uri.clone(), diagnostics(&document.text, &document.analysis)))
+            .collect::<Vec<_>>();
+        for (uri, diagnostics) in diagnostics {
+            self.publish_diagnostics(&uri, diagnostics)?;
+        }
         Ok(())
     }
 

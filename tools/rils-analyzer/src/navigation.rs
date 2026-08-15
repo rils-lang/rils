@@ -42,6 +42,28 @@ impl Server {
     }
 
     fn project_definition(&self, uri: &str, document: &Document, offset: usize) -> Option<Value> {
+        if let Some(symbol) = analysis(document).and_then(|current| {
+            current
+                .symbols
+                .iter()
+                .find(|symbol| symbol.span.start <= offset && offset <= symbol.span.end)
+        }) {
+            if let Some(definition_span) = symbol
+                .definition_span
+                .filter(|span| span.source != document.source_id)
+            {
+                if let Some((target_uri, target_document)) = self
+                    .documents
+                    .iter()
+                    .find(|(_, candidate)| candidate.source_id == definition_span.source)
+                {
+                    return Some(json!({
+                        "uri": target_uri,
+                        "range": range(&target_document.text, definition_span)
+                    }));
+                }
+            }
+        }
         let (target_uri, member) = self.project_member_target(uri, document, offset)?;
         let owned_source;
         let source = if let Some(document) = self.documents.get(&target_uri) {
@@ -119,6 +141,34 @@ impl Server {
         offset: usize,
         expected_kind: SymbolKind,
     ) -> Option<rils_frontend::SymbolId> {
+        if let Some(symbol) = analysis(document).and_then(|current| {
+            current
+                .symbols
+                .iter()
+                .find(|symbol| symbol.span.start <= offset && offset <= symbol.span.end)
+        }) {
+            if let Some(definition_span) = symbol
+                .definition_span
+                .filter(|span| span.source != document.source_id)
+            {
+                if let Some(target_document) = self
+                    .documents
+                    .values()
+                    .find(|candidate| candidate.source_id == definition_span.source)
+                {
+                    if let Some(target_analysis) = analysis(target_document) {
+                        if let Some(definition) = target_analysis.symbols.iter().find(|candidate| {
+                            candidate.is_definition
+                                && candidate.span == definition_span
+                                && candidate.name == symbol.name
+                                && compatible_symbol_kinds(candidate.kind, expected_kind)
+                        }) {
+                            return definition.symbol_id;
+                        }
+                    }
+                }
+            }
+        }
         let (target_uri, member) = self.project_member_target(uri, document, offset)?;
         let target_document = self.documents.get(&target_uri)?;
         let program =

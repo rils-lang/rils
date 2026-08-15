@@ -27,6 +27,15 @@ pub enum SymbolKind {
     Module,
 }
 
+/// A public declaration exported by a module outside the document currently
+/// being analyzed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExternalModuleExport {
+    pub name: String,
+    pub span: Span,
+    pub kind: SymbolKind,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SymbolOccurrence {
     pub name: String,
@@ -109,7 +118,7 @@ pub fn analyze_program_with_host_functions(
     program: &Program,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> DocumentAnalysis {
-    Analyzer::new(SourceId::UNKNOWN, host_functions, program).analyze(program)
+    Analyzer::new(SourceId::UNKNOWN, host_functions, program, &HashMap::new()).analyze(program)
 }
 
 pub fn analyze(source: &str) -> Result<DocumentAnalysis, FrontendError> {
@@ -129,9 +138,19 @@ pub fn analyze_with_source_id(
     source_id: SourceId,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> Result<DocumentAnalysis, FrontendError> {
+    analyze_with_source_id_and_external_exports(source, source_id, host_functions, &HashMap::new())
+}
+
+/// Analyze a document with public declarations supplied by other project files.
+pub fn analyze_with_source_id_and_external_exports(
+    source: &str,
+    source_id: SourceId,
+    host_functions: &HashMap<String, FunctionSignature>,
+    external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+) -> Result<DocumentAnalysis, FrontendError> {
     let tokens = crate::lexer::lex_with_source_id(source, source_id).map_err(FrontendError::Lex)?;
     let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
-    Ok(Analyzer::new(source_id, host_functions, &program).analyze(&program))
+    Ok(Analyzer::new(source_id, host_functions, &program, external_exports).analyze(&program))
 }
 
 struct Analyzer {
@@ -152,7 +171,21 @@ impl Analyzer {
         source_id: SourceId,
         host_functions: &HashMap<String, FunctionSignature>,
         program: &Program,
+        external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
     ) -> Self {
+        let mut module_exports = collect_module_exports(&program.statements);
+        for (module, exports) in external_exports {
+            module_exports.entry(module.clone()).or_insert_with(|| {
+                exports
+                    .iter()
+                    .map(|export| ModuleExport {
+                        name: export.name.clone(),
+                        span: export.span,
+                        kind: export.kind,
+                    })
+                    .collect()
+            });
+        }
         let mut globals = HashMap::new();
         for name in [
             "#rils_native_print",
@@ -241,7 +274,7 @@ impl Analyzer {
             scopes: vec![globals],
             glob_imports: vec![false],
             module_path: Vec::new(),
-            module_exports: collect_module_exports(&program.statements),
+            module_exports,
             trait_members: HashMap::new(),
             type_aliases: HashMap::new(),
             host_functions: host_functions.clone(),

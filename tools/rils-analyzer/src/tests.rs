@@ -671,6 +671,11 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         "pub fn add(left: i32, right: i32) -> i32 { left + right }\nfn hidden() {}",
     )
     .unwrap();
+    fs::write(
+        scripts.join("other.rils"),
+        "pub fn sub(left: i32, right: i32) -> i32 { left - right }",
+    )
+    .unwrap();
     let entry = scripts.join("main.rils");
     let text = "use crate::math as math;\nfn main() { math::add(1, 2); }";
     fs::write(&entry, text).unwrap();
@@ -704,6 +709,18 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         }))
         .unwrap();
     let expected_uri = path_to_file_uri(&scripts.join("math.rils"));
+    assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
+
+    let multiple_globs = "use crate::other::*;\nuse crate::math::*;\nfn main() { add(1, 2); }";
+    server
+        .update_document(uri.clone(), multiple_globs.into())
+        .unwrap();
+    let definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 2, "character": 13 }
+        }))
+        .unwrap();
     assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
     let references = server
         .references(&json!({
@@ -761,17 +778,13 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
 
     let glob = "use crate::math::*;\nfn main() { add(1, 2); }";
-    server.documents.insert(
-        uri.clone(),
-        Document {
-            source_id,
-            text: glob.into(),
-            analysis: rils_frontend::analysis::analyze_with_source_id(
-                glob,
-                source_id,
-                &server.host_functions,
-            ),
-        },
+    server.update_document(uri.clone(), glob.into()).unwrap();
+    let glob_analysis = server.documents[&uri].analysis.as_ref().unwrap();
+    assert!(
+        !glob_analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("undefined name `add`"))
     );
     let definition = server
         .definition(&json!({
@@ -780,6 +793,18 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         }))
         .unwrap();
     assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
+
+    let broken_glob = "use crate::math::*;\nfn main() { missing(1, 2); }";
+    server
+        .update_document(uri.clone(), broken_glob.into())
+        .unwrap();
+    let broken_analysis = server.documents[&uri].analysis.as_ref().unwrap();
+    assert!(
+        broken_analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("undefined name `missing`"))
+    );
 
     let grouped_alias = "use crate::{math as m};\nfn main() { m::a }";
     server.documents.insert(
