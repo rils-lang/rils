@@ -97,7 +97,8 @@ manifest_dirs = [".rils/manifests"]
 
 项目内文件会自动映射为模块并支持 `crate::`、`self::`、`super::`；作为入口的脚本定义
 零参数 `fn main()`。`compile_file` 输出无需保留源码目录的单一字节码模块。没有 `rils.toml` 时
-继续支持旧的 `mod name;` 文件加载规则。
+继续支持旧的 `mod name;` 文件加载规则。`use` 支持单项、别名、公开成员通配和递归分组，例如
+`use crate::api::*;` 与 `use crate::api::{Client, model::{User, Role}};`。
 
 Host Manifest 可以按 Unity 模块或项目生成来源拆分到 `.rils/manifests/**/*.rilhm`。Analyzer 和
 Editor 编译会确定性合并 fragments；发布前可运行

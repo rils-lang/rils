@@ -267,6 +267,10 @@
           "match": "::"
         },
         {
+          "name": "keyword.operator.glob-import.rils",
+          "match": "(?<=::)\\*(?=\\s*(?:[,};]))"
+        },
+        {
           "name": "keyword.operator.comparison.rils",
           "match": "==|!=|<=|>=|<|>"
         },

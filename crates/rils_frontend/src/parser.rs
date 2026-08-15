@@ -10,7 +10,7 @@ use crate::{
     ast::{
         AssociatedType, BinaryOp, Block, EnumVariant, Expr, GenericParameter, ImplMethod, Literal,
         LogicalOp, MacroSymbol, MatchArm, NamedField, Parameter, Pattern, Program, Stmt,
-        TraitMethod, TypeReference, UnaryOp,
+        TraitMethod, TypeReference, UnaryOp, UseImport, UseImportKind,
     },
     source::Span,
     token::{Token, TokenKind},
@@ -426,5 +426,29 @@ mod tests {
             }
         "#;
         parse(lex(source).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn flattens_grouped_nested_and_glob_use_trees() {
+        let source = r#"
+            use root::{self as root_alias, alpha, beta as b, nested::{delta, epsilon}, tools::*};
+        "#;
+        let program = parse(lex(source).unwrap()).unwrap();
+        let Stmt::Use { imports, .. } = &program.statements[0] else {
+            panic!("expected use statement");
+        };
+        assert_eq!(imports.len(), 6);
+        assert_eq!(imports[0].path, ["root"]);
+        assert_eq!(imports[0].binding_name(), Some("root_alias"));
+        assert_eq!(imports[1].path, ["root", "alpha"]);
+        assert_eq!(imports[2].binding_name(), Some("b"));
+        assert_eq!(imports[3].path, ["root", "nested", "delta"]);
+        assert_eq!(imports[4].path, ["root", "nested", "epsilon"]);
+        assert_eq!(imports[5].path, ["root", "tools"]);
+        assert_eq!(imports[5].kind, UseImportKind::Glob);
+        assert!(imports.iter().all(|import| {
+            import.path.len() == import.path_spans.len()
+                && import.path_spans.iter().all(|span| span.start < span.end)
+        }));
     }
 }

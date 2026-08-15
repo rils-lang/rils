@@ -100,6 +100,35 @@ pub struct AssociatedType {
     pub span: Span,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UseImportKind {
+    Single,
+    Glob,
+}
+
+#[derive(Clone, Debug)]
+pub struct UseImport {
+    pub path: Vec<String>,
+    pub path_spans: Vec<Span>,
+    pub alias: Option<String>,
+    pub alias_span: Option<Span>,
+    pub name_span: Span,
+    pub kind: UseImportKind,
+    pub span: Span,
+}
+
+impl UseImport {
+    pub fn binding_name(&self) -> Option<&str> {
+        match self.kind {
+            UseImportKind::Single => self
+                .alias
+                .as_deref()
+                .or_else(|| self.path.last().map(String::as_str)),
+            UseImportKind::Glob => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Public {
@@ -113,9 +142,7 @@ pub enum Stmt {
         span: Span,
     },
     Use {
-        path: Vec<String>,
-        alias: Option<String>,
-        alias_span: Option<Span>,
+        imports: Vec<UseImport>,
         span: Span,
     },
     Let {

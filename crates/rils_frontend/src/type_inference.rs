@@ -430,32 +430,59 @@ impl Inferencer {
                 }
                 Type::Unit
             }
-            Stmt::Use {
-                path,
-                alias,
-                alias_span,
-                span,
-            } => {
-                let name = alias.as_ref().or_else(|| path.last()).expect("use path");
-                let name_span = alias_span
-                    .unwrap_or_else(|| Span::new(span.end - 1 - name.len(), span.end - 1));
-                let path_name = path.join("::");
-                let ty = self
-                    .host_functions
-                    .get(&path_name)
-                    .cloned()
-                    .or_else(|| crate::standard_library::standard_function_signature(&path_name))
-                    .map_or_else(
-                        || {
-                            if name.chars().next().is_some_and(char::is_uppercase) {
-                                Type::named(path_name)
-                            } else {
-                                Type::Unknown
-                            }
-                        },
-                        |signature| signature.as_type(),
-                    );
-                self.define_binding(name, name_span, Binding { ty });
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    if import.kind == crate::ast::UseImportKind::Glob {
+                        let prefix = format!("{}::", import.path.join("::"));
+                        let mut bindings = self
+                            .host_functions
+                            .iter()
+                            .filter_map(|(path, signature)| {
+                                let name = path.strip_prefix(&prefix)?;
+                                (!name.contains("::"))
+                                    .then(|| (name.to_owned(), signature.as_type()))
+                            })
+                            .collect::<Vec<_>>();
+                        for builtin in rils_builtins::BUILTINS.iter().filter(|builtin| {
+                            builtin.path.starts_with(&prefix)
+                                && !builtin.path[prefix.len()..].contains("::")
+                        }) {
+                            let name = builtin.path[prefix.len()..].to_owned();
+                            let ty =
+                                crate::standard_library::standard_function_signature(builtin.path)
+                                    .map_or(Type::Unknown, |signature| signature.as_type());
+                            bindings.push((name, ty));
+                        }
+                        for (name, ty) in bindings {
+                            self.scopes
+                                .last_mut()
+                                .expect("scope exists")
+                                .insert(name, Binding { ty });
+                        }
+                        continue;
+                    }
+                    let name = import.binding_name().expect("single use import");
+                    let name_span = import.alias_span.unwrap_or(import.name_span);
+                    let path_name = import.path.join("::");
+                    let ty = self
+                        .host_functions
+                        .get(&path_name)
+                        .cloned()
+                        .or_else(|| {
+                            crate::standard_library::standard_function_signature(&path_name)
+                        })
+                        .map_or_else(
+                            || {
+                                if name.chars().next().is_some_and(char::is_uppercase) {
+                                    Type::named(path_name)
+                                } else {
+                                    Type::Unknown
+                                }
+                            },
+                            |signature| signature.as_type(),
+                        );
+                    self.define_binding(name, name_span, Binding { ty });
+                }
                 Type::Unit
             }
             Stmt::Let {

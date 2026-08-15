@@ -26,25 +26,101 @@ impl Parser {
     }
 
     pub(super) fn use_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
-        let (first, _) = self.expect_path_segment("expected path after `use`")?;
-        let mut path = vec![first];
-        while self.take(&TokenKind::ColonColon).is_some() {
-            let (segment, _) = self.expect_path_segment("expected name after `::`")?;
-            path.push(segment);
-        }
-        let (alias, alias_span) = if self.take(&TokenKind::As).is_some() {
-            let (alias, span) = self.expect_identifier("expected alias after `as`")?;
-            (Some(alias), Some(span))
-        } else {
-            (None, None)
-        };
+        let mut imports = Vec::new();
+        self.use_tree(Vec::new(), Vec::new(), &mut imports)?;
         let end = self.expect(&TokenKind::Semicolon, "expected `;` after use item")?;
         Ok(Stmt::Use {
-            path,
-            alias,
-            alias_span,
+            imports,
             span: start.merge(end.span),
         })
+    }
+
+    fn use_tree(
+        &mut self,
+        mut prefix: Vec<String>,
+        mut prefix_spans: Vec<Span>,
+        imports: &mut Vec<UseImport>,
+    ) -> Result<(), ParseError> {
+        if let Some(star) = self.take(&TokenKind::Star) {
+            if prefix.is_empty() {
+                return Err(ParseError {
+                    message: "glob import requires a module path".into(),
+                    span: star.span,
+                });
+            }
+            imports.push(UseImport {
+                path: prefix,
+                path_spans: prefix_spans,
+                alias: None,
+                alias_span: None,
+                name_span: star.span,
+                kind: UseImportKind::Glob,
+                span: star.span,
+            });
+            return Ok(());
+        }
+        if self.take(&TokenKind::LeftBrace).is_some() {
+            if self.check(&TokenKind::RightBrace) {
+                return Err(ParseError {
+                    message: "use group must contain at least one item".into(),
+                    span: self.peek().span,
+                });
+            }
+            loop {
+                self.use_tree(prefix.clone(), prefix_spans.clone(), imports)?;
+                if self.take(&TokenKind::Comma).is_some() {
+                    if self.check(&TokenKind::RightBrace) {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            self.expect(&TokenKind::RightBrace, "expected `}` after use group")?;
+            return Ok(());
+        }
+
+        let (segment, segment_span) = self.expect_path_segment("expected path after `use`")?;
+        if segment == "self" && !prefix.is_empty() && !self.check(&TokenKind::ColonColon) {
+            let (alias, alias_span) = self.use_alias()?;
+            let span = segment_span.merge(alias_span.unwrap_or(segment_span));
+            imports.push(UseImport {
+                path: prefix,
+                path_spans: prefix_spans,
+                alias,
+                alias_span,
+                name_span: segment_span,
+                kind: UseImportKind::Single,
+                span,
+            });
+            return Ok(());
+        }
+        prefix.push(segment);
+        prefix_spans.push(segment_span);
+        if self.take(&TokenKind::ColonColon).is_some() {
+            return self.use_tree(prefix, prefix_spans, imports);
+        }
+        let (alias, alias_span) = self.use_alias()?;
+        let span = prefix_spans[0].merge(alias_span.unwrap_or(segment_span));
+        imports.push(UseImport {
+            path: prefix,
+            path_spans: prefix_spans,
+            alias,
+            alias_span,
+            name_span: segment_span,
+            kind: UseImportKind::Single,
+            span,
+        });
+        Ok(())
+    }
+
+    fn use_alias(&mut self) -> Result<(Option<String>, Option<Span>), ParseError> {
+        if self.take(&TokenKind::As).is_some() {
+            let (alias, span) = self.expect_identifier("expected alias after `as`")?;
+            Ok((Some(alias), Some(span)))
+        } else {
+            Ok((None, None))
+        }
     }
 
     pub(super) fn let_statement(&mut self) -> Result<Stmt, ParseError> {

@@ -32,6 +32,9 @@
 
 ### Added
 
+- `use` 增加公开成员通配导入和递归分组导入，支持 `use path::*;`、别名、嵌套
+  `use path::{item, child::{nested, other}};`。解释器、字节码编译、项目加载与
+  Analyzer 共用相同的可见性规则；编辑器可在未闭合的分组路径中补全并跨文件跳转。
 - SourceId 已贯通 lexer/parser、静态分析、HIR/MIR、字节码格式与 verifier、解释器、Analyzer、
   CLI 和 C API。项目及兼容模块加载会为每个脚本分配确定的来源标识，跨文件编译和运行错误可报告
   实际依赖文件；Analyzer 的符号 ID、定义与引用也保留文件身份。

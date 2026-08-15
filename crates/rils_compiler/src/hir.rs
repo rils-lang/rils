@@ -33,24 +33,34 @@ fn collect_host_use_aliases(
             statement => statement,
         };
         match statement {
-            Stmt::Use { path, alias, .. } => {
-                let absolute = path.join("::");
-                let anchored = resolve_anchored_path(prefix, path);
-                let relative = if prefix.is_empty() {
-                    absolute.clone()
-                } else {
-                    format!("{}::{absolute}", prefix.join("::"))
-                };
-                let declaration = functions
-                    .get(anchored.as_deref().unwrap_or(&absolute))
-                    .or_else(|| functions.get(&relative))
-                    .cloned();
-                if let Some(declaration) = declaration {
-                    let alias = alias
-                        .as_deref()
-                        .or_else(|| path.last().map(String::as_str))
-                        .expect("use paths are non-empty");
-                    functions.insert(qualified_name(prefix, alias), declaration);
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    let candidates = use_resolution_candidates(prefix, &import.path);
+                    if import.kind == crate::ast::UseImportKind::Glob {
+                        let declarations = functions
+                            .iter()
+                            .filter_map(|(name, declaration)| {
+                                let member = candidates
+                                    .iter()
+                                    .find_map(|candidate| immediate_path_member(name, candidate))?;
+                                Some((member.to_owned(), declaration.clone()))
+                            })
+                            .collect::<Vec<_>>();
+                        for (name, declaration) in declarations {
+                            functions.insert(qualified_name(prefix, &name), declaration);
+                        }
+                        continue;
+                    }
+                    let declaration = candidates
+                        .iter()
+                        .find_map(|candidate| functions.get(candidate))
+                        .cloned();
+                    if let Some(declaration) = declaration {
+                        functions.insert(
+                            qualified_name(prefix, import.binding_name().expect("single import")),
+                            declaration,
+                        );
+                    }
                 }
             }
             Stmt::Module {
@@ -159,11 +169,14 @@ impl ProgramLowerer {
             &mut methods,
             &mut method_names,
         );
+        let mut public_symbols = HashSet::new();
+        collect_public_symbols(&program.statements, &mut Vec::new(), &mut public_symbols);
         collect_use_aliases(
             &program.statements,
             &mut Vec::new(),
             &mut functions,
             &mut types,
+            &public_symbols,
         );
         let mut host_functions = host
             .functions()

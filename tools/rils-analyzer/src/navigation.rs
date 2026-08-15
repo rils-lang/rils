@@ -17,6 +17,9 @@ impl Server {
                 .project_definition(&uri, document, offset)
                 .unwrap_or(Value::Null));
         };
+        if let Some(definition) = self.project_definition(&uri, document, offset) {
+            return Ok(definition);
+        }
         let target_id = symbol.symbol_id.or(symbol.definition_id);
         if let Some(target_id) = target_id {
             for (candidate_uri, candidate_document) in &self.documents {
@@ -35,30 +38,16 @@ impl Server {
                 }
             }
         }
-        if let Some(definition) = self.project_definition(&uri, document, offset) {
-            return Ok(definition);
-        }
         Ok(Value::Null)
     }
 
     fn project_definition(&self, uri: &str, document: &Document, offset: usize) -> Option<Value> {
-        let path = file_uri_to_path(uri)?;
-        let project = self
-            .projects
-            .iter()
-            .find(|project| project.module_for_file(&path).is_some())?;
-        let current = &project.module_for_file(&path)?.module_path;
-        let qualified = qualified_path_at(&document.text, offset)?;
-        let (qualifier, member) = qualified.rsplit_once("::")?;
-        let qualifier = resolve_path_alias(&document.text, qualifier);
-        let module_path = resolve_project_path(current, &qualifier)?;
-        let file = project.module(&module_path)?;
-        let target_uri = path_to_file_uri(&file.path);
+        let (target_uri, member) = self.project_member_target(uri, document, offset)?;
         let owned_source;
         let source = if let Some(document) = self.documents.get(&target_uri) {
             document.text.as_str()
         } else {
-            owned_source = fs::read_to_string(&file.path).ok()?;
+            owned_source = fs::read_to_string(file_uri_to_path(&target_uri)?).ok()?;
             &owned_source
         };
         let program = parse(lex(source).ok()?).ok()?;
@@ -66,7 +55,7 @@ impl Server {
             let Stmt::Public { statement, .. } = statement else {
                 return None;
             };
-            declaration_name_span(statement, member)
+            declaration_name_span(statement, &member)
         })?;
         Some(json!({
             "uri": target_uri,
@@ -90,10 +79,12 @@ impl Server {
             .pointer("/context/includeDeclaration")
             .and_then(Value::as_bool)
             .unwrap_or(true);
-        let target_id = symbol
-            .symbol_id
-            .or(symbol.definition_id)
-            .or_else(|| self.project_symbol_id(&uri, document, offset, symbol.kind));
+        let target_id = if symbol.is_definition {
+            symbol.symbol_id.or(symbol.definition_id)
+        } else {
+            self.project_symbol_id(&uri, document, offset, symbol.kind)
+                .or(symbol.definition_id)
+        };
         let Some(target_id) = target_id else {
             return Ok(json!([]));
         };
@@ -128,18 +119,7 @@ impl Server {
         offset: usize,
         expected_kind: SymbolKind,
     ) -> Option<rils_frontend::SymbolId> {
-        let path = file_uri_to_path(uri)?;
-        let project = self
-            .projects
-            .iter()
-            .find(|project| project.module_for_file(&path).is_some())?;
-        let current = &project.module_for_file(&path)?.module_path;
-        let qualified = qualified_path_at(&document.text, offset)?;
-        let (qualifier, member) = qualified.rsplit_once("::")?;
-        let qualifier = resolve_path_alias(&document.text, qualifier);
-        let module_path = resolve_project_path(current, &qualifier)?;
-        let file = project.module(&module_path)?;
-        let target_uri = path_to_file_uri(&file.path);
+        let (target_uri, member) = self.project_member_target(uri, document, offset)?;
         let target_document = self.documents.get(&target_uri)?;
         let program =
             parse(lex_with_source_id(&target_document.text, target_document.source_id).ok()?)
@@ -148,7 +128,7 @@ impl Server {
             let Stmt::Public { statement, .. } = statement else {
                 return None;
             };
-            declaration_name_span(statement, member)
+            declaration_name_span(statement, &member)
         })?;
         analysis(target_document)?
             .symbols
@@ -160,6 +140,27 @@ impl Server {
                     && compatible_symbol_kinds(candidate.kind, expected_kind)
             })?
             .symbol_id
+    }
+
+    fn project_member_target(
+        &self,
+        uri: &str,
+        document: &Document,
+        offset: usize,
+    ) -> Option<(String, String)> {
+        let path = file_uri_to_path(uri)?;
+        let project = self
+            .projects
+            .iter()
+            .find(|project| project.module_for_file(&path).is_some())?;
+        let current = &project.module_for_file(&path)?.module_path;
+        let qualified = qualified_path_at(&document.text, offset)
+            .map(|qualified| resolve_path_alias(&document.text, &qualified))
+            .or_else(|| imported_path_at(document, offset))?;
+        let (qualifier, member) = qualified.rsplit_once("::")?;
+        let module_path = resolve_project_path(current, qualifier)?;
+        let file = project.module(&module_path)?;
+        Some((path_to_file_uri(&file.path), member.to_owned()))
     }
 
     pub(super) fn hover(&self, params: &Value) -> Result<Value, AnyError> {
@@ -197,4 +198,54 @@ impl Server {
             "range": range(&document.text, symbol.span)
         }))
     }
+}
+
+fn imported_path_at(document: &Document, offset: usize) -> Option<String> {
+    let identifier = identifier_at(&document.text, offset)?;
+    let program = parse(lex_with_source_id(&document.text, document.source_id).ok()?).ok()?;
+    for statement in &program.statements {
+        let statement = match statement {
+            Stmt::Public { statement, .. } => statement.as_ref(),
+            statement => statement,
+        };
+        let Stmt::Use { imports, .. } = statement else {
+            continue;
+        };
+        for import in imports {
+            if import
+                .path_spans
+                .iter()
+                .any(|span| span.start <= offset && offset <= span.end)
+            {
+                return Some(import.path.join("::"));
+            }
+            if import.binding_name() == Some(identifier) {
+                return Some(import.path.join("::"));
+            }
+            if import.kind == rils_frontend::ast::UseImportKind::Glob {
+                return Some(format!("{}::{identifier}", import.path.join("::")));
+            }
+        }
+    }
+    None
+}
+
+fn identifier_at(text: &str, offset: usize) -> Option<&str> {
+    let offset = floor_char_boundary(text, offset.min(text.len()));
+    let allowed = |character: char| character == '_' || character.is_alphanumeric();
+    let mut start = offset;
+    for (index, character) in text[..offset].char_indices().rev() {
+        if !allowed(character) {
+            break;
+        }
+        start = index;
+    }
+    let mut end = offset;
+    for (relative, character) in text[offset..].char_indices() {
+        if !allowed(character) {
+            break;
+        }
+        end = offset + relative + character.len_utf8();
+    }
+    (start < end).then(|| &text[start..end])
 }

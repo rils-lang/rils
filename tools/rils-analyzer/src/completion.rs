@@ -80,7 +80,9 @@ impl Server {
                 }
             }
         }
-        let Some((qualifier, member_prefix)) = completion_target(&document.text, offset) else {
+        let Some((qualifier, member_prefix)) = use_tree_completion_target(&document.text, offset)
+            .or_else(|| completion_target(&document.text, offset))
+        else {
             return Ok(json!([]));
         };
         if rils_builtins::IntegerType::from_name(&qualifier).is_some() {
@@ -290,9 +292,7 @@ impl Server {
             let Stmt::Public { statement, .. } = statement else {
                 continue;
             };
-            if let Some(item) = public_completion_item(statement, member_prefix) {
-                items.push(item);
-            }
+            items.extend(public_completion_items(statement, member_prefix));
         }
     }
 }

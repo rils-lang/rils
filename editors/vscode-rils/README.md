@@ -17,6 +17,8 @@ The language server resolves explicit UFCS calls to their trait method declarati
 both the owner and index expressions for diagnostics, references, hover, and semantic tokens.
 It discovers `rils.toml`, indexes only its configured `script_paths`, and maps files to stable module paths for
 cross-file navigation and completion. Without a project file it falls back to workspace-wide `.rils` indexing.
+Project-aware completion and navigation understand wildcard imports and recursively grouped imports, including
+incomplete `use crate::module::{...` trees while they are being typed.
 Language intelligence is provided by `rils-analyzer`. Static diagnostics cover names, basic type
 compatibility, match/control flow, ownership, moves, mutability, and local-reference escape rules.
 Definite semantic failures are errors; unreachable statements and match arms are warnings.

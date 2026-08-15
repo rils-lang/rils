@@ -111,6 +111,66 @@ pub(super) fn completion_target(text: &str, byte_offset: usize) -> Option<(Strin
     Some((qualifier.to_owned(), member_prefix.to_owned()))
 }
 
+pub(super) fn use_tree_completion_target(
+    text: &str,
+    byte_offset: usize,
+) -> Option<(String, String)> {
+    let end = floor_char_boundary(text, byte_offset.min(text.len()));
+    let before = &text[..end];
+    let use_start = before.rfind("use ")? + "use ".len();
+    let fragment = &before[use_start..];
+    if fragment.contains(';') {
+        return None;
+    }
+    let mut base = Vec::<String>::new();
+    let mut stack = Vec::<Vec<String>>::new();
+    let mut current = Vec::<String>::new();
+    let mut identifier = String::new();
+    let mut saw_group = false;
+    let mut chars = fragment.chars().peekable();
+    while let Some(character) = chars.next() {
+        if character == '_' || character.is_alphanumeric() {
+            identifier.push(character);
+            continue;
+        }
+        if character == ':' && chars.peek() == Some(&':') {
+            chars.next();
+            if !identifier.is_empty() {
+                current.push(std::mem::take(&mut identifier));
+            }
+            continue;
+        }
+        match character {
+            '{' => {
+                if !identifier.is_empty() {
+                    current.push(std::mem::take(&mut identifier));
+                }
+                stack.push(base.clone());
+                base.extend(std::mem::take(&mut current));
+                saw_group = true;
+            }
+            ',' => {
+                identifier.clear();
+                current.clear();
+            }
+            '}' => {
+                identifier.clear();
+                current.clear();
+                base = stack.pop()?;
+            }
+            '*' => identifier.clear(),
+            character if character.is_whitespace() => {}
+            _ => return None,
+        }
+    }
+    if !saw_group || stack.is_empty() {
+        return None;
+    }
+    let prefix = identifier;
+    base.extend(current);
+    (!base.is_empty()).then(|| (base.join("::"), prefix))
+}
+
 pub(super) fn qualified_path_at(text: &str, byte_offset: usize) -> Option<String> {
     let offset = floor_char_boundary(text, byte_offset.min(text.len()));
     let allowed =
@@ -137,6 +197,26 @@ pub(super) fn resolve_path_alias(text: &str, qualifier: &str) -> String {
     let (root, suffix) = qualifier
         .split_once("::")
         .map_or((qualifier, None), |(root, suffix)| (root, Some(suffix)));
+    if let Ok(tokens) = lex(text)
+        && let Ok(program) = parse(tokens)
+    {
+        for statement in &program.statements {
+            let statement = match statement {
+                Stmt::Public { statement, .. } => statement.as_ref(),
+                statement => statement,
+            };
+            let Stmt::Use { imports, .. } = statement else {
+                continue;
+            };
+            if let Some(import) = imports
+                .iter()
+                .find(|import| import.binding_name() == Some(root))
+            {
+                let path = import.path.join("::");
+                return suffix.map_or(path.clone(), |suffix| format!("{path}::{suffix}"));
+            }
+        }
+    }
     for line in text.lines() {
         let Some(import) = line.trim().strip_prefix("use ") else {
             continue;
@@ -192,7 +272,23 @@ pub(super) fn join_module_path(parent: &str, child: &str) -> String {
     }
 }
 
-pub(super) fn public_completion_item(statement: &Stmt, prefix: &str) -> Option<Value> {
+pub(super) fn public_completion_items(statement: &Stmt, prefix: &str) -> Vec<Value> {
+    if let Stmt::Use { imports, .. } = statement {
+        return imports
+            .iter()
+            .filter_map(|import| {
+                let name = import.binding_name()?;
+                name.starts_with(prefix).then(|| {
+                    json!({
+                        "label": name,
+                        "kind": 18,
+                        "detail": format!("use {}", import.path.join("::")),
+                        "sortText": format!("1_{name}")
+                    })
+                })
+            })
+            .collect();
+    }
     let (name, kind, detail) = match statement {
         Stmt::Function {
             name,
@@ -218,20 +314,19 @@ pub(super) fn public_completion_item(statement: &Stmt, prefix: &str) -> Option<V
         Stmt::Trait { name, .. } => (name, 8, format!("trait {name}")),
         Stmt::TypeAlias { name, target, .. } => (name, 25, format!("type {name} = {target}")),
         Stmt::Module { name, .. } => (name, 9, format!("module {name}")),
-        Stmt::Use { path, alias, .. } => {
-            let name = alias.as_ref().or_else(|| path.last())?;
-            (name, 18, format!("use {}", path.join("::")))
-        }
-        _ => return None,
+        _ => return Vec::new(),
     };
-    name.starts_with(prefix).then(|| {
-        json!({
-            "label": name,
-            "kind": kind,
-            "detail": detail,
-            "sortText": format!("1_{name}")
+    name.starts_with(prefix)
+        .then(|| {
+            json!({
+                "label": name,
+                "kind": kind,
+                "detail": detail,
+                "sortText": format!("1_{name}")
+            })
         })
-    })
+        .into_iter()
+        .collect()
 }
 
 pub(super) fn declaration_name_span(statement: &Stmt, expected: &str) -> Option<Span> {
@@ -254,14 +349,10 @@ pub(super) fn declaration_name_span(statement: &Stmt, expected: &str) -> Option<
         | Stmt::Module {
             name, name_span, ..
         } if name == expected => Some(*name_span),
-        Stmt::Use {
-            path,
-            alias,
-            alias_span,
-            span,
-        } if alias.as_deref().or_else(|| path.last().map(String::as_str)) == Some(expected) => {
-            Some(alias_span.unwrap_or(*span))
-        }
+        Stmt::Use { imports, .. } => imports.iter().find_map(|import| {
+            (import.binding_name() == Some(expected))
+                .then_some(import.alias_span.unwrap_or(import.name_span))
+        }),
         _ => None,
     }
 }

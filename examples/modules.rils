@@ -1,7 +1,7 @@
 mod module_demo;
 
-use module_demo::answer;
+use module_demo::*;
 
-let value = answer();
+let value = add(answer(), 0);
 std::io::println("module answer:", value);
 value

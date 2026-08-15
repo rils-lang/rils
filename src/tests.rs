@@ -2877,6 +2877,53 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
 }
 
 #[test]
+fn project_entries_support_grouped_and_glob_imports() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-project-use-tree-test-{}-{unique}",
+        std::process::id()
+    ));
+    let scripts = root.join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(
+        root.join("rils.toml"),
+        "[project]\nname = \"use_tree\"\nscript_paths = [\"scripts\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        scripts.join("api.rils"),
+        r#"
+            pub fn alpha() -> i32 { 10 }
+            pub fn beta() -> i32 { 11 }
+            pub mod nested {
+                pub fn delta() -> i32 { 9 }
+                pub fn epsilon() -> i32 { 12 }
+            }
+        "#,
+    )
+    .unwrap();
+    let entry = scripts.join("main.rils");
+    std::fs::write(
+        &entry,
+        r#"
+            use crate::api::{alpha, beta as b, nested::{delta, epsilon}};
+            fn main() -> i32 { alpha() + b() + delta() + epsilon() }
+        "#,
+    )
+    .unwrap();
+
+    let interpreted = Engine::new().eval_file(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+    assert_eq!(interpreted, Value::I32(42));
+    assert_eq!(compiled, interpreted);
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn project_source_ids_survive_bytecode_round_trip_and_locate_runtime_errors() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

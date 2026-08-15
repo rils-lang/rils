@@ -764,11 +764,24 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
             "unity.math",
         )
         .unwrap();
+    contract
+        .register_function(
+            101,
+            "unity_engine::math::one",
+            FunctionSignature::fixed(Vec::new(), Type::I32),
+            "unity.math",
+        )
+        .unwrap();
 
-    let module = compile_with_host("use unity_engine::math::add; add(20, 22)", &contract).unwrap();
-    assert_eq!(module.imports().len(), 1);
-    assert_eq!(module.imports()[0].name, "unity_engine::math::add");
-    assert_eq!(module.imports()[0].capability, "unity.math");
+    let module =
+        compile_with_host("use unity_engine::math::*; add(20, 21) + one()", &contract).unwrap();
+    assert_eq!(module.imports().len(), 2);
+    assert!(
+        module
+            .imports()
+            .iter()
+            .all(|import| import.capability == "unity.math")
+    );
 
     let mut host = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION);
     host.allow_capability("unity.math");
@@ -780,6 +793,13 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
             [Value::I32(left), Value::I32(right)] => Ok(Value::I32(left + right)),
             _ => Err("unexpected arguments".into()),
         },
+    )
+    .unwrap();
+    host.register_function(
+        "unity_engine::math::one",
+        FunctionSignature::fixed(Vec::new(), Type::I32),
+        "unity.math",
+        |_| Ok(Value::I32(1)),
     )
     .unwrap();
 
@@ -1250,6 +1270,72 @@ fn compiles_inline_modules_qualified_calls_and_use_aliases() {
                 first::value() + second::value()
             "#,
     );
+}
+
+#[test]
+fn grouped_and_glob_imports_match_interpreter() {
+    assert_matches_interpreter(
+        r#"
+            mod api {
+                pub fn alpha() -> i32 { 10 }
+                pub fn beta() -> i32 { 11 }
+                pub mod nested {
+                    pub fn delta() -> i32 { 9 }
+                    pub fn epsilon() -> i32 { 12 }
+                }
+            }
+            use api::{alpha, beta as b, nested::{delta, epsilon}};
+            alpha() + b() + delta() + epsilon()
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            mod api {
+                pub fn left() -> i32 { 20 }
+                pub fn right() -> i32 { 22 }
+                fn hidden() -> i32 { 100 }
+            }
+            use api::*;
+            left() + right()
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            mod model { pub struct Point { value: i32 } }
+            use model::*;
+            let point = Point { value: 42 };
+            point.value
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            mod api {
+                pub mod nested { pub fn answer() -> i32 { 42 } }
+            }
+            use api::*;
+            nested::answer()
+        "#,
+    );
+    assert_matches_interpreter(
+        r#"
+            mod api {
+                pub mod nested { pub fn answer() -> i32 { 42 } }
+            }
+            use api::nested as n;
+            n::answer()
+        "#,
+    );
+
+    let error = compile(
+        r#"
+            mod api { fn hidden() -> i32 { 42 } }
+            use api::*;
+            hidden()
+        "#,
+    )
+    .err()
+    .expect("glob import must not expose private members");
+    assert!(error.message.contains("hidden"));
 }
 
 #[test]

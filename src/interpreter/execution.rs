@@ -79,10 +79,10 @@ impl Interpreter {
                 };
                 let members = Environment::module_child(environment.clone());
                 self.execute_statements(statements, members.clone())?;
-                let public = statements
-                    .iter()
-                    .filter_map(public_name)
-                    .collect::<std::collections::HashSet<_>>();
+                let mut public = std::collections::HashSet::new();
+                for statement in statements {
+                    public.extend(public_names(statement, &members)?);
+                }
                 environment.borrow_mut().define(
                     name.clone(),
                     Value::Module(Rc::new(ModuleValue {
@@ -95,20 +95,55 @@ impl Interpreter {
                 );
                 Ok(Flow::Value(Value::Unit))
             }
-            Stmt::Use {
-                path, alias, span, ..
-            } => {
-                let value = resolve_visible_path(path, &environment, *span)?;
-                let name = alias
-                    .clone()
-                    .unwrap_or_else(|| path.last().expect("use path is non-empty").clone());
-                if environment.borrow().contains_local(&name) {
-                    return Err(RuntimeError::new(
-                        format!("name `{name}` is already defined"),
-                        *span,
-                    ));
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    if import.kind == crate::ast::UseImportKind::Glob {
+                        let value = resolve_visible_path(&import.path, &environment, import.span)?;
+                        let Value::Module(module) = value else {
+                            return Err(RuntimeError::new(
+                                "glob import target must be a module",
+                                import.span,
+                            ));
+                        };
+                        let mut names = module.public.borrow().iter().cloned().collect::<Vec<_>>();
+                        names.sort();
+                        if let Some(name) = names
+                            .iter()
+                            .find(|name| environment.borrow().contains_local(name))
+                        {
+                            return Err(RuntimeError::new(
+                                format!("name `{name}` is already defined"),
+                                import.span,
+                            ));
+                        }
+                        let values = names
+                            .into_iter()
+                            .map(|name| {
+                                let value =
+                                    module.members.borrow().get(&name).ok_or_else(|| {
+                                        RuntimeError::new(
+                                            format!("module export `{name}` is unavailable"),
+                                            import.span,
+                                        )
+                                    })?;
+                                Ok((name, value))
+                            })
+                            .collect::<Result<Vec<_>, RuntimeError>>()?;
+                        for (name, value) in values {
+                            environment.borrow_mut().define(name, value, false, None);
+                        }
+                        continue;
+                    }
+                    let value = resolve_visible_path(&import.path, &environment, import.span)?;
+                    let name = import.binding_name().expect("single import").to_owned();
+                    if environment.borrow().contains_local(&name) {
+                        return Err(RuntimeError::new(
+                            format!("name `{name}` is already defined"),
+                            import.span,
+                        ));
+                    }
+                    environment.borrow_mut().define(name, value, false, None);
                 }
-                environment.borrow_mut().define(name, value, false, None);
                 Ok(Flow::Value(Value::Unit))
             }
             Stmt::Let {
@@ -860,20 +895,40 @@ fn unwrap_public(statement: &Stmt) -> &Stmt {
     }
 }
 
-fn public_name(statement: &Stmt) -> Option<String> {
+fn public_names(
+    statement: &Stmt,
+    environment: &EnvironmentRef,
+) -> Result<Vec<String>, RuntimeError> {
     let Stmt::Public { statement, .. } = statement else {
-        return None;
+        return Ok(Vec::new());
     };
-    match statement.as_ref() {
+    Ok(match statement.as_ref() {
         Stmt::Function { name, .. }
         | Stmt::Struct { name, .. }
         | Stmt::Enum { name, .. }
         | Stmt::TypeAlias { name, .. }
         | Stmt::Trait { name, .. }
-        | Stmt::Module { name, .. } => Some(name.clone()),
-        Stmt::Use { path, alias, .. } => alias.clone().or_else(|| path.last().cloned()),
-        _ => None,
-    }
+        | Stmt::Module { name, .. } => vec![name.clone()],
+        Stmt::Use { imports, .. } => {
+            let mut names = Vec::new();
+            for import in imports {
+                if let Some(name) = import.binding_name() {
+                    names.push(name.to_owned());
+                } else {
+                    let value = resolve_visible_path(&import.path, environment, import.span)?;
+                    let Value::Module(module) = value else {
+                        return Err(RuntimeError::new(
+                            "glob import target must be a module",
+                            import.span,
+                        ));
+                    };
+                    names.extend(module.public.borrow().iter().cloned());
+                }
+            }
+            names
+        }
+        _ => Vec::new(),
+    })
 }
 
 pub(super) fn resolve_visible_path(

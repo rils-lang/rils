@@ -1,6 +1,6 @@
 //! Symbol discovery performed before expression lowering.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{Block, Parameter, Stmt},
@@ -174,35 +174,102 @@ pub(super) fn collect_use_aliases(
     prefix: &mut Vec<String>,
     functions: &mut HashMap<String, FunctionId>,
     types: &mut HashMap<String, TypeId>,
+    public_symbols: &HashSet<String>,
 ) {
     for statement in statements {
         match unwrapped_statement(statement) {
-            Stmt::Use { path, alias, .. } => {
-                let absolute = path.join("::");
-                let anchored = resolve_anchored_path(prefix, path);
-                let relative = if prefix.is_empty() {
-                    absolute.clone()
-                } else {
-                    format!("{}::{absolute}", prefix.join("::"))
-                };
-                let alias = alias
-                    .as_deref()
-                    .or_else(|| path.last().map(String::as_str))
-                    .expect("use paths are non-empty")
-                    .to_string();
-                if let Some(id) = functions
-                    .get(anchored.as_deref().unwrap_or(&absolute))
-                    .or_else(|| functions.get(&relative))
-                    .copied()
-                {
-                    functions.insert(qualified_name(prefix, &alias), id);
-                }
-                if let Some(id) = types
-                    .get(anchored.as_deref().unwrap_or(&absolute))
-                    .or_else(|| types.get(&relative))
-                    .copied()
-                {
-                    types.insert(qualified_name(prefix, &alias), id);
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    let candidates = use_resolution_candidates(prefix, &import.path);
+                    if import.kind == crate::ast::UseImportKind::Glob {
+                        let function_members = functions
+                            .iter()
+                            .filter_map(|(name, id)| {
+                                if !public_symbols.contains(name) {
+                                    return None;
+                                }
+                                let member = candidates
+                                    .iter()
+                                    .find_map(|candidate| immediate_path_member(name, candidate))?;
+                                Some((member.to_owned(), *id))
+                            })
+                            .collect::<Vec<_>>();
+                        let type_members = types
+                            .iter()
+                            .filter_map(|(name, id)| {
+                                if !public_symbols.contains(name) {
+                                    return None;
+                                }
+                                let member = candidates
+                                    .iter()
+                                    .find_map(|candidate| immediate_path_member(name, candidate))?;
+                                Some((member.to_owned(), *id))
+                            })
+                            .collect::<Vec<_>>();
+                        for (name, id) in function_members {
+                            functions.insert(qualified_name(prefix, &name), id);
+                        }
+                        for (name, id) in type_members {
+                            types.insert(qualified_name(prefix, &name), id);
+                        }
+                        let public_modules = public_symbols
+                            .iter()
+                            .filter(|symbol| {
+                                candidates.iter().any(|candidate| {
+                                    immediate_path_member(symbol, candidate).is_some()
+                                }) && functions.keys().chain(types.keys()).any(|name| {
+                                    name.strip_prefix(symbol.as_str())
+                                        .is_some_and(|rest| rest.starts_with("::"))
+                                })
+                            })
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        for module in public_modules {
+                            let name = module.rsplit("::").next().expect("module name");
+                            let destination = qualified_name(prefix, name);
+                            alias_public_module_members(
+                                functions,
+                                &module,
+                                &destination,
+                                public_symbols,
+                            );
+                            alias_public_module_members(
+                                types,
+                                &module,
+                                &destination,
+                                public_symbols,
+                            );
+                        }
+                        continue;
+                    }
+                    let alias = import.binding_name().expect("single import");
+                    if let Some(id) = candidates
+                        .iter()
+                        .find_map(|candidate| functions.get(candidate))
+                        .copied()
+                    {
+                        functions.insert(qualified_name(prefix, alias), id);
+                    }
+                    if let Some(id) = candidates
+                        .iter()
+                        .find_map(|candidate| types.get(candidate))
+                        .copied()
+                    {
+                        types.insert(qualified_name(prefix, alias), id);
+                    }
+                    for module in candidates
+                        .iter()
+                        .filter(|candidate| public_symbols.contains(*candidate))
+                    {
+                        let destination = qualified_name(prefix, alias);
+                        alias_public_module_members(
+                            functions,
+                            module,
+                            &destination,
+                            public_symbols,
+                        );
+                        alias_public_module_members(types, module, &destination, public_symbols);
+                    }
                 }
             }
             Stmt::Module {
@@ -211,12 +278,73 @@ pub(super) fn collect_use_aliases(
                 ..
             } => {
                 prefix.push(name.clone());
-                collect_use_aliases(module_statements, prefix, functions, types);
+                collect_use_aliases(module_statements, prefix, functions, types, public_symbols);
                 prefix.pop();
             }
             _ => {}
         }
     }
+}
+
+pub(super) fn collect_public_symbols(
+    statements: &[Stmt],
+    prefix: &mut Vec<String>,
+    output: &mut HashSet<String>,
+) {
+    for statement in statements {
+        let (statement, public) = match statement {
+            Stmt::Public { statement, .. } => (statement.as_ref(), true),
+            statement => (statement, false),
+        };
+        if public {
+            match statement {
+                Stmt::Function { name, .. }
+                | Stmt::Struct { name, .. }
+                | Stmt::Enum { name, .. }
+                | Stmt::TypeAlias { name, .. }
+                | Stmt::Module { name, .. } => {
+                    output.insert(qualified_name(prefix, name));
+                }
+                Stmt::Use { imports, .. } => {
+                    for import in imports {
+                        if let Some(name) = import.binding_name() {
+                            output.insert(qualified_name(prefix, name));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Stmt::Module {
+            name,
+            statements: Some(statements),
+            ..
+        } = statement
+        {
+            prefix.push(name.clone());
+            collect_public_symbols(statements, prefix, output);
+            prefix.pop();
+        }
+    }
+}
+
+fn alias_public_module_members<T: Copy>(
+    symbols: &mut HashMap<String, T>,
+    source: &str,
+    destination: &str,
+    public_symbols: &HashSet<String>,
+) {
+    let prefix = format!("{source}::");
+    let aliases = symbols
+        .iter()
+        .filter_map(|(name, id)| {
+            let remainder = name.strip_prefix(&prefix)?;
+            public_symbols
+                .contains(name)
+                .then(|| (format!("{destination}::{remainder}"), *id))
+        })
+        .collect::<Vec<_>>();
+    symbols.extend(aliases);
 }
 
 pub(super) fn resolve_anchored_path(prefix: &[String], path: &[String]) -> Option<String> {
@@ -245,6 +373,29 @@ pub(super) fn resolve_anchored_path(prefix: &[String], path: &[String]) -> Optio
         }
     }
     Some(output.join("::"))
+}
+
+pub(super) fn use_resolution_candidates(prefix: &[String], path: &[String]) -> Vec<String> {
+    let absolute = path.join("::");
+    let mut candidates = Vec::new();
+    if let Some(anchored) = resolve_anchored_path(prefix, path) {
+        candidates.push(anchored);
+    } else {
+        if !prefix.is_empty() {
+            candidates.push(format!("{}::{absolute}", prefix.join("::")));
+        }
+        candidates.push(absolute);
+    }
+    candidates
+}
+
+pub(super) fn immediate_path_member<'a>(name: &'a str, prefix: &str) -> Option<&'a str> {
+    let member = if prefix.is_empty() {
+        name
+    } else {
+        name.strip_prefix(prefix)?.strip_prefix("::")?
+    };
+    (!member.is_empty() && !member.contains("::")).then_some(member)
 }
 
 pub(super) fn collect_method_symbols(

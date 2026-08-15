@@ -8,6 +8,11 @@ use crate::{
     types::{FunctionSignature, Type},
 };
 
+#[path = "analysis/imports.rs"]
+mod imports;
+
+use imports::{ModuleExport, collect_module_exports};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SymbolKind {
     Variable,
@@ -104,7 +109,7 @@ pub fn analyze_program_with_host_functions(
     program: &Program,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> DocumentAnalysis {
-    Analyzer::new(SourceId::UNKNOWN, host_functions).analyze(program)
+    Analyzer::new(SourceId::UNKNOWN, host_functions, program).analyze(program)
 }
 
 pub fn analyze(source: &str) -> Result<DocumentAnalysis, FrontendError> {
@@ -126,13 +131,16 @@ pub fn analyze_with_source_id(
 ) -> Result<DocumentAnalysis, FrontendError> {
     let tokens = crate::lexer::lex_with_source_id(source, source_id).map_err(FrontendError::Lex)?;
     let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
-    Ok(Analyzer::new(source_id, host_functions).analyze(&program))
+    Ok(Analyzer::new(source_id, host_functions, &program).analyze(&program))
 }
 
 struct Analyzer {
     source_id: SourceId,
     next_symbol: HashMap<SourceId, u32>,
     scopes: Vec<HashMap<String, Definition>>,
+    glob_imports: Vec<bool>,
+    module_path: Vec<String>,
+    module_exports: HashMap<String, Vec<ModuleExport>>,
     trait_members: HashMap<(String, String), Span>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
     host_functions: HashMap<String, FunctionSignature>,
@@ -140,7 +148,11 @@ struct Analyzer {
 }
 
 impl Analyzer {
-    fn new(source_id: SourceId, host_functions: &HashMap<String, FunctionSignature>) -> Self {
+    fn new(
+        source_id: SourceId,
+        host_functions: &HashMap<String, FunctionSignature>,
+        program: &Program,
+    ) -> Self {
         let mut globals = HashMap::new();
         for name in [
             "#rils_native_print",
@@ -227,6 +239,9 @@ impl Analyzer {
             source_id,
             next_symbol: HashMap::new(),
             scopes: vec![globals],
+            glob_imports: vec![false],
+            module_path: Vec::new(),
+            module_exports: collect_module_exports(&program.statements),
             trait_members: HashMap::new(),
             type_aliases: HashMap::new(),
             host_functions: host_functions.clone(),
@@ -385,54 +400,12 @@ impl Analyzer {
             } => {
                 self.define(name, *name_span, SymbolKind::Module);
                 if let Some(statements) = statements {
+                    self.module_path.push(name.clone());
                     self.with_scope(|analyzer| analyzer.statements(statements));
+                    self.module_path.pop();
                 }
             }
-            Stmt::Use {
-                path,
-                alias,
-                alias_span,
-                span,
-            } => {
-                if let Some(first) = path.first() {
-                    self.reference(
-                        first,
-                        Span::new(
-                            span.start + "use ".len(),
-                            span.start + "use ".len() + first.len(),
-                        ),
-                        SymbolKind::Module,
-                    );
-                }
-                let mut offset = span.start + "use ".len();
-                for (index, segment) in path.iter().enumerate().skip(1) {
-                    offset += path[index - 1].len() + 2;
-                    self.result.symbols.push(SymbolOccurrence {
-                        name: segment.clone(),
-                        span: Span::new(offset, offset + segment.len()),
-                        definition_span: None,
-                        symbol_id: None,
-                        definition_id: None,
-                        kind: if index + 1 == path.len() {
-                            SymbolKind::Function
-                        } else {
-                            SymbolKind::Module
-                        },
-                        is_definition: false,
-                        inferred_type: None,
-                        detail: None,
-                    });
-                }
-                let name = alias.as_ref().or_else(|| path.last()).expect("use path");
-                let name_span = alias_span
-                    .unwrap_or_else(|| Span::new(span.end - 1 - name.len(), span.end - 1));
-                let kind = if name.chars().next().is_some_and(char::is_uppercase) {
-                    SymbolKind::Type
-                } else {
-                    SymbolKind::Function
-                };
-                self.define(name, name_span, kind);
-            }
+            Stmt::Use { imports, .. } => imports::analyze(self, imports),
             Stmt::Let {
                 name,
                 name_span,
@@ -926,10 +899,12 @@ impl Analyzer {
                 detail: None,
             });
         } else {
-            self.result.diagnostics.push(AnalysisDiagnostic::error(
-                format!("undefined name `{name}`"),
-                span,
-            ));
+            if !self.glob_imports.iter().rev().any(|has_glob| *has_glob) {
+                self.result.diagnostics.push(AnalysisDiagnostic::error(
+                    format!("undefined name `{name}`"),
+                    span,
+                ));
+            }
             self.result.symbols.push(SymbolOccurrence {
                 name: name.into(),
                 span,
@@ -1110,7 +1085,9 @@ impl Analyzer {
 
     fn with_scope(&mut self, action: impl FnOnce(&mut Self)) {
         self.scopes.push(HashMap::new());
+        self.glob_imports.push(false);
         action(self);
+        self.glob_imports.pop();
         self.scopes.pop();
     }
 }

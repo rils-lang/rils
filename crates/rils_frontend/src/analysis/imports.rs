@@ -1,0 +1,190 @@
+//! Static symbol registration for flattened `use` trees.
+
+use std::collections::HashMap;
+
+use crate::{
+    ast::{Stmt, UseImport, UseImportKind},
+    source::Span,
+};
+
+use super::{AnalysisDiagnostic, Analyzer, Definition, SymbolKind, SymbolOccurrence};
+
+#[derive(Clone)]
+pub(super) struct ModuleExport {
+    pub(super) name: String,
+    pub(super) span: Span,
+    pub(super) kind: SymbolKind,
+}
+
+pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
+    for import in imports {
+        for (index, (segment, segment_span)) in
+            import.path.iter().zip(&import.path_spans).enumerate()
+        {
+            if index == 0 {
+                analyzer.reference(segment, *segment_span, SymbolKind::Module);
+            } else {
+                analyzer.result.symbols.push(SymbolOccurrence {
+                    name: segment.clone(),
+                    span: *segment_span,
+                    definition_span: None,
+                    symbol_id: None,
+                    definition_id: None,
+                    kind: if index + 1 == import.path.len() && import.kind == UseImportKind::Single
+                    {
+                        SymbolKind::Function
+                    } else {
+                        SymbolKind::Module
+                    },
+                    is_definition: false,
+                    inferred_type: None,
+                    detail: None,
+                });
+            }
+        }
+        let Some(name) = import.binding_name() else {
+            import_glob(analyzer, import);
+            continue;
+        };
+        let name_span = import.alias_span.unwrap_or(import.name_span);
+        let kind = if name.chars().next().is_some_and(char::is_uppercase) {
+            SymbolKind::Type
+        } else {
+            SymbolKind::Function
+        };
+        analyzer.define(name, name_span, kind);
+    }
+}
+
+fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {
+    let exports = module_candidates(&analyzer.module_path, &import.path)
+        .iter()
+        .find_map(|module| analyzer.module_exports.get(module))
+        .cloned();
+    let Some(exports) = exports else {
+        *analyzer.glob_imports.last_mut().expect("scope exists") = true;
+        return;
+    };
+    for export in exports {
+        if analyzer
+            .scopes
+            .last()
+            .is_some_and(|scope| scope.contains_key(&export.name))
+        {
+            analyzer.result.diagnostics.push(AnalysisDiagnostic::error(
+                format!("`{}` is already defined in this scope", export.name),
+                import.span,
+            ));
+            continue;
+        }
+        analyzer.scopes.last_mut().expect("scope exists").insert(
+            export.name,
+            Definition {
+                span: Some(export.span),
+                id: None,
+                kind: export.kind,
+            },
+        );
+    }
+}
+
+pub(super) fn collect_module_exports(statements: &[Stmt]) -> HashMap<String, Vec<ModuleExport>> {
+    fn visit(
+        statements: &[Stmt],
+        prefix: &mut Vec<String>,
+        output: &mut HashMap<String, Vec<ModuleExport>>,
+    ) {
+        for statement in statements {
+            let statement = match statement {
+                Stmt::Public { statement, .. } => statement.as_ref(),
+                statement => statement,
+            };
+            let Stmt::Module {
+                name,
+                statements: Some(module_statements),
+                ..
+            } = statement
+            else {
+                continue;
+            };
+            prefix.push(name.clone());
+            output.insert(
+                prefix.join("::"),
+                module_statements.iter().filter_map(public_export).collect(),
+            );
+            visit(module_statements, prefix, output);
+            prefix.pop();
+        }
+    }
+
+    let mut output = HashMap::new();
+    visit(statements, &mut Vec::new(), &mut output);
+    output
+}
+
+fn public_export(statement: &Stmt) -> Option<ModuleExport> {
+    let Stmt::Public { statement, .. } = statement else {
+        return None;
+    };
+    let (name, span, kind) = match statement.as_ref() {
+        Stmt::Function {
+            name, name_span, ..
+        } => (name, *name_span, SymbolKind::Function),
+        Stmt::Struct {
+            name, name_span, ..
+        }
+        | Stmt::Enum {
+            name, name_span, ..
+        }
+        | Stmt::TypeAlias {
+            name, name_span, ..
+        } => (name, *name_span, SymbolKind::Type),
+        Stmt::Trait {
+            name, name_span, ..
+        } => (name, *name_span, SymbolKind::Trait),
+        Stmt::Module {
+            name, name_span, ..
+        } => (name, *name_span, SymbolKind::Module),
+        _ => return None,
+    };
+    Some(ModuleExport {
+        name: name.clone(),
+        span,
+        kind,
+    })
+}
+
+fn module_candidates(prefix: &[String], path: &[String]) -> Vec<String> {
+    let Some(first) = path.first().map(String::as_str) else {
+        return Vec::new();
+    };
+    if matches!(first, "crate" | "self" | "super") {
+        let mut output = match first {
+            "crate" => Vec::new(),
+            "self" => prefix.to_vec(),
+            "super" => {
+                let mut output = prefix.to_vec();
+                output.pop();
+                output
+            }
+            _ => unreachable!(),
+        };
+        for segment in path.iter().skip(1) {
+            match segment.as_str() {
+                "crate" => output.clear(),
+                "self" => {}
+                "super" => {
+                    output.pop();
+                }
+                _ => output.push(segment.clone()),
+            }
+        }
+        return vec![output.join("::")];
+    }
+    let absolute = path.join("::");
+    if prefix.is_empty() {
+        vec![absolute]
+    } else {
+        vec![format!("{}::{absolute}", prefix.join("::")), absolute]
+    }
+}

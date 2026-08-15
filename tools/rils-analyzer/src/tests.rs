@@ -713,6 +713,98 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         }))
         .unwrap();
     assert_eq!(references.as_array().map(Vec::len), Some(2));
+
+    let source_id = server.documents[&uri].source_id;
+    let grouped = "use crate::math::{a";
+    server.documents.insert(
+        uri.clone(),
+        Document {
+            source_id,
+            text: grouped.into(),
+            analysis: rils_frontend::analysis::analyze_with_source_id(
+                grouped,
+                source_id,
+                &server.host_functions,
+            ),
+        },
+    );
+    let completion = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": grouped.len() }
+        }))
+        .unwrap();
+    assert!(completion.as_array().is_some_and(|items| {
+        items.iter().any(|item| item["label"] == "add")
+            && !items.iter().any(|item| item["label"] == "hidden")
+    }));
+
+    let grouped_valid = "use crate::math::{add};\nfn main() { add(1, 2); }";
+    server.documents.insert(
+        uri.clone(),
+        Document {
+            source_id,
+            text: grouped_valid.into(),
+            analysis: rils_frontend::analysis::analyze_with_source_id(
+                grouped_valid,
+                source_id,
+                &server.host_functions,
+            ),
+        },
+    );
+    let definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 13 }
+        }))
+        .unwrap();
+    assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
+
+    let glob = "use crate::math::*;\nfn main() { add(1, 2); }";
+    server.documents.insert(
+        uri.clone(),
+        Document {
+            source_id,
+            text: glob.into(),
+            analysis: rils_frontend::analysis::analyze_with_source_id(
+                glob,
+                source_id,
+                &server.host_functions,
+            ),
+        },
+    );
+    let definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 13 }
+        }))
+        .unwrap();
+    assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
+
+    let grouped_alias = "use crate::{math as m};\nfn main() { m::a }";
+    server.documents.insert(
+        uri.clone(),
+        Document {
+            source_id,
+            text: grouped_alias.into(),
+            analysis: rils_frontend::analysis::analyze_with_source_id(
+                grouped_alias,
+                source_id,
+                &server.host_functions,
+            ),
+        },
+    );
+    let completion = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 16 }
+        }))
+        .unwrap();
+    assert!(
+        completion
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item["label"] == "add"))
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

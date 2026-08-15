@@ -221,16 +221,12 @@ impl<'a> Checker<'a> {
             } => self.statements(statements),
             Stmt::Module {
                 name, name_span, ..
-            }
-            | Stmt::Use {
-                alias: Some(name),
-                alias_span: Some(name_span),
-                ..
             } => self.define(name, *name_span, false),
-            Stmt::Use { path, span, .. } => {
-                if let Some(name) = path.last() {
-                    let name_span = Span::new(span.end - 1 - name.len(), span.end - 1);
-                    self.define(name, name_span, false);
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    if let Some(name) = import.binding_name() {
+                        self.define(name, import.alias_span.unwrap_or(import.name_span), false);
+                    }
                 }
             }
             Stmt::Let {

@@ -5,3 +5,7 @@ fn internal_value() -> i32 {
 pub fn answer() -> i32 {
     internal_value() + 2
 }
+
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
