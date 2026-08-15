@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
+import heapq
 import json
 import os
 from pathlib import Path
@@ -16,10 +18,6 @@ from urllib.request import Request, urlopen
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
-RELEASE_PACKAGES = ("rils_frontend", "rils_compiler", "rils")
-WORKSPACE_PACKAGES = (*RELEASE_PACKAGES, "rils_analyzer")
-
-
 def command_path(name: str) -> str:
     path = shutil.which(name)
     if path is None:
@@ -58,21 +56,62 @@ def workspace_metadata(cargo: str) -> dict[str, object]:
     return json.loads(result.stdout)
 
 
-def workspace_version(metadata: dict[str, object]) -> str:
-    packages = {
-        package["name"]: package["version"]
-        for package in metadata["packages"]  # type: ignore[index]
-        if package["name"] in WORKSPACE_PACKAGES
+def publishable_packages(metadata: dict[str, object]) -> dict[str, dict[str, object]]:
+    packages = metadata.get("packages")
+    if not isinstance(packages, list):
+        raise RuntimeError("cargo metadata did not return a package list")
+    publishable = {
+        str(package["name"]): package
+        for package in packages
+        if isinstance(package, dict) and package.get("publish")
     }
-    missing = sorted(set(WORKSPACE_PACKAGES) - packages.keys())
-    if missing:
-        raise RuntimeError(f"Cargo workspace packages are missing: {', '.join(missing)}")
+    if not publishable:
+        raise RuntimeError("workspace has no publishable packages")
+    return publishable
 
-    versions = set(packages.values())
+
+def workspace_version(packages: dict[str, dict[str, object]]) -> str:
+    versions = {str(package["version"]) for package in packages.values()}
     if len(versions) != 1:
-        summary = ", ".join(f"{name}={version}" for name, version in packages.items())
+        summary = ", ".join(f"{name}={package['version']}" for name, package in packages.items())
         raise RuntimeError(f"Workspace package versions do not match: {summary}")
     return str(versions.pop())
+
+
+def publish_order(packages: dict[str, dict[str, object]]) -> list[str]:
+    """Return a deterministic dependency-first order for publishable crates."""
+    dependents: dict[str, set[str]] = defaultdict(set)
+    indegree = {name: 0 for name in packages}
+    for name, package in packages.items():
+        dependencies = package.get("dependencies", [])
+        if not isinstance(dependencies, list):
+            continue
+        for dependency in dependencies:
+            if not isinstance(dependency, dict):
+                continue
+            dependency_name = dependency.get("name")
+            if dependency_name not in packages or dependency.get("path") is None:
+                continue
+            dependents[str(dependency_name)].add(name)
+            indegree[name] += 1
+
+    ready = [name for name, degree in indegree.items() if degree == 0]
+    heapq.heapify(ready)
+    order = []
+    while ready:
+        name = heapq.heappop(ready)
+        order.append(name)
+        for dependent in sorted(dependents[name]):
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                heapq.heappush(ready, dependent)
+    if len(order) != len(packages):
+        cyclic = sorted(name for name, degree in indegree.items() if degree > 0)
+        raise RuntimeError(
+            "publishable workspace packages contain a dependency cycle: "
+            + ", ".join(cyclic)
+        )
+    return order
 
 
 def crate_is_available(package: str, version: str) -> bool:
@@ -134,7 +173,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--publish",
         action="store_true",
-        help="publish rils_frontend, rils_compiler, and rils to crates.io",
+        help="publish all workspace packages with publish metadata to crates.io",
     )
     return parser.parse_args()
 
@@ -150,12 +189,17 @@ def main() -> int:
         assert_clean_worktree(git)
 
     metadata = workspace_metadata(cargo)
-    version = workspace_version(metadata)
+    packages = publishable_packages(metadata)
+    order = publish_order(packages)
+    version = workspace_version(packages)
     target_directory = Path(str(metadata["target_directory"]))
     artifact_directory = target_directory / "release-artifacts" / f"v{version}"
+    if artifact_directory.exists():
+        shutil.rmtree(artifact_directory)
     artifact_directory.mkdir(parents=True, exist_ok=True)
 
     print(f"Preparing Rils v{version}")
+    print(f"Publish order: {' -> '.join(order)}")
     print(f"Artifacts: {artifact_directory}")
 
     run([cargo, "fmt", "--check"])
@@ -167,12 +211,12 @@ def main() -> int:
     copy_binary(target_directory, artifact_directory, "rils-analyzer")
 
     if args.publish:
-        for index, package in enumerate(RELEASE_PACKAGES):
+        for index, package in enumerate(order):
             if crate_is_available(package, version):
                 print(f"Skipping already published {package} v{version}", flush=True)
             else:
                 run([cargo, "publish", "-p", package])
-            if index < len(RELEASE_PACKAGES) - 1:
+            if index < len(order) - 1:
                 wait_for_crate(package, version)
 
     print("Rils release completed successfully:")
