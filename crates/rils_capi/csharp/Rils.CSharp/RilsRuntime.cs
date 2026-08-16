@@ -121,6 +121,26 @@ namespace Rils.CSharp
             return manifest;
         }
 
+        /// Freezes the host declaration contract without installing managed callbacks.
+        public void FreezeHostRegistry()
+        {
+            EnsureUsable();
+            NativeInterop.Check(NativeMethods.RuntimeFreezeHostRegistry(_handle));
+        }
+
+        public unsafe void AllowCapability(string capability)
+        {
+            if (capability == null) throw new ArgumentNullException(nameof(capability));
+            EnsureUsable();
+            byte[] bytes = Encoding.UTF8.GetBytes(capability);
+            fixed (byte* pointer = bytes)
+            {
+                NativeInterop.Check(NativeMethods.RuntimeAllowCapability(
+                    _handle,
+                    NativeInterop.Slice(pointer, bytes.Length)));
+            }
+        }
+
         public unsafe RilsModule Compile(string source, string sourceName = "<memory>")
         {
             if (source == null) throw new ArgumentNullException(nameof(source));

@@ -10,7 +10,7 @@ use serde::Deserialize;
 pub const PROJECT_FILE_NAME: &str = "rils.toml";
 pub const DEFAULT_HOST_MANIFEST_PATHS: &[&str] =
     &[".rils/host.rilhm", "host.rilhm", "rils-host.rilhm"];
-pub const DEFAULT_HOST_MANIFEST_DIR: &str = ".rils/manifests";
+pub const DEFAULT_HOST_MANIFEST_DIR: &str = ".rils/manifest";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Project {
@@ -572,11 +572,11 @@ mod tests {
     fn discovers_recursive_manifest_fragments_in_stable_order() {
         let root = temporary_project();
         fs::create_dir_all(root.join("scripts")).unwrap();
-        fs::create_dir_all(root.join(".rils/manifests/unity")).unwrap();
-        fs::create_dir_all(root.join(".rils/manifests/project")).unwrap();
+        fs::create_dir_all(root.join(".rils/manifest/unity")).unwrap();
+        fs::create_dir_all(root.join(".rils/manifest/project")).unwrap();
         fs::write(root.join("scripts/main.rils"), "fn main() {}").unwrap();
-        fs::write(root.join(".rils/manifests/unity/physics.rilhm"), b"a").unwrap();
-        fs::write(root.join(".rils/manifests/project/game.rilhm"), b"b").unwrap();
+        fs::write(root.join(".rils/manifest/unity/physics.rilhm"), b"a").unwrap();
+        fs::write(root.join(".rils/manifest/project/game.rilhm"), b"b").unwrap();
         fs::write(
             root.join(PROJECT_FILE_NAME),
             "[project]\nname = \"game\"\nscript_paths = [\"scripts\"]\n",

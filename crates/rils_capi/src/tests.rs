@@ -28,6 +28,38 @@ unsafe extern "C" fn add_dispatcher(
     RILS_STATUS_OK
 }
 
+unsafe extern "C" fn handle_dispatcher(
+    _user_data: *mut c_void,
+    function_id: u64,
+    arguments: *const RilsValue,
+    argument_count: usize,
+    out_value: *mut RilsValue,
+    _out_error: *mut RilsSlice,
+) -> i32 {
+    if arguments.is_null() || out_value.is_null() {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    let arguments = unsafe { slice::from_raw_parts(arguments, argument_count) };
+    match function_id {
+        101 if argument_count == 0 => {}
+        102 if argument_count == 1 && arguments[0].tag == RILS_VALUE_HOST_HANDLE => {}
+        _ => return RILS_STATUS_INVALID_ARGUMENT,
+    }
+    unsafe {
+        out_value.write(RilsValue {
+            tag: RILS_VALUE_HOST_HANDLE,
+            reserved: 0,
+            low: if function_id == 101 {
+                77
+            } else {
+                arguments[0].low
+            },
+            high: (3_u64 << 32) | 9,
+        });
+    }
+    RILS_STATUS_OK
+}
+
 fn bytes(value: &str) -> RilsSlice {
     RilsSlice {
         data: value.as_ptr(),
@@ -96,6 +128,68 @@ fn registers_freezes_and_dispatches_custom_host_functions() {
 }
 
 #[test]
+fn dispatches_opaque_host_handles_through_bytecode() {
+    let runtime = rils_runtime_create();
+    let no_parameters: [u32; 0] = [];
+    let handle_parameter = [RILS_VALUE_HOST_HANDLE];
+    let descriptors = [
+        RilsHostFunction {
+            function_id: 101,
+            name: bytes("unity_engine::object::get"),
+            capability: bytes("unity.object"),
+            parameter_tags: no_parameters.as_ptr(),
+            parameter_count: 0,
+            return_tag: RILS_VALUE_HOST_HANDLE,
+            reserved: 0,
+        },
+        RilsHostFunction {
+            function_id: 102,
+            name: bytes("unity_engine::object::echo"),
+            capability: bytes("unity.object"),
+            parameter_tags: handle_parameter.as_ptr(),
+            parameter_count: 1,
+            return_tag: RILS_VALUE_HOST_HANDLE,
+            reserved: 0,
+        },
+    ];
+    assert_eq!(
+        unsafe { rils_runtime_register_host_functions(runtime, descriptors.as_ptr(), 2) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        rils_runtime_set_host_dispatcher(runtime, Some(handle_dispatcher), ptr::null_mut()),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        unsafe { rils_runtime_allow_capability(runtime, bytes("unity.object")) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+
+    let source = "fn echo(handle: HostHandle) -> HostHandle { unity_engine::object::echo(handle) } fn run() -> HostHandle { echo(unity_engine::object::get()) } run()";
+    let mut module = 0;
+    assert_eq!(
+        unsafe { rils_module_compile(runtime, bytes("handle.rils"), bytes(source), &mut module) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_module_validate_host(runtime, module), RILS_STATUS_OK);
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(result.tag, RILS_VALUE_HOST_HANDLE);
+    assert_eq!(result.low, 77);
+    assert_eq!(result.high, (3_u64 << 32) | 9);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
 fn registers_and_exports_canonical_host_manifest() {
     let mut contract = HostContract::new();
     contract.register_module("unity_engine::math", 3).unwrap();
@@ -137,6 +231,117 @@ fn registers_and_exports_canonical_host_manifest() {
     );
     assert_eq!(written, size);
     assert_eq!(exported, manifest);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn merges_compatible_host_manifest_fragments() {
+    let mut first = HostContract::new();
+    first
+        .register_function(
+            301,
+            "unity::object::is_valid",
+            FunctionSignature::fixed(vec![Type::named("HostHandle")], Type::Bool),
+            "unity.object",
+        )
+        .unwrap();
+    let mut second = HostContract::new();
+    second
+        .register_function(
+            302,
+            "unity::object::instance_id",
+            FunctionSignature::fixed(vec![Type::named("HostHandle")], Type::I32),
+            "unity.object",
+        )
+        .unwrap();
+    let first_bytes = first.to_manifest_bytes().unwrap();
+    let second_bytes = second.to_manifest_bytes().unwrap();
+    let runtime = rils_runtime_create();
+    assert_eq!(
+        unsafe { rils_runtime_register_host_manifest(runtime, raw_bytes(&first_bytes)) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        unsafe { rils_runtime_register_host_manifest(runtime, raw_bytes(&second_bytes)) },
+        RILS_STATUS_OK
+    );
+    let mut expected = first;
+    expected.merge(&second).unwrap();
+    let expected_bytes = expected.to_manifest_bytes().unwrap();
+    let mut size = 0;
+    assert_eq!(
+        unsafe { rils_runtime_host_manifest_size(runtime, &mut size) },
+        RILS_STATUS_OK
+    );
+    let mut exported = vec![0; size];
+    let mut written = 0;
+    assert_eq!(
+        unsafe {
+            rils_runtime_write_host_manifest(
+                runtime,
+                exported.as_mut_ptr(),
+                exported.len(),
+                &mut written,
+            )
+        },
+        RILS_STATUS_OK
+    );
+    assert_eq!(exported, expected_bytes);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn rejects_conflicting_host_manifest_fragments_without_partial_registration() {
+    let mut first = HostContract::new();
+    first
+        .register_function(
+            401,
+            "unity::object::get_id",
+            FunctionSignature::fixed(vec![Type::named("HostHandle")], Type::I32),
+            "unity.object",
+        )
+        .unwrap();
+    let mut conflicting = HostContract::new();
+    conflicting
+        .register_function(
+            402,
+            "unity::object::get_id",
+            FunctionSignature::fixed(vec![Type::named("HostHandle")], Type::Bool),
+            "unity.object",
+        )
+        .unwrap();
+    let first_bytes = first.to_manifest_bytes().unwrap();
+    let conflicting_bytes = conflicting.to_manifest_bytes().unwrap();
+    let runtime = rils_runtime_create();
+    assert_eq!(
+        unsafe { rils_runtime_register_host_manifest(runtime, raw_bytes(&first_bytes)) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        unsafe { rils_runtime_register_host_manifest(runtime, raw_bytes(&conflicting_bytes)) },
+        RILS_STATUS_INVALID_ARGUMENT
+    );
+    assert!(current_error_message().contains("conflict"));
+
+    let mut size = 0;
+    assert_eq!(
+        unsafe { rils_runtime_host_manifest_size(runtime, &mut size) },
+        RILS_STATUS_OK
+    );
+    let mut exported = vec![0; size];
+    let mut written = 0;
+    assert_eq!(
+        unsafe {
+            rils_runtime_write_host_manifest(
+                runtime,
+                exported.as_mut_ptr(),
+                exported.len(),
+                &mut written,
+            )
+        },
+        RILS_STATUS_OK
+    );
+    assert_eq!(&exported[..written], first_bytes.as_slice());
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
 }
 

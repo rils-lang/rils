@@ -18,7 +18,7 @@ use rils::{
     Type, Value,
 };
 
-pub const RILS_ABI_VERSION: u32 = 1;
+pub const RILS_ABI_VERSION: u32 = 2;
 pub const RILS_STATUS_OK: i32 = 0;
 pub const RILS_STATUS_INVALID_ARGUMENT: i32 = 1;
 pub const RILS_STATUS_INVALID_HANDLE: i32 = 2;
@@ -45,6 +45,7 @@ pub const RILS_VALUE_USIZE: u32 = 13;
 pub const RILS_VALUE_F32: u32 = 14;
 pub const RILS_VALUE_F64: u32 = 15;
 pub const RILS_VALUE_CHAR: u32 = 16;
+pub const RILS_VALUE_HOST_HANDLE: u32 = 17;
 
 type Handle = u64;
 
@@ -508,6 +509,24 @@ fn from_ffi_value(value: RilsValue) -> Result<Value, i32> {
                 })?;
             Ok(Value::Char(scalar))
         }
+        RILS_VALUE_HOST_HANDLE => {
+            let object_id = i64::from_le_bytes(value.low.to_le_bytes());
+            let generation = (value.high >> 32) as u32;
+            let type_id = value.high as u32;
+            if generation == 0 || type_id == 0 || object_id == 0 {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host handle payload is invalid",
+                    "",
+                    Span::default(),
+                ));
+            }
+            Ok(rils::opaque_host_value(rils::OpaqueHostHandle {
+                object_id,
+                generation,
+                type_id,
+            }))
+        }
         _ => Err(fail(
             RILS_STATUS_UNSUPPORTED_VALUE,
             format!("unsupported C ABI value tag {}", value.tag),
@@ -546,6 +565,21 @@ fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue, i32> {
         Value::F32(value) => scalar(RILS_VALUE_F32, u64::from(value.to_bits()), 0),
         Value::F64(value) => scalar(RILS_VALUE_F64, value.to_bits(), 0),
         Value::Char(value) => scalar(RILS_VALUE_CHAR, u64::from(u32::from(value)), 0),
+        Value::HostObject(object) if object.type_definition.name == "HostHandle" => {
+            let Some(handle) = object.payload.downcast_ref::<rils::OpaqueHostHandle>() else {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host handle payload is invalid",
+                    source_name,
+                    Span::default(),
+                ));
+            };
+            scalar(
+                RILS_VALUE_HOST_HANDLE,
+                u64::from_le_bytes(handle.object_id.to_le_bytes()),
+                (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
+            )
+        }
         other => {
             return Err(fail(
                 RILS_STATUS_UNSUPPORTED_VALUE,
@@ -575,6 +609,7 @@ fn portable_type_from_tag(tag: u32, allow_unit: bool) -> Result<Type, String> {
         RILS_VALUE_U64 => Ok(Type::Integer(IntegerType::U64)),
         RILS_VALUE_F32 => Ok(Type::Float(FloatType::F32)),
         RILS_VALUE_F64 => Ok(Type::Float(FloatType::F64)),
+        RILS_VALUE_HOST_HANDLE => Ok(Type::named("HostHandle")),
         _ => Err(format!(
             "value tag {tag} is not supported by the portable host contract"
         )),
@@ -591,6 +626,9 @@ fn portable_tag_from_type(ty: &Type, allow_unit: bool) -> Result<u32, String> {
         Type::Integer(IntegerType::U64) => Ok(RILS_VALUE_U64),
         Type::Float(FloatType::F32) => Ok(RILS_VALUE_F32),
         Type::Float(FloatType::F64) => Ok(RILS_VALUE_F64),
+        Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => {
+            Ok(RILS_VALUE_HOST_HANDLE)
+        }
         _ => Err(format!(
             "host manifest type `{ty}` is not supported by the current C dispatcher ABI"
         )),

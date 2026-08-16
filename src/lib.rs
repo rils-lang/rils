@@ -46,6 +46,7 @@ mod lexer {
 mod macros {
     pub(crate) use rils_frontend::macros::*;
 }
+mod opaque_host;
 mod parser {
     pub(crate) use rils_frontend::parser::*;
 }
@@ -75,6 +76,7 @@ pub use bytecode::{
     HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
     HostFunctionDeclaration, HostModuleDeclaration, HostThreadAffinity,
 };
+pub use opaque_host::{OpaqueHostHandle, opaque_host_handle, opaque_host_value};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,

@@ -95,6 +95,10 @@ namespace Rils.CSharp
         public static RilsValue From(double value) => new RilsValue(RilsValueTag.F64, unchecked((ulong)BitConverter.DoubleToInt64Bits(value)));
         public static RilsValue From(char value) => From(new RilsChar(value));
         public static RilsValue From(RilsChar value) => new RilsValue(RilsValueTag.Char, value.Value);
+        public static RilsValue From(RilsObjectHandle value) => new RilsValue(
+            RilsValueTag.HostHandle,
+            unchecked((ulong)value.ObjectId),
+            (ulong)value.Generation << 32 | value.TypeId);
 
         public bool AsBool() { Require(RilsValueTag.Bool); return _low != 0; }
         public sbyte AsI8() { Require(RilsValueTag.I8); return unchecked((sbyte)_low); }
@@ -112,6 +116,13 @@ namespace Rils.CSharp
         public float AsF32() { Require(RilsValueTag.F32); return BitConverter.Int32BitsToSingle(unchecked((int)_low)); }
         public double AsF64() { Require(RilsValueTag.F64); return BitConverter.Int64BitsToDouble(unchecked((long)_low)); }
         public RilsChar AsChar() { Require(RilsValueTag.Char); return new RilsChar(checked((uint)_low)); }
+        public RilsObjectHandle AsHostHandle(ulong sessionId)
+        {
+            Require(RilsValueTag.HostHandle);
+            uint generation = checked((uint)(_high >> 32));
+            uint typeId = checked((uint)(_high & uint.MaxValue));
+            return new RilsObjectHandle(sessionId, unchecked((long)_low), generation, typeId);
+        }
 
         internal NativeValue ToNative() => new NativeValue { Tag = Tag, Low = _low, High = _high };
         internal static RilsValue FromNative(NativeValue value) => new RilsValue(value.Tag, value.Low, value.High);

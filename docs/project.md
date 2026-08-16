@@ -11,7 +11,7 @@ name = "game_scripts"
 script_paths = ["Assets/Res/rils-script"]
 
 [host]
-manifest_dirs = [".rils/manifests"]
+manifest_dirs = [".rils/manifest"]
 ```
 
 `name` 是项目对外的逻辑名称；`script_paths` 可以指定一个或多个脚本根目录。脚本根目录下
@@ -38,7 +38,7 @@ use crate::api::{Client, model::{User, Role}};
 
 ## Host Manifest
 
-项目可以在 `.rils/manifests/` 下按模块保存多个 `.rilhm` fragment，工具会按稳定顺序加载并
+项目可以在 `.rils/manifest/` 下按模块保存多个 `.rilhm` fragment，工具会按稳定顺序加载并
 合并它们。需要单文件部署时可显式执行 Manifest link；JSON 只作为显式交换格式，不是运行时
 默认产物。Manifest 的二进制布局见 [Host Manifest](capi/host-manifest.md)。
 

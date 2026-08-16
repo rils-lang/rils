@@ -8,7 +8,7 @@ static void Equal<T>(T expected, T actual, string label)
     }
 }
 
-Equal(1U, RilsRuntime.NativeAbiVersion, "ABI version");
+Equal(2U, RilsRuntime.NativeAbiVersion, "ABI version");
 
 byte[] emptyHostManifest;
 using (var runtime = new RilsRuntime())

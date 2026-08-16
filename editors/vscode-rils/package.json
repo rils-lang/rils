@@ -61,7 +61,7 @@
           "type": "string",
           "default": "",
           "scope": "resource",
-          "description": "Path to a binary .rilhm host manifest, relative to the workspace folder or absolute. When empty, rils.toml [host].manifest and conventional project/source-root locations are detected automatically. Reload the window after changing this setting."
+          "description": "Optional path to a binary .rilhm host manifest, relative to the workspace folder or absolute. When empty, rils.toml and the conventional .rils/manifest directory are detected automatically."
         },
         "rils.server.trace": {
           "type": "string",

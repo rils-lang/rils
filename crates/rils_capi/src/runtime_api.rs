@@ -203,7 +203,8 @@ pub unsafe extern "C" fn rils_runtime_register_host_functions(
 }
 
 #[unsafe(no_mangle)]
-/// Registers a complete versioned binary host manifest. Input data is copied.
+/// Registers a versioned binary host manifest fragment. Repeated calls merge
+/// compatible fragments deterministically. Input data is copied.
 ///
 /// # Safety
 ///
@@ -253,15 +254,11 @@ pub unsafe extern "C" fn rils_runtime_register_host_manifest(
                     Span::default(),
                 );
             }
-            if !runtime.host_contract.is_empty() {
-                return fail(
-                    RILS_STATUS_INVALID_ARGUMENT,
-                    "host manifest must be registered before individual host functions",
-                    "",
-                    Span::default(),
-                );
+            if runtime.host_contract.is_empty() {
+                runtime.host_contract = contract;
+            } else if let Err(message) = runtime.host_contract.merge(&contract) {
+                return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
             }
-            runtime.host_contract = contract;
             RILS_STATUS_OK
         })
     })

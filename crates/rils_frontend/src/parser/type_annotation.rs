@@ -152,6 +152,7 @@ impl Parser {
                 | "Vec"
                 | "HashMap"
                 | "HashSet"
+                | "HostHandle"
                 | "core"
                 | "std"
                 | "prelude"

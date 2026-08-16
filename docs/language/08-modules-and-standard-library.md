@@ -44,7 +44,7 @@ name = "unity_game"
 script_paths = ["Assets/Res/rils-script"]
 
 [host]
-manifest_dirs = [".rils/manifests"] # 可选；未配置时也是默认目录
+manifest_dirs = [".rils/manifest"] # 可选；未配置时也是默认目录
 manifests = ["generated/extra.rilhm"] # 可选的额外 fragment
 ```
 
@@ -57,7 +57,7 @@ manifests = ["generated/extra.rilhm"] # 可选的额外 fragment
 `super::` 返回父模块且可以重复。`use crate::gameplay::player as player;` 与完整限定调用都可使用。
 `project.name` 是稳定的 crate 标识，为后续外部项目依赖预留；当前项目内部应使用 `crate::`。
 
-`.rils/manifests/**/*.rilhm` 会按规范化路径排序并合并成一个逻辑 Host Contract。相同声明可以在
+`.rils/manifest/**/*.rilhm` 会按规范化路径排序并合并成一个逻辑 Host Contract。相同声明可以在
 多个 fragment 中幂等出现；ABI/contract/module 版本、函数名称、签名或全局 function ID 冲突都会
 使整个项目加载失败。旧的 `[host].manifest` 单文件配置继续兼容。
 

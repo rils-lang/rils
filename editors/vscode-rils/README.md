@@ -30,7 +30,7 @@ to the workspace folder. When the setting is empty, the Analyzer reads `[host].m
 checks conventional names at the project and configured script roots. Reload the VS Code window after changing
 the path or replacing the manifest.
 
-The project convention is `.rils/manifests/**/*.rilhm`. Every fragment is verified and merged into one logical
+The project convention is `.rils/manifest/**/*.rilhm`. Every fragment is verified and merged into one logical
 contract; an explicitly configured `rils.hostManifest.path` remains a single-file override.
 
 The Analyzer uses the contract for diagnostics and type checking. Typing a qualified module path followed by

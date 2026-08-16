@@ -103,7 +103,7 @@ rils_runtime_write_host_manifest
 开发期推荐将 Host Contract 拆成多个 fragment：
 
 ```text
-.rils/manifests/
+.rils/manifest/
 ├─ unity-engine/core.rilhm
 ├─ unity-engine/physics.rilhm
 └─ project/game.rilhm
@@ -113,15 +113,16 @@ Analyzer 与源码编译入口递归读取所有 `.rilhm`，按规范化相对�
 文件遍历顺序无关：相同声明幂等去重；ABI/contract/module 版本不一致、同名函数声明不同或不同
 函数复用同一 ID 都会报错，并指出当前 fragment 文件。
 
-Unity Editor/构建管线应在 Player 打包前链接为一个运行时文件：
+Unity Editor/构建管线可以在 Player 打包前链接为一个运行时文件：
 
 ```text
-rils host-manifest link .rils/manifests -o Library/Rils/host.rilhm
+rils host-manifest link .rils/manifest -o Library/Rils/host.rilhm
 # 也可以传入项目根目录或 rils.toml，使用其中的 host 配置
 ```
 
 链接结果仍是 `.rilhm` v1，不携带 fragment 路径或生成器来源，整体 contract hash 只由规范化合并
-内容决定。Player 和 C API 默认消费这份单一产物。Unity 的稳定 API 选择器可以按模块生成
+内容决定。C API 也允许在冻结前重复注册兼容 fragment，运行时会合并为同一个 contract；Player
+通常消费链接后的单一产物。Unity 的稳定 API 选择器可以按模块生成
 `unity-engine/*.rilhm`，项目 Attribute 扫描器单独更新 `project/*.rilhm`，避免每次重写整个大文件。
 
 ## 显式 JSON 工具
@@ -140,7 +141,7 @@ Rust 工具也可以显式调用 `HostContract::from_manifest_json` 和 `to_mani
 
 VS Code 插件通过 `rils.hostManifest.path` 加载单一 `.rilhm`。未配置时，Analyzer 优先读取
 `rils.toml` 的 `[host].manifests` / `manifest_dirs` / 兼容 `manifest`；没有显式配置时递归读取
-`.rils/manifests`，若目录不存在再依次检测项目根和各 `script_paths` 下的
+`.rils/manifest`，若目录不存在再依次检测项目根和各 `script_paths` 下的
 `.rils/host.rilhm`、`host.rilhm`、`rils-host.rilhm`。Analyzer 使用与 Runtime 相同的 verifier，
 并将宿主函数加入静态检查、hover、语义符号及 `module::` 补全。
 

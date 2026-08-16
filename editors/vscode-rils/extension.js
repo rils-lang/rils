@@ -62,7 +62,22 @@ function resolveHostManifestPaths() {
       paths.add(path.isAbsolute(configured)
         ? configured
         : path.join(folder.uri.fsPath, configured));
+      continue;
     }
+
+    const manifestDirectory = path.join(folder.uri.fsPath, ".rils", "manifest");
+    const visit = (directory) => {
+      if (!fs.existsSync(directory)) return;
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const entryPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          visit(entryPath);
+        } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".rilhm")) {
+          paths.add(entryPath);
+        }
+      }
+    };
+    visit(manifestDirectory);
   }
   return [...paths];
 }

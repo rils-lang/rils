@@ -27,7 +27,7 @@ The executable is written to `target/debug/rils-analyzer` (or
 - `rils.toml` project discovery and `script_paths` workspace indexing with cross-file locations
 - module declarations, imports, visibility symbols, and namespace semantic tokens
 - verified `.rilhm` Host Manifest loading through the LSP `initializationOptions.hostManifestPaths`
-- recursive `.rils/manifests` discovery and deterministic multi-fragment contract merging
+- recursive `.rils/manifest` discovery and deterministic multi-fragment contract merging
 - host module/member completion after `::`, including `use ... as ...` module aliases, signatures, and capabilities
 - project module and public-item completion after `crate::`, `self::`, `super::`, or a `use` alias
 

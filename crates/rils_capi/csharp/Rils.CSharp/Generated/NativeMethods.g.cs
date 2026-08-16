@@ -37,6 +37,7 @@ public enum RilsValueTag : uint
     F32 = 14,
     F64 = 15,
     Char = 16,
+    HostHandle = 17,
 }
 
 [StructLayout(LayoutKind.Sequential)]

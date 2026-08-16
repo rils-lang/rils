@@ -24,6 +24,29 @@ namespace Rils.CSharp
             Handler = handler ?? throw new ArgumentNullException(nameof(handler));
             FunctionId = functionId;
             ReturnTag = returnTag;
+            Parameters = CreateParameters(parameterTags);
+            ThreadPolicy = RilsHostThreadPolicy.MainThreadOnly;
+        }
+
+        public RilsHostFunction(
+            ulong functionId,
+            string name,
+            string capability,
+            RilsHostParameter returnParameter,
+            IReadOnlyList<RilsHostParameter> parameters,
+            Func<RilsValue[], RilsValue> handler,
+            RilsHostThreadPolicy threadPolicy = RilsHostThreadPolicy.MainThreadOnly)
+        {
+            if (functionId == 0) throw new ArgumentOutOfRangeException(nameof(functionId));
+            Name = name ?? throw new ArgumentNullException(nameof(name));
+            Capability = capability ?? throw new ArgumentNullException(nameof(capability));
+            Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
+            Handler = handler ?? throw new ArgumentNullException(nameof(handler));
+            FunctionId = functionId;
+            ReturnTag = returnParameter.Tag;
+            ReturnTransferMode = returnParameter.TransferMode;
+            ParameterTags = CreateTags(parameters);
+            ThreadPolicy = threadPolicy;
         }
 
         public ulong FunctionId { get; }
@@ -31,7 +54,27 @@ namespace Rils.CSharp
         public string Capability { get; }
         public RilsValueTag ReturnTag { get; }
         public IReadOnlyList<RilsValueTag> ParameterTags { get; }
+        public IReadOnlyList<RilsHostParameter> Parameters { get; }
+        public RilsHostTransferMode ReturnTransferMode { get; }
+        public RilsHostThreadPolicy ThreadPolicy { get; }
         internal Func<RilsValue[], RilsValue> Handler { get; }
+
+        private static IReadOnlyList<RilsHostParameter> CreateParameters(IReadOnlyList<RilsValueTag> tags)
+        {
+            var parameters = new RilsHostParameter[tags.Count];
+            for (int index = 0; index < parameters.Length; index++)
+            {
+                parameters[index] = new RilsHostParameter(tags[index]);
+            }
+            return parameters;
+        }
+
+        private static IReadOnlyList<RilsValueTag> CreateTags(IReadOnlyList<RilsHostParameter> parameters)
+        {
+            var tags = new RilsValueTag[parameters.Count];
+            for (int index = 0; index < tags.Length; index++) tags[index] = parameters[index].Tag;
+            return tags;
+        }
     }
 
     /// Minimal synchronous scalar bridge for the Unity prototype.
@@ -46,10 +89,12 @@ namespace Rils.CSharp
         private readonly GCHandle _selfHandle;
         private bool _frozen;
         private bool _disposed;
+        private readonly int _ownerThreadId;
 
         public RilsHostRegistry(RilsRuntime runtime)
         {
             _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+            _ownerThreadId = Environment.CurrentManagedThreadId;
             _selfHandle = GCHandle.Alloc(this, GCHandleType.Normal);
             NativeInterop.Check(NativeMethods.RuntimeSetHostDispatcher(
                 _runtime.Handle,
@@ -66,6 +111,14 @@ namespace Rils.CSharp
             {
                 throw new InvalidOperationException(
                     $"A host function with ID {function.FunctionId} is already registered.");
+            }
+            if (function.ThreadPolicy == RilsHostThreadPolicy.ScheduleToMainThread)
+            {
+                throw new NotSupportedException(
+                    "Main-thread scheduling is not enabled by the synchronous host bridge yet.");
+            }
+            for (int index = 0; index < function.Parameters.Count; index++)
+            {
             }
 
             byte[] name = Encoding.UTF8.GetBytes(function.Name);
@@ -90,10 +143,19 @@ namespace Rils.CSharp
                     ReturnTag = function.ReturnTag,
                     Reserved = 0,
                 };
-                NativeInterop.Check(NativeMethods.RuntimeRegisterHostFunctions(
-                    _runtime.Handle,
-                    &descriptor,
-                    new UIntPtr(1)));
+                try
+                {
+                    NativeInterop.Check(NativeMethods.RuntimeRegisterHostFunctions(
+                        _runtime.Handle,
+                        &descriptor,
+                        new UIntPtr(1)));
+                }
+                catch (RilsException exception) when (
+                    exception.Message.IndexOf("already declared", StringComparison.Ordinal) >= 0)
+                {
+                    // The declaration came from a registered manifest fragment;
+                    // retain the managed callback for dispatch.
+                }
             }
             _functions.Add(function.FunctionId, function);
         }
@@ -173,6 +235,12 @@ namespace Rils.CSharp
             if (!_functions.TryGetValue(functionId, out RilsHostFunction? function))
             {
                 return (int)RilsStatus.InvalidArgument;
+            }
+            if (function.ThreadPolicy == RilsHostThreadPolicy.MainThreadOnly &&
+                Environment.CurrentManagedThreadId != _ownerThreadId)
+            {
+                if (outError != null) *outError = default;
+                return (int)RilsStatus.ExecutionError;
             }
             ulong count = argumentCount.ToUInt64();
             if (count > int.MaxValue || count != (ulong)function.ParameterTags.Count)

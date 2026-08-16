@@ -837,6 +837,7 @@ fn type_tag(ty: &Type) -> Result<u8, String> {
         Type::Float(FloatType::F32) => Ok(6),
         Type::Float(FloatType::F64) => Ok(7),
         Type::String => Ok(8),
+        Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => Ok(9),
         _ => Err(format!(
             "host type `{ty}` cannot be encoded in binary manifest v1"
         )),
@@ -855,6 +856,7 @@ fn decode_type_tag(tag: u8, allow_unit: bool) -> Result<Type, String> {
         6 => Ok(Type::Float(FloatType::F32)),
         7 => Ok(Type::Float(FloatType::F64)),
         8 => Ok(Type::String),
+        9 => Ok(Type::named("HostHandle")),
         value => Err(format!("unsupported binary host type tag {value}")),
     }
 }
@@ -1072,6 +1074,7 @@ fn is_portable_host_type(ty: &Type, allow_unit: bool) -> bool {
             IntegerType::I32 | IntegerType::I64 | IntegerType::U32 | IntegerType::U64,
         ) => true,
         Type::Float(_) => true,
+        Type::Named { name, arguments } => name == "HostHandle" && arguments.is_empty(),
         _ => false,
     }
 }
@@ -1087,6 +1090,7 @@ fn parse_type(name: &str) -> Result<Type, String> {
         "f32" => Ok(Type::Float(FloatType::F32)),
         "f64" => Ok(Type::Float(FloatType::F64)),
         "string" => Ok(Type::String),
+        "HostHandle" => Ok(Type::named("HostHandle")),
         _ => Err(format!("unsupported host manifest type `{name}`")),
     }
 }
@@ -1102,6 +1106,7 @@ fn type_name(ty: &Type) -> &'static str {
         Type::Float(FloatType::F32) => "f32",
         Type::Float(FloatType::F64) => "f64",
         Type::String => "string",
+        Type::Named { name, .. } if name == "HostHandle" => "HostHandle",
         _ => unreachable!("host contract types were validated before serialization"),
     }
 }

@@ -74,7 +74,8 @@ enum RilsValueTag {
     RILS_VALUE_USIZE = 13,
     RILS_VALUE_F32 = 14,
     RILS_VALUE_F64 = 15,
-    RILS_VALUE_CHAR = 16
+    RILS_VALUE_CHAR = 16,
+    RILS_VALUE_HOST_HANDLE = 17
 };
 
 RILS_API uint32_t rils_abi_version(void);

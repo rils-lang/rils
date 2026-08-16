@@ -880,6 +880,65 @@ fn loads_binary_host_manifest_from_initialization_options() {
 }
 
 #[test]
+fn discovers_and_merges_default_manifest_directory() {
+    let root = std::env::temp_dir().join(format!(
+        "rils-analyzer-project-manifest-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(root.join(".rils/manifest")).unwrap();
+    let mut first = HostContract::new();
+    first
+        .register_function(
+            201,
+            "unity::object::is_valid",
+            FunctionSignature::fixed(vec![Type::named("HostHandle")], Type::Bool),
+            "unity.object",
+        )
+        .unwrap();
+    let mut second = HostContract::new();
+    second
+        .register_function(
+            202,
+            "unity::object::instance_id",
+            FunctionSignature::fixed(vec![Type::named("HostHandle")], Type::I32),
+            "unity.object",
+        )
+        .unwrap();
+    fs::write(
+        root.join(".rils/manifest/object.rilhm"),
+        first.to_manifest_bytes().unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        root.join(".rils/manifest/identity.rilhm"),
+        second.to_manifest_bytes().unwrap(),
+    )
+    .unwrap();
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        projects: vec![Project::from_root(&root).unwrap()],
+        next_source_id: 1,
+    };
+    server.load_host_manifests(&json!({})).unwrap();
+    assert!(
+        server
+            .host_functions
+            .contains_key("unity::object::is_valid")
+    );
+    assert!(
+        server
+            .host_functions
+            .contains_key("unity::object::instance_id")
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn parse_errors_remain_diagnostics_not_request_failures() {
     let text = "let =";
     let result = rils_frontend::analysis::analyze(text);
