@@ -79,7 +79,7 @@ function resolveHostManifestPaths() {
     };
     visit(manifestDirectory);
   }
-  return [...paths];
+  return [...paths].sort((left, right) => left.localeCompare(right));
 }
 
 async function activate(context) {
@@ -108,6 +108,31 @@ async function activate(context) {
     clientOptions,
   );
   context.subscriptions.push(client);
+  const manifestWatchers = [];
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    const pattern = new vscode.RelativePattern(folder, ".rils/manifest/**/*.rilhm");
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    const refresh = () => {
+      if (client) {
+        client.sendNotification("rils/hostManifestChanged", {
+          hostManifestPaths: resolveHostManifestPaths(),
+        });
+      }
+    };
+    watcher.onDidCreate(refresh, null, context.subscriptions);
+    watcher.onDidChange(refresh, null, context.subscriptions);
+    watcher.onDidDelete(refresh, null, context.subscriptions);
+    manifestWatchers.push(watcher);
+
+    const projectWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(folder, "rils.toml"),
+    );
+    projectWatcher.onDidChange(refresh, null, context.subscriptions);
+    projectWatcher.onDidCreate(refresh, null, context.subscriptions);
+    projectWatcher.onDidDelete(refresh, null, context.subscriptions);
+    manifestWatchers.push(projectWatcher);
+  }
+  context.subscriptions.push(...manifestWatchers);
   await client.start();
 }
 

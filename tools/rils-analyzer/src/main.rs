@@ -143,6 +143,33 @@ impl Server {
                 }
                 self.publish_diagnostics(&uri, Vec::new())?;
             }
+            "rils/hostManifestChanged" => {
+                let paths = notification
+                    .params
+                    .get("hostManifestPaths")
+                    .and_then(Value::as_array)
+                    .map(|paths| {
+                        paths
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(PathBuf::from)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if let Err(error) = self.reload_host_manifests(paths) {
+                    self.connection.sender.send(Message::Notification(Notification::new(
+                        "window/showMessage".to_owned(),
+                        json!({
+                            "type": 1,
+                            "message": format!("Rils host manifest reload failed: {error}"),
+                        }),
+                    )))?;
+                } else {
+                    self.reanalyze_documents();
+                    self.refresh_project_symbol_links();
+                    self.publish_all_diagnostics()?;
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -189,6 +216,13 @@ impl Server {
                 paths.extend(project.host_manifests().iter().cloned());
             }
         }
+        self.reload_host_manifests(paths)
+    }
+
+    fn reload_host_manifests(&mut self, paths: Vec<PathBuf>) -> Result<(), AnyError> {
+        let mut paths = paths;
+        paths.sort();
+        paths.dedup();
         let mut merged: Option<HostContract> = None;
         for path in paths {
             let bytes = fs::read(&path).map_err(|error| {

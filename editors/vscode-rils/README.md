@@ -34,12 +34,17 @@ The project convention is `.rils/manifest/**/*.rilhm`. Every fragment is verifie
 contract; an explicitly configured `rils.hostManifest.path` remains a single-file override.
 
 The Analyzer uses the contract for diagnostics and type checking. Typing a qualified module path followed by
-`::`, for example `unity_engine::math::`, lists its accessible host functions and child modules. Completion items
+`::`, for example `unity_engine::math::`, lists its accessible host functions and child modules. Pressing
+`Ctrl+Space` also requests the same candidates when automatic trigger characters are disabled. Completion items
 show the function signature and required capability. Module aliases such as
 `use unity_engine::math as math; math::` are supported.
 
 Project modules use the same completion flow. After `crate::`, `self::`, `super::`, a module path, or a
 `use` alias, the Analyzer lists child modules and public declarations from the target `.rils` file.
+
+Changes to `.rils/manifest/**/*.rilhm` and `rils.toml` are watched by the extension. The Analyzer reloads the
+contract and republishes diagnostics without requiring a window reload; malformed replacements keep the previous
+valid contract and show an error notification.
 
 Generate the runtime manifest explicitly from a JSON tool input when needed:
 
