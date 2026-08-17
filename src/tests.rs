@@ -2859,6 +2859,7 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
     )
     .unwrap();
     std::fs::write(scripts.join("math.rils"), "pub fn answer() -> i32 { 41 }").unwrap();
+    std::fs::write(scripts.join("main.rils"), "").unwrap();
     let entry = scripts.join("feature/mod.rils");
     std::fs::write(
         &entry,
@@ -2942,11 +2943,12 @@ fn project_source_ids_survive_bytecode_round_trip_and_locate_runtime_errors() {
     .unwrap();
     let entry = scripts.join("entry.rils");
     let dependency = scripts.join("math.rils");
+    std::fs::write(scripts.join("main.rils"), "").unwrap();
     std::fs::write(&entry, "fn main() -> i32 { crate::math::fail() }").unwrap();
     std::fs::write(&dependency, "pub fn fail() -> i32 { 1 / 0 }").unwrap();
 
     let module = compile_file(&entry).unwrap();
-    assert_eq!(module.sources().len(), 2);
+    assert_eq!(module.sources().len(), 3);
     assert!(
         module
             .sources()
@@ -3010,7 +3012,7 @@ fn project_compile_and_interpreter_errors_retain_dependency_source() {
 }
 
 #[test]
-fn project_entry_requires_main_but_legacy_files_do_not() {
+fn projects_without_main_are_library_projects() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -3027,14 +3029,6 @@ fn project_entry_requires_main_but_legacy_files_do_not() {
     .unwrap();
     let entry = root.join("scripts/no_main.rils");
     std::fs::write(&entry, "pub fn value() -> i32 { 42 }").unwrap();
-    let error = match compile_file(&entry) {
-        Ok(_) => panic!("project entry without main should fail"),
-        Err(error) => error,
-    };
-    assert!(
-        error
-            .message
-            .contains("must define a zero-parameter `fn main()`")
-    );
+    assert!(compile_file(&entry).is_ok());
     std::fs::remove_dir_all(root).unwrap();
 }

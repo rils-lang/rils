@@ -1,7 +1,8 @@
 # 项目模型
 
-Rils 项目通过项目根目录的 `rils.toml` 描述脚本根目录、项目名称和宿主 Manifest。项目模型
-让每个脚本都可以作为入口，同时为跨文件模块解析、Analyzer 和后续 crate 依赖保留稳定边界。
+Rils 项目通过项目根目录的 `rils.toml` 描述脚本根目录、项目名称、依赖和宿主 Manifest。项目模型
+为跨文件模块解析、Analyzer 和宿主库依赖保留稳定边界。依赖库和 Unity 打包规则见
+[项目依赖与打包](project-dependencies-and-packaging.md)。
 
 ## 配置
 
@@ -9,6 +10,10 @@ Rils 项目通过项目根目录的 `rils.toml` 描述脚本根目录、项目�
 [project]
 name = "game_scripts"
 script_paths = ["Assets/Res/rils-script"]
+
+[dependencies.rils_for_unity]
+path = "Packages/com.rils-lang.rils-for-unity/Runtime/Rils"
+prelude = true
 
 [host]
 manifest_dirs = [".rils/manifest"]
@@ -20,7 +25,8 @@ manifest_dirs = [".rils/manifest"]
 
 ## 入口与路径
 
-任何项目脚本都可以作为编译入口，但可执行入口需要提供零参数 `fn main()`。模块引用支持：
+项目模式默认根据源码根目录下是否存在 `main.rils` 判断：存在时按可执行项目处理，并要求零参数
+`fn main()`；不存在时按库项目处理。库项目也可以通过 `[lib]` 显式声明。模块引用支持：
 
 - `crate::`：项目脚本根；
 - `self::`：当前模块；

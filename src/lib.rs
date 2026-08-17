@@ -74,14 +74,14 @@ pub use bytecode::{
     HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
     HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
     HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
-    HostFunctionDeclaration, HostModuleDeclaration, HostThreadAffinity,
+    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
 };
 pub use opaque_host::{OpaqueHostHandle, opaque_host_handle, opaque_host_value};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,
 };
-pub use rils_project::{Project, ProjectError, ProjectFile};
+pub use rils_project::{Project, ProjectDependency, ProjectError, ProjectFile};
 pub use value::Value;
 
 pub type NativeFunctionHandler = fn(&[Value]) -> Result<Value, String>;
@@ -416,6 +416,7 @@ impl Engine {
                 &project,
                 &self.native_macros,
                 &mut sources,
+                true,
             )?;
             rils_frontend::resolve_numeric_literals(&mut program)
                 .map_err(numeric_resolution_error)?;
@@ -600,6 +601,7 @@ fn load_file_modules(
     project: &Project,
     native_macros: &[macros::NativeMacroDefinition],
     sources: &mut SourceRegistry,
+    require_entry: bool,
 ) -> Result<(), RilsError> {
     if project.manifest_path().is_none() {
         let base = entry_path.parent().unwrap_or_else(|| Path::new("."));
@@ -616,8 +618,26 @@ fn load_file_modules(
             project.manifest_path().unwrap().display()
         ))
     })?;
-    let entry_statements = prepare_project_entry(std::mem::take(statements))?;
+    let entry_statements = if require_entry {
+        prepare_project_entry(std::mem::take(statements))?
+    } else {
+        reject_external_module_declarations(statements)?;
+        std::mem::take(statements)
+    };
     let mut root = ProjectModuleNode::default();
+    for dependency in project.dependencies() {
+        let Some(prelude_path) = dependency.prelude.as_deref() else {
+            continue;
+        };
+        let source = fs::read_to_string(prelude_path)
+            .map_err(|error| module_load_error(prelude_path, error))?;
+        let source_id = sources.register_source(prelude_path, &source);
+        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
+        let prelude =
+            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        reject_external_module_declarations(&prelude.statements)?;
+        root.statements.extend(prelude.statements);
+    }
     for file in project.modules() {
         let module_statements = if file.module_path == entry.module_path {
             entry_statements.clone()
@@ -634,23 +654,25 @@ fn load_file_modules(
         insert_project_module(&mut root, &file.module_path, module_statements);
     }
     *statements = project_module_statements(root);
-    let mut entry_path = entry
-        .module_path
-        .split("::")
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    entry_path.push("main".into());
-    statements.push(ast::Stmt::Expr {
-        expression: ast::Expr::Call {
-            callee: Box::new(ast::Expr::Path {
-                segments: entry_path,
+    if require_entry {
+        let mut entry_path = entry
+            .module_path
+            .split("::")
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        entry_path.push("main".into());
+        statements.push(ast::Stmt::Expr {
+            expression: ast::Expr::Call {
+                callee: Box::new(ast::Expr::Path {
+                    segments: entry_path,
+                    span: Span::default(),
+                }),
+                arguments: Vec::new(),
                 span: Span::default(),
-            }),
-            arguments: Vec::new(),
-            span: Span::default(),
-        },
-        terminated: false,
-    });
+            },
+            terminated: false,
+        });
+    }
     Ok(())
 }
 
@@ -876,7 +898,7 @@ pub fn compile_file(path: impl AsRef<Path>) -> Result<BytecodeModule, CompileErr
         }
     }
     let host = host.unwrap_or_default();
-    compile_project_file_with_host(path, &project, &host)
+    compile_project_file_with_host(path, &project, &host, project.requires_entry())
 }
 
 /// Loads and compiles a Rils module tree using declarations supplied by a host contract.
@@ -887,7 +909,7 @@ pub fn compile_file_with_host(
     let path = path.as_ref();
     let project = discover_entry_project(path)
         .map_err(|error| CompileError::new(error.to_string(), Span::default()))?;
-    compile_project_file_with_host(path, &project, host)
+    compile_project_file_with_host(path, &project, host, project.requires_entry())
 }
 
 fn discover_entry_project(path: &Path) -> Result<Project, ProjectError> {
@@ -900,6 +922,7 @@ fn compile_project_file_with_host(
     path: &Path,
     project: &Project,
     host: &HostContract,
+    require_entry: bool,
 ) -> Result<BytecodeModule, CompileError> {
     let mut sources = SourceRegistry::default();
     sources.register_project(project);
@@ -915,8 +938,15 @@ fn compile_project_file_with_host(
             .map_err(|error| CompileError::new(error.message, error.span))?;
         let mut program =
             parser::parse(tokens).map_err(|error| CompileError::new(error.message, error.span))?;
-        load_file_modules(&mut program.statements, path, project, &[], &mut sources)
-            .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
+        load_file_modules(
+            &mut program.statements,
+            path,
+            project,
+            &[],
+            &mut sources,
+            require_entry,
+        )
+        .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
         bytecode::compile_program_with_host_and_sources(&program, host, sources.source_files())
     })();
     result.map_err(|error| locate_compile_error(error, &sources))

@@ -17,15 +17,32 @@ pub struct Project {
     root: PathBuf,
     manifest_path: Option<PathBuf>,
     name: String,
+    kind: ProjectKind,
     source_roots: Vec<PathBuf>,
     host_manifests: Vec<PathBuf>,
+    dependencies: BTreeMap<String, ProjectDependency>,
     modules: BTreeMap<String, ProjectFile>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProjectKind {
+    Bin,
+    Lib,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectFile {
     pub path: PathBuf,
     pub module_path: String,
+}
+
+/// A path-based Rils library made available under a crate name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectDependency {
+    pub name: String,
+    pub root: PathBuf,
+    pub source_roots: Vec<PathBuf>,
+    pub prelude: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,8 +126,10 @@ impl Project {
             root: root.clone(),
             manifest_path: None,
             name,
+            kind: ProjectKind::Bin,
             source_roots: vec![root],
             host_manifests,
+            dependencies: BTreeMap::new(),
             modules: BTreeMap::new(),
         })
     }
@@ -153,13 +172,25 @@ impl Project {
             .into_iter()
             .map(|directory| normalize_under_root(&root, &directory, "host manifest directory"))
             .collect::<Result<Vec<_>, _>>()?;
+        let kind = if config.lib.is_some()
+            || !source_roots
+                .iter()
+                .any(|source_root| source_root.join("main.rils").is_file())
+        {
+            ProjectKind::Lib
+        } else {
+            ProjectKind::Bin
+        };
+        let dependencies = load_dependencies(&root, config.dependencies)?;
         Self::build(
             root,
             Some(path),
             project.name,
+            kind,
             source_roots,
             configured_manifests,
             configured_manifest_dirs,
+            dependencies,
         )
     }
 
@@ -171,16 +202,27 @@ impl Project {
             .filter(|name| is_identifier(name))
             .unwrap_or("project")
             .to_owned();
-        Self::build(root.clone(), None, name, vec![root], Vec::new(), Vec::new())
+        Self::build(
+            root.clone(),
+            None,
+            name,
+            ProjectKind::Bin,
+            vec![root],
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
     }
 
     fn build(
         root: PathBuf,
         manifest_path: Option<PathBuf>,
         name: String,
+        kind: ProjectKind,
         source_roots: Vec<PathBuf>,
         configured_manifests: Vec<PathBuf>,
         configured_manifest_dirs: Vec<PathBuf>,
+        dependencies: BTreeMap<String, ProjectDependency>,
     ) -> Result<Self, ProjectError> {
         let host_manifests =
             if configured_manifests.is_empty() && configured_manifest_dirs.is_empty() {
@@ -190,34 +232,21 @@ impl Project {
             };
         let mut modules = BTreeMap::new();
         for source_root in &source_roots {
-            let mut files = Vec::new();
-            collect_rils_files(source_root, &mut files).map_err(|error| {
-                project_error(format!(
-                    "failed to scan script path `{}`: {error}",
-                    source_root.display()
-                ))
-            })?;
-            for path in files {
-                let module_path = module_path(source_root, &path)?;
-                let file = ProjectFile {
-                    path: path.clone(),
-                    module_path: module_path.clone(),
-                };
-                if let Some(previous) = modules.insert(module_path.clone(), file) {
-                    return Err(project_error(format!(
-                        "module `{module_path}` is provided by both `{}` and `{}`",
-                        previous.path.display(),
-                        path.display()
-                    )));
-                }
+            collect_modules(&mut modules, source_root, "")?;
+        }
+        for dependency in dependencies.values() {
+            for source_root in &dependency.source_roots {
+                collect_modules(&mut modules, source_root, &dependency.name)?;
             }
         }
         Ok(Self {
             root,
             manifest_path,
             name,
+            kind,
             source_roots,
             host_manifests,
+            dependencies,
             modules,
         })
     }
@@ -234,6 +263,14 @@ impl Project {
         &self.name
     }
 
+    pub fn kind(&self) -> ProjectKind {
+        self.kind
+    }
+
+    pub fn requires_entry(&self) -> bool {
+        self.kind == ProjectKind::Bin
+    }
+
     pub fn source_roots(&self) -> &[PathBuf] {
         &self.source_roots
     }
@@ -244,6 +281,14 @@ impl Project {
 
     pub fn host_manifests(&self) -> &[PathBuf] {
         &self.host_manifests
+    }
+
+    pub fn dependencies(&self) -> impl ExactSizeIterator<Item = &ProjectDependency> {
+        self.dependencies.values()
+    }
+
+    pub fn dependency(&self, name: &str) -> Option<&ProjectDependency> {
+        self.dependencies.get(name)
     }
 
     pub fn modules(&self) -> impl ExactSizeIterator<Item = &ProjectFile> {
@@ -260,11 +305,54 @@ impl Project {
     }
 }
 
+fn collect_modules(
+    modules: &mut BTreeMap<String, ProjectFile>,
+    source_root: &Path,
+    prefix: &str,
+) -> Result<(), ProjectError> {
+    let mut files = Vec::new();
+    collect_rils_files(source_root, &mut files).map_err(|error| {
+        project_error(format!(
+            "failed to scan script path `{}`: {error}",
+            source_root.display()
+        ))
+    })?;
+    for path in files {
+        // `prelude.rils` is injected by the dependency loader and is not a
+        // user-addressable module path.
+        if path.file_name().is_some_and(|name| name == "prelude.rils") {
+            continue;
+        }
+        let local_path = module_path(source_root, &path)?;
+        let module_path = if prefix.is_empty() {
+            local_path
+        } else {
+            format!("{prefix}::{local_path}")
+        };
+        let file = ProjectFile {
+            path: path.clone(),
+            module_path: module_path.clone(),
+        };
+        if let Some(previous) = modules.insert(module_path.clone(), file) {
+            return Err(project_error(format!(
+                "module `{module_path}` is provided by both `{}` and `{}`",
+                previous.path.display(),
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProjectConfig {
     project: Option<ProjectSection>,
     host: Option<HostSection>,
+    #[serde(default)]
+    dependencies: BTreeMap<String, DependencySection>,
+    #[serde(default)]
+    lib: Option<LibSection>,
 }
 
 #[derive(Deserialize)]
@@ -275,6 +363,13 @@ struct ProjectSection {
     script_paths: Vec<PathBuf>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LibSection {
+    #[serde(default)]
+    prelude: Option<PathBuf>,
+}
+
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HostSection {
@@ -283,6 +378,104 @@ struct HostSection {
     manifests: Vec<PathBuf>,
     #[serde(default)]
     manifest_dirs: Vec<PathBuf>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DependencySection {
+    path: PathBuf,
+    #[serde(default)]
+    prelude: bool,
+}
+
+fn load_dependencies(
+    root: &Path,
+    configured: BTreeMap<String, DependencySection>,
+) -> Result<BTreeMap<String, ProjectDependency>, ProjectError> {
+    let mut dependencies = BTreeMap::new();
+    for (name, dependency) in configured {
+        validate_project_name(&name)?;
+        let dependency_root = absolutize(&root.join(dependency.path))?;
+        if !dependency_root.is_dir() {
+            return Err(project_error(format!(
+                "dependency `{name}` path `{}` is not a directory",
+                dependency_root.display()
+            )));
+        }
+        let (source_roots, package_name, package_prelude) =
+            read_dependency_metadata(&dependency_root)?;
+        if let Some(package_name) = package_name {
+            if package_name != name {
+                return Err(project_error(format!(
+                    "dependency alias `{name}` does not match package name `{package_name}`"
+                )));
+            }
+        }
+        let prelude = if dependency.prelude {
+            find_prelude(&dependency_root, &source_roots)
+        } else if let Some(path) = package_prelude {
+            Some(normalize_under_root(
+                &dependency_root,
+                &path,
+                "dependency prelude",
+            )?)
+        } else {
+            None
+        };
+        dependencies.insert(
+            name.clone(),
+            ProjectDependency {
+                name,
+                root: dependency_root,
+                source_roots,
+                prelude,
+            },
+        );
+    }
+    Ok(dependencies)
+}
+
+fn read_dependency_metadata(
+    root: &Path,
+) -> Result<(Vec<PathBuf>, Option<String>, Option<PathBuf>), ProjectError> {
+    let config_path = root.join(PROJECT_FILE_NAME);
+    if !config_path.is_file() {
+        return Ok((vec![root.to_path_buf()], None, None));
+    }
+    let source = fs::read_to_string(&config_path).map_err(|error| {
+        project_error(format!(
+            "failed to read `{}`: {error}",
+            config_path.display()
+        ))
+    })?;
+    let config: ProjectConfig = toml::from_str(&source)
+        .map_err(|error| project_error(format!("invalid `{}`: {error}", config_path.display())))?;
+    let Some(project) = config.project else {
+        return Ok((vec![root.to_path_buf()], None, None));
+    };
+    validate_project_name(&project.name)?;
+    let paths = if project.script_paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        project.script_paths
+    };
+    let source_roots = paths
+        .into_iter()
+        .map(|path| normalize_under_root(root, &path, "dependency script path"))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((
+        source_roots,
+        Some(project.name),
+        config.lib.and_then(|library| library.prelude),
+    ))
+}
+
+fn find_prelude(root: &Path, source_roots: &[PathBuf]) -> Option<PathBuf> {
+    source_roots
+        .iter()
+        .map(|source_root| source_root.join("prelude.rils"))
+        .chain([root.join("prelude.rils")])
+        .find(|path| path.is_file())
 }
 
 fn discover_default_host_manifests(
@@ -613,6 +806,37 @@ mod tests {
 
         let project = Project::from_file(root.join(PROJECT_FILE_NAME)).unwrap();
         assert_eq!(project.host_manifests().len(), 2);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn loads_path_dependencies_and_prelude() {
+        let root = temporary_project();
+        let dependency = root.join("Packages/rils_for_unity");
+        fs::create_dir_all(dependency.join("src")).unwrap();
+        fs::create_dir_all(root.join("scripts")).unwrap();
+        fs::write(
+            dependency.join("rils.toml"),
+            "[project]\nname = \"rils_for_unity\"\nscript_paths = [\"src\"]\n",
+        )
+        .unwrap();
+        fs::write(dependency.join("src/behaviour.rils"), "pub fn awake() {}").unwrap();
+        fs::write(dependency.join("src/prelude.rils"), "").unwrap();
+        fs::write(
+            root.join("rils.toml"),
+            "[project]\nname = \"game\"\nscript_paths = [\"scripts\"]\n\n[dependencies.rils_for_unity]\npath = \"Packages/rils_for_unity\"\nprelude = true\n",
+        )
+        .unwrap();
+
+        let project = Project::from_file(root.join(PROJECT_FILE_NAME)).unwrap();
+        let dependency = project.dependency("rils_for_unity").unwrap();
+        assert_eq!(dependency.source_roots, vec![dependency.root.join("src")]);
+        assert_eq!(
+            dependency.prelude,
+            Some(dependency.root.join("src/prelude.rils"))
+        );
+        assert!(project.module("rils_for_unity::behaviour").is_some());
+        assert_eq!(project.dependencies().len(), 1);
         fs::remove_dir_all(root).unwrap();
     }
 }
