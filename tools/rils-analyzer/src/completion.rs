@@ -36,6 +36,31 @@ impl Server {
                             .and_then(|symbol| symbol.inferred_type.as_ref())
                     })
             }) {
+                if matches!(&receiver_type, Type::Named { name, .. } if name == "HostHandle") {
+                    let mut items = self
+                        .host_contract
+                        .functions()
+                        .filter(|function| function.receiver.is_some())
+                        .filter_map(|function| {
+                            let (_, name) = function.name.rsplit_once("::")?;
+                            name.starts_with(&member_prefix).then(|| {
+                                json!({
+                                    "label": name,
+                                    "kind": 2,
+                                    "detail": signature_declaration(name, &function.signature),
+                                    "documentation": {
+                                        "kind": "markdown",
+                                        "value": format!("Host method receiver: `{}`\\n\\nCapability: `{}`", function.receiver.unwrap().as_str(), function.capability)
+                                    }
+                                })
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    items.sort_by(|left, right| {
+                        left["label"].as_str().cmp(&right["label"].as_str())
+                    });
+                    return Ok(json!(items));
+                }
                 if receiver_type.is_integer() {
                     let items = rils_builtins::INTEGER_INTRINSICS
                         .iter()

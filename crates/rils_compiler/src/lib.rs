@@ -7,7 +7,7 @@ pub use host::{
     HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
     HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
     HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
-    HostFunctionDeclaration, HostModuleDeclaration, HostThreadAffinity,
+    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
 };
 
 mod ast {
@@ -145,7 +145,9 @@ pub fn compile_program_with_host_and_sources(
 
 #[cfg(test)]
 mod tests {
-    use super::compile;
+    use super::{compile, compile_with_host};
+    use crate::{HostContract, HostReceiver};
+    use rils_frontend::{FunctionSignature, Type};
 
     #[test]
     fn compiles_source_through_static_analysis_hir_and_mir() {
@@ -170,5 +172,25 @@ mod tests {
         };
 
         assert!(error.message.contains("immutable"));
+    }
+
+    #[test]
+    fn lowers_host_receiver_method_calls() {
+        let mut host = HostContract::new();
+        host.register_function_with_options_and_receiver(
+            900,
+            "unity::game_object::active_self",
+            FunctionSignature::fixed(vec![Type::named("HostHandle")], Type::Bool),
+            "unity.game_object",
+            crate::HostCallKind::Direct,
+            crate::HostThreadAffinity::MainThread,
+            Some(HostReceiver::Ref),
+        )
+        .unwrap();
+        compile_with_host(
+            "fn check(object: HostHandle) -> bool { object.active_self() }",
+            &host,
+        )
+        .expect("host receiver calls should lower");
     }
 }

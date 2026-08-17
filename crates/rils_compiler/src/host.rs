@@ -38,6 +38,41 @@ pub enum HostThreadAffinity {
     MainThread,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostReceiver {
+    Value,
+    Ref,
+    RefMut,
+}
+
+impl HostReceiver {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Value => "self",
+            Self::Ref => "&self",
+            Self::RefMut => "&mut self",
+        }
+    }
+
+    const fn as_tag(self) -> u8 {
+        match self {
+            Self::Value => 1,
+            Self::Ref => 2,
+            Self::RefMut => 3,
+        }
+    }
+
+    pub fn from_tag(tag: u8) -> Result<Option<Self>, String> {
+        match tag {
+            0 => Ok(None),
+            1 => Ok(Some(Self::Value)),
+            2 => Ok(Some(Self::Ref)),
+            3 => Ok(Some(Self::RefMut)),
+            value => Err(format!("unsupported binary host receiver kind {value}")),
+        }
+    }
+}
+
 impl HostThreadAffinity {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -74,6 +109,7 @@ pub struct HostFunctionDeclaration {
     pub capability: String,
     pub call_kind: HostCallKind,
     pub thread_affinity: HostThreadAffinity,
+    pub receiver: Option<HostReceiver>,
 }
 
 impl Default for HostContract {
@@ -161,6 +197,27 @@ impl HostContract {
         call_kind: HostCallKind,
         thread_affinity: HostThreadAffinity,
     ) -> Result<(), String> {
+        self.register_function_with_options_and_receiver(
+            function_id,
+            name,
+            signature,
+            capability,
+            call_kind,
+            thread_affinity,
+            None,
+        )
+    }
+
+    pub fn register_function_with_options_and_receiver(
+        &mut self,
+        function_id: u64,
+        name: impl Into<String>,
+        signature: FunctionSignature,
+        capability: impl Into<String>,
+        call_kind: HostCallKind,
+        thread_affinity: HostThreadAffinity,
+        receiver: Option<HostReceiver>,
+    ) -> Result<(), String> {
         let name = name.into();
         let capability = capability.into();
         let (module, function_name) = split_function_name(&name)?;
@@ -212,6 +269,7 @@ impl HostContract {
                 capability,
                 call_kind,
                 thread_affinity,
+                receiver,
             },
         );
         self.parameter_count += parameter_count;
@@ -262,13 +320,14 @@ impl HostContract {
                     function.name
                 ));
             }
-            self.register_function_with_options(
+            self.register_function_with_options_and_receiver(
                 function.function_id,
                 &function.name,
                 function.signature.clone(),
                 &function.capability,
                 function.call_kind,
                 function.thread_affinity,
+                function.receiver,
             )?;
         }
         Ok(())
@@ -378,10 +437,19 @@ impl HostContract {
     }
 
     pub(crate) fn signatures(&self) -> HashMap<String, FunctionSignature> {
-        self.functions
+        let mut signatures = self
+            .functions
             .iter()
             .map(|(name, function)| (name.clone(), function.signature.clone()))
-            .collect()
+            .collect::<HashMap<_, _>>();
+        for function in self.functions.values() {
+            if function.receiver.is_some()
+                && let Some((_, method)) = function.name.rsplit_once("::")
+            {
+                signatures.insert(format!("HostHandle::{method}"), function.signature.clone());
+            }
+        }
+        signatures
     }
 
     fn canonical_value(&self, include_hash: bool) -> Value {
@@ -399,7 +467,7 @@ impl HostContract {
                     .map(|function| {
                         let (_, name) = split_function_name(&function.name)
                             .expect("registered function names are valid");
-                        json!({
+                        let mut value = json!({
                             "id": format!("0x{:016x}", function.function_id),
                             "name": name,
                             "parameters": function.signature.parameters.as_ref().expect("host signatures are fixed").iter().map(type_name).collect::<Vec<_>>(),
@@ -407,7 +475,14 @@ impl HostContract {
                             "capability": function.capability,
                             "call_kind": function.call_kind.as_str(),
                             "thread_affinity": function.thread_affinity.as_str(),
-                        })
+                        });
+                        if let Some(receiver) = function.receiver {
+                            value.as_object_mut().expect("function JSON is an object").insert(
+                                "receiver".into(),
+                                Value::String(receiver.as_str().into()),
+                            );
+                        }
+                        value
                     })
                     .collect::<Vec<_>>();
                 json!({
@@ -497,7 +572,7 @@ fn encode_binary_manifest(contract: &HostContract) -> Result<Vec<u8>, String> {
         payload.push(match function.thread_affinity {
             HostThreadAffinity::MainThread => 0,
         });
-        payload.push(0);
+        payload.push(function.receiver.map_or(0, HostReceiver::as_tag));
         for parameter in parameters {
             parameter_types.push(type_tag(parameter)?);
         }
@@ -680,9 +755,7 @@ fn decode_binary_manifest(bytes: &[u8]) -> Result<HostContract, String> {
                 return Err(format!("unsupported binary host thread affinity {value}"));
             }
         };
-        if payload.read_u8()? != 0 {
-            return Err("binary host manifest function reserved byte must be zero".into());
-        }
+        let receiver = HostReceiver::from_tag(payload.read_u8()?)?;
         let name = indexed_string(&strings, name_index, "function name")?;
         let module = module_names.get(module_index).ok_or_else(|| {
             format!("binary host function module index {module_index} is invalid")
@@ -719,6 +792,7 @@ fn decode_binary_manifest(bytes: &[u8]) -> Result<HostContract, String> {
             return_type,
             call_kind,
             thread_affinity,
+            receiver,
         });
     }
     if next_parameter != parameter_count {
@@ -737,13 +811,14 @@ fn decode_binary_manifest(bytes: &[u8]) -> Result<HostContract, String> {
             .iter()
             .map(|tag| decode_type_tag(*tag, false))
             .collect::<Result<Vec<_>, _>>()?;
-        contract.register_function_with_options(
+        contract.register_function_with_options_and_receiver(
             function.function_id,
             function.name,
             FunctionSignature::fixed(parameters, function.return_type),
             function.capability,
             function.call_kind,
             function.thread_affinity,
+            function.receiver,
         )?;
     }
     if used_strings.iter().any(|used| !used) {
@@ -761,6 +836,7 @@ struct RawBinaryFunction {
     return_type: Type,
     call_kind: HostCallKind,
     thread_affinity: HostThreadAffinity,
+    receiver: Option<HostReceiver>,
 }
 
 struct BinaryReader<'a> {
@@ -898,6 +974,7 @@ fn parse_function(
             "capability",
             "call_kind",
             "thread_affinity",
+            "receiver",
         ],
         "host function",
     )?;
@@ -931,13 +1008,28 @@ fn parse_function(
             ));
         }
     };
-    contract.register_function_with_options(
+    let receiver = function
+        .get("receiver")
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| "host function receiver must be a string".to_string())
+                .and_then(|receiver| match receiver {
+                    "self" => Ok(HostReceiver::Value),
+                    "&self" => Ok(HostReceiver::Ref),
+                    "&mut self" => Ok(HostReceiver::RefMut),
+                    other => Err(format!("unsupported host function receiver `{other}`")),
+                })
+        })
+        .transpose()?;
+    contract.register_function_with_options_and_receiver(
         function_id,
         format!("{module_name}::{name}"),
         FunctionSignature::fixed(parameters, return_type),
         capability,
         call_kind,
         thread_affinity,
+        receiver,
     )
 }
 

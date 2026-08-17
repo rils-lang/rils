@@ -620,6 +620,7 @@ fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
         }
         Type::Tuple(elements) => elements.iter().all(|ty| type_is_copy(ty, environment)),
         Type::Array { element, .. } => type_is_copy(element, environment),
+        Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => true,
         Type::Named { name, arguments } => match environment.borrow().get(name) {
             Some(Value::StructType(definition)) => {
                 if definition.implemented_traits.borrow().contains("Copy") {

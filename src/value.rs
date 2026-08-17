@@ -610,14 +610,17 @@ impl Value {
             | Self::BoundMethod(_)
             | Self::BuiltinBoundMethod(_)
             | Self::TraitMethodSelector(_) => true,
+            // HostHandle is an opaque, copyable identity token.  The payload is
+            // reference-counted internally, but copying the token must not copy
+            // or transfer ownership of the host object itself.
+            Self::HostObject(object) => object.type_definition.name == "HostHandle",
             Self::String(_)
             | Self::Range(_)
             | Self::Vec(_)
             | Self::HashMap(_)
             | Self::HashSet(_)
             | Self::SequenceIterator(_)
-            | Self::BytecodeIterator(_)
-            | Self::HostObject(_) => false,
+            | Self::BytecodeIterator(_) => false,
         }
     }
 

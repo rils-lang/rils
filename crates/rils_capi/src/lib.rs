@@ -14,8 +14,8 @@ use std::{
 };
 
 use rils::{
-    BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostContract, IntegerType, Span,
-    Type, Value,
+    BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostCallKind, HostContract,
+    HostReceiver, HostThreadAffinity, IntegerType, Span, Type, Value,
 };
 
 pub const RILS_ABI_VERSION: u32 = 2;

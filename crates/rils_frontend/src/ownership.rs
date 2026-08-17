@@ -1013,6 +1013,9 @@ impl<'a> Checker<'a> {
             Type::Tuple(elements) => elements.iter().all(|ty| self.is_copy_inner(ty, visiting)),
             Type::Array { element, .. } => self.is_copy_inner(element, visiting),
             Type::Named { name, arguments } => {
+                if name == "HostHandle" && arguments.is_empty() {
+                    return true;
+                }
                 let Some(definition) = self.nominals.get(name) else {
                     return false;
                 };

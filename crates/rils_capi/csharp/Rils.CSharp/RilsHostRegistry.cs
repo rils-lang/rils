@@ -26,6 +26,7 @@ namespace Rils.CSharp
             ReturnTag = returnTag;
             Parameters = CreateParameters(parameterTags);
             ThreadPolicy = RilsHostThreadPolicy.MainThreadOnly;
+            Receiver = RilsHostReceiver.None;
         }
 
         public RilsHostFunction(
@@ -35,7 +36,8 @@ namespace Rils.CSharp
             RilsHostParameter returnParameter,
             IReadOnlyList<RilsHostParameter> parameters,
             Func<RilsValue[], RilsValue> handler,
-            RilsHostThreadPolicy threadPolicy = RilsHostThreadPolicy.MainThreadOnly)
+            RilsHostThreadPolicy threadPolicy = RilsHostThreadPolicy.MainThreadOnly,
+            RilsHostReceiver receiver = RilsHostReceiver.None)
         {
             if (functionId == 0) throw new ArgumentOutOfRangeException(nameof(functionId));
             Name = name ?? throw new ArgumentNullException(nameof(name));
@@ -47,6 +49,7 @@ namespace Rils.CSharp
             ReturnTransferMode = returnParameter.TransferMode;
             ParameterTags = CreateTags(parameters);
             ThreadPolicy = threadPolicy;
+            Receiver = receiver;
         }
 
         public ulong FunctionId { get; }
@@ -57,6 +60,7 @@ namespace Rils.CSharp
         public IReadOnlyList<RilsHostParameter> Parameters { get; }
         public RilsHostTransferMode ReturnTransferMode { get; }
         public RilsHostThreadPolicy ThreadPolicy { get; }
+        public RilsHostReceiver Receiver { get; }
         internal Func<RilsValue[], RilsValue> Handler { get; }
 
         private static IReadOnlyList<RilsHostParameter> CreateParameters(IReadOnlyList<RilsValueTag> tags)
@@ -141,7 +145,7 @@ namespace Rils.CSharp
                     ParameterTags = tagPointer,
                     ParameterCount = new UIntPtr(checked((uint)tags.Length)),
                     ReturnTag = function.ReturnTag,
-                    Reserved = 0,
+                    Reserved = (uint)function.Receiver,
                 };
                 try
                 {

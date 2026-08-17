@@ -157,13 +157,15 @@ impl Server {
                     })
                     .unwrap_or_default();
                 if let Err(error) = self.reload_host_manifests(paths) {
-                    self.connection.sender.send(Message::Notification(Notification::new(
-                        "window/showMessage".to_owned(),
-                        json!({
-                            "type": 1,
-                            "message": format!("Rils host manifest reload failed: {error}"),
-                        }),
-                    )))?;
+                    self.connection
+                        .sender
+                        .send(Message::Notification(Notification::new(
+                            "window/showMessage".to_owned(),
+                            json!({
+                                "type": 1,
+                                "message": format!("Rils host manifest reload failed: {error}"),
+                            }),
+                        )))?;
                 } else {
                     self.reanalyze_documents();
                     self.refresh_project_symbol_links();
@@ -256,6 +258,14 @@ impl Server {
             .functions()
             .map(|function| (function.name.clone(), function.signature.clone()))
             .collect();
+        for function in self.host_contract.functions() {
+            if function.receiver.is_some()
+                && let Some((_, method)) = function.name.rsplit_once("::")
+            {
+                self.host_functions
+                    .insert(format!("HostHandle::{method}"), function.signature.clone());
+            }
+        }
         Ok(())
     }
 

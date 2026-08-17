@@ -22,6 +22,14 @@ namespace Rils.CSharp
         ScheduleToMainThread = 2,
     }
 
+    public enum RilsHostReceiver
+    {
+        None = 0,
+        Self = 1,
+        RefSelf = 2,
+        RefMutSelf = 3,
+    }
+
     /// Stable categories for errors produced by a host function.
     public enum RilsHostErrorCode
     {

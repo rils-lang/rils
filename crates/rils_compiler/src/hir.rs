@@ -937,6 +937,46 @@ impl<'a> FunctionLowerer<'a> {
                             });
                         }
                     }
+                    if let Some(host) = self.host_method(name).cloned() {
+                        let receiver = match host.receiver {
+                            Some(crate::host::HostReceiver::Value) => ReceiverMode::Owned,
+                            Some(crate::host::HostReceiver::Ref) => {
+                                ReceiverMode::Reference { mutable: false }
+                            }
+                            Some(crate::host::HostReceiver::RefMut) => {
+                                ReceiverMode::Reference { mutable: true }
+                            }
+                            None => unreachable!("host_method only returns receiver methods"),
+                        };
+                        let mut lowered = Vec::with_capacity(arguments.len() + 1);
+                        // Host ABI methods always receive the opaque handle by value.  The
+                        // receiver mode still controls borrowing/ownership at the source
+                        // level, but a `&self`/`&mut self` receiver must be dereferenced
+                        // before crossing the import boundary (otherwise the VM passes a
+                        // reference value and the host reports `expected HostHandle`).
+                        let receiver_value = self.method_receiver(object, receiver)?;
+                        lowered.push(match receiver {
+                            ReceiverMode::Owned => receiver_value,
+                            ReceiverMode::Reference { .. } => HirExpression::Unary {
+                                operator: UnaryOp::Dereference,
+                                operand: Box::new(receiver_value),
+                                span: *span,
+                            },
+                        });
+                        lowered.extend(
+                            arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        );
+                        return Ok(HirExpression::CallImport {
+                            name: host.name.clone(),
+                            signature: host.signature.clone(),
+                            capability: host.capability.clone(),
+                            arguments: lowered,
+                            span: *span,
+                        });
+                    }
                     let method = self
                         .method_names
                         .get(name)
@@ -1300,6 +1340,18 @@ impl<'a> FunctionLowerer<'a> {
             }
         }
         self.host_functions.get(&name)
+    }
+
+    fn host_method(&self, name: &str) -> Option<&HostFunctionDeclaration> {
+        let mut matches = self.host_functions.values().filter(|function| {
+            function.receiver.is_some()
+                && function
+                    .name
+                    .rsplit_once("::")
+                    .is_some_and(|(_, method)| method == name)
+        });
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
     }
 
     fn scoped_name(&self, name: &str) -> String {

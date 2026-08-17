@@ -111,10 +111,10 @@ pub unsafe extern "C" fn rils_runtime_register_host_functions(
         };
         let mut declarations = Vec::with_capacity(descriptors.len());
         for descriptor in descriptors {
-            if descriptor.reserved != 0 || descriptor.function_id == 0 {
+            if descriptor.reserved > 3 || descriptor.function_id == 0 {
                 return fail(
                     RILS_STATUS_INVALID_ARGUMENT,
-                    "host function reserved fields must be zero and function id must be non-zero",
+                    "host function receiver kind is invalid or function id is zero",
                     "",
                     Span::default(),
                 );
@@ -167,6 +167,8 @@ pub unsafe extern "C" fn rils_runtime_register_host_functions(
                 name,
                 FunctionSignature::fixed(parameters, return_type),
                 capability,
+                HostReceiver::from_tag(descriptor.reserved as u8)
+                    .expect("receiver kind was validated above"),
             ));
         }
 
@@ -189,10 +191,16 @@ pub unsafe extern "C" fn rils_runtime_register_host_functions(
                 );
             }
             let mut contract = runtime.host_contract.clone();
-            for (function_id, name, signature, capability) in declarations {
-                if let Err(message) =
-                    contract.register_function(function_id, name, signature, capability)
-                {
+            for (function_id, name, signature, capability, receiver) in declarations {
+                if let Err(message) = contract.register_function_with_options_and_receiver(
+                    function_id,
+                    name,
+                    signature,
+                    capability,
+                    HostCallKind::Direct,
+                    HostThreadAffinity::MainThread,
+                    receiver,
+                ) {
                     return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
                 }
             }
