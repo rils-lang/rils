@@ -54,7 +54,7 @@ integerType = "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
             | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" ;
 floatType   = "f32" | "f64" ;
 typeAlias   = "type" IDENT genericParams? "=" type ";" ;
-structDecl  = "struct" IDENT genericParams? "{" namedFields "}" ;
+structDecl  = "struct" IDENT genericParams? (";" | "{" namedFields? "}") ;
 enumDecl    = "enum" IDENT genericParams? "{"
               enumVariant ("," enumVariant)* ","? "}" ;
 enumVariant = IDENT

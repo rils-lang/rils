@@ -1593,6 +1593,26 @@ fn structs_support_construction_fields_and_impl_methods() {
 }
 
 #[test]
+fn empty_struct_declarations_work_in_interpreter_and_bytecode() {
+    let source = r#"
+        struct Unit;
+        struct Empty {}
+
+        impl Unit {
+            fn answer() -> i32 { 40 }
+        }
+
+        impl Empty {
+            fn answer() -> i32 { 2 }
+        }
+
+        Unit::answer() + Empty::answer()
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+}
+
+#[test]
 fn struct_patterns_destructure_fields() {
     assert_eq!(
         integer(

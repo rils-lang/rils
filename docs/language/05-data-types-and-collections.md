@@ -4,7 +4,7 @@
 
 ## Struct
 
-Struct 使用命名字段，并且至少包含一个字段：
+Struct 可以使用命名字段，也可以声明为不保存状态的单位结构体：
 
 ```rust
 struct Point {
@@ -19,9 +19,14 @@ let mut point: Point = Point {
 
 println!(point.x);
 point.x = 10.0;
+
+struct Marker;
+struct Empty {}
 ```
 
-构造时必须提供所有字段，不能提供未知字段，并且字段值必须符合声明类型。Struct 是名义类型：字段相同但名字不同的两个 struct 不是同一种类型。
+`struct Marker;` 和零字段的 `struct Empty {}` 都是不保存字段的零大小名义类型。带字段 Struct
+在构造时必须提供所有字段，不能提供未知字段，并且字段值必须符合声明类型。Struct 是名义类型：
+字段相同但名字不同的两个 struct 不是同一种类型。
 
 字段是 place，可以直接赋值或局部借用。可写性来自最外层变量或引用：
 

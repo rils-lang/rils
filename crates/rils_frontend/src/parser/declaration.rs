@@ -237,14 +237,12 @@ impl Parser {
         let (name, name_span) = self.expect_identifier("expected struct name")?;
         let generic_parameters = self.generic_parameters()?;
         self.generic_scopes.push(generic_parameters.clone());
-        let (fields, end) = self.named_fields("expected `{` after struct name")?;
+        let (fields, end) = if let Some(semicolon) = self.take(&TokenKind::Semicolon) {
+            (Vec::new(), semicolon.span)
+        } else {
+            self.named_fields("expected `{` or `;` after struct name")?
+        };
         self.generic_scopes.pop();
-        if fields.is_empty() {
-            return Err(ParseError {
-                message: "unit structs are not supported yet; declare at least one field".into(),
-                span: start.merge(end),
-            });
-        }
         Ok(Stmt::Struct {
             name,
             name_span,

@@ -26,28 +26,33 @@ Unity API 默认要求主线程。跨线程调用必须返回明确错误，不�
 
 ## Unity 生命周期资产
 
-Unity 场景中的 `RilsBehaviour` 组件可以直接引用 `.rils` 导入资产，不需要在
-C# 脚本中硬编码源码。导入器会记录可选的生命周期函数，组件创建实例后按
-Unity 的顺序调用：
+Unity 场景中的 `RilsBehaviour` 组件引用 `.rils` 主资产下生成的 `RilsEntryAsset`
+子资产，不需要在 C# 脚本中硬编码源码。入口由实现同名 trait 的类型声明：
 
 ```rils
-pub fn awake(host: HostHandle) { }
-pub fn start(host: HostHandle) { }
-pub fn update(host: HostHandle, delta_seconds: f32) { }
-pub fn on_destroy(host: HostHandle) { }
+pub struct PlayerBehaviour { }
+
+impl RilsBehaviour for PlayerBehaviour {
+    fn awake(&mut self, host: HostHandle) { }
+    fn start(&mut self, host: HostHandle) { }
+    fn update(&mut self, host: HostHandle, delta_seconds: f32) { }
+    fn on_destroy(&mut self, host: HostHandle) { }
+}
 ```
 
-函数参数中的 `HostHandle` 是当前 GameObject 的 session 绑定句柄，不拥有或
-暴露 Unity 对象本身。没有声明的回调不会产生调用开销；脚本异常默认会记录
-带对象上下文的 Unity 错误并禁用组件。后续增加 `fixed_update`、`late_update`
-等回调时保持同样的显式声明和导入期标记方式。
+方法参数中的 `HostHandle` 是当前 GameObject 的 session 绑定句柄，不拥有或
+暴露 Unity 对象本身。当前第一版已经建立主资产/入口子资产边界；按具体 entry
+构造并持久保存脚本状态、以 trait 方法身份精确调用生命周期函数仍需要字节码元数据
+与 instance 模型支持，不能仅用类型名字符串替代。
 
 ## Unity 宿主 manifest
 
 Unity 集成使用项目根目录下的 `.rils/manifest/` 作为生成的二进制宿主契约目录，
-不把 manifest 放进 `Assets`，也不把它作为 Unity 资源提交。通过菜单
-`Rils > Generate Unity Host Manifest` 生成后，导入器会用它校验带有
-`unity::object::*` 调用的脚本，并把 manifest 字节嵌入对应的
-`RilsBytecodeAsset`。多个 fragment 会按路径排序后合并。这样 Player 运行时只依赖 bytecode asset，不需要访问
+不把 manifest 放进 `Assets`，也不把它作为 Unity 资源提交。Editor 启动时会把现有
+`unity.object.rilhm` 与当前 Unity 宿主绑定生成的内容比较；文件缺失、损坏或已经过期时会
+原子重建并自动重新导入 `.rils` 资产。菜单 `Rils > Generate Unity Host Manifest` 仍可用于
+显式强制重建。导入器会用该 manifest 校验带有
+`unity::object::*` 调用的脚本，并把 manifest 字节保存到对应的
+`RilsScriptAsset` 主资产。其 `RilsEntryAsset` 子资产共享这些数据，不重复存储。多个 fragment 会按路径排序后合并。这样 Player 运行时只依赖导入资产，不需要访问
 工程根目录的 `.rils` 文件；`.rils/manifest/*.rilhm` 作为动态生成物由集成项目的
 局部 `.gitignore` 忽略。

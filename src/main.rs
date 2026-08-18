@@ -5,7 +5,7 @@ use std::{
     process::ExitCode,
 };
 
-use rils::{BytecodeModule, Engine, HostContract};
+use rils::{BytecodeModule, Engine, HostContract, RilsLibrary};
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = env::args().skip(1).collect();
@@ -17,6 +17,17 @@ fn main() -> ExitCode {
         }
         [command, path] if command == "verify" => verify_bytecode(path),
         [command, path] if command == "run" => run_bytecode(path),
+        [command, action, input] if command == "library" && action == "compile" => {
+            compile_library(input, None)
+        }
+        [command, action, input, option, output]
+            if command == "library" && action == "compile" && option == "-o" =>
+        {
+            compile_library(input, Some(output))
+        }
+        [command, action, path] if command == "library" && action == "verify" => {
+            verify_library(path)
+        }
         [command, action, input] if command == "host-manifest" && action == "compile" => {
             compile_host_manifest(input, None)
         }
@@ -59,9 +70,58 @@ fn print_usage() {
     eprintln!("  rils compile <script.rils> [-o output.rilbc]");
     eprintln!("  rils verify <module.rilbc>");
     eprintln!("  rils run <module.rilbc>");
+    eprintln!("  rils library compile <directory|rils.toml|source.rils> [-o output.rilslib]");
+    eprintln!("  rils library verify <library.rilslib>");
     eprintln!("  rils host-manifest compile <contract.json> [-o contract.rilhm]");
     eprintln!("  rils host-manifest export-json <contract.rilhm> [-o contract.json]");
     eprintln!("  rils host-manifest link <directory|rils.toml> -o contract.rilhm");
+}
+
+fn compile_library(input: &str, output: Option<&str>) -> ExitCode {
+    let library = match rils::compile_library(input) {
+        Ok(library) => library,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let output = output.map(PathBuf::from).unwrap_or_else(|| {
+        let input = Path::new(input);
+        let directory = if input.is_dir() {
+            input
+        } else {
+            input.parent().unwrap_or_else(|| Path::new("."))
+        };
+        directory.join(format!("{}.rilslib", library.name()))
+    });
+    match library.write_file(&output) {
+        Ok(()) => {
+            println!("wrote {}", output.display());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn verify_library(path: &str) -> ExitCode {
+    match RilsLibrary::read_file(path) {
+        Ok(library) => {
+            println!(
+                "verified {path}: library `{}`, {} functions, {} instructions",
+                library.name(),
+                library.module().function_count(),
+                library.module().instruction_count()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn link_host_manifests(input: &str, output: &str) -> ExitCode {

@@ -367,6 +367,19 @@ mod tests {
     }
 
     #[test]
+    fn parses_unit_and_empty_braced_structs() {
+        let program = parse(lex("struct Unit; struct Empty {}").unwrap()).unwrap();
+        assert!(matches!(
+            &program.statements[0],
+            Stmt::Struct { fields, .. } if fields.is_empty()
+        ));
+        assert!(matches!(
+            &program.statements[1],
+            Stmt::Struct { fields, .. } if fields.is_empty()
+        ));
+    }
+
+    #[test]
     fn rejects_invalid_assignment_target() {
         let error = parse(lex("(1 + 2) = 3;").unwrap()).unwrap_err();
         assert_eq!(error.message, "invalid assignment target");

@@ -2,6 +2,7 @@ pub mod bytecode;
 mod environment;
 mod hash_collections;
 mod interpreter;
+mod library;
 mod numeric;
 mod runtime_type;
 mod standard_library;
@@ -76,12 +77,13 @@ pub use bytecode::{
     HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
     HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
 };
+pub use library::{LibraryFormatError, RilsLibrary};
 pub use opaque_host::{OpaqueHostHandle, opaque_host_handle, opaque_host_value};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,
 };
-pub use rils_project::{Project, ProjectDependency, ProjectError, ProjectFile};
+pub use rils_project::{Project, ProjectDependency, ProjectError, ProjectFile, ProjectKind};
 pub use value::Value;
 
 pub type NativeFunctionHandler = fn(&[Value]) -> Result<Value, String>;
@@ -611,13 +613,22 @@ fn load_file_modules(
         }
         return load_external_modules(statements, base, native_macros, &mut loading, sources);
     }
-    let entry = project.module_for_file(entry_path).ok_or_else(|| {
-        module_message(format!(
+    let entry = project.module_for_file(entry_path);
+    let entry_is_prelude = project.prelude().is_some_and(|prelude_path| {
+        prelude_path == entry_path
+            || entry_path.canonicalize().is_ok_and(|entry_path| {
+                prelude_path
+                    .canonicalize()
+                    .is_ok_and(|path| path == entry_path)
+            })
+    });
+    if entry.is_none() && !entry_is_prelude {
+        return Err(module_message(format!(
             "entry script `{}` is outside the script_paths configured by `{}`",
             entry_path.display(),
             project.manifest_path().unwrap().display()
-        ))
-    })?;
+        )));
+    }
     let entry_statements = if require_entry {
         prepare_project_entry(std::mem::take(statements))?
     } else {
@@ -625,6 +636,18 @@ fn load_file_modules(
         std::mem::take(statements)
     };
     let mut root = ProjectModuleNode::default();
+    if entry_is_prelude {
+        root.statements.extend(entry_statements.clone());
+    } else if let Some(prelude_path) = project.prelude() {
+        let source = fs::read_to_string(prelude_path)
+            .map_err(|error| module_load_error(prelude_path, error))?;
+        let source_id = sources.register_source(prelude_path, &source);
+        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
+        let prelude =
+            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        reject_external_module_declarations(&prelude.statements)?;
+        root.statements.extend(prelude.statements);
+    }
     for dependency in project.dependencies() {
         let Some(prelude_path) = dependency.prelude.as_deref() else {
             continue;
@@ -639,7 +662,8 @@ fn load_file_modules(
         root.statements.extend(prelude.statements);
     }
     for file in project.modules() {
-        let module_statements = if file.module_path == entry.module_path {
+        let module_statements = if entry.is_some_and(|entry| file.module_path == entry.module_path)
+        {
             entry_statements.clone()
         } else {
             let source = fs::read_to_string(&file.path)
@@ -656,6 +680,7 @@ fn load_file_modules(
     *statements = project_module_statements(root);
     if require_entry {
         let mut entry_path = entry
+            .expect("executable project entries cannot be library preludes")
             .module_path
             .split("::")
             .map(str::to_owned)
@@ -899,6 +924,53 @@ pub fn compile_file(path: impl AsRef<Path>) -> Result<BytecodeModule, CompileErr
     }
     let host = host.unwrap_or_default();
     compile_project_file_with_host(path, &project, &host, project.requires_entry())
+}
+
+/// Compiles a configured library project into a verified `.rilslib` artifact.
+pub fn compile_library(path: impl AsRef<Path>) -> Result<RilsLibrary, CompileError> {
+    let path = path.as_ref();
+    let project = if path.is_file() && path.file_name().is_some_and(|name| name == "rils.toml") {
+        Project::from_file(path)
+    } else {
+        Project::discover(path, None)
+    }
+    .map_err(|error| CompileError::new(error.to_string(), Span::default()))?;
+    if project.kind() != ProjectKind::Lib {
+        return Err(CompileError::new(
+            format!(
+                "project `{}` is executable; only library projects can produce .rilslib artifacts",
+                project.name()
+            ),
+            Span::default(),
+        ));
+    }
+    let requested_source = path.is_file()
+        && path
+            .extension()
+            .is_some_and(|extension| extension == "rils")
+        && project.module_for_file(path).is_some();
+    let entry = if requested_source {
+        path.to_path_buf()
+    } else {
+        project
+            .modules()
+            .find(|file| {
+                project
+                    .source_roots()
+                    .iter()
+                    .any(|root| file.path.starts_with(root))
+            })
+            .map(|file| file.path.clone())
+            .ok_or_else(|| {
+                CompileError::new(
+                    format!("library project `{}` contains no modules", project.name()),
+                    Span::default(),
+                )
+            })?
+    };
+    let module = compile_file(entry)?;
+    RilsLibrary::new(project.name(), module)
+        .map_err(|error| CompileError::new(error.to_string(), Span::default()))
 }
 
 /// Loads and compiles a Rils module tree using declarations supplied by a host contract.

@@ -7,6 +7,16 @@
 
 ### Added
 
+- 增加实验性 `.rilslib` 库容器、`rils library compile/verify` 命令和严格加载校验；库项目自身的
+  `[lib].prelude` 现在会参与独立库编译。当前阶段先支持显式导出与验证，二进制依赖链接仍在后续实现。
+- RilsForUnity 在 Editor 启动时自动校验内置 Host Manifest；缺失、损坏或与当前绑定不一致时会
+  原子重建并重新导入 `.rils` 资产，不再要求用户先执行生成菜单。
+- `compile_file` 允许把库自身 `[lib].prelude` 作为资产入口编译，保证只注入一次并同时加载库项目；
+  RilsForUnity 同步增加空脚本和完整 `RilsBehaviour` 模板的右键创建菜单。
+- Struct 现在支持 `struct Name;` 单位声明和 `struct Name {}` 零字段声明；RilsForUnity 的
+  `RilsBehaviour` 创建模板使用 prelude 自动导入的 trait，不再生成显式 `use`，并会把重名或含空格的
+  文件名规范化为合法 Rils 模块标识符。
+
 - `use` 增加公开成员通配导入和递归分组导入，支持 `use path::*;`、别名、嵌套
   `use path::{item, child::{nested, other}};`。
 - Analyzer 增加项目级跨文件公开导出索引，编辑器可以在工作区范围内解析和跳转符号。

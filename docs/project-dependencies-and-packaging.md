@@ -51,9 +51,11 @@ use crate::rils_for_unity::behaviour::RilsBehaviour;
 
 ## Unity 资产边界
 
-RilsForUnity 自带的 `Runtime/Rils/` 源码属于库源码，不作为独立 Unity 资产导入。Unity importer 会根据最近的 `rils.toml` 判断源码是否属于 `[lib]` 项目；库项目中的 `.rils` 文件由 project dependency graph 加载。
+Unity 工作区中的每个 `.rils` 文件都会由 ScriptedImporter 导入为 `RilsScriptAsset` 主资产；脚本中每个被识别出的 `RilsBehaviour` 实现会生成一个 `RilsEntryAsset` 子资产。源码位于 `[lib]` 项目中也不会改变这一资产关系；编译器仍通过最近的 `rils.toml` 和 project dependency graph 自动解析同项目模块与源码依赖。
 
-用户项目中的 `.rils` 文件仍然会被 ScriptedImporter 编译为 `RilsBytecodeAsset`。因此多个 Rils 项目可以放在同一个 Unity 工作区中，只要各自拥有独立的 `rils.toml` 和源码根目录。
+`[lib].prelude` 也是可正常选择的 `RilsScriptAsset`。它仍作为库的特殊根声明注入，不会同时以普通模块路径重复加入；以 prelude 文件触发导入时会编译完整库项目。
+
+因此多个 Rils 项目可以放在同一个 Unity 工作区中，只要各自拥有独立的 `rils.toml` 和源码根目录。开发期不要求先把源码依赖手工导出成 `.rilslib`。
 
 ## 编译与最终产物
 
@@ -65,9 +67,10 @@ RilsForUnity 自带的 `Runtime/Rils/` 源码属于库源码，不作为独立 U
   + 依赖库模块
   + 依赖 prelude
         ↓
-统一编译为 Rils bytecode
+统一编译为当前入口 bytecode
         ↓
-RilsBytecodeAsset / .bytes
+RilsScriptAsset
+  └─ 0..N RilsEntryAsset
 ```
 
 这意味着：
@@ -76,7 +79,7 @@ RilsBytecodeAsset / .bytes
 - `rils.toml` 不需要随 Player 发布；
 - 依赖库中参与编译的代码会进入使用它的 bytecode 产物；
 - Player 默认只加载 bytecode，不要求恢复 Rils 源码目录；
-- 不作为独立 Unity 资产不会导致依赖内容丢失。
+- 每个 entry 子资产共享主资产中的 bytecode 与 host manifest，不重复内嵌大块数据。
 
 这与 Rust 的“依赖先编译，再链接”在最终部署效果上相近，但当前 Rils 仍采用模块合并式 bytecode，而不是独立库文件链接。
 
@@ -103,3 +106,9 @@ RilsBytecodeAsset / .bytes
 - Unity 构建阶段统一生成并复用依赖产物。
 
 这些优化不能改变依赖解析、SourceId、模块路径和 prelude 注入的语义。
+
+## 可分发库产物
+
+库项目可以使用 `rils library compile` 显式导出 `.rilslib`，格式与当前能力边界见
+[Rils 库产物](library-artifacts.md)。开发期的路径依赖仍直接使用源码并自动参与项目编译；二进制
+依赖声明和入口到共享库的动态链接仍属于下一阶段，不会在尚未具备链接语义时静默回退为内嵌依赖。

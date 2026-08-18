@@ -18,6 +18,7 @@ pub struct Project {
     manifest_path: Option<PathBuf>,
     name: String,
     kind: ProjectKind,
+    prelude: Option<PathBuf>,
     source_roots: Vec<PathBuf>,
     host_manifests: Vec<PathBuf>,
     dependencies: BTreeMap<String, ProjectDependency>,
@@ -127,6 +128,7 @@ impl Project {
             manifest_path: None,
             name,
             kind: ProjectKind::Bin,
+            prelude: None,
             source_roots: vec![root],
             host_manifests,
             dependencies: BTreeMap::new(),
@@ -172,7 +174,8 @@ impl Project {
             .into_iter()
             .map(|directory| normalize_under_root(&root, &directory, "host manifest directory"))
             .collect::<Result<Vec<_>, _>>()?;
-        let kind = if config.lib.is_some()
+        let library = config.lib;
+        let kind = if library.is_some()
             || !source_roots
                 .iter()
                 .any(|source_root| source_root.join("main.rils").is_file())
@@ -181,12 +184,17 @@ impl Project {
         } else {
             ProjectKind::Bin
         };
+        let prelude = library
+            .and_then(|library| library.prelude)
+            .map(|path| normalize_under_root(&root, &path, "library prelude"))
+            .transpose()?;
         let dependencies = load_dependencies(&root, config.dependencies)?;
         Self::build(
             root,
             Some(path),
             project.name,
             kind,
+            prelude,
             source_roots,
             configured_manifests,
             configured_manifest_dirs,
@@ -207,6 +215,7 @@ impl Project {
             None,
             name,
             ProjectKind::Bin,
+            None,
             vec![root],
             Vec::new(),
             Vec::new(),
@@ -219,6 +228,7 @@ impl Project {
         manifest_path: Option<PathBuf>,
         name: String,
         kind: ProjectKind,
+        prelude: Option<PathBuf>,
         source_roots: Vec<PathBuf>,
         configured_manifests: Vec<PathBuf>,
         configured_manifest_dirs: Vec<PathBuf>,
@@ -244,6 +254,7 @@ impl Project {
             manifest_path,
             name,
             kind,
+            prelude,
             source_roots,
             host_manifests,
             dependencies,
@@ -269,6 +280,10 @@ impl Project {
 
     pub fn requires_entry(&self) -> bool {
         self.kind == ProjectKind::Bin
+    }
+
+    pub fn prelude(&self) -> Option<&Path> {
+        self.prelude.as_deref()
     }
 
     pub fn source_roots(&self) -> &[PathBuf] {
@@ -837,6 +852,30 @@ mod tests {
         );
         assert!(project.module("rils_for_unity::behaviour").is_some());
         assert_eq!(project.dependencies().len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn records_library_prelude() {
+        let root = temporary_project();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("src/prelude.rils"),
+            "pub fn value() -> i32 { 42 }",
+        )
+        .unwrap();
+        fs::write(root.join("src/module.rils"), "pub fn other() -> i32 { 1 }").unwrap();
+        fs::write(
+            root.join(PROJECT_FILE_NAME),
+            "[project]\nname = \"sample\"\nscript_paths = [\"src\"]\n\n[lib]\nprelude = \"src/prelude.rils\"\n",
+        )
+        .unwrap();
+
+        let project = Project::from_file(root.join(PROJECT_FILE_NAME)).unwrap();
+        assert_eq!(
+            project.prelude(),
+            Some(root.join("src/prelude.rils").as_path())
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

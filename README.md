@@ -43,6 +43,7 @@ script_paths = ["scripts"]
 
 - [语言手册](docs/language/README.md)
 - [项目模型](docs/project.md)
+- [Rils 库产物](docs/library-artifacts.md)
 - [Analyzer 与编辑器能力](docs/analyzer.md)
 - [字节码设计](docs/bytecode.md)
 - [C API 与 Host Manifest](docs/capi/README.md)
