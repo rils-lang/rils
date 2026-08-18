@@ -129,6 +129,15 @@ internal static unsafe class NativeMethods
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_validate_host")]
     internal static extern int ModuleValidateHost(ulong runtime, ulong module);
 
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_trait_implementation_count")]
+    internal static extern int ModuleTraitImplementationCount(ulong runtime, ulong module, NativeSlice trait_name, NativeSlice source_name, out UIntPtr out_count);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_trait_implementation_name_size")]
+    internal static extern int ModuleTraitImplementationNameSize(ulong runtime, ulong module, NativeSlice trait_name, NativeSlice source_name, UIntPtr index, out UIntPtr out_size);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_write_trait_implementation_name")]
+    internal static extern int ModuleWriteTraitImplementationName(ulong runtime, ulong module, NativeSlice trait_name, NativeSlice source_name, UIntPtr index, byte* buffer, UIntPtr buffer_capacity, out UIntPtr out_written);
+
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_bytecode_size")]
     internal static extern int ModuleBytecodeSize(ulong runtime, ulong module, out UIntPtr out_size);
 
@@ -152,6 +161,15 @@ internal static unsafe class NativeMethods
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_instance_call")]
     internal static extern int InstanceCall(ulong runtime, ulong instance, NativeSlice function_name, NativeValue* arguments, UIntPtr argument_count, out NativeValue out_value);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_script_value_create_default")]
+    internal static extern int ScriptValueCreateDefault(ulong runtime, ulong instance, NativeSlice target, out ulong out_value);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_script_value_destroy")]
+    internal static extern int ScriptValueDestroy(ulong runtime, ulong value);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_script_value_call_trait")]
+    internal static extern int ScriptValueCallTrait(ulong runtime, ulong instance, ulong value, NativeSlice trait_name, NativeSlice method_name, NativeValue* arguments, UIntPtr argument_count, out NativeValue out_value);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_last_error_code")]
     internal static extern int LastErrorCode();

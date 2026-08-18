@@ -35,7 +35,11 @@ pub unsafe extern "C" fn rils_instance_create(
                     Span::default(),
                 );
             }
-            let instance = state.instances.insert(Instance { runtime, module });
+            let instance = state.instances.insert(Instance {
+                runtime,
+                module,
+                script_values: Vec::new(),
+            });
             state
                 .runtimes
                 .get_mut(runtime)
@@ -67,7 +71,19 @@ pub extern "C" fn rils_instance_destroy(runtime: Handle, instance: Handle) -> i3
                     Span::default(),
                 );
             }
-            state.instances.remove(instance);
+            let instance_value = state
+                .instances
+                .remove(instance)
+                .expect("instance was checked");
+            for value in instance_value.script_values {
+                state.script_values.remove(value);
+                state
+                    .runtimes
+                    .get_mut(runtime)
+                    .expect("runtime was checked")
+                    .script_values
+                    .retain(|handle| *handle != value);
+            }
             state
                 .runtimes
                 .get_mut(runtime)
@@ -100,7 +116,7 @@ pub unsafe extern "C" fn rils_instance_execute(
         }
         let resolved = STATE.with(|state| {
             let state = state.borrow();
-            let instance_value = *state.instances.get(instance)?;
+            let instance_value = state.instances.get(instance)?.clone();
             if instance_value.runtime != runtime {
                 return None;
             }
@@ -186,7 +202,7 @@ pub unsafe extern "C" fn rils_instance_call(
         };
         let resolved = STATE.with(|state| {
             let state = state.borrow();
-            let instance_value = *state.instances.get(instance)?;
+            let instance_value = state.instances.get(instance)?.clone();
             if instance_value.runtime != runtime {
                 return None;
             }

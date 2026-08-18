@@ -369,6 +369,172 @@ pub extern "C" fn rils_module_validate_host(runtime: Handle, module: Handle) -> 
     })
 }
 
+fn trait_implementation_targets(
+    module: &Module,
+    trait_name: &str,
+    source_name: Option<&str>,
+) -> Vec<String> {
+    let mut targets = module
+        .bytecode
+        .trait_implementations(trait_name)
+        .filter(|implementation| {
+            source_name.is_none_or(|source_name| {
+                module.bytecode.source_name(implementation.source()) == Some(source_name)
+            })
+        })
+        .map(|implementation| implementation.target().to_owned())
+        .collect::<Vec<_>>();
+    targets.sort();
+    targets.dedup();
+    targets
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rils_module_trait_implementation_count(
+    runtime: Handle,
+    module: Handle,
+    trait_name: RilsSlice,
+    source_name: RilsSlice,
+    out_count: *mut usize,
+) -> i32 {
+    status_entry(|| {
+        if out_count.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "out_count is null",
+                "",
+                Span::default(),
+            );
+        }
+        let trait_name = match unsafe { read_utf8(trait_name, "trait name") } {
+            Ok("") => {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "trait name must not be empty",
+                    "",
+                    Span::default(),
+                );
+            }
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let source_name = match unsafe { read_utf8(source_name, "source name") } {
+            Ok("") => None,
+            Ok(value) => Some(value),
+            Err(status) => return status,
+        };
+        let module = match clone_module(runtime, module) {
+            Ok(module) => module,
+            Err(status) => return status,
+        };
+        let count = trait_implementation_targets(&module, trait_name, source_name).len();
+        unsafe { out_count.write(count) };
+        RILS_STATUS_OK
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rils_module_trait_implementation_name_size(
+    runtime: Handle,
+    module: Handle,
+    trait_name: RilsSlice,
+    source_name: RilsSlice,
+    index: usize,
+    out_size: *mut usize,
+) -> i32 {
+    status_entry(|| {
+        if out_size.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "out_size is null",
+                "",
+                Span::default(),
+            );
+        }
+        let trait_name = match unsafe { read_utf8(trait_name, "trait name") } {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let source_name = match unsafe { read_utf8(source_name, "source name") } {
+            Ok("") => None,
+            Ok(value) => Some(value),
+            Err(status) => return status,
+        };
+        let module = match clone_module(runtime, module) {
+            Ok(module) => module,
+            Err(status) => return status,
+        };
+        let targets = trait_implementation_targets(&module, trait_name, source_name);
+        let Some(target) = targets.get(index) else {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "trait implementation index is out of bounds",
+                &module.source_name,
+                Span::default(),
+            );
+        };
+        unsafe { out_size.write(target.len()) };
+        RILS_STATUS_OK
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rils_module_write_trait_implementation_name(
+    runtime: Handle,
+    module: Handle,
+    trait_name: RilsSlice,
+    source_name: RilsSlice,
+    index: usize,
+    buffer: *mut u8,
+    buffer_capacity: usize,
+    out_written: *mut usize,
+) -> i32 {
+    status_entry(|| {
+        if out_written.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "out_written is null",
+                "",
+                Span::default(),
+            );
+        }
+        unsafe { out_written.write(0) };
+        let trait_name = match unsafe { read_utf8(trait_name, "trait name") } {
+            Ok(value) => value,
+            Err(status) => return status,
+        };
+        let source_name = match unsafe { read_utf8(source_name, "source name") } {
+            Ok("") => None,
+            Ok(value) => Some(value),
+            Err(status) => return status,
+        };
+        let module = match clone_module(runtime, module) {
+            Ok(module) => module,
+            Err(status) => return status,
+        };
+        let targets = trait_implementation_targets(&module, trait_name, source_name);
+        let Some(target) = targets.get(index) else {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "trait implementation index is out of bounds",
+                &module.source_name,
+                Span::default(),
+            );
+        };
+        unsafe { out_written.write(target.len()) };
+        if buffer_capacity < target.len() || (!target.is_empty() && buffer.is_null()) {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "trait implementation name buffer is too small or null",
+                &module.source_name,
+                Span::default(),
+            );
+        }
+        unsafe { ptr::copy_nonoverlapping(target.as_ptr(), buffer, target.len()) };
+        RILS_STATUS_OK
+    })
+}
+
 #[unsafe(no_mangle)]
 /// Returns the number of bytes required to serialize `module` as `.rilbc`.
 ///
@@ -550,14 +716,20 @@ pub extern "C" fn rils_module_destroy(runtime: Handle, module: Handle) -> i32 {
                 .expect("runtime was checked")
                 .instances
                 .clone();
+            let mut removed_values = Vec::new();
             for handle in children {
                 if state
                     .instances
                     .get(handle)
                     .is_some_and(|instance| instance.module == module)
                 {
-                    state.instances.remove(handle);
+                    if let Some(instance) = state.instances.remove(handle) {
+                        removed_values.extend(instance.script_values);
+                    }
                 }
+            }
+            for value in removed_values {
+                state.script_values.remove(value);
             }
             state.modules.remove(module);
             let surviving_instances = state
@@ -569,12 +741,22 @@ pub extern "C" fn rils_module_destroy(runtime: Handle, module: Handle) -> i32 {
                 .copied()
                 .filter(|handle| state.instances.get(*handle).is_some())
                 .collect();
+            let surviving_script_values = state
+                .runtimes
+                .get(runtime)
+                .expect("runtime was checked")
+                .script_values
+                .iter()
+                .copied()
+                .filter(|handle| state.script_values.get(*handle).is_some())
+                .collect();
             let runtime = state
                 .runtimes
                 .get_mut(runtime)
                 .expect("runtime was checked");
             runtime.modules.retain(|handle| *handle != module);
             runtime.instances = surviving_instances;
+            runtime.script_values = surviving_script_values;
             RILS_STATUS_OK
         })
     })

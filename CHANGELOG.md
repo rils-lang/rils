@@ -5,7 +5,19 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- `.rilbc` 格式由 v4 提升为 v5，新增经过 verifier 校验的 trait implementation 表；已有 `.rilbc`、
+  Unity `.bytes` 和 `.rilslib` 内嵌模块需要从源码重新编译。
+- C ABI 提升为 version 3，增加 trait implementation 枚举和 opaque script value 生命周期接口；
+  C# facade 与 Unity 原生库必须成套更新。
+
 ### Added
+
+- 增加内建 `Default` trait 和 `#[derive(Default)]`。基础标量、tuple、数组、`Option` 与空集合具有统一默认值；Struct 派生会检查每个字段的 `Default` 约束，并由解释器、字节码编译器和 Analyzer 共享同一展开结果。
+- Trait 支持声明 supertrait；解释器、编译器和 Analyzer 会统一要求 impl target 满足全部 supertrait。RilsForUnity 的 `RilsBehaviour` 现在继承 `Default`，新建模板会自动添加 `#[derive(Default)]`。
+- 字节码、C API 与 C# facade 支持发现具体 trait 实现、通过 `Default` 构造持久 opaque script value，
+  并以 trait 方法身份连续调用；RilsForUnity 生命周期不再依赖源码正则或同名模块函数。
 
 - 增加实验性 `.rilslib` 库容器、`rils library compile/verify` 命令和严格加载校验；库项目自身的
   `[lib].prelude` 现在会参与独立库编译。当前阶段先支持显式导出与验证，二进制依赖链接仍在后续实现。
@@ -24,6 +36,11 @@
 - Host interop 增加 session-bound `HostHandle`、C# 宿主注册桥接，以及 Unity 生命周期测试支持。
 - Host Manifest 支持 `.rils/manifest/**/*.rilhm` 多 fragment 自动发现和兼容片段合并；冲突声明
   仍然报告错误。
+
+### Fixed
+
+- Trait implementation 元数据现在保留声明 `SourceId`；RilsForUnity 导入项目级 module 时仅为当前
+  `.rils` 源文件创建 entry 子资产，不再把其他脚本的 `RilsBehaviour` 实现重复挂到每个主资产下。
 
 ## 0.2.0 - 2026-08-16
 

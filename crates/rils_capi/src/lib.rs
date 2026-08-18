@@ -18,7 +18,7 @@ use rils::{
     HostReceiver, HostThreadAffinity, IntegerType, Span, Type, Value,
 };
 
-pub const RILS_ABI_VERSION: u32 = 2;
+pub const RILS_ABI_VERSION: u32 = 3;
 pub const RILS_STATUS_OK: i32 = 0;
 pub const RILS_STATUS_INVALID_ARGUMENT: i32 = 1;
 pub const RILS_STATUS_INVALID_HANDLE: i32 = 2;
@@ -108,6 +108,7 @@ struct Runtime {
     max_steps: usize,
     modules: Vec<Handle>,
     instances: Vec<Handle>,
+    script_values: Vec<Handle>,
     host_contract: HostContract,
     host: BytecodeHost,
     allowed_capabilities: HashSet<String>,
@@ -130,10 +131,19 @@ fn module_source_name(module: &Module, span: Span) -> &str {
         .unwrap_or(&module.source_name)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Instance {
     runtime: Handle,
     module: Handle,
+    script_values: Vec<Handle>,
+}
+
+#[derive(Clone)]
+struct ScriptValue {
+    runtime: Handle,
+    instance: Handle,
+    target: String,
+    value: Value,
 }
 
 struct Slot<T> {
@@ -203,6 +213,7 @@ struct State {
     runtimes: SlotMap<Runtime>,
     modules: SlotMap<Module>,
     instances: SlotMap<Instance>,
+    script_values: SlotMap<ScriptValue>,
 }
 
 impl Default for State {
@@ -211,6 +222,7 @@ impl Default for State {
             runtimes: SlotMap::new(1),
             modules: SlotMap::new(2),
             instances: SlotMap::new(3),
+            script_values: SlotMap::new(0),
         }
     }
 }
@@ -774,11 +786,13 @@ mod error_api;
 mod instance_api;
 mod module_api;
 mod runtime_api;
+mod script_value_api;
 
 pub use error_api::*;
 pub use instance_api::*;
 pub use module_api::*;
 pub use runtime_api::*;
+pub use script_value_api::*;
 
 #[cfg(test)]
 mod tests;

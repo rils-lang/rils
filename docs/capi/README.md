@@ -1,6 +1,6 @@
 # Rils C API 与 C# facade（实验）
 
-`rils_capi` 是宿主无关的原生 facade。当前只验证 Windows DLL，ABI 版本为 `1`，但在 M0
+`rils_capi` 是宿主无关的原生 facade。当前只验证 Windows DLL，ABI 版本为 `3`，但在 M0
 基准完成前不视为冻结接口，也不因此修改项目版本号。
 
 ## 构建
@@ -28,7 +28,11 @@ python tools/build-capi.py
    调用方缓冲区；也可用 `rils_module_write_bytecode_file` 直接生成 `.rilbc` 文件。
 4. `rils_instance_create` 创建调用实例。
 5. `rils_instance_execute` 执行模块顶层入口；`rils_instance_call` 按完整名称调用无捕获的 `pub fn`。
-6. 逆序销毁 instance、module、runtime；销毁 runtime 也会释放其所有子句柄。
+6. `rils_module_trait_implementation_*` 枚举字节码中的 trait 实现；
+   `rils_script_value_create_default` 创建持久 opaque script value，`rils_script_value_call_trait` 对其
+   精确调用 trait 方法。枚举接口可传空 source name 查询整个 module，也可传完整来源名称只查询某个
+   `SourceId` 声明的实现。
+7. 逆序销毁 script value、instance、module、runtime；销毁父句柄也会释放其所有子句柄。
 
 Runtime 还可在创建 module 前批量注册宿主函数描述、设置一个统一 dispatcher、单独授权 capability，
 再冻结注册表。源码编译会使用同一份宿主签名产生 imports；bytes/file 加载和
@@ -46,7 +50,8 @@ module，冻结后也不能继续修改函数、dispatcher 或 capability。
 一次回调期间有效。dispatcher 必须在创建 Runtime 的线程同步返回，不得重入 Rils C API。托管异常
 需要在 dispatcher 内转换成非零状态和 UTF-8 错误，不能越过反向 P/Invoke。
 
-当前 `instance` 是生命周期和未来状态容器的占位实现，函数调用本身无持久 VM 状态。普通宿主调用
+`instance` 可拥有多个持久 opaque script value。复杂 Rils 值只保存在 DLL 内部，不暴露 Rust 布局；
+C/C# 通过 generation handle 管理其生命周期。普通宿主调用
 值协议支持
 `()`、`bool`、全部定宽整数、`isize`/`usize`、`f32`/`f64` 和 `char`。`low`/`high` 保存整数位模式，
 浮点数使用 IEEE 位模式，`char` 使用 Unicode scalar value。字符串、数组、Option/Result、对象句柄
@@ -63,7 +68,7 @@ module，冻结后也不能继续修改函数、dispatcher 或 capability。
 调用方不得释放。所有可失败入口都捕获 Rust panic，panic 不会穿过 C ABI。
 
 通过 `compile_file` 编译的项目或兼容模块树会保留每个脚本的 SourceId；编译错误和 VM 运行错误
-返回实际出错依赖文件的名称，而不是始终使用入口路径。从 `.rilbc` v4 bytes/file 加载后该映射仍然保留。
+返回实际出错依赖文件的名称，而不是始终使用入口路径。从 `.rilbc` v5 bytes/file 加载后该映射仍然保留。
 
 输入 `RilsSlice` 仅在调用期间借用；输出句柄由创建者负责释放。`RilsValue.reserved` 必须为零，方便
 后续在不复用现有字段含义的前提下扩展协议。完整声明见

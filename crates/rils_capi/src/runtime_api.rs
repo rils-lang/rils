@@ -13,6 +13,7 @@ pub extern "C" fn rils_runtime_create() -> Handle {
                 max_steps: 1_000_000,
                 modules: Vec::new(),
                 instances: Vec::new(),
+                script_values: Vec::new(),
                 host_contract: HostContract::new(),
                 host: BytecodeHost::standard(),
                 allowed_capabilities: HashSet::new(),
@@ -37,6 +38,9 @@ pub extern "C" fn rils_runtime_destroy(runtime: Handle) -> i32 {
                     Span::default(),
                 );
             };
+            for value in runtime_value.script_values {
+                state.script_values.remove(value);
+            }
             for instance in runtime_value.instances {
                 state.instances.remove(instance);
             }

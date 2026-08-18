@@ -287,6 +287,70 @@ namespace Rils.CSharp
             NativeInterop.Check(NativeMethods.ModuleValidateHost(_runtime.Handle, _handle));
         }
 
+        public unsafe IReadOnlyList<string> GetTraitImplementations(
+            string traitName,
+            string? sourceName = null)
+        {
+            if (traitName == null) throw new ArgumentNullException(nameof(traitName));
+            EnsureUsable();
+            byte[] traitBytes = Encoding.UTF8.GetBytes(traitName);
+            byte[] sourceBytes = Encoding.UTF8.GetBytes(sourceName ?? string.Empty);
+            fixed (byte* traitPointer = traitBytes)
+            fixed (byte* sourcePointer = sourceBytes)
+            {
+                NativeSlice traitSlice = NativeInterop.Slice(traitPointer, traitBytes.Length);
+                NativeSlice sourceSlice = NativeInterop.Slice(sourcePointer, sourceBytes.Length);
+                NativeInterop.Check(NativeMethods.ModuleTraitImplementationCount(
+                    _runtime.Handle,
+                    _handle,
+                    traitSlice,
+                    sourceSlice,
+                    out UIntPtr nativeCount));
+                ulong count = nativeCount.ToUInt64();
+                if (count > int.MaxValue)
+                {
+                    throw new InvalidOperationException("Rils trait implementation count exceeds the managed list limit.");
+                }
+
+                var implementations = new List<string>(checked((int)count));
+                for (int index = 0; index < (int)count; index++)
+                {
+                    UIntPtr nativeIndex = new UIntPtr(checked((uint)index));
+                    NativeInterop.Check(NativeMethods.ModuleTraitImplementationNameSize(
+                        _runtime.Handle,
+                        _handle,
+                        traitSlice,
+                        sourceSlice,
+                        nativeIndex,
+                        out UIntPtr nativeSize));
+                    ulong size = nativeSize.ToUInt64();
+                    if (size > int.MaxValue)
+                    {
+                        throw new InvalidOperationException("Rils trait implementation name exceeds the managed string limit.");
+                    }
+                    byte[] nameBytes = new byte[checked((int)size)];
+                    fixed (byte* namePointer = nameBytes)
+                    {
+                        NativeInterop.Check(NativeMethods.ModuleWriteTraitImplementationName(
+                            _runtime.Handle,
+                            _handle,
+                            traitSlice,
+                            sourceSlice,
+                            nativeIndex,
+                            namePointer,
+                            new UIntPtr(checked((uint)nameBytes.Length)),
+                            out UIntPtr nativeWritten));
+                        if (nativeWritten.ToUInt64() != size)
+                        {
+                            throw new InvalidOperationException("Native Rils trait implementation name changed while reading it.");
+                        }
+                    }
+                    implementations.Add(Encoding.UTF8.GetString(nameBytes));
+                }
+                return implementations;
+            }
+        }
+
         public unsafe byte[] GetBytecode()
         {
             EnsureUsable();
@@ -371,6 +435,7 @@ namespace Rils.CSharp
     public sealed class RilsInstance : IDisposable
     {
         private readonly RilsModule _module;
+        private readonly List<RilsScriptValue> _scriptValues = new List<RilsScriptValue>();
         private ulong _handle;
 
         internal RilsInstance(RilsModule module, ulong handle)
@@ -380,6 +445,24 @@ namespace Rils.CSharp
         }
 
         public bool IsDisposed => _handle == 0;
+
+        public unsafe RilsScriptValue CreateDefaultValue(string targetType)
+        {
+            if (targetType == null) throw new ArgumentNullException(nameof(targetType));
+            EnsureUsable();
+            byte[] targetBytes = Encoding.UTF8.GetBytes(targetType);
+            fixed (byte* targetPointer = targetBytes)
+            {
+                NativeInterop.Check(NativeMethods.ScriptValueCreateDefault(
+                    _module.Runtime.Handle,
+                    _handle,
+                    NativeInterop.Slice(targetPointer, targetBytes.Length),
+                    out ulong value));
+                var result = new RilsScriptValue(this, value);
+                _scriptValues.Add(result);
+                return result;
+            }
+        }
 
         public unsafe RilsValue Call(string functionName, params RilsValue[] arguments)
         {
@@ -425,17 +508,101 @@ namespace Rils.CSharp
                 return;
             }
             _module.EnsureUsable();
+            foreach (RilsScriptValue value in _scriptValues.ToArray())
+            {
+                value.Dispose();
+            }
             NativeInterop.Check(NativeMethods.InstanceDestroy(_module.Runtime.Handle, _handle));
             _handle = 0;
             _module.Unregister(this);
         }
 
-        private void EnsureUsable()
+        internal RilsModule Module => _module;
+
+        internal ulong Handle
+        {
+            get { EnsureUsable(); return _handle; }
+        }
+
+        internal void EnsureUsable()
         {
             _module.EnsureUsable();
             if (_handle == 0)
             {
                 throw new ObjectDisposedException(nameof(RilsInstance));
+            }
+        }
+
+        internal void Unregister(RilsScriptValue value) => _scriptValues.Remove(value);
+    }
+
+    public sealed class RilsScriptValue : IDisposable
+    {
+        private readonly RilsInstance _instance;
+        private ulong _handle;
+
+        internal RilsScriptValue(RilsInstance instance, ulong handle)
+        {
+            _instance = instance;
+            _handle = handle;
+        }
+
+        public bool IsDisposed => _handle == 0;
+
+        public unsafe RilsValue CallTrait(
+            string traitName,
+            string methodName,
+            params RilsValue[] arguments)
+        {
+            if (traitName == null) throw new ArgumentNullException(nameof(traitName));
+            if (methodName == null) throw new ArgumentNullException(nameof(methodName));
+            if (arguments == null) throw new ArgumentNullException(nameof(arguments));
+            EnsureUsable();
+
+            byte[] traitBytes = Encoding.UTF8.GetBytes(traitName);
+            byte[] methodBytes = Encoding.UTF8.GetBytes(methodName);
+            var nativeArguments = new NativeValue[arguments.Length];
+            for (int index = 0; index < arguments.Length; index++)
+            {
+                nativeArguments[index] = arguments[index].ToNative();
+            }
+            fixed (byte* traitPointer = traitBytes)
+            fixed (byte* methodPointer = methodBytes)
+            fixed (NativeValue* argumentPointer = nativeArguments)
+            {
+                NativeInterop.Check(NativeMethods.ScriptValueCallTrait(
+                    _instance.Module.Runtime.Handle,
+                    _instance.Handle,
+                    _handle,
+                    NativeInterop.Slice(traitPointer, traitBytes.Length),
+                    NativeInterop.Slice(methodPointer, methodBytes.Length),
+                    argumentPointer,
+                    new UIntPtr(checked((uint)nativeArguments.Length)),
+                    out NativeValue result));
+                return RilsValue.FromNative(result);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_handle == 0)
+            {
+                return;
+            }
+            _instance.EnsureUsable();
+            NativeInterop.Check(NativeMethods.ScriptValueDestroy(
+                _instance.Module.Runtime.Handle,
+                _handle));
+            _handle = 0;
+            _instance.Unregister(this);
+        }
+
+        private void EnsureUsable()
+        {
+            _instance.EnsureUsable();
+            if (_handle == 0)
+            {
+                throw new ObjectDisposedException(nameof(RilsScriptValue));
             }
         }
     }

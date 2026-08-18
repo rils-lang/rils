@@ -22,7 +22,7 @@ Rils 与 Unity 的主要调用方向是 **Rils → C# facade → Unity API**。C
 
 Unity API 默认要求主线程。跨线程调用必须返回明确错误，不能在底层隐式阻塞切换线程。宿主错误使用稳定错误码和消息模型，当前原生 ABI 暂统一映射为执行错误。
 
-当前 host-handle 值扩展使用 C ABI version 2。旧版原生库必须先升级，才能注册或执行 `HostHandle` 参数。第一版先覆盖标量、对象句柄，再逐步接入 `GameObject`、`Component`、`Transform` 等 Unity API。
+当前 opaque script value 与 trait 调用扩展使用 C ABI version 3。旧版原生库必须先升级，才能发现 trait entry、构造持久脚本状态并调用其方法。第一版先覆盖标量、对象句柄，再逐步接入 `GameObject`、`Component`、`Transform` 等 Unity API。
 
 ## Unity 生命周期资产
 
@@ -30,6 +30,7 @@ Unity 场景中的 `RilsBehaviour` 组件引用 `.rils` 主资产下生成的 `R
 子资产，不需要在 C# 脚本中硬编码源码。入口由实现同名 trait 的类型声明：
 
 ```rils
+#[derive(Default)]
 pub struct PlayerBehaviour { }
 
 impl RilsBehaviour for PlayerBehaviour {
@@ -41,9 +42,10 @@ impl RilsBehaviour for PlayerBehaviour {
 ```
 
 方法参数中的 `HostHandle` 是当前 GameObject 的 session 绑定句柄，不拥有或
-暴露 Unity 对象本身。当前第一版已经建立主资产/入口子资产边界；按具体 entry
-构造并持久保存脚本状态、以 trait 方法身份精确调用生命周期函数仍需要字节码元数据
-与 instance 模型支持，不能仅用类型名字符串替代。
+暴露 Unity 对象本身。导入器从经过 verifier 校验的字节码 trait implementation 表生成 entry 子资产，
+不再扫描源码；项目级 module 包含多个脚本时，只为当前导入源文件声明的实现创建子资产。运行时按
+`EntryId` 调用 `Default::default()` 构造一个 opaque script value，并在组件存活
+期间持久保存；`awake/start/update/on_destroy` 均以 `RilsBehaviour` trait 方法身份分发到该值。
 
 ## Unity 宿主 manifest
 

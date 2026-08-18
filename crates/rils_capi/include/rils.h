@@ -119,6 +119,28 @@ RILS_API int32_t rils_module_load_bytecode_file(
     RilsSlice path,
     RilsHandle *out_module);
 RILS_API int32_t rils_module_validate_host(RilsHandle runtime, RilsHandle module);
+RILS_API int32_t rils_module_trait_implementation_count(
+    RilsHandle runtime,
+    RilsHandle module,
+    RilsSlice trait_name,
+    RilsSlice source_name,
+    size_t *out_count);
+RILS_API int32_t rils_module_trait_implementation_name_size(
+    RilsHandle runtime,
+    RilsHandle module,
+    RilsSlice trait_name,
+    RilsSlice source_name,
+    size_t index,
+    size_t *out_size);
+RILS_API int32_t rils_module_write_trait_implementation_name(
+    RilsHandle runtime,
+    RilsHandle module,
+    RilsSlice trait_name,
+    RilsSlice source_name,
+    size_t index,
+    uint8_t *buffer,
+    size_t buffer_capacity,
+    size_t *out_written);
 RILS_API int32_t rils_module_bytecode_size(
     RilsHandle runtime,
     RilsHandle module,
@@ -147,6 +169,21 @@ RILS_API int32_t rils_instance_call(
     RilsHandle runtime,
     RilsHandle instance,
     RilsSlice function_name,
+    const RilsValue *arguments,
+    size_t argument_count,
+    RilsValue *out_value);
+RILS_API int32_t rils_script_value_create_default(
+    RilsHandle runtime,
+    RilsHandle instance,
+    RilsSlice target,
+    RilsHandle *out_value);
+RILS_API int32_t rils_script_value_destroy(RilsHandle runtime, RilsHandle value);
+RILS_API int32_t rils_script_value_call_trait(
+    RilsHandle runtime,
+    RilsHandle instance,
+    RilsHandle value,
+    RilsSlice trait_name,
+    RilsSlice method_name,
     const RilsValue *arguments,
     size_t argument_count,
     RilsValue *out_value);

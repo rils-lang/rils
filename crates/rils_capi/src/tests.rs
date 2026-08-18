@@ -416,6 +416,122 @@ fn compiles_and_calls_two_number_function() {
 }
 
 #[test]
+fn discovers_trait_entries_and_calls_persistent_script_values() {
+    let runtime = rils_runtime_create();
+    let source = r#"
+        trait Behaviour: Default { fn tick(&mut self, amount: i32) -> i32; }
+        #[derive(Default)]
+        struct State { value: i32 }
+        impl Behaviour for State {
+            fn tick(&mut self, amount: i32) -> i32 {
+                self.value = self.value + amount;
+                self.value
+            }
+        }
+    "#;
+    let source_path = std::env::temp_dir().join(format!(
+        "rils-capi-trait-source-test-{}.rils",
+        std::process::id()
+    ));
+    std::fs::write(&source_path, source).unwrap();
+    let source_name = source_path.to_string_lossy();
+    let mut module = 0;
+    assert_eq!(
+        unsafe { rils_module_compile_file(runtime, bytes(&source_name), &mut module) },
+        RILS_STATUS_OK
+    );
+    let mut count = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_trait_implementation_count(
+                runtime,
+                module,
+                bytes("Behaviour"),
+                bytes(&source_name),
+                &mut count,
+            )
+        },
+        RILS_STATUS_OK
+    );
+    assert_eq!(count, 1);
+    let mut name_size = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_trait_implementation_name_size(
+                runtime,
+                module,
+                bytes("Behaviour"),
+                bytes(&source_name),
+                0,
+                &mut name_size,
+            )
+        },
+        RILS_STATUS_OK
+    );
+    let mut name = vec![0; name_size];
+    let mut written = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_write_trait_implementation_name(
+                runtime,
+                module,
+                bytes("Behaviour"),
+                bytes(&source_name),
+                0,
+                name.as_mut_ptr(),
+                name.len(),
+                &mut written,
+            )
+        },
+        RILS_STATUS_OK
+    );
+    assert_eq!(std::str::from_utf8(&name).unwrap(), "State");
+
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut state = 0;
+    assert_eq!(
+        unsafe { rils_script_value_create_default(runtime, instance, bytes("State"), &mut state) },
+        RILS_STATUS_OK
+    );
+    for (amount, expected) in [(2, 2), (3, 5)] {
+        let argument = RilsValue {
+            tag: RILS_VALUE_I32,
+            low: amount,
+            ..RilsValue::default()
+        };
+        let mut result = RilsValue::default();
+        assert_eq!(
+            unsafe {
+                rils_script_value_call_trait(
+                    runtime,
+                    instance,
+                    state,
+                    bytes("Behaviour"),
+                    bytes("tick"),
+                    &argument,
+                    1,
+                    &mut result,
+                )
+            },
+            RILS_STATUS_OK
+        );
+        assert_eq!(result.tag, RILS_VALUE_I32);
+        assert_eq!(result.low, expected);
+    }
+    assert_eq!(rils_module_destroy(runtime, module), RILS_STATUS_OK);
+    assert_eq!(
+        rils_script_value_destroy(runtime, state),
+        RILS_STATUS_INVALID_HANDLE
+    );
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+    std::fs::remove_file(source_path).unwrap();
+}
+
+#[test]
 fn loads_and_executes_bytecode_from_memory() {
     let image = rils::compile("40 + 2")
         .unwrap()

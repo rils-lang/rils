@@ -8,7 +8,7 @@ static void Equal<T>(T expected, T actual, string label)
     }
 }
 
-Equal(2U, RilsRuntime.NativeAbiVersion, "ABI version");
+Equal(3U, RilsRuntime.NativeAbiVersion, "ABI version");
 
 byte[] emptyHostManifest;
 using (var runtime = new RilsRuntime())
@@ -16,6 +16,28 @@ using (var runtime = new RilsRuntime())
     emptyHostManifest = runtime.GetHostManifest();
     Equal(true, emptyHostManifest.Length >= 64, "binary host manifest header size");
     Equal((byte)'R', emptyHostManifest[0], "binary host manifest magic");
+}
+
+using (var runtime = new RilsRuntime())
+{
+    using RilsModule module = runtime.Compile(
+        """
+        trait Behaviour: Default { fn tick(&mut self, amount: i32) -> i32; }
+        #[derive(Default)]
+        struct State { value: i32 }
+        impl Behaviour for State {
+            fn tick(&mut self, amount: i32) -> i32 {
+                self.value = self.value + amount;
+                self.value
+            }
+        }
+        """,
+        "managed-trait-smoke.rils");
+    Equal("State", module.GetTraitImplementations("Behaviour").Single(), "trait entry");
+    using RilsInstance instance = module.CreateInstance();
+    using RilsScriptValue state = instance.CreateDefaultValue("State");
+    Equal(2, state.CallTrait("Behaviour", "tick", 2).AsI32(), "first trait call");
+    Equal(5, state.CallTrait("Behaviour", "tick", 3).AsI32(), "persistent trait call");
 }
 using (var runtime = new RilsRuntime())
 {
@@ -72,11 +94,17 @@ string moduleDirectory = Path.Combine(Path.GetTempPath(), $"rils-csharp-modules-
 Directory.CreateDirectory(moduleDirectory);
 string entryPath = Path.Combine(moduleDirectory, "main.rils");
 string dependencyPath = Path.Combine(moduleDirectory, "math.rils");
+string behaviourPath = Path.Combine(moduleDirectory, "behaviour.rils");
 string bytecodePath = Path.Combine(moduleDirectory, "main.rilbc");
 try
 {
     File.WriteAllText(entryPath, "mod math; use math::answer; answer()");
     File.WriteAllText(dependencyPath, "pub fn answer() -> i32 { 42 }");
+    File.WriteAllText(
+        behaviourPath,
+        "trait Behaviour: Default { fn tick(&mut self); } " +
+        "#[derive(Default)] struct State; " +
+        "impl Behaviour for State { fn tick(&mut self) { } }");
     using var runtime = new RilsRuntime();
     using RilsModule module = runtime.CompileFile(entryPath);
     using RilsInstance instance = module.CreateInstance();
@@ -85,12 +113,22 @@ try
     using RilsModule loadedModule = runtime.LoadBytecodeFile(bytecodePath);
     using RilsInstance loadedInstance = loadedModule.CreateInstance();
     Equal(42, loadedInstance.Execute().AsI32(), "exported file execution");
+    using RilsModule behaviourModule = runtime.CompileFile(behaviourPath);
+    Equal(
+        "State",
+        behaviourModule.GetTraitImplementations("Behaviour", behaviourPath).Single(),
+        "source-filtered trait entry");
+    Equal(
+        0,
+        behaviourModule.GetTraitImplementations("Behaviour", dependencyPath).Count,
+        "unrelated source trait entries");
 }
 finally
 {
     File.Delete(bytecodePath);
     File.Delete(entryPath);
     File.Delete(dependencyPath);
+    File.Delete(behaviourPath);
     Directory.Delete(moduleDirectory);
 }
 
