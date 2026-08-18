@@ -230,6 +230,50 @@ impl Interpreter {
             }
             Value::BuiltinBoundMethod(method) => self.call_builtin_method(&method, arguments, span),
             Value::TraitMethodSelector(selector) => {
+                if selector.trait_name == "Default" && selector.method_name == "default" {
+                    check_arity("Default::default", 0, 0, arguments.len(), span)?;
+                    let target = selector.target.as_ref().ok_or_else(|| {
+                        RuntimeError::new(
+                            "`Default::default()` requires a type context; use `<Type as Default>::default()`",
+                            span,
+                        )
+                    })?;
+                    let target = expand_type_aliases(target, &selector.environment, span)?;
+                    if let Some(value) = builtin_default_value(&target) {
+                        return Ok(value);
+                    }
+                    let Type::Named { name, .. } = &target else {
+                        return Err(RuntimeError::new(
+                            format!("type `{target}` does not implement Default"),
+                            span,
+                        ));
+                    };
+                    let value = selector.environment.borrow().get(name).ok_or_else(|| {
+                        RuntimeError::new(format!("unknown Default target `{name}`"), span)
+                    })?;
+                    let function = match value {
+                        Value::StructType(definition) => definition
+                            .trait_methods
+                            .borrow()
+                            .get("Default")
+                            .and_then(|methods| methods.get("default"))
+                            .cloned(),
+                        Value::EnumType(definition) => definition
+                            .trait_methods
+                            .borrow()
+                            .get("Default")
+                            .and_then(|methods| methods.get("default"))
+                            .cloned(),
+                        _ => None,
+                    }
+                    .ok_or_else(|| {
+                        RuntimeError::new(
+                            format!("type `{target}` does not implement Default"),
+                            span,
+                        )
+                    })?;
+                    return self.call(Value::Function(function), &[], span);
+                }
                 check_arity(
                     &format!("{}::{}", selector.trait_name, selector.method_name),
                     1,
@@ -1000,6 +1044,96 @@ impl Interpreter {
             function,
         })))
     }
+}
+
+fn builtin_default_value(ty: &Type) -> Option<Value> {
+    use rils_frontend::default::DefaultPlan;
+
+    fn materialize(plan: &DefaultPlan) -> Option<Value> {
+        let sequence = |values: Vec<(Value, Type)>| {
+            Rc::new(SequenceValue {
+                elements: RefCell::new(
+                    values
+                        .into_iter()
+                        .map(|(value, type_annotation)| FieldSlot {
+                            value: Some(value),
+                            type_annotation,
+                            references: 0,
+                        })
+                        .collect(),
+                ),
+                element_type: RefCell::new(None),
+            })
+        };
+        Some(match plan {
+            DefaultPlan::Unit => Value::Unit,
+            DefaultPlan::Bool => Value::Bool(false),
+            DefaultPlan::Integer(crate::IntegerType::I8) => Value::I8(0),
+            DefaultPlan::Integer(crate::IntegerType::I16) => Value::I16(0),
+            DefaultPlan::Integer(crate::IntegerType::I32) => Value::I32(0),
+            DefaultPlan::Integer(crate::IntegerType::I64) => Value::I64(0),
+            DefaultPlan::Integer(crate::IntegerType::I128) => Value::I128(0),
+            DefaultPlan::Integer(crate::IntegerType::Isize) => Value::Isize(0),
+            DefaultPlan::Integer(crate::IntegerType::U8) => Value::U8(0),
+            DefaultPlan::Integer(crate::IntegerType::U16) => Value::U16(0),
+            DefaultPlan::Integer(crate::IntegerType::U32) => Value::U32(0),
+            DefaultPlan::Integer(crate::IntegerType::U64) => Value::U64(0),
+            DefaultPlan::Integer(crate::IntegerType::U128) => Value::U128(0),
+            DefaultPlan::Integer(crate::IntegerType::Usize) => Value::Usize(0),
+            DefaultPlan::Float(crate::FloatType::F32) => Value::F32(0.0),
+            DefaultPlan::Float(crate::FloatType::F64) => Value::F64(0.0),
+            DefaultPlan::Char => Value::Char('\0'),
+            DefaultPlan::String => Value::String(Rc::from("")),
+            DefaultPlan::Tuple(elements) => Value::Tuple(sequence(
+                elements
+                    .iter()
+                    .map(|element| {
+                        let value = materialize(element)?;
+                        let ty = Type::of_value(&value)?;
+                        Some((value, ty))
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            )),
+            DefaultPlan::Array {
+                element,
+                element_type,
+                length,
+            } => {
+                let values = (0..*length)
+                    .map(|_| Some((materialize(element)?, element_type.clone())))
+                    .collect::<Option<Vec<_>>>()?;
+                let sequence = sequence(values);
+                *sequence.element_type.borrow_mut() = Some(element_type.clone());
+                Value::Array(sequence)
+            }
+            DefaultPlan::Option(inner) => Value::Option {
+                value: None,
+                element_type: Some(inner.clone()),
+            },
+            DefaultPlan::EmptyCollection { name, arguments } if name == "Vec" => {
+                Value::Vec(Rc::new(SequenceValue {
+                    elements: RefCell::new(Vec::new()),
+                    element_type: RefCell::new(Some(arguments[0].clone())),
+                }))
+            }
+            DefaultPlan::EmptyCollection { name, arguments } if name == "HashMap" => {
+                Value::HashMap(Rc::new(HashMapValue {
+                    entries: RefCell::new(std::collections::HashMap::new()),
+                    key_type: RefCell::new(arguments[0].clone()),
+                    value_type: RefCell::new(arguments[1].clone()),
+                }))
+            }
+            DefaultPlan::EmptyCollection { name, arguments } if name == "HashSet" => {
+                Value::HashSet(Rc::new(HashSetValue {
+                    entries: RefCell::new(std::collections::HashSet::new()),
+                    element_type: RefCell::new(arguments[0].clone()),
+                }))
+            }
+            DefaultPlan::EmptyCollection { .. } | DefaultPlan::TraitCall(_) => return None,
+        })
+    }
+
+    materialize(&rils_frontend::default::default_plan(ty)?)
 }
 
 pub(super) fn builtin_runtime_member(

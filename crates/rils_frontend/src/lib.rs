@@ -1,6 +1,8 @@
 pub mod analysis;
 pub mod ast;
 mod control_flow;
+pub mod default;
+mod derive;
 mod error;
 pub mod lexer;
 pub mod macros;
@@ -11,6 +13,7 @@ pub mod source;
 pub mod standard_library;
 mod static_type_check;
 pub mod token;
+mod trait_check;
 mod type_inference;
 pub mod types;
 

@@ -758,6 +758,17 @@ impl<'a> FunctionLowerer<'a> {
                     ..
                 } = callee.as_ref()
                 {
+                    if trait_name == "Default" && member == "default" {
+                        if !arguments.is_empty() {
+                            return Err(CompileError::unsupported(
+                                "Default::default takes no arguments",
+                                *span,
+                            ));
+                        }
+                        if let Some(value) = builtin_default_hir(target, *span)? {
+                            return Ok(value);
+                        }
+                    }
                     let target_name = nominal_type_name(target).ok_or_else(|| {
                         CompileError::unsupported("UFCS target must be a nominal type", *span)
                     })?;
@@ -1434,6 +1445,84 @@ fn lower_literal(value: &Literal) -> HirLiteral {
         Literal::Float(value) => HirLiteral::F64(*value),
         Literal::String(value) => HirLiteral::String(value.clone()),
     }
+}
+
+fn builtin_default_hir(ty: &Type, span: Span) -> Result<Option<HirExpression>, CompileError> {
+    use rils_frontend::default::DefaultPlan;
+
+    let Some(plan) = rils_frontend::default::default_plan(ty) else {
+        return Err(CompileError::unsupported(
+            format!("type `{ty}` does not implement Default"),
+            span,
+        ));
+    };
+    fn lower(plan: &DefaultPlan, span: Span) -> Result<Option<HirExpression>, CompileError> {
+        let literal = |value| HirExpression::Literal { value, span };
+        Ok(Some(match plan {
+            DefaultPlan::Unit => literal(HirLiteral::Unit),
+            DefaultPlan::Bool => literal(HirLiteral::Bool(false)),
+            DefaultPlan::Integer(crate::types::IntegerType::I8) => literal(HirLiteral::I8(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::I16) => literal(HirLiteral::I16(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::I32) => literal(HirLiteral::I32(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::I64) => literal(HirLiteral::I64(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::I128) => literal(HirLiteral::I128(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::Isize) => literal(HirLiteral::Isize(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::U8) => literal(HirLiteral::U8(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::U16) => literal(HirLiteral::U16(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::U32) => literal(HirLiteral::U32(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::U64) => literal(HirLiteral::U64(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::U128) => literal(HirLiteral::U128(0)),
+            DefaultPlan::Integer(crate::types::IntegerType::Usize) => literal(HirLiteral::Usize(0)),
+            DefaultPlan::Float(crate::types::FloatType::F32) => literal(HirLiteral::F32(0.0)),
+            DefaultPlan::Float(crate::types::FloatType::F64) => literal(HirLiteral::F64(0.0)),
+            DefaultPlan::Char => literal(HirLiteral::Char('\0')),
+            DefaultPlan::String => literal(HirLiteral::String(String::new())),
+            DefaultPlan::Tuple(elements) => HirExpression::Tuple {
+                elements: elements
+                    .iter()
+                    .map(|element| {
+                        lower(element, span)?.ok_or_else(|| {
+                            CompileError::unsupported(
+                                "nested type does not implement Default",
+                                span,
+                            )
+                        })
+                    })
+                    .collect::<Result<_, _>>()?,
+                span,
+            },
+            DefaultPlan::Array {
+                element, length, ..
+            } => HirExpression::Array {
+                elements: (0..*length)
+                    .map(|_| {
+                        lower(element, span)?.ok_or_else(|| {
+                            CompileError::unsupported(
+                                "array element does not implement Default",
+                                span,
+                            )
+                        })
+                    })
+                    .collect::<Result<_, _>>()?,
+                repeat: None,
+                span,
+            },
+            DefaultPlan::Option(_) => HirExpression::OptionNone { span },
+            DefaultPlan::EmptyCollection { name, .. } => {
+                let (name, signature) = collection_import_signature(&format!("{name}::new"))
+                    .expect("default collection has a constructor import");
+                HirExpression::CallImport {
+                    name: name.into(),
+                    signature,
+                    capability: "core".into(),
+                    arguments: Vec::new(),
+                    span,
+                }
+            }
+            DefaultPlan::TraitCall(_) => return Ok(None),
+        }))
+    }
+    lower(&plan, span)
 }
 
 fn integer_constant_literal(

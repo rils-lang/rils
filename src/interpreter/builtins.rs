@@ -446,6 +446,7 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
             ("clone", get("clone")),
         ],
     );
+    let default = module("default", vec![("Default", get("Default"))]);
     let hash = module("hash", vec![("Hash", get("Hash"))]);
     let cmp = module("cmp", vec![("Eq", get("Eq"))]);
     let core = module(
@@ -455,6 +456,7 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
             ("result", result),
             ("iter", iter),
             ("clone", clone),
+            ("default", default),
             ("hash", hash),
             ("cmp", cmp),
         ],
@@ -497,6 +499,7 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
             ("HashSet", get("HashSet")),
             ("Copy", get("Copy")),
             ("Clone", get("Clone")),
+            ("Default", get("Default")),
             ("Eq", get("Eq")),
             ("Hash", get("Hash")),
             ("Iterator", get("Iterator")),
@@ -521,14 +524,26 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
         mutable: true,
         inner: Box::new(self_type.clone()),
     };
+    let Type::Function {
+        parameters: Some(default_parameters),
+        return_type: default_return,
+    } = rils_frontend::standard_library::builtin_trait_member_type(
+        "Default", &self_type, "default",
+    )
+    .expect("Default::default is declared in rils_builtins")
+    else {
+        unreachable!("Default::default must have a fixed function signature");
+    };
     let traits = [
         TraitType {
             name: "Copy".into(),
+            bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: Vec::new(),
         },
         TraitType {
             name: "Clone".into(),
+            bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: vec![TraitMethod {
                 name: "clone".into(),
@@ -545,17 +560,42 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             }],
         },
         TraitType {
+            name: "Default".into(),
+            bounds: Vec::new(),
+            associated_types: Vec::new(),
+            methods: vec![TraitMethod {
+                name: "default".into(),
+                name_span: span,
+                generic_parameters: Vec::new(),
+                parameters: default_parameters
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, type_annotation)| Parameter {
+                        name: format!("argument{index}"),
+                        mutable: false,
+                        type_annotation: Some(type_annotation),
+                        span,
+                    })
+                    .collect(),
+                return_type: Some(*default_return),
+                span,
+            }],
+        },
+        TraitType {
             name: "Eq".into(),
+            bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: Vec::new(),
         },
         TraitType {
             name: "Hash".into(),
+            bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: Vec::new(),
         },
         TraitType {
             name: "Iterator".into(),
+            bounds: Vec::new(),
             associated_types: vec![AssociatedType {
                 name: "Item".into(),
                 name_span: span,
@@ -584,6 +624,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
         },
         TraitType {
             name: "IntoIterator".into(),
+            bounds: Vec::new(),
             associated_types: vec![AssociatedType {
                 name: "IntoIter".into(),
                 name_span: span,

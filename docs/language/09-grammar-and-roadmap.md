@@ -7,8 +7,9 @@
 ```ebnf
 program     = moduleStatement* EOF ;
 moduleStatement = itemDecl | blockStatement ;
-itemDecl    = macroDecl | structDecl | enumDecl | implDecl | traitDecl
-            | typeAlias | moduleDecl | useDecl | publicDecl ;
+itemDecl    = attribute* (macroDecl | structDecl | enumDecl | implDecl | traitDecl
+            | typeAlias | moduleDecl | useDecl | publicDecl) ;
+attribute   = "#" "[" "derive" "(" IDENT ("," IDENT)* ")" "]" ;
 blockStatement = letDecl | fnDecl | whileStmt | loopStmt | forStmt
                | returnStmt | breakStmt | continueStmt | exprStmt ;
 letDecl     = "let" "mut"? IDENT (":" type)? "=" expression ";" ;
@@ -61,7 +62,7 @@ enumVariant = IDENT
             | IDENT "(" (type ("," type)*)? ")"
             | IDENT "{" namedFields "}" ;
 namedFields = IDENT ":" type ("," IDENT ":" type)* ","? ;
-traitDecl   = "trait" IDENT "{"
+traitDecl   = "trait" IDENT (":" IDENT ("+" IDENT)*)? "{"
               (traitMethod | associatedType)* "}" ;
 traitMethod = "fn" IDENT genericParams?
               "(" parameters? ")" ("->" type)? ";" ;

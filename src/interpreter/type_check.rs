@@ -317,6 +317,7 @@ pub(super) fn type_implements_trait(
         }
         "Copy" => type_is_copy(actual, environment),
         "Clone" => type_is_clone(actual, environment),
+        "Default" => type_is_default(actual, environment),
         "Eq" | "Hash" => matches!(
             actual,
             Type::Bool | Type::Char | Type::String | Type::Integer(_)
@@ -335,6 +336,24 @@ pub(super) fn type_implements_trait(
                 _ => false,
             }
         }
+    }
+}
+
+fn type_is_default(actual: &Type, environment: &EnvironmentRef) -> bool {
+    match rils_frontend::default::default_plan(actual) {
+        Some(rils_frontend::default::DefaultPlan::TraitCall(Type::Named { name, .. })) => {
+            match environment.borrow().get(&name) {
+                Some(Value::StructType(definition)) => {
+                    definition.implemented_traits.borrow().contains("Default")
+                }
+                Some(Value::EnumType(definition)) => {
+                    definition.implemented_traits.borrow().contains("Default")
+                }
+                _ => false,
+            }
+        }
+        Some(rils_frontend::default::DefaultPlan::TraitCall(_)) | None => false,
+        Some(_) => true,
     }
 }
 

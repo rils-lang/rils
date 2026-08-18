@@ -83,6 +83,7 @@ impl<'a> Lexer<'a> {
             '*' => self.add(TokenKind::Star),
             '%' => self.add(TokenKind::Percent),
             '$' => self.add(TokenKind::Dollar),
+            '#' => self.add(TokenKind::Hash),
             '-' => {
                 let kind = if self.take('>') {
                     TokenKind::Arrow

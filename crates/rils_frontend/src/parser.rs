@@ -8,9 +8,9 @@ mod type_annotation;
 
 use crate::{
     ast::{
-        AssociatedType, BinaryOp, Block, EnumVariant, Expr, GenericParameter, ImplMethod, Literal,
-        LogicalOp, MacroSymbol, MatchArm, NamedField, Parameter, Pattern, Program, Stmt,
-        TraitMethod, TypeReference, UnaryOp, UseImport, UseImportKind,
+        AssociatedType, Attribute, BinaryOp, Block, EnumVariant, Expr, GenericParameter,
+        ImplMethod, Literal, LogicalOp, MacroSymbol, MatchArm, NamedField, Parameter, Pattern,
+        Program, Stmt, TraitMethod, TypeReference, UnaryOp, UseImport, UseImportKind,
     },
     source::Span,
     token::{Token, TokenKind},
@@ -33,7 +33,9 @@ pub fn parse_with_native_macros(
 ) -> Result<Program, ParseError> {
     validate_delimiters(&tokens)?;
     let expansion = crate::macros::expand(tokens, native_macros)?;
-    Parser::new(expansion.tokens, expansion.macros).parse_program()
+    let mut program = Parser::new(expansion.tokens, expansion.macros).parse_program()?;
+    crate::derive::expand(&mut program)?;
+    Ok(program)
 }
 
 fn validate_delimiters(tokens: &[Token]) -> Result<(), ParseError> {
@@ -226,6 +228,25 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
+        if self.check(&TokenKind::Hash) {
+            let attributes = self.attributes()?;
+            let mut statement = self.statement()?;
+            let target = match &mut statement {
+                Stmt::Public { statement, .. } => statement.as_mut(),
+                statement => statement,
+            };
+            let Stmt::Struct {
+                attributes: target, ..
+            } = target
+            else {
+                return Err(ParseError {
+                    message: "attributes are currently supported on structs only".into(),
+                    span: attributes[0].span,
+                });
+            };
+            target.extend(attributes);
+            return Ok(statement);
+        }
         if self.block_depth > 0
             && matches!(
                 self.peek().kind,
@@ -314,6 +335,46 @@ impl Parser {
         }
         self.expression_statement()
     }
+
+    fn attributes(&mut self) -> Result<Vec<Attribute>, ParseError> {
+        let mut attributes = Vec::new();
+        while let Some(hash) = self.take(&TokenKind::Hash) {
+            self.expect(&TokenKind::LeftBracket, "expected `[` after `#`")?;
+            let (first, _) = self.expect_identifier("expected attribute name")?;
+            let mut path = vec![first];
+            while self.take(&TokenKind::ColonColon).is_some() {
+                path.push(self.expect_identifier("expected attribute path segment")?.0);
+            }
+            let mut arguments = Vec::new();
+            if self.take(&TokenKind::LeftParen).is_some() {
+                if !self.check(&TokenKind::RightParen) {
+                    loop {
+                        let (first, _) = self.expect_identifier("expected attribute argument")?;
+                        let mut argument = vec![first];
+                        while self.take(&TokenKind::ColonColon).is_some() {
+                            argument
+                                .push(self.expect_identifier("expected attribute path segment")?.0);
+                        }
+                        arguments.push(argument);
+                        if self.take(&TokenKind::Comma).is_none() {
+                            break;
+                        }
+                    }
+                }
+                self.expect(
+                    &TokenKind::RightParen,
+                    "expected `)` after attribute arguments",
+                )?;
+            }
+            let right = self.expect(&TokenKind::RightBracket, "expected `]` after attribute")?;
+            attributes.push(Attribute {
+                path,
+                arguments,
+                span: hash.span.merge(right.span),
+            });
+        }
+        Ok(attributes)
+    }
 }
 
 fn statement_span_for_parser(statement: &Stmt) -> Span {
@@ -377,6 +438,56 @@ mod tests {
             &program.statements[1],
             Stmt::Struct { fields, .. } if fields.is_empty()
         ));
+    }
+
+    #[test]
+    fn parses_and_expands_default_derive() {
+        let program = parse(
+            lex("#[derive(Default)] pub struct Settings { enabled: bool, count: i32 }").unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(program.statements[0], Stmt::Public { .. }));
+        assert!(matches!(
+            &program.statements[1],
+            Stmt::Impl { trait_name: Some(name), methods, .. }
+                if name == "Default" && methods.len() == 1 && methods[0].name == "default"
+        ));
+    }
+
+    #[test]
+    fn default_derive_rejects_non_default_fields() {
+        let error = parse(lex("#[derive(Default)] struct Bad { callback: fn() -> () }").unwrap())
+            .unwrap_err();
+        assert!(error.message.contains("field `callback`"), "{error:?}");
+        assert!(
+            error.message.contains("does not implement Default"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn default_derive_adds_required_generic_bounds() {
+        let program =
+            parse(lex("#[derive(Default)] struct Wrapper<T> { value: T }").unwrap()).unwrap();
+        let Stmt::Impl {
+            generic_parameters, ..
+        } = &program.statements[1]
+        else {
+            panic!("expected generated impl");
+        };
+        assert_eq!(generic_parameters[0].bounds, ["Default"]);
+    }
+
+    #[test]
+    fn default_derive_rejects_an_explicit_impl_for_the_same_type() {
+        let error = parse(
+            lex(
+                "#[derive(Default)] struct Value; impl Default for Value { fn default() -> Self { loop {} } }",
+            )
+            .unwrap(),
+        )
+        .unwrap_err();
+        assert!(error.message.contains("both derive Default"), "{error:?}");
     }
 
     #[test]

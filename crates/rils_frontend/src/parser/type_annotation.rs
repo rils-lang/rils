@@ -144,6 +144,7 @@ impl Parser {
                 | "Self"
                 | "Copy"
                 | "Clone"
+                | "Default"
                 | "Eq"
                 | "Hash"
                 | "Iterator"

@@ -344,6 +344,7 @@ impl Interpreter {
             Stmt::TypeAlias { .. } => Ok(Flow::Value(Value::Unit)),
             Stmt::Trait {
                 name,
+                bounds,
                 associated_types,
                 methods,
                 span,
@@ -405,6 +406,7 @@ impl Interpreter {
                     name.clone(),
                     Value::TraitType(Rc::new(TraitType {
                         name: name.clone(),
+                        bounds: bounds.clone(),
                         associated_types,
                         methods,
                     })),
@@ -523,6 +525,17 @@ impl Interpreter {
                             "conditional trait impl bounds are not supported yet",
                             *span,
                         ));
+                    }
+                    for bound in &definition.bounds {
+                        if !type_implements_trait(target, bound, &environment) {
+                            return Err(RuntimeError::new(
+                                format!(
+                                    "type `{target}` must implement supertrait `{bound}` before implementing `{}`",
+                                    definition.name
+                                ),
+                                *span,
+                            ));
+                        }
                     }
                     validate_trait_implementation(
                         definition,

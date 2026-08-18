@@ -482,6 +482,9 @@ const INTO_ITERATOR_MEMBERS: &[BuiltinMember] = &[
 const CLONE_MEMBERS: &[BuiltinMember] = &[
     member!("clone", method Shared [] -> TypePattern::SelfType, Clone, "Explicitly duplicates an owned value."),
 ];
+const DEFAULT_MEMBERS: &[BuiltinMember] = &[
+    member!("default", associated [] -> TypePattern::SelfType, "Constructs the default value for this type."),
+];
 const VEC_MEMBERS: &[BuiltinMember] = &[
     member!("new", associated [] -> TypePattern::SelfType, "Creates an empty Vec."),
     member!("from", associated [TypePattern::Unknown] -> TypePattern::SelfType, "Creates a Vec from an owned array."),
@@ -672,6 +675,14 @@ pub const BUILTINS: &[BuiltinDeclaration] = &[
         "Explicit owned duplication."
     ),
     builtin!(
+        "Default",
+        Trait,
+        [],
+        DEFAULT_MEMBERS,
+        BuiltinBackend::Metadata,
+        "Types with a canonical default value."
+    ),
+    builtin!(
         "Eq",
         Trait,
         [],
@@ -747,11 +758,14 @@ pub fn builtin_module_members(path: &str) -> &'static [&'static str] {
     match path {
         "std" => &["collections", "io", "fs"],
         "std::collections" => &["Vec", "HashMap", "HashSet"],
-        "core" => &["option", "result", "iter", "clone", "cmp", "hash"],
+        "core" => &[
+            "option", "result", "iter", "clone", "default", "cmp", "hash",
+        ],
         "core::option" => &["Option", "Some", "None"],
         "core::result" => &["Result", "Ok", "Err"],
         "core::iter" => &["Iterator", "IntoIterator", "Range"],
         "core::clone" => &["Copy", "Clone", "clone"],
+        "core::default" => &["Default"],
         "core::cmp" => &["Eq"],
         "core::hash" => &["Hash"],
         _ => &[],
@@ -991,5 +1005,16 @@ mod tests {
                 "missing runtime member {id:?}"
             );
         }
+    }
+
+    #[test]
+    fn default_trait_has_a_catalog_defined_associated_function() {
+        let declaration = builtin("Default").expect("Default trait declaration");
+        assert_eq!(declaration.kind, BuiltinKind::Trait);
+        let member = builtin_member("Default", "default").expect("Default::default declaration");
+        assert_eq!(member.kind, BuiltinMemberKind::AssociatedFunction);
+        let signature = member.signature.expect("Default::default signature");
+        assert!(signature.parameters.is_empty());
+        assert_eq!(signature.result, TypePattern::SelfType);
     }
 }

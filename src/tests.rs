@@ -8,6 +8,107 @@ fn integer(source: &str) -> i32 {
 }
 
 #[test]
+fn derives_default_from_field_defaults() {
+    let source = r#"
+        #[derive(Default)]
+        struct Settings {
+            enabled: bool,
+            retries: i32,
+            name: string,
+            position: (f32, f32),
+            tags: Vec<string>,
+            selected: Option<i32>,
+        }
+
+        let settings = <Settings as Default>::default();
+        assert!(!settings.enabled);
+        assert!(settings.retries == 0);
+        assert!(settings.name == "");
+        assert!(settings.position.0 == 0f32);
+        assert!(settings.selected == None);
+        <i64 as Default>::default()
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I64(0));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I64(0));
+}
+
+#[test]
+fn derives_default_for_unit_structs() {
+    let source = r#"
+        #[derive(Default)]
+        struct Marker;
+        let marker = <Marker as Default>::default();
+        type_of(marker)
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::String("Marker".into()));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::String("Marker".into())
+    );
+}
+
+#[test]
+fn default_is_available_for_builtin_composite_types() {
+    let source = r#"
+        let pair = <(bool, i16) as Default>::default();
+        let values = <[u8; 2] as Default>::default();
+        let optional = <Option<string> as Default>::default();
+        let items = <Vec<i32> as Default>::default();
+        assert!(!pair.0 && pair.1 == 0i16);
+        assert!(values[0usize] == 0u8 && values[1usize] == 0u8);
+        assert!(optional == None);
+        let _items = items;
+        pair.0
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::Bool(false));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::Bool(false)
+    );
+}
+
+#[test]
+fn supports_explicit_default_impls_in_derived_fields() {
+    let source = r#"
+        struct Port { value: i32 }
+        impl Default for Port {
+            fn default() -> Self { Port { value: 8080 } }
+        }
+        #[derive(Default)]
+        struct Server { port: Port }
+        let server = <Server as Default>::default();
+        server.port.value
+    "#;
+    assert_eq!(integer(source), 8080);
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::I32(8080)
+    );
+}
+
+#[test]
+fn trait_supertraits_are_required_by_interpreter_and_compiler() {
+    let valid = r#"
+        trait Behaviour: Default {}
+        #[derive(Default)]
+        struct State;
+        impl Behaviour for State {}
+        <State as Default>::default();
+    "#;
+    assert_eq!(eval(valid).unwrap(), Value::Unit);
+    assert_eq!(compile(valid).unwrap().execute().unwrap(), Value::Unit);
+
+    let missing = "trait Behaviour: Default {} struct State; impl Behaviour for State {}";
+    let interpreted = eval(missing).unwrap_err().to_string();
+    assert!(interpreted.contains("must implement supertrait `Default`"));
+    let compiled = match compile(missing) {
+        Ok(_) => panic!("missing supertrait unexpectedly compiled"),
+        Err(error) => error.to_string(),
+    };
+    assert!(compiled.contains("must implement supertrait `Default`"));
+}
+
+#[test]
 fn supports_concrete_numeric_types_char_and_contextual_usize_inference() {
     let source = r#"
         assert!(type_of(1i8) == "i8");

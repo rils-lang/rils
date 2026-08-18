@@ -6,6 +6,7 @@
     {"include": "#comments"},
     {"include": "#strings"},
     {"include": "#numbers"},
+    {"include": "#attributes"},
     {"include": "#declarations"},
     {"include": "#qualified-paths"},
     {"include": "#macro-syntax"},
@@ -17,6 +18,21 @@
     {"include": "#punctuation"}
   ],
   "repository": {
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.rils",
+          "begin": "#\\[",
+          "end": "\\]",
+          "patterns": [
+            {
+              "name": "entity.name.function.attribute.rils",
+              "match": "\\b(?:derive|Default)\\b"
+            }
+          ]
+        }
+      ]
+    },
     "comments": {
       "patterns": [
         {
@@ -208,7 +224,7 @@
         },
         {
           "name": "support.type.builtin.rils",
-          "match": "\\b(?:Range|Vec|Copy|Clone|Iterator|IntoIterator|Error|ErrorKind|core|std|prelude|io|fs|collections)\\b"
+          "match": "\\b(?:Range|Vec|Copy|Clone|Default|Iterator|IntoIterator|Error|ErrorKind|core|std|prelude|io|fs|collections)\\b"
         },
         {
           "name": "entity.name.type.rils",

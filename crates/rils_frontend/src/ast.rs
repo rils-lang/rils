@@ -53,6 +53,13 @@ pub struct NamedField {
 }
 
 #[derive(Clone, Debug)]
+pub struct Attribute {
+    pub path: Vec<String>,
+    pub arguments: Vec<Vec<String>>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
 pub enum EnumVariant {
     Unit {
         name: String,
@@ -163,6 +170,7 @@ pub enum Stmt {
         span: Span,
     },
     Struct {
+        attributes: Vec<Attribute>,
         name: String,
         name_span: Span,
         generic_parameters: Vec<GenericParameter>,
@@ -194,6 +202,7 @@ pub enum Stmt {
     Trait {
         name: String,
         name_span: Span,
+        bounds: Vec<String>,
         associated_types: Vec<AssociatedType>,
         methods: Vec<TraitMethod>,
         span: Span,

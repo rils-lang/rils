@@ -149,6 +149,13 @@ trait IntoIterator {
 }
 ```
 
+Trait 可以声明一个或多个 supertrait。实现该 trait 的类型必须同时实现所有 supertrait：
+
+```rust
+trait Behaviour: Default + Clone {
+}
+```
+
 Trait 可以声明必需关联类型，也可以使用 `=` 提供默认类型。关联类型及默认值均可带泛型参数：
 
 ```rust
@@ -202,6 +209,24 @@ Trait impl 会验证：
 - `self` 的位置一致
 - 返回类型一致，包括 `Self`
 - 同一个 trait 不会对同一类型重复实现
+
+## Default 与派生
+
+`Default` 是 prelude 中的内建 trait，关联函数签名为 `fn default() -> Self`。基础标量的默认值分别是数值零、`false`、`'\0'`、空字符串和 `()`；tuple 与数组逐元素取默认值，`Option<T>` 默认为 `None`，`Vec<T>`、`HashMap<K, V>` 和 `HashSet<T>` 默认为空集合。引用、函数、`Result<T, E>` 和宿主对象没有隐式默认值。
+
+Struct 可以使用 Rust 风格派生：
+
+```rust
+#[derive(Default)]
+struct Settings {
+    enabled: bool,
+    retries: i32,
+}
+
+let settings = <Settings as Default>::default();
+```
+
+派生会在前端生成普通的 `impl Default`，因此解释器、字节码编译器和 Analyzer 使用同一模型。每个字段类型都必须实现 `Default`，否则诊断会指向对应字段。同一类型不能同时派生并显式实现 `Default`。内部派生模型会为泛型字段记录所需的 `Default` bound；泛型条件 impl 的执行仍受本章末尾所述的当前限制。
 
 Trait 方法保留其 trait 身份。同一类型可以实现多个带同名方法的 trait；普通方法调用只有在
 候选唯一时才会自动选择，否则必须使用 UFCS：

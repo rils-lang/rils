@@ -244,6 +244,7 @@ impl Parser {
         };
         self.generic_scopes.pop();
         Ok(Stmt::Struct {
+            attributes: Vec::new(),
             name,
             name_span,
             generic_parameters,
@@ -408,6 +409,33 @@ impl Parser {
 
     pub(super) fn trait_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         let (name, name_span) = self.expect_identifier("expected trait name")?;
+        let mut bounds = Vec::new();
+        if self.take(&TokenKind::Colon).is_some() {
+            loop {
+                let (bound, bound_span) =
+                    self.expect_identifier("expected supertrait name after `:`")?;
+                if bounds.contains(&bound) {
+                    return Err(ParseError {
+                        message: format!("duplicate supertrait `{bound}`"),
+                        span: bound_span,
+                    });
+                }
+                self.type_references.push(TypeReference {
+                    name: bound.clone(),
+                    span: bound_span,
+                    definition_span: None,
+                    is_builtin: matches!(
+                        bound.as_str(),
+                        "Copy" | "Clone" | "Default" | "Eq" | "Hash" | "Iterator" | "IntoIterator"
+                    ),
+                    arguments: Vec::new(),
+                });
+                bounds.push(bound);
+                if self.take(&TokenKind::Plus).is_none() {
+                    break;
+                }
+            }
+        }
         self.expect(&TokenKind::LeftBrace, "expected `{` after trait name")?;
         let mut methods = Vec::new();
         let mut associated_types = Vec::new();
@@ -446,6 +474,7 @@ impl Parser {
         Ok(Stmt::Trait {
             name,
             name_span,
+            bounds,
             associated_types,
             methods,
             span: start.merge(right.span),

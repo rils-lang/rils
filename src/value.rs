@@ -104,6 +104,7 @@ pub struct EnumType {
 
 pub struct TraitType {
     pub name: String,
+    pub bounds: Vec<String>,
     pub associated_types: Vec<AssociatedType>,
     pub methods: Vec<TraitMethod>,
 }

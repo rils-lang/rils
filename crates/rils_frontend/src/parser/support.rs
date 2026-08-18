@@ -157,7 +157,13 @@ impl Parser {
                         definition_span: None,
                         is_builtin: matches!(
                             bound.as_str(),
-                            "Copy" | "Clone" | "Eq" | "Hash" | "Iterator" | "IntoIterator"
+                            "Copy"
+                                | "Clone"
+                                | "Default"
+                                | "Eq"
+                                | "Hash"
+                                | "Iterator"
+                                | "IntoIterator"
                         ),
                         arguments: Vec::new(),
                     });

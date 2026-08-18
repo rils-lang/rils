@@ -306,6 +306,9 @@ impl Analyzer {
             ));
         self.result
             .diagnostics
+            .extend(crate::trait_check::analyze(program));
+        self.result
+            .diagnostics
             .sort_by_key(|diagnostic| (diagnostic.span.start, diagnostic.span.end));
         self.result
             .diagnostics
