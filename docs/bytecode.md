@@ -85,7 +85,7 @@ receiver 和引用 receiver 只允许立即调用，不能进入可复制的绑�
 | 模块 | 已支持 | 内联模块、use/as、多段路径及 `compile_file` 外部模块链接 |
 | 迭代器 | 部分支持 | Range、数组、Vec 和自定义 Iterator/IntoIterator；借用迭代器待实现 |
 | 标准库/宿主 | 部分支持 | core/Vec、内置宏、显式授权的 std::io/std::fs，以及编译期自定义 HostContract 已链接；解释器 Engine 与同一契约的整合待完成 |
-| 磁盘预编译 | 实验可用 | `.rilbc` v4、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
+| 磁盘预编译 | 实验可用 | `.rilbc` v5、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
 
 Rust 宿主入口如下：
 
@@ -132,14 +132,16 @@ game.validate_host(&game_host)?;
 
 ## 磁盘格式
 
-当前已实现实验性 `.rilbc` v4。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
+当前已实现实验性 `.rilbc` v5。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
 内存布局：
 
 ```text
 magic | format version | language version | host ABI | pointer width | flags | section directory | CRC32
 ```
 
-v4 包含 module、imports、types、iterators、functions 和 sources 六个必需 section。sources 表只
+v5 包含 module、imports、types、iterators、functions、sources 和 trait implementations 七个必需
+section。trait implementations 表以受 verifier 校验的类型名、trait 名、声明 SourceId、方法名和函数索引保留实现身份，
+宿主无需扫描源码或猜测函数名即可发现入口并精确分发 trait 方法。sources 表只
 保存确定性 `SourceId -> 来源名称` 映射，不嵌入源码正文；常量、指令和源码 Span 使用各自的显式
 tag/字段编码，每个 Span 都携带 SourceId。加载器限制文件为 64 MiB、单个字符串为 1 MiB、通用集合为一百万项、
 函数/类型/导入表各 65,536 项、总指令两百万条、单函数寄存器和局部槽位各 262,144 个、类型/模式
@@ -148,11 +150,12 @@ tag/字段编码，每个 Span 都携带 SourceId。加载器限制文件为 64 
 现有 verifier，函数、常量、类型、导入、寄存器、局部槽位和跳转索引都不会被信任。未知必需
 section 拒绝加载，未知可选 section 在完成边界验证后跳过。
 
-由于语言当前存在 `usize`/`isize`，v4 记录目标指针宽度，32 位和 64 位产物不允许交叉加载，避免
+由于语言当前存在 `usize`/`isize`，v5 记录目标指针宽度，32 位和 64 位产物不允许交叉加载，避免
 发生静默截断。`format version`、`language version` 和 `host ABI` 分别检查。当前格式仍处于 0.2.0
 实验期，后续不兼容调整会提升格式版本；尚未承诺长期跨版本兼容。
 
-格式 v4 包含显式整数 `cast`、稳定 ID 的 `call_intrinsic` 指令和来源文件表。旧 loader 不会误读这些指令；
+格式 v5 在 v4 的显式整数 `cast`、稳定 ID intrinsic 和来源文件表之外增加 trait implementation 表。
+旧 loader 不会误读这些内容；
 升级后的 loader 也会明确拒绝旧文件，项目需要从源码重新生成 `.rilbc`/`.bytes`。
 
 CLI 入口为：

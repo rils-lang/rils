@@ -1,7 +1,8 @@
 use crate::{
     ast::{BinaryOp, UnaryOp},
     hir::{
-        FunctionId, HirIteratorMethods, HirLiteral, HirPattern, HirTypeDefinition, LocalId, TypeId,
+        FunctionId, HirIteratorMethods, HirLiteral, HirPattern, HirTraitImplementation,
+        HirTypeDefinition, LocalId, TypeId,
     },
     source::{SourceFile, Span},
     types::IntegerType,
@@ -27,6 +28,7 @@ pub struct MirProgram {
     pub functions: Vec<MirFunction>,
     pub types: Vec<HirTypeDefinition>,
     pub iterators: std::collections::HashMap<String, HirIteratorMethods>,
+    pub trait_implementations: Vec<HirTraitImplementation>,
     pub entry: FunctionId,
 }
 

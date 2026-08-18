@@ -18,12 +18,12 @@ use crate::{
 
 use super::{
     BYTECODE_HOST_ABI_VERSION, BytecodeFunction, BytecodeImport, BytecodeIteratorMethods,
-    BytecodeModule, BytecodePlace, BytecodeProjection, Constant, Instruction, RuntimeType,
-    SpannedInstruction,
+    BytecodeModule, BytecodePlace, BytecodeProjection, BytecodeTraitImplementation, Constant,
+    Instruction, RuntimeType, SpannedInstruction,
 };
 
 const MAGIC: &[u8; 8] = b"RILBC\0\0\0";
-pub const BYTECODE_FORMAT_VERSION: u16 = 4;
+pub const BYTECODE_FORMAT_VERSION: u16 = 5;
 pub const BYTECODE_LANGUAGE_VERSION: (u16, u16, u16) = (0, 1, 0);
 
 const HEADER_LEN: usize = 32;
@@ -34,6 +34,7 @@ const SECTION_TYPES: u16 = 3;
 const SECTION_ITERATORS: u16 = 4;
 const SECTION_FUNCTIONS: u16 = 5;
 const SECTION_SOURCES: u16 = 6;
+const SECTION_TRAIT_IMPLEMENTATIONS: u16 = 7;
 const REQUIRED_SECTION: u16 = 1;
 const MAX_FILE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_STRING_BYTES: usize = 1024 * 1024;
@@ -129,6 +130,9 @@ impl BytecodeModule {
         functions.collection(&self.functions, write_function)?;
         let mut sources = Writer::default();
         sources.collection(&self.sources, write_source_file)?;
+        let mut trait_implementations = Writer::default();
+        trait_implementations
+            .collection(&self.trait_implementations, write_trait_implementation)?;
 
         encode_container([
             (SECTION_MODULE, module.finish()),
@@ -137,6 +141,10 @@ impl BytecodeModule {
             (SECTION_ITERATORS, iterators.finish()),
             (SECTION_FUNCTIONS, functions.finish()),
             (SECTION_SOURCES, sources.finish()),
+            (
+                SECTION_TRAIT_IMPLEMENTATIONS,
+                trait_implementations.finish(),
+            ),
         ])
     }
 
@@ -186,6 +194,17 @@ impl BytecodeModule {
             "source table",
         )?;
         sources_reader.finish()?;
+        let mut trait_reader = section_reader(
+            &sections,
+            SECTION_TRAIT_IMPLEMENTATIONS,
+            "trait implementations",
+        )?;
+        let trait_implementations = trait_reader.collection_limited(
+            read_trait_implementation,
+            MAX_TYPES,
+            "trait implementation table",
+        )?;
+        trait_reader.finish()?;
 
         let instruction_count = functions.iter().try_fold(0usize, |total, function| {
             total
@@ -200,6 +219,7 @@ impl BytecodeModule {
             types,
             imports,
             iterators,
+            trait_implementations,
             entry,
         };
         module.verify().map_err(|error| {
@@ -219,6 +239,47 @@ impl BytecodeModule {
         let bytes = fs::read(path).map_err(|error| BytecodeFormatError::io("read", path, error))?;
         Self::from_bytes(&bytes)
     }
+}
+
+fn write_trait_implementation(
+    writer: &mut Writer,
+    implementation: &BytecodeTraitImplementation,
+) -> Result<()> {
+    writer.string(&implementation.target)?;
+    writer.string(&implementation.trait_name)?;
+    writer.u32(implementation.source.0);
+    let mut methods = implementation.methods.iter().collect::<Vec<_>>();
+    methods.sort_by(|left, right| left.0.cmp(right.0));
+    writer.len(methods.len(), "trait method table")?;
+    for (name, function) in methods {
+        writer.string(name)?;
+        writer.index(*function, "trait method function")?;
+    }
+    Ok(())
+}
+
+fn read_trait_implementation(reader: &mut Reader<'_>) -> Result<BytecodeTraitImplementation> {
+    let target = reader.string()?;
+    let trait_name = reader.string()?;
+    let source = SourceId::new(reader.u32()?);
+    let method_count = reader.len()?;
+    ensure_limit(method_count, MAX_FUNCTIONS, "trait method table")?;
+    let mut methods = HashMap::with_capacity(method_count);
+    for _ in 0..method_count {
+        let name = reader.string()?;
+        let function = reader.index()?;
+        if methods.insert(name.clone(), function).is_some() {
+            return Err(BytecodeFormatError::new(format!(
+                "duplicate trait method `{name}`"
+            )));
+        }
+    }
+    Ok(BytecodeTraitImplementation {
+        target,
+        trait_name,
+        source,
+        methods,
+    })
 }
 
 fn encode_container<const N: usize>(sections: [(u16, Vec<u8>); N]) -> Result<Vec<u8>> {
@@ -357,6 +418,7 @@ fn decode_container(bytes: &[u8]) -> Result<HashMap<u16, &[u8]>> {
                 | SECTION_ITERATORS
                 | SECTION_FUNCTIONS
                 | SECTION_SOURCES
+                | SECTION_TRAIT_IMPLEMENTATIONS
         );
         if !known && flags & REQUIRED_SECTION != 0 {
             return Err(BytecodeFormatError::new(format!(
@@ -398,6 +460,7 @@ fn decode_container(bytes: &[u8]) -> Result<HashMap<u16, &[u8]>> {
         SECTION_ITERATORS,
         SECTION_FUNCTIONS,
         SECTION_SOURCES,
+        SECTION_TRAIT_IMPLEMENTATIONS,
     ] {
         if !sections.contains_key(&id) {
             return Err(BytecodeFormatError::new(format!(

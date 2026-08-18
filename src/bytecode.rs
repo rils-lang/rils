@@ -81,7 +81,34 @@ pub struct BytecodeModule {
     types: Vec<RuntimeType>,
     imports: Vec<BytecodeImport>,
     iterators: HashMap<String, BytecodeIteratorMethods>,
+    trait_implementations: Vec<BytecodeTraitImplementation>,
     entry: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BytecodeTraitImplementation {
+    target: String,
+    trait_name: String,
+    source: SourceId,
+    methods: HashMap<String, usize>,
+}
+
+impl BytecodeTraitImplementation {
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    pub fn trait_name(&self) -> &str {
+        &self.trait_name
+    }
+
+    pub fn source(&self) -> SourceId {
+        self.source
+    }
+
+    pub fn methods(&self) -> impl Iterator<Item = &str> {
+        self.methods.keys().map(String::as_str)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -120,6 +147,116 @@ impl BytecodeModule {
             .iter()
             .find(|file| file.id == source)
             .map(|file| file.name.as_str())
+    }
+
+    pub fn trait_implementations(
+        &self,
+        trait_name: &str,
+    ) -> impl Iterator<Item = &BytecodeTraitImplementation> {
+        self.trait_implementations
+            .iter()
+            .filter(move |implementation| {
+                trait_name_matches(&implementation.trait_name, trait_name)
+            })
+    }
+
+    pub fn construct_default_with_host_and_limit(
+        &self,
+        target: &str,
+        host: &BytecodeHost,
+        max_steps: usize,
+    ) -> Result<Value, BytecodeError> {
+        let implementation = self
+            .trait_implementations("Default")
+            .find(|implementation| implementation.target == target)
+            .ok_or_else(|| {
+                BytecodeError::new(
+                    format!("type `{target}` does not implement `Default`"),
+                    Span::default(),
+                )
+            })?;
+        let function = implementation
+            .methods
+            .get("default")
+            .copied()
+            .ok_or_else(|| {
+                BytecodeError::new(
+                    format!("`Default` implementation for `{target}` has no `default` method"),
+                    Span::default(),
+                )
+            })?;
+        self.call_function_with_host_and_limit(function, Vec::new(), host, max_steps)
+    }
+
+    pub fn call_trait_method_with_host_and_limit(
+        &self,
+        target: &str,
+        trait_name: &str,
+        method_name: &str,
+        receiver: &mut Value,
+        mut arguments: Vec<Value>,
+        host: &BytecodeHost,
+        max_steps: usize,
+    ) -> Result<Value, BytecodeError> {
+        let implementation = self
+            .trait_implementations(trait_name)
+            .find(|implementation| implementation.target == target)
+            .ok_or_else(|| {
+                BytecodeError::new(
+                    format!("type `{target}` does not implement `{trait_name}`"),
+                    Span::default(),
+                )
+            })?;
+        let function = implementation
+            .methods
+            .get(method_name)
+            .copied()
+            .ok_or_else(|| {
+                BytecodeError::new(
+                    format!("trait `{trait_name}` has no method `{method_name}` for `{target}`"),
+                    Span::default(),
+                )
+            })?;
+        let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+        storage.borrow_mut().initialize(receiver.clone());
+        arguments.insert(
+            0,
+            Value::Reference(Rc::new(ReferenceValue::new_storage(storage.clone(), true))),
+        );
+        let result = self.call_function_with_host_and_limit(function, arguments, host, max_steps);
+        *receiver = storage.borrow().read().map_err(|_| {
+            BytecodeError::new(
+                format!("trait method `{trait_name}::{method_name}` moved its receiver"),
+                Span::default(),
+            )
+        })?;
+        result
+    }
+
+    fn call_function_with_host_and_limit(
+        &self,
+        function: usize,
+        arguments: Vec<Value>,
+        host: &BytecodeHost,
+        max_steps: usize,
+    ) -> Result<Value, BytecodeError> {
+        let bytecode_function = self.functions.get(function).ok_or_else(|| {
+            BytecodeError::new(
+                "trait method function index is out of bounds",
+                Span::default(),
+            )
+        })?;
+        if bytecode_function.capture_count != 0 {
+            return Err(BytecodeError::new(
+                format!(
+                    "function `{}` requires a closure environment",
+                    bytecode_function.name
+                ),
+                bytecode_function.span,
+            ));
+        }
+        let imports = self.link(host)?;
+        VirtualMachine::new_call(self, imports, max_steps, function, arguments)?.execute()
     }
 
     pub fn execute(&self) -> Result<Value, BytecodeError> {
@@ -262,6 +399,14 @@ impl BytecodeModule {
             })
             .collect()
     }
+}
+
+fn trait_name_matches(stored: &str, requested: &str) -> bool {
+    stored == requested
+        || stored
+            .rsplit("::")
+            .next()
+            .is_some_and(|name| name == requested)
 }
 
 fn new_local_storage(function: &BytecodeFunction) -> Vec<StorageRef> {

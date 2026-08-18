@@ -26,7 +26,16 @@ pub struct HirProgram {
     pub functions: Vec<HirFunction>,
     pub types: Vec<HirTypeDefinition>,
     pub iterators: HashMap<String, HirIteratorMethods>,
+    pub trait_implementations: Vec<HirTraitImplementation>,
     pub entry: FunctionId,
+}
+
+#[derive(Clone)]
+pub struct HirTraitImplementation {
+    pub target: String,
+    pub trait_name: String,
+    pub source: crate::source::SourceId,
+    pub methods: HashMap<String, FunctionId>,
 }
 
 #[derive(Clone, Default)]

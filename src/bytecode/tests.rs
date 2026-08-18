@@ -12,6 +12,120 @@ fn assert_matches_interpreter(source: &str) {
 }
 
 #[test]
+fn trait_metadata_constructs_and_calls_persistent_default_instances() {
+    let module = compile(
+        r#"
+            trait Behaviour: Default {
+                fn tick(&mut self, amount: i32) -> i32;
+            }
+
+            #[derive(Default)]
+            struct State { value: i32 }
+
+            impl Behaviour for State {
+                fn tick(&mut self, amount: i32) -> i32 {
+                    self.value = self.value + amount;
+                    self.value
+                }
+            }
+        "#,
+    )
+    .expect("behaviour should compile");
+
+    let implementations = module
+        .trait_implementations("Behaviour")
+        .collect::<Vec<_>>();
+    assert_eq!(implementations.len(), 1);
+    assert_eq!(implementations[0].target(), "State");
+    assert_eq!(implementations[0].source(), SourceId::UNKNOWN);
+
+    let host = BytecodeHost::standard();
+    let mut state = module
+        .construct_default_with_host_and_limit("State", &host, 1_000_000)
+        .expect("Default should construct the state");
+    let first = module
+        .call_trait_method_with_host_and_limit(
+            "State",
+            "Behaviour",
+            "tick",
+            &mut state,
+            vec![Value::I32(2)],
+            &host,
+            1_000_000,
+        )
+        .expect("first trait call should succeed");
+    let second = module
+        .call_trait_method_with_host_and_limit(
+            "State",
+            "Behaviour",
+            "tick",
+            &mut state,
+            vec![Value::I32(3)],
+            &host,
+            1_000_000,
+        )
+        .expect("second trait call should preserve state");
+    assert_eq!(first, Value::I32(2));
+    assert_eq!(second, Value::I32(5));
+
+    let decoded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(
+        decoded
+            .trait_implementations("Behaviour")
+            .next()
+            .map(BytecodeTraitImplementation::target),
+        Some("State")
+    );
+}
+
+#[test]
+fn project_trait_metadata_preserves_each_implementation_source() {
+    let directory = std::env::temp_dir().join(format!(
+        "rils-bytecode-trait-source-test-{}",
+        std::process::id()
+    ));
+    let scripts = directory.join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(
+        directory.join("rils.toml"),
+        "[project]\nname = \"trait_sources\"\nscript_paths = [\"scripts\"]\n",
+    )
+    .unwrap();
+    let behaviour_source = |name: &str| {
+        format!(
+            "trait Behaviour: Default {{ fn tick(&mut self); }}\n\
+             #[derive(Default)] struct {name};\n\
+             impl Behaviour for {name} {{ fn tick(&mut self) {{ }} }}\n"
+        )
+    };
+    let first = scripts.join("first.rils");
+    let second = scripts.join("second.rils");
+    std::fs::write(&first, behaviour_source("First")).unwrap();
+    std::fs::write(&second, behaviour_source("Second")).unwrap();
+
+    let module = crate::compile_file(&first).expect("project should compile");
+    let mut sources = module
+        .trait_implementations("Behaviour")
+        .map(|implementation| {
+            module
+                .source_name(implementation.source())
+                .expect("file implementation should retain its source")
+                .replace('\\', "/")
+        })
+        .collect::<Vec<_>>();
+    sources.sort();
+    assert_eq!(sources.len(), 2);
+    assert!(sources[0].ends_with("/scripts/first.rils"));
+    assert!(sources[1].ends_with("/scripts/second.rils"));
+
+    std::fs::remove_file(first).unwrap();
+    std::fs::remove_file(second).unwrap();
+    std::fs::remove_file(directory.join("rils.toml")).unwrap();
+    std::fs::remove_dir(scripts).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+}
+
+#[test]
 fn compiles_arithmetic_blocks_and_short_circuiting() {
     assert_matches_interpreter(
         r#"

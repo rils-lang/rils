@@ -23,6 +23,7 @@ pub(crate) fn lower(program: HirProgram) -> Result<MirProgram, CompileError> {
         functions,
         types: program.types,
         iterators: program.iterators,
+        trait_implementations: program.trait_implementations,
         entry: program.entry,
     })
 }

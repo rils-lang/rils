@@ -271,6 +271,7 @@ impl ProgramLowerer {
             functions: lowered,
             types: self.type_definitions,
             iterators: iterator_methods(&self.methods),
+            trait_implementations: trait_implementations(&self.methods),
             entry: 0,
         })
     }

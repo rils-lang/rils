@@ -64,6 +64,32 @@ impl BytecodeModule {
                 ));
             }
         }
+        let mut implementations = HashSet::new();
+        for implementation in &self.trait_implementations {
+            if implementation.target.is_empty()
+                || implementation.trait_name.is_empty()
+                || !self.valid_span(Span {
+                    source: implementation.source,
+                    start: 0,
+                    end: 0,
+                })
+                || !implementations.insert((
+                    implementation.target.as_str(),
+                    implementation.trait_name.as_str(),
+                ))
+                || implementation.methods.is_empty()
+                || implementation.methods.iter().any(|(name, function)| {
+                    name.is_empty()
+                        || *function >= self.functions.len()
+                        || self.functions[*function].capture_count != 0
+                })
+            {
+                return Err(BytecodeError::new(
+                    "trait implementation table is invalid",
+                    Span::default(),
+                ));
+            }
+        }
         Ok(())
     }
 

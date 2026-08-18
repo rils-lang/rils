@@ -40,6 +40,16 @@ pub(super) fn encode(program: MirProgram) -> Result<BytecodeModule, CompileError
                 )
             })
             .collect(),
+        trait_implementations: program
+            .trait_implementations
+            .into_iter()
+            .map(|implementation| BytecodeTraitImplementation {
+                target: implementation.target,
+                trait_name: implementation.trait_name,
+                source: implementation.source,
+                methods: implementation.methods,
+            })
+            .collect(),
         entry: program.entry,
     };
     module

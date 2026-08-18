@@ -9,7 +9,7 @@ use crate::{
     types::Type,
 };
 
-use super::{FunctionId, HirIteratorMethods, HirTypeDefinition, TypeId};
+use super::{FunctionId, HirIteratorMethods, HirTraitImplementation, HirTypeDefinition, TypeId};
 pub(super) struct FunctionDeclaration<'a> {
     pub(super) name: &'a str,
     pub(super) qualified_name: String,
@@ -23,6 +23,7 @@ pub(super) struct FunctionDeclaration<'a> {
 pub(super) struct MethodInfo {
     pub(super) function: FunctionId,
     pub(super) receiver: Option<ReceiverMode>,
+    pub(super) source: crate::source::SourceId,
 }
 
 #[derive(Clone, Copy)]
@@ -411,6 +412,7 @@ pub(super) fn collect_method_symbols(
                 target,
                 trait_name,
                 methods: definitions,
+                span,
                 ..
             } => {
                 let Some(target_name) = qualified_type_name(prefix, target) else {
@@ -423,6 +425,7 @@ pub(super) fn collect_method_symbols(
                     let info = MethodInfo {
                         function: *next_function_id,
                         receiver: method.parameters.first().and_then(receiver_mode),
+                        source: span.source,
                     };
                     *next_function_id += 1;
                     methods.insert(
@@ -576,6 +579,44 @@ pub(super) fn iterator_methods(
     }
     iterators.retain(|_, methods| methods.next.is_some() || methods.into_iter.is_some());
     iterators
+}
+
+pub(super) fn trait_implementations(
+    methods: &HashMap<String, MethodInfo>,
+) -> Vec<HirTraitImplementation> {
+    let mut implementations =
+        HashMap::<(String, String), (crate::source::SourceId, HashMap<String, FunctionId>)>::new();
+    for (key, method) in methods {
+        let Some(inner) = key.strip_prefix('<') else {
+            continue;
+        };
+        let Some((implementation, method_name)) = inner.rsplit_once(">::") else {
+            continue;
+        };
+        let Some((target, trait_name)) = implementation.rsplit_once(" as ") else {
+            continue;
+        };
+        implementations
+            .entry((target.to_string(), trait_name.to_string()))
+            .or_insert_with(|| (method.source, HashMap::new()))
+            .1
+            .insert(method_name.to_string(), method.function);
+    }
+    let mut implementations = implementations
+        .into_iter()
+        .map(
+            |((target, trait_name), (source, methods))| HirTraitImplementation {
+                target,
+                trait_name,
+                source,
+                methods,
+            },
+        )
+        .collect::<Vec<_>>();
+    implementations.sort_by(|left, right| {
+        (&left.trait_name, &left.target).cmp(&(&right.trait_name, &right.target))
+    });
+    implementations
 }
 
 pub(super) fn is_compile_time_declaration(statement: &Stmt) -> bool {
