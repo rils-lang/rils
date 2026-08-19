@@ -50,11 +50,19 @@ impl RilsBehaviour for PlayerBehaviour {
 ## Unity 宿主 manifest
 
 Unity 集成使用项目根目录下的 `.rils/manifest/` 作为生成的二进制宿主契约目录，
-不把 manifest 放进 `Assets`，也不把它作为 Unity 资源提交。Editor 启动时会把现有
-`unity.object.rilhm` 与当前 Unity 宿主绑定生成的内容比较；文件缺失、损坏或已经过期时会
-原子重建并自动重新导入 `.rils` 资产。菜单 `Rils > Generate Unity Host Manifest` 仍可用于
-显式强制重建。导入器会用该 manifest 校验带有
-`unity::object::*` 调用的脚本，并把 manifest 字节保存到对应的
+不把 manifest 放进 `Assets`，也不把它作为 Unity 资源提交。Editor 与 Player 共享
+`UnityEngineBindingCatalog` 中的模块 descriptor：Editor 从 descriptor 为
+`unity_engine::object`、`game_object`、`component`、`transform` 和 `time` 分别生成
+`.rils/manifest/unity-engine/*.rilhm`，Player 从同一 descriptor 绑定静态 C# handler。
+生成 manifest 不执行 handler，也不创建假的 Unity 对象表。
+
+Editor 启动时会逐模块比较当前内容；文件缺失、损坏、已经过期或属于旧模块集合时会原子同步并
+自动重新导入 `.rils` 资产。菜单 `Rils > Generate Unity Host Manifest` 仍可用于显式强制重建。
+导入器会用这些 fragment 校验带有 `unity_engine::*` 调用的脚本，并把合并后的 manifest 字节保存到对应的
 `RilsScriptAsset` 主资产。其 `RilsEntryAsset` 子资产共享这些数据，不重复存储。多个 fragment 会按路径排序后合并。这样 Player 运行时只依赖导入资产，不需要访问
 工程根目录的 `.rils` 文件；`.rils/manifest/*.rilhm` 作为动态生成物由集成项目的
 局部 `.gitignore` 忽略。
+
+Binding descriptor 已保留 `unity_engine::GameObject` 等逻辑类型名，但 Host Manifest v1 目前仍把
+所有 Unity 对象参数降级为 `HostHandle`。命名宿主类型、继承和值类型 transport 需要独立的
+manifest 格式升级，不能只在 Unity 绑定中私自扩展。

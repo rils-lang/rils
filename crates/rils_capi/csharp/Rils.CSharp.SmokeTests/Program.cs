@@ -10,6 +10,57 @@ static void Equal<T>(T expected, T actual, string label)
 
 Equal(3U, RilsRuntime.NativeAbiVersion, "ABI version");
 
+ulong stableHostId = RilsHostStableId.FromCanonicalName(
+    "UnityEngine.CoreModule:UnityEngine.Time.get_deltaTime():System.Single");
+Equal(
+    stableHostId,
+    RilsHostStableId.FromCanonicalName(
+        "UnityEngine.CoreModule:UnityEngine.Time.get_deltaTime():System.Single"),
+    "stable host ID");
+var timeDescriptor = new RilsHostFunctionDescriptor(
+    stableHostId,
+    "unity_engine::time::delta_time",
+    "unity_engine.time",
+    new RilsHostParameter(RilsValueTag.F32),
+    Array.Empty<RilsHostParameter>(),
+    managedMemberName: "UnityEngine.Time.get_deltaTime");
+var timeModule = new RilsHostModuleDescriptor(
+    "unity_engine::time",
+    1,
+    new[] { timeDescriptor });
+var mutableParameters = new[] { new RilsHostParameter(RilsValueTag.I32) };
+var immutableFunction = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("Smoke.Immutable(System.Int32):System.Void"),
+    "smoke::immutable",
+    "smoke.immutable",
+    new RilsHostParameter(RilsValueTag.Unit),
+    mutableParameters);
+mutableParameters[0] = new RilsHostParameter(RilsValueTag.Bool);
+Equal(RilsValueTag.I32, immutableFunction.Parameters[0].Tag, "function parameter snapshot");
+var mutableFunctions = new[] { immutableFunction };
+var immutableModule = new RilsHostModuleDescriptor("smoke", 1, mutableFunctions);
+mutableFunctions[0] = timeDescriptor;
+Equal("smoke::immutable", immutableModule.Functions[0].Name, "module function snapshot");
+byte[] timeManifest = RilsHostManifestBuilder.Build(timeModule);
+using (var runtime = new RilsRuntime())
+{
+    runtime.RegisterHostManifest(timeManifest);
+    using var hosts = new RilsHostRegistry(runtime);
+    hosts.Register(new RilsHostFunction(timeDescriptor, _ => RilsValue.From(0.25F)));
+    hosts.AllowCapability("unity_engine.time");
+    hosts.Freeze();
+    using RilsModule module = runtime.Compile(
+        "unity_engine::time::delta_time()",
+        "managed-host-module-smoke.rils");
+    using RilsInstance instance = module.CreateInstance();
+    Equal(0.25F, instance.Execute().AsF32(), "descriptor-backed host dispatch");
+    runtime.Dispose();
+}
+
+RilsHostParameter gameObjectType = RilsHostParameter.NamedHandle("unity_engine::GameObject");
+Equal(RilsValueTag.HostHandle, gameObjectType.Tag, "named handle transport");
+Equal("unity_engine::GameObject", gameObjectType.LogicalTypeName, "named handle logical type");
+
 byte[] emptyHostManifest;
 using (var runtime = new RilsRuntime())
 {

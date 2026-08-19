@@ -14,6 +14,8 @@
 
 ### Added
 
+- `Rils.CSharp` 增加与 handler 分离的宿主模块/函数 descriptor、确定性稳定 ID 和单模块
+  `.rilhm` builder；Unity 集成可由同一份 Binding IR 生成编译期契约并注册 Player 静态绑定。
 - 增加内建 `Default` trait 和 `#[derive(Default)]`。基础标量、tuple、数组、`Option` 与空集合具有统一默认值；Struct 派生会检查每个字段的 `Default` 约束，并由解释器、字节码编译器和 Analyzer 共享同一展开结果。
 - Trait 支持声明 supertrait；解释器、编译器和 Analyzer 会统一要求 impl target 满足全部 supertrait。RilsForUnity 的 `RilsBehaviour` 现在继承 `Default`，新建模板会自动添加 `#[derive(Default)]`。
 - 字节码、C API 与 C# facade 支持发现具体 trait 实现、通过 `Default` 构造持久 opaque script value，

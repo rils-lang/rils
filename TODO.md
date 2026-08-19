@@ -46,6 +46,9 @@
 ### 宿主与部署
 
 - 在保持宿主无关的前提下继续扩展 C ABI 的核心生命周期、值交换和诊断能力。
+- 设计 Host Manifest v2 的命名宿主类型表、继承、enum、常量和逻辑类型到 ABI transport 的降级；
+  Unity `GameObject`、`Component`、`Transform` 等类型在 v1 期间仍以 `HostHandle` 传输。
+- 编译后按实际 host imports 裁剪或外置运行时契约，避免完整 Unity manifest 在每个脚本资产中重复内嵌。
 - 将 Unity、UE 等引擎集成维护在各自独立仓库和插件工程中。
 - 评估可选 Rust AOT 后端；AOT 不替代字节码验证、能力隔离和资源限制。
 

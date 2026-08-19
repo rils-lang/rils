@@ -10,6 +10,15 @@ namespace Rils.CSharp
     public sealed class RilsHostFunction
     {
         public RilsHostFunction(
+            RilsHostFunctionDescriptor descriptor,
+            Func<RilsValue[], RilsValue> handler)
+        {
+            Descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
+            Handler = handler ?? throw new ArgumentNullException(nameof(handler));
+            ParameterTags = CreateTags(descriptor.Parameters);
+        }
+
+        public RilsHostFunction(
             ulong functionId,
             string name,
             string capability,
@@ -18,15 +27,16 @@ namespace Rils.CSharp
             Func<RilsValue[], RilsValue> handler)
         {
             if (functionId == 0) throw new ArgumentOutOfRangeException(nameof(functionId));
-            Name = name ?? throw new ArgumentNullException(nameof(name));
-            Capability = capability ?? throw new ArgumentNullException(nameof(capability));
-            ParameterTags = parameterTags ?? throw new ArgumentNullException(nameof(parameterTags));
+            if (parameterTags == null) throw new ArgumentNullException(nameof(parameterTags));
+            RilsHostParameter[] parameters = CreateParameters(parameterTags);
+            Descriptor = new RilsHostFunctionDescriptor(
+                functionId,
+                name,
+                capability,
+                new RilsHostParameter(returnTag),
+                parameters);
+            ParameterTags = parameterTags;
             Handler = handler ?? throw new ArgumentNullException(nameof(handler));
-            FunctionId = functionId;
-            ReturnTag = returnTag;
-            Parameters = CreateParameters(parameterTags);
-            ThreadPolicy = RilsHostThreadPolicy.MainThreadOnly;
-            Receiver = RilsHostReceiver.None;
         }
 
         public RilsHostFunction(
@@ -40,30 +50,31 @@ namespace Rils.CSharp
             RilsHostReceiver receiver = RilsHostReceiver.None)
         {
             if (functionId == 0) throw new ArgumentOutOfRangeException(nameof(functionId));
-            Name = name ?? throw new ArgumentNullException(nameof(name));
-            Capability = capability ?? throw new ArgumentNullException(nameof(capability));
-            Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
+            Descriptor = new RilsHostFunctionDescriptor(
+                functionId,
+                name,
+                capability,
+                returnParameter,
+                parameters,
+                threadPolicy,
+                receiver);
+            ParameterTags = CreateTags(Descriptor.Parameters);
             Handler = handler ?? throw new ArgumentNullException(nameof(handler));
-            FunctionId = functionId;
-            ReturnTag = returnParameter.Tag;
-            ReturnTransferMode = returnParameter.TransferMode;
-            ParameterTags = CreateTags(parameters);
-            ThreadPolicy = threadPolicy;
-            Receiver = receiver;
         }
 
-        public ulong FunctionId { get; }
-        public string Name { get; }
-        public string Capability { get; }
-        public RilsValueTag ReturnTag { get; }
+        public RilsHostFunctionDescriptor Descriptor { get; }
+        public ulong FunctionId => Descriptor.FunctionId;
+        public string Name => Descriptor.Name;
+        public string Capability => Descriptor.Capability;
+        public RilsValueTag ReturnTag => Descriptor.ReturnParameter.Tag;
         public IReadOnlyList<RilsValueTag> ParameterTags { get; }
-        public IReadOnlyList<RilsHostParameter> Parameters { get; }
-        public RilsHostTransferMode ReturnTransferMode { get; }
-        public RilsHostThreadPolicy ThreadPolicy { get; }
-        public RilsHostReceiver Receiver { get; }
+        public IReadOnlyList<RilsHostParameter> Parameters => Descriptor.Parameters;
+        public RilsHostTransferMode ReturnTransferMode => Descriptor.ReturnParameter.TransferMode;
+        public RilsHostThreadPolicy ThreadPolicy => Descriptor.ThreadPolicy;
+        public RilsHostReceiver Receiver => Descriptor.Receiver;
         internal Func<RilsValue[], RilsValue> Handler { get; }
 
-        private static IReadOnlyList<RilsHostParameter> CreateParameters(IReadOnlyList<RilsValueTag> tags)
+        private static RilsHostParameter[] CreateParameters(IReadOnlyList<RilsValueTag> tags)
         {
             var parameters = new RilsHostParameter[tags.Count];
             for (int index = 0; index < parameters.Length; index++)
@@ -121,45 +132,15 @@ namespace Rils.CSharp
                 throw new NotSupportedException(
                     "Main-thread scheduling is not enabled by the synchronous host bridge yet.");
             }
-            for (int index = 0; index < function.Parameters.Count; index++)
+            try
             {
+                RilsHostDeclarationInterop.Register(_runtime, function.Descriptor);
             }
-
-            byte[] name = Encoding.UTF8.GetBytes(function.Name);
-            byte[] capability = Encoding.UTF8.GetBytes(function.Capability);
-            uint[] tags = new uint[function.ParameterTags.Count];
-            for (int index = 0; index < tags.Length; index++)
+            catch (RilsException exception) when (
+                exception.Message.IndexOf("already declared", StringComparison.Ordinal) >= 0)
             {
-                tags[index] = (uint)function.ParameterTags[index];
-            }
-
-            fixed (byte* namePointer = name)
-            fixed (byte* capabilityPointer = capability)
-            fixed (uint* tagPointer = tags)
-            {
-                var descriptor = new NativeHostFunction
-                {
-                    FunctionId = function.FunctionId,
-                    Name = NativeInterop.Slice(namePointer, name.Length),
-                    Capability = NativeInterop.Slice(capabilityPointer, capability.Length),
-                    ParameterTags = tagPointer,
-                    ParameterCount = new UIntPtr(checked((uint)tags.Length)),
-                    ReturnTag = function.ReturnTag,
-                    Reserved = (uint)function.Receiver,
-                };
-                try
-                {
-                    NativeInterop.Check(NativeMethods.RuntimeRegisterHostFunctions(
-                        _runtime.Handle,
-                        &descriptor,
-                        new UIntPtr(1)));
-                }
-                catch (RilsException exception) when (
-                    exception.Message.IndexOf("already declared", StringComparison.Ordinal) >= 0)
-                {
-                    // The declaration came from a registered manifest fragment;
-                    // retain the managed callback for dispatch.
-                }
+                // The declaration came from a registered manifest fragment;
+                // retain the managed callback for dispatch.
             }
             _functions.Add(function.FunctionId, function);
         }
@@ -278,6 +259,42 @@ namespace Rils.CSharp
                 // will add an owned error-buffer protocol for managed exception messages.
                 if (outError != null) *outError = default;
                 return (int)RilsStatus.ExecutionError;
+            }
+        }
+    }
+
+    internal static unsafe class RilsHostDeclarationInterop
+    {
+        internal static void Register(
+            RilsRuntime runtime,
+            RilsHostFunctionDescriptor function)
+        {
+            byte[] name = Encoding.UTF8.GetBytes(function.Name);
+            byte[] capability = Encoding.UTF8.GetBytes(function.Capability);
+            uint[] tags = new uint[function.Parameters.Count];
+            for (int index = 0; index < tags.Length; index++)
+            {
+                tags[index] = (uint)function.Parameters[index].Tag;
+            }
+
+            fixed (byte* namePointer = name)
+            fixed (byte* capabilityPointer = capability)
+            fixed (uint* tagPointer = tags)
+            {
+                var native = new NativeHostFunction
+                {
+                    FunctionId = function.FunctionId,
+                    Name = NativeInterop.Slice(namePointer, name.Length),
+                    Capability = NativeInterop.Slice(capabilityPointer, capability.Length),
+                    ParameterTags = tagPointer,
+                    ParameterCount = new UIntPtr(checked((uint)tags.Length)),
+                    ReturnTag = function.ReturnParameter.Tag,
+                    Reserved = (uint)function.Receiver,
+                };
+                NativeInterop.Check(NativeMethods.RuntimeRegisterHostFunctions(
+                    runtime.Handle,
+                    &native,
+                    new UIntPtr(1)));
             }
         }
     }

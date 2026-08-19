@@ -7,7 +7,7 @@ import argparse
 import shutil
 import subprocess
 import sys
-import tempfile
+import uuid
 from pathlib import Path
 
 
@@ -113,9 +113,12 @@ def main() -> None:
         raise SystemExit(f"missing Unity assembly definition: {asmdef}")
 
     output_directory.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(
-        tempfile.mkdtemp(prefix=".rils-csharp-unity-", dir=output_directory.parent)
-    )
+    # tempfile.mkdtemp applies a private Windows ACL. Renaming that directory
+    # into the Unity package keeps the restrictive ACL and can make the export
+    # unreadable to Unity or sandboxed tooling. A normal directory inherits the
+    # package parent's ACL while the random name still prevents collisions.
+    staging = output_directory.parent / f".rils-csharp-unity-{uuid.uuid4().hex}"
+    staging.mkdir()
     preserved_meta: dict[Path, Path] = {}
     if output_directory.is_dir():
         generated_files = {

@@ -103,13 +103,38 @@ namespace Rils.CSharp
     /// One parameter in a host function signature.
     public readonly struct RilsHostParameter
     {
-        public RilsHostParameter(RilsValueTag tag, RilsHostTransferMode transferMode = RilsHostTransferMode.Copy)
+        public RilsHostParameter(
+            RilsValueTag tag,
+            RilsHostTransferMode transferMode = RilsHostTransferMode.Copy,
+            string? logicalTypeName = null)
         {
+            if (logicalTypeName != null &&
+                (tag != RilsValueTag.HostHandle || transferMode != RilsHostTransferMode.Handle))
+            {
+                throw new ArgumentException(
+                    "Named host types must currently lower to handle transport.",
+                    nameof(logicalTypeName));
+            }
             Tag = tag;
             TransferMode = transferMode;
+            LogicalTypeName = logicalTypeName;
         }
 
         public RilsValueTag Tag { get; }
         public RilsHostTransferMode TransferMode { get; }
+        /// The future manifest-level nominal type. Manifest v1 lowers it to HostHandle.
+        public string? LogicalTypeName { get; }
+
+        public static RilsHostParameter NamedHandle(string logicalTypeName)
+        {
+            if (string.IsNullOrWhiteSpace(logicalTypeName))
+            {
+                throw new ArgumentException("Logical host type name cannot be empty.", nameof(logicalTypeName));
+            }
+            return new RilsHostParameter(
+                RilsValueTag.HostHandle,
+                RilsHostTransferMode.Handle,
+                logicalTypeName);
+        }
     }
 }
