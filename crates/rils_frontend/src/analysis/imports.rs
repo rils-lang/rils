@@ -18,6 +18,7 @@ pub(super) struct ModuleExport {
 
 pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
     for import in imports {
+        let exported = imported_export(analyzer, import);
         for (index, (segment, segment_span)) in
             import.path.iter().zip(&import.path_spans).enumerate()
         {
@@ -32,7 +33,10 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
                     definition_id: None,
                     kind: if index + 1 == import.path.len() && import.kind == UseImportKind::Single
                     {
-                        SymbolKind::Function
+                        exported
+                            .as_ref()
+                            .map(|export| export.kind)
+                            .unwrap_or(SymbolKind::Function)
                     } else {
                         SymbolKind::Module
                     },
@@ -47,13 +51,30 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
             continue;
         };
         let name_span = import.alias_span.unwrap_or(import.name_span);
-        let kind = if name.chars().next().is_some_and(char::is_uppercase) {
-            SymbolKind::Type
-        } else {
-            SymbolKind::Function
-        };
+        let kind = exported.as_ref().map_or_else(
+            || {
+                if name.chars().next().is_some_and(char::is_uppercase) {
+                    SymbolKind::Type
+                } else {
+                    SymbolKind::Function
+                }
+            },
+            |export| export.kind,
+        );
         analyzer.define(name, name_span, kind);
     }
+}
+
+fn imported_export(analyzer: &Analyzer, import: &UseImport) -> Option<ModuleExport> {
+    let name = import.path.last()?;
+    module_candidates(
+        &analyzer.module_path,
+        &import.path[..import.path.len().saturating_sub(1)],
+    )
+    .iter()
+    .find_map(|module| analyzer.module_exports.get(module))
+    .and_then(|exports| exports.iter().find(|export| export.name == *name))
+    .cloned()
 }
 
 fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {

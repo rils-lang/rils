@@ -1145,11 +1145,17 @@ impl Inferencer {
                 .unwrap_or_default();
             return FunctionSignature::fixed(parameters, signature.return_type.clone()).as_type();
         }
-        let Type::Named { name, .. } = object_type else {
+        let Type::Named { name, arguments } = object_type else {
             return Type::Unknown;
         };
         self.types.get(name).map_or(Type::Unknown, |definition| {
-            definition
+            let substitutions = definition
+                .generic_parameters
+                .iter()
+                .cloned()
+                .zip(arguments.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            let member = definition
                 .fields
                 .get(field)
                 .or_else(|| definition.methods.get(field))
@@ -1165,7 +1171,9 @@ impl Inferencer {
                         )
                     })
                     .flatten()
-                })
+                });
+            member
+                .map(|member| member.substitute(&substitutions))
                 .unwrap_or(Type::Unknown)
         })
     }

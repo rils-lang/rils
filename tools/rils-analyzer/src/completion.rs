@@ -62,10 +62,13 @@ impl Server {
                         .filter_map(|function| {
                             let (_, name) = function.name.rsplit_once("::")?;
                             name.starts_with(&member_prefix).then(|| {
+                                let detail = signature_declaration(name, &function.signature);
                                 json!({
-                                    "label": name,
+                                    "label": detail,
+                                    "filterText": name,
+                                    "insertText": name,
                                     "kind": 2,
-                                    "detail": signature_declaration(name, &function.signature),
+                                    "detail": detail,
                                     "documentation": {
                                         "kind": "markdown",
                                         "value": format!("Host method receiver: `{}`\\n\\nCapability: `{}`", function.receiver.unwrap().as_str(), function.capability)
@@ -236,7 +239,9 @@ impl Server {
             }
             let declaration = signature_declaration(name, &function.signature);
             items.push(json!({
-                "label": name,
+                "label": declaration,
+                "filterText": name,
+                "insertText": name,
                 "kind": 3,
                 "detail": declaration,
                 "documentation": {

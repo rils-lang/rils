@@ -24,6 +24,50 @@ fn resolves_local_definitions_and_references() {
 }
 
 #[test]
+fn exposes_complete_declarations_for_user_symbols() {
+    let source = r#"
+        struct Pair<T: Clone, U> { first: T, second: U }
+        enum Value<T> { Empty, Item(T), Named { value: T } }
+        trait Inspect: Default {
+            type Output;
+            fn inspect(&self) -> Self::Output;
+        }
+        fn combine<T: Clone>(left: T, right: T) -> T { left }
+        Pair;
+        combine;
+    "#;
+    let analysis = analyze(source).unwrap();
+
+    let detail = |name: &str, is_definition: bool| {
+        analysis
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == name && symbol.is_definition == is_definition)
+            .and_then(|symbol| symbol.detail.as_deref())
+    };
+    assert_eq!(
+        detail("Pair", true),
+        Some("struct Pair<T: Clone, U> {\n    first: T,\n    second: U,\n}")
+    );
+    assert_eq!(
+        detail("Value", true),
+        Some("enum Value<T> {\n    Empty,\n    Item(T),\n    Named { value: T },\n}")
+    );
+    assert_eq!(
+        detail("Inspect", true),
+        Some(
+            "trait Inspect: Default {\n    type Output;\n    fn inspect(&self) -> Self::Output;\n}"
+        )
+    );
+    assert_eq!(
+        detail("combine", true),
+        Some("fn combine<T: Clone>(left: T, right: T) -> T")
+    );
+    assert_eq!(detail("Pair", false), detail("Pair", true));
+    assert_eq!(detail("combine", false), detail("combine", true));
+}
+
+#[test]
 fn symbol_ids_distinguish_shadowed_bindings() {
     let source = "let value = 1; { let value = 2; value } value";
     let analysis = analyze_with_source_id(source, SourceId::new(11), &HashMap::new()).unwrap();
@@ -361,6 +405,41 @@ fn analyzes_modules_imports_and_builtin_namespaces() {
             .iter()
             .any(|symbol| { symbol.is_definition && symbol.name == "answer" })
     );
+}
+
+#[test]
+fn preserves_external_import_symbol_kinds() {
+    let exports = HashMap::from([(
+        "event".into(),
+        vec![
+            ExternalModuleExport {
+                name: "Event".into(),
+                span: Span::in_source(SourceId::new(2), 9, 14),
+                kind: SymbolKind::Type,
+            },
+            ExternalModuleExport {
+                name: "timing".into(),
+                span: Span::in_source(SourceId::new(2), 23, 29),
+                kind: SymbolKind::Function,
+            },
+        ],
+    )]);
+    let analysis = analyze_with_source_id_and_external_exports(
+        "use crate::event::{Event, timing}; let event = timing(1);",
+        SourceId::new(1),
+        &HashMap::new(),
+        &exports,
+    )
+    .unwrap();
+    let imported_kind = |name: &str| {
+        analysis
+            .symbols
+            .iter()
+            .find(|symbol| symbol.is_definition && symbol.name == name)
+            .map(|symbol| symbol.kind)
+    };
+    assert_eq!(imported_kind("Event"), Some(SymbolKind::Type));
+    assert_eq!(imported_kind("timing"), Some(SymbolKind::Function));
 }
 
 #[test]
@@ -747,22 +826,83 @@ fn tracks_owned_and_borrowed_method_receivers() {
 
 #[test]
 fn infers_generic_record_literals_in_return_positions() {
-    let analysis = analyze(
-        r#"
+    let source = r#"
             struct Pair<T, U> { first: T, second: U }
             impl<T, U> Pair<T, U> {
                 fn swap(self) -> Pair<U, T> {
                     Pair { first: self.second, second: self.first }
                 }
             }
-        "#,
-    )
-    .unwrap();
+            let pair: Pair<string, i32> = Pair { first: "temperature", second: 40 };
+            let swapped = pair.swap();
+        "#;
+    let analysis = analyze(source).unwrap();
     assert!(
         analysis.diagnostics.is_empty(),
         "{:?}",
         analysis.diagnostics
     );
+    assert!(analysis.inlay_hints.iter().any(|hint| {
+        hint.label == ": Pair<i32, string>" && &source[hint.span.start..hint.span.end] == "swapped"
+    }));
+    let swap_use = analysis
+        .symbols
+        .iter()
+        .find(|symbol| !symbol.is_definition && symbol.name == "swap")
+        .expect("method call symbol");
+    assert_eq!(swap_use.kind, SymbolKind::Method);
+    assert_eq!(
+        swap_use.detail.as_deref(),
+        Some("fn swap(self) -> Pair<U, T>")
+    );
+}
+
+#[test]
+fn recognizes_enum_variants_in_paths_and_match_patterns() {
+    let source = r#"
+        enum Reading<T> { Value(T), Missing, Failure { code: i32 } }
+        let reading = Reading::Value(42);
+        let failed = Reading::Failure { code: 503 };
+        match reading {
+            Reading::Value(value) => value,
+            Reading::Missing => 0,
+        }
+        match failed { Reading::Failure { code } => code }
+    "#;
+    let analysis = analyze(source).unwrap();
+    let value_uses = analysis
+        .symbols
+        .iter()
+        .filter(|symbol| !symbol.is_definition && symbol.name == "Value")
+        .collect::<Vec<_>>();
+    assert!(value_uses.len() >= 2, "{value_uses:?}");
+    assert!(
+        value_uses.iter().all(|symbol| {
+            symbol.kind == SymbolKind::Variant
+                && symbol.detail.as_deref() == Some("Reading::Value(T)")
+                && symbol.definition_span.is_some()
+        }),
+        "{value_uses:?}"
+    );
+    let missing = analysis
+        .symbols
+        .iter()
+        .find(|symbol| !symbol.is_definition && symbol.name == "Missing")
+        .expect("unit variant use");
+    assert_eq!(missing.kind, SymbolKind::Variant);
+    assert_eq!(missing.detail.as_deref(), Some("Reading::Missing"));
+    assert!(missing.definition_span.is_some());
+    let failure_uses = analysis
+        .symbols
+        .iter()
+        .filter(|symbol| !symbol.is_definition && symbol.name == "Failure")
+        .collect::<Vec<_>>();
+    assert!(failure_uses.len() >= 2, "{failure_uses:?}");
+    assert!(failure_uses.iter().all(|symbol| {
+        symbol.kind == SymbolKind::Variant
+            && symbol.detail.as_deref() == Some("Reading::Failure { code: i32 }")
+            && symbol.definition_span.is_some()
+    }));
 }
 
 #[test]

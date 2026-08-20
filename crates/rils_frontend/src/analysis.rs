@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     FrontendError,
-    ast::{Block, EnumVariant, Expr, Pattern, Program, Stmt},
+    ast::{
+        AssociatedType, Block, EnumVariant, Expr, GenericParameter, ImplMethod, NamedField,
+        Parameter, Pattern, Program, Stmt, TraitMethod,
+    },
     source::{SourceId, Span, SymbolId},
     type_inference,
     types::{FunctionSignature, Type},
@@ -106,6 +109,18 @@ struct Definition {
 struct TypeAliasDefinition {
     parameters: Vec<String>,
     target: Type,
+}
+
+#[derive(Clone)]
+struct InherentMethod {
+    span: Span,
+    detail: String,
+}
+
+#[derive(Clone)]
+struct EnumVariantSymbol {
+    span: Span,
+    detail: String,
 }
 
 #[doc(hidden)]
@@ -239,6 +254,8 @@ struct Analyzer {
     module_path: Vec<String>,
     module_exports: HashMap<String, Vec<ModuleExport>>,
     trait_members: HashMap<(String, String), Span>,
+    inherent_methods: HashMap<String, Vec<InherentMethod>>,
+    enum_variants: HashMap<(String, String), EnumVariantSymbol>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
     host_functions: HashMap<String, FunctionSignature>,
     host_types: HashSet<String>,
@@ -377,6 +394,8 @@ impl Analyzer {
             module_path: Vec::new(),
             module_exports,
             trait_members: HashMap::new(),
+            inherent_methods: HashMap::new(),
+            enum_variants: HashMap::new(),
             type_aliases: HashMap::new(),
             host_functions: host_functions.clone(),
             host_types: host_types.clone(),
@@ -387,6 +406,8 @@ impl Analyzer {
 
     fn analyze(mut self, program: &Program) -> DocumentAnalysis {
         self.collect_trait_members(&program.statements);
+        self.collect_inherent_methods(&program.statements);
+        self.collect_enum_variants(&program.statements);
         self.collect_type_aliases(&program.statements);
         self.macros(program);
         self.statements(&program.statements);
@@ -420,6 +441,23 @@ impl Analyzer {
         for symbol in &mut self.result.symbols {
             if let Some(definition_span) = symbol.definition_span {
                 symbol.inferred_type = inference.binding_types.get(&definition_span).cloned();
+            }
+        }
+        let definition_details = self
+            .result
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                symbol
+                    .is_definition
+                    .then_some((symbol.symbol_id?, symbol.detail.clone()?))
+            })
+            .collect::<HashMap<_, _>>();
+        for symbol in &mut self.result.symbols {
+            if !symbol.is_definition && symbol.detail.is_none() {
+                symbol.detail = symbol
+                    .definition_id
+                    .and_then(|id| definition_details.get(&id).cloned());
             }
         }
         self.result.inlay_hints = inference
@@ -503,6 +541,71 @@ impl Analyzer {
         }
     }
 
+    fn collect_inherent_methods(&mut self, statements: &[Stmt]) {
+        for statement in statements {
+            if let Stmt::Public { statement, .. } = statement {
+                self.collect_inherent_methods(std::slice::from_ref(statement));
+                continue;
+            }
+            if let Stmt::Module {
+                statements: Some(statements),
+                ..
+            } = statement
+            {
+                self.collect_inherent_methods(statements);
+                continue;
+            }
+            let Stmt::Impl {
+                trait_name: None,
+                target: Type::Named { name: _, .. },
+                methods,
+                ..
+            } = statement
+            else {
+                continue;
+            };
+            for method in methods {
+                self.inherent_methods
+                    .entry(method.name.clone())
+                    .or_default()
+                    .push(InherentMethod {
+                        span: method.name_span,
+                        detail: impl_method_detail(method),
+                    });
+            }
+        }
+    }
+
+    fn collect_enum_variants(&mut self, statements: &[Stmt]) {
+        for statement in statements {
+            if let Stmt::Public { statement, .. } = statement {
+                self.collect_enum_variants(std::slice::from_ref(statement));
+                continue;
+            }
+            if let Stmt::Module {
+                statements: Some(statements),
+                ..
+            } = statement
+            {
+                self.collect_enum_variants(statements);
+                continue;
+            }
+            let Stmt::Enum { name, variants, .. } = statement else {
+                continue;
+            };
+            for variant in variants {
+                let (variant_name, span) = enum_variant_name_and_span(variant);
+                self.enum_variants.insert(
+                    (name.clone(), variant_name.into()),
+                    EnumVariantSymbol {
+                        span,
+                        detail: enum_variant_declaration(name, variant),
+                    },
+                );
+            }
+        }
+    }
+
     fn macros(&mut self, program: &Program) {
         for definition in &program.macros {
             let definition_id =
@@ -560,10 +663,17 @@ impl Analyzer {
                 name_span,
                 generic_parameters,
                 parameters,
+                return_type,
                 body,
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Function);
+                self.set_last_detail(function_detail(
+                    name,
+                    generic_parameters,
+                    parameters,
+                    return_type.as_ref(),
+                ));
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                 }
@@ -582,6 +692,7 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Type);
+                self.set_last_detail(struct_detail(name, generic_parameters, fields));
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                 }
@@ -597,18 +708,14 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Type);
+                self.set_last_detail(enum_detail(name, generic_parameters, variants));
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                 }
                 for variant in variants {
-                    let (variant_name, span) = match variant {
-                        EnumVariant::Unit { name, span }
-                        | EnumVariant::Tuple { name, span, .. }
-                        | EnumVariant::Record { name, span, .. } => {
-                            (name, Span::new(span.start, span.start + name.len()))
-                        }
-                    };
+                    let (variant_name, span) = enum_variant_name_and_span(variant);
                     self.definition_only(variant_name, span, SymbolKind::Variant);
+                    self.set_last_detail(enum_variant_declaration(name, variant));
                     if let EnumVariant::Record { fields, .. } = variant {
                         for field in fields {
                             self.definition_only(&field.name, field.span, SymbolKind::Field);
@@ -619,19 +726,23 @@ impl Analyzer {
             Stmt::Trait {
                 name,
                 name_span,
+                bounds,
                 associated_types,
                 methods,
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Trait);
+                self.set_last_detail(trait_detail(name, bounds, associated_types, methods));
                 for associated in associated_types {
                     self.definition_only(&associated.name, associated.name_span, SymbolKind::Type);
+                    self.set_last_detail(associated_type_detail(associated));
                     for parameter in &associated.generic_parameters {
                         self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                     }
                 }
                 for method in methods {
                     self.definition_only(&method.name, method.name_span, SymbolKind::Method);
+                    self.set_last_detail(trait_method_detail(method));
                     for parameter in &method.generic_parameters {
                         self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                     }
@@ -669,12 +780,14 @@ impl Analyzer {
                 }
                 for associated in associated_types {
                     self.definition_only(&associated.name, associated.name_span, SymbolKind::Type);
+                    self.set_last_detail(associated_type_detail(associated));
                     for parameter in &associated.generic_parameters {
                         self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                     }
                 }
                 for method in methods {
                     self.definition_only(&method.name, method.name_span, SymbolKind::Method);
+                    self.set_last_detail(impl_method_detail(method));
                     for parameter in &method.generic_parameters {
                         self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                     }
@@ -790,6 +903,9 @@ impl Analyzer {
                         });
                     }
                 }
+                if !segments.is_empty() {
+                    self.variant_symbol_for_path(segments, *span);
+                }
             }
             Expr::QualifiedPath {
                 trait_name,
@@ -812,17 +928,7 @@ impl Analyzer {
             }),
             Expr::Member { object, name, span } => {
                 self.expression(object);
-                self.result.symbols.push(SymbolOccurrence {
-                    name: name.clone(),
-                    span: member_name_span(*span, name),
-                    definition_span: None,
-                    symbol_id: None,
-                    definition_id: None,
-                    kind: SymbolKind::Field,
-                    is_definition: false,
-                    inferred_type: None,
-                    detail: None,
-                });
+                self.member_symbol(name, *span, SymbolKind::Field);
             }
             Expr::Index { object, index, .. } => {
                 self.expression(object);
@@ -852,6 +958,7 @@ impl Analyzer {
                         SymbolKind::Type,
                     );
                 }
+                self.variant_symbol_for_path(path, *span);
                 for (_, expression) in fields {
                     self.expression(expression);
                 }
@@ -878,17 +985,7 @@ impl Analyzer {
             } => {
                 if let Expr::Member { object, name, span } = callee.as_ref() {
                     self.expression(object);
-                    self.result.symbols.push(SymbolOccurrence {
-                        name: name.clone(),
-                        span: member_name_span(*span, name),
-                        definition_span: None,
-                        symbol_id: None,
-                        definition_id: None,
-                        kind: SymbolKind::Method,
-                        is_definition: false,
-                        inferred_type: None,
-                        detail: None,
-                    });
+                    self.member_symbol(name, *span, SymbolKind::Method);
                 } else {
                     self.expression(callee);
                     if let Expr::Path { segments, span } = callee.as_ref()
@@ -947,21 +1044,21 @@ impl Analyzer {
 
     fn pattern(&mut self, pattern: &Pattern) {
         match pattern {
-            Pattern::Wildcard { .. }
-            | Pattern::Literal { .. }
-            | Pattern::None { .. }
-            | Pattern::Path { .. } => {}
+            Pattern::Wildcard { .. } | Pattern::Literal { .. } | Pattern::None { .. } => {}
+            Pattern::Path { path, span } => self.variant_symbol_for_path(path, *span),
             Pattern::Binding { name, span } => {
                 self.define(name, *span, SymbolKind::Variable);
             }
             Pattern::Some { inner, .. } => self.pattern(inner),
             Pattern::Ok { inner, .. } | Pattern::Err { inner, .. } => self.pattern(inner),
-            Pattern::TupleVariant { fields, .. } => {
+            Pattern::TupleVariant { path, fields, span } => {
+                self.variant_symbol_for_path(path, *span);
                 for field in fields {
                     self.pattern(field);
                 }
             }
-            Pattern::Record { fields, .. } => {
+            Pattern::Record { path, fields, span } => {
+                self.variant_symbol_for_path(path, *span);
                 for (_, pattern) in fields {
                     self.pattern(pattern);
                 }
@@ -1059,6 +1156,57 @@ impl Analyzer {
         }
     }
 
+    fn member_symbol(&mut self, name: &str, span: Span, fallback_kind: SymbolKind) {
+        let method = self
+            .inherent_methods
+            .get(name)
+            .and_then(|methods| (methods.len() == 1).then(|| methods[0].clone()));
+        self.result.symbols.push(SymbolOccurrence {
+            name: name.into(),
+            span: member_name_span(span, name),
+            definition_span: method.as_ref().map(|method| method.span),
+            symbol_id: None,
+            definition_id: None,
+            kind: method
+                .as_ref()
+                .map(|_| SymbolKind::Method)
+                .unwrap_or(fallback_kind),
+            is_definition: false,
+            inferred_type: None,
+            detail: method.map(|method| method.detail),
+        });
+    }
+
+    fn variant_symbol_for_path(&mut self, path: &[String], symbol_span: Span) {
+        let [enum_name, variant_name] = path else {
+            return;
+        };
+        let Some(variant) = self
+            .enum_variants
+            .get(&(enum_name.clone(), variant_name.clone()))
+            .cloned()
+        else {
+            return;
+        };
+        let variant_start = symbol_span.start + enum_name.len() + 2;
+        let variant_span = Span::in_source(
+            symbol_span.source,
+            variant_start,
+            variant_start + variant_name.len(),
+        );
+        self.result.symbols.push(SymbolOccurrence {
+            name: variant_name.clone(),
+            span: variant_span,
+            definition_span: Some(variant.span),
+            symbol_id: None,
+            definition_id: None,
+            kind: SymbolKind::Variant,
+            is_definition: false,
+            inferred_type: None,
+            detail: Some(variant.detail),
+        });
+    }
+
     fn type_references(&mut self, program: &Program) {
         for reference in &program.type_references {
             let resolved = reference.definition_span.or_else(|| {
@@ -1137,6 +1285,14 @@ impl Analyzer {
             )
         };
         Some(format!("type {name}{arguments} = {expanded}"))
+    }
+
+    fn set_last_detail(&mut self, detail: String) {
+        self.result
+            .symbols
+            .last_mut()
+            .expect("definition symbol")
+            .detail = Some(detail);
     }
 
     fn expand_type_alias(
@@ -1232,6 +1388,189 @@ impl Analyzer {
         action(self);
         self.glob_imports.pop();
         self.scopes.pop();
+    }
+}
+
+fn generic_parameters_detail(parameters: &[GenericParameter]) -> String {
+    if parameters.is_empty() {
+        return String::new();
+    }
+    let parameters = parameters
+        .iter()
+        .map(|parameter| {
+            if parameter.bounds.is_empty() {
+                parameter.name.clone()
+            } else {
+                format!("{}: {}", parameter.name, parameter.bounds.join(" + "))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("<{parameters}>")
+}
+
+fn parameter_detail(parameter: &Parameter) -> String {
+    if parameter.name == "self"
+        && let Some(Type::Reference { mutable, .. }) = &parameter.type_annotation
+    {
+        return if *mutable {
+            "&mut self".into()
+        } else {
+            "&self".into()
+        };
+    }
+    let name = if parameter.mutable {
+        format!("mut {}", parameter.name)
+    } else {
+        parameter.name.clone()
+    };
+    parameter
+        .type_annotation
+        .as_ref()
+        .map(|ty| format!("{name}: {ty}"))
+        .unwrap_or(name)
+}
+
+fn function_detail(
+    name: &str,
+    generic_parameters: &[GenericParameter],
+    parameters: &[Parameter],
+    return_type: Option<&Type>,
+) -> String {
+    let generic_parameters = generic_parameters_detail(generic_parameters);
+    let parameters = parameters
+        .iter()
+        .map(parameter_detail)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let return_type = return_type
+        .map(|ty| format!(" -> {ty}"))
+        .unwrap_or_default();
+    format!("fn {name}{generic_parameters}({parameters}){return_type}")
+}
+
+fn struct_detail(
+    name: &str,
+    generic_parameters: &[GenericParameter],
+    fields: &[NamedField],
+) -> String {
+    let generic_parameters = generic_parameters_detail(generic_parameters);
+    if fields.is_empty() {
+        return format!("struct {name}{generic_parameters}");
+    }
+    let fields = fields
+        .iter()
+        .map(|field| format!("    {}: {},", field.name, field.type_annotation))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("struct {name}{generic_parameters} {{\n{fields}\n}}")
+}
+
+fn enum_variant_detail(variant: &EnumVariant) -> String {
+    match variant {
+        EnumVariant::Unit { name, .. } => name.clone(),
+        EnumVariant::Tuple { name, fields, .. } => format!(
+            "{name}({})",
+            fields
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        EnumVariant::Record { name, fields, .. } => format!(
+            "{name} {{ {} }}",
+            fields
+                .iter()
+                .map(|field| format!("{}: {}", field.name, field.type_annotation))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn enum_variant_name_and_span(variant: &EnumVariant) -> (&str, Span) {
+    match variant {
+        EnumVariant::Unit { name, span }
+        | EnumVariant::Tuple { name, span, .. }
+        | EnumVariant::Record { name, span, .. } => {
+            (name, Span::new(span.start, span.start + name.len()))
+        }
+    }
+}
+
+fn enum_variant_declaration(enum_name: &str, variant: &EnumVariant) -> String {
+    format!("{enum_name}::{}", enum_variant_detail(variant))
+}
+
+fn enum_detail(
+    name: &str,
+    generic_parameters: &[GenericParameter],
+    variants: &[EnumVariant],
+) -> String {
+    let generic_parameters = generic_parameters_detail(generic_parameters);
+    if variants.is_empty() {
+        return format!("enum {name}{generic_parameters}");
+    }
+    let variants = variants
+        .iter()
+        .map(|variant| format!("    {},", enum_variant_detail(variant)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("enum {name}{generic_parameters} {{\n{variants}\n}}")
+}
+
+fn associated_type_detail(associated: &AssociatedType) -> String {
+    let generic_parameters = generic_parameters_detail(&associated.generic_parameters);
+    let value = associated
+        .value
+        .as_ref()
+        .map(|value| format!(" = {value}"))
+        .unwrap_or_default();
+    format!("type {}{generic_parameters}{value}", associated.name)
+}
+
+fn trait_method_detail(method: &TraitMethod) -> String {
+    function_detail(
+        &method.name,
+        &method.generic_parameters,
+        &method.parameters,
+        method.return_type.as_ref(),
+    )
+}
+
+fn impl_method_detail(method: &ImplMethod) -> String {
+    function_detail(
+        &method.name,
+        &method.generic_parameters,
+        &method.parameters,
+        method.return_type.as_ref(),
+    )
+}
+
+fn trait_detail(
+    name: &str,
+    bounds: &[String],
+    associated_types: &[AssociatedType],
+    methods: &[TraitMethod],
+) -> String {
+    let bounds = if bounds.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", bounds.join(" + "))
+    };
+    let members = associated_types
+        .iter()
+        .map(|associated| format!("    {};", associated_type_detail(associated)))
+        .chain(
+            methods
+                .iter()
+                .map(|method| format!("    {};", trait_method_detail(method))),
+        )
+        .collect::<Vec<_>>();
+    if members.is_empty() {
+        format!("trait {name}{bounds}")
+    } else {
+        format!("trait {name}{bounds} {{\n{}\n}}", members.join("\n"))
     }
 }
 

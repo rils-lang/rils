@@ -166,6 +166,10 @@ fn test_server(
     }
 }
 
+fn completion_named(item: &serde_json::Value, name: &str) -> bool {
+    item.get("filterText").unwrap_or(&item["label"]) == name
+}
+
 #[test]
 fn hover_shows_expanded_type_aliases() {
     let text = "struct Box<T> { value: T }\ntype ValueBox<T> = Box<T>;\ntype IntBox = ValueBox<i32>;\nlet value: IntBox = Box { value: 1 };";
@@ -266,7 +270,8 @@ fn completes_host_modules_functions_and_aliases() {
         }))
         .unwrap();
     assert_eq!(functions.as_array().unwrap().len(), 1);
-    assert_eq!(functions[0]["label"], "add");
+    assert_eq!(functions[0]["label"], "fn add(i32, i32) -> i32");
+    assert_eq!(functions[0]["insertText"], "add");
     assert_eq!(functions[0]["detail"], "fn add(i32, i32) -> i32");
     assert!(
         functions[0]
@@ -368,7 +373,7 @@ fn completes_inherited_methods_for_named_host_types() {
         methods
             .as_array()
             .is_some_and(|items| items.iter().any(|item| {
-                item["label"] == "instance_id"
+                completion_named(item, "instance_id")
                     && item["detail"] == "fn instance_id(unity_engine::Object) -> i32"
             })),
         "{methods}"
@@ -408,8 +413,12 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
         .unwrap();
     assert!(
         methods.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "checked_add")
-                && items.iter().any(|item| item["label"] == "checked_pow")
+            items
+                .iter()
+                .any(|item| completion_named(item, "checked_add"))
+                && items
+                    .iter()
+                    .any(|item| completion_named(item, "checked_pow"))
         }),
         "{methods}"
     );
@@ -420,7 +429,7 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
             "position": { "line": 2, "character": 9 }
         }))
         .unwrap();
-    assert_eq!(associated[0]["label"], "try_from");
+    assert!(completion_named(&associated[0], "try_from"));
 
     let constants = server
         .completion(&json!({
@@ -472,8 +481,8 @@ fn completes_float_intrinsic_methods() {
         .unwrap();
     assert!(
         completion.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "sqrt")
-                && items.iter().any(|item| item["label"] == "signum")
+            items.iter().any(|item| completion_named(item, "sqrt"))
+                && items.iter().any(|item| completion_named(item, "signum"))
         }),
         "{completion}"
     );
@@ -531,10 +540,14 @@ text."#;
     let string_items = complete(1, 5);
     assert!(
         string_items.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "starts_with")
-                && items.iter().any(|item| item["label"] == "chars")
-                && items.iter().any(|item| item["label"] == "split")
-                && items.iter().any(|item| item["label"] == "to_uppercase")
+            items
+                .iter()
+                .any(|item| completion_named(item, "starts_with"))
+                && items.iter().any(|item| completion_named(item, "chars"))
+                && items.iter().any(|item| completion_named(item, "split"))
+                && items
+                    .iter()
+                    .any(|item| completion_named(item, "to_uppercase"))
         }),
         "{string_items}"
     );
@@ -573,11 +586,11 @@ text."#;
         .unwrap();
     assert!(
         option_items.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "unwrap")
-                && items.iter().any(|item| item["label"] == "unwrap_or")
-                && items.iter().any(|item| item["label"] == "map")
-                && items.iter().any(|item| item["label"] == "and_then")
-                && items.iter().any(|item| item["label"] == "or_else")
+            items.iter().any(|item| completion_named(item, "unwrap"))
+                && items.iter().any(|item| completion_named(item, "unwrap_or"))
+                && items.iter().any(|item| completion_named(item, "map"))
+                && items.iter().any(|item| completion_named(item, "and_then"))
+                && items.iter().any(|item| completion_named(item, "or_else"))
         }),
         "{option_items}"
     );
@@ -597,9 +610,9 @@ fn completes_members_from_the_last_valid_prefix_after_an_unrelated_parse_error()
         }))
         .unwrap();
     assert!(
-        items
-            .as_array()
-            .is_some_and(|items| items.iter().any(|item| item["label"] == "checked_add")),
+        items.as_array().is_some_and(|items| items
+            .iter()
+            .any(|item| completion_named(item, "checked_add"))),
         "{items}"
     );
 }
@@ -643,7 +656,7 @@ fn completes_hash_collection_types_constructors_and_members() {
     assert!(
         constructor_items
             .as_array()
-            .is_some_and(|items| { items.iter().any(|item| item["label"] == "new") }),
+            .is_some_and(|items| { items.iter().any(|item| completion_named(item, "new")) }),
         "{constructor_items}"
     );
 
@@ -658,9 +671,15 @@ fn completes_hash_collection_types_constructors_and_members() {
         .unwrap();
     assert!(
         member_items.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "contains_key")
-                && items.iter().any(|item| item["label"] == "get_cloned")
-                && items.iter().any(|item| item["label"] == "values_cloned")
+            items
+                .iter()
+                .any(|item| completion_named(item, "contains_key"))
+                && items
+                    .iter()
+                    .any(|item| completion_named(item, "get_cloned"))
+                && items
+                    .iter()
+                    .any(|item| completion_named(item, "values_cloned"))
         }),
         "{member_items}"
     );
@@ -703,16 +722,18 @@ iterator."#;
         .unwrap();
     assert!(
         items.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "next")
-                && items.iter().any(|item| item["label"] == "count")
-                && items.iter().any(|item| item["label"] == "collect_vec")
-                && items.iter().any(|item| item["label"] == "take")
-                && items.iter().any(|item| item["label"] == "rev")
-                && items.iter().any(|item| item["label"] == "map")
-                && items.iter().any(|item| item["label"] == "filter")
-                && items.iter().any(|item| item["label"] == "fold")
-                && items.iter().any(|item| item["label"] == "any")
-                && items.iter().any(|item| item["label"] == "enumerate")
+            items.iter().any(|item| completion_named(item, "next"))
+                && items.iter().any(|item| completion_named(item, "count"))
+                && items
+                    .iter()
+                    .any(|item| completion_named(item, "collect_vec"))
+                && items.iter().any(|item| completion_named(item, "take"))
+                && items.iter().any(|item| completion_named(item, "rev"))
+                && items.iter().any(|item| completion_named(item, "map"))
+                && items.iter().any(|item| completion_named(item, "filter"))
+                && items.iter().any(|item| completion_named(item, "fold"))
+                && items.iter().any(|item| completion_named(item, "any"))
+                && items.iter().any(|item| completion_named(item, "enumerate"))
         }),
         "{items}"
     );
@@ -760,9 +781,9 @@ iterator."#;
         .unwrap();
     assert!(
         items.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "map")
-                && items.iter().any(|item| item["label"] == "fold")
-                && items.iter().any(|item| item["label"] == "position")
+            items.iter().any(|item| completion_named(item, "map"))
+                && items.iter().any(|item| completion_named(item, "fold"))
+                && items.iter().any(|item| completion_named(item, "position"))
         }),
         "{items}"
     );
@@ -820,8 +841,8 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert!(
         completion.as_array().is_some_and(|items| {
-            items.iter().any(|item| item["label"] == "add")
-                && !items.iter().any(|item| item["label"] == "hidden")
+            items.iter().any(|item| completion_named(item, "add"))
+                && !items.iter().any(|item| completion_named(item, "hidden"))
         }),
         "{completion}"
     );
@@ -875,8 +896,8 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         }))
         .unwrap();
     assert!(completion.as_array().is_some_and(|items| {
-        items.iter().any(|item| item["label"] == "add")
-            && !items.iter().any(|item| item["label"] == "hidden")
+        items.iter().any(|item| completion_named(item, "add"))
+            && !items.iter().any(|item| completion_named(item, "hidden"))
     }));
 
     let grouped_valid = "use crate::math::{add};\nfn main() { add(1, 2); }";
@@ -951,7 +972,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     assert!(
         completion
             .as_array()
-            .is_some_and(|items| items.iter().any(|item| item["label"] == "add"))
+            .is_some_and(|items| items.iter().any(|item| completion_named(item, "add")))
     );
     fs::remove_dir_all(root).unwrap();
 }

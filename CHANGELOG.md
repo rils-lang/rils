@@ -53,6 +53,9 @@
 
 ### Fixed
 
+- Analyzer 现在会在补全列表和 Hover 中显示用户函数、泛型类型、trait、固有方法及 enum variant 的完整
+  声明；泛型 receiver 的方法返回值会按实际类型实参推导。跨文件 `use` 导入保留真实符号类别，
+  record/unit/tuple enum variant 在构造与 match 模式中均可正确识别并跳转。
 - 宿主类型现在会在 frontend 名称解析阶段统一规范化完整身份；`use module::*`、显式类型导入和
   `as` 别名可用于函数参数、字段及嵌套类型，编译器与 Analyzer 不再因短名丢失继承 receiver 方法。
   未导入的宿主短名和多个通配导入产生的同名类型会在 lowering 前给出明确诊断。

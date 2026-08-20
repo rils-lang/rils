@@ -10,7 +10,9 @@ pub(super) fn integer_intrinsic_completion(item: &rils_builtins::IntrinsicDeclar
         }
     };
     json!({
-        "label": item.name,
+        "label": detail,
+        "filterText": item.name,
+        "insertText": item.name,
         "kind": 2,
         "detail": detail,
         "documentation": { "kind": "markdown", "value": item.documentation },
@@ -45,7 +47,9 @@ pub(super) fn builtin_member_completion(ty: &Type, member: &rils_builtins::Built
         .map(|member_type| function_declaration(member.name, &member_type))
         .unwrap_or_else(|| format!("fn {}(...) ", member.name));
     json!({
-        "label": member.name,
+        "label": detail,
+        "filterText": member.name,
+        "insertText": member.name,
         "kind": 2,
         "detail": detail,
         "documentation": { "kind": "markdown", "value": member.documentation },
@@ -319,7 +323,9 @@ pub(super) fn public_completion_items(statement: &Stmt, prefix: &str) -> Vec<Val
     name.starts_with(prefix)
         .then(|| {
             json!({
-                "label": name,
+                "label": detail,
+                "filterText": name,
+                "insertText": name,
                 "kind": kind,
                 "detail": detail,
                 "sortText": format!("1_{name}")
