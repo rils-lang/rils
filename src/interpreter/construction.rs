@@ -99,9 +99,12 @@ impl Interpreter {
 
     pub(super) fn tick(&mut self, span: Span) -> Result<(), RuntimeError> {
         self.steps += 1;
-        if self.steps > self.max_steps {
+        if self.steps > self.limits.max_steps {
             Err(RuntimeError::new(
-                format!("execution exceeded the {} step limit", self.max_steps),
+                format!(
+                    "execution exceeded the {} step limit",
+                    self.limits.max_steps
+                ),
                 span,
             ))
         } else {

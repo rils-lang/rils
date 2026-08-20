@@ -1,7 +1,32 @@
 use super::*;
 
+const INTERPRETER_STACK_RED_ZONE: usize = 128 * 1024;
+const INTERPRETER_STACK_SEGMENT: usize = 2 * 1024 * 1024;
+
 impl Interpreter {
     pub(super) fn call_user_function(
+        &mut self,
+        function: Rc<UserFunction>,
+        arguments: &[Value],
+        span: Span,
+    ) -> Result<Value, RuntimeError> {
+        if self.function_depth >= self.limits.max_call_depth {
+            return Err(RuntimeError::new(
+                format!(
+                    "call stack exceeded the {} frame limit",
+                    self.limits.max_call_depth
+                ),
+                span,
+            ));
+        }
+        stacker::maybe_grow(
+            INTERPRETER_STACK_RED_ZONE,
+            INTERPRETER_STACK_SEGMENT,
+            || self.call_user_function_inner(function, arguments, span),
+        )
+    }
+
+    fn call_user_function_inner(
         &mut self,
         function: Rc<UserFunction>,
         arguments: &[Value],

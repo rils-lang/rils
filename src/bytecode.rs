@@ -261,19 +261,39 @@ impl BytecodeModule {
             ));
         }
         let imports = self.link(host)?;
-        VirtualMachine::new_call(self, imports, max_steps, function, arguments)?.execute()
+        VirtualMachine::new_call(
+            self,
+            imports,
+            crate::ExecutionLimits {
+                max_steps,
+                ..crate::ExecutionLimits::default()
+            },
+            function,
+            arguments,
+        )?
+        .execute()
     }
 
     pub fn execute(&self) -> Result<Value, BytecodeError> {
-        self.execute_with_limit(1_000_000)
+        self.execute_with_limits(crate::ExecutionLimits::default())
     }
 
     pub fn execute_with_limit(&self, max_steps: usize) -> Result<Value, BytecodeError> {
-        self.execute_with_host_and_limit(&BytecodeHost::standard(), max_steps)
+        self.execute_with_limits(crate::ExecutionLimits {
+            max_steps,
+            ..crate::ExecutionLimits::default()
+        })
+    }
+
+    pub fn execute_with_limits(
+        &self,
+        limits: crate::ExecutionLimits,
+    ) -> Result<Value, BytecodeError> {
+        self.execute_with_host_and_limits(&BytecodeHost::standard(), limits)
     }
 
     pub fn execute_with_host(&self, host: &BytecodeHost) -> Result<Value, BytecodeError> {
-        self.execute_with_host_and_limit(host, 1_000_000)
+        self.execute_with_host_and_limits(host, crate::ExecutionLimits::default())
     }
 
     pub fn execute_with_host_and_limit(
@@ -281,9 +301,23 @@ impl BytecodeModule {
         host: &BytecodeHost,
         max_steps: usize,
     ) -> Result<Value, BytecodeError> {
+        self.execute_with_host_and_limits(
+            host,
+            crate::ExecutionLimits {
+                max_steps,
+                ..crate::ExecutionLimits::default()
+            },
+        )
+    }
+
+    pub fn execute_with_host_and_limits(
+        &self,
+        host: &BytecodeHost,
+        limits: crate::ExecutionLimits,
+    ) -> Result<Value, BytecodeError> {
         self.verify()?;
         let imports = self.link(host)?;
-        VirtualMachine::new(self, imports, max_steps).execute()
+        VirtualMachine::new(self, imports, limits).execute()
     }
 
     /// Calls a named bytecode function without executing the module entry point.
@@ -293,7 +327,12 @@ impl BytecodeModule {
     /// rejected because their closure environment only exists while another
     /// bytecode invocation is running.
     pub fn call(&self, name: &str, arguments: Vec<Value>) -> Result<Value, BytecodeError> {
-        self.call_with_host_and_limit(name, arguments, &BytecodeHost::standard(), 1_000_000)
+        self.call_with_host_and_limits(
+            name,
+            arguments,
+            &BytecodeHost::standard(),
+            crate::ExecutionLimits::default(),
+        )
     }
 
     pub fn call_with_host_and_limit(
@@ -302,6 +341,24 @@ impl BytecodeModule {
         arguments: Vec<Value>,
         host: &BytecodeHost,
         max_steps: usize,
+    ) -> Result<Value, BytecodeError> {
+        self.call_with_host_and_limits(
+            name,
+            arguments,
+            host,
+            crate::ExecutionLimits {
+                max_steps,
+                ..crate::ExecutionLimits::default()
+            },
+        )
+    }
+
+    pub fn call_with_host_and_limits(
+        &self,
+        name: &str,
+        arguments: Vec<Value>,
+        host: &BytecodeHost,
+        limits: crate::ExecutionLimits,
     ) -> Result<Value, BytecodeError> {
         self.verify()?;
         let function = self
@@ -321,7 +378,7 @@ impl BytecodeModule {
             ));
         }
         let imports = self.link(host)?;
-        VirtualMachine::new_call(self, imports, max_steps, function, arguments)?.execute()
+        VirtualMachine::new_call(self, imports, limits, function, arguments)?.execute()
     }
 
     pub fn imports(&self) -> &[BytecodeImport] {

@@ -4,6 +4,7 @@ mod error;
 mod hash_collections;
 mod interpreter;
 mod library;
+mod limits;
 mod native_type;
 mod numeric;
 mod runtime_type;
@@ -82,6 +83,7 @@ pub use bytecode::{
 };
 pub use error::RilsError;
 pub use library::{LibraryFormatError, RilsLibrary};
+pub use limits::ExecutionLimits;
 pub use native_type::{NativeFunctionHandler, NativeTypeHandle};
 pub use opaque_host::{
     OpaqueHostHandle, opaque_host_handle, opaque_host_value, opaque_host_value_typed,
@@ -116,6 +118,14 @@ impl Engine {
 
     pub fn set_max_steps(&mut self, max_steps: usize) {
         self.interpreter.set_max_steps(max_steps);
+    }
+
+    pub fn set_max_call_depth(&mut self, max_call_depth: usize) {
+        self.interpreter.set_max_call_depth(max_call_depth);
+    }
+
+    pub fn set_execution_limits(&mut self, limits: ExecutionLimits) {
+        self.interpreter.set_execution_limits(limits);
     }
 
     pub fn register_module(&mut self, path: &str) -> Result<(), String> {

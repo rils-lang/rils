@@ -20,6 +20,8 @@
 
 ### Added
 
+- 增加解释器与字节码 VM 共享的 `ExecutionLimits`，默认将脚本调用限制为 1024 层。AST 解释器会
+  按需增长栈段，字节码 VM 继续使用显式帧；两者超限时均返回可诊断错误，不再依赖宿主线程栈崩溃。
 - Host Contract、编译器、Runtime、Analyzer 和 C# facade 现已贯通命名宿主对象类型与单继承；派生
   类型可传给基类参数并调用继承的 receiver 方法，当前在 C ABI 上统一使用 `HostHandle` transport。
 - C# trait 调用可为参数携带逻辑宿主类型；RilsForUnity 生命周期回调现以

@@ -21,6 +21,7 @@ rils_compiler.workspace = true
 rils_frontend.workspace = true
 rils_builtins.workspace = true
 rils_project.workspace = true
+stacker = "0.1"
 
 [workspace]
 members = [

@@ -491,6 +491,27 @@ fn compiles_functions_recursion_and_early_return() {
 }
 
 #[test]
+fn recursion_uses_explicit_vm_frames_and_respects_the_configured_limit() {
+    let source = r#"
+        fn countdown(n: i32) -> i32 {
+            if n == 0 { 0 } else { countdown(n - 1) }
+        }
+        countdown(1000)
+    "#;
+    let module = compile(source).unwrap();
+    assert_eq!(module.execute().unwrap(), Value::I32(0));
+
+    let error = module
+        .execute_with_limits(crate::ExecutionLimits::new(1_000_000, 8))
+        .unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("call stack exceeded the 8 frame limit")
+    );
+}
+
+#[test]
 fn compiles_top_level_function_values_and_indirect_calls() {
     assert_matches_interpreter(
         r#"

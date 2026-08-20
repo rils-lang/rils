@@ -42,14 +42,15 @@ pub(super) struct VirtualMachine<'a> {
     frames: Vec<Frame>,
     steps: usize,
     max_steps: usize,
-    max_frames: usize,
+    max_call_depth: usize,
+    root_is_module_entry: bool,
 }
 
 impl<'a> VirtualMachine<'a> {
     pub(super) fn new(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
-        max_steps: usize,
+        limits: crate::ExecutionLimits,
     ) -> Self {
         let entry = &module.functions[module.entry];
         Self {
@@ -63,15 +64,16 @@ impl<'a> VirtualMachine<'a> {
                 return_action: ReturnAction::Complete,
             }],
             steps: 0,
-            max_steps,
-            max_frames: 1_024,
+            max_steps: limits.max_steps,
+            max_call_depth: limits.max_call_depth,
+            root_is_module_entry: true,
         }
     }
 
     pub(super) fn new_call(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
-        max_steps: usize,
+        limits: crate::ExecutionLimits,
         function: usize,
         arguments: Vec<Value>,
     ) -> Result<Self, BytecodeError> {
@@ -108,8 +110,9 @@ impl<'a> VirtualMachine<'a> {
                 return_action: ReturnAction::Complete,
             }],
             steps: 0,
-            max_steps,
-            max_frames: 1_024,
+            max_steps: limits.max_steps,
+            max_call_depth: limits.max_call_depth,
+            root_is_module_entry: false,
         })
     }
 
@@ -452,12 +455,7 @@ impl<'a> VirtualMachine<'a> {
                     function,
                     arguments,
                 } => {
-                    if self.frames.len() >= self.max_frames {
-                        return Err(BytecodeError::new(
-                            format!("call stack exceeded the {} frame limit", self.max_frames),
-                            instruction.span,
-                        ));
-                    }
+                    self.ensure_call_capacity(instruction.span)?;
                     let arguments = arguments
                         .into_iter()
                         .map(|register| self.take_register(register, instruction.span))
@@ -498,12 +496,7 @@ impl<'a> VirtualMachine<'a> {
                             instruction.span,
                         ));
                     }
-                    if self.frames.len() >= self.max_frames {
-                        return Err(BytecodeError::new(
-                            format!("call stack exceeded the {} frame limit", self.max_frames),
-                            instruction.span,
-                        ));
-                    }
+                    self.ensure_call_capacity(instruction.span)?;
                     let mut call_arguments = callee.bound_arguments.clone();
                     call_arguments.extend(
                         arguments
@@ -1016,12 +1009,7 @@ impl<'a> VirtualMachine<'a> {
         return_action: ReturnAction,
         span: Span,
     ) -> Result<(), BytecodeError> {
-        if self.frames.len() >= self.max_frames {
-            return Err(BytecodeError::new(
-                format!("call stack exceeded the {} frame limit", self.max_frames),
-                span,
-            ));
-        }
+        self.ensure_call_capacity(span)?;
         let callee = &self.module.functions[function];
         if callee.capture_count != 0 || callee.parameter_count != arguments.len() {
             return Err(BytecodeError::new("invalid iterator method layout", span));
@@ -1037,6 +1025,20 @@ impl<'a> VirtualMachine<'a> {
             instruction: 0,
             return_action,
         });
+        Ok(())
+    }
+
+    fn ensure_call_capacity(&self, span: Span) -> Result<(), BytecodeError> {
+        let call_depth = self.frames.len() - usize::from(self.root_is_module_entry);
+        if call_depth >= self.max_call_depth {
+            return Err(BytecodeError::new(
+                format!(
+                    "call stack exceeded the {} frame limit",
+                    self.max_call_depth
+                ),
+                span,
+            ));
+        }
         Ok(())
     }
 

@@ -73,7 +73,7 @@ const TRY_RETURN_SIGNAL: &str = "#rils_try_return";
 pub struct Interpreter {
     globals: EnvironmentRef,
     steps: usize,
-    max_steps: usize,
+    limits: crate::ExecutionLimits,
     function_depth: usize,
     pending_return: Option<Value>,
     pending_loop_flow: Option<Flow>,
@@ -92,7 +92,7 @@ impl Interpreter {
         Self {
             globals,
             steps: 0,
-            max_steps: 1_000_000,
+            limits: crate::ExecutionLimits::default(),
             function_depth: 0,
             pending_return: None,
             pending_loop_flow: None,
@@ -100,7 +100,15 @@ impl Interpreter {
     }
 
     pub fn set_max_steps(&mut self, max_steps: usize) {
-        self.max_steps = max_steps;
+        self.limits.max_steps = max_steps;
+    }
+
+    pub fn set_max_call_depth(&mut self, max_call_depth: usize) {
+        self.limits.max_call_depth = max_call_depth;
+    }
+
+    pub fn set_execution_limits(&mut self, limits: crate::ExecutionLimits) {
+        self.limits = limits;
     }
 
     pub(crate) fn register_native_function(

@@ -1057,7 +1057,7 @@ fn functions_are_recursive_and_blocks_return_values() {
 }
 
 #[test]
-fn interpreter_recursion_fits_the_default_test_thread_stack() {
+fn interpreter_recursion_uses_growable_stack_segments() {
     assert_eq!(
         integer(
             r#"
@@ -1068,10 +1068,31 @@ fn interpreter_recursion_fits_the_default_test_thread_stack() {
                         countdown(n - 1)
                     }
                 }
-                countdown(32)
+                countdown(1000)
                 "#
         ),
         0
+    );
+}
+
+#[test]
+fn interpreter_reports_the_configured_call_depth_limit() {
+    let mut engine = Engine::new();
+    engine.set_max_call_depth(8);
+    let error = engine
+        .eval(
+            r#"
+                fn countdown(n: i32) -> i32 {
+                    if n == 0 { 0 } else { countdown(n - 1) }
+                }
+                countdown(8)
+            "#,
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("call stack exceeded the 8 frame limit")
     );
 }
 

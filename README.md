@@ -25,6 +25,10 @@ let module = rils::compile("let value = 40; value + 2")?;
 let value = module.execute()?;
 ```
 
+解释器与字节码 VM 默认允许 1024 层脚本调用。嵌入方可通过
+`Engine::set_max_call_depth` 或 `BytecodeModule::execute_with_limits` 配置调用深度和指令步数预算；
+超过预算会返回运行时错误，不会继续递归直到宿主线程栈溢出。
+
 需要加载多文件项目或预编译模块时，可使用 `compile_file`、`BytecodeModule::read_file` 和 CLI
 的 `compile`、`verify`、`run` 命令。
 
