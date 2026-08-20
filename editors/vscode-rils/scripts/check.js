@@ -16,6 +16,10 @@ for (const file of [
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const lockfile = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
 const cargoManifest = fs.readFileSync(path.join(repositoryRoot, "Cargo.toml"), "utf8");
+const grammar = fs.readFileSync(
+  path.join(root, "syntaxes/rils.tmLanguage.json"),
+  "utf8",
+);
 const cargoVersion = cargoManifest.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 const bundledExtension = path.join(root, manifest.main);
 
@@ -36,6 +40,17 @@ if (
   lockfile.packages?.[""]?.version !== manifest.version
 ) {
   throw new Error("package-lock.json does not match the extension version.");
+}
+
+for (const requiredSyntax of [
+  '"#characters"',
+  "constant.numeric.float.rils",
+  "HashMap|HashSet",
+  "derive|Default",
+]) {
+  if (!grammar.includes(requiredSyntax)) {
+    throw new Error(`TextMate grammar is missing support for ${requiredSyntax}.`);
+  }
 }
 
 new Function(fs.readFileSync(bundledExtension, "utf8"));

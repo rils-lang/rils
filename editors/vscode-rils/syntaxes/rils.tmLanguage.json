@@ -5,6 +5,7 @@
   "patterns": [
     {"include": "#comments"},
     {"include": "#strings"},
+    {"include": "#characters"},
     {"include": "#numbers"},
     {"include": "#attributes"},
     {"include": "#declarations"},
@@ -64,11 +65,34 @@
         }
       ]
     },
+    "characters": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.rils",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.rils",
+              "match": "\\\\(?:[nrt0'\\\\])"
+            },
+            {
+              "name": "invalid.illegal.escape.rils",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
     "numbers": {
       "patterns": [
         {
           "name": "constant.numeric.f64.rils",
           "match": "\\b[0-9]+\\.[0-9]+(?:_?f(?:32|64))?\\b"
+        },
+        {
+          "name": "constant.numeric.float.rils",
+          "match": "\\b[0-9]+(?:_?f(?:32|64))\\b"
         },
         {
           "name": "constant.numeric.integer.rils",
@@ -224,7 +248,7 @@
         },
         {
           "name": "support.type.builtin.rils",
-          "match": "\\b(?:Range|Vec|Copy|Clone|Default|Iterator|IntoIterator|Error|ErrorKind|core|std|prelude|io|fs|collections)\\b"
+          "match": "\\b(?:Range|Vec|HashMap|HashSet|Copy|Clone|Default|Iterator|IntoIterator|Error|ErrorKind|core|std|prelude|io|fs|collections)\\b"
         },
         {
           "name": "entity.name.type.rils",

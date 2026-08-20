@@ -4,12 +4,15 @@ This extension provides syntax highlighting and language intelligence through
 `rils-analyzer`. Published platform-specific VSIX packages include the matching
 Analyzer executable, so users do not need to install it separately.
 
-Version 0.1 follows the Rils 0.1 language version. Its TextMate grammar covers
+Version 0.2 follows the Rils 0.2 language version. Its TextMate grammar covers
 the implemented declarations, generics and trait bounds, trait implementations,
 nominal types and variants, pattern matching, function types, and function-like
 macro syntax. It also highlights ownership operations and local `&T`/`&mut T`
 references, built-in traits, and iterator-based `for value in iterable` loops.
 It also covers generic type aliases, associated types, and `start..end` ranges.
+Current syntax highlighting also recognizes `char` literals and escapes, typed
+`f32`/`f64` literals with or without a decimal point, `#[derive(Default)]`,
+supertraits, and the `HashMap`/`HashSet` prelude collections.
 Trait highlighting includes UFCS and fully qualified `<Type as Trait>::Item` paths.
 The grammar also recognizes tuple fields, fixed-array/`Vec<T>` types, collection literals, and
 field/index place syntax such as `value.0`, `value.field`, and `value[index]`.
