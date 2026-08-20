@@ -1057,6 +1057,25 @@ fn functions_are_recursive_and_blocks_return_values() {
 }
 
 #[test]
+fn interpreter_recursion_fits_the_default_test_thread_stack() {
+    assert_eq!(
+        integer(
+            r#"
+                fn countdown(n: i32) -> i32 {
+                    if n == 0 {
+                        0
+                    } else {
+                        countdown(n - 1)
+                    }
+                }
+                countdown(32)
+                "#
+        ),
+        0
+    );
+}
+
+#[test]
 fn function_types_preserve_higher_order_signatures() {
     let source = r#"
             fn make_value() -> fn() -> i32 {

@@ -1,5 +1,9 @@
 use super::*;
 
+mod control;
+mod member;
+mod values;
+
 impl Interpreter {
     pub(super) fn execute_block(
         &mut self,
@@ -26,6 +30,21 @@ impl Interpreter {
         environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
         self.tick(expression.span())?;
+        match expression {
+            Expr::Call { .. }
+            | Expr::If { .. }
+            | Expr::Match { .. }
+            | Expr::Block(_)
+            | Expr::Try { .. } => self.evaluate_control(expression, environment),
+            _ => self.evaluate_non_control(expression, environment),
+        }
+    }
+
+    fn evaluate_non_control(
+        &mut self,
+        expression: &Expr,
+        environment: EnvironmentRef,
+    ) -> Result<Value, RuntimeError> {
         match expression {
             Expr::Literal { value, .. } => Ok(match value {
                 Literal::Unit => Value::Unit,
@@ -54,128 +73,10 @@ impl Interpreter {
                 Literal::Float(value) => Value::F64(*value),
                 Literal::String(value) => Value::String(Rc::from(value.as_str())),
             }),
-            Expr::Tuple { elements, span } => {
-                let mut slots = Vec::with_capacity(elements.len());
-                for element in elements {
-                    let value = self.evaluate(element, environment.clone())?;
-                    if value.contains_reference() {
-                        return Err(RuntimeError::new(
-                            "tuple values cannot own local references",
-                            *span,
-                        ));
-                    }
-                    let ty = Type::of_value(&value).unwrap_or(Type::Unknown);
-                    slots.push(FieldSlot {
-                        value: Some(value),
-                        type_annotation: ty,
-                        references: 0,
-                    });
-                }
-                Ok(Value::Tuple(Rc::new(SequenceValue {
-                    elements: RefCell::new(slots),
-                    element_type: RefCell::new(None),
-                })))
+            Expr::Tuple { .. } | Expr::Array { .. } => {
+                self.evaluate_sequence(expression, environment)
             }
-            Expr::Array {
-                elements,
-                repeat,
-                span,
-            } => {
-                let mut values = Vec::new();
-                if let Some(count) = repeat {
-                    let value = self.evaluate(&elements[0], environment.clone())?;
-                    if value.contains_reference() {
-                        return Err(RuntimeError::new(
-                            "arrays cannot own local references",
-                            *span,
-                        ));
-                    }
-                    if !value.is_copy() {
-                        return Err(RuntimeError::new(
-                            "array repeat syntax requires a Copy value",
-                            *span,
-                        ));
-                    }
-                    let count = self.evaluate(count, environment.clone())?;
-                    let Value::Usize(count) = count else {
-                        return Err(RuntimeError::new("array repeat count must be usize", *span));
-                    };
-                    for _ in 0..count {
-                        values.push(
-                            value
-                                .clone_owned()
-                                .map_err(|message| RuntimeError::new(message, *span))?,
-                        );
-                    }
-                } else {
-                    for element in elements {
-                        let value = self.evaluate(element, environment.clone())?;
-                        if value.contains_reference() {
-                            return Err(RuntimeError::new(
-                                "arrays cannot own local references",
-                                *span,
-                            ));
-                        }
-                        values.push(value);
-                    }
-                }
-                let mut element_type = Type::Unknown;
-                for value in &values {
-                    let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-                    element_type = merge_types(&element_type, &actual).ok_or_else(|| {
-                        RuntimeError::new(
-                            format!("array elements must have one type, found `{element_type}` and `{actual}`"),
-                            *span,
-                        )
-                    })?;
-                }
-                let slots = values
-                    .into_iter()
-                    .map(|value| FieldSlot {
-                        value: Some(value),
-                        type_annotation: element_type.clone(),
-                        references: 0,
-                    })
-                    .collect();
-                Ok(Value::Array(Rc::new(SequenceValue {
-                    elements: RefCell::new(slots),
-                    element_type: RefCell::new(Some(element_type)),
-                })))
-            }
-            Expr::Try { operand, span } => {
-                if self.function_depth == 0 {
-                    return Err(RuntimeError::new(
-                        "the `?` operator can only be used inside a function",
-                        *span,
-                    ));
-                }
-                let value = self.evaluate(operand, environment)?;
-                let Value::Result {
-                    value, error_type, ..
-                } = value
-                else {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "the `?` operator requires Result, found {}",
-                            value.type_name()
-                        ),
-                        *span,
-                    ));
-                };
-                match value {
-                    Ok(value) => Rc::try_unwrap(value)
-                        .or_else(|value| value.clone_owned())
-                        .map_err(|message| RuntimeError::new(message, *span)),
-                    Err(error) => {
-                        self.pending_return = Some(Value::Result {
-                            value: Err(error),
-                            ok_type: None,
-                            error_type,
-                        });
-                        Err(RuntimeError::new(TRY_RETURN_SIGNAL, *span))
-                    }
-                }
-            }
+            Expr::Try { .. } => self.evaluate_control(expression, environment),
             Expr::Variable { name, span } => environment.borrow().take(name).map_err(|error| {
                 RuntimeError::new(
                     match error {
@@ -199,141 +100,7 @@ impl Interpreter {
                 span,
             } => self.resolve_qualified_path(target, trait_name, member, &environment, *span),
             Expr::Member { object, name, span } => {
-                if let Expr::Variable {
-                    name: variable_name,
-                    ..
-                } = object.as_ref()
-                    && let Some(value) = environment.borrow().get(variable_name)
-                {
-                    if let Value::Struct(instance) = &value
-                        && instance.fields.borrow().contains_key(name)
-                    {
-                        return self.resolve_member(value, name, *span);
-                    }
-                    if matches!(&value, Value::Tuple(_)) && name.parse::<usize>().is_ok() {
-                        return self.resolve_member(value, name, *span);
-                    }
-                    if let Value::HostObject(instance) = &value
-                        && instance.type_definition.methods.borrow().contains_key(name)
-                    {
-                        return self.resolve_member(value, name, *span);
-                    }
-                    let builtin_borrow = super::call::builtin_runtime_member(&value, name)
-                        .and_then(|(_, receiver)| match receiver {
-                            rils_builtins::ReceiverMode::Shared => Some(false),
-                            rils_builtins::ReceiverMode::Mutable => Some(true),
-                            rils_builtins::ReceiverMode::Owned => None,
-                        });
-                    if let Some(mutable) = builtin_borrow {
-                        let receiver =
-                            self.reference_variable(variable_name, mutable, &environment, *span)?;
-                        return self.resolve_member(receiver, name, *span);
-                    }
-                    let method = match &value {
-                        Value::Struct(instance) => super::call::select_method(
-                            &instance.type_definition.methods,
-                            &instance.type_definition.trait_methods,
-                            name,
-                        )
-                        .map_err(|traits| {
-                            RuntimeError::new(
-                                format!(
-                                    "method `{name}` is ambiguous; candidates come from traits {}",
-                                    traits.join(", ")
-                                ),
-                                *span,
-                            )
-                        })?,
-                        Value::Enum(instance) => super::call::select_method(
-                            &instance.type_definition.methods,
-                            &instance.type_definition.trait_methods,
-                            name,
-                        )
-                        .map_err(|traits| {
-                            RuntimeError::new(
-                                format!(
-                                    "method `{name}` is ambiguous; candidates come from traits {}",
-                                    traits.join(", ")
-                                ),
-                                *span,
-                            )
-                        })?,
-                        _ => None,
-                    };
-                    if let Some(mutable) = method.as_ref().and_then(|method| {
-                        match method.parameters.first()?.type_annotation.as_ref()? {
-                            Type::Reference { mutable, .. } => Some(*mutable),
-                            _ => None,
-                        }
-                    }) {
-                        let receiver =
-                            self.reference_variable(variable_name, mutable, &environment, *span)?;
-                        return self.resolve_member(receiver, name, *span);
-                    }
-                    if method.is_none()
-                        && name == "clone"
-                        && Type::of_value(&value)
-                            .is_some_and(|ty| type_implements_trait(&ty, "Clone", &environment))
-                    {
-                        let receiver =
-                            self.reference_variable(variable_name, false, &environment, *span)?;
-                        return self.resolve_member(receiver, name, *span);
-                    }
-                }
-                if matches!(
-                    object.as_ref(),
-                    Expr::Member { .. }
-                        | Expr::Index { .. }
-                        | Expr::Unary {
-                            operator: UnaryOp::Dereference,
-                            ..
-                        }
-                ) {
-                    let place = self.resolve_place(object, &environment, *span)?;
-                    let value = place.read(*span)?;
-                    let method = match &value {
-                        Value::Struct(instance) => super::call::select_method(
-                            &instance.type_definition.methods,
-                            &instance.type_definition.trait_methods,
-                            name,
-                        )
-                        .map_err(|traits| {
-                            RuntimeError::new(
-                                format!(
-                                    "method `{name}` is ambiguous; candidates come from traits {}",
-                                    traits.join(", ")
-                                ),
-                                *span,
-                            )
-                        })?,
-                        Value::Enum(instance) => super::call::select_method(
-                            &instance.type_definition.methods,
-                            &instance.type_definition.trait_methods,
-                            name,
-                        )
-                        .map_err(|traits| {
-                            RuntimeError::new(
-                                format!(
-                                    "method `{name}` is ambiguous; candidates come from traits {}",
-                                    traits.join(", ")
-                                ),
-                                *span,
-                            )
-                        })?,
-                        _ => None,
-                    };
-                    if let Some(mutable) = method.as_ref().and_then(|method| {
-                        match method.parameters.first()?.type_annotation.as_ref()? {
-                            Type::Reference { mutable, .. } => Some(*mutable),
-                            _ => None,
-                        }
-                    }) {
-                        let receiver = place.borrow(mutable, *span)?;
-                        return self.resolve_member(receiver, name, *span);
-                    }
-                }
-                let object = self.evaluate(object, environment)?;
-                self.resolve_member(object, name, *span)
+                self.evaluate_member(object, name, *span, environment)
             }
             Expr::Index { span, .. } => {
                 let place = self.resolve_place(expression, &environment, *span)?;
@@ -440,66 +207,8 @@ impl Interpreter {
                     .map(Value::Range)
                     .map_err(|message| RuntimeError::new(message, *span))
             }
-            Expr::Call {
-                callee,
-                arguments,
-                span,
-            } => {
-                let callee = self.evaluate(callee, environment.clone())?;
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| self.evaluate(argument, environment.clone()))
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.call(callee, &arguments, *span)
-            }
-            Expr::If {
-                condition,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                let condition_value = self.evaluate(condition, environment.clone())?;
-                if self.condition_value(&condition_value, condition.span())? {
-                    let flow = self.execute_block(then_branch, environment)?;
-                    Ok(self.flow_value(flow))
-                } else if let Some(else_branch) = else_branch {
-                    self.evaluate(else_branch, environment)
-                } else {
-                    Ok(Value::Unit)
-                }
-            }
-            Expr::Match {
-                value, arms, span, ..
-            } => {
-                let value = self.evaluate(value, environment.clone())?;
-                for arm in arms {
-                    self.tick(arm.pattern.span())?;
-                    let mut bindings = Vec::new();
-                    if pattern_matches(&arm.pattern, &value, &mut bindings) {
-                        let branch_environment = Environment::child(environment);
-                        for (name, value) in bindings {
-                            branch_environment
-                                .borrow_mut()
-                                .define(name, value, false, None);
-                        }
-                        let result = self.evaluate(&arm.expression, branch_environment)?;
-                        if result.contains_reference() {
-                            return Err(RuntimeError::new(
-                                "reference cannot escape its match arm",
-                                arm.expression.span(),
-                            ));
-                        }
-                        return Ok(result);
-                    }
-                }
-                Err(RuntimeError::new(
-                    format!("non-exhaustive match for value `{value}`"),
-                    *span,
-                ))
-            }
-            Expr::Block(block) => {
-                let flow = self.execute_block(block, environment)?;
-                Ok(self.flow_value(flow))
+            Expr::Call { .. } | Expr::If { .. } | Expr::Match { .. } | Expr::Block(_) => {
+                self.evaluate_control(expression, environment)
             }
         }
     }

@@ -56,6 +56,43 @@ impl Interpreter {
         environment: EnvironmentRef,
     ) -> Result<Flow, RuntimeError> {
         match statement {
+            Stmt::Return { value, span } => {
+                if self.function_depth == 0 {
+                    return Err(RuntimeError::new(
+                        "`return` can only be used inside a function",
+                        *span,
+                    ));
+                }
+                let value = value
+                    .as_ref()
+                    .map(|expression| self.evaluate(expression, environment))
+                    .transpose()?
+                    .unwrap_or(Value::Unit);
+                if value.contains_reference() {
+                    return Err(RuntimeError::new(
+                        "references cannot be returned from functions",
+                        *span,
+                    ));
+                }
+                Ok(Flow::Return(value))
+            }
+            Stmt::Expr {
+                expression,
+                terminated,
+            } => {
+                let value = self.evaluate(expression, environment)?;
+                Ok(Flow::Value(if *terminated { Value::Unit } else { value }))
+            }
+            _ => self.execute_non_expression_statement(statement, environment),
+        }
+    }
+
+    fn execute_non_expression_statement(
+        &mut self,
+        statement: &Stmt,
+        environment: EnvironmentRef,
+    ) -> Result<Flow, RuntimeError> {
+        match statement {
             Stmt::Public { statement, .. } => self.execute_statement(statement, environment),
             Stmt::Module {
                 name,
@@ -855,25 +892,8 @@ impl Interpreter {
                 }
                 Ok(Flow::Value(Value::Unit))
             }
-            Stmt::Return { value, span } => {
-                if self.function_depth == 0 {
-                    return Err(RuntimeError::new(
-                        "`return` can only be used inside a function",
-                        *span,
-                    ));
-                }
-                let value = value
-                    .as_ref()
-                    .map(|expression| self.evaluate(expression, environment))
-                    .transpose()?
-                    .unwrap_or(Value::Unit);
-                if value.contains_reference() {
-                    return Err(RuntimeError::new(
-                        "references cannot be returned from functions",
-                        *span,
-                    ));
-                }
-                Ok(Flow::Return(value))
+            Stmt::Return { .. } | Stmt::Expr { .. } => {
+                unreachable!("return and expression statements use the fast path")
             }
             Stmt::Break { value, span } => {
                 let value = value
@@ -890,13 +910,6 @@ impl Interpreter {
                 Ok(Flow::Break(value))
             }
             Stmt::Continue { .. } => Ok(Flow::Continue),
-            Stmt::Expr {
-                expression,
-                terminated,
-            } => {
-                let value = self.evaluate(expression, environment)?;
-                Ok(Flow::Value(if *terminated { Value::Unit } else { value }))
-            }
         }
     }
 }
