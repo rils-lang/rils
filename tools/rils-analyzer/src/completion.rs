@@ -11,8 +11,14 @@ impl Server {
             } else {
                 let mut source = document.text.clone();
                 source.insert_str(offset, "__rils_completion");
-                recovered =
-                    analyze_with_source_id(&source, document.source_id, &self.host_functions).ok();
+                recovered = analyze_with_source_id_and_external_exports_and_host_types(
+                    &source,
+                    document.source_id,
+                    &self.host_functions,
+                    &self.host_types,
+                    &HashMap::new(),
+                )
+                .ok();
                 recovered.as_ref()
             };
             if let Some(receiver_type) = current_analysis.and_then(|analysis| {
@@ -36,11 +42,14 @@ impl Server {
                             .and_then(|symbol| symbol.inferred_type.as_ref())
                     })
             }) {
-                if matches!(&receiver_type, Type::Named { name, .. } if name == "HostHandle") {
+                if let Type::Named { name, arguments } = receiver_type
+                    && arguments.is_empty()
+                    && (name == "HostHandle" || self.host_contract.host_type(name).is_some())
+                {
                     let mut items = self
                         .host_contract
-                        .functions()
-                        .filter(|function| function.receiver.is_some())
+                        .receiver_methods(name)
+                        .into_iter()
                         .filter_map(|function| {
                             let (_, name) = function.name.rsplit_once("::")?;
                             name.starts_with(&member_prefix).then(|| {

@@ -11,8 +11,9 @@ pub(crate) fn analyze(
     program: &Program,
     binding_types: &HashMap<Span, Type>,
     expression_types: &HashMap<Span, Type>,
+    host_types: &HashSet<String>,
 ) -> Vec<AnalysisDiagnostic> {
-    Checker::new(program, binding_types, expression_types).run(program)
+    Checker::new(program, binding_types, expression_types, host_types).run(program)
 }
 
 #[derive(Clone)]
@@ -58,6 +59,7 @@ enum ReceiverMode {
 struct Checker<'a> {
     binding_types: &'a HashMap<Span, Type>,
     expression_types: &'a HashMap<Span, Type>,
+    host_types: &'a HashSet<String>,
     nominals: HashMap<String, NominalDefinition>,
     receivers: HashMap<(String, String), ReceiverMode>,
     scopes: Vec<Scope>,
@@ -71,10 +73,12 @@ impl<'a> Checker<'a> {
         program: &Program,
         binding_types: &'a HashMap<Span, Type>,
         expression_types: &'a HashMap<Span, Type>,
+        host_types: &'a HashSet<String>,
     ) -> Self {
         let mut checker = Self {
             binding_types,
             expression_types,
+            host_types,
             nominals: HashMap::new(),
             receivers: HashMap::new(),
             scopes: vec![Scope::default()],
@@ -1013,7 +1017,8 @@ impl<'a> Checker<'a> {
             Type::Tuple(elements) => elements.iter().all(|ty| self.is_copy_inner(ty, visiting)),
             Type::Array { element, .. } => self.is_copy_inner(element, visiting),
             Type::Named { name, arguments } => {
-                if name == "HostHandle" && arguments.is_empty() {
+                if arguments.is_empty() && (name == "HostHandle" || self.host_types.contains(name))
+                {
                     return true;
                 }
                 let Some(definition) = self.nominals.get(name) else {

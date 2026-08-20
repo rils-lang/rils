@@ -176,9 +176,13 @@ fn recover_analysis(
     for insertion in ["1i32)", "1i32);", "()", "());"] {
         let mut source = document.text.clone();
         source.insert_str(offset, insertion);
-        if let Ok(analysis) =
-            analyze_with_source_id(&source, document.source_id, &server.host_functions)
-        {
+        if let Ok(analysis) = analyze_with_source_id_and_external_exports_and_host_types(
+            &source,
+            document.source_id,
+            &server.host_functions,
+            &server.host_types,
+            &HashMap::new(),
+        ) {
             return Some(analysis);
         }
     }

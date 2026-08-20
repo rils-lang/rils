@@ -118,7 +118,27 @@ pub fn analyze_program_with_host_functions(
     program: &Program,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> DocumentAnalysis {
-    Analyzer::new(SourceId::UNKNOWN, host_functions, program, &HashMap::new()).analyze(program)
+    analyze_program_with_host_declarations(program, host_functions, &HashSet::new())
+}
+
+#[doc(hidden)]
+pub fn analyze_program_with_host_declarations(
+    program: &Program,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+) -> DocumentAnalysis {
+    let mut program = program.clone();
+    let resolution_errors = crate::resolve_host_type_names(&mut program, host_types);
+    let mut analysis = Analyzer::new(
+        SourceId::UNKNOWN,
+        host_functions,
+        host_types,
+        &program,
+        &HashMap::new(),
+    )
+    .analyze(&program);
+    append_host_type_resolution_errors(&mut analysis, resolution_errors);
+    analysis
 }
 
 pub fn analyze(source: &str) -> Result<DocumentAnalysis, FrontendError> {
@@ -130,7 +150,22 @@ pub fn analyze_with_host_functions(
     source: &str,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> Result<DocumentAnalysis, FrontendError> {
-    analyze_with_source_id(source, SourceId::UNKNOWN, host_functions)
+    analyze_with_host_declarations(source, host_functions, &HashSet::new())
+}
+
+#[doc(hidden)]
+pub fn analyze_with_host_declarations(
+    source: &str,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+) -> Result<DocumentAnalysis, FrontendError> {
+    analyze_with_source_id_and_external_exports_and_host_types(
+        source,
+        SourceId::UNKNOWN,
+        host_functions,
+        host_types,
+        &HashMap::new(),
+    )
 }
 
 pub fn analyze_with_source_id(
@@ -148,9 +183,52 @@ pub fn analyze_with_source_id_and_external_exports(
     host_functions: &HashMap<String, FunctionSignature>,
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
 ) -> Result<DocumentAnalysis, FrontendError> {
+    analyze_with_source_id_and_external_exports_and_host_types(
+        source,
+        source_id,
+        host_functions,
+        &HashSet::new(),
+        external_exports,
+    )
+}
+
+pub fn analyze_with_source_id_and_external_exports_and_host_types(
+    source: &str,
+    source_id: SourceId,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+    external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+) -> Result<DocumentAnalysis, FrontendError> {
     let tokens = crate::lexer::lex_with_source_id(source, source_id).map_err(FrontendError::Lex)?;
-    let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
-    Ok(Analyzer::new(source_id, host_functions, &program, external_exports).analyze(&program))
+    let mut program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
+    let resolution_errors = crate::resolve_host_type_names(&mut program, host_types);
+    let mut analysis = Analyzer::new(
+        source_id,
+        host_functions,
+        host_types,
+        &program,
+        external_exports,
+    )
+    .analyze(&program);
+    append_host_type_resolution_errors(&mut analysis, resolution_errors);
+    Ok(analysis)
+}
+
+fn append_host_type_resolution_errors(
+    analysis: &mut DocumentAnalysis,
+    errors: Vec<crate::HostTypeResolutionError>,
+) {
+    analysis.diagnostics.extend(
+        errors
+            .into_iter()
+            .map(|error| AnalysisDiagnostic::error(error.message, error.span)),
+    );
+    analysis
+        .diagnostics
+        .sort_by_key(|diagnostic| (diagnostic.span.start, diagnostic.span.end));
+    analysis
+        .diagnostics
+        .dedup_by(|left, right| left.span == right.span && left.message == right.message);
 }
 
 struct Analyzer {
@@ -163,6 +241,8 @@ struct Analyzer {
     trait_members: HashMap<(String, String), Span>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
     host_functions: HashMap<String, FunctionSignature>,
+    host_types: HashSet<String>,
+    host_type_segments: HashSet<String>,
     result: DocumentAnalysis,
 }
 
@@ -170,6 +250,7 @@ impl Analyzer {
     fn new(
         source_id: SourceId,
         host_functions: &HashMap<String, FunctionSignature>,
+        host_types: &HashSet<String>,
         program: &Program,
         external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
     ) -> Self {
@@ -268,6 +349,26 @@ impl Analyzer {
                 },
             });
         }
+        let host_type_segments = host_functions
+            .values()
+            .flat_map(|signature| {
+                signature
+                    .parameters
+                    .iter()
+                    .flatten()
+                    .chain(std::iter::once(&signature.return_type))
+            })
+            .filter_map(|ty| match ty {
+                Type::Named { name, arguments } if arguments.is_empty() => Some(name.as_str()),
+                _ => None,
+            })
+            .flat_map(|name| name.split("::").map(str::to_owned))
+            .chain(
+                host_types
+                    .iter()
+                    .flat_map(|name| name.split("::").map(str::to_owned)),
+            )
+            .collect();
         Self {
             source_id,
             next_symbol: HashMap::new(),
@@ -278,6 +379,8 @@ impl Analyzer {
             trait_members: HashMap::new(),
             type_aliases: HashMap::new(),
             host_functions: host_functions.clone(),
+            host_types: host_types.clone(),
+            host_type_segments,
             result: DocumentAnalysis::default(),
         }
     }
@@ -297,6 +400,7 @@ impl Analyzer {
             program,
             &inference.binding_types,
             &inference.expression_types,
+            &self.host_types,
         ));
         self.result
             .diagnostics
@@ -978,7 +1082,10 @@ impl Analyzer {
                         && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
                 })
                 .and_then(|symbol| symbol.symbol_id);
-            if resolved.is_none() && !reference.is_builtin {
+            if resolved.is_none()
+                && !reference.is_builtin
+                && !self.host_type_segments.contains(&reference.name)
+            {
                 self.result.diagnostics.push(AnalysisDiagnostic::error(
                     format!("undefined type or trait `{}`", reference.name),
                     reference.span,

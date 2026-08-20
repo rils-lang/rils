@@ -3,7 +3,9 @@ use super::{
     function_declaration, offset, path_to_file_uri, position,
 };
 use lsp_server::Connection;
-use rils_compiler::HostContract;
+use rils_compiler::{
+    HostCallKind, HostContract, HostReceiver, HostThreadAffinity, HostTypeTransport,
+};
 use rils_frontend::FunctionSignature;
 use serde_json::json;
 use std::{
@@ -158,6 +160,7 @@ fn test_server(
         workspace_documents: HashSet::new(),
         host_contract,
         host_functions,
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
     }
@@ -183,6 +186,7 @@ fn hover_shows_expanded_type_aliases() {
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
     };
@@ -250,6 +254,7 @@ fn completes_host_modules_functions_and_aliases() {
         workspace_documents: HashSet::new(),
         host_contract: contract,
         host_functions,
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
     };
@@ -284,6 +289,93 @@ fn completes_host_modules_functions_and_aliases() {
 }
 
 #[test]
+fn completes_inherited_methods_for_named_host_types() {
+    let mut contract = HostContract::new();
+    contract
+        .register_type(
+            "unity_engine::Object",
+            None::<String>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    contract
+        .register_type(
+            "unity_engine::GameObject",
+            Some("unity_engine::Object"),
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    contract
+        .register_function(
+            110,
+            "unity_engine::object::get",
+            FunctionSignature::fixed(Vec::new(), Type::named("unity_engine::GameObject")),
+            "unity.object",
+        )
+        .unwrap();
+    contract
+        .register_function_with_options_and_receiver(
+            111,
+            "unity_engine::object::instance_id",
+            FunctionSignature::fixed(vec![Type::named("unity_engine::Object")], Type::I32),
+            "unity.object",
+            HostCallKind::Direct,
+            HostThreadAffinity::MainThread,
+            Some(HostReceiver::Ref),
+        )
+        .unwrap();
+
+    let host_functions = contract.signatures();
+    let host_types = contract
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect::<HashSet<_>>();
+    let text =
+        "use unity_engine::*;\nfn inspect(object: GameObject) {\n    object.instance_id();\n}";
+    let uri = "file:///named-host-completion.rils".to_owned();
+    let (connection, _client) = Connection::memory();
+    let mut documents = HashMap::new();
+    documents.insert(
+        uri.clone(),
+        Document {
+            source_id: SourceId::UNKNOWN,
+            text: text.into(),
+            analysis: rils_frontend::analysis::analyze_with_host_declarations(
+                text,
+                &host_functions,
+                &host_types,
+            ),
+        },
+    );
+    let server = Server {
+        connection,
+        documents,
+        workspace_documents: HashSet::new(),
+        host_contract: contract,
+        host_functions,
+        host_types,
+        projects: Vec::new(),
+        next_source_id: 1,
+    };
+
+    let methods = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 2, "character": 14 }
+        }))
+        .unwrap();
+    assert!(
+        methods
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| {
+                item["label"] == "instance_id"
+                    && item["detail"] == "fn instance_id(unity_engine::Object) -> i32"
+            })),
+        "{methods}"
+    );
+}
+
+#[test]
 fn completes_integer_intrinsic_methods_and_associated_functions() {
     let text = "let value: i32 = 1;\nvalue.checked_add(1i32);\ni16::try_from(1usize);\ni16::M;";
     let uri = "file:///intrinsics.rils".to_owned();
@@ -303,6 +395,7 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
     };
@@ -366,6 +459,7 @@ fn completes_float_intrinsic_methods() {
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
     };
@@ -422,6 +516,7 @@ text."#;
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
     };
@@ -466,6 +561,7 @@ text."#;
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 3,
     };
@@ -574,6 +670,7 @@ iterator."#;
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
     };
@@ -630,6 +727,7 @@ iterator."#;
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
     };
@@ -687,6 +785,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: vec![project],
         next_source_id: 1,
     };
@@ -698,10 +797,13 @@ fn completes_project_modules_public_items_and_crate_aliases() {
             "position": { "line": 1, "character": 19 }
         }))
         .unwrap();
-    assert!(completion.as_array().is_some_and(|items| {
-        items.iter().any(|item| item["label"] == "add")
-            && !items.iter().any(|item| item["label"] == "hidden")
-    }));
+    assert!(
+        completion.as_array().is_some_and(|items| {
+            items.iter().any(|item| item["label"] == "add")
+                && !items.iter().any(|item| item["label"] == "hidden")
+        }),
+        "{completion}"
+    );
     let definition = server
         .definition(&json!({
             "textDocument": { "uri": uri },
@@ -856,6 +958,7 @@ fn loads_binary_host_manifest_from_initialization_options() {
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
     };
@@ -921,6 +1024,7 @@ fn discovers_and_merges_default_manifest_directory() {
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: vec![Project::from_root(&root).unwrap()],
         next_source_id: 1,
     };

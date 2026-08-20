@@ -71,7 +71,7 @@ receiver 和引用 receiver 只允许立即调用，不能进入可复制的绑�
 `compile_file_with_host` 会让这些声明参与静态分析并生成普通 import，运行前由
 `BytecodeModule::validate_host` 或正常执行路径链接到 `BytecodeHost`。自定义
 `Iterator`/`IntoIterator` 的脚本方法登记在模块迭代表中，`for` 会通过普通 VM 调用帧驱动它们。
-跨工具交换使用严格、确定性排序的 [Host Manifest v1](capi/host-manifest.md)，不直接序列化 Rust 结构。
+跨工具交换使用严格、确定性排序的 [Host Manifest v2](capi/host-manifest.md)，不直接序列化 Rust 结构。
 
 当前覆盖边界汇总如下：
 

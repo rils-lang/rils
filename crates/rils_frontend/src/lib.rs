@@ -4,6 +4,7 @@ mod control_flow;
 pub mod default;
 mod derive;
 mod error;
+mod host_type_resolution;
 pub mod lexer;
 pub mod macros;
 mod ownership;
@@ -18,6 +19,7 @@ mod type_inference;
 pub mod types;
 
 pub use error::FrontendError;
+pub use host_type_resolution::{HostTypeResolutionError, resolve_host_type_names};
 pub use lexer::{LexError, lex, lex_with_source_id};
 pub use parser::{ParseError, parse};
 pub use resolution::{

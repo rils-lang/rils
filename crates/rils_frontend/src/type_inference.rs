@@ -924,18 +924,6 @@ impl Inferencer {
                     .iter()
                     .map(|argument| self.expression(argument, returns))
                     .collect::<Vec<_>>();
-                if let Expr::Member { name, .. } = callee.as_ref()
-                    && let Some(signature) = self
-                        .host_functions
-                        .get(&format!("HostHandle::{name}"))
-                        .cloned()
-                    && let Some(parameters) = &signature.parameters
-                {
-                    for (parameter, argument) in parameters.iter().skip(1).zip(&argument_types) {
-                        self.unify(parameter, argument);
-                    }
-                    return signature.return_type.clone();
-                }
                 if let Type::Function {
                     parameters: Some(parameters),
                     ..
@@ -1146,8 +1134,9 @@ impl Inferencer {
         if let Some(member) = crate::standard_library::builtin_member_type(object_type, field) {
             return member;
         }
-        if matches!(object_type, Type::Named { name, .. } if name == "HostHandle")
-            && let Some(signature) = self.host_functions.get(&format!("HostHandle::{field}"))
+        if let Type::Named { name, arguments } = object_type
+            && arguments.is_empty()
+            && let Some(signature) = self.host_functions.get(&format!("{name}::{field}"))
         {
             let parameters = signature
                 .parameters

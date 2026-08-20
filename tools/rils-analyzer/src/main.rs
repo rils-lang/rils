@@ -10,8 +10,8 @@ use rils_compiler::{HOST_CONTRACT_ABI_VERSION, HostContract};
 use rils_frontend::{
     FrontendError, FunctionSignature, SourceId, Span, Type,
     analysis::{
-        DiagnosticSeverity, DocumentAnalysis, SymbolKind, analyze_with_source_id,
-        analyze_with_source_id_and_external_exports,
+        DiagnosticSeverity, DocumentAnalysis, SymbolKind,
+        analyze_with_source_id_and_external_exports_and_host_types,
     },
     ast::Stmt,
     lexer::{lex, lex_with_source_id},
@@ -64,6 +64,7 @@ fn main() -> Result<(), AnyError> {
         workspace_documents: HashSet::new(),
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
+        host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
     };
@@ -81,6 +82,7 @@ struct Server {
     workspace_documents: HashSet<String>,
     host_contract: HostContract,
     host_functions: HashMap<String, FunctionSignature>,
+    host_types: HashSet<String>,
     projects: Vec<Project>,
     next_source_id: u32,
 }
@@ -184,7 +186,13 @@ impl Server {
             Document {
                 source_id,
                 text,
-                analysis: analyze_with_source_id("", source_id, &self.host_functions),
+                analysis: analyze_with_source_id_and_external_exports_and_host_types(
+                    "",
+                    source_id,
+                    &self.host_functions,
+                    &self.host_types,
+                    &HashMap::new(),
+                ),
             },
         );
         self.reanalyze_documents();
@@ -253,19 +261,12 @@ impl Server {
             }
         }
         self.host_contract = merged.unwrap_or_default();
-        self.host_functions = self
+        self.host_functions = self.host_contract.signatures();
+        self.host_types = self
             .host_contract
-            .functions()
-            .map(|function| (function.name.clone(), function.signature.clone()))
+            .types()
+            .map(|declaration| declaration.name.clone())
             .collect();
-        for function in self.host_contract.functions() {
-            if function.receiver.is_some()
-                && let Some((_, method)) = function.name.rsplit_once("::")
-            {
-                self.host_functions
-                    .insert(format!("HostHandle::{method}"), function.signature.clone());
-            }
-        }
         Ok(())
     }
 
@@ -287,7 +288,13 @@ impl Server {
                 uri,
                 Document {
                     source_id,
-                    analysis: analyze_with_source_id(&text, source_id, &self.host_functions),
+                    analysis: analyze_with_source_id_and_external_exports_and_host_types(
+                        &text,
+                        source_id,
+                        &self.host_functions,
+                        &self.host_types,
+                        &HashMap::new(),
+                    ),
                     text,
                 },
             );
@@ -300,10 +307,11 @@ impl Server {
     fn reanalyze_documents(&mut self) {
         let exports = project_index::collect_external_exports(self);
         for document in self.documents.values_mut() {
-            document.analysis = analyze_with_source_id_and_external_exports(
+            document.analysis = analyze_with_source_id_and_external_exports_and_host_types(
                 &document.text,
                 document.source_id,
                 &self.host_functions,
+                &self.host_types,
                 &exports,
             );
         }

@@ -157,7 +157,9 @@ fn accepts(expected: &Type, value: &Value) -> bool {
             name == "Range" && (arguments.is_empty() || arguments == &vec![range.element_type()])
         }
         (Type::Named { name, arguments }, Value::HostObject(object)) => {
-            arguments.is_empty() && object.type_definition.name == *name
+            arguments.is_empty()
+                && (object.type_definition.name == *name
+                    || object.type_definition.base_types.contains(name))
         }
         _ => false,
     }

@@ -29,11 +29,12 @@ pub mod analysis {
         source: &str,
         host: &crate::HostContract,
     ) -> Result<DocumentAnalysis, crate::RilsError> {
-        let signatures = host
-            .functions()
-            .map(|function| (function.name.clone(), function.signature.clone()))
+        let signatures = host.signatures();
+        let host_types = host
+            .types()
+            .map(|declaration| declaration.name.clone())
             .collect();
-        rils_frontend::analysis::analyze_with_host_functions(source, &signatures)
+        rils_frontend::analysis::analyze_with_host_declarations(source, &signatures, &host_types)
             .map_err(Into::into)
     }
 }
@@ -74,11 +75,14 @@ pub use bytecode::{
     HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_MANIFEST_FORMAT_VERSION,
     HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
     HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
-    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
-    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
+    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
+    HostContract, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
+    HostTypeDeclaration, HostTypeTransport,
 };
 pub use library::{LibraryFormatError, RilsLibrary};
-pub use opaque_host::{OpaqueHostHandle, opaque_host_handle, opaque_host_value};
+pub use opaque_host::{
+    OpaqueHostHandle, opaque_host_handle, opaque_host_value, opaque_host_value_typed,
+};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,

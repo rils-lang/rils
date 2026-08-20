@@ -67,6 +67,8 @@ pub struct HostFunction {
 
 pub struct HostType {
     pub name: String,
+    pub base_types: HashSet<String>,
+    pub copy: bool,
     pub methods: RefCell<HashMap<String, Rc<HostFunction>>>,
 }
 
@@ -611,10 +613,10 @@ impl Value {
             | Self::BoundMethod(_)
             | Self::BuiltinBoundMethod(_)
             | Self::TraitMethodSelector(_) => true,
-            // HostHandle is an opaque, copyable identity token.  The payload is
+            // Portable host handles are opaque, copyable identity tokens. The payload is
             // reference-counted internally, but copying the token must not copy
             // or transfer ownership of the host object itself.
-            Self::HostObject(object) => object.type_definition.name == "HostHandle",
+            Self::HostObject(object) => object.type_definition.copy,
             Self::String(_)
             | Self::Range(_)
             | Self::Vec(_)

@@ -93,6 +93,7 @@ struct ProgramLowerer {
     types: HashMap<String, TypeId>,
     type_definitions: Vec<HirTypeDefinition>,
     host_functions: HashMap<String, HostFunctionDeclaration>,
+    host_methods: HashMap<String, HostFunctionDeclaration>,
     expression_types: HashMap<Span, Type>,
 }
 
@@ -183,6 +184,7 @@ impl ProgramLowerer {
             .map(|function| (function.name.clone(), function.clone()))
             .collect::<HashMap<_, _>>();
         collect_host_use_aliases(&program.statements, &mut Vec::new(), &mut host_functions);
+        let host_methods = host.method_functions();
         Ok(Self {
             functions,
             methods,
@@ -190,6 +192,7 @@ impl ProgramLowerer {
             types,
             type_definitions,
             host_functions,
+            host_methods,
             expression_types: expression_types.clone(),
         })
     }
@@ -224,6 +227,7 @@ impl ProgramLowerer {
                 &self.method_names,
                 &self.types,
                 &self.host_functions,
+                &self.host_methods,
                 &self.expression_types,
                 generated.clone(),
             )
@@ -257,6 +261,7 @@ impl ProgramLowerer {
                     &self.method_names,
                     &self.types,
                     &self.host_functions,
+                    &self.host_methods,
                     &self.expression_types,
                     generated.clone(),
                 )
@@ -289,6 +294,7 @@ struct FunctionLowerer<'a> {
     method_names: &'a HashMap<String, Option<MethodInfo>>,
     types: &'a HashMap<String, TypeId>,
     host_functions: &'a HashMap<String, HostFunctionDeclaration>,
+    host_methods: &'a HashMap<String, HostFunctionDeclaration>,
     expression_types: &'a HashMap<Span, Type>,
     namespace: String,
     scopes: Vec<HashMap<String, LocalId>>,
@@ -306,6 +312,7 @@ impl<'a> FunctionLowerer<'a> {
         method_names: &'a HashMap<String, Option<MethodInfo>>,
         types: &'a HashMap<String, TypeId>,
         host_functions: &'a HashMap<String, HostFunctionDeclaration>,
+        host_methods: &'a HashMap<String, HostFunctionDeclaration>,
         expression_types: &'a HashMap<Span, Type>,
         generated: GeneratedFunctions,
     ) -> Self {
@@ -315,6 +322,7 @@ impl<'a> FunctionLowerer<'a> {
             method_names,
             types,
             host_functions,
+            host_methods,
             expression_types,
             namespace: String::new(),
             scopes: vec![HashMap::new()],
@@ -485,6 +493,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.method_names,
                     self.types,
                     self.host_functions,
+                    self.host_methods,
                     self.expression_types,
                     self.generated.clone(),
                 );
@@ -949,7 +958,7 @@ impl<'a> FunctionLowerer<'a> {
                             });
                         }
                     }
-                    if let Some(host) = self.host_method(name).cloned() {
+                    if let Some(host) = self.host_method(object, name).cloned() {
                         let receiver = match host.receiver {
                             Some(crate::host::HostReceiver::Value) => ReceiverMode::Owned,
                             Some(crate::host::HostReceiver::Ref) => {
@@ -1354,16 +1363,18 @@ impl<'a> FunctionLowerer<'a> {
         self.host_functions.get(&name)
     }
 
-    fn host_method(&self, name: &str) -> Option<&HostFunctionDeclaration> {
-        let mut matches = self.host_functions.values().filter(|function| {
-            function.receiver.is_some()
-                && function
-                    .name
-                    .rsplit_once("::")
-                    .is_some_and(|(_, method)| method == name)
-        });
-        let first = matches.next()?;
-        matches.next().is_none().then_some(first)
+    fn host_method(&self, object: &Expr, name: &str) -> Option<&HostFunctionDeclaration> {
+        let Type::Named {
+            name: receiver_type,
+            arguments,
+        } = self.expression_types.get(&object.span())?
+        else {
+            return None;
+        };
+        if !arguments.is_empty() {
+            return None;
+        }
+        self.host_methods.get(&format!("{receiver_type}::{name}"))
     }
 
     fn scoped_name(&self, name: &str) -> String {

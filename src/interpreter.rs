@@ -181,6 +181,8 @@ impl Interpreter {
         }
         let definition = Rc::new(HostType {
             name: name.clone(),
+            base_types: Default::default(),
+            copy: false,
             methods: RefCell::new(Default::default()),
         });
         environment.borrow_mut().define(

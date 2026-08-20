@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::Value;
@@ -13,9 +14,20 @@ pub struct OpaqueHostHandle {
 
 /// Construct a host object value with the stable `HostHandle` runtime type.
 pub fn opaque_host_value(handle: OpaqueHostHandle) -> Value {
+    opaque_host_value_typed(handle, "HostHandle", HashSet::new())
+}
+
+/// Construct a host object with a manifest-provided nominal type and lineage.
+pub fn opaque_host_value_typed(
+    handle: OpaqueHostHandle,
+    type_name: impl Into<String>,
+    base_types: HashSet<String>,
+) -> Value {
     Value::HostObject(Rc::new(HostObject {
         type_definition: Rc::new(HostType {
-            name: "HostHandle".into(),
+            name: type_name.into(),
+            base_types,
+            copy: true,
             methods: Default::default(),
         }),
         payload: Rc::new(handle),
@@ -27,8 +39,5 @@ pub fn opaque_host_handle(value: &Value) -> Option<OpaqueHostHandle> {
     let Value::HostObject(object) = value else {
         return None;
     };
-    if object.type_definition.name != "HostHandle" {
-        return None;
-    }
     object.payload.downcast_ref::<OpaqueHostHandle>().copied()
 }

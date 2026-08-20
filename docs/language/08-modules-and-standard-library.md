@@ -61,6 +61,32 @@ manifests = ["generated/extra.rilhm"] # 可选的额外 fragment
 多个 fragment 中幂等出现；ABI/contract/module 版本、函数名称、签名或全局 function ID 冲突都会
 使整个项目加载失败。旧的 `[host].manifest` 单文件配置继续兼容。
 
+Host Manifest v2 可以声明命名宿主类型和单继承。类型路径可直接用于标注和推断，不需要在 Rils
+源码中重复声明：
+
+```rils
+let object: unity_engine::GameObject = unity_engine::object::get();
+let id = object.instance_id(); // instance_id 声明在 unity_engine::Object
+```
+
+宿主类型也遵循普通的 `use` 名称解析。显式导入、通配导入和 `as` 别名都会解析到 manifest 中的
+完整类型身份，后续的类型推断、继承成员查找与 Analyzer 使用同一结果：
+
+```rils
+use unity_engine::*;
+
+fn inspect(object: GameObject) {
+    object.instance_id();
+}
+```
+
+短名必须通过 `use` 进入当前作用域；多个通配导入带来同名宿主类型时会报告候选列表，必须改用
+显式导入、别名或完整限定名，不能按导入顺序静默选择。
+
+派生宿主类型可传给基类参数，并继承基类的 receiver 方法。它们在 Rils 中保持不同的逻辑类型，在
+宿主 ABI 上则按 manifest 声明降级到 transport；当前命名类型使用 `HostHandle`。这不会改变 Rils
+拥有型 struct/enum 的语义，也不允许脚本访问宿主 payload。
+
 没有 `rils.toml` 时保留旧的单文件兼容模式：`mod name;` 依次查找同目录的 `name.rils` 与
 `name/mod.rils`。项目模式只保留 `mod name { ... }` 作为局部内联模块，外部 `mod name;` 会给出
 迁移诊断。字符串形式的 `Engine::eval` 和 `rils::compile` 始终不进行隐式文件访问。

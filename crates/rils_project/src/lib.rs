@@ -316,7 +316,13 @@ impl Project {
 
     pub fn module_for_file(&self, path: impl AsRef<Path>) -> Option<&ProjectFile> {
         let path = absolutize(path.as_ref()).ok()?;
-        self.modules.values().find(|file| file.path == path)
+        self.modules.values().find(|file| {
+            file.path == path
+                || fs::canonicalize(&file.path)
+                    .ok()
+                    .zip(fs::canonicalize(&path).ok())
+                    .is_some_and(|(left, right)| left == right)
+        })
     }
 }
 

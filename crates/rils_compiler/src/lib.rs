@@ -6,8 +6,9 @@ pub use host::{
     HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_MANIFEST_FORMAT_VERSION,
     HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
     HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
-    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HostCallKind, HostContract,
-    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
+    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
+    HostContract, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
+    HostTypeDeclaration, HostTypeTransport,
 };
 
 mod ast {
@@ -124,10 +125,23 @@ pub fn compile_program_with_host_and_sources(
 ) -> Result<mir::MirProgram, CompileError> {
     let mut program = program.clone();
     let signatures = host.signatures();
+    let host_types = host
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
+    if let Some(error) = rils_frontend::resolve_host_type_names(&mut program, &host_types)
+        .into_iter()
+        .next()
+    {
+        return Err(CompileError::new(error.message, error.span));
+    }
     rils_frontend::resolve_numeric_literals_with_host_functions(&mut program, &signatures)
         .map_err(|error| CompileError::new(error.message, error.span))?;
-    let analysis =
-        rils_frontend::analysis::analyze_program_with_host_functions(&program, &signatures);
+    let analysis = rils_frontend::analysis::analyze_program_with_host_declarations(
+        &program,
+        &signatures,
+        &host_types,
+    );
     if let Some(diagnostic) = analysis
         .diagnostics
         .into_iter()
@@ -146,8 +160,8 @@ pub fn compile_program_with_host_and_sources(
 #[cfg(test)]
 mod tests {
     use super::{compile, compile_with_host};
-    use crate::{HostContract, HostReceiver};
-    use rils_frontend::{FunctionSignature, Type};
+    use crate::{HostContract, HostReceiver, HostTypeTransport};
+    use rils_frontend::{FunctionSignature, IntegerType, Type};
 
     #[test]
     fn compiles_source_through_static_analysis_hir_and_mir() {
@@ -192,5 +206,86 @@ mod tests {
             &host,
         )
         .expect("host receiver calls should lower");
+    }
+
+    #[test]
+    fn lowers_inherited_named_host_receiver_methods() {
+        let mut host = HostContract::new();
+        host.register_type(
+            "unity_engine::Object",
+            None::<&str>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+        host.register_type(
+            "unity_engine::GameObject",
+            Some("unity_engine::Object"),
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+        host.register_function_with_options_and_receiver(
+            901,
+            "unity_engine::object::instance_id",
+            FunctionSignature::fixed(
+                vec![Type::named("unity_engine::Object")],
+                Type::Integer(IntegerType::I64),
+            ),
+            "unity_engine.object",
+            crate::HostCallKind::Direct,
+            crate::HostThreadAffinity::MainThread,
+            Some(HostReceiver::Ref),
+        )
+        .unwrap();
+        compile_with_host(
+            "fn id(object: unity_engine::GameObject) -> i64 { object.instance_id() }",
+            &host,
+        )
+        .expect("derived host types should inherit receiver methods");
+
+        for source in [
+            "use unity_engine::*; fn id(object: GameObject) -> i64 { object.instance_id() }",
+            "use unity_engine::GameObject; fn id(object: GameObject) -> i64 { object.instance_id() }",
+            "use unity_engine::GameObject as Go; fn id(object: Go) -> i64 { object.instance_id() }",
+            "fn id(object: GameObject) -> i64 { object.instance_id() } use unity_engine::*;",
+            "mod nested { use unity_engine::*; fn id(object: GameObject) -> i64 { object.instance_id() } }",
+            "use unity_engine::GameObject as Go; struct Holder { object: Go }",
+        ] {
+            compile_with_host(source, &host)
+                .expect("imported host type identities should be canonical before lowering");
+        }
+    }
+
+    #[test]
+    fn reports_missing_and_ambiguous_host_type_imports_before_lowering() {
+        let mut host = HostContract::new();
+        for name in ["alpha::Object", "beta::Object"] {
+            host.register_type(name, None::<&str>, HostTypeTransport::HostHandle)
+                .unwrap();
+        }
+
+        let missing = match compile_with_host("fn inspect(value: Object) {}", &host) {
+            Ok(_) => panic!("unimported host type should fail"),
+            Err(error) => error,
+        };
+        assert!(
+            missing
+                .message
+                .contains("host type `Object` is not in scope")
+        );
+
+        let ambiguous = match compile_with_host(
+            "use alpha::*; use beta::*; fn inspect(value: Object) {}",
+            &host,
+        ) {
+            Ok(_) => panic!("ambiguous host type should fail"),
+            Err(error) => error,
+        };
+        assert!(
+            ambiguous
+                .message
+                .contains("host type `Object` is ambiguous")
+        );
+        assert!(ambiguous.message.contains("alpha::Object"));
+        assert!(ambiguous.message.contains("beta::Object"));
     }
 }

@@ -1,7 +1,8 @@
 {
-  "format_version": 1,
+  "format_version": 2,
   "host_abi_version": 1,
   "contract_version": 1,
+  "types": [],
   "modules": [
     {
       "name": "unity_engine::math",
