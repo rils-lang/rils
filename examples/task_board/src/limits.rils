@@ -1,0 +1,27 @@
+use crate::kanban::Summary;
+
+#[derive(Default)]
+pub struct Limits {
+    max_active: i32,
+    max_score: i32,
+}
+
+impl Limits {
+    fn new(max_active: i32, max_score: i32) -> Self {
+        Limits {
+            max_active: max_active,
+            max_score: max_score,
+        }
+    }
+}
+
+pub fn accepts(summary: &Summary, limits: &Limits) -> bool {
+    summary.active <= limits.max_active && summary.total_score <= limits.max_score
+}
+
+pub fn planning_limits(max_active: i32, max_score: i32) -> Limits {
+    Limits {
+        max_active: max_active,
+        max_score: max_score,
+    }
+}

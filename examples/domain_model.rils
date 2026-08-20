@@ -1,0 +1,53 @@
+trait Labeled {
+    fn label(&self) -> string;
+}
+
+struct Measurement {
+    value: i32,
+}
+
+impl Labeled for Measurement {
+    fn label(&self) -> string {
+        "measurement"
+    }
+}
+
+struct Pair<T, U> {
+    first: T,
+    second: U,
+}
+
+impl<T, U> Pair<T, U> {
+    fn swap(self) -> Pair<U, T> {
+        Pair {
+            first: self.second,
+            second: self.first,
+        }
+    }
+}
+
+enum Reading<T> {
+    Value(T),
+    Missing,
+}
+
+type IntReading = Reading<i32>;
+
+fn normalize(reading: IntReading) -> i32 {
+    match reading {
+        Reading::Value(value) => value,
+        Reading::Missing => 0,
+    }
+}
+
+let pair: Pair<string, i32> = Pair {
+    first: "temperature",
+    second: 40,
+};
+let swapped = pair.swap();
+let measurement = Measurement {
+    value: swapped.first + 2,
+};
+
+assert!(<Measurement as Labeled>::label(&measurement) == "measurement");
+normalize(Reading::Value(measurement.value))

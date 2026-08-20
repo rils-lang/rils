@@ -1,0 +1,56 @@
+use crate::domain::{Task, is_completed, score_task};
+
+pub struct Board {
+    tasks: Vec<Task>,
+}
+
+pub struct Summary {
+    active: i32,
+    completed: i32,
+    total_score: i32,
+}
+
+impl Board {
+    fn new() -> Self {
+        Board { tasks: Vec::new() }
+    }
+
+    fn add(&mut self, task: Task) {
+        let tasks = &mut self.tasks;
+        tasks.push(task);
+    }
+
+    fn summarize(self) -> Summary {
+        let mut active = 0;
+        let mut completed = 0;
+        let mut total_score = 0;
+
+        for task in self.tasks {
+            total_score = total_score + score_task(&task);
+            if is_completed(&task) {
+                completed = completed + 1;
+            } else {
+                active = active + 1;
+            }
+        }
+
+        Summary {
+            active: active,
+            completed: completed,
+            total_score: total_score,
+        }
+    }
+}
+
+pub fn new_board() -> Board {
+    Board { tasks: Vec::new() }
+}
+
+pub fn add_task(board: &mut Board, task: Task) {
+    let tasks = &mut board.tasks;
+    tasks.push(task);
+}
+
+pub fn summarize_board(board: Board) -> Summary {
+    board.summarize()
+}

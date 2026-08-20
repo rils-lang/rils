@@ -1,0 +1,39 @@
+use crate::{
+    event::{Event, count, failure, timing},
+    generator::{SampleRange, Window, sample_window},
+    ingest::aggregate,
+};
+
+fn successful_batch() -> Vec<Event> {
+    let mut events: Vec<Event> = Vec::new();
+    for sample in sample_window(1, 6) {
+        events.push(timing(sample * 10));
+    }
+    events.push(count(2));
+    events
+}
+
+fn failure_code() -> i32 {
+    let mut events: Vec<Event> = Vec::new();
+    events.push(failure(503));
+    match aggregate(events) {
+        Ok(_) => 0,
+        Err(code) => code,
+    }
+}
+
+fn main() -> i32 {
+    match aggregate(successful_batch()) {
+        Ok(metrics) => {
+            assert!(metrics.samples == 7);
+            assert!(metrics.total_milliseconds == 150);
+            assert!(metrics.max_milliseconds == 50);
+
+            metrics.samples * 1000
+                + metrics.total_milliseconds
+                + metrics.max_milliseconds
+                + failure_code()
+        }
+        Err(_) => 0,
+    }
+}

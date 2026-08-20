@@ -1,0 +1,113 @@
+pub enum Priority {
+    Low,
+    Normal,
+    High,
+}
+
+pub enum TaskState {
+    Planned,
+    Completed,
+}
+
+pub struct Task {
+    id: i32,
+    title: string,
+    priority: Priority,
+    estimate: i32,
+    state: TaskState,
+}
+
+impl Task {
+    fn new(id: i32, title: string, priority: Priority, estimate: i32) -> Self {
+        Task {
+            id: id,
+            title: title,
+            priority: priority,
+            estimate: estimate,
+            state: TaskState::Planned,
+        }
+    }
+
+    fn low(id: i32, title: string, estimate: i32) -> Self {
+        Task::new(id, title, Priority::Low, estimate)
+    }
+
+    fn normal(id: i32, title: string, estimate: i32) -> Self {
+        Task::new(id, title, Priority::Normal, estimate)
+    }
+
+    fn high(id: i32, title: string, estimate: i32) -> Self {
+        Task::new(id, title, Priority::High, estimate)
+    }
+
+    fn complete(mut self) -> Self {
+        self.state = TaskState::Completed;
+        self
+    }
+}
+
+pub trait Scored {
+    fn score(&self) -> i32;
+}
+
+impl Scored for Task {
+    fn score(&self) -> i32 {
+        let priority_score = match self.priority {
+            Priority::Low => 1,
+            Priority::Normal => 3,
+            Priority::High => 5,
+        };
+        priority_score + self.estimate
+    }
+}
+
+pub fn score_task(task: &Task) -> i32 {
+    <Task as Scored>::score(task)
+}
+
+pub fn low_task(id: i32, title: string, estimate: i32) -> Task {
+    Task {
+        id: id,
+        title: title,
+        priority: Priority::Low,
+        estimate: estimate,
+        state: TaskState::Planned,
+    }
+}
+
+pub fn normal_task(id: i32, title: string, estimate: i32) -> Task {
+    Task {
+        id: id,
+        title: title,
+        priority: Priority::Normal,
+        estimate: estimate,
+        state: TaskState::Planned,
+    }
+}
+
+pub fn high_task(id: i32, title: string, estimate: i32) -> Task {
+    Task {
+        id: id,
+        title: title,
+        priority: Priority::High,
+        estimate: estimate,
+        state: TaskState::Planned,
+    }
+}
+
+pub fn complete_task(task: Task) -> Task {
+    Task {
+        id: task.id,
+        title: task.title,
+        priority: task.priority,
+        estimate: task.estimate,
+        state: TaskState::Completed,
+    }
+}
+
+pub fn is_completed(task: &Task) -> bool {
+    match task.state {
+        TaskState::Completed => true,
+        TaskState::Planned => false,
+    }
+}

@@ -1,0 +1,36 @@
+use crate::event::Event;
+
+#[derive(Default)]
+pub struct Metrics {
+    samples: i32,
+    total_milliseconds: i32,
+    max_milliseconds: i32,
+}
+
+impl Metrics {
+    fn record(&mut self, event: Event) -> Result<(), i32> {
+        match event {
+            Event::Timing { milliseconds } => {
+                self.samples = self.samples + 1;
+                self.total_milliseconds = self.total_milliseconds + milliseconds;
+                if milliseconds > self.max_milliseconds {
+                    self.max_milliseconds = milliseconds;
+                }
+                Ok(())
+            }
+            Event::Count(amount) => {
+                self.samples = self.samples + amount;
+                Ok(())
+            }
+            Event::Failure { code } => Err(code),
+        }
+    }
+}
+
+pub fn aggregate(events: Vec<Event>) -> Result<Metrics, i32> {
+    let mut metrics = <Metrics as Default>::default();
+    for event in events {
+        metrics.record(event)?;
+    }
+    Ok(metrics)
+}

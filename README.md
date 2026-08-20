@@ -56,6 +56,7 @@ script_paths = ["scripts"]
 
 ## 文档
 
+- [可运行示例](examples/README.md)
 - [语言手册](docs/language/README.md)
 - [项目模型](docs/project.md)
 - [项目依赖与打包](docs/project-dependencies-and-packaging.md)

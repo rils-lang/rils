@@ -1,0 +1,44 @@
+pub struct SampleRange {
+    current: i32,
+    end: i32,
+}
+
+impl Iterator for SampleRange {
+    type Item = i32;
+
+    fn next(&mut self) -> Option<i32> {
+        if self.current < self.end {
+            let value = self.current;
+            self.current = self.current + 1;
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Window {
+    start: i32,
+    end: i32,
+}
+
+impl Window {
+    fn new(start: i32, end: i32) -> Self {
+        Window { start: start, end: end }
+    }
+}
+
+impl IntoIterator for Window {
+    type IntoIter = SampleRange;
+
+    fn into_iter(self) -> SampleRange {
+        SampleRange {
+            current: self.start,
+            end: self.end,
+        }
+    }
+}
+
+pub fn sample_window(start: i32, end: i32) -> Window {
+    Window { start: start, end: end }
+}

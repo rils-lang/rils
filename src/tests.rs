@@ -2924,28 +2924,73 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
     );
 }
 
+fn bundled_example_expectations() -> Vec<(&'static str, Value)> {
+    vec![
+        ("collections_and_closures.rils", Value::I32(42)),
+        ("domain_model.rils", Value::I32(42)),
+        ("fallible_pipeline.rils", Value::I32(42)),
+        ("hello.rils", Value::I32(720)),
+        ("iterators.rils", Value::I32(20)),
+        ("macros.rils", Value::I32(42)),
+        ("references.rils", Value::I32(7)),
+        ("task_board/src/main.rils", Value::I32(1222)),
+        ("telemetry_pipeline/src/main.rils", Value::I32(7703)),
+    ]
+}
+
+#[test]
+fn bundled_example_catalog_covers_every_deterministic_entry() {
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+    let catalog = bundled_example_expectations()
+        .into_iter()
+        .map(|(path, _)| path.to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut discovered = std::collections::BTreeSet::new();
+
+    for entry in std::fs::read_dir(&examples).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .extension()
+            .is_some_and(|extension| extension == "rils")
+        {
+            if path
+                .file_name()
+                .is_some_and(|name| name != "standard_fs.rils")
+            {
+                discovered.insert(path.file_name().unwrap().to_string_lossy().into_owned());
+            }
+            continue;
+        }
+        let manifest = path.join("rils.toml");
+        if !manifest.is_file() {
+            continue;
+        }
+        let project = Project::from_file(&manifest).unwrap();
+        let main = project
+            .modules()
+            .find(|module| module.module_path == "main")
+            .unwrap_or_else(|| panic!("example project `{}` has no main module", path.display()));
+        discovered.insert(
+            main.path
+                .strip_prefix(&examples)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/"),
+        );
+    }
+
+    assert_eq!(catalog, discovered);
+}
+
 #[test]
 fn bundled_examples_compile_to_bytecode() {
     let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
-    for relative_path in [
-        "closures.rils",
-        "collections.rils",
-        "generics.rils",
-        "hello.rils",
-        "iterators.rils",
-        "loops.rils",
-        "macros.rils",
-        "match.rils",
-        "module_demo/mod.rils",
-        "modules.rils",
-        "option.rils",
-        "references.rils",
-        "result.rils",
-        "standard_fs.rils",
-        "traits.rils",
-        "type_aliases.rils",
-        "types.rils",
-    ] {
+    let mut paths = bundled_example_expectations()
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect::<Vec<_>>();
+    paths.push("standard_fs.rils");
+    for relative_path in paths {
         let path = examples.join(relative_path);
         compile_file(&path).unwrap_or_else(|error| {
             panic!("example `{}` failed to compile: {error}", path.display())
@@ -2956,24 +3001,7 @@ fn bundled_examples_compile_to_bytecode() {
 #[test]
 fn bundled_examples_match_interpreter_and_vm() {
     let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
-    for relative_path in [
-        "closures.rils",
-        "collections.rils",
-        "generics.rils",
-        "hello.rils",
-        "iterators.rils",
-        "loops.rils",
-        "macros.rils",
-        "match.rils",
-        "module_demo/mod.rils",
-        "modules.rils",
-        "option.rils",
-        "references.rils",
-        "result.rils",
-        "traits.rils",
-        "type_aliases.rils",
-        "types.rils",
-    ] {
+    for (relative_path, expected) in bundled_example_expectations() {
         let path = examples.join(relative_path);
         let interpreted = Engine::new().eval_file(&path).unwrap_or_else(|error| {
             panic!(
@@ -2987,12 +3015,22 @@ fn bundled_examples_match_interpreter_and_vm() {
         let mut host = BytecodeHost::standard();
         host.enable_standard_io().unwrap();
         let executed = module.execute_with_host(&host).unwrap_or_else(|error| {
-            panic!("example `{}` failed in the VM: {error}", path.display())
+            panic!(
+                "example `{}` failed in the VM at {:?}: {error}",
+                path.display(),
+                error.span
+            )
         });
         assert_eq!(
             interpreted,
+            expected,
+            "interpreter returned an unexpected value for example `{}`",
+            path.display()
+        );
+        assert_eq!(
             executed,
-            "interpreter and VM differ for example `{}`",
+            expected,
+            "VM returned an unexpected value for example `{}`",
             path.display()
         );
     }

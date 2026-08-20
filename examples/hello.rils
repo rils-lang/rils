@@ -14,3 +14,4 @@ let language = "Rils";
 println!("hello from", language);
 println!("6! =", factorial(6));
 assert!(factorial(5) == 120, "factorial is broken");
+factorial(6)

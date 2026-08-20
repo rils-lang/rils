@@ -1,0 +1,17 @@
+pub enum Event {
+    Timing { milliseconds: i32 },
+    Count(i32),
+    Failure { code: i32 },
+}
+
+pub fn timing(milliseconds: i32) -> Event {
+    Event::Timing { milliseconds: milliseconds }
+}
+
+pub fn count(amount: i32) -> Event {
+    Event::Count(amount)
+}
+
+pub fn failure(code: i32) -> Event {
+    Event::Failure { code: code }
+}

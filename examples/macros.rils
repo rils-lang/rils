@@ -19,3 +19,4 @@ macro print_all {
 bindings!(left = 20, right = 22)
 let answer = choose_larger!(left + right, 40);
 print_all!("macro result:", answer);
+answer

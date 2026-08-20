@@ -1,0 +1,24 @@
+use crate::{
+    domain::{complete_task, high_task, low_task, normal_task},
+    kanban::{add_task, new_board, summarize_board},
+    limits::{accepts, planning_limits},
+    logbook::print_summary,
+};
+
+fn main() -> i32 {
+    let mut board = new_board();
+    add_task(&mut board, high_task(1, "ship bytecode", 8));
+    add_task(
+        &mut board,
+        complete_task(normal_task(2, "write migration guide", 3))
+    );
+    add_task(&mut board, low_task(3, "triage feedback", 2));
+
+    let summary = summarize_board(board);
+    let limits = planning_limits(2, 25);
+    assert!(accepts(&summary, &limits));
+    assert!(summary.active == 2);
+    assert!(summary.completed == 1);
+    assert!(summary.total_score == 22);
+    print_summary(&summary)
+}

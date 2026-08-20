@@ -1,0 +1,30 @@
+fn make_accumulator() {
+    let mut total = 0;
+
+    fn add(value: i32) -> i32 {
+        total = total + value;
+        total
+    }
+
+    add
+}
+
+let source = [10, 20, 12];
+let mut values: Vec<i32> = Vec::from(source);
+
+{
+    let first = &mut values[0usize];
+    *first = *first + 1;
+}
+
+values.insert(0usize, -1);
+assert!(values.len() == 4usize);
+
+let accumulate = make_accumulator();
+let mut result = 0;
+for value in values {
+    result = accumulate(value);
+}
+
+assert!(result == 42);
+result

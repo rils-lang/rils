@@ -26,3 +26,4 @@ assert!(copied.value == 42);
 
 counter.set(7);
 println!(counter.value);
+counter.value

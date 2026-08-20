@@ -44,3 +44,4 @@ for value in 0..5 {
     range_total = range_total + value;
 }
 println!("range sum:", range_total);
+total + range_total

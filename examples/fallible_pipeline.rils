@@ -1,0 +1,41 @@
+struct Request {
+    token: Option<string>,
+    payload: i32,
+}
+
+fn authenticate(token: Option<string>) -> Result<string, string> {
+    match token {
+        Some(value) => Ok(value),
+        None => Err("missing token"),
+    }
+}
+
+fn process(request: Request) -> Result<i32, string> {
+    let _identity = authenticate(request.token)?;
+    if request.payload >= 0 {
+        Ok(request.payload * 2)
+    } else {
+        Err("negative payload")
+    }
+}
+
+let success = process(Request {
+    token: Some("agent"),
+    payload: 21,
+});
+let rejected = process(Request {
+    token: None,
+    payload: 100,
+});
+
+let value = match success {
+    Ok(value) => value,
+    Err(_) => 0,
+};
+let error_was_reported = match rejected {
+    Ok(_) => false,
+    Err(message) => message == "missing token",
+};
+
+assert!(error_was_reported);
+value
