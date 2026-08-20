@@ -68,6 +68,18 @@ target such as `--target win32-x64`, `--skip-install` to reuse the currently
 installed npm dependencies, or `--publish` to publish the generated VSIX after
 packaging it. Cross-platform targets require the corresponding Rust target and
 linker to be installed.
+
+For a local prerelease package, pass a SemVer prerelease without changing the
+tracked workspace or extension version. The script stages rewritten manifest
+metadata in a temporary directory, does not publish the package, and writes the
+VSIX to `dist/` as usual:
+
+```console
+python tools/release-vscode.py --allow-dirty --skip-install --preview-version 0.3.0-preview.0
+```
+
+Use a numeric preview suffix when publishing several local builds so VS Code can
+distinguish their versions.
 The build step bundles the extension and language client into `out/extension.js`, so packaged
 VSIX files do not include the development `node_modules` tree.
 

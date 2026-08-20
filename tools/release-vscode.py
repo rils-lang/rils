@@ -8,9 +8,11 @@ import json
 import os
 import platform
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 
@@ -27,6 +29,10 @@ PLATFORM_TARGETS = {
     "darwin-x64": ("x86_64-apple-darwin", "rils-analyzer"),
     "darwin-arm64": ("aarch64-apple-darwin", "rils-analyzer"),
 }
+PREVIEW_VERSION_PATTERN = re.compile(
+    r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+    r"-(?:[0-9A-Za-z-]+)(?:\.[0-9A-Za-z-]+)*$"
+)
 
 
 def command_prefix(name: str) -> list[str]:
@@ -119,6 +125,31 @@ def verify_bundled_analyzer(package_path: Path, executable: str) -> None:
             )
 
 
+def stage_preview_extension(version: str) -> tempfile.TemporaryDirectory[str]:
+    """Copy the extension and override only the staged package metadata."""
+    staging = tempfile.TemporaryDirectory(prefix="rils-vscode-preview-")
+    staged_root = Path(staging.name) / "vscode-rils"
+    shutil.copytree(
+        EXTENSION_ROOT,
+        staged_root,
+        ignore=shutil.ignore_patterns("dist", "node_modules", "server", ".vscode"),
+    )
+    manifest_path = staged_root / "package.json"
+    lockfile_path = staged_root / "package-lock.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    lockfile = json.loads(lockfile_path.read_text(encoding="utf-8"))
+    manifest["version"] = version
+    # The source extension was already bundled and checked before staging. Do
+    # not run vscode:prepublish again here: node_modules is deliberately not
+    # copied into the temporary directory.
+    manifest.get("scripts", {}).pop("vscode:prepublish", None)
+    lockfile["version"] = version
+    lockfile["packages"][""]["version"] = version
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    lockfile_path.write_text(json.dumps(lockfile, indent=2) + "\n", encoding="utf-8")
+    return staging
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -137,6 +168,13 @@ def parse_arguments() -> argparse.Namespace:
         help="publish the generated VSIX to the Visual Studio Marketplace",
     )
     parser.add_argument(
+        "--preview-version",
+        help=(
+            "package a local prerelease VSIX using this SemVer version without "
+            "changing tracked manifests; cannot be combined with --publish"
+        ),
+    )
+    parser.add_argument(
         "--target",
         choices=sorted(PLATFORM_TARGETS),
         help="VS Code platform target (defaults to the current platform)",
@@ -148,6 +186,15 @@ def main() -> int:
     args = parse_arguments()
     if args.allow_dirty and args.publish:
         raise RuntimeError("--allow-dirty cannot be combined with --publish")
+    if args.preview_version and args.publish:
+        raise RuntimeError("--preview-version cannot be combined with --publish")
+    if args.preview_version and not PREVIEW_VERSION_PATTERN.fullmatch(
+        args.preview_version
+    ):
+        raise RuntimeError(
+            "--preview-version must be a SemVer prerelease, for example "
+            "0.3.0-preview.0"
+        )
 
     cargo = command_prefix("cargo")
     git = command_prefix("git")
@@ -168,8 +215,8 @@ def main() -> int:
     workspace_version, target_directory = cargo_version_and_target(cargo)
     platform_target = args.target or detect_platform_target()
     rust_target, analyzer_executable = PLATFORM_TARGETS[platform_target]
-    extension_version = str(manifest["version"])
-    if extension_version != workspace_version:
+    extension_version = args.preview_version or str(manifest["version"])
+    if args.preview_version is None and extension_version != workspace_version:
         raise RuntimeError(
             f"VS Code extension version {extension_version} does not match "
             f"workspace version {workspace_version}"
@@ -178,12 +225,12 @@ def main() -> int:
     package_name = f"{manifest['name']}-{extension_version}-{platform_target}.vsix"
     dist_directory = EXTENSION_ROOT / "dist"
     package_path = dist_directory / package_name
-    artifact_directory = target_directory / "release-artifacts" / f"v{workspace_version}"
+    artifact_directory = target_directory / "release-artifacts" / f"v{extension_version}"
     dist_directory.mkdir(parents=True, exist_ok=True)
     artifact_directory.mkdir(parents=True, exist_ok=True)
 
     print(
-        f"Preparing Rils VS Code extension v{extension_version} "
+        f"Preparing {'preview ' if args.preview_version else ''}Rils VS Code extension v{extension_version} "
         f"for {platform_target}"
     )
     run(
@@ -207,36 +254,50 @@ def main() -> int:
         run([*npm, "ci"], cwd=EXTENSION_ROOT)
     run([*npm, "run", "check"], cwd=EXTENSION_ROOT)
 
-    extension_license = EXTENSION_ROOT / "LICENSE"
-    server_directory = EXTENSION_ROOT / "server"
-    if server_directory.exists():
-        raise RuntimeError(
-            f"Temporary analyzer staging directory already exists: {server_directory}"
-        )
-    temporary_license = not extension_license.exists()
-    server_directory.mkdir()
+    preview_staging = (
+        stage_preview_extension(extension_version) if args.preview_version else None
+    )
+    package_root = (
+        Path(preview_staging.name) / "vscode-rils"
+        if preview_staging is not None
+        else EXTENSION_ROOT
+    )
     try:
-        if temporary_license:
-            shutil.copy2(repository_license, extension_license)
-        shutil.copy2(analyzer_path, server_directory / analyzer_executable)
-        run(
-            [
+        extension_license = package_root / "LICENSE"
+        server_directory = package_root / "server"
+        if server_directory.exists():
+            raise RuntimeError(
+                f"Temporary analyzer staging directory already exists: {server_directory}"
+            )
+        temporary_license = not extension_license.exists()
+        server_directory.mkdir()
+        try:
+            if temporary_license:
+                shutil.copy2(repository_license, extension_license)
+            shutil.copy2(analyzer_path, server_directory / analyzer_executable)
+            package_command = [
                 *vsce,
                 "package",
                 "--target",
                 platform_target,
                 "--out",
                 str(package_path),
-            ],
-            cwd=EXTENSION_ROOT,
-        )
-        if not package_path.is_file():
-            raise RuntimeError(f"VSIX package was not created: {package_path}")
-        verify_bundled_analyzer(package_path, analyzer_executable)
+            ]
+            if preview_staging is not None:
+                # extension.js is bundled by esbuild before staging, and the
+                # staging directory intentionally has no node_modules tree.
+                package_command.append("--no-dependencies")
+            run(package_command, cwd=package_root)
+            if not package_path.is_file():
+                raise RuntimeError(f"VSIX package was not created: {package_path}")
+            verify_bundled_analyzer(package_path, analyzer_executable)
+        finally:
+            shutil.rmtree(server_directory)
+            if temporary_license:
+                extension_license.unlink(missing_ok=True)
     finally:
-        shutil.rmtree(server_directory)
-        if temporary_license:
-            extension_license.unlink(missing_ok=True)
+        if preview_staging is not None:
+            preview_staging.cleanup()
 
     shutil.copy2(package_path, artifact_directory / package_name)
 
