@@ -39,14 +39,27 @@ script_paths = ["scripts"]
 项目脚本会自动映射为模块，并支持 `crate`、`self`、`super` 路径。可执行入口提供零参数
 `fn main()` 即可。
 
+## 当前迭代重点
+
+- 语言内置 `Default` 与 `#[derive(Default)]`，派生 Struct 的每个字段都必须满足 `Default`；Trait
+  可以声明 supertrait。
+- `.rilbc` v5 保留经过 verifier 校验的 trait implementation 身份，宿主可以发现实现、用
+  `Default::default()` 构造持久脚本值并按 trait 方法调用。
+- 项目支持路径源码依赖和实验性的 `.rilslib` 导出/验证。开发期仍以自动编译源码依赖为默认流程；
+  入口到共享 `.rilslib` 的动态链接尚未完成。
+- Host Manifest v2 支持命名宿主类型、单继承和独立 ABI transport；C ABI version 4 与 C# facade
+  可以注册并调用保留逻辑类型身份的宿主对象。
+
 ## 文档
 
 - [语言手册](docs/language/README.md)
 - [项目模型](docs/project.md)
+- [项目依赖与打包](docs/project-dependencies-and-packaging.md)
 - [Rils 库产物](docs/library-artifacts.md)
 - [Analyzer 与编辑器能力](docs/analyzer.md)
 - [字节码设计](docs/bytecode.md)
 - [C API 与 Host Manifest](docs/capi/README.md)
+- [Unity 互操作边界](docs/unity-interoperability.md)
 - [示例程序](examples)
 - [VS Code 插件](editors/vscode-rils)
 - [未来规划与待办](TODO.md)

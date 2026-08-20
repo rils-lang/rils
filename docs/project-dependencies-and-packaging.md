@@ -41,19 +41,29 @@ prelude = "src/prelude.rils"
 
 ## Prelude
 
-启用依赖的 `prelude = true` 后，项目加载阶段会读取依赖声明的 prelude，并将其注入用户项目的根模块上下文。Prelude 不是用户可寻址的独立模块，也不应被当成 Unity 独立脚本资产导入。
+启用依赖的 `prelude = true` 后，项目加载阶段会读取依赖声明的 prelude，并将其注入用户项目的
+根模块上下文。Prelude 不是普通的可寻址模块：编译器只注入一次，不会再以常规模块路径重复加载。
+不过在 Unity 中，prelude 源文件仍会导入为可检查、可追踪依赖关系的 `RilsScriptAsset` 主资产；
+以它触发导入时会编译完整库项目。
 
-因此，以下引用可以使用依赖库中的公开声明：
+依赖 prelude 暴露的常用名称可以直接使用。例如 RilsForUnity 项目中的生命周期脚本无需手写
+`use`：
 
 ```rils
-use crate::rils_for_unity::behaviour::RilsBehaviour;
+#[derive(Default)]
+pub struct PlayerBehaviour;
+
+impl RilsBehaviour for PlayerBehaviour { /* lifecycle methods */ }
 ```
+
+公开声明仍保留完整库路径身份，例如
+`crate::rils_for_unity::behaviour::RilsBehaviour`，供显式引用、诊断和 Analyzer 定位定义使用。
 
 ## Unity 资产边界
 
 Unity 工作区中的每个 `.rils` 文件都会由 ScriptedImporter 导入为 `RilsScriptAsset` 主资产；脚本中每个被识别出的 `RilsBehaviour` 实现会生成一个 `RilsEntryAsset` 子资产。源码位于 `[lib]` 项目中也不会改变这一资产关系；编译器仍通过最近的 `rils.toml` 和 project dependency graph 自动解析同项目模块与源码依赖。
 
-`[lib].prelude` 也是可正常选择的 `RilsScriptAsset`。它仍作为库的特殊根声明注入，不会同时以普通模块路径重复加入；以 prelude 文件触发导入时会编译完整库项目。
+`[lib].prelude` 也是可正常选择的 `RilsScriptAsset`。它仍作为库的特殊根声明注入，不会同时以普通模块路径重复加入。
 
 因此多个 Rils 项目可以放在同一个 Unity 工作区中，只要各自拥有独立的 `rils.toml` 和源码根目录。开发期不要求先把源码依赖手工导出成 `.rilslib`。
 
