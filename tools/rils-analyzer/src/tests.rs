@@ -1,6 +1,6 @@
 use super::{
     Document, Project, Server, SourceId, Type, analysis, diagnostics, file_uri_to_path,
-    function_declaration, offset, path_to_file_uri, position,
+    function_declaration, offset, path_to_file_uri, position, workspace_projects,
 };
 use lsp_server::Connection;
 use rils_compiler::{
@@ -1117,4 +1117,33 @@ fn file_uris_round_trip_for_workspace_indexing() {
         decoded.canonicalize().unwrap(),
         path.canonicalize().unwrap()
     );
+}
+
+#[test]
+fn workspace_projects_index_nested_projects_without_treating_package_paths_as_modules() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-analyzer-workspace-projects-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("root.rils"), "let answer = 42;").unwrap();
+
+    let nested = root.join("com.rils-lang.rils-for-unity");
+    fs::create_dir_all(nested.join("src")).unwrap();
+    fs::write(
+        nested.join("rils.toml"),
+        "[project]\nname = \"rils_for_unity\"\nscript_paths = [\"src\"]\n",
+    )
+    .unwrap();
+    fs::write(nested.join("src/behaviour.rils"), "pub fn awake() {}").unwrap();
+
+    let projects = workspace_projects(&root).unwrap();
+    assert_eq!(projects.len(), 2);
+    assert!(projects[0].module("root").is_some());
+    assert!(projects[1].module("behaviour").is_some());
+    fs::remove_dir_all(root).unwrap();
 }

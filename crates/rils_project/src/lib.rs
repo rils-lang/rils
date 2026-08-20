@@ -639,8 +639,9 @@ fn collect_rils_files(root: &Path, output: &mut Vec<PathBuf>) -> io::Result<()> 
         if file_type.is_dir() {
             if !matches!(
                 entry.file_name().to_str(),
-                Some(".git" | ".rils" | "target" | "node_modules" | "dist")
-            ) {
+                Some(".git" | ".rils" | "target" | "node_modules" | "dist" | "Library")
+            ) && !path.join(PROJECT_FILE_NAME).is_file()
+            {
                 collect_rils_files(&path, output)?;
             }
         } else if file_type.is_file()
@@ -908,6 +909,26 @@ mod tests {
             project.prelude(),
             Some(root.join("src/prelude.rils").as_path())
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_root_skips_nested_configured_projects() {
+        let root = temporary_project();
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("root.rils"), "let answer = 42;").unwrap();
+        let nested = root.join("external-package");
+        fs::create_dir_all(nested.join("src")).unwrap();
+        fs::write(
+            nested.join(PROJECT_FILE_NAME),
+            "[project]\nname = \"external_package\"\nscript_paths = [\"src\"]\n",
+        )
+        .unwrap();
+        fs::write(nested.join("src/behaviour.rils"), "pub fn awake() {}").unwrap();
+
+        let project = Project::from_root(&root).unwrap();
+        assert!(project.module("root").is_some());
+        assert!(project.module("external_package::behaviour").is_none());
         fs::remove_dir_all(root).unwrap();
     }
 }

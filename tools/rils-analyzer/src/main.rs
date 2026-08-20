@@ -92,12 +92,10 @@ impl Server {
         let mut seen = HashSet::new();
         self.projects = workspace_roots(initialization)
             .into_iter()
-            .map(|root| {
-                Project::discover(&root, Some(&root))
-                    .map_err(|error| invalid_data(error.to_string()))
-            })
+            .map(|root| workspace_projects(&root))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
+            .flatten()
             .filter(|project| seen.insert(project.root().to_path_buf()))
             .collect();
         Ok(())
@@ -419,6 +417,66 @@ impl Server {
         let offset = offset(&document.text, line, character);
         Ok((uri, document, offset))
     }
+}
+
+fn workspace_projects(root: &Path) -> Result<Vec<Project>, AnyError> {
+    let manifest = root.join("rils.toml");
+    if manifest.is_file() {
+        return Ok(vec![Project::from_file(manifest)?]);
+    }
+
+    let mut projects = vec![Project::from_root(root)?];
+    let mut manifests = Vec::new();
+    collect_nested_project_manifests(root, &mut manifests)?;
+    manifests.sort_by(|left, right| {
+        left.components()
+            .count()
+            .cmp(&right.components().count())
+            .then_with(|| left.cmp(right))
+    });
+
+    let mut configured_roots = Vec::new();
+    for manifest in manifests {
+        let project_root = manifest
+            .parent()
+            .expect("project manifest always has a parent");
+        if configured_roots
+            .iter()
+            .any(|configured_root: &PathBuf| project_root.starts_with(configured_root))
+        {
+            continue;
+        }
+        let project = Project::from_file(&manifest)?;
+        configured_roots.push(project.root().to_path_buf());
+        projects.push(project);
+    }
+    Ok(projects)
+}
+
+fn collect_nested_project_manifests(
+    root: &Path,
+    manifests: &mut Vec<PathBuf>,
+) -> std::io::Result<()> {
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        if matches!(
+            entry.file_name().to_str(),
+            Some(".git" | ".rils" | "target" | "node_modules" | "dist" | "Library")
+        ) {
+            continue;
+        }
+        let manifest = path.join("rils.toml");
+        if manifest.is_file() {
+            manifests.push(manifest);
+            continue;
+        }
+        collect_nested_project_manifests(&path, manifests)?;
+    }
+    Ok(())
 }
 
 mod completion;
