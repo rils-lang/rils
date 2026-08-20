@@ -306,6 +306,10 @@ struct FunctionLowerer<'a> {
 }
 
 impl<'a> FunctionLowerer<'a> {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the lowerer borrows one immutable table per compiler identity domain"
+    )]
     fn new(
         functions: &'a HashMap<String, FunctionId>,
         methods: &'a HashMap<String, MethodInfo>,

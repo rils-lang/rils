@@ -51,6 +51,24 @@ pub struct ProjectError {
     pub message: String,
 }
 
+struct ProjectBuild {
+    root: PathBuf,
+    manifest_path: Option<PathBuf>,
+    name: String,
+    kind: ProjectKind,
+    prelude: Option<PathBuf>,
+    source_roots: Vec<PathBuf>,
+    configured_manifests: Vec<PathBuf>,
+    configured_manifest_dirs: Vec<PathBuf>,
+    dependencies: BTreeMap<String, ProjectDependency>,
+}
+
+struct DependencyMetadata {
+    source_roots: Vec<PathBuf>,
+    package_name: Option<String>,
+    prelude: Option<PathBuf>,
+}
+
 impl Project {
     pub fn discover_manifest_directory(
         path: impl AsRef<Path>,
@@ -189,17 +207,17 @@ impl Project {
             .map(|path| normalize_under_root(&root, &path, "library prelude"))
             .transpose()?;
         let dependencies = load_dependencies(&root, config.dependencies)?;
-        Self::build(
+        Self::build(ProjectBuild {
             root,
-            Some(path),
-            project.name,
+            manifest_path: Some(path),
+            name: project.name,
             kind,
             prelude,
             source_roots,
             configured_manifests,
             configured_manifest_dirs,
             dependencies,
-        )
+        })
     }
 
     pub fn from_root(path: impl AsRef<Path>) -> Result<Self, ProjectError> {
@@ -210,30 +228,31 @@ impl Project {
             .filter(|name| is_identifier(name))
             .unwrap_or("project")
             .to_owned();
-        Self::build(
-            root.clone(),
-            None,
+        Self::build(ProjectBuild {
+            root: root.clone(),
+            manifest_path: None,
             name,
-            ProjectKind::Bin,
-            None,
-            vec![root],
-            Vec::new(),
-            Vec::new(),
-            BTreeMap::new(),
-        )
+            kind: ProjectKind::Bin,
+            prelude: None,
+            source_roots: vec![root],
+            configured_manifests: Vec::new(),
+            configured_manifest_dirs: Vec::new(),
+            dependencies: BTreeMap::new(),
+        })
     }
 
-    fn build(
-        root: PathBuf,
-        manifest_path: Option<PathBuf>,
-        name: String,
-        kind: ProjectKind,
-        prelude: Option<PathBuf>,
-        source_roots: Vec<PathBuf>,
-        configured_manifests: Vec<PathBuf>,
-        configured_manifest_dirs: Vec<PathBuf>,
-        dependencies: BTreeMap<String, ProjectDependency>,
-    ) -> Result<Self, ProjectError> {
+    fn build(input: ProjectBuild) -> Result<Self, ProjectError> {
+        let ProjectBuild {
+            root,
+            manifest_path,
+            name,
+            kind,
+            prelude,
+            source_roots,
+            configured_manifests,
+            configured_manifest_dirs,
+            dependencies,
+        } = input;
         let host_manifests =
             if configured_manifests.is_empty() && configured_manifest_dirs.is_empty() {
                 discover_default_host_manifests(&root, &source_roots)?
@@ -423,8 +442,9 @@ fn load_dependencies(
                 dependency_root.display()
             )));
         }
-        let (source_roots, package_name, package_prelude) =
-            read_dependency_metadata(&dependency_root)?;
+        let metadata = read_dependency_metadata(&dependency_root)?;
+        let source_roots = metadata.source_roots;
+        let package_name = metadata.package_name;
         if let Some(package_name) = package_name {
             if package_name != name {
                 return Err(project_error(format!(
@@ -434,7 +454,7 @@ fn load_dependencies(
         }
         let prelude = if dependency.prelude {
             find_prelude(&dependency_root, &source_roots)
-        } else if let Some(path) = package_prelude {
+        } else if let Some(path) = metadata.prelude {
             Some(normalize_under_root(
                 &dependency_root,
                 &path,
@@ -456,12 +476,14 @@ fn load_dependencies(
     Ok(dependencies)
 }
 
-fn read_dependency_metadata(
-    root: &Path,
-) -> Result<(Vec<PathBuf>, Option<String>, Option<PathBuf>), ProjectError> {
+fn read_dependency_metadata(root: &Path) -> Result<DependencyMetadata, ProjectError> {
     let config_path = root.join(PROJECT_FILE_NAME);
     if !config_path.is_file() {
-        return Ok((vec![root.to_path_buf()], None, None));
+        return Ok(DependencyMetadata {
+            source_roots: vec![root.to_path_buf()],
+            package_name: None,
+            prelude: None,
+        });
     }
     let source = fs::read_to_string(&config_path).map_err(|error| {
         project_error(format!(
@@ -472,7 +494,11 @@ fn read_dependency_metadata(
     let config: ProjectConfig = toml::from_str(&source)
         .map_err(|error| project_error(format!("invalid `{}`: {error}", config_path.display())))?;
     let Some(project) = config.project else {
-        return Ok((vec![root.to_path_buf()], None, None));
+        return Ok(DependencyMetadata {
+            source_roots: vec![root.to_path_buf()],
+            package_name: None,
+            prelude: None,
+        });
     };
     validate_project_name(&project.name)?;
     let paths = if project.script_paths.is_empty() {
@@ -484,11 +510,11 @@ fn read_dependency_metadata(
         .into_iter()
         .map(|path| normalize_under_root(root, &path, "dependency script path"))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok((
+    Ok(DependencyMetadata {
         source_roots,
-        Some(project.name),
-        config.lib.and_then(|library| library.prelude),
-    ))
+        package_name: Some(project.name),
+        prelude: config.lib.and_then(|library| library.prelude),
+    })
 }
 
 fn find_prelude(root: &Path, source_roots: &[PathBuf]) -> Option<PathBuf> {

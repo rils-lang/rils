@@ -1,6 +1,12 @@
 use super::*;
 
 #[unsafe(no_mangle)]
+/// Constructs a persistent script value through the target type's `Default` implementation.
+///
+/// # Safety
+///
+/// `target` must reference readable memory for its declared length, and `out_value` must point to
+/// writable storage for one Rils handle.
 pub unsafe extern "C" fn rils_script_value_create_default(
     runtime: Handle,
     instance: Handle,
@@ -136,6 +142,13 @@ pub extern "C" fn rils_script_value_destroy(runtime: Handle, value: Handle) -> i
 }
 
 #[unsafe(no_mangle)]
+/// Invokes a trait method on a persistent script value.
+///
+/// # Safety
+///
+/// The name slices and every logical-type slice must reference readable memory for their declared
+/// lengths. When `argument_count` is non-zero, `arguments` and `argument_types` must each reference
+/// that many initialized records. `out_value` must point to writable storage for one `RilsValue`.
 pub unsafe extern "C" fn rils_script_value_call_trait(
     runtime: Handle,
     instance: Handle,

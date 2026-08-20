@@ -249,9 +249,12 @@ impl<'a> Checker<'a> {
             Expr::Match { value, arms, .. } => {
                 self.expression(value);
                 let exhaustive = self.check_match(value, arms);
-                let any_arm_falls_through = arms.iter().fold(false, |falls_through, arm| {
-                    self.expression(&arm.expression) || falls_through
-                });
+                let mut any_arm_falls_through = false;
+                for arm in arms {
+                    // Analyze every arm even after one falls through so diagnostics remain complete.
+                    any_arm_falls_through =
+                        self.expression(&arm.expression) || any_arm_falls_through;
+                }
                 !exhaustive || any_arm_falls_through
             }
             Expr::Block(block) => self.block(block),

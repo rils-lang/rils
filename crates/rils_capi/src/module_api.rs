@@ -390,6 +390,12 @@ fn trait_implementation_targets(
 }
 
 #[unsafe(no_mangle)]
+/// Counts verified implementations of `trait_name`, optionally filtered by source name.
+///
+/// # Safety
+///
+/// Both input slices must reference readable memory for their declared lengths, and `out_count`
+/// must point to writable storage for one `size_t` value.
 pub unsafe extern "C" fn rils_module_trait_implementation_count(
     runtime: Handle,
     module: Handle,
@@ -434,6 +440,12 @@ pub unsafe extern "C" fn rils_module_trait_implementation_count(
 }
 
 #[unsafe(no_mangle)]
+/// Returns the UTF-8 byte length of one verified trait implementation target name.
+///
+/// # Safety
+///
+/// Both input slices must reference readable memory for their declared lengths, and `out_size`
+/// must point to writable storage for one `size_t` value.
 pub unsafe extern "C" fn rils_module_trait_implementation_name_size(
     runtime: Handle,
     module: Handle,
@@ -479,6 +491,13 @@ pub unsafe extern "C" fn rils_module_trait_implementation_name_size(
 }
 
 #[unsafe(no_mangle)]
+/// Writes one verified trait implementation target name as UTF-8 bytes.
+///
+/// # Safety
+///
+/// Both input slices must reference readable memory for their declared lengths. `out_written`
+/// must point to writable storage for one `size_t` value, and `buffer` must be writable for
+/// `buffer_capacity` bytes when the selected name is not empty.
 pub unsafe extern "C" fn rils_module_write_trait_implementation_name(
     runtime: Handle,
     module: Handle,

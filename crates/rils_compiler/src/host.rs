@@ -254,6 +254,10 @@ impl HostContract {
         )
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "this stable registration API keeps each host ABI property explicit"
+    )]
     pub fn register_function_with_options_and_receiver(
         &mut self,
         function_id: u64,

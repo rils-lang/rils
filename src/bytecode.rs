@@ -189,6 +189,10 @@ impl BytecodeModule {
         self.call_function_with_host_and_limit(function, Vec::new(), host, max_steps)
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the public trait dispatch API keeps target, method, host, and budget explicit"
+    )]
     pub fn call_trait_method_with_host_and_limit(
         &self,
         target: &str,
