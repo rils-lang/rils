@@ -18,7 +18,16 @@ impl Server {
                     &self.host_types,
                     &HashMap::new(),
                 )
-                .ok();
+                .ok()
+                .or_else(|| {
+                    recover_member_completion_analysis(
+                        &document.text,
+                        dot_offset,
+                        document.source_id,
+                        &self.host_functions,
+                        &self.host_types,
+                    )
+                });
                 recovered.as_ref()
             };
             if let Some(receiver_type) = current_analysis.and_then(|analysis| {
@@ -329,6 +338,63 @@ impl Server {
             items.extend(public_completion_items(statement, member_prefix));
         }
     }
+}
+
+fn recover_member_completion_analysis(
+    source: &str,
+    dot_offset: usize,
+    source_id: SourceId,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+) -> Option<DocumentAnalysis> {
+    source[..dot_offset]
+        .match_indices(';')
+        .map(|(index, _)| index + 1)
+        .rev()
+        .find_map(|end| {
+            let candidate = close_open_delimiters(&source[..end]);
+            analyze_with_source_id_and_external_exports_and_host_types(
+                &candidate,
+                source_id,
+                host_functions,
+                host_types,
+                &HashMap::new(),
+            )
+            .ok()
+        })
+}
+
+fn close_open_delimiters(source: &str) -> String {
+    let mut delimiters = Vec::new();
+    let mut in_string = None;
+    let mut escaped = false;
+    for character in source.chars() {
+        if let Some(quote) = in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == quote {
+                in_string = None;
+            }
+            continue;
+        }
+        match character {
+            '"' | '\'' => in_string = Some(character),
+            '(' => delimiters.push(')'),
+            '[' => delimiters.push(']'),
+            '{' => delimiters.push('}'),
+            ')' | ']' | '}' => {
+                if delimiters.last() == Some(&character) {
+                    delimiters.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut completed = source.to_owned();
+    completed.extend(delimiters.into_iter().rev());
+    completed
 }
 
 fn implements_iterator_at_completion(text: &str, offset: usize, receiver: &Type) -> bool {

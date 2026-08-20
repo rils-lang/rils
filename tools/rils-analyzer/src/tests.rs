@@ -584,6 +584,27 @@ text."#;
 }
 
 #[test]
+fn completes_members_from_the_last_valid_prefix_after_an_unrelated_parse_error() {
+    let text = "let value = 1;\nlet incomplete = ;\nvalue.";
+    let uri = "file:///recovered-member-completion.rils";
+    let server = test_server(uri, text, HashMap::new(), HostContract::new());
+    assert!(analysis(server.documents.get(uri).unwrap()).is_none());
+
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 2, "character": 6 }
+        }))
+        .unwrap();
+    assert!(
+        items
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item["label"] == "checked_add")),
+        "{items}"
+    );
+}
+
+#[test]
 fn completes_hash_collection_types_constructors_and_members() {
     let module_uri = "file:///hash-module.rils";
     let module_server = test_server(
