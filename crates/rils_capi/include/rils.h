@@ -38,6 +38,30 @@ typedef struct RilsHostFunction {
     uint32_t reserved;
 } RilsHostFunction;
 
+typedef struct RilsHostType {
+    RilsSlice name;
+    RilsSlice base_type;
+    uint32_t transport_tag;
+    uint32_t reserved;
+} RilsHostType;
+
+typedef struct RilsHostParameter {
+    RilsSlice logical_type;
+    uint32_t transport_tag;
+    uint32_t reserved;
+} RilsHostParameter;
+
+typedef struct RilsHostFunctionV2 {
+    uint64_t function_id;
+    RilsSlice name;
+    RilsSlice capability;
+    const RilsHostParameter *parameters;
+    size_t parameter_count;
+    RilsHostParameter return_parameter;
+    uint32_t receiver;
+    uint32_t reserved;
+} RilsHostFunctionV2;
+
 typedef int32_t (*RilsHostDispatcher)(
     void *user_data,
     uint64_t function_id,
@@ -85,6 +109,14 @@ RILS_API int32_t rils_runtime_set_max_steps(RilsHandle runtime, uint64_t max_ste
 RILS_API int32_t rils_runtime_register_host_functions(
     RilsHandle runtime,
     const RilsHostFunction *functions,
+    size_t function_count);
+RILS_API int32_t rils_runtime_register_host_types(
+    RilsHandle runtime,
+    const RilsHostType *types,
+    size_t type_count);
+RILS_API int32_t rils_runtime_register_host_functions_v2(
+    RilsHandle runtime,
+    const RilsHostFunctionV2 *functions,
     size_t function_count);
 RILS_API int32_t rils_runtime_register_host_manifest(
     RilsHandle runtime,
@@ -185,6 +217,7 @@ RILS_API int32_t rils_script_value_call_trait(
     RilsSlice trait_name,
     RilsSlice method_name,
     const RilsValue *arguments,
+    const RilsHostParameter *argument_types,
     size_t argument_count,
     RilsValue *out_value);
 

@@ -40,7 +40,7 @@ Runtime 还可在创建 module 前批量注册宿主函数描述、设置一个�
 module，冻结后也不能继续修改函数、dispatcher 或 capability。
 
 完整契约也可通过 `rils_runtime_register_host_manifest` 一次注册。该入口接受
-[Host Manifest v1](host-manifest.md) `.rilhm` 二进制数据；`rils_runtime_host_manifest_size` 和
+[Host Manifest v2](host-manifest.md) `.rilhm` 二进制数据；`rils_runtime_host_manifest_size` 和
 `rils_runtime_write_host_manifest` 可按两段式 API 导出经过 verifier 的规范二进制。JSON 只通过
 显式 CLI/Rust 工具进行导入导出，不属于 Runtime 默认路径。Manifest 声明 capability 不代表授权，
 仍需逐项调用 `rils_runtime_allow_capability`。

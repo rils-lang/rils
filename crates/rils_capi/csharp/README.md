@@ -75,9 +75,11 @@ HostContract dispatcher 入口；高层静态 dispatcher/Attribute 注册、字�
 `.rilhm`，不安装 dispatcher，也不需要创建假的宿主运行时对象；Player 再通过
 `new RilsHostFunction(descriptor, handler)` 绑定真实实现。
 
-`RilsHostParameter.NamedHandle("path::Type")` 会在 Binding IR 中保留未来的命名宿主类型，当前
-Host Manifest v1 和 dispatcher ABI 则明确将其降级为 `HostHandle`。命名类型、继承、enum 和
-value struct transport 将由后续 manifest 版本承载，不应在 C# 或 Unity 侧另建不兼容格式。
+`RilsHostTypeDescriptor` 声明 Host Manifest v2 命名类型和可选基类；
+`RilsHostParameter.NamedHandle("path::Type")` 在函数签名中引用该逻辑类型，并明确使用
+`HostHandle` 作为 ABI transport。`RilsHostManifestBuilder` 会先注册类型再注册函数。Player 侧也应
+先调用 `RilsHostRegistry.Register(type)`，或先加载包含类型表的 manifest，再绑定 handler。
+enum、常量和 value struct transport 尚未实现，不应在 C# 或 Unity 侧另建不兼容格式。
 
 ## 导出到 Unity
 

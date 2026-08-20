@@ -194,7 +194,7 @@ pub unsafe extern "C" fn rils_instance_call(
         let arguments = match arguments
             .iter()
             .copied()
-            .map(from_ffi_value)
+            .map(|value| from_ffi_value(value, None))
             .collect::<Result<Vec<_>, _>>()
         {
             Ok(values) => values,

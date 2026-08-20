@@ -50,6 +50,9 @@ def parameter(c_parameter: str) -> str:
     value = " ".join(c_parameter.split())
     patterns = [
         (r"const RilsHostFunction \*(\w+)", lambda name: f"NativeHostFunction* {name}"),
+        (r"const RilsHostType \*(\w+)", lambda name: f"NativeHostType* {name}"),
+        (r"const RilsHostFunctionV2 \*(\w+)", lambda name: f"NativeHostFunctionV2* {name}"),
+        (r"const RilsHostParameter \*(\w+)", lambda name: f"NativeHostParameter* {name}"),
         (r"RilsHandle \*(\w+)", lambda name: f"out ulong {name}"),
         (r"RilsValue \*(\w+)", lambda name: f"out NativeValue {name}"),
         (r"RilsSlice \*(\w+)", lambda name: f"NativeSlice* {name}"),
@@ -131,6 +134,36 @@ internal unsafe struct NativeHostFunction
     internal uint* ParameterTags;
     internal UIntPtr ParameterCount;
     internal RilsValueTag ReturnTag;
+    internal uint Reserved;
+}}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHostType
+{{
+    internal NativeSlice Name;
+    internal NativeSlice BaseType;
+    internal RilsValueTag TransportTag;
+    internal uint Reserved;
+}}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHostParameter
+{{
+    internal NativeSlice LogicalType;
+    internal RilsValueTag TransportTag;
+    internal uint Reserved;
+}}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHostFunctionV2
+{{
+    internal ulong FunctionId;
+    internal NativeSlice Name;
+    internal NativeSlice Capability;
+    internal NativeHostParameter* Parameters;
+    internal UIntPtr ParameterCount;
+    internal NativeHostParameter ReturnParameter;
+    internal uint Receiver;
     internal uint Reserved;
 }}
 

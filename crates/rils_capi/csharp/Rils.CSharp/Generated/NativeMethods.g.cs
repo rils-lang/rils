@@ -68,6 +68,36 @@ internal unsafe struct NativeHostFunction
     internal uint Reserved;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHostType
+{
+    internal NativeSlice Name;
+    internal NativeSlice BaseType;
+    internal RilsValueTag TransportTag;
+    internal uint Reserved;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHostParameter
+{
+    internal NativeSlice LogicalType;
+    internal RilsValueTag TransportTag;
+    internal uint Reserved;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHostFunctionV2
+{
+    internal ulong FunctionId;
+    internal NativeSlice Name;
+    internal NativeSlice Capability;
+    internal NativeHostParameter* Parameters;
+    internal UIntPtr ParameterCount;
+    internal NativeHostParameter ReturnParameter;
+    internal uint Receiver;
+    internal uint Reserved;
+}
+
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal unsafe delegate int NativeHostDispatcher(
     IntPtr userData,
@@ -95,6 +125,12 @@ internal static unsafe class NativeMethods
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_functions")]
     internal static extern int RuntimeRegisterHostFunctions(ulong runtime, NativeHostFunction* functions, UIntPtr function_count);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_types")]
+    internal static extern int RuntimeRegisterHostTypes(ulong runtime, NativeHostType* types, UIntPtr type_count);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_functions_v2")]
+    internal static extern int RuntimeRegisterHostFunctionsV2(ulong runtime, NativeHostFunctionV2* functions, UIntPtr function_count);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_manifest")]
     internal static extern int RuntimeRegisterHostManifest(ulong runtime, NativeSlice manifest);
@@ -169,7 +205,7 @@ internal static unsafe class NativeMethods
     internal static extern int ScriptValueDestroy(ulong runtime, ulong value);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_script_value_call_trait")]
-    internal static extern int ScriptValueCallTrait(ulong runtime, ulong instance, ulong value, NativeSlice trait_name, NativeSlice method_name, NativeValue* arguments, UIntPtr argument_count, out NativeValue out_value);
+    internal static extern int ScriptValueCallTrait(ulong runtime, ulong instance, ulong value, NativeSlice trait_name, NativeSlice method_name, NativeValue* arguments, NativeHostParameter* argument_types, UIntPtr argument_count, out NativeValue out_value);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_last_error_code")]
     internal static extern int LastErrorCode();

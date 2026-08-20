@@ -145,6 +145,14 @@ namespace Rils.CSharp
             _functions.Add(function.FunctionId, function);
         }
 
+        public void Register(RilsHostTypeDescriptor type)
+        {
+            EnsureOpen();
+            if (type == null) throw new ArgumentNullException(nameof(type));
+            if (_frozen) throw new InvalidOperationException("The Rils host registry is already frozen.");
+            RilsHostDeclarationInterop.Register(_runtime, type);
+        }
+
         public void AllowCapability(string capability)
         {
             EnsureOpen();
@@ -265,36 +273,92 @@ namespace Rils.CSharp
 
     internal static unsafe class RilsHostDeclarationInterop
     {
+        internal static void Register(RilsRuntime runtime, RilsHostTypeDescriptor type)
+        {
+            byte[] name = Encoding.UTF8.GetBytes(type.Name);
+            byte[] baseType = type.BaseTypeName == null
+                ? Array.Empty<byte>()
+                : Encoding.UTF8.GetBytes(type.BaseTypeName);
+            fixed (byte* namePointer = name)
+            fixed (byte* baseTypePointer = baseType)
+            {
+                var native = new NativeHostType
+                {
+                    Name = NativeInterop.Slice(namePointer, name.Length),
+                    BaseType = NativeInterop.Slice(baseTypePointer, baseType.Length),
+                    TransportTag = type.TransportTag,
+                };
+                NativeInterop.Check(NativeMethods.RuntimeRegisterHostTypes(
+                    runtime.Handle,
+                    &native,
+                    new UIntPtr(1)));
+            }
+        }
+
         internal static void Register(
             RilsRuntime runtime,
             RilsHostFunctionDescriptor function)
         {
             byte[] name = Encoding.UTF8.GetBytes(function.Name);
             byte[] capability = Encoding.UTF8.GetBytes(function.Capability);
-            uint[] tags = new uint[function.Parameters.Count];
-            for (int index = 0; index < tags.Length; index++)
+            var logicalTypes = new byte[function.Parameters.Count][];
+            var pins = new GCHandle[function.Parameters.Count];
+            NativeHostParameter* parameters = stackalloc NativeHostParameter[function.Parameters.Count];
+            try
             {
-                tags[index] = (uint)function.Parameters[index].Tag;
-            }
-
-            fixed (byte* namePointer = name)
-            fixed (byte* capabilityPointer = capability)
-            fixed (uint* tagPointer = tags)
-            {
-                var native = new NativeHostFunction
+                for (int index = 0; index < function.Parameters.Count; index++)
                 {
-                    FunctionId = function.FunctionId,
-                    Name = NativeInterop.Slice(namePointer, name.Length),
-                    Capability = NativeInterop.Slice(capabilityPointer, capability.Length),
-                    ParameterTags = tagPointer,
-                    ParameterCount = new UIntPtr(checked((uint)tags.Length)),
-                    ReturnTag = function.ReturnParameter.Tag,
-                    Reserved = (uint)function.Receiver,
-                };
-                NativeInterop.Check(NativeMethods.RuntimeRegisterHostFunctions(
-                    runtime.Handle,
-                    &native,
-                    new UIntPtr(1)));
+                    string? logicalType = function.Parameters[index].LogicalTypeName;
+                    logicalTypes[index] = logicalType == null
+                        ? Array.Empty<byte>()
+                        : Encoding.UTF8.GetBytes(logicalType);
+                    byte* logicalPointer = null;
+                    if (logicalTypes[index].Length != 0)
+                    {
+                        pins[index] = GCHandle.Alloc(logicalTypes[index], GCHandleType.Pinned);
+                        logicalPointer = (byte*)pins[index].AddrOfPinnedObject();
+                    }
+                    parameters[index] = new NativeHostParameter
+                    {
+                        LogicalType = NativeInterop.Slice(logicalPointer, logicalTypes[index].Length),
+                        TransportTag = function.Parameters[index].Tag,
+                    };
+                }
+
+                byte[] returnLogicalType = function.ReturnParameter.LogicalTypeName == null
+                    ? Array.Empty<byte>()
+                    : Encoding.UTF8.GetBytes(function.ReturnParameter.LogicalTypeName);
+
+                fixed (byte* namePointer = name)
+                fixed (byte* capabilityPointer = capability)
+                fixed (byte* returnLogicalPointer = returnLogicalType)
+                {
+                    var native = new NativeHostFunctionV2
+                    {
+                        FunctionId = function.FunctionId,
+                        Name = NativeInterop.Slice(namePointer, name.Length),
+                        Capability = NativeInterop.Slice(capabilityPointer, capability.Length),
+                        Parameters = parameters,
+                        ParameterCount = new UIntPtr(checked((uint)function.Parameters.Count)),
+                        ReturnParameter = new NativeHostParameter
+                        {
+                            LogicalType = NativeInterop.Slice(returnLogicalPointer, returnLogicalType.Length),
+                            TransportTag = function.ReturnParameter.Tag,
+                        },
+                        Receiver = (uint)function.Receiver,
+                    };
+                    NativeInterop.Check(NativeMethods.RuntimeRegisterHostFunctionsV2(
+                        runtime.Handle,
+                        &native,
+                        new UIntPtr(1)));
+                }
+            }
+            finally
+            {
+                for (int index = 0; index < pins.Length; index++)
+                {
+                    if (pins[index].IsAllocated) pins[index].Free();
+                }
             }
         }
     }

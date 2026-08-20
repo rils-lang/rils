@@ -554,6 +554,20 @@ namespace Rils.CSharp
             string methodName,
             params RilsValue[] arguments)
         {
+            if (arguments == null) throw new ArgumentNullException(nameof(arguments));
+            var typedArguments = new RilsHostArgument[arguments.Length];
+            for (int index = 0; index < arguments.Length; index++)
+            {
+                typedArguments[index] = RilsHostArgument.From(arguments[index]);
+            }
+            return CallTraitTyped(traitName, methodName, typedArguments);
+        }
+
+        public unsafe RilsValue CallTraitTyped(
+            string traitName,
+            string methodName,
+            params RilsHostArgument[] arguments)
+        {
             if (traitName == null) throw new ArgumentNullException(nameof(traitName));
             if (methodName == null) throw new ArgumentNullException(nameof(methodName));
             if (arguments == null) throw new ArgumentNullException(nameof(arguments));
@@ -562,24 +576,54 @@ namespace Rils.CSharp
             byte[] traitBytes = Encoding.UTF8.GetBytes(traitName);
             byte[] methodBytes = Encoding.UTF8.GetBytes(methodName);
             var nativeArguments = new NativeValue[arguments.Length];
+            var nativeTypes = new NativeHostParameter[arguments.Length];
+            var logicalTypes = new byte[arguments.Length][];
+            var pins = new GCHandle[arguments.Length];
             for (int index = 0; index < arguments.Length; index++)
             {
-                nativeArguments[index] = arguments[index].ToNative();
+                nativeArguments[index] = arguments[index].Value.ToNative();
+                string? logicalType = arguments[index].Parameter.LogicalTypeName;
+                logicalTypes[index] = logicalType == null
+                    ? Array.Empty<byte>()
+                    : Encoding.UTF8.GetBytes(logicalType);
+                byte* logicalPointer = null;
+                if (logicalTypes[index].Length != 0)
+                {
+                    pins[index] = GCHandle.Alloc(logicalTypes[index], GCHandleType.Pinned);
+                    logicalPointer = (byte*)pins[index].AddrOfPinnedObject();
+                }
+                nativeTypes[index] = new NativeHostParameter
+                {
+                    LogicalType = NativeInterop.Slice(logicalPointer, logicalTypes[index].Length),
+                    TransportTag = arguments[index].Parameter.Tag,
+                };
             }
-            fixed (byte* traitPointer = traitBytes)
-            fixed (byte* methodPointer = methodBytes)
-            fixed (NativeValue* argumentPointer = nativeArguments)
+            try
             {
-                NativeInterop.Check(NativeMethods.ScriptValueCallTrait(
-                    _instance.Module.Runtime.Handle,
-                    _instance.Handle,
-                    _handle,
-                    NativeInterop.Slice(traitPointer, traitBytes.Length),
-                    NativeInterop.Slice(methodPointer, methodBytes.Length),
-                    argumentPointer,
-                    new UIntPtr(checked((uint)nativeArguments.Length)),
-                    out NativeValue result));
-                return RilsValue.FromNative(result);
+                fixed (byte* traitPointer = traitBytes)
+                fixed (byte* methodPointer = methodBytes)
+                fixed (NativeValue* argumentPointer = nativeArguments)
+                fixed (NativeHostParameter* typePointer = nativeTypes)
+                {
+                    NativeInterop.Check(NativeMethods.ScriptValueCallTrait(
+                        _instance.Module.Runtime.Handle,
+                        _instance.Handle,
+                        _handle,
+                        NativeInterop.Slice(traitPointer, traitBytes.Length),
+                        NativeInterop.Slice(methodPointer, methodBytes.Length),
+                        argumentPointer,
+                        typePointer,
+                        new UIntPtr(checked((uint)nativeArguments.Length)),
+                        out NativeValue result));
+                    return RilsValue.FromNative(result);
+                }
+            }
+            finally
+            {
+                for (int index = 0; index < pins.Length; index++)
+                {
+                    if (pins[index].IsAllocated) pins[index].Free();
+                }
             }
         }
 

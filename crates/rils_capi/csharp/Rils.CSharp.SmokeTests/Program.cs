@@ -8,7 +8,7 @@ static void Equal<T>(T expected, T actual, string label)
     }
 }
 
-Equal(3U, RilsRuntime.NativeAbiVersion, "ABI version");
+Equal(4U, RilsRuntime.NativeAbiVersion, "ABI version");
 
 ulong stableHostId = RilsHostStableId.FromCanonicalName(
     "UnityEngine.CoreModule:UnityEngine.Time.get_deltaTime():System.Single");
@@ -60,6 +60,72 @@ using (var runtime = new RilsRuntime())
 RilsHostParameter gameObjectType = RilsHostParameter.NamedHandle("unity_engine::GameObject");
 Equal(RilsValueTag.HostHandle, gameObjectType.Tag, "named handle transport");
 Equal("unity_engine::GameObject", gameObjectType.LogicalTypeName, "named handle logical type");
+
+var objectType = new RilsHostTypeDescriptor("unity_engine::Object");
+var derivedGameObjectType = new RilsHostTypeDescriptor(
+    "unity_engine::GameObject",
+    "unity_engine::Object");
+var getObjectDescriptor = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("Smoke.GetGameObject():UnityEngine.GameObject"),
+    "unity_engine::object::get",
+    "unity_engine.object",
+    RilsHostParameter.NamedHandle("unity_engine::GameObject"),
+    Array.Empty<RilsHostParameter>());
+var instanceIdDescriptor = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("UnityEngine.Object.GetInstanceID():System.Int32"),
+    "unity_engine::object::instance_id",
+    "unity_engine.object",
+    new RilsHostParameter(RilsValueTag.I64),
+    new[] { RilsHostParameter.NamedHandle("unity_engine::Object") },
+    receiver: RilsHostReceiver.RefSelf);
+var objectModule = new RilsHostModuleDescriptor(
+    "unity_engine::object",
+    1,
+    new[] { objectType, derivedGameObjectType },
+    new[] { getObjectDescriptor, instanceIdDescriptor });
+byte[] objectManifest = RilsHostManifestBuilder.Build(objectModule);
+Equal(2U, BitConverter.ToUInt32(objectManifest, 8), "host manifest format version");
+using (var runtime = new RilsRuntime())
+{
+    runtime.RegisterHostManifest(objectManifest);
+    using var hosts = new RilsHostRegistry(runtime);
+    hosts.Register(new RilsHostFunction(
+        getObjectDescriptor,
+        _ => RilsValue.From(new RilsObjectHandle(1, 77, 3, 9))));
+    hosts.Register(new RilsHostFunction(
+        instanceIdDescriptor,
+        arguments => RilsValue.From(arguments[0].AsHostHandle(1).ObjectId)));
+    hosts.AllowCapability("unity_engine.object");
+    hosts.Freeze();
+    using RilsModule module = runtime.Compile(
+        "unity_engine::object::get().instance_id()",
+        "managed-named-host-smoke.rils");
+    using RilsInstance instance = module.CreateInstance();
+    Equal(77L, instance.Execute().AsI64(), "inherited named host method dispatch");
+    using RilsModule behaviourModule = runtime.Compile(
+        """
+        trait Behaviour: Default {
+            fn tick(&mut self, host: unity_engine::GameObject) -> i64;
+        }
+        #[derive(Default)]
+        struct State;
+        impl Behaviour for State {
+            fn tick(&mut self, host: unity_engine::GameObject) -> i64 { 42i64 }
+        }
+        """,
+        "managed-named-trait-argument-smoke.rils");
+    using RilsInstance behaviourInstance = behaviourModule.CreateInstance();
+    using RilsScriptValue state = behaviourInstance.CreateDefaultValue("State");
+    Equal(
+        42L,
+        state.CallTraitTyped(
+            "Behaviour",
+            "tick",
+            RilsHostArgument.NamedHandle(new RilsObjectHandle(1, 77, 3, 9), "unity_engine::GameObject"))
+            .AsI64(),
+        "named host trait argument");
+    runtime.Dispose();
+}
 
 byte[] emptyHostManifest;
 using (var runtime = new RilsRuntime())

@@ -143,11 +143,14 @@ pub unsafe extern "C" fn rils_script_value_call_trait(
     trait_name: RilsSlice,
     method_name: RilsSlice,
     arguments: *const RilsValue,
+    argument_types: *const RilsHostParameter,
     argument_count: usize,
     out_value: *mut RilsValue,
 ) -> i32 {
     status_entry(|| {
-        if out_value.is_null() || (argument_count != 0 && arguments.is_null()) {
+        if out_value.is_null()
+            || (argument_count != 0 && (arguments.is_null() || argument_types.is_null()))
+        {
             return fail(
                 RILS_STATUS_INVALID_ARGUMENT,
                 "invalid argument or output pointer",
@@ -163,19 +166,15 @@ pub unsafe extern "C" fn rils_script_value_call_trait(
             Ok(value) => value,
             Err(status) => return status,
         };
-        let arguments = if argument_count == 0 {
+        let raw_arguments = if argument_count == 0 {
             &[]
         } else {
             unsafe { slice::from_raw_parts(arguments, argument_count) }
         };
-        let arguments = match arguments
-            .iter()
-            .copied()
-            .map(from_ffi_value)
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(arguments) => arguments,
-            Err(status) => return status,
+        let argument_types = if argument_count == 0 {
+            &[]
+        } else {
+            unsafe { slice::from_raw_parts(argument_types, argument_count) }
         };
         let resolved = STATE.with(|state| {
             let state = state.borrow();
@@ -192,11 +191,12 @@ pub unsafe extern "C" fn rils_script_value_call_trait(
             Some((
                 runtime_value.max_steps,
                 runtime_value.host.clone(),
+                runtime_value.host_contract.clone(),
                 module,
                 script_value,
             ))
         });
-        let Some((max_steps, host, module, mut script_value)) = resolved else {
+        let Some((max_steps, host, host_contract, module, mut script_value)) = resolved else {
             return fail(
                 RILS_STATUS_INVALID_HANDLE,
                 "invalid runtime, instance, or script value handle",
@@ -204,6 +204,59 @@ pub unsafe extern "C" fn rils_script_value_call_trait(
                 Span::default(),
             );
         };
+        let mut arguments = Vec::with_capacity(argument_count);
+        for (value, parameter) in raw_arguments.iter().zip(argument_types) {
+            if parameter.reserved != 0 || value.tag != parameter.transport_tag {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "trait argument transport metadata is invalid",
+                    &module.source_name,
+                    Span::default(),
+                );
+            }
+            let logical_type = match unsafe { read_utf8(parameter.logical_type, "logical type") } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+            let logical_type = match logical_type_from_transport(
+                &host_contract,
+                parameter.transport_tag,
+                logical_type,
+                false,
+            ) {
+                Ok(value) => value,
+                Err(message) => {
+                    return fail(
+                        RILS_STATUS_INVALID_ARGUMENT,
+                        message,
+                        &module.source_name,
+                        Span::default(),
+                    );
+                }
+            };
+            let logical_host_type = match logical_type {
+                Type::Named { name, arguments }
+                    if arguments.is_empty() && host_contract.host_type(&name).is_some() =>
+                {
+                    match host_contract.type_lineage(&name) {
+                        Ok(lineage) => Some((name, lineage)),
+                        Err(message) => {
+                            return fail(
+                                RILS_STATUS_INVALID_ARGUMENT,
+                                message,
+                                &module.source_name,
+                                Span::default(),
+                            );
+                        }
+                    }
+                }
+                _ => None,
+            };
+            match from_ffi_value(*value, logical_host_type.as_ref()) {
+                Ok(value) => arguments.push(value),
+                Err(status) => return status,
+            }
+        }
         let result = match module.bytecode.call_trait_method_with_host_and_limit(
             &script_value.target,
             trait_name,

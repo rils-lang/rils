@@ -5,6 +5,31 @@ using System.Text;
 
 namespace Rils.CSharp
 {
+    public sealed class RilsHostTypeDescriptor
+    {
+        public RilsHostTypeDescriptor(
+            string name,
+            string? baseTypeName = null,
+            RilsValueTag transportTag = RilsValueTag.HostHandle)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Host type name cannot be empty.", nameof(name));
+            if (baseTypeName != null && string.IsNullOrWhiteSpace(baseTypeName))
+                throw new ArgumentException("Host base type name cannot be empty.", nameof(baseTypeName));
+            if (string.Equals(name, baseTypeName, StringComparison.Ordinal))
+                throw new ArgumentException("A host type cannot inherit itself.", nameof(baseTypeName));
+            if (transportTag != RilsValueTag.HostHandle)
+                throw new NotSupportedException("Manifest v2 currently supports HostHandle transport for named host types.");
+            Name = name;
+            BaseTypeName = baseTypeName;
+            TransportTag = transportTag;
+        }
+
+        public string Name { get; }
+        public string? BaseTypeName { get; }
+        public RilsValueTag TransportTag { get; }
+    }
+
     /// Describes one host function independently from its managed implementation.
     public sealed class RilsHostFunctionDescriptor
     {
@@ -55,11 +80,40 @@ namespace Rils.CSharp
             string name,
             uint version,
             IReadOnlyList<RilsHostFunctionDescriptor> functions)
+            : this(name, version, Array.Empty<RilsHostTypeDescriptor>(), functions)
+        {
+        }
+
+        public RilsHostModuleDescriptor(
+            string name,
+            uint version,
+            IReadOnlyList<RilsHostTypeDescriptor> types,
+            IReadOnlyList<RilsHostFunctionDescriptor> functions)
         {
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Host module name cannot be empty.", nameof(name));
             if (version == 0) throw new ArgumentOutOfRangeException(nameof(version));
             Name = name;
             Version = version;
+            if (types == null) throw new ArgumentNullException(nameof(types));
+            var typeSnapshot = new RilsHostTypeDescriptor[types.Count];
+            var typeNames = new HashSet<string>(StringComparer.Ordinal);
+            for (int index = 0; index < types.Count; index++)
+            {
+                RilsHostTypeDescriptor type = types[index]
+                    ?? throw new ArgumentException("Host module types cannot contain null.", nameof(types));
+                if (!typeNames.Add(type.Name))
+                    throw new ArgumentException($"Host type '{type.Name}' is duplicated.", nameof(types));
+                typeSnapshot[index] = type;
+            }
+            for (int index = 0; index < typeSnapshot.Length; index++)
+            {
+                string? baseType = typeSnapshot[index].BaseTypeName;
+                if (baseType != null && !typeNames.Contains(baseType))
+                    throw new ArgumentException(
+                        $"Host type '{typeSnapshot[index].Name}' inherits undeclared type '{baseType}'.",
+                        nameof(types));
+            }
+            Types = Array.AsReadOnly(typeSnapshot);
             if (functions == null) throw new ArgumentNullException(nameof(functions));
             var functionSnapshot = new RilsHostFunctionDescriptor[functions.Count];
 
@@ -87,12 +141,31 @@ namespace Rils.CSharp
                 {
                     throw new ArgumentException($"Host function '{function.Name}' is duplicated in module '{name}'.", nameof(functions));
                 }
+                ValidateLogicalType(function.ReturnParameter, typeNames, function.Name);
+                for (int parameterIndex = 0; parameterIndex < function.Parameters.Count; parameterIndex++)
+                {
+                    ValidateLogicalType(function.Parameters[parameterIndex], typeNames, function.Name);
+                }
             }
             Functions = Array.AsReadOnly(functionSnapshot);
         }
 
+        private static void ValidateLogicalType(
+            RilsHostParameter parameter,
+            HashSet<string> typeNames,
+            string functionName)
+        {
+            if (parameter.LogicalTypeName != null && !typeNames.Contains(parameter.LogicalTypeName))
+            {
+                throw new ArgumentException(
+                    $"Host function '{functionName}' references undeclared logical type '{parameter.LogicalTypeName}'.",
+                    "functions");
+            }
+        }
+
         public string Name { get; }
         public uint Version { get; }
+        public IReadOnlyList<RilsHostTypeDescriptor> Types { get; }
         public IReadOnlyList<RilsHostFunctionDescriptor> Functions { get; }
     }
 
@@ -130,6 +203,10 @@ namespace Rils.CSharp
             }
             using (var runtime = new RilsRuntime())
             {
+                for (int index = 0; index < module.Types.Count; index++)
+                {
+                    RilsHostDeclarationInterop.Register(runtime, module.Types[index]);
+                }
                 for (int index = 0; index < module.Functions.Count; index++)
                 {
                     RilsHostDeclarationInterop.Register(runtime, module.Functions[index]);

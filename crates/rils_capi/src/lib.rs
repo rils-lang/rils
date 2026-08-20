@@ -15,10 +15,10 @@ use std::{
 
 use rils::{
     BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostCallKind, HostContract,
-    HostReceiver, HostThreadAffinity, IntegerType, Span, Type, Value,
+    HostReceiver, HostThreadAffinity, HostTypeTransport, IntegerType, Span, Type, Value,
 };
 
-pub const RILS_ABI_VERSION: u32 = 3;
+pub const RILS_ABI_VERSION: u32 = 4;
 pub const RILS_STATUS_OK: i32 = 0;
 pub const RILS_STATUS_INVALID_ARGUMENT: i32 = 1;
 pub const RILS_STATUS_INVALID_HANDLE: i32 = 2;
@@ -83,6 +83,36 @@ pub struct RilsHostFunction {
     pub parameter_tags: *const u32,
     pub parameter_count: usize,
     pub return_tag: u32,
+    pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RilsHostType {
+    pub name: RilsSlice,
+    pub base_type: RilsSlice,
+    pub transport_tag: u32,
+    pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RilsHostParameter {
+    pub logical_type: RilsSlice,
+    pub transport_tag: u32,
+    pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RilsHostFunctionV2 {
+    pub function_id: u64,
+    pub name: RilsSlice,
+    pub capability: RilsSlice,
+    pub parameters: *const RilsHostParameter,
+    pub parameter_count: usize,
+    pub return_parameter: RilsHostParameter,
+    pub receiver: u32,
     pub reserved: u32,
 }
 
@@ -412,7 +442,10 @@ unsafe fn read_utf8(value: RilsSlice, label: &str) -> Result<&str, i32> {
     })
 }
 
-fn from_ffi_value(value: RilsValue) -> Result<Value, i32> {
+fn from_ffi_value(
+    value: RilsValue,
+    logical_host_type: Option<&(String, HashSet<String>)>,
+) -> Result<Value, i32> {
     if value.reserved != 0 {
         return Err(fail(
             RILS_STATUS_INVALID_ARGUMENT,
@@ -533,11 +566,17 @@ fn from_ffi_value(value: RilsValue) -> Result<Value, i32> {
                     Span::default(),
                 ));
             }
-            Ok(rils::opaque_host_value(rils::OpaqueHostHandle {
+            let handle = rils::OpaqueHostHandle {
                 object_id,
                 generation,
                 type_id,
-            }))
+            };
+            Ok(logical_host_type.map_or_else(
+                || rils::opaque_host_value(handle),
+                |(name, base_types)| {
+                    rils::opaque_host_value_typed(handle, name.clone(), base_types.clone())
+                },
+            ))
         }
         _ => Err(fail(
             RILS_STATUS_UNSUPPORTED_VALUE,
@@ -577,8 +616,8 @@ fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue, i32> {
         Value::F32(value) => scalar(RILS_VALUE_F32, u64::from(value.to_bits()), 0),
         Value::F64(value) => scalar(RILS_VALUE_F64, value.to_bits(), 0),
         Value::Char(value) => scalar(RILS_VALUE_CHAR, u64::from(u32::from(value)), 0),
-        Value::HostObject(object) if object.type_definition.name == "HostHandle" => {
-            let Some(handle) = object.payload.downcast_ref::<rils::OpaqueHostHandle>() else {
+        Value::HostObject(object) => {
+            let Some(handle) = rils::opaque_host_handle(&Value::HostObject(object)) else {
                 return Err(fail(
                     RILS_STATUS_INVALID_ARGUMENT,
                     "host handle payload is invalid",
@@ -628,7 +667,32 @@ fn portable_type_from_tag(tag: u32, allow_unit: bool) -> Result<Type, String> {
     }
 }
 
-fn portable_tag_from_type(ty: &Type, allow_unit: bool) -> Result<u32, String> {
+fn logical_type_from_transport(
+    contract: &HostContract,
+    transport_tag: u32,
+    logical_type: &str,
+    allow_unit: bool,
+) -> Result<Type, String> {
+    if logical_type.is_empty() {
+        return portable_type_from_tag(transport_tag, allow_unit);
+    }
+    let declaration = contract
+        .host_type(logical_type)
+        .ok_or_else(|| format!("host type `{logical_type}` is not declared"))?;
+    let expected_tag = portable_tag_from_type(contract, &declaration.transport.as_type(), false)?;
+    if transport_tag != expected_tag {
+        return Err(format!(
+            "host type `{logical_type}` requires transport tag {expected_tag}, found {transport_tag}"
+        ));
+    }
+    Ok(Type::named(logical_type))
+}
+
+fn portable_tag_from_type(
+    contract: &HostContract,
+    ty: &Type,
+    allow_unit: bool,
+) -> Result<u32, String> {
     match ty {
         Type::Unit if allow_unit => Ok(RILS_VALUE_UNIT),
         Type::Bool => Ok(RILS_VALUE_BOOL),
@@ -641,6 +705,12 @@ fn portable_tag_from_type(ty: &Type, allow_unit: bool) -> Result<u32, String> {
         Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => {
             Ok(RILS_VALUE_HOST_HANDLE)
         }
+        Type::Named { name, arguments } if arguments.is_empty() => contract
+            .host_type(name)
+            .ok_or_else(|| format!("host manifest type `{name}` is not declared"))
+            .and_then(|declaration| {
+                portable_tag_from_type(contract, &declaration.transport.as_type(), allow_unit)
+            }),
         _ => Err(format!(
             "host manifest type `{ty}` is not supported by the current C dispatcher ABI"
         )),
@@ -662,9 +732,9 @@ fn validate_c_dispatcher_contract(contract: &HostContract) -> Result<(), String>
             .as_ref()
             .expect("host contract signatures are fixed");
         for parameter in parameters {
-            portable_tag_from_type(parameter, false)?;
+            portable_tag_from_type(contract, parameter, false)?;
         }
-        portable_tag_from_type(&function.signature.return_type, true)?;
+        portable_tag_from_type(contract, &function.signature.return_type, true)?;
     }
     Ok(())
 }
@@ -690,6 +760,7 @@ fn invoke_host_dispatcher(
     function_id: u64,
     function_name: &str,
     signature: &FunctionSignature,
+    logical_return_type: Option<&(String, HashSet<String>)>,
     arguments: &[Value],
 ) -> Result<Value, String> {
     let parameters = signature
@@ -737,7 +808,8 @@ fn invoke_host_dispatcher(
             copy_callback_error(error)
         ));
     }
-    let result = from_ffi_value(result).map_err(|_| current_error_message())?;
+    let result =
+        from_ffi_value(result, logical_return_type).map_err(|_| current_error_message())?;
     signature.return_type.constrain(&result).ok_or_else(|| {
         format!(
             "host function `{function_name}` returned `{}`, expected `{}`",
@@ -763,6 +835,14 @@ fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
         let signature = function.signature.clone();
         let callback_name = function_name.clone();
         let callback_signature = signature.clone();
+        let logical_return_type = match &signature.return_type {
+            Type::Named { name, arguments }
+                if arguments.is_empty() && runtime.host_contract.host_type(name).is_some() =>
+            {
+                Some((name.clone(), runtime.host_contract.type_lineage(name)?))
+            }
+            _ => None,
+        };
         host.register_function(
             function_name,
             signature,
@@ -774,6 +854,7 @@ fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
                     function_id,
                     &callback_name,
                     &callback_signature,
+                    logical_return_type.as_ref(),
                     arguments,
                 )
             },

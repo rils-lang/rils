@@ -215,6 +215,268 @@ pub unsafe extern "C" fn rils_runtime_register_host_functions(
 }
 
 #[unsafe(no_mangle)]
+/// Registers nominal host object types before v2 function declarations.
+///
+/// # Safety
+///
+/// `types` and every non-empty nested slice must remain readable for this call.
+pub unsafe extern "C" fn rils_runtime_register_host_types(
+    runtime: Handle,
+    types: *const RilsHostType,
+    type_count: usize,
+) -> i32 {
+    status_entry(|| {
+        if type_count != 0 && types.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host type array is null",
+                "",
+                Span::default(),
+            );
+        }
+        let descriptors = if type_count == 0 {
+            &[]
+        } else {
+            // SAFETY: The caller promises a readable array for this call.
+            unsafe { slice::from_raw_parts(types, type_count) }
+        };
+        let mut declarations = Vec::with_capacity(descriptors.len());
+        for descriptor in descriptors {
+            if descriptor.reserved != 0 {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host type reserved fields must be zero",
+                    "",
+                    Span::default(),
+                );
+            }
+            let name = match unsafe { read_utf8(descriptor.name, "host type name") } {
+                Ok(value) => value.to_owned(),
+                Err(status) => return status,
+            };
+            let base_type = match unsafe { read_utf8(descriptor.base_type, "host base type") } {
+                Ok("") => None,
+                Ok(value) => Some(value.to_owned()),
+                Err(status) => return status,
+            };
+            let transport = match descriptor.transport_tag {
+                RILS_VALUE_HOST_HANDLE => HostTypeTransport::HostHandle,
+                value => {
+                    return fail(
+                        RILS_STATUS_UNSUPPORTED_VALUE,
+                        format!("value tag {value} is not a supported host type transport"),
+                        "",
+                        Span::default(),
+                    );
+                }
+            };
+            declarations.push((name, base_type, transport));
+        }
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host registry cannot change after freeze or module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            let mut contract = runtime.host_contract.clone();
+            for (name, base_type, transport) in declarations {
+                if let Err(message) = contract.register_type(name, base_type.as_deref(), transport)
+                {
+                    return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+                }
+            }
+            if let Err(message) = contract.to_manifest_bytes() {
+                return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+            }
+            runtime.host_contract = contract;
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Registers v2 host functions with separate logical type and ABI transport metadata.
+///
+/// # Safety
+///
+/// `functions` and every non-empty nested slice must remain readable for this call.
+pub unsafe extern "C" fn rils_runtime_register_host_functions_v2(
+    runtime: Handle,
+    functions: *const RilsHostFunctionV2,
+    function_count: usize,
+) -> i32 {
+    status_entry(|| {
+        if function_count != 0 && functions.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host function v2 array is null",
+                "",
+                Span::default(),
+            );
+        }
+        let descriptors = if function_count == 0 {
+            &[]
+        } else {
+            // SAFETY: The caller promises a readable array for this call.
+            unsafe { slice::from_raw_parts(functions, function_count) }
+        };
+        let mut declarations = Vec::with_capacity(descriptors.len());
+        for descriptor in descriptors {
+            if descriptor.reserved != 0 || descriptor.receiver > 3 || descriptor.function_id == 0 {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host function v2 receiver, reserved fields, or id are invalid",
+                    "",
+                    Span::default(),
+                );
+            }
+            let name = match unsafe { read_utf8(descriptor.name, "host function name") } {
+                Ok(value) => value.to_owned(),
+                Err(status) => return status,
+            };
+            let capability =
+                match unsafe { read_utf8(descriptor.capability, "host function capability") } {
+                    Ok(value) => value.to_owned(),
+                    Err(status) => return status,
+                };
+            if descriptor.parameter_count != 0 && descriptor.parameters.is_null() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host function v2 parameter array is null",
+                    "",
+                    Span::default(),
+                );
+            }
+            let parameters = if descriptor.parameter_count == 0 {
+                &[]
+            } else {
+                unsafe { slice::from_raw_parts(descriptor.parameters, descriptor.parameter_count) }
+            };
+            let mut raw_parameters = Vec::with_capacity(parameters.len());
+            for parameter in parameters {
+                if parameter.reserved != 0 {
+                    return fail(
+                        RILS_STATUS_INVALID_ARGUMENT,
+                        "host parameter reserved fields must be zero",
+                        "",
+                        Span::default(),
+                    );
+                }
+                let logical_type =
+                    match unsafe { read_utf8(parameter.logical_type, "logical parameter type") } {
+                        Ok(value) => value.to_owned(),
+                        Err(status) => return status,
+                    };
+                raw_parameters.push((parameter.transport_tag, logical_type));
+            }
+            if descriptor.return_parameter.reserved != 0 {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host return parameter reserved fields must be zero",
+                    "",
+                    Span::default(),
+                );
+            }
+            let return_logical_type = match unsafe {
+                read_utf8(
+                    descriptor.return_parameter.logical_type,
+                    "logical return type",
+                )
+            } {
+                Ok(value) => value.to_owned(),
+                Err(status) => return status,
+            };
+            declarations.push((
+                descriptor.function_id,
+                name,
+                capability,
+                raw_parameters,
+                (
+                    descriptor.return_parameter.transport_tag,
+                    return_logical_type,
+                ),
+                descriptor.receiver,
+            ));
+        }
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host registry cannot change after freeze or module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            let mut contract = runtime.host_contract.clone();
+            for (function_id, name, capability, raw_parameters, raw_return, receiver) in
+                declarations
+            {
+                let parameters = match raw_parameters
+                    .iter()
+                    .map(|(tag, logical)| {
+                        logical_type_from_transport(&contract, *tag, logical, false)
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(value) => value,
+                    Err(message) => {
+                        return fail(RILS_STATUS_UNSUPPORTED_VALUE, message, "", Span::default());
+                    }
+                };
+                let return_type =
+                    match logical_type_from_transport(&contract, raw_return.0, &raw_return.1, true)
+                    {
+                        Ok(value) => value,
+                        Err(message) => {
+                            return fail(
+                                RILS_STATUS_UNSUPPORTED_VALUE,
+                                message,
+                                "",
+                                Span::default(),
+                            );
+                        }
+                    };
+                if let Err(message) = contract.register_function_with_options_and_receiver(
+                    function_id,
+                    name,
+                    FunctionSignature::fixed(parameters, return_type),
+                    capability,
+                    HostCallKind::Direct,
+                    HostThreadAffinity::MainThread,
+                    HostReceiver::from_tag(receiver as u8)
+                        .expect("receiver kind was validated above"),
+                ) {
+                    return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+                }
+            }
+            runtime.host_contract = contract;
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
 /// Registers a versioned binary host manifest fragment. Repeated calls merge
 /// compatible fragments deterministically. Input data is copied.
 ///

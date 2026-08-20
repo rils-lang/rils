@@ -122,7 +122,7 @@ namespace Rils.CSharp
 
         public RilsValueTag Tag { get; }
         public RilsHostTransferMode TransferMode { get; }
-        /// The future manifest-level nominal type. Manifest v1 lowers it to HostHandle.
+        /// The Manifest v2 logical type name. Current named types use HostHandle transport.
         public string? LogicalTypeName { get; }
 
         public static RilsHostParameter NamedHandle(string logicalTypeName)
@@ -136,5 +136,39 @@ namespace Rils.CSharp
                 RilsHostTransferMode.Handle,
                 logicalTypeName);
         }
+    }
+
+    /// A value crossing from managed code into a Rils call together with its
+    /// logical host type. Primitive arguments can use From; named objects use
+    /// NamedHandle so the runtime can restore their nominal type and lineage.
+    public readonly struct RilsHostArgument
+    {
+        public RilsHostArgument(RilsValue value, RilsHostParameter parameter)
+        {
+            if (value.Tag != parameter.Tag)
+            {
+                throw new ArgumentException(
+                    "The host argument value and transport metadata must use the same tag.",
+                    nameof(parameter));
+            }
+            Value = value;
+            Parameter = parameter;
+        }
+
+        public RilsValue Value { get; }
+        public RilsHostParameter Parameter { get; }
+
+        public static RilsHostArgument From(RilsValue value)
+        {
+            RilsHostTransferMode transfer = value.Tag == RilsValueTag.HostHandle
+                ? RilsHostTransferMode.Handle
+                : RilsHostTransferMode.Copy;
+            return new RilsHostArgument(value, new RilsHostParameter(value.Tag, transfer));
+        }
+
+        public static RilsHostArgument NamedHandle(RilsObjectHandle value, string logicalTypeName) =>
+            new RilsHostArgument(
+                RilsValue.From(value),
+                RilsHostParameter.NamedHandle(logicalTypeName));
     }
 }

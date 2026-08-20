@@ -43,6 +43,17 @@ unsafe extern "C" fn handle_dispatcher(
     match function_id {
         101 if argument_count == 0 => {}
         102 if argument_count == 1 && arguments[0].tag == RILS_VALUE_HOST_HANDLE => {}
+        103 if argument_count == 1 && arguments[0].tag == RILS_VALUE_HOST_HANDLE => {
+            unsafe {
+                out_value.write(RilsValue {
+                    tag: RILS_VALUE_I64,
+                    reserved: 0,
+                    low: arguments[0].low,
+                    high: 0,
+                });
+            }
+            return RILS_STATUS_OK;
+        }
         _ => return RILS_STATUS_INVALID_ARGUMENT,
     }
     unsafe {
@@ -186,6 +197,203 @@ fn dispatches_opaque_host_handles_through_bytecode() {
     assert_eq!(result.tag, RILS_VALUE_HOST_HANDLE);
     assert_eq!(result.low, 77);
     assert_eq!(result.high, (3_u64 << 32) | 9);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn dispatches_named_host_types_with_inherited_receiver_methods() {
+    let runtime = rils_runtime_create();
+    let types = [
+        RilsHostType {
+            name: bytes("unity_engine::Object"),
+            base_type: bytes(""),
+            transport_tag: RILS_VALUE_HOST_HANDLE,
+            reserved: 0,
+        },
+        RilsHostType {
+            name: bytes("unity_engine::GameObject"),
+            base_type: bytes("unity_engine::Object"),
+            transport_tag: RILS_VALUE_HOST_HANDLE,
+            reserved: 0,
+        },
+    ];
+    assert_eq!(
+        unsafe { rils_runtime_register_host_types(runtime, types.as_ptr(), types.len()) },
+        RILS_STATUS_OK
+    );
+    let object_parameter = [RilsHostParameter {
+        logical_type: bytes("unity_engine::Object"),
+        transport_tag: RILS_VALUE_HOST_HANDLE,
+        reserved: 0,
+    }];
+    let functions = [
+        RilsHostFunctionV2 {
+            function_id: 101,
+            name: bytes("unity_engine::object::get"),
+            capability: bytes("unity.object"),
+            parameters: ptr::null(),
+            parameter_count: 0,
+            return_parameter: RilsHostParameter {
+                logical_type: bytes("unity_engine::GameObject"),
+                transport_tag: RILS_VALUE_HOST_HANDLE,
+                reserved: 0,
+            },
+            receiver: 0,
+            reserved: 0,
+        },
+        RilsHostFunctionV2 {
+            function_id: 103,
+            name: bytes("unity_engine::object::instance_id"),
+            capability: bytes("unity.object"),
+            parameters: object_parameter.as_ptr(),
+            parameter_count: object_parameter.len(),
+            return_parameter: RilsHostParameter {
+                logical_type: bytes(""),
+                transport_tag: RILS_VALUE_I64,
+                reserved: 0,
+            },
+            receiver: 2,
+            reserved: 0,
+        },
+    ];
+    assert_eq!(
+        unsafe {
+            rils_runtime_register_host_functions_v2(runtime, functions.as_ptr(), functions.len())
+        },
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        rils_runtime_set_host_dispatcher(runtime, Some(handle_dispatcher), ptr::null_mut()),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        unsafe { rils_runtime_allow_capability(runtime, bytes("unity.object")) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+
+    let source = "unity_engine::object::get().instance_id()";
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(
+                runtime,
+                bytes("named-host.rils"),
+                bytes(source),
+                &mut module,
+            )
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(result.tag, RILS_VALUE_I64);
+    assert_eq!(result.low, 77);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn restores_named_host_types_for_trait_call_arguments() {
+    let runtime = rils_runtime_create();
+    let types = [
+        RilsHostType {
+            name: bytes("unity_engine::Object"),
+            base_type: bytes(""),
+            transport_tag: RILS_VALUE_HOST_HANDLE,
+            reserved: 0,
+        },
+        RilsHostType {
+            name: bytes("unity_engine::GameObject"),
+            base_type: bytes("unity_engine::Object"),
+            transport_tag: RILS_VALUE_HOST_HANDLE,
+            reserved: 0,
+        },
+    ];
+    assert_eq!(
+        unsafe { rils_runtime_register_host_types(runtime, types.as_ptr(), types.len()) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+    let source = r#"
+        trait Behaviour: Default {
+            fn tick(&mut self, host: unity_engine::GameObject) -> i64;
+        }
+        #[derive(Default)]
+        struct State;
+        impl Behaviour for State {
+            fn tick(&mut self, host: unity_engine::GameObject) -> i64 {
+                42i64
+            }
+        }
+    "#;
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(
+                runtime,
+                bytes("typed-trait-argument.rils"),
+                bytes(source),
+                &mut module,
+            )
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut state = 0;
+    assert_eq!(
+        unsafe { rils_script_value_create_default(runtime, instance, bytes("State"), &mut state) },
+        RILS_STATUS_OK
+    );
+    let argument = RilsValue {
+        tag: RILS_VALUE_HOST_HANDLE,
+        low: 77,
+        high: (3_u64 << 32) | 9,
+        ..RilsValue::default()
+    };
+    let argument_type = RilsHostParameter {
+        logical_type: bytes("unity_engine::GameObject"),
+        transport_tag: RILS_VALUE_HOST_HANDLE,
+        reserved: 0,
+    };
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe {
+            rils_script_value_call_trait(
+                runtime,
+                instance,
+                state,
+                bytes("Behaviour"),
+                bytes("tick"),
+                &argument,
+                &argument_type,
+                1,
+                &mut result,
+            )
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(result.tag, RILS_VALUE_I64);
+    assert_eq!(result.low, 42);
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
 }
 
@@ -503,6 +711,11 @@ fn discovers_trait_entries_and_calls_persistent_script_values() {
             low: amount,
             ..RilsValue::default()
         };
+        let argument_type = RilsHostParameter {
+            logical_type: bytes(""),
+            transport_tag: RILS_VALUE_I32,
+            reserved: 0,
+        };
         let mut result = RilsValue::default();
         assert_eq!(
             unsafe {
@@ -513,6 +726,7 @@ fn discovers_trait_entries_and_calls_persistent_script_values() {
                     bytes("Behaviour"),
                     bytes("tick"),
                     &argument,
+                    &argument_type,
                     1,
                     &mut result,
                 )
@@ -671,7 +885,7 @@ fn scalar_value_protocol_round_trips_all_payload_shapes() {
     ];
     for expected in values {
         let encoded = to_ffi_value(expected.clone(), "").unwrap();
-        assert_eq!(from_ffi_value(encoded).unwrap(), expected);
+        assert_eq!(from_ffi_value(encoded, None).unwrap(), expected);
     }
 }
 

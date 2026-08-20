@@ -7,6 +7,12 @@
 
 ### Breaking Changes
 
+- Host Manifest 二进制与 JSON 格式提升为 v2，新增命名宿主类型、单继承和逻辑类型到 ABI transport
+  的映射。Runtime、CLI 和 Analyzer 仍可读取 v1，重新导出或链接时会写为 v2。
+- C ABI 提升为 version 4，新增 `rils_runtime_register_host_types` 和
+  `rils_runtime_register_host_functions_v2`。使用命名宿主类型的调用方必须先注册类型，再以逻辑类型
+  与 transport 分离的参数结构注册函数；`rils_script_value_call_trait` 同步增加逐参数 transport/逻辑
+  类型描述数组。仅使用 primitive/`HostHandle` 的宿主函数旧注册入口继续兼容。
 - `.rilbc` 格式由 v4 提升为 v5，新增经过 verifier 校验的 trait implementation 表；已有 `.rilbc`、
   Unity `.bytes` 和 `.rilslib` 内嵌模块需要从源码重新编译。
 - C ABI 提升为 version 3，增加 trait implementation 枚举和 opaque script value 生命周期接口；
@@ -14,6 +20,10 @@
 
 ### Added
 
+- Host Contract、编译器、Runtime、Analyzer 和 C# facade 现已贯通命名宿主对象类型与单继承；派生
+  类型可传给基类参数并调用继承的 receiver 方法，当前在 C ABI 上统一使用 `HostHandle` transport。
+- C# trait 调用可为参数携带逻辑宿主类型；RilsForUnity 生命周期回调现以
+  `unity_engine::GameObject` 暴露宿主对象，而不是丢失类型信息的裸 `HostHandle`。
 - `Rils.CSharp` 增加与 handler 分离的宿主模块/函数 descriptor、确定性稳定 ID 和单模块
   `.rilhm` builder；Unity 集成可由同一份 Binding IR 生成编译期契约并注册 Player 静态绑定。
 - 增加内建 `Default` trait 和 `#[derive(Default)]`。基础标量、tuple、数组、`Option` 与空集合具有统一默认值；Struct 派生会检查每个字段的 `Default` 约束，并由解释器、字节码编译器和 Analyzer 共享同一展开结果。
@@ -41,6 +51,9 @@
 
 ### Fixed
 
+- 宿主类型现在会在 frontend 名称解析阶段统一规范化完整身份；`use module::*`、显式类型导入和
+  `as` 别名可用于函数参数、字段及嵌套类型，编译器与 Analyzer 不再因短名丢失继承 receiver 方法。
+  未导入的宿主短名和多个通配导入产生的同名类型会在 lowering 前给出明确诊断。
 - Trait implementation 元数据现在保留声明 `SourceId`；RilsForUnity 导入项目级 module 时仅为当前
   `.rils` 源文件创建 entry 子资产，不再把其他脚本的 `RilsBehaviour` 实现重复挂到每个主资产下。
 
