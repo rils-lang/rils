@@ -49,7 +49,8 @@ fn main() -> Result<(), AnyError> {
             "legend": {
                 "tokenTypes": [
                     "variable", "parameter", "function", "type", "class",
-                    "enum", "interface", "property", "method", "enumMember", "namespace"
+                    "enum", "interface", "property", "method", "enumMember", "namespace",
+                    "keyword"
                 ],
                 "tokenModifiers": ["declaration"]
             },

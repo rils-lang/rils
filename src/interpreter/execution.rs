@@ -605,6 +605,13 @@ impl Interpreter {
                     }
                 }
                 for method in methods {
+                    let method_environment = Environment::child(environment.clone());
+                    method_environment.borrow_mut().define(
+                        "Self",
+                        target_value.clone(),
+                        false,
+                        None,
+                    );
                     let mut parameters = method.parameters.clone();
                     if let Some(self_index) = parameters
                         .iter()
@@ -668,7 +675,7 @@ impl Interpreter {
                         parameters,
                         return_type,
                         body: method.body.clone(),
-                        closure: environment.clone(),
+                        closure: method_environment,
                     });
                     let (inherent_methods, trait_methods) = match &target_value {
                         Value::StructType(definition) => {

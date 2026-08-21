@@ -123,6 +123,7 @@ struct TypeAliasDefinition {
 
 #[derive(Clone)]
 struct InherentMethod {
+    owner: String,
     span: Span,
     detail: String,
 }
@@ -291,6 +292,8 @@ struct Analyzer {
     enum_variants: HashMap<(String, String), EnumVariantSymbol>,
     struct_fields: HashMap<String, Vec<HashMap<String, StructFieldSymbol>>>,
     member_receivers: HashMap<Span, Span>,
+    self_types: Vec<Option<String>>,
+    self_type_references: HashMap<Span, String>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
     host_functions: HashMap<String, FunctionSignature>,
     host_types: HashSet<String>,
@@ -462,6 +465,8 @@ impl Analyzer {
             enum_variants: HashMap::new(),
             struct_fields,
             member_receivers: HashMap::new(),
+            self_types: vec![None],
+            self_type_references: collect_self_type_references(program),
             type_aliases: HashMap::new(),
             host_functions: host_functions.clone(),
             host_types: host_types.clone(),
@@ -815,7 +820,7 @@ impl Analyzer {
             }
             let Stmt::Impl {
                 trait_name: None,
-                target: Type::Named { .. },
+                target: Type::Named { name: owner, .. },
                 methods,
                 ..
             } = statement
@@ -827,6 +832,7 @@ impl Analyzer {
                     .entry(method.name.clone())
                     .or_default()
                     .push(InherentMethod {
+                        owner: owner.clone(),
                         span: method.name_span,
                         detail: impl_method_detail(method),
                     });
@@ -1036,10 +1042,15 @@ impl Analyzer {
             }
             Stmt::Impl {
                 generic_parameters,
+                target,
                 associated_types,
                 methods,
                 ..
             } => {
+                let self_type = match target {
+                    Type::Named { name, .. } => Some(name.clone()),
+                    _ => None,
+                };
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                 }
@@ -1057,10 +1068,21 @@ impl Analyzer {
                         self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                     }
                     self.with_scope(|analyzer| {
+                        analyzer.self_types.push(self_type.clone());
+                        if let Some(self_type) = &self_type
+                            && let Some(definition) = analyzer.lookup(self_type).cloned()
+                        {
+                            analyzer
+                                .scopes
+                                .last_mut()
+                                .expect("scope exists")
+                                .insert("Self".into(), definition);
+                        }
                         for parameter in &method.parameters {
                             analyzer.define(&parameter.name, parameter.span, SymbolKind::Parameter);
                         }
                         analyzer.block_contents(&method.body);
+                        analyzer.self_types.pop();
                     });
                 }
             }
@@ -1165,6 +1187,31 @@ impl Analyzer {
                             is_definition: false,
                             inferred_type: None,
                             detail: None,
+                        });
+                    }
+                }
+                if let [type_name, member] = segments.as_slice() {
+                    let owner = if type_name == "Self" {
+                        self.self_types.last().and_then(Clone::clone)
+                    } else {
+                        Some(type_name.clone())
+                    };
+                    if let Some(method) = owner.and_then(|owner| {
+                        self.inherent_methods
+                            .get(member)
+                            .and_then(|methods| methods.iter().find(|method| method.owner == owner))
+                            .cloned()
+                    }) {
+                        self.result.symbols.push(SymbolOccurrence {
+                            name: member.clone(),
+                            span: member_name_span(*span, member),
+                            definition_span: Some(method.span),
+                            symbol_id: None,
+                            definition_id: None,
+                            kind: SymbolKind::Method,
+                            is_definition: false,
+                            inferred_type: None,
+                            detail: Some(method.detail),
                         });
                     }
                 }
@@ -1494,13 +1541,17 @@ impl Analyzer {
 
     fn type_references(&mut self, program: &Program) {
         for reference in &program.type_references {
+            let resolved_name = self
+                .self_type_references
+                .get(&reference.span)
+                .map_or(reference.name.as_str(), String::as_str);
             let resolved = reference.definition_span.or_else(|| {
                 self.result
                     .symbols
                     .iter()
                     .find(|symbol| {
                         symbol.is_definition
-                            && symbol.name == reference.name
+                            && symbol.name == resolved_name
                             && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
                     })
                     .map(|symbol| symbol.span)
@@ -1511,7 +1562,7 @@ impl Analyzer {
                 .iter()
                 .find(|symbol| {
                     symbol.is_definition
-                        && symbol.name == reference.name
+                        && symbol.name == resolved_name
                         && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
                 })
                 .and_then(|symbol| symbol.symbol_id);
@@ -1861,6 +1912,46 @@ fn trait_detail(
 
 fn member_name_span(span: Span, name: &str) -> Span {
     Span::new(span.end.saturating_sub(name.len()), span.end)
+}
+
+fn collect_self_type_references(program: &Program) -> HashMap<Span, String> {
+    fn visit(
+        statements: &[Stmt],
+        references: &[crate::ast::TypeReference],
+        output: &mut HashMap<Span, String>,
+    ) {
+        for statement in statements {
+            let statement = match statement {
+                Stmt::Public { statement, .. } => statement.as_ref(),
+                statement => statement,
+            };
+            match statement {
+                Stmt::Module {
+                    statements: Some(statements),
+                    ..
+                } => visit(statements, references, output),
+                Stmt::Impl {
+                    target: Type::Named { name, .. },
+                    span,
+                    ..
+                } => {
+                    for reference in references.iter().filter(|reference| {
+                        reference.name == "Self"
+                            && reference.span.source == span.source
+                            && span.start <= reference.span.start
+                            && reference.span.end <= span.end
+                    }) {
+                        output.insert(reference.span, name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut output = HashMap::new();
+    visit(&program.statements, &program.type_references, &mut output);
+    output
 }
 
 fn hash_key_type_supported(ty: &Type) -> bool {

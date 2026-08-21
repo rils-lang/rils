@@ -8,8 +8,12 @@ Struct 和 enum 都可以拥有 `impl`：
 
 ```rust
 impl Point {
-    fn new(x: f64, y: f64) -> Point {
-        Point { x: x, y: y }
+    fn new(x: f64, y: f64) -> Self {
+        Self { x: x, y: y }
+    }
+
+    fn origin() -> Self {
+        Self::new(0.0, 0.0)
     }
 
     fn length_squared(self) -> f64 {
@@ -26,6 +30,8 @@ println!(point.length_squared());
 - 没有 `self` 参数的函数通过 `Type::function(...)` 调用。
 - 实例方法的第一个参数必须是 `self`。
 - 未标注的 `self` 自动视为当前名义类型。
+- `Self` 在 impl 的类型标注、构造表达式和关联路径中表示当前具体类型，例如 `Self { ... }`
+  与 `Self::new(...)`。
 - receiver 支持 Rust 风格的 `self`、`mut self`、`&self` 和 `&mut self`。
 - `self` 和 `mut self` 接收所有权；后者允许在方法内重新赋值 receiver。
 - `&self` 和 `&mut self` 由方法调用自动借用，`&mut self` 要求实例绑定可变。

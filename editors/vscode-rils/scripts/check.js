@@ -48,6 +48,7 @@ for (const requiredSyntax of [
   "HashMap|HashSet",
   "derive|Default",
   "constant.other.symbol.enum.rils",
+  "keyword.other.self.rils",
 ]) {
   if (!grammar.includes(requiredSyntax)) {
     throw new Error(`TextMate grammar is missing support for ${requiredSyntax}.`);

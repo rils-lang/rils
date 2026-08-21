@@ -1501,7 +1501,8 @@ fn compiles_impls_declared_inside_modules() {
                     pub trait Read { fn read(&self) -> i32; }
 
                     impl Number {
-                        fn new(value: i32) -> Self { Number { value: value } }
+                        fn new(value: i32) -> Self { Self { value: value } }
+                        fn twenty() -> Self { Self::new(20) }
                         fn add(&mut self, amount: i32) {
                             let next = self.value + amount;
                             *self = Number { value: next };
@@ -1517,7 +1518,7 @@ fn compiles_impls_declared_inside_modules() {
                     }
                 }
 
-                let mut number = model::Number::new(20);
+                let mut number = model::Number::twenty();
                 number.add(1);
                 number.read() + model::read_again(&number)
             "#,

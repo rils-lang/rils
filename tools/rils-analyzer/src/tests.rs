@@ -210,6 +210,91 @@ fn hover_shows_expanded_type_aliases() {
 }
 
 #[test]
+fn classifies_self_receivers_and_references_as_keywords() {
+    let text = r#"struct Counter { value: i32 }
+impl Counter {
+    fn read(&self) -> i32 {
+        self.value
+    }
+}"#;
+    let uri = "file:///self-keyword.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    let tokens = server
+        .semantic_tokens(&json!({ "textDocument": { "uri": uri } }))
+        .unwrap();
+    let self_tokens = tokens["data"]
+        .as_array()
+        .expect("semantic token data")
+        .chunks_exact(5)
+        .filter(|token| token[2] == 4 && token[3] == 11)
+        .count();
+
+    assert_eq!(self_tokens, 2, "{tokens}");
+}
+
+#[test]
+fn resolves_self_types_and_associated_method_paths() {
+    let text = r#"struct Counter { value: i32 }
+impl Counter {
+    fn new(value: i32) -> Self {
+        Self { value: value }
+    }
+    fn answer() -> Self {
+        Self::new(42)
+    }
+}"#;
+    let uri = "file:///self-type.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    let self_type_offset = text.find("-> Self").expect("Self return type") + 3;
+    let self_type_position = position(text, self_type_offset);
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": self_type_position[0], "character": self_type_position[1] }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some("```rils\nstruct Counter {\n    value: i32,\n}\n```")
+    );
+    let definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": self_type_position[0], "character": self_type_position[1] }
+        }))
+        .unwrap();
+    assert_eq!(
+        definition["range"]["start"],
+        json!({ "line": 0, "character": 7 })
+    );
+
+    let method_offset = text.find("Self::new").expect("Self associated method") + 6;
+    let method_position = position(text, method_offset);
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": method_position[0], "character": method_position[1] }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some("```rils\nfn new(value: i32) -> Self\n```")
+    );
+    let definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": method_position[0], "character": method_position[1] }
+        }))
+        .unwrap();
+    assert_eq!(
+        definition["range"]["start"],
+        json!({ "line": 2, "character": 7 })
+    );
+}
+
+#[test]
 fn completes_host_modules_functions_and_aliases() {
     let mut contract = HostContract::new();
     contract

@@ -17,6 +17,7 @@ pub(super) struct FunctionDeclaration<'a> {
     pub(super) body: &'a Block,
     pub(super) span: Span,
     pub(super) exported: bool,
+    pub(super) self_type: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -55,6 +56,7 @@ pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclarati
         body,
         span: *span,
         exported,
+        self_type: None,
     })
 }
 
@@ -490,6 +492,7 @@ pub(super) fn collect_method_declarations<'a>(
                             body: &method.body,
                             span: method.span,
                             exported: false,
+                            self_type: Some(target_name.clone()),
                         },
                     ));
                 }

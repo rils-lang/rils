@@ -48,6 +48,21 @@ fn derives_default_for_unit_structs() {
 }
 
 #[test]
+fn self_paths_resolve_to_the_current_impl_type() {
+    let source = r#"
+        struct Counter { value: i32 }
+        impl Counter {
+            fn new(value: i32) -> Self { Self { value: value } }
+            fn answer() -> Self { Self::new(42) }
+        }
+        let counter = Counter::answer();
+        counter.value
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+}
+
+#[test]
 fn default_is_available_for_builtin_composite_types() {
     let source = r#"
         let pair = <(bool, i16) as Default>::default();

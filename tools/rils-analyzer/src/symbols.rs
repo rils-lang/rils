@@ -102,7 +102,11 @@ impl Server {
                 delta_line,
                 delta_start,
                 end[1] - start[1],
-                semantic_token_kind(symbol.kind),
+                if symbol.name == "self" {
+                    11
+                } else {
+                    semantic_token_kind(symbol.kind)
+                },
                 u32::from(symbol.is_definition),
             ]);
             previous_line = start[0];

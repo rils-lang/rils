@@ -264,7 +264,7 @@
           "match": "\\b(?:let|mut|fn|macro|struct|enum|impl|trait|type|mod|pub)\\b"
         },
         {
-          "name": "variable.language.self.rils",
+          "name": "keyword.other.self.rils",
           "match": "\\bself\\b"
         }
       ]

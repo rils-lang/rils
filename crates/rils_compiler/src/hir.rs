@@ -297,6 +297,7 @@ struct FunctionLowerer<'a> {
     host_methods: &'a HashMap<String, HostFunctionDeclaration>,
     expression_types: &'a HashMap<Span, Type>,
     namespace: String,
+    self_type: Option<String>,
     scopes: Vec<HashMap<String, LocalId>>,
     mutable: Vec<bool>,
     in_function: bool,
@@ -329,6 +330,7 @@ impl<'a> FunctionLowerer<'a> {
             host_methods,
             expression_types,
             namespace: String::new(),
+            self_type: None,
             scopes: vec![HashMap::new()],
             mutable: Vec::new(),
             in_function: false,
@@ -364,6 +366,7 @@ impl<'a> FunctionLowerer<'a> {
             .qualified_name
             .rsplit_once("::")
             .map_or_else(String::new, |(namespace, _)| namespace.to_string());
+        self.self_type = declaration.self_type;
         for parameter in declaration.parameters {
             let local = self.mutable.len();
             self.mutable.push(parameter.mutable);
@@ -517,6 +520,7 @@ impl<'a> FunctionLowerer<'a> {
                     body,
                     span: *span,
                     exported: false,
+                    self_type: self.self_type.clone(),
                 })?;
                 self.generated
                     .functions
@@ -561,6 +565,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
             }
             Expr::Path { segments, span } => {
+                let segments = self.resolve_self_path(segments);
                 if let [type_name, member] = segments.as_slice()
                     && let Some(target) = crate::types::IntegerType::from_name(type_name)
                     && let Some(constant) = rils_builtins::integer_constant(member)
@@ -585,7 +590,7 @@ impl<'a> FunctionLowerer<'a> {
                         span: *span,
                     });
                 }
-                let (type_id, variant) = self.enum_variant_path(segments, *span)?;
+                let (type_id, variant) = self.enum_variant_path(&segments, *span)?;
                 Ok(HirExpression::ConstructUnitVariant {
                     type_id,
                     variant,
@@ -802,6 +807,7 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
+                    let segments = self.resolve_self_path(segments);
                     let raw_key = segments.join("::");
                     if let [type_name, member] = segments.as_slice()
                         && let Some(target) = crate::types::IntegerType::from_name(type_name)
@@ -881,7 +887,7 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    let (type_id, variant) = self.enum_variant_path(segments, *span)?;
+                    let (type_id, variant) = self.enum_variant_path(&segments, *span)?;
                     return Ok(HirExpression::ConstructTupleVariant {
                         type_id,
                         variant,
@@ -1115,6 +1121,7 @@ impl<'a> FunctionLowerer<'a> {
                 })
             }
             Expr::RecordLiteral { path, fields, span } => {
+                let path = self.resolve_self_path(path);
                 let (type_id, variant) = if path.len() >= 2 {
                     let enum_name = path[..path.len() - 1].join("::");
                     if let Some(type_id) = self.types.get(&enum_name) {
@@ -1416,6 +1423,19 @@ impl<'a> FunctionLowerer<'a> {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         resolve_anchored_path(&prefix, &path).unwrap_or_else(|| name.to_owned())
+    }
+
+    fn resolve_self_path(&self, path: &[String]) -> Vec<String> {
+        if path.first().is_some_and(|segment| segment == "Self")
+            && let Some(self_type) = &self.self_type
+        {
+            return self_type
+                .split("::")
+                .map(str::to_owned)
+                .chain(path.iter().skip(1).cloned())
+                .collect();
+        }
+        path.to_vec()
     }
 
     fn enum_variant_path(

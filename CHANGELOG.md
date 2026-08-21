@@ -30,6 +30,8 @@
   `.rilhm` builder；Unity 集成可由同一份 Binding IR 生成编译期契约并注册 Player 静态绑定。
 - 增加内建 `Default` trait 和 `#[derive(Default)]`。基础标量、tuple、数组、`Option` 与空集合具有统一默认值；Struct 派生会检查每个字段的 `Default` 约束，并由解释器、字节码编译器和 Analyzer 共享同一展开结果。
 - Trait 支持声明 supertrait；解释器、编译器和 Analyzer 会统一要求 impl target 满足全部 supertrait。RilsForUnity 的 `RilsBehaviour` 现在继承 `Default`，新建模板会自动添加 `#[derive(Default)]`。
+- impl 内的 `Self` 现在统一解析为当前具体类型，支持在解释器和字节码中使用 `Self { ... }` 与
+  `Self::associated(...)`；Analyzer 会显示具体类型声明，并为类型及关联方法提供定义跳转。
 - 字节码、C API 与 C# facade 支持发现具体 trait 实现、通过 `Default` 构造持久 opaque script value，
   并以 trait 方法身份连续调用；RilsForUnity 生命周期不再依赖源码正则或同名模块函数。
 
@@ -65,7 +67,7 @@
   `for item in iterable` 的循环绑定类型，并显示 `item: Type` inlay hint。内建方法的嵌套泛型返回
   类型会保留具体实参，因此 `values.into_iter()` 可显示完整签名并继续推导循环项类型；VS Code
   也会按普通类型相同的 scope 高亮 `Vec`、`HashMap` 等内置类型，并在源码及 Hover 代码块中
-  用独立的 enum member scope 高亮 enum variant。
+  用独立的 enum member scope 高亮 enum variant；方法 receiver `self` 在声明和方法体中统一按关键字高亮。
 - Analyzer 现在会在补全列表和 Hover 中显示用户函数、泛型类型、trait、固有方法及 enum variant 的完整
   声明；泛型 receiver 的方法返回值会按实际类型实参推导。跨文件 `use` 导入保留真实符号类别，
   record/unit/tuple enum variant 在构造与 match 模式中均可正确识别并跳转。

@@ -394,14 +394,20 @@ impl Inferencer {
                             .iter()
                             .filter(|parameter| parameter.name != "self")
                             .map(|parameter| {
-                                parameter.type_annotation.clone().unwrap_or(Type::Unknown)
+                                parameter
+                                    .type_annotation
+                                    .as_ref()
+                                    .map_or(Type::Unknown, |ty| resolve_impl_self(ty, target))
                             })
                             .collect();
                         definition.methods.insert(
                             method.name.clone(),
                             Type::function(
                                 parameters,
-                                method.return_type.clone().unwrap_or(Type::Unknown),
+                                method
+                                    .return_type
+                                    .as_ref()
+                                    .map_or(Type::Unknown, |ty| resolve_impl_self(ty, target)),
                             ),
                         );
                     }
@@ -596,6 +602,11 @@ impl Inferencer {
             } => {
                 for method in methods {
                     self.with_scope_value(|inferencer| {
+                        inferencer
+                            .scopes
+                            .last_mut()
+                            .expect("scope exists")
+                            .insert("Self".into(), Binding { ty: target.clone() });
                         let parameter_types = method
                             .parameters
                             .iter()
@@ -725,13 +736,31 @@ impl Inferencer {
                 })
                 .map(|signature| signature.as_type())
                 .or_else(|| {
+                    let [type_name, member] = segments.as_slice() else {
+                        return None;
+                    };
+                    let owner = if type_name == "Self" {
+                        match self.lookup("Self").map(|binding| &binding.ty) {
+                            Some(Type::Named { name, .. }) => name.as_str(),
+                            _ => return None,
+                        }
+                    } else {
+                        type_name.as_str()
+                    };
+                    self.types.get(owner)?.methods.get(member).cloned()
+                })
+                .or_else(|| {
                     segments
                         .first()
                         .and_then(|name| {
-                            self.types.contains_key(name).then(|| Type::Named {
-                                name: name.clone(),
-                                arguments: Vec::new(),
-                            })
+                            if name == "Self" {
+                                self.lookup("Self").map(|binding| binding.ty.clone())
+                            } else {
+                                self.types.contains_key(name).then(|| Type::Named {
+                                    name: name.clone(),
+                                    arguments: Vec::new(),
+                                })
+                            }
                         })
                         .or_else(|| {
                             segments.last().and_then(|variant| {
@@ -849,8 +878,20 @@ impl Inferencer {
                     .iter()
                     .map(|field| (&field.name, self.expression(&field.value, returns)))
                     .collect::<Vec<_>>();
-                let Some(name) = path.first() else {
+                let Some(path_name) = path.first() else {
                     return Type::Unknown;
+                };
+                let self_name;
+                let name = if path_name == "Self" {
+                    let Some(Type::Named { name, .. }) =
+                        self.lookup("Self").map(|binding| &binding.ty)
+                    else {
+                        return Type::Unknown;
+                    };
+                    self_name = name.clone();
+                    &self_name
+                } else {
+                    path_name
                 };
                 let Some(definition) = self.types.get(name).cloned() else {
                     return Type::Named {
@@ -1299,6 +1340,65 @@ fn impl_parameter_type(parameter: &Parameter, target: &Type) -> Type {
         Some(Type::Named { name, .. }) if name == "Self" => target.clone(),
         Some(ty) => ty.clone(),
         None => target.clone(),
+    }
+}
+
+fn resolve_impl_self(ty: &Type, target: &Type) -> Type {
+    match ty {
+        Type::Named { name, arguments } if name == "Self" && arguments.is_empty() => target.clone(),
+        Type::Option(inner) => Type::Option(Box::new(resolve_impl_self(inner, target))),
+        Type::Result(ok, error) => Type::Result(
+            Box::new(resolve_impl_self(ok, target)),
+            Box::new(resolve_impl_self(error, target)),
+        ),
+        Type::Tuple(elements) => Type::Tuple(
+            elements
+                .iter()
+                .map(|element| resolve_impl_self(element, target))
+                .collect(),
+        ),
+        Type::Array { element, length } => Type::Array {
+            element: Box::new(resolve_impl_self(element, target)),
+            length: *length,
+        },
+        Type::Reference { mutable, inner } => Type::Reference {
+            mutable: *mutable,
+            inner: Box::new(resolve_impl_self(inner, target)),
+        },
+        Type::Function {
+            parameters,
+            return_type,
+        } => Type::Function {
+            parameters: parameters.as_ref().map(|parameters| {
+                parameters
+                    .iter()
+                    .map(|parameter| resolve_impl_self(parameter, target))
+                    .collect()
+            }),
+            return_type: Box::new(resolve_impl_self(return_type, target)),
+        },
+        Type::Named { name, arguments } => Type::Named {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| resolve_impl_self(argument, target))
+                .collect(),
+        },
+        Type::Associated {
+            base,
+            trait_name,
+            name,
+            arguments,
+        } => Type::Associated {
+            base: Box::new(resolve_impl_self(base, target)),
+            trait_name: trait_name.clone(),
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| resolve_impl_self(argument, target))
+                .collect(),
+        },
+        other => other.clone(),
     }
 }
 
