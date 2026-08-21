@@ -65,7 +65,7 @@ fn collect_statements(
             statement => (statement, false),
         };
         if is_public {
-            if let Some(export) = public_export(statement, analysis) {
+            if let Some(export) = public_export(statement, module_path, analysis) {
                 module_exports.push(export);
             }
         }
@@ -92,6 +92,7 @@ fn collect_statements(
 
 fn public_export(
     statement: &Stmt,
+    module_path: &str,
     analysis: Option<&DocumentAnalysis>,
 ) -> Option<ExternalModuleExport> {
     let (name, span, kind, fields) = match statement {
@@ -148,6 +149,7 @@ fn public_export(
                 .find(|symbol| symbol.is_definition && symbol.span == span)
                 .and_then(|symbol| symbol.detail.clone())
         }),
+        module_path: module_path.to_owned(),
         fields,
     })
 }

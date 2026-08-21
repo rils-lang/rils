@@ -240,10 +240,15 @@ impl Server {
             }
             _ => format!("{} {}", kind_label(symbol.kind), symbol.name),
         };
+        let context = match &symbol.container {
+            Some(SymbolContainer::Module(module)) => format!("\n\nmodule `{module}`"),
+            Some(SymbolContainer::Type(owner)) => format!("\n\ntype `{owner}`"),
+            None => String::new(),
+        };
         Ok(json!({
             "contents": {
                 "kind": "markdown",
-                "value": format!("```rils\n{detail}\n```")
+                "value": format!("```rils\n{detail}\n```{context}")
             },
             "range": range(&document.text, symbol.span)
         }))

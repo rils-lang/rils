@@ -205,7 +205,7 @@ fn hover_shows_expanded_type_aliases() {
         hover
             .pointer("/contents/value")
             .and_then(|value| value.as_str()),
-        Some("```rils\ntype IntBox = Box<i32>\n```")
+        Some("```rils\ntype IntBox = Box<i32>\n```\n\nmodule `crate`")
     );
 }
 
@@ -257,7 +257,7 @@ impl Counter {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nstruct Counter {\n    value: i32,\n}\n```")
+        Some("```rils\nstruct Counter {\n    value: i32,\n}\n```\n\nmodule `crate`")
     );
     let definition = server
         .definition(&json!({
@@ -943,6 +943,23 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     let expected_uri = path_to_file_uri(&scripts.join("math.rils"));
     assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
 
+    let type_import = "use crate::math::Sum;\nlet total: Sum = Sum { value: 3 };";
+    server
+        .update_document(uri.clone(), type_import.into())
+        .unwrap();
+    for (line, character) in [(0, 18), (1, 11)] {
+        let hover = server
+            .hover(&json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }))
+            .unwrap();
+        assert_eq!(
+            hover["contents"]["value"].as_str(),
+            Some("```rils\nstruct Sum {\n    value: i32,\n}\n```\n\nmodule `math`")
+        );
+    }
+
     let typed_import = "use crate::math::{sum};\nfn main() { let total = sum(1, 2); total.value; }";
     server
         .update_document(uri.clone(), typed_import.into())
@@ -986,7 +1003,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert_eq!(
         field_hover["contents"]["value"].as_str(),
-        Some("```rils\nfield value: i32\n```")
+        Some("```rils\nfield value: i32\n```\n\ntype `Sum`")
     );
     let field_definition = server
         .definition(&json!({
@@ -1168,7 +1185,7 @@ fn enum_variant_paths_go_to_variant_declarations() {
         .unwrap();
     assert_eq!(
         pattern_type_hover["contents"]["value"].as_str(),
-        Some("```rils\nenum Priority {\n    Low,\n    High,\n}\n```")
+        Some("```rils\nenum Priority {\n    Low,\n    High,\n}\n```\n\nmodule `crate`")
     );
     let pattern_type_definition = server
         .definition(&json!({
@@ -1183,6 +1200,16 @@ fn enum_variant_paths_go_to_variant_declarations() {
             "start": { "line": 0, "character": 5 },
             "end": { "line": 0, "character": 13 }
         })
+    );
+    let variant_hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 6, "character": 16 }
+        }))
+        .unwrap();
+    assert_eq!(
+        variant_hover["contents"]["value"].as_str(),
+        Some("```rils\nPriority::Low\n```\n\ntype `Priority`")
     );
 }
 
@@ -1250,8 +1277,9 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
             hover["contents"]["value"].as_str(),
             Some(
                 format!(
-                    "```rils\nfield {}: {expected}\n```",
-                    if line == 18 { "tasks" } else { "active" }
+                    "```rils\nfield {}: {expected}\n```\n\ntype `{}`",
+                    if line == 18 { "tasks" } else { "active" },
+                    if line == 18 { "Board" } else { "Summary" }
                 )
                 .as_str()
             )

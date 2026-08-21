@@ -7,7 +7,9 @@ use crate::{
     source::Span,
 };
 
-use super::{AnalysisDiagnostic, Analyzer, Definition, SymbolKind, SymbolOccurrence};
+use super::{
+    AnalysisDiagnostic, Analyzer, Definition, SymbolContainer, SymbolKind, SymbolOccurrence,
+};
 
 #[derive(Clone)]
 pub(super) struct ModuleExport {
@@ -16,6 +18,7 @@ pub(super) struct ModuleExport {
     pub(super) kind: SymbolKind,
     pub(super) inferred_type: Option<crate::types::Type>,
     pub(super) detail: Option<String>,
+    pub(super) module_path: String,
 }
 
 pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
@@ -54,6 +57,14 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
                     detail: is_imported_item
                         .then(|| exported.as_ref().and_then(|export| export.detail.clone()))
                         .flatten(),
+                    container: is_imported_item
+                        .then(|| {
+                            exported.as_ref().and_then(|export| {
+                                matches!(export.kind, SymbolKind::Type | SymbolKind::Trait)
+                                    .then(|| SymbolContainer::Module(export.module_path.clone()))
+                            })
+                        })
+                        .flatten(),
                 });
             }
         }
@@ -73,8 +84,13 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
             |export| export.kind,
         );
         analyzer.define(name, name_span, kind);
-        if let Some(detail) = exported.and_then(|export| export.detail) {
-            analyzer.set_last_detail(detail);
+        if let Some(exported) = exported {
+            if let Some(detail) = exported.detail {
+                analyzer.set_last_detail(detail);
+            }
+            if matches!(kind, SymbolKind::Type | SymbolKind::Trait) {
+                analyzer.set_last_container(SymbolContainer::Module(exported.module_path));
+            }
         }
     }
 }
@@ -118,6 +134,8 @@ fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {
                 span: Some(export.span),
                 id: None,
                 kind: export.kind,
+                container: matches!(export.kind, SymbolKind::Type | SymbolKind::Trait)
+                    .then(|| SymbolContainer::Module(export.module_path)),
             },
         );
     }
@@ -145,7 +163,10 @@ pub(super) fn collect_module_exports(statements: &[Stmt]) -> HashMap<String, Vec
             prefix.push(name.clone());
             output.insert(
                 prefix.join("::"),
-                module_statements.iter().filter_map(public_export).collect(),
+                module_statements
+                    .iter()
+                    .filter_map(|statement| public_export(statement, &prefix.join("::")))
+                    .collect(),
             );
             visit(module_statements, prefix, output);
             prefix.pop();
@@ -157,7 +178,7 @@ pub(super) fn collect_module_exports(statements: &[Stmt]) -> HashMap<String, Vec
     output
 }
 
-fn public_export(statement: &Stmt) -> Option<ModuleExport> {
+fn public_export(statement: &Stmt, module_path: &str) -> Option<ModuleExport> {
     let Stmt::Public { statement, .. } = statement else {
         return None;
     };
@@ -188,6 +209,7 @@ fn public_export(statement: &Stmt) -> Option<ModuleExport> {
         kind,
         inferred_type: None,
         detail: None,
+        module_path: module_path.to_owned(),
     })
 }
 

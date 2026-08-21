@@ -39,6 +39,7 @@ pub struct ExternalModuleExport {
     pub kind: SymbolKind,
     pub inferred_type: Option<Type>,
     pub detail: Option<String>,
+    pub module_path: String,
     pub fields: Vec<ExternalTypeField>,
 }
 
@@ -60,6 +61,13 @@ pub struct SymbolOccurrence {
     pub is_definition: bool,
     pub inferred_type: Option<Type>,
     pub detail: Option<String>,
+    pub container: Option<SymbolContainer>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SymbolContainer {
+    Module(String),
+    Type(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -113,6 +121,7 @@ struct Definition {
     span: Option<Span>,
     id: Option<SymbolId>,
     kind: SymbolKind,
+    container: Option<SymbolContainer>,
 }
 
 #[derive(Clone)]
@@ -132,6 +141,7 @@ struct InherentMethod {
 struct EnumVariantSymbol {
     span: Span,
     detail: String,
+    owner: String,
 }
 
 #[derive(Clone)]
@@ -139,6 +149,7 @@ struct StructFieldSymbol {
     span: Span,
     ty: Type,
     detail: String,
+    owner: String,
 }
 
 fn callable_detail(name: &str, ty: &Type) -> String {
@@ -286,6 +297,7 @@ struct Analyzer {
     scopes: Vec<HashMap<String, Definition>>,
     glob_imports: Vec<bool>,
     module_path: Vec<String>,
+    definition_modules: HashMap<Span, String>,
     module_exports: HashMap<String, Vec<ModuleExport>>,
     trait_members: HashMap<(String, String), Span>,
     inherent_methods: HashMap<String, Vec<InherentMethod>>,
@@ -309,6 +321,12 @@ impl Analyzer {
         program: &Program,
         external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
     ) -> Self {
+        let definition_modules = external_exports
+            .values()
+            .flatten()
+            .filter(|export| export.span.source == source_id)
+            .map(|export| (export.span, export.module_path.clone()))
+            .collect();
         let mut module_exports = collect_module_exports(&program.statements);
         for (module, exports) in external_exports {
             module_exports.entry(module.clone()).or_insert_with(|| {
@@ -320,6 +338,7 @@ impl Analyzer {
                         kind: export.kind,
                         inferred_type: export.inferred_type.clone(),
                         detail: export.detail.clone(),
+                        module_path: export.module_path.clone(),
                     })
                     .collect()
             });
@@ -345,6 +364,7 @@ impl Analyzer {
                                         span: field.span,
                                         ty: field.ty.clone(),
                                         detail: format!("field {}: {}", field.name, field.ty),
+                                        owner: export.name.clone(),
                                     },
                                 )
                             })
@@ -365,6 +385,7 @@ impl Analyzer {
                     span: None,
                     id: None,
                     kind: SymbolKind::Function,
+                    container: None,
                 },
             );
         }
@@ -386,6 +407,7 @@ impl Analyzer {
                     span: None,
                     id: None,
                     kind,
+                    container: None,
                 },
             );
         }
@@ -396,6 +418,7 @@ impl Analyzer {
                     span: None,
                     id: None,
                     kind: SymbolKind::Type,
+                    container: None,
                 },
             );
         }
@@ -406,6 +429,7 @@ impl Analyzer {
                     span: None,
                     id: None,
                     kind: SymbolKind::Type,
+                    container: None,
                 },
             );
         }
@@ -416,6 +440,7 @@ impl Analyzer {
                     span: None,
                     id: None,
                     kind: SymbolKind::Module,
+                    container: None,
                 },
             );
         }
@@ -431,6 +456,7 @@ impl Analyzer {
                 } else {
                     SymbolKind::Function
                 },
+                container: None,
             });
         }
         let host_type_segments = host_functions
@@ -459,6 +485,7 @@ impl Analyzer {
             scopes: vec![globals],
             glob_imports: vec![false],
             module_path: Vec::new(),
+            definition_modules,
             module_exports,
             trait_members: HashMap::new(),
             inherent_methods: HashMap::new(),
@@ -610,6 +637,7 @@ impl Analyzer {
                                                 "field {}: {}",
                                                 field.name, field.type_annotation
                                             ),
+                                            owner: name.clone(),
                                         },
                                     )
                                 })
@@ -654,6 +682,7 @@ impl Analyzer {
                     None,
                     Some(method_type.clone()),
                     Some(callable_detail(&symbol.name, &method_type)),
+                    None,
                 ));
                 continue;
             }
@@ -689,14 +718,18 @@ impl Analyzer {
                 definition_id,
                 Some(field.ty.clone()),
                 Some(field.detail.clone()),
+                Some(SymbolContainer::Type(field.owner.clone())),
             ));
         }
-        for (index, definition_span, definition_id, inferred_type, detail) in updates {
+        for (index, definition_span, definition_id, inferred_type, detail, container) in updates {
             let symbol = &mut self.result.symbols[index];
             symbol.definition_span = definition_span;
             symbol.definition_id = definition_id;
             symbol.inferred_type = inferred_type;
             symbol.detail = detail;
+            if container.is_some() {
+                symbol.container = container;
+            }
         }
     }
 
@@ -732,7 +765,8 @@ impl Analyzer {
             kind: SymbolKind::Field,
             is_definition: false,
             inferred_type: definition.as_ref().map(|field| field.ty.clone()),
-            detail: definition.map(|field| field.detail),
+            detail: definition.as_ref().map(|field| field.detail.clone()),
+            container: definition.map(|field| SymbolContainer::Type(field.owner)),
         });
     }
 
@@ -864,6 +898,7 @@ impl Analyzer {
                     EnumVariantSymbol {
                         span,
                         detail: enum_variant_declaration(name, variant),
+                        owner: name.clone(),
                     },
                 );
             }
@@ -885,6 +920,7 @@ impl Analyzer {
                     is_definition: false,
                     inferred_type: None,
                     detail: None,
+                    container: None,
                 });
             }
         }
@@ -956,6 +992,9 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Type);
+                self.set_last_container(SymbolContainer::Module(
+                    self.module_path_for_definition(*name_span),
+                ));
                 self.set_last_detail(struct_detail(name, generic_parameters, fields));
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
@@ -966,6 +1005,7 @@ impl Analyzer {
                         "field {}: {}",
                         field.name, field.type_annotation
                     ));
+                    self.set_last_container(SymbolContainer::Type(name.clone()));
                     if let Some(symbol) = self.result.symbols.last_mut() {
                         symbol.inferred_type = Some(field.type_annotation.clone());
                     }
@@ -979,6 +1019,9 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Type);
+                self.set_last_container(SymbolContainer::Module(
+                    self.module_path_for_definition(*name_span),
+                ));
                 self.set_last_detail(enum_detail(name, generic_parameters, variants));
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
@@ -987,9 +1030,11 @@ impl Analyzer {
                     let (variant_name, span) = enum_variant_name_and_span(variant);
                     self.definition_only(variant_name, span, SymbolKind::Variant);
                     self.set_last_detail(enum_variant_declaration(name, variant));
+                    self.set_last_container(SymbolContainer::Type(name.clone()));
                     if let EnumVariant::Record { fields, .. } = variant {
                         for field in fields {
                             self.definition_only(&field.name, field.span, SymbolKind::Field);
+                            self.set_last_container(SymbolContainer::Type(name.clone()));
                         }
                     }
                 }
@@ -1003,6 +1048,9 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Trait);
+                self.set_last_container(SymbolContainer::Module(
+                    self.module_path_for_definition(*name_span),
+                ));
                 self.set_last_detail(trait_detail(name, bounds, associated_types, methods));
                 for associated in associated_types {
                     self.definition_only(&associated.name, associated.name_span, SymbolKind::Type);
@@ -1026,6 +1074,9 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Type);
+                self.set_last_container(SymbolContainer::Module(
+                    self.module_path_for_definition(*name_span),
+                ));
                 let arguments = generic_parameters
                     .iter()
                     .map(|parameter| Type::Variable(parameter.name.clone()))
@@ -1165,6 +1216,7 @@ impl Analyzer {
                             "host fn {qualified_name}({parameters}) -> {}",
                             signature.return_type
                         )),
+                        container: None,
                     });
                 }
                 if let [trait_name, member] = segments.as_slice() {
@@ -1187,6 +1239,7 @@ impl Analyzer {
                             is_definition: false,
                             inferred_type: None,
                             detail: None,
+                            container: None,
                         });
                     }
                 }
@@ -1212,6 +1265,7 @@ impl Analyzer {
                             is_definition: false,
                             inferred_type: None,
                             detail: Some(method.detail),
+                            container: None,
                         });
                     }
                 }
@@ -1237,6 +1291,7 @@ impl Analyzer {
                 is_definition: false,
                 inferred_type: None,
                 detail: None,
+                container: None,
             }),
             Expr::Member { object, name, span } => {
                 self.expression(object);
@@ -1326,6 +1381,7 @@ impl Analyzer {
                                 is_definition: false,
                                 inferred_type: None,
                                 detail: None,
+                                container: None,
                             });
                         }
                     }
@@ -1409,6 +1465,7 @@ impl Analyzer {
                 span: Some(span),
                 id: Some(id),
                 kind,
+                container: None,
             },
         );
     }
@@ -1435,6 +1492,7 @@ impl Analyzer {
             is_definition: true,
             inferred_type: None,
             detail: None,
+            container: None,
         });
         id
     }
@@ -1451,6 +1509,7 @@ impl Analyzer {
                 is_definition: false,
                 inferred_type: None,
                 detail: None,
+                container: definition.container,
             });
         } else {
             if !self.glob_imports.iter().rev().any(|has_glob| *has_glob) {
@@ -1469,6 +1528,7 @@ impl Analyzer {
                 is_definition: false,
                 inferred_type: None,
                 detail: None,
+                container: None,
             });
         }
     }
@@ -1491,6 +1551,7 @@ impl Analyzer {
             is_definition: false,
             inferred_type: None,
             detail: method.map(|method| method.detail),
+            container: None,
         });
     }
 
@@ -1521,6 +1582,7 @@ impl Analyzer {
             is_definition: false,
             inferred_type: None,
             detail: Some(variant.detail),
+            container: Some(SymbolContainer::Type(variant.owner)),
         });
     }
 
@@ -1598,6 +1660,9 @@ impl Analyzer {
                 is_definition: false,
                 inferred_type: None,
                 detail: self.type_alias_detail(&reference.name, &reference.arguments),
+                container: self
+                    .lookup(resolved_name)
+                    .and_then(|definition| definition.container.clone()),
             });
         }
     }
@@ -1629,6 +1694,30 @@ impl Analyzer {
             .last_mut()
             .expect("definition symbol")
             .detail = Some(detail);
+    }
+
+    fn set_last_container(&mut self, container: SymbolContainer) {
+        let symbol = self.result.symbols.last_mut().expect("definition symbol");
+        symbol.container = Some(container.clone());
+        if symbol.is_definition
+            && let Some(definition) = self
+                .scopes
+                .last_mut()
+                .and_then(|scope| scope.get_mut(&symbol.name))
+        {
+            definition.container = Some(container);
+        }
+    }
+
+    fn module_path_for_definition(&self, span: Span) -> String {
+        if let Some(module) = self.definition_modules.get(&span) {
+            return module.clone();
+        }
+        if self.module_path.is_empty() {
+            "crate".into()
+        } else {
+            self.module_path.join("::")
+        }
     }
 
     fn expand_type_alias(
@@ -1785,6 +1874,25 @@ fn function_detail(
     format!("fn {name}{generic_parameters}({parameters}){return_type}")
 }
 
+const MAX_HOVER_MEMBERS: usize = 8;
+
+fn hover_member_lines<T>(
+    members: &[T],
+    member_name: &str,
+    render: impl Fn(&T) -> String,
+) -> String {
+    let mut lines = members
+        .iter()
+        .take(MAX_HOVER_MEMBERS)
+        .map(|member| format!("    {},", render(member)))
+        .collect::<Vec<_>>();
+    let omitted = members.len().saturating_sub(MAX_HOVER_MEMBERS);
+    if omitted > 0 {
+        lines.push(format!("    // ... {omitted} more {member_name}"));
+    }
+    lines.join("\n")
+}
+
 fn struct_detail(
     name: &str,
     generic_parameters: &[GenericParameter],
@@ -1794,11 +1902,9 @@ fn struct_detail(
     if fields.is_empty() {
         return format!("struct {name}{generic_parameters}");
     }
-    let fields = fields
-        .iter()
-        .map(|field| format!("    {}: {},", field.name, field.type_annotation))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let fields = hover_member_lines(fields, "fields", |field| {
+        format!("{}: {}", field.name, field.type_annotation)
+    });
     format!("struct {name}{generic_parameters} {{\n{fields}\n}}")
 }
 
@@ -1847,11 +1953,7 @@ fn enum_detail(
     if variants.is_empty() {
         return format!("enum {name}{generic_parameters}");
     }
-    let variants = variants
-        .iter()
-        .map(|variant| format!("    {},", enum_variant_detail(variant)))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let variants = hover_member_lines(variants, "variants", enum_variant_detail);
     format!("enum {name}{generic_parameters} {{\n{variants}\n}}")
 }
 

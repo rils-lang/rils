@@ -489,6 +489,7 @@ fn preserves_external_import_symbol_kinds() {
                 kind: SymbolKind::Type,
                 inferred_type: None,
                 detail: Some("struct Event".into()),
+                module_path: "event".into(),
                 fields: Vec::new(),
             },
             ExternalModuleExport {
@@ -497,6 +498,7 @@ fn preserves_external_import_symbol_kinds() {
                 kind: SymbolKind::Function,
                 inferred_type: Some(Type::function(vec![Type::I32], Type::named("Event"))),
                 detail: Some("fn timing(delay: i32) -> Event".into()),
+                module_path: "event".into(),
                 fields: Vec::new(),
             },
         ],
@@ -539,6 +541,66 @@ fn preserves_external_import_symbol_kinds() {
             .iter()
             .any(|hint| hint.label == ": Event")
     );
+}
+
+#[test]
+fn records_hover_containers_for_types_fields_and_variants() {
+    let analysis = analyze(
+        r#"
+        mod domain {
+            pub struct Task { title: string }
+            pub enum Priority { Low, High }
+        }
+    "#,
+    )
+    .unwrap();
+
+    let container = |name: &str, kind| {
+        analysis
+            .symbols
+            .iter()
+            .find(|symbol| symbol.is_definition && symbol.name == name && symbol.kind == kind)
+            .and_then(|symbol| symbol.container.clone())
+    };
+    assert_eq!(
+        container("Task", SymbolKind::Type),
+        Some(SymbolContainer::Module("domain".into()))
+    );
+    assert_eq!(
+        container("title", SymbolKind::Field),
+        Some(SymbolContainer::Type("Task".into()))
+    );
+    assert_eq!(
+        container("High", SymbolKind::Variant),
+        Some(SymbolContainer::Type("Priority".into()))
+    );
+}
+
+#[test]
+fn truncates_large_struct_and_enum_hover_declarations() {
+    let fields = (0..10)
+        .map(|index| format!("field_{index}: i32"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let variants = (0..11)
+        .map(|index| format!("Variant{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = format!("struct Large {{ {fields} }} enum Many {{ {variants} }}");
+    let analysis = analyze(&source).unwrap();
+    let detail = |name: &str| {
+        analysis
+            .symbols
+            .iter()
+            .find(|symbol| symbol.is_definition && symbol.name == name)
+            .and_then(|symbol| symbol.detail.as_deref())
+            .unwrap()
+    };
+
+    assert!(detail("Large").contains("// ... 2 more fields"));
+    assert!(!detail("Large").contains("field_9"));
+    assert!(detail("Many").contains("// ... 3 more variants"));
+    assert!(!detail("Many").contains("Variant10"));
 }
 
 #[test]
