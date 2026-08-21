@@ -179,18 +179,19 @@ impl Server {
 
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         let source_id = self.source_id_for_uri(&uri);
+        let analysis = analyze_with_source_id_and_external_exports_and_host_types(
+            &text,
+            source_id,
+            &self.host_functions,
+            &self.host_types,
+            &HashMap::new(),
+        );
         self.documents.insert(
             uri.clone(),
             Document {
                 source_id,
                 text,
-                analysis: analyze_with_source_id_and_external_exports_and_host_types(
-                    "",
-                    source_id,
-                    &self.host_functions,
-                    &self.host_types,
-                    &HashMap::new(),
-                ),
+                analysis,
             },
         );
         self.reanalyze_documents();

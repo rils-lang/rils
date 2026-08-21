@@ -14,6 +14,8 @@ pub(super) struct ModuleExport {
     pub(super) name: String,
     pub(super) span: Span,
     pub(super) kind: SymbolKind,
+    pub(super) inferred_type: Option<crate::types::Type>,
+    pub(super) detail: Option<String>,
 }
 
 pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
@@ -22,7 +24,9 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
         for (index, (segment, segment_span)) in
             import.path.iter().zip(&import.path_spans).enumerate()
         {
-            if index == 0 {
+            let is_imported_item =
+                index + 1 == import.path.len() && import.kind == UseImportKind::Single;
+            if index == 0 && !is_imported_item {
                 analyzer.reference(segment, *segment_span, SymbolKind::Module);
             } else {
                 analyzer.result.symbols.push(SymbolOccurrence {
@@ -31,8 +35,7 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
                     definition_span: None,
                     symbol_id: None,
                     definition_id: None,
-                    kind: if index + 1 == import.path.len() && import.kind == UseImportKind::Single
-                    {
+                    kind: if is_imported_item {
                         exported
                             .as_ref()
                             .map(|export| export.kind)
@@ -41,8 +44,16 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
                         SymbolKind::Module
                     },
                     is_definition: false,
-                    inferred_type: None,
-                    detail: None,
+                    inferred_type: is_imported_item
+                        .then(|| {
+                            exported
+                                .as_ref()
+                                .and_then(|export| export.inferred_type.clone())
+                        })
+                        .flatten(),
+                    detail: is_imported_item
+                        .then(|| exported.as_ref().and_then(|export| export.detail.clone()))
+                        .flatten(),
                 });
             }
         }
@@ -62,6 +73,9 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
             |export| export.kind,
         );
         analyzer.define(name, name_span, kind);
+        if let Some(detail) = exported.and_then(|export| export.detail) {
+            analyzer.set_last_detail(detail);
+        }
     }
 }
 
@@ -172,6 +186,8 @@ fn public_export(statement: &Stmt) -> Option<ModuleExport> {
         name: name.clone(),
         span,
         kind,
+        inferred_type: None,
+        detail: None,
     })
 }
 

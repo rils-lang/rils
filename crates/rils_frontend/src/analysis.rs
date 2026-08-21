@@ -37,6 +37,8 @@ pub struct ExternalModuleExport {
     pub name: String,
     pub span: Span,
     pub kind: SymbolKind,
+    pub inferred_type: Option<Type>,
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -280,6 +282,8 @@ impl Analyzer {
                         name: export.name.clone(),
                         span: export.span,
                         kind: export.kind,
+                        inferred_type: export.inferred_type.clone(),
+                        detail: export.detail.clone(),
                     })
                     .collect()
             });
@@ -412,7 +416,31 @@ impl Analyzer {
         self.macros(program);
         self.statements(&program.statements);
         self.type_references(program);
-        let inference = type_inference::infer_with_host_functions(program, &self.host_functions);
+        let mut inference_functions = self.host_functions.clone();
+        for (module, exports) in &self.module_exports {
+            for export in exports {
+                let Some(Type::Function {
+                    parameters,
+                    return_type,
+                }) = &export.inferred_type
+                else {
+                    continue;
+                };
+                let signature = FunctionSignature {
+                    parameters: parameters.clone(),
+                    return_type: (**return_type).clone(),
+                };
+                for path in [
+                    format!("{module}::{}", export.name),
+                    format!("crate::{module}::{}", export.name),
+                ] {
+                    inference_functions
+                        .entry(path)
+                        .or_insert_with(|| signature.clone());
+                }
+            }
+        }
+        let inference = type_inference::infer_with_host_functions(program, &inference_functions);
         self.result.diagnostics.extend(crate::control_flow::analyze(
             program,
             &inference.expression_types,

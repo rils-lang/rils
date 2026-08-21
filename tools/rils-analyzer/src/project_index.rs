@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs};
 
 use rils_frontend::{
     SourceId,
-    analysis::{ExternalModuleExport, SymbolKind},
+    analysis::{DocumentAnalysis, ExternalModuleExport, SymbolKind},
     ast::Stmt,
     lexer::lex_with_source_id,
     parser::parse,
@@ -37,7 +37,16 @@ pub(super) fn collect_external_exports(
             let Ok(program) = parse(tokens) else {
                 continue;
             };
-            collect_statements(&program.statements, &project_file.module_path, &mut exports);
+            let analysis = server
+                .documents
+                .get(&uri)
+                .and_then(|document| document.analysis.as_ref().ok());
+            collect_statements(
+                &program.statements,
+                &project_file.module_path,
+                analysis,
+                &mut exports,
+            );
         }
     }
     exports
@@ -46,6 +55,7 @@ pub(super) fn collect_external_exports(
 fn collect_statements(
     statements: &[Stmt],
     module_path: &str,
+    analysis: Option<&DocumentAnalysis>,
     output: &mut HashMap<String, Vec<ExternalModuleExport>>,
 ) {
     let mut module_exports = Vec::new();
@@ -55,7 +65,7 @@ fn collect_statements(
             statement => (statement, false),
         };
         if is_public {
-            if let Some(export) = public_export(statement) {
+            if let Some(export) = public_export(statement, analysis) {
                 module_exports.push(export);
             }
         }
@@ -71,7 +81,7 @@ fn collect_statements(
                 } else {
                     format!("{module_path}::{name}")
                 };
-                collect_statements(children, &child_path, output);
+                collect_statements(children, &child_path, analysis, output);
             }
         }
     }
@@ -80,7 +90,10 @@ fn collect_statements(
     }
 }
 
-fn public_export(statement: &Stmt) -> Option<ExternalModuleExport> {
+fn public_export(
+    statement: &Stmt,
+    analysis: Option<&DocumentAnalysis>,
+) -> Option<ExternalModuleExport> {
     let (name, span, kind) = match statement {
         Stmt::Function {
             name, name_span, ..
@@ -106,5 +119,19 @@ fn public_export(statement: &Stmt) -> Option<ExternalModuleExport> {
         name: name.clone(),
         span,
         kind,
+        inferred_type: analysis.and_then(|analysis| {
+            analysis
+                .symbols
+                .iter()
+                .find(|symbol| symbol.is_definition && symbol.span == span)
+                .and_then(|symbol| symbol.inferred_type.clone())
+        }),
+        detail: analysis.and_then(|analysis| {
+            analysis
+                .symbols
+                .iter()
+                .find(|symbol| symbol.is_definition && symbol.span == span)
+                .and_then(|symbol| symbol.detail.clone())
+        }),
     })
 }

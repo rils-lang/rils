@@ -855,6 +855,42 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     let expected_uri = path_to_file_uri(&scripts.join("math.rils"));
     assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
 
+    let typed_import = "use crate::math::{add};\nfn main() { let total = add(1, 2); total; }";
+    server
+        .update_document(uri.clone(), typed_import.into())
+        .unwrap();
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 26 }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some("```rils\nfn add(left: i32, right: i32) -> i32\n```")
+    );
+    let use_hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": 19 }
+        }))
+        .unwrap();
+    assert_eq!(use_hover["contents"], hover["contents"]);
+    let hints = server
+        .inlay_hints(&json!({
+            "textDocument": { "uri": uri },
+            "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 1, "character": 50 }
+            }
+        }))
+        .unwrap();
+    assert!(
+        hints
+            .as_array()
+            .is_some_and(|hints| { hints.iter().any(|hint| hint["label"] == ": i32") })
+    );
+
     let multiple_globs = "use crate::other::*;\nuse crate::math::*;\nfn main() { add(1, 2); }";
     server
         .update_document(uri.clone(), multiple_globs.into())

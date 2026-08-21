@@ -416,11 +416,15 @@ fn preserves_external_import_symbol_kinds() {
                 name: "Event".into(),
                 span: Span::in_source(SourceId::new(2), 9, 14),
                 kind: SymbolKind::Type,
+                inferred_type: None,
+                detail: Some("struct Event".into()),
             },
             ExternalModuleExport {
                 name: "timing".into(),
                 span: Span::in_source(SourceId::new(2), 23, 29),
                 kind: SymbolKind::Function,
+                inferred_type: Some(Type::function(vec![Type::I32], Type::named("Event"))),
+                detail: Some("fn timing(delay: i32) -> Event".into()),
             },
         ],
     )]);
@@ -440,6 +444,28 @@ fn preserves_external_import_symbol_kinds() {
     };
     assert_eq!(imported_kind("Event"), Some(SymbolKind::Type));
     assert_eq!(imported_kind("timing"), Some(SymbolKind::Function));
+    let timing = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "timing")
+        .unwrap();
+    assert_eq!(
+        timing.inferred_type,
+        Some(Type::function(vec![Type::I32], Type::named("Event")))
+    );
+    let timing_use = analysis
+        .symbols
+        .iter()
+        .find(|symbol| !symbol.is_definition && symbol.name == "timing" && symbol.span.start < 35)
+        .unwrap();
+    assert_eq!(timing_use.inferred_type, timing.inferred_type);
+    assert_eq!(timing_use.detail, timing.detail);
+    assert!(
+        analysis
+            .inlay_hints
+            .iter()
+            .any(|hint| hint.label == ": Event")
+    );
 }
 
 #[test]

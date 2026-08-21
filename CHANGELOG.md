@@ -53,6 +53,9 @@
 
 ### Fixed
 
+- Analyzer 的项目索引现在会跨模块保留公开函数的完整签名与展示声明；通过显式、分组或通配
+  `use` 导入的函数可参与调用结果推导，Hover 不再显示未知类型，未标注的局部变量也会恢复
+  `: Type` inlay hint。编辑导出文件时会先分析最新文本再刷新项目索引，避免类型信息短暂丢失。
 - Analyzer 现在会在补全列表和 Hover 中显示用户函数、泛型类型、trait、固有方法及 enum variant 的完整
   声明；泛型 receiver 的方法返回值会按实际类型实参推导。跨文件 `use` 导入保留真实符号类别，
   record/unit/tuple enum variant 在构造与 match 模式中均可正确识别并跳转。
