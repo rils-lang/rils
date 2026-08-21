@@ -63,6 +63,7 @@ script_paths = ["scripts"]
 - [Rils 库产物](docs/library-artifacts.md)
 - [Analyzer 与编辑器能力](docs/analyzer.md)
 - [字节码设计](docs/bytecode.md)
+- [发布与分支流程](docs/release-process.md)
 - [C API 与 Host Manifest](docs/capi/README.md)
 - [Unity 互操作边界](docs/unity-interoperability.md)
 - [示例程序](examples)
@@ -70,5 +71,5 @@ script_paths = ["scripts"]
 - [未来规划与待办](TODO.md)
 - [变更日志](CHANGELOG.md)
 
-当前代码处于 `0.2.0` 阶段，适合语言实验、工具开发和受控宿主嵌入。Unity、UE 等引擎集成由
+当前代码处于 `0.3.0` 阶段，适合语言实验、工具开发和受控宿主嵌入。Unity、UE 等引擎集成由
 各自独立的插件工程维护，不属于 Rils 核心仓库的版本标准。

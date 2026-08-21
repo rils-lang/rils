@@ -1,7 +1,7 @@
 # Rils C API 与 C# facade（实验）
 
-`rils_capi` 是宿主无关的原生 facade。当前只验证 Windows DLL，ABI 版本为 `3`，但在 M0
-基准完成前不视为冻结接口，也不因此修改项目版本号。
+`rils_capi` 是宿主无关的原生 facade。当前只验证 Windows DLL，ABI 版本为 `4`。接口仍处于
+实验阶段，不承诺跨版本 ABI 稳定性，也不因本地构建或重新打包修改项目版本号。
 
 ## 构建
 

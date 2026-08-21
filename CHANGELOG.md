@@ -5,18 +5,29 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-08-22
+
 ### Breaking Changes
 
 - Host Manifest 二进制与 JSON 格式提升为 v2，新增命名宿主类型、单继承和逻辑类型到 ABI transport
   的映射。Runtime、CLI 和 Analyzer 仍可读取 v1，重新导出或链接时会写为 v2。
-- C ABI 提升为 version 4，新增 `rils_runtime_register_host_types` 和
+- C ABI 从 version 2 提升为 version 4。version 3 引入 trait implementation 枚举和 opaque script
+  value 生命周期接口；version 4 新增 `rils_runtime_register_host_types` 和
   `rils_runtime_register_host_functions_v2`。使用命名宿主类型的调用方必须先注册类型，再以逻辑类型
   与 transport 分离的参数结构注册函数；`rils_script_value_call_trait` 同步增加逐参数 transport/逻辑
   类型描述数组。仅使用 primitive/`HostHandle` 的宿主函数旧注册入口继续兼容。
 - `.rilbc` 格式由 v4 提升为 v5，新增经过 verifier 校验的 trait implementation 表；已有 `.rilbc`、
   Unity `.bytes` 和 `.rilslib` 内嵌模块需要从源码重新编译。
-- C ABI 提升为 version 3，增加 trait implementation 枚举和 opaque script value 生命周期接口；
-  C# facade 与 Unity 原生库必须成套更新。
+
+### Migration
+
+- 从 0.2.x 升级后，使用源码重新生成所有 `.rilbc`、Unity `.bytes` 和内嵌字节码的 `.rilslib`；v5
+  loader 会明确拒绝旧格式文件。
+- 重新导出或链接 Host Manifest，使其写为 v2。v1 Manifest 仍可被 Runtime、CLI 和 Analyzer 读取，
+  但不再应作为新发布产物。
+- C/C# 宿主必须将 native DLL、`rils.h` 生成的绑定和 `Rils.CSharp` facade 成套更新至 C ABI v4。
+  使用命名宿主类型时，先注册类型表，再通过 v2 函数注册接口提供逻辑类型与 transport 描述；持久
+  script value 的 trait 调用也要传入逐参数描述数组。
 
 ### Added
 

@@ -29,8 +29,8 @@ crate 消费 MIR 并完成字节码编码、验证和 VM 执行。encoder 迁移
 
 当前支持常量、局部 `let`/`let mut`、局部赋值、基础一元/二元运算、短路逻辑、块表达式、
 `if`、`while`、`loop`、`break value`、`continue`、函数、参数、直接命名调用、递归、函数值、
-间接调用、嵌套函数、词法闭包和 `return`。迭代控制流支持 Range 和拥有型数组的 `for`，包括
-`break value` 与 `continue`。
+间接调用、嵌套函数、词法闭包和 `return`。迭代控制流支持 Range、拥有型数组、`Vec`、`HashMap`、
+`HashSet` 及脚本自定义 `Iterator` / `IntoIterator` 的 `for`，包括 `break value` 与 `continue`。
 复合值已覆盖 tuple、数组、重复数组、Range、Option 和 Result，以及局部 tuple/数组的索引读取
 与写入、tuple 数字字段读写。函数内的 `?` 会在 VM 调用帧上直接传播 Err。局部和参数读取沿用
 Rils 的显式所有权语义：Copy 值复制，其他值 move；索引读取也会对非 Copy 元素执行部分 move。
@@ -153,7 +153,7 @@ tag/字段编码，每个 Span 都携带 SourceId。加载器限制文件为 64 
 section 拒绝加载，未知可选 section 在完成边界验证后跳过。
 
 由于语言当前存在 `usize`/`isize`，v5 记录目标指针宽度，32 位和 64 位产物不允许交叉加载，避免
-发生静默截断。`format version`、`language version` 和 `host ABI` 分别检查。当前格式仍处于 0.2.0
+发生静默截断。`format version`、`language version` 和 `host ABI` 分别检查。当前格式仍处于 0.3.0
 实验期，后续不兼容调整会提升格式版本；尚未承诺长期跨版本兼容。
 
 格式 v5 在 v4 的显式整数 `cast`、稳定 ID intrinsic 和来源文件表之外增加 trait implementation 表。
