@@ -557,7 +557,7 @@ impl Analyzer {
             }
             let Stmt::Impl {
                 trait_name: None,
-                target: Type::Named { name: _, .. },
+                target: Type::Named { .. },
                 methods,
                 ..
             } = statement

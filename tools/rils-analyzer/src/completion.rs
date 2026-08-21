@@ -389,10 +389,8 @@ fn close_open_delimiters(source: &str) -> String {
             '(' => delimiters.push(')'),
             '[' => delimiters.push(']'),
             '{' => delimiters.push('}'),
-            ')' | ']' | '}' => {
-                if delimiters.last() == Some(&character) {
-                    delimiters.pop();
-                }
+            ')' | ']' | '}' if delimiters.last() == Some(&character) => {
+                delimiters.pop();
             }
             _ => {}
         }
