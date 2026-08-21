@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    ast::{BinaryOp, Block, EnumVariant, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
+    ast::{
+        BinaryOp, Block, EnumVariant, Expr, Literal, Parameter, Pattern, Program, Stmt, UnaryOp,
+    },
     source::Span,
     types::{FunctionSignature, Type, merge_types},
 };
@@ -33,6 +35,7 @@ struct TypeDefinition {
     variants: HashMap<String, VariantDefinition>,
     methods: HashMap<String, Type>,
     implemented_traits: HashSet<String>,
+    associated_types: HashMap<(String, String), Type>,
 }
 
 #[derive(Clone)]
@@ -320,6 +323,7 @@ impl Inferencer {
                             variants: HashMap::new(),
                             methods: HashMap::new(),
                             implemented_traits: HashSet::new(),
+                            associated_types: HashMap::new(),
                         },
                     );
                 }
@@ -363,6 +367,7 @@ impl Inferencer {
                 Stmt::Impl {
                     target,
                     trait_name,
+                    associated_types,
                     methods,
                     ..
                 } => {
@@ -374,6 +379,14 @@ impl Inferencer {
                     };
                     if let Some(trait_name) = trait_name {
                         definition.implemented_traits.insert(trait_name.clone());
+                        for associated in associated_types {
+                            if let Some(value) = &associated.value {
+                                definition.associated_types.insert(
+                                    (trait_name.clone(), associated.name.clone()),
+                                    value.clone(),
+                                );
+                            }
+                        }
                     }
                     for method in methods {
                         let parameters = method
@@ -578,18 +591,18 @@ impl Inferencer {
                 Type::Unit
             }
             Stmt::TypeAlias { .. } => Type::Unit,
-            Stmt::Impl { methods, .. } => {
+            Stmt::Impl {
+                target, methods, ..
+            } => {
                 for method in methods {
                     self.with_scope_value(|inferencer| {
                         let parameter_types = method
                             .parameters
                             .iter()
-                            .map(|parameter| {
-                                parameter.type_annotation.clone().unwrap_or(Type::Unknown)
-                            })
+                            .map(|parameter| impl_parameter_type(parameter, target))
                             .collect::<Vec<_>>();
                         for parameter in &method.parameters {
-                            let ty = parameter.type_annotation.clone().unwrap_or(Type::Unknown);
+                            let ty = impl_parameter_type(parameter, target);
                             inferencer.define_binding(
                                 &parameter.name,
                                 parameter.span,
@@ -656,13 +669,17 @@ impl Inferencer {
                 body,
                 ..
             } => {
-                self.expression(iterable, returns);
+                let iterable_type = self.expression(iterable, returns);
+                let item_type = self.iterable_item_type(&iterable_type);
                 self.with_scope_value(|inferencer| {
                     inferencer.define_binding(
                         binding,
                         *binding_span,
-                        Binding { ty: Type::Unknown },
+                        Binding {
+                            ty: item_type.clone(),
+                        },
                     );
+                    inferencer.type_hint(*binding_span, item_type, ": ");
                     inferencer.block_contents(body, returns);
                 });
                 Type::Unit
@@ -780,10 +797,21 @@ impl Inferencer {
             Expr::Array {
                 elements, repeat, ..
             } => {
-                let mut element_type = Type::Unknown;
+                let mut element_type: Option<Type> = None;
                 for element in elements {
                     let actual = self.expression(element, returns);
-                    element_type = merge_types(&element_type, &actual).unwrap_or(Type::Unknown);
+                    element_type = Some(if let Some(current) = element_type {
+                        if (current.is_integer() && actual.is_integer())
+                            || (current.is_float() && actual.is_float())
+                        {
+                            self.unify(&current, &actual);
+                            current
+                        } else {
+                            merge_types(&current, &actual).unwrap_or(Type::Unknown)
+                        }
+                    } else {
+                        actual
+                    });
                 }
                 let length = repeat
                     .as_ref()
@@ -808,7 +836,7 @@ impl Inferencer {
                     self.unify(&repeat_type, &Type::USIZE);
                 }
                 Type::Array {
-                    element: Box::new(element_type),
+                    element: Box::new(element_type.unwrap_or(Type::Unknown)),
                     length,
                 }
             }
@@ -819,7 +847,7 @@ impl Inferencer {
             Expr::RecordLiteral { path, fields, .. } => {
                 let actual_fields = fields
                     .iter()
-                    .map(|(name, value)| (name, self.expression(value, returns)))
+                    .map(|field| (&field.name, self.expression(&field.value, returns)))
                     .collect::<Vec<_>>();
                 let Some(name) = path.first() else {
                     return Type::Unknown;
@@ -1113,6 +1141,9 @@ impl Inferencer {
     }
 
     fn field_type(&self, object_type: &Type, field: &str) -> Type {
+        if let Type::Reference { inner, .. } = object_type {
+            return self.field_type(inner, field);
+        }
         if let Type::Integer(integer) = object_type
             && let Some(intrinsic) = rils_builtins::integer_method(field)
         {
@@ -1178,6 +1209,51 @@ impl Inferencer {
         })
     }
 
+    fn iterable_item_type(&self, iterable_type: &Type) -> Type {
+        self.iterable_item_type_inner(iterable_type, 0)
+    }
+
+    fn iterable_item_type_inner(&self, iterable_type: &Type, depth: usize) -> Type {
+        if depth >= 8 {
+            return Type::Unknown;
+        }
+        match iterable_type {
+            Type::Reference { inner, .. } => self.iterable_item_type_inner(inner, depth + 1),
+            Type::Array { element, .. } => (**element).clone(),
+            Type::Named { name, arguments } => match name.as_str() {
+                "Vec" | "HashSet" | "SequenceIterator" | "Range" => {
+                    arguments.first().cloned().unwrap_or(Type::Unknown)
+                }
+                "HashMap" if arguments.len() == 2 => Type::Tuple(arguments.clone()),
+                _ => {
+                    let Some(definition) = self.types.get(name) else {
+                        return Type::Unknown;
+                    };
+                    let substitutions = definition
+                        .generic_parameters
+                        .iter()
+                        .cloned()
+                        .zip(arguments.iter().cloned())
+                        .collect::<HashMap<_, _>>();
+                    if let Some(item) = definition
+                        .associated_types
+                        .get(&("Iterator".into(), "Item".into()))
+                    {
+                        return item.substitute(&substitutions);
+                    }
+                    let Some(iterator) = definition
+                        .associated_types
+                        .get(&("IntoIterator".into(), "IntoIter".into()))
+                    else {
+                        return Type::Unknown;
+                    };
+                    self.iterable_item_type_inner(&iterator.substitute(&substitutions), depth + 1)
+                }
+            },
+            _ => Type::Unknown,
+        }
+    }
+
     fn define_binding(&mut self, name: &str, span: Span, binding: Binding) {
         self.result.binding_types.insert(span, binding.ty.clone());
         self.scopes
@@ -1206,6 +1282,23 @@ impl Inferencer {
         let result = action(self);
         self.scopes.pop();
         result
+    }
+}
+
+fn impl_parameter_type(parameter: &Parameter, target: &Type) -> Type {
+    if parameter.name != "self" {
+        return parameter.type_annotation.clone().unwrap_or(Type::Unknown);
+    }
+    match &parameter.type_annotation {
+        Some(Type::Reference { mutable, inner }) if matches!(inner.as_ref(), Type::Named { name, .. } if name == "Self") => {
+            Type::Reference {
+                mutable: *mutable,
+                inner: Box::new(target.clone()),
+            }
+        }
+        Some(Type::Named { name, .. }) if name == "Self" => target.clone(),
+        Some(ty) => ty.clone(),
+        None => target.clone(),
     }
 }
 

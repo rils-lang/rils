@@ -276,6 +276,14 @@ fn resolve_member_pattern(
             mutable,
             inner: Box::new(resolve_member_pattern(*inner, self_type, generics)),
         },
+        TypePattern::Named { path, arguments } => Type::Named {
+            name: path.into(),
+            arguments: arguments
+                .iter()
+                .copied()
+                .map(|argument| resolve_member_pattern(argument, self_type, generics))
+                .collect(),
+        },
         other => resolve_type_pattern(other),
     }
 }
@@ -375,6 +383,24 @@ mod tests {
                     Type::Variable("F".into()),
                 )],
                 Type::Result(Box::new(Type::I32), Box::new(Type::Variable("F".into()))),
+            ))
+        );
+    }
+
+    #[test]
+    fn builtin_members_replace_generics_nested_in_return_types() {
+        let tasks = Type::Named {
+            name: "Vec".into(),
+            arguments: vec![Type::named("Task")],
+        };
+        assert_eq!(
+            builtin_member_type(&tasks, "into_iter"),
+            Some(Type::function(
+                Vec::new(),
+                Type::Named {
+                    name: "SequenceIterator".into(),
+                    arguments: vec![Type::named("Task")],
+                }
             ))
         );
     }

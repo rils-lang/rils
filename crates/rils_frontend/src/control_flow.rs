@@ -219,8 +219,8 @@ impl<'a> Checker<'a> {
                 true
             }
             Expr::RecordLiteral { fields, .. } => {
-                for (_, value) in fields {
-                    self.expression(value);
+                for field in fields {
+                    self.expression(&field.value);
                 }
                 true
             }

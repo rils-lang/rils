@@ -4,7 +4,7 @@ use crate::{
     FrontendError,
     ast::{
         AssociatedType, Block, EnumVariant, Expr, GenericParameter, ImplMethod, NamedField,
-        Parameter, Pattern, Program, Stmt, TraitMethod,
+        Parameter, Pattern, Program, RecordField, Stmt, TraitMethod,
     },
     source::{SourceId, Span, SymbolId},
     type_inference,
@@ -39,6 +39,14 @@ pub struct ExternalModuleExport {
     pub kind: SymbolKind,
     pub inferred_type: Option<Type>,
     pub detail: Option<String>,
+    pub fields: Vec<ExternalTypeField>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExternalTypeField {
+    pub name: String,
+    pub span: Span,
+    pub ty: Type,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,6 +131,29 @@ struct InherentMethod {
 struct EnumVariantSymbol {
     span: Span,
     detail: String,
+}
+
+#[derive(Clone)]
+struct StructFieldSymbol {
+    span: Span,
+    ty: Type,
+    detail: String,
+}
+
+fn callable_detail(name: &str, ty: &Type) -> String {
+    let Type::Function {
+        parameters: Some(parameters),
+        return_type,
+    } = ty
+    else {
+        return format!("fn {name}: {ty}");
+    };
+    let parameters = parameters
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("fn {name}({parameters}) -> {return_type}")
 }
 
 #[doc(hidden)]
@@ -258,6 +289,8 @@ struct Analyzer {
     trait_members: HashMap<(String, String), Span>,
     inherent_methods: HashMap<String, Vec<InherentMethod>>,
     enum_variants: HashMap<(String, String), EnumVariantSymbol>,
+    struct_fields: HashMap<String, Vec<HashMap<String, StructFieldSymbol>>>,
+    member_receivers: HashMap<Span, Span>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
     host_functions: HashMap<String, FunctionSignature>,
     host_types: HashSet<String>,
@@ -289,6 +322,33 @@ impl Analyzer {
             });
         }
         let mut globals = HashMap::new();
+        let mut struct_fields = HashMap::new();
+        for exports in external_exports.values() {
+            for export in exports {
+                if export.fields.is_empty() || export.span.source == source_id {
+                    continue;
+                }
+                struct_fields
+                    .entry(export.name.clone())
+                    .or_insert_with(Vec::new)
+                    .push(
+                        export
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                (
+                                    field.name.clone(),
+                                    StructFieldSymbol {
+                                        span: field.span,
+                                        ty: field.ty.clone(),
+                                        detail: format!("field {}: {}", field.name, field.ty),
+                                    },
+                                )
+                            })
+                            .collect(),
+                    );
+            }
+        }
         for name in [
             "#rils_native_print",
             "#rils_native_println",
@@ -400,6 +460,8 @@ impl Analyzer {
             trait_members: HashMap::new(),
             inherent_methods: HashMap::new(),
             enum_variants: HashMap::new(),
+            struct_fields,
+            member_receivers: HashMap::new(),
             type_aliases: HashMap::new(),
             host_functions: host_functions.clone(),
             host_types: host_types.clone(),
@@ -412,6 +474,7 @@ impl Analyzer {
         self.collect_trait_members(&program.statements);
         self.collect_inherent_methods(&program.statements);
         self.collect_enum_variants(&program.statements);
+        self.collect_struct_fields(&program.statements);
         self.collect_type_aliases(&program.statements);
         self.macros(program);
         self.statements(&program.statements);
@@ -441,6 +504,7 @@ impl Analyzer {
             }
         }
         let inference = type_inference::infer_with_host_functions(program, &inference_functions);
+        self.enrich_member_symbols(&inference.expression_types);
         self.result.diagnostics.extend(crate::control_flow::analyze(
             program,
             &inference.expression_types,
@@ -468,7 +532,9 @@ impl Analyzer {
             .dedup_by(|left, right| left.span == right.span && left.message == right.message);
         for symbol in &mut self.result.symbols {
             if let Some(definition_span) = symbol.definition_span {
-                symbol.inferred_type = inference.binding_types.get(&definition_span).cloned();
+                if let Some(inferred_type) = inference.binding_types.get(&definition_span) {
+                    symbol.inferred_type = Some(inferred_type.clone());
+                }
             }
         }
         let definition_details = self
@@ -499,6 +565,157 @@ impl Analyzer {
             .collect();
         self.result.expression_types = inference.expression_types;
         self.result
+    }
+
+    fn collect_struct_fields(&mut self, statements: &[Stmt]) {
+        fn visit(
+            statements: &[Stmt],
+            output: &mut HashMap<String, Vec<HashMap<String, StructFieldSymbol>>>,
+        ) {
+            for statement in statements {
+                let statement = match statement {
+                    Stmt::Public { statement, .. } => statement.as_ref(),
+                    statement => statement,
+                };
+                match statement {
+                    Stmt::Struct { name, fields, .. } => {
+                        output.entry(name.clone()).or_default().push(
+                            fields
+                                .iter()
+                                .map(|field| {
+                                    (
+                                        field.name.clone(),
+                                        StructFieldSymbol {
+                                            span: field.span,
+                                            ty: field.type_annotation.clone(),
+                                            detail: format!(
+                                                "field {}: {}",
+                                                field.name, field.type_annotation
+                                            ),
+                                        },
+                                    )
+                                })
+                                .collect(),
+                        );
+                    }
+                    Stmt::Module {
+                        statements: Some(children),
+                        ..
+                    } => visit(children, output),
+                    _ => {}
+                }
+            }
+        }
+
+        visit(statements, &mut self.struct_fields);
+    }
+
+    fn enrich_member_symbols(&mut self, expression_types: &HashMap<Span, Type>) {
+        let mut updates = Vec::new();
+        for (index, symbol) in self.result.symbols.iter().enumerate() {
+            if symbol.is_definition {
+                continue;
+            }
+            let Some(receiver_span) = self.member_receivers.get(&symbol.span) else {
+                continue;
+            };
+            let Some(receiver_type) = expression_types.get(receiver_span) else {
+                continue;
+            };
+            let receiver_type = match receiver_type {
+                Type::Reference { inner, .. } => inner.as_ref(),
+                receiver_type => receiver_type,
+            };
+            if symbol.kind == SymbolKind::Method
+                && let Some(method_type) =
+                    crate::standard_library::builtin_member_type(receiver_type, &symbol.name)
+            {
+                updates.push((
+                    index,
+                    None,
+                    None,
+                    Some(method_type.clone()),
+                    Some(callable_detail(&symbol.name, &method_type)),
+                ));
+                continue;
+            }
+            if symbol.kind != SymbolKind::Field {
+                continue;
+            }
+            let Type::Named { name, .. } = receiver_type else {
+                continue;
+            };
+            let Some(definitions) = self.struct_fields.get(name) else {
+                continue;
+            };
+            let candidates = definitions
+                .iter()
+                .filter_map(|fields| fields.get(&symbol.name))
+                .collect::<Vec<_>>();
+            let [field] = candidates.as_slice() else {
+                continue;
+            };
+            let definition_id = self
+                .result
+                .symbols
+                .iter()
+                .find(|candidate| {
+                    candidate.is_definition
+                        && candidate.kind == SymbolKind::Field
+                        && candidate.span == field.span
+                })
+                .and_then(|candidate| candidate.symbol_id);
+            updates.push((
+                index,
+                Some(field.span),
+                definition_id,
+                Some(field.ty.clone()),
+                Some(field.detail.clone()),
+            ));
+        }
+        for (index, definition_span, definition_id, inferred_type, detail) in updates {
+            let symbol = &mut self.result.symbols[index];
+            symbol.definition_span = definition_span;
+            symbol.definition_id = definition_id;
+            symbol.inferred_type = inferred_type;
+            symbol.detail = detail;
+        }
+    }
+
+    fn record_field_symbol(&mut self, type_name: Option<&str>, field: &RecordField) {
+        let definition = type_name.and_then(|type_name| {
+            let definitions = self.struct_fields.get(type_name)?;
+            let candidates = definitions
+                .iter()
+                .filter_map(|fields| fields.get(&field.name))
+                .collect::<Vec<_>>();
+            let [field] = candidates.as_slice() else {
+                return None;
+            };
+            Some((*field).clone())
+        });
+        let definition_id = definition.as_ref().and_then(|field| {
+            self.result
+                .symbols
+                .iter()
+                .find(|candidate| {
+                    candidate.is_definition
+                        && candidate.kind == SymbolKind::Field
+                        && candidate.span == field.span
+                })
+                .and_then(|candidate| candidate.symbol_id)
+        });
+        self.result.symbols.push(SymbolOccurrence {
+            name: field.name.clone(),
+            span: field.name_span,
+            definition_span: definition.as_ref().map(|field| field.span),
+            symbol_id: None,
+            definition_id,
+            kind: SymbolKind::Field,
+            is_definition: false,
+            inferred_type: definition.as_ref().map(|field| field.ty.clone()),
+            detail: definition.map(|field| field.detail),
+        });
     }
 
     fn collect_type_aliases(&mut self, statements: &[Stmt]) {
@@ -726,6 +943,13 @@ impl Analyzer {
                 }
                 for field in fields {
                     self.definition_only(&field.name, field.span, SymbolKind::Field);
+                    self.set_last_detail(format!(
+                        "field {}: {}",
+                        field.name, field.type_annotation
+                    ));
+                    if let Some(symbol) = self.result.symbols.last_mut() {
+                        symbol.inferred_type = Some(field.type_annotation.clone());
+                    }
                 }
             }
             Stmt::Enum {
@@ -956,6 +1180,8 @@ impl Analyzer {
             }),
             Expr::Member { object, name, span } => {
                 self.expression(object);
+                self.member_receivers
+                    .insert(member_name_span(*span, name), object.span());
                 self.member_symbol(name, *span, SymbolKind::Field);
             }
             Expr::Index { object, index, .. } => {
@@ -987,8 +1213,9 @@ impl Analyzer {
                     );
                 }
                 self.variant_symbol_for_path(path, *span);
-                for (_, expression) in fields {
-                    self.expression(expression);
+                for field in fields {
+                    self.record_field_symbol(path.last().map(String::as_str), field);
+                    self.expression(&field.value);
                 }
             }
             Expr::Assign { target, value, .. } => {
@@ -1013,6 +1240,8 @@ impl Analyzer {
             } => {
                 if let Expr::Member { object, name, span } = callee.as_ref() {
                     self.expression(object);
+                    self.member_receivers
+                        .insert(member_name_span(*span, name), object.span());
                     self.member_symbol(name, *span, SymbolKind::Method);
                 } else {
                     self.expression(callee);

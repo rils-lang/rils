@@ -145,8 +145,8 @@ fn resolve_expression(
             }
         }
         Expr::RecordLiteral { fields, .. } => {
-            for (_, value) in fields {
-                resolve_expression(value, types)?;
+            for field in fields {
+                resolve_expression(&mut field.value, types)?;
             }
         }
         Expr::Call {

@@ -286,7 +286,7 @@ impl Parser {
                         self.expect_identifier("expected field name in constructor")?;
                     if fields
                         .iter()
-                        .any(|(existing, _): &(String, Expr)| existing == &name)
+                        .any(|existing: &crate::ast::RecordField| existing.name == name)
                     {
                         return Err(ParseError {
                             message: format!("duplicate field `{name}`"),
@@ -294,7 +294,11 @@ impl Parser {
                         });
                     }
                     self.expect(&TokenKind::Colon, "expected `:` after field name")?;
-                    fields.push((name, self.expression()?));
+                    fields.push(crate::ast::RecordField {
+                        name,
+                        name_span,
+                        value: self.expression()?,
+                    });
                     if self.take(&TokenKind::Comma).is_none() {
                         break;
                     }

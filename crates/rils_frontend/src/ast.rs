@@ -360,6 +360,13 @@ pub struct MatchArm {
 }
 
 #[derive(Clone, Debug)]
+pub struct RecordField {
+    pub name: String,
+    pub name_span: Span,
+    pub value: Expr,
+}
+
+#[derive(Clone, Debug)]
 pub enum Expr {
     Literal {
         value: Literal,
@@ -404,7 +411,7 @@ pub enum Expr {
     },
     RecordLiteral {
         path: Vec<String>,
-        fields: Vec<(String, Expr)>,
+        fields: Vec<RecordField>,
         span: Span,
     },
     Assign {

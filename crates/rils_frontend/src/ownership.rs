@@ -552,7 +552,7 @@ impl<'a> Checker<'a> {
             Expr::RecordLiteral { fields, span, .. } => {
                 let values = fields
                     .iter()
-                    .map(|(_, value)| self.expression(value))
+                    .map(|field| self.expression(&field.value))
                     .collect::<Vec<_>>();
                 if values.iter().any(|value| value.contains_reference) {
                     self.diagnostic(

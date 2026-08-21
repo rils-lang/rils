@@ -808,7 +808,10 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     .unwrap();
     fs::write(
         scripts.join("math.rils"),
-        "pub fn add(left: i32, right: i32) -> i32 { left + right }\nfn hidden() {}",
+        "pub fn add(left: i32, right: i32) -> i32 { left + right }\n\
+         pub struct Sum { value: i32 }\n\
+         pub fn sum(left: i32, right: i32) -> Sum { Sum { value: left + right } }\n\
+         fn hidden() {}",
     )
     .unwrap();
     fs::write(
@@ -855,7 +858,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     let expected_uri = path_to_file_uri(&scripts.join("math.rils"));
     assert_eq!(definition["uri"].as_str(), Some(expected_uri.as_str()));
 
-    let typed_import = "use crate::math::{add};\nfn main() { let total = add(1, 2); total; }";
+    let typed_import = "use crate::math::{sum};\nfn main() { let total = sum(1, 2); total.value; }";
     server
         .update_document(uri.clone(), typed_import.into())
         .unwrap();
@@ -867,7 +870,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nfn add(left: i32, right: i32) -> i32\n```")
+        Some("```rils\nfn sum(left: i32, right: i32) -> Sum\n```")
     );
     let use_hover = server
         .hover(&json!({
@@ -888,7 +891,44 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     assert!(
         hints
             .as_array()
-            .is_some_and(|hints| { hints.iter().any(|hint| hint["label"] == ": i32") })
+            .is_some_and(|hints| { hints.iter().any(|hint| hint["label"] == ": Sum") })
+    );
+    let field_hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 42 }
+        }))
+        .unwrap();
+    assert_eq!(
+        field_hover["contents"]["value"].as_str(),
+        Some("```rils\nfield value: i32\n```")
+    );
+    let field_definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 42 }
+        }))
+        .unwrap();
+    assert_eq!(
+        field_definition["uri"].as_str(),
+        Some(expected_uri.as_str())
+    );
+    let literal_field_hover = server
+        .hover(&json!({
+            "textDocument": { "uri": expected_uri },
+            "position": { "line": 2, "character": 50 }
+        }))
+        .unwrap();
+    assert_eq!(literal_field_hover["contents"], field_hover["contents"]);
+    let literal_field_definition = server
+        .definition(&json!({
+            "textDocument": { "uri": expected_uri },
+            "position": { "line": 2, "character": 50 }
+        }))
+        .unwrap();
+    assert_eq!(
+        literal_field_definition["uri"].as_str(),
+        Some(expected_uri.as_str())
     );
 
     let multiple_globs = "use crate::other::*;\nuse crate::math::*;\nfn main() { add(1, 2); }";
@@ -1011,6 +1051,115 @@ fn completes_project_modules_public_items_and_crate_aliases() {
             .is_some_and(|items| items.iter().any(|item| completion_named(item, "add")))
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .unwrap();
+    let kanban = repository.join("examples/task_board/src/kanban.rils");
+    let uri = path_to_file_uri(&kanban);
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        host_types: HashSet::new(),
+        projects: workspace_projects(repository).unwrap(),
+        next_source_id: 1,
+    };
+    server.load_workspace().unwrap();
+    let document_count = server.documents.len();
+    let vscode_uri = uri.replace("kanban.rils", "%6Banban.rils");
+    let open_text = fs::read_to_string(&kanban).unwrap();
+    server
+        .update_document(vscode_uri.clone(), open_text)
+        .unwrap();
+    assert_eq!(server.documents.len(), document_count);
+    assert!(analysis(&server.documents[&uri]).is_some_and(|analysis| {
+        analysis.symbols.iter().any(|symbol| {
+            symbol.name == "Vec" && symbol.kind == rils_frontend::analysis::SymbolKind::Type
+        })
+    }));
+
+    let hints = server
+        .inlay_hints(&json!({ "textDocument": { "uri": vscode_uri } }))
+        .unwrap();
+    assert!(
+        hints
+            .as_array()
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint["label"] == ": &mut Vec<Task>"
+                    && hint["position"] == json!({ "line": 18, "character": 17 })
+            }))
+    );
+    assert!(
+        hints
+            .as_array()
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint["label"] == ": Task"
+                    && hint["position"] == json!({ "line": 27, "character": 16 })
+            }))
+    );
+
+    for (line, character, expected) in [(18, 31, "Vec<Task>"), (37, 13, "i32")] {
+        let hover = server
+            .hover(&json!({
+                "textDocument": { "uri": vscode_uri },
+                "position": { "line": line, "character": character }
+            }))
+            .unwrap();
+        assert_eq!(
+            hover["contents"]["value"].as_str(),
+            Some(
+                format!(
+                    "```rils\nfield {}: {expected}\n```",
+                    if line == 18 { "tasks" } else { "active" }
+                )
+                .as_str()
+            )
+        );
+        let definition = server
+            .definition(&json!({
+                "textDocument": { "uri": vscode_uri },
+                "position": { "line": line, "character": character }
+            }))
+            .unwrap();
+        assert_eq!(definition["uri"].as_str(), Some(uri.as_str()));
+    }
+
+    let explicit_iterator = server.documents[&uri].text.replace(
+        "for task in self.tasks {",
+        "for task in self.tasks.into_iter() {",
+    );
+    server
+        .update_document(vscode_uri.clone(), explicit_iterator)
+        .unwrap();
+    let hints = server
+        .inlay_hints(&json!({ "textDocument": { "uri": vscode_uri } }))
+        .unwrap();
+    assert!(
+        hints
+            .as_array()
+            .is_some_and(|hints| hints.iter().any(|hint| {
+                hint["label"] == ": Task"
+                    && hint["position"] == json!({ "line": 27, "character": 16 })
+            }))
+    );
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": vscode_uri },
+            "position": { "line": 27, "character": 35 }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some("```rils\nfn into_iter() -> SequenceIterator<Task>\n```")
+    );
 }
 
 #[test]

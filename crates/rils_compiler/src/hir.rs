@@ -1130,7 +1130,7 @@ impl<'a> FunctionLowerer<'a> {
                     variant,
                     fields: fields
                         .iter()
-                        .map(|(name, value)| Ok((name.clone(), self.expression(value)?)))
+                        .map(|field| Ok((field.name.clone(), self.expression(&field.value)?)))
                         .collect::<Result<_, CompileError>>()?,
                     span: *span,
                 })

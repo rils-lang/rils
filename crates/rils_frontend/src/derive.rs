@@ -143,10 +143,11 @@ fn derive_statement(
         fields: fields
             .iter()
             .map(|field| {
-                Ok((
-                    field.name.clone(),
-                    default_expression(&field.type_annotation, field.span)?,
-                ))
+                Ok(crate::ast::RecordField {
+                    name: field.name.clone(),
+                    name_span: field.span,
+                    value: default_expression(&field.type_annotation, field.span)?,
+                })
             })
             .collect::<Result<Vec<_>, ParseError>>()?,
         span: *span,

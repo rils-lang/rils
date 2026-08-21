@@ -247,6 +247,8 @@ fn classifies_called_members_as_methods_and_other_members_as_fields() {
             struct Factory { value: i32 }
             impl Factory {
                 fn make(&self) -> i32 { self.value }
+                fn replace(&mut self, value: i32) { self.value = value; }
+                fn consume(self) -> i32 { self.value }
             }
             let factory = Factory { value: 42 };
             factory.make();
@@ -262,9 +264,27 @@ fn classifies_called_members_as_methods_and_other_members_as_fields() {
     assert!(analysis.symbols.iter().any(|symbol| {
         !symbol.is_definition && symbol.name == "make" && symbol.kind == SymbolKind::Method
     }));
-    assert!(analysis.symbols.iter().any(|symbol| {
-        !symbol.is_definition && symbol.name == "value" && symbol.kind == SymbolKind::Field
-    }));
+    let field_definition = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "value")
+        .unwrap();
+    assert_eq!(field_definition.inferred_type, Some(Type::I32));
+    assert_eq!(field_definition.detail.as_deref(), Some("field value: i32"));
+    let field_uses = analysis
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            !symbol.is_definition && symbol.name == "value" && symbol.kind == SymbolKind::Field
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(field_uses.len(), 5);
+    for field_use in field_uses {
+        assert_eq!(field_use.definition_span, Some(field_definition.span));
+        assert_eq!(field_use.definition_id, field_definition.symbol_id);
+        assert_eq!(field_use.inferred_type, Some(Type::I32));
+        assert_eq!(field_use.detail, field_definition.detail);
+    }
 }
 
 #[test]
@@ -366,6 +386,57 @@ fn infers_function_let_and_pattern_binding_types() {
 }
 
 #[test]
+fn infers_for_binding_types_from_builtin_and_custom_iterators() {
+    let source = r#"
+        struct Numbers { marker: i32 }
+        struct Source { marker: i32 }
+        impl Iterator for Numbers {
+            type Item = i32;
+            fn next(&mut self) -> Option<i32> { None }
+        }
+        impl IntoIterator for Source {
+            type IntoIter = Numbers;
+            fn into_iter(self) -> Numbers { Numbers { marker: self.marker } }
+        }
+        let values = Vec::from([1, 2]);
+        for array_item in [1, 2] { array_item; }
+        for vec_item in values { vec_item; }
+        for custom_item in Source { marker: 0 } { custom_item; }
+    "#;
+    let analysis = analyze(source).unwrap();
+    for binding in ["array_item", "vec_item", "custom_item"] {
+        assert!(
+            analysis.inlay_hints.iter().any(|hint| {
+                &source[hint.span.start..hint.span.end] == binding && hint.label == ": i32"
+            }),
+            "missing {binding}: {:?}",
+            analysis.inlay_hints
+        );
+    }
+}
+
+#[test]
+fn infers_for_binding_types_from_self_fields() {
+    let source = r#"
+        struct Task { value: i32 }
+        struct Board { tasks: Vec<Task> }
+        impl Board {
+            fn visit(self) {
+                for task in self.tasks { task.value; }
+            }
+        }
+    "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis.inlay_hints.iter().any(|hint| {
+            &source[hint.span.start..hint.span.end] == "task" && hint.label == ": Task"
+        }),
+        "{:?}",
+        analysis.inlay_hints
+    );
+}
+
+#[test]
 fn resolves_macro_definitions_and_invocations() {
     let source = "macro twice($value) { $value + $value } twice!(21)";
     let analysis = analyze(source).unwrap();
@@ -418,6 +489,7 @@ fn preserves_external_import_symbol_kinds() {
                 kind: SymbolKind::Type,
                 inferred_type: None,
                 detail: Some("struct Event".into()),
+                fields: Vec::new(),
             },
             ExternalModuleExport {
                 name: "timing".into(),
@@ -425,6 +497,7 @@ fn preserves_external_import_symbol_kinds() {
                 kind: SymbolKind::Function,
                 inferred_type: Some(Type::function(vec![Type::I32], Type::named("Event"))),
                 detail: Some("fn timing(delay: i32) -> Event".into()),
+                fields: Vec::new(),
             },
         ],
     )]);

@@ -476,8 +476,8 @@ impl<'a> Resolver<'a> {
                 }
             }
             Expr::RecordLiteral { fields, .. } => {
-                for (_, value) in fields {
-                    self.resolve_expression(value);
+                for field in fields {
+                    self.resolve_expression(&mut field.value);
                 }
             }
             Expr::Call {

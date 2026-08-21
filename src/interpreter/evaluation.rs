@@ -108,10 +108,10 @@ impl Interpreter {
             }
             Expr::RecordLiteral { path, fields, span } => {
                 let mut values = HashMap::new();
-                for (name, expression) in fields {
+                for field in fields {
                     values.insert(
-                        name.clone(),
-                        self.evaluate(expression, environment.clone())?,
+                        field.name.clone(),
+                        self.evaluate(&field.value, environment.clone())?,
                     );
                 }
                 self.construct_record(path, values, *span, &environment)

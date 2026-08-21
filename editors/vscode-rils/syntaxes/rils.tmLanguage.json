@@ -247,7 +247,7 @@
           "match": "\\b(?:bool|char|i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|string|function|Option|Result|Self)\\b"
         },
         {
-          "name": "support.type.builtin.rils",
+          "name": "entity.name.type.rils",
           "match": "\\b(?:Range|Vec|HashMap|HashSet|Copy|Clone|Default|Iterator|IntoIterator|Error|ErrorKind|core|std|prelude|io|fs|collections)\\b"
         },
         {

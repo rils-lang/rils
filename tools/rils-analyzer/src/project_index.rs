@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs};
 
 use rils_frontend::{
     SourceId,
-    analysis::{DocumentAnalysis, ExternalModuleExport, SymbolKind},
+    analysis::{DocumentAnalysis, ExternalModuleExport, ExternalTypeField, SymbolKind},
     ast::Stmt,
     lexer::lex_with_source_id,
     parser::parse,
@@ -94,25 +94,40 @@ fn public_export(
     statement: &Stmt,
     analysis: Option<&DocumentAnalysis>,
 ) -> Option<ExternalModuleExport> {
-    let (name, span, kind) = match statement {
+    let (name, span, kind, fields) = match statement {
         Stmt::Function {
             name, name_span, ..
-        } => (name, *name_span, SymbolKind::Function),
+        } => (name, *name_span, SymbolKind::Function, Vec::new()),
         Stmt::Struct {
-            name, name_span, ..
-        }
-        | Stmt::Enum {
+            name,
+            name_span,
+            fields,
+            ..
+        } => (
+            name,
+            *name_span,
+            SymbolKind::Type,
+            fields
+                .iter()
+                .map(|field| ExternalTypeField {
+                    name: field.name.clone(),
+                    span: field.span,
+                    ty: field.type_annotation.clone(),
+                })
+                .collect(),
+        ),
+        Stmt::Enum {
             name, name_span, ..
         }
         | Stmt::TypeAlias {
             name, name_span, ..
-        } => (name, *name_span, SymbolKind::Type),
+        } => (name, *name_span, SymbolKind::Type, Vec::new()),
         Stmt::Trait {
             name, name_span, ..
-        } => (name, *name_span, SymbolKind::Trait),
+        } => (name, *name_span, SymbolKind::Trait, Vec::new()),
         Stmt::Module {
             name, name_span, ..
-        } => (name, *name_span, SymbolKind::Module),
+        } => (name, *name_span, SymbolKind::Module, Vec::new()),
         _ => return None,
     };
     Some(ExternalModuleExport {
@@ -133,5 +148,6 @@ fn public_export(
                 .find(|symbol| symbol.is_definition && symbol.span == span)
                 .and_then(|symbol| symbol.detail.clone())
         }),
+        fields,
     })
 }

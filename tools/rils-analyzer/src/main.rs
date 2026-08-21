@@ -137,7 +137,10 @@ impl Server {
                 self.update_document(uri, text)?;
             }
             "textDocument/didClose" => {
-                let uri = string_at(&notification.params, &["textDocument", "uri"])?;
+                let uri = normalize_document_uri(&string_at(
+                    &notification.params,
+                    &["textDocument", "uri"],
+                )?);
                 if !self.workspace_documents.contains(&uri) {
                     self.documents.remove(&uri);
                 }
@@ -178,6 +181,7 @@ impl Server {
     }
 
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
+        let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri);
         let analysis = analyze_with_source_id_and_external_exports_and_host_types(
             &text,
@@ -400,7 +404,7 @@ impl Server {
     }
 
     fn document<'a>(&'a self, params: &Value) -> Result<(String, &'a Document), AnyError> {
-        let uri = string_at(params, &["textDocument", "uri"])?;
+        let uri = normalize_document_uri(&string_at(params, &["textDocument", "uri"])?);
         let document = self
             .documents
             .get(&uri)

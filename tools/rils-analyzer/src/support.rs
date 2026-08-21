@@ -618,6 +618,12 @@ pub(super) fn path_to_file_uri(path: &Path) -> String {
     }
 }
 
+/// Convert equivalent file URI spellings (for example VS Code's percent-encoded
+/// Windows drive URI) to the single spelling used by the workspace index.
+pub(super) fn normalize_document_uri(uri: &str) -> String {
+    file_uri_to_path(uri).map_or_else(|| uri.to_owned(), |path| path_to_file_uri(&path))
+}
+
 pub(super) fn percent_encode_path(path: &str) -> String {
     let mut encoded = String::new();
     for byte in path.bytes() {
