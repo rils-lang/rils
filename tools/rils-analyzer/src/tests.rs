@@ -1054,6 +1054,54 @@ fn completes_project_modules_public_items_and_crate_aliases() {
 }
 
 #[test]
+fn enum_variant_paths_go_to_variant_declarations() {
+    let text = "enum Priority {\n    Low,\n    High,\n}\nlet priority = Priority::High;\nmatch priority {\n    Priority::Low => 1,\n    Priority::High => 2,\n}";
+    let uri = "file:///enum-variant.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    let definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 4, "character": 26 }
+        }))
+        .unwrap();
+
+    assert_eq!(definition["uri"].as_str(), Some(uri.as_str()));
+    assert_eq!(
+        definition["range"],
+        json!({
+            "start": { "line": 2, "character": 4 },
+            "end": { "line": 2, "character": 8 }
+        })
+    );
+
+    let pattern_type_hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 6, "character": 6 }
+        }))
+        .unwrap();
+    assert_eq!(
+        pattern_type_hover["contents"]["value"].as_str(),
+        Some("```rils\nenum Priority {\n    Low,\n    High,\n}\n```")
+    );
+    let pattern_type_definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 6, "character": 6 }
+        }))
+        .unwrap();
+    assert_eq!(pattern_type_definition["uri"].as_str(), Some(uri.as_str()));
+    assert_eq!(
+        pattern_type_definition["range"],
+        json!({
+            "start": { "line": 0, "character": 5 },
+            "end": { "line": 0, "character": 13 }
+        })
+    );
+}
+
+#[test]
 fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

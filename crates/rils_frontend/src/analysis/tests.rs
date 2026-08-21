@@ -969,6 +969,31 @@ fn recognizes_enum_variants_in_paths_and_match_patterns() {
         match failed { Reading::Failure { code } => code }
     "#;
     let analysis = analyze(source).unwrap();
+    let reading_definition = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "Reading")
+        .expect("enum definition");
+    let pattern_type_start = source
+        .find("Reading::Value(value)")
+        .expect("tuple variant pattern");
+    let pattern_type = analysis
+        .symbols
+        .iter()
+        .find(|symbol| {
+            !symbol.is_definition
+                && symbol.name == "Reading"
+                && symbol.span.start == pattern_type_start
+        })
+        .expect("enum type in variant pattern");
+    assert_eq!(pattern_type.kind, SymbolKind::Type);
+    assert_eq!(pattern_type.definition_id, reading_definition.symbol_id);
+    assert_eq!(pattern_type.detail, reading_definition.detail);
+    let value_definition = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "Value")
+        .expect("variant definition");
     let value_uses = analysis
         .symbols
         .iter()
@@ -980,6 +1005,7 @@ fn recognizes_enum_variants_in_paths_and_match_patterns() {
             symbol.kind == SymbolKind::Variant
                 && symbol.detail.as_deref() == Some("Reading::Value(T)")
                 && symbol.definition_span.is_some()
+                && symbol.definition_id == value_definition.symbol_id
         }),
         "{value_uses:?}"
     );

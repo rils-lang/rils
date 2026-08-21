@@ -47,6 +47,7 @@ for (const requiredSyntax of [
   "constant.numeric.float.rils",
   "HashMap|HashSet",
   "derive|Default",
+  "constant.other.symbol.enum.rils",
 ]) {
   if (!grammar.includes(requiredSyntax)) {
     throw new Error(`TextMate grammar is missing support for ${requiredSyntax}.`);

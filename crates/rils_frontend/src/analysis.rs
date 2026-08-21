@@ -530,8 +530,21 @@ impl Analyzer {
         self.result
             .diagnostics
             .dedup_by(|left, right| left.span == right.span && left.message == right.message);
+        let definition_ids = self
+            .result
+            .symbols
+            .iter()
+            .filter_map(|symbol| {
+                symbol
+                    .is_definition
+                    .then_some((symbol.span, symbol.symbol_id?))
+            })
+            .collect::<HashMap<_, _>>();
         for symbol in &mut self.result.symbols {
             if let Some(definition_span) = symbol.definition_span {
+                if symbol.definition_id.is_none() {
+                    symbol.definition_id = definition_ids.get(&definition_span).copied();
+                }
                 if let Some(inferred_type) = inference.binding_types.get(&definition_span) {
                     symbol.inferred_type = Some(inferred_type.clone());
                 }
@@ -1302,20 +1315,20 @@ impl Analyzer {
     fn pattern(&mut self, pattern: &Pattern) {
         match pattern {
             Pattern::Wildcard { .. } | Pattern::Literal { .. } | Pattern::None { .. } => {}
-            Pattern::Path { path, span } => self.variant_symbol_for_path(path, *span),
+            Pattern::Path { path, span } => self.pattern_variant_symbols(path, *span),
             Pattern::Binding { name, span } => {
                 self.define(name, *span, SymbolKind::Variable);
             }
             Pattern::Some { inner, .. } => self.pattern(inner),
             Pattern::Ok { inner, .. } | Pattern::Err { inner, .. } => self.pattern(inner),
             Pattern::TupleVariant { path, fields, span } => {
-                self.variant_symbol_for_path(path, *span);
+                self.pattern_variant_symbols(path, *span);
                 for field in fields {
                     self.pattern(field);
                 }
             }
             Pattern::Record { path, fields, span } => {
-                self.variant_symbol_for_path(path, *span);
+                self.pattern_variant_symbols(path, *span);
                 for (_, pattern) in fields {
                     self.pattern(pattern);
                 }
@@ -1462,6 +1475,21 @@ impl Analyzer {
             inferred_type: None,
             detail: Some(variant.detail),
         });
+    }
+
+    fn pattern_variant_symbols(&mut self, path: &[String], symbol_span: Span) {
+        if let [enum_name, ..] = path {
+            self.reference(
+                enum_name,
+                Span::in_source(
+                    symbol_span.source,
+                    symbol_span.start,
+                    symbol_span.start + enum_name.len(),
+                ),
+                SymbolKind::Type,
+            );
+        }
+        self.variant_symbol_for_path(path, symbol_span);
     }
 
     fn type_references(&mut self, program: &Program) {

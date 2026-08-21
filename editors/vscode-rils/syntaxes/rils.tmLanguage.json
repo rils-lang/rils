@@ -103,6 +103,47 @@
     "declarations": {
       "patterns": [
         {
+          "name": "meta.enum.rils",
+          "begin": "\\b(enum)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)(?:\\s*<[^>{}]+>)?\\s*(\\{)",
+          "beginCaptures": {
+            "1": {"name": "storage.type.rils"},
+            "2": {"name": "entity.name.type.rils"},
+            "3": {"name": "punctuation.section.block.begin.rils"}
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {"name": "punctuation.section.block.end.rils"}
+          },
+          "applyEndPatternLast": true,
+          "patterns": [
+            {"include": "#comments"},
+            {"include": "#strings"},
+            {
+              "name": "meta.enum.variant.record.rils",
+              "begin": "\\b(\\p{Lu}[_\\p{L}\\p{N}]*)(?:\\s*)(\\{)",
+              "beginCaptures": {
+                "1": {"name": "constant.other.symbol.enum.rils"},
+                "2": {"name": "punctuation.section.block.begin.rils"}
+              },
+              "end": "\\}",
+              "endCaptures": {
+                "0": {"name": "punctuation.section.block.end.rils"}
+              },
+              "patterns": [
+                {"include": "#comments"},
+                {"include": "#types"},
+                {"include": "#punctuation"}
+              ]
+            },
+            {
+              "name": "constant.other.symbol.enum.rils",
+              "match": "\\b\\p{Lu}[_\\p{L}\\p{N}]*\\b(?=\\s*(?:\\(|,|\\}))"
+            },
+            {"include": "#types"},
+            {"include": "#punctuation"}
+          ]
+        },
+        {
           "match": "\\b(fn)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
           "captures": {
             "1": {"name": "storage.type.function.rils"},
@@ -182,6 +223,14 @@
     },
     "qualified-paths": {
       "patterns": [
+        {
+          "match": "\\b(\\p{Lu}[_\\p{L}\\p{N}]*)(::)(\\p{Lu}[_\\p{L}\\p{N}]*)(?=\\s*(?:\\(|\\{|,|\\}|$))",
+          "captures": {
+            "1": {"name": "entity.name.type.rils"},
+            "2": {"name": "punctuation.accessor.double-colon.rils"},
+            "3": {"name": "constant.other.symbol.enum.rils"}
+          }
+        },
         {
           "match": "<\\s*([_\\p{L}][_\\p{L}\\p{N}]*)\\s+(as)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)\\s*>\\s*(::)\\s*([_\\p{L}][_\\p{L}\\p{N}]*)(?=\\s*\\()",
           "captures": {

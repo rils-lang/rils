@@ -64,7 +64,8 @@
 - Analyzer 现在会从数组、集合、Range 以及自定义 `Iterator` / `IntoIterator` 的关联类型推导
   `for item in iterable` 的循环绑定类型，并显示 `item: Type` inlay hint。内建方法的嵌套泛型返回
   类型会保留具体实参，因此 `values.into_iter()` 可显示完整签名并继续推导循环项类型；VS Code
-  也会按普通类型相同的 scope 高亮 `Vec`、`HashMap` 等内置类型。
+  也会按普通类型相同的 scope 高亮 `Vec`、`HashMap` 等内置类型，并在源码及 Hover 代码块中
+  用独立的 enum member scope 高亮 enum variant。
 - Analyzer 现在会在补全列表和 Hover 中显示用户函数、泛型类型、trait、固有方法及 enum variant 的完整
   声明；泛型 receiver 的方法返回值会按实际类型实参推导。跨文件 `use` 导入保留真实符号类别，
   record/unit/tuple enum variant 在构造与 match 模式中均可正确识别并跳转。
