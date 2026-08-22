@@ -32,7 +32,7 @@ def resolve_output(repository_root: Path, value: str | None) -> Path:
 
     repository_root = repository_root.resolve()
     source_directory = (
-        repository_root / "crates" / "rils_capi" / "csharp" / "Rils.CSharp"
+        repository_root / "tools" / "rils-capi" / "csharp" / "Rils.CSharp"
     ).resolve()
     if repository_root == output or repository_root.is_relative_to(output):
         raise SystemExit(f"refusing to replace a repository ancestor: {output}")
@@ -77,7 +77,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-build",
         action="store_true",
-        help="reuse the existing crates/rils_capi/dist/win-x64/rils_capi.dll",
+        help="reuse the existing tools/rils-capi/dist/win-x64/rils_capi.dll",
     )
     args = parser.parse_args()
     if args.debug and args.skip_build:
@@ -86,12 +86,12 @@ def main() -> None:
     repository_root = Path(__file__).resolve().parent.parent
     output_directory = resolve_output(repository_root, args.output)
     source_directory = (
-        repository_root / "crates" / "rils_capi" / "csharp" / "Rils.CSharp"
+        repository_root / "tools" / "rils-capi" / "csharp" / "Rils.CSharp"
     )
     native_library = (
         repository_root
-        / "crates"
-        / "rils_capi"
+        / "tools"
+        / "rils-capi"
         / "dist"
         / "win-x64"
         / "rils_capi.dll"

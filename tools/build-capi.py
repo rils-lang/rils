@@ -50,8 +50,8 @@ def main() -> None:
             "build",
             str(
                 repository_root
-                / "crates"
-                / "rils_capi"
+                / "tools"
+                / "rils-capi"
                 / "csharp"
                 / "Rils.CSharp"
                 / "Rils.CSharp.csproj"
@@ -64,7 +64,7 @@ def main() -> None:
     )
 
     profile = "debug" if args.debug else "release"
-    output_directory = repository_root / "crates" / "rils_capi" / "dist" / "win-x64"
+    output_directory = repository_root / "tools" / "rils-capi" / "dist" / "win-x64"
     output_directory.mkdir(parents=True, exist_ok=True)
     for legacy_name in (
         "rils_unity.dll",
@@ -77,8 +77,8 @@ def main() -> None:
     artifacts = (
         repository_root / "target" / profile / "rils_capi.dll",
         repository_root
-        / "crates"
-        / "rils_capi"
+        / "tools"
+        / "rils-capi"
         / "csharp"
         / "Rils.CSharp"
         / "bin"

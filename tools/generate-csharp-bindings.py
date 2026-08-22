@@ -192,8 +192,8 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
-    header_path = root / "crates" / "rils_capi" / "include" / "rils.h"
-    output_path = root / "crates" / "rils_capi" / "csharp" / "Rils.CSharp" / "Generated" / "NativeMethods.g.cs"
+    header_path = root / "tools" / "rils-capi" / "include" / "rils.h"
+    output_path = root / "tools" / "rils-capi" / "csharp" / "Rils.CSharp" / "Generated" / "NativeMethods.g.cs"
     expected = generate(header_path.read_text(encoding="utf-8"))
     if args.check:
         actual = output_path.read_text(encoding="utf-8") if output_path.exists() else ""

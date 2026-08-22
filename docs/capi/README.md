@@ -11,13 +11,13 @@
 python tools/build-capi.py
 ```
 
-输出位于 `crates/rils_capi/dist/win-x64/`：
+输出位于 `tools/rils-capi/dist/win-x64/`：
 
 - `rils_capi.dll`
 - `Rils.CSharp.dll`
 
 `dist/` 是本地构建产物，不进入 git。独立 C# 项目位于
-[`crates/rils_capi/csharp/Rils.CSharp`](../../crates/rils_capi/csharp/Rils.CSharp)，业务代码不应分散声明 P/Invoke。
+[`tools/rils-capi/csharp/Rils.CSharp`](../../tools/rils-capi/csharp/Rils.CSharp)，业务代码不应分散声明 P/Invoke。
 
 ## 当前调用模型
 
@@ -72,7 +72,7 @@ C/C# 通过 generation handle 管理其生命周期。普通宿主调用
 
 输入 `RilsSlice` 仅在调用期间借用；输出句柄由创建者负责释放。`RilsValue.reserved` 必须为零，方便
 后续在不复用现有字段含义的前提下扩展协议。完整声明见
-[`crates/rils_capi/include/rils.h`](../../crates/rils_capi/include/rils.h)。Rust 构建 `cdylib` 本身不需要
+[`tools/rils-capi/include/rils.h`](../../tools/rils-capi/include/rils.h)。Rust 构建 `cdylib` 本身不需要
 这个头文件；它用于记录供 C/C++、C# P/Invoke 和绑定生成器消费的稳定布局与函数签名。
 
 C# 低层 P/Invoke 已由 `python tools/generate-csharp-bindings.py` 从头文件生成；高层 facade 负责 UTF-8、
@@ -86,5 +86,5 @@ C# 低层 P/Invoke 已由 `python tools/generate-csharp-bindings.py` 从头文�
 缓冲区不足，写入接口不会写 buffer，而会通过 `out_written` 返回所需长度。
 
 最小调用示例和复制说明见
-[`crates/rils_capi/csharp/README.md`](../../crates/rils_capi/csharp/README.md)。端到端冒烟项目会加载真实
+[`tools/rils-capi/csharp/README.md`](../../tools/rils-capi/csharp/README.md)。端到端冒烟项目会加载真实
 Windows DLL，覆盖函数调用、128 位整数、Unicode scalar、编译诊断和父子句柄级联释放。

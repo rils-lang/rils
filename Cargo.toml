@@ -30,7 +30,7 @@ members = [
     "crates/rils_frontend",
     "crates/rils_builtins",
     "crates/rils_project",
-    "crates/rils_capi",
+    "tools/rils-capi",
     "tools/rils-analyzer"
 ]
 resolver = "3"
