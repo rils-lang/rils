@@ -450,6 +450,20 @@ impl<'a> VirtualMachine<'a> {
                     self.frame_mut().registers[destination] =
                         Some(binary(left, operator, right, instruction.span)?);
                 }
+                Instruction::IntegerBinary {
+                    destination,
+                    left,
+                    operator,
+                    right,
+                    integer,
+                } => {
+                    let left = self.take_register(left, instruction.span)?;
+                    let right = self.take_register(right, instruction.span)?;
+                    self.frame_mut().registers[destination] = Some(
+                        crate::numeric::integer_binary_typed(left, integer, operator, right)
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                    );
+                }
                 Instruction::Call {
                     destination,
                     function,

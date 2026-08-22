@@ -238,11 +238,21 @@ fn encode_function(
                         left,
                         operator,
                         right,
-                    } => Instruction::Binary {
-                        destination,
-                        left,
-                        operator,
-                        right,
+                        integer,
+                    } => match integer {
+                        Some(integer) => Instruction::IntegerBinary {
+                            destination,
+                            left,
+                            operator,
+                            right,
+                            integer,
+                        },
+                        None => Instruction::Binary {
+                            destination,
+                            left,
+                            operator,
+                            right,
+                        },
                     },
                     MirInstruction::Call {
                         destination,

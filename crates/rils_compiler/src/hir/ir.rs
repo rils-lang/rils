@@ -188,6 +188,7 @@ pub enum HirExpression {
         left: Box<HirExpression>,
         operator: BinaryOp,
         right: Box<HirExpression>,
+        integer: Option<IntegerType>,
         span: Span,
     },
     Logical {

@@ -23,7 +23,7 @@ use super::{
 };
 
 const MAGIC: &[u8; 8] = b"RILBC\0\0\0";
-pub const BYTECODE_FORMAT_VERSION: u16 = 5;
+pub const BYTECODE_FORMAT_VERSION: u16 = 6;
 pub const BYTECODE_LANGUAGE_VERSION: (u16, u16, u16) = (0, 1, 0);
 
 const HEADER_LEN: usize = 32;
@@ -1645,6 +1645,20 @@ fn write_instruction(writer: &mut Writer, value: &SpannedInstruction) -> Result<
             writer.u8(write_binary(*operator));
             writer.index(*right, "right")?;
         }
+        Instruction::IntegerBinary {
+            destination,
+            left,
+            operator,
+            right,
+            integer,
+        } => {
+            writer.u8(44);
+            writer.index(*destination, "destination")?;
+            writer.index(*left, "left")?;
+            writer.u8(write_binary(*operator));
+            writer.index(*right, "right")?;
+            writer.u8(write_integer_type(*integer));
+        }
         Instruction::Call {
             destination,
             function,
@@ -2072,6 +2086,13 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruction> {
                 arguments: reader.indices()?,
             }
         }
+        44 => Instruction::IntegerBinary {
+            destination: reader.index()?,
+            left: reader.index()?,
+            operator: read_binary(reader.u8()?)?,
+            right: reader.index()?,
+            integer: read_integer_type(reader.u8()?)?,
+        },
         value => {
             return Err(BytecodeFormatError::new(format!(
                 "invalid instruction opcode {value}"

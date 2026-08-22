@@ -749,6 +749,13 @@ enum Instruction {
         operator: BinaryOp,
         right: usize,
     },
+    IntegerBinary {
+        destination: usize,
+        left: usize,
+        operator: BinaryOp,
+        right: usize,
+        integer: IntegerType,
+    },
     Call {
         destination: usize,
         function: usize,

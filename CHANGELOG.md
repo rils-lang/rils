@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- `.rilbc` 格式由 v5 提升为 v6：编译器会为已静态确定类型的整数二元运算写入专用指令。v6 loader
+  会明确拒绝 v5 及更早的产物。
+
+### Migration
+
+- 升级到包含 v6 loader 的版本后，从源码重新生成所有 `.rilbc`、Unity `.bytes` 和嵌入
+  `.rilslib` 的字节码模块。
+
+### Changed
+
+- VM 对静态类型已知的整数二元运算使用类型专用分派，减少热循环中的数值类型匹配；动态或非整数
+  运算继续使用通用指令路径。
+
 ## 0.3.0 - 2026-08-22
 
 ### Breaking Changes

@@ -752,6 +752,13 @@ impl<'a> FunctionLowerer<'a> {
                 left: Box::new(self.expression(left)?),
                 operator: *operator,
                 right: Box::new(self.expression(right)?),
+                integer: self
+                    .expression_types
+                    .get(&left.span())
+                    .and_then(|value| match value {
+                        Type::Integer(integer) => Some(*integer),
+                        _ => None,
+                    }),
                 span: *span,
             }),
             Expr::Logical {

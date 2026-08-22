@@ -12,6 +12,35 @@ fn assert_matches_interpreter(source: &str) {
 }
 
 #[test]
+fn emits_and_round_trips_typed_integer_binary_instructions() {
+    let module = compile("let mut value: i32 = 0; while value < 3 { value = value + 1; } value")
+        .expect("source should compile");
+
+    let has_i32_binary = |module: &BytecodeModule| {
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .any(|instruction| {
+                matches!(
+                    instruction.instruction,
+                    Instruction::IntegerBinary {
+                        integer: IntegerType::I32,
+                        ..
+                    }
+                )
+            })
+    };
+    assert!(has_i32_binary(&module));
+    assert_eq!(module.execute().unwrap(), Value::I32(3));
+
+    let image = module.to_bytes().expect("module serializes");
+    let loaded = BytecodeModule::from_bytes(&image).expect("module deserializes");
+    assert!(has_i32_binary(&loaded));
+    assert_eq!(loaded.execute().unwrap(), Value::I32(3));
+}
+
+#[test]
 fn trait_metadata_constructs_and_calls_persistent_default_instances() {
     let module = compile(
         r#"
