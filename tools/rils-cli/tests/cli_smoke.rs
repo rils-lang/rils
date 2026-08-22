@@ -62,6 +62,22 @@ fn compiles_verifies_and_runs_a_bytecode_module() {
 }
 
 #[test]
+fn displays_help_without_arguments() {
+    let cli = env!("CARGO_BIN_EXE_rils");
+    let help = Command::new(cli)
+        .output()
+        .expect("run rils without arguments");
+    assert!(
+        help.status.success(),
+        "help failed: {}",
+        String::from_utf8_lossy(&help.stderr)
+    );
+    let output = String::from_utf8_lossy(&help.stdout);
+    assert!(output.contains("Usage: rils"));
+    assert!(output.contains("repl"));
+}
+
+#[test]
 fn runs_a_project_directory() {
     let directory = temporary_directory();
     let source_directory = directory.join("src");

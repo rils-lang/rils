@@ -4,7 +4,7 @@ use std::{
     process::ExitCode,
 };
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use rils::{BytecodeModule, Engine, HostContract, Project, ProjectKind, RilsLibrary};
 
 use crate::args::{Cli, CliCommand, HostManifestCommand, LibraryCommand};
@@ -13,7 +13,7 @@ pub(crate) fn run(arguments: Vec<String>) -> ExitCode {
     let cli = Cli::try_parse_from(std::iter::once("rils".to_owned()).chain(arguments))
         .unwrap_or_else(|error| error.exit());
     match (cli.command, cli.script) {
-        (None, None) => crate::repl::run(),
+        (None, None) => print_help(),
         (None, Some(path))
             if Path::new(&path)
                 .extension()
@@ -22,6 +22,7 @@ pub(crate) fn run(arguments: Vec<String>) -> ExitCode {
             run_bytecode(&path)
         }
         (None, Some(path)) => run_source_file(&path),
+        (Some(CliCommand::Repl), None) => crate::repl::run(),
         (Some(CliCommand::Compile(command)), None) => {
             compile_file(&command.input, command.output.as_deref())
         }
@@ -44,6 +45,11 @@ pub(crate) fn run(arguments: Vec<String>) -> ExitCode {
         },
         (_, Some(_)) => unreachable!("clap does not allow a command and script together"),
     }
+}
+
+fn print_help() -> ExitCode {
+    print!("{}", Cli::command().render_help());
+    ExitCode::SUCCESS
 }
 
 fn compile_library(input: &str, output: Option<&str>) -> ExitCode {

@@ -11,10 +11,10 @@ Rils（Rust-Inspired Lightweight Script）是一门面向嵌入场景的轻量�
 cargo run -p rils_cli -- examples/hello.rils
 ```
 
-不传脚本路径会进入 REPL：
+通过 `repl` 命令进入 REPL：
 
 ```console
-cargo run -p rils_cli
+cargo run -p rils_cli -- repl
 ```
 
 ## Rust 嵌入
