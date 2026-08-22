@@ -6,6 +6,19 @@ use crate::args::IntegerType;
 
 use super::Benchmark;
 
+pub(super) fn empty_call(work: usize) -> Result<Benchmark, String> {
+    let value = i32::try_from(work).map_err(|_| "work does not fit in i32".to_owned())?;
+    benchmark_case(
+        "vm_empty_call.rils",
+        "echo",
+        work,
+        Value::I32(value),
+        Value::I32(value),
+        "vm-empty-call",
+        Some("i32"),
+    )
+}
+
 pub(super) fn counter_loop(work: usize, integer_type: IntegerType) -> Result<Benchmark, String> {
     let expected = expected_value(work, integer_type)?;
     benchmark_case(
@@ -131,7 +144,15 @@ fn expected_value(work: usize, integer_type: IntegerType) -> Result<Value, Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{IntegerType, integer_loop};
+    use super::{IntegerType, empty_call, integer_loop};
+
+    #[test]
+    fn empty_call_returns_its_argument() {
+        empty_call(1_000)
+            .expect("build empty VM call")
+            .run()
+            .expect("run empty VM call");
+    }
 
     #[test]
     fn integer_loop_returns_the_expected_sum() {

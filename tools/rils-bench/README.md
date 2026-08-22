@@ -11,6 +11,12 @@ Run it from the repository root through the stable Python entry point:
 python tools/benchmark.py vm-integer-loop
 ```
 
+Measure the fixed public bytecode-call cost before evaluating loop changes:
+
+```console
+python tools/benchmark.py vm-empty-call
+```
+
 Compare the supported counter integer types with the same workload:
 
 ```console
@@ -33,3 +39,7 @@ register, and frame-allocation regressions without including parse or compile ti
 `vm-counter-loop` performs only typed comparison and increment operations. It is the appropriate
 scenario for comparing `i32`, `u32`, `i64`, `u64`, and `usize` loop behavior without mixing in
 accumulator overflow constraints.
+
+`vm-empty-call` uses the same public bytecode call path but returns its integer argument directly.
+Compare it with `vm-counter-loop` to separate verifier, exported-function lookup, Host linking,
+and frame setup from per-iteration execution cost.

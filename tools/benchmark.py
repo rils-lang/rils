@@ -22,7 +22,10 @@ def command_output(command: list[str]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=["vm-counter-loop", "vm-integer-loop"])
+    parser.add_argument(
+        "scenario",
+        choices=["vm-empty-call", "vm-counter-loop", "vm-integer-loop"],
+    )
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--work", type=int, default=100_000)
@@ -63,7 +66,8 @@ def main() -> int:
         "python": platform.python_version(),
     }
     RESULTS.mkdir(parents=True, exist_ok=True)
-    output = RESULTS / f"{arguments.scenario}-{arguments.integer_type}-{timestamp}.json"
+    integer_type = result.get("integer_type") or "none"
+    output = RESULTS / f"{arguments.scenario}-{integer_type}-{timestamp}.json"
     output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(output.relative_to(ROOT))
     return 0

@@ -2,8 +2,12 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Clone, Debug, ValueEnum)]
 pub(crate) enum Scenario {
-    VmCounterLoop,
-    VmIntegerLoop,
+    #[value(name = "vm-empty-call")]
+    EmptyCall,
+    #[value(name = "vm-counter-loop")]
+    CounterLoop,
+    #[value(name = "vm-integer-loop")]
+    IntegerLoop,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]

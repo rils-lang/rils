@@ -21,7 +21,8 @@ pub(crate) fn build(
     integer_type: IntegerType,
 ) -> Result<Benchmark, String> {
     match scenario {
-        Scenario::VmCounterLoop => vm::counter_loop(work, integer_type),
-        Scenario::VmIntegerLoop => vm::integer_loop(work),
+        Scenario::EmptyCall => vm::empty_call(work),
+        Scenario::CounterLoop => vm::counter_loop(work, integer_type),
+        Scenario::IntegerLoop => vm::integer_loop(work),
     }
 }
