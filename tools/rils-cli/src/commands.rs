@@ -4,75 +4,46 @@ use std::{
     process::ExitCode,
 };
 
+use clap::Parser;
 use rils::{BytecodeModule, Engine, HostContract, RilsLibrary};
 
+use crate::args::{Cli, CliCommand, HostManifestCommand, LibraryCommand};
+
 pub(crate) fn run(arguments: Vec<String>) -> ExitCode {
-    match arguments.as_slice() {
-        [] => crate::repl::run(),
-        [command, input] if command == "compile" => compile_file(input, None),
-        [command, input, option, output] if command == "compile" && option == "-o" => {
-            compile_file(input, Some(output))
-        }
-        [command, path] if command == "verify" => verify_bytecode(path),
-        [command, path] if command == "run" => run_bytecode(path),
-        [command, action, input] if command == "library" && action == "compile" => {
-            compile_library(input, None)
-        }
-        [command, action, input, option, output]
-            if command == "library" && action == "compile" && option == "-o" =>
-        {
-            compile_library(input, Some(output))
-        }
-        [command, action, path] if command == "library" && action == "verify" => {
-            verify_library(path)
-        }
-        [command, action, input] if command == "host-manifest" && action == "compile" => {
-            compile_host_manifest(input, None)
-        }
-        [command, action, input, option, output]
-            if command == "host-manifest" && action == "compile" && option == "-o" =>
-        {
-            compile_host_manifest(input, Some(output))
-        }
-        [command, action, input] if command == "host-manifest" && action == "export-json" => {
-            export_host_manifest_json(input, None)
-        }
-        [command, action, input, option, output]
-            if command == "host-manifest" && action == "export-json" && option == "-o" =>
-        {
-            export_host_manifest_json(input, Some(output))
-        }
-        [command, action, input, option, output]
-            if command == "host-manifest" && action == "link" && option == "-o" =>
-        {
-            link_host_manifests(input, output)
-        }
-        [path]
-            if Path::new(path)
+    let cli = Cli::try_parse_from(std::iter::once("rils".to_owned()).chain(arguments))
+        .unwrap_or_else(|error| error.exit());
+    match (cli.command, cli.script) {
+        (None, None) => crate::repl::run(),
+        (None, Some(path))
+            if Path::new(&path)
                 .extension()
                 .is_some_and(|extension| extension == "rilbc") =>
         {
-            run_bytecode(path)
+            run_bytecode(&path)
         }
-        [path] => run_source_file(path),
-        _ => {
-            print_usage();
-            ExitCode::from(2)
+        (None, Some(path)) => run_source_file(&path),
+        (Some(CliCommand::Compile(command)), None) => {
+            compile_file(&command.input, command.output.as_deref())
         }
+        (Some(CliCommand::Verify { path }), None) => verify_bytecode(&path),
+        (Some(CliCommand::Run { path }), None) => run_bytecode(&path),
+        (Some(CliCommand::Library { command }), None) => match command {
+            LibraryCommand::Compile(command) => {
+                compile_library(&command.input, command.output.as_deref())
+            }
+            LibraryCommand::Verify { path } => verify_library(&path),
+        },
+        (Some(CliCommand::HostManifest { command }), None) => match command {
+            HostManifestCommand::Compile(command) => {
+                compile_host_manifest(&command.input, command.output.as_deref())
+            }
+            HostManifestCommand::ExportJson(command) => {
+                export_host_manifest_json(&command.input, command.output.as_deref())
+            }
+            HostManifestCommand::Link { input, output } => link_host_manifests(&input, &output),
+        },
+        (_, Some(_)) => unreachable!("clap does not allow a command and script together"),
     }
-}
-
-fn print_usage() {
-    eprintln!("usage:");
-    eprintln!("  rils [script.rils]");
-    eprintln!("  rils compile <script.rils> [-o output.rilbc]");
-    eprintln!("  rils verify <module.rilbc>");
-    eprintln!("  rils run <module.rilbc>");
-    eprintln!("  rils library compile <directory|rils.toml|source.rils> [-o output.rilslib]");
-    eprintln!("  rils library verify <library.rilslib>");
-    eprintln!("  rils host-manifest compile <contract.json> [-o contract.rilhm]");
-    eprintln!("  rils host-manifest export-json <contract.rilhm> [-o contract.json]");
-    eprintln!("  rils host-manifest link <directory|rils.toml> -o contract.rilhm");
 }
 
 fn compile_library(input: &str, output: Option<&str>) -> ExitCode {
