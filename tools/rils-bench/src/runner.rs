@@ -25,7 +25,7 @@ pub(crate) fn run() -> ExitCode {
         eprintln!("--work must be greater than zero");
         return ExitCode::FAILURE;
     }
-    let benchmark = match scenarios::build(args.scenario, args.work) {
+    let benchmark = match scenarios::build(args.scenario, args.work, args.integer_type) {
         Ok(benchmark) => benchmark,
         Err(error) => {
             eprintln!("failed to prepare benchmark: {error}");
@@ -53,7 +53,13 @@ pub(crate) fn run() -> ExitCode {
         });
     }
     black_box(&samples);
-    print_result(benchmark.name, args.work, args.warmups, &samples);
+    print_result(
+        benchmark.name,
+        benchmark.integer_type,
+        args.work,
+        args.warmups,
+        &samples,
+    );
     ExitCode::SUCCESS
 }
 
@@ -62,7 +68,13 @@ struct Sample {
     allocations: AllocationMetrics,
 }
 
-fn print_result(name: &str, work: usize, warmups: usize, samples: &[Sample]) {
+fn print_result(
+    name: &str,
+    integer_type: Option<&str>,
+    work: usize,
+    warmups: usize,
+    samples: &[Sample],
+) {
     let mut elapsed = samples
         .iter()
         .map(|sample| sample.elapsed.as_nanos())
@@ -74,8 +86,11 @@ fn print_result(name: &str, work: usize, warmups: usize, samples: &[Sample]) {
     let allocated_bytes = median_metric(samples, |metrics| metrics.allocated_bytes);
     let deallocated_bytes = median_metric(samples, |metrics| metrics.deallocated_bytes);
     let peak_live_bytes = median_metric(samples, |metrics| metrics.peak_live_bytes);
+    let integer_type = integer_type
+        .map(|integer_type| format!("\"{integer_type}\""))
+        .unwrap_or_else(|| "null".to_owned());
     println!(
-        "{{\"schema_version\":1,\"scenario\":\"{name}\",\"work\":{work},\"warmups\":{warmups},\"samples\":{},\"median_ns\":{median},\"p95_ns\":{p95},\"median_allocations\":{allocation_count},\"median_allocated_bytes\":{allocated_bytes},\"median_deallocated_bytes\":{deallocated_bytes},\"median_peak_live_bytes\":{peak_live_bytes}}}",
+        "{{\"schema_version\":1,\"scenario\":\"{name}\",\"integer_type\":{integer_type},\"work\":{work},\"warmups\":{warmups},\"samples\":{},\"median_ns\":{median},\"p95_ns\":{p95},\"median_allocations\":{allocation_count},\"median_allocated_bytes\":{allocated_bytes},\"median_deallocated_bytes\":{deallocated_bytes},\"median_peak_live_bytes\":{peak_live_bytes}}}",
         samples.len()
     );
 }

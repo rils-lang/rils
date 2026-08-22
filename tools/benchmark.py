@@ -22,10 +22,15 @@ def command_output(command: list[str]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=["vm-integer-loop"])
+    parser.add_argument("scenario", choices=["vm-counter-loop", "vm-integer-loop"])
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--work", type=int, default=100_000)
+    parser.add_argument(
+        "--integer-type",
+        choices=["i32", "u32", "i64", "u64", "usize"],
+        default="i64",
+    )
     arguments = parser.parse_args()
 
     command = [
@@ -42,6 +47,8 @@ def main() -> int:
         str(arguments.iterations),
         "--work",
         str(arguments.work),
+        "--integer-type",
+        arguments.integer_type,
     ]
     completed = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
     if completed.returncode:
@@ -56,7 +63,7 @@ def main() -> int:
         "python": platform.python_version(),
     }
     RESULTS.mkdir(parents=True, exist_ok=True)
-    output = RESULTS / f"{arguments.scenario}-{timestamp}.json"
+    output = RESULTS / f"{arguments.scenario}-{arguments.integer_type}-{timestamp}.json"
     output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(output.relative_to(ROOT))
     return 0
