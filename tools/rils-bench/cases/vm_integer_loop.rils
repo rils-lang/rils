@@ -1,0 +1,9 @@
+pub fn sum_to(limit: i64) -> i64 {
+    let mut index: i64 = 0;
+    let mut total: i64 = 0;
+    while index < limit {
+        total = total + index;
+        index = index + 1;
+    }
+    total
+}

@@ -4,6 +4,7 @@ use crate::args::{IntegerType, Scenario};
 
 pub(crate) struct Benchmark {
     pub(crate) name: &'static str,
+    pub(crate) case: &'static str,
     pub(crate) integer_type: Option<&'static str>,
     run: Box<dyn Fn() -> Result<(), String>>,
 }

@@ -1,27 +1,22 @@
-use std::hint::black_box;
+use std::{fs, hint::black_box, path::PathBuf};
 
-use rils::{BytecodeModule, ExecutionLimits, Value};
+use rils::{BytecodeHost, BytecodeModule, ExecutionLimits, Value};
 
 use crate::args::IntegerType;
 
 use super::Benchmark;
 
 pub(super) fn counter_loop(work: usize, integer_type: IntegerType) -> Result<Benchmark, String> {
-    let limit = typed_limit(work, integer_type)?;
-    let source = format!(
-        "fn count_to(limit: {type_name}) -> {type_name} {{\n    let mut index: {type_name} = 0;\n    while index < limit {{\n        index = index + 1;\n    }}\n    index\n}}\ncount_to({limit})\n",
-        type_name = integer_type.name(),
-    );
-    let module = rils::compile(&source).map_err(|error| error.to_string())?;
-    let limits = execution_limits(work);
     let expected = expected_value(work, integer_type)?;
-    verify_result(&module, limits, expected.clone())?;
-
-    Ok(Benchmark {
-        name: "vm-counter-loop",
-        integer_type: Some(integer_type.name()),
-        run: Box::new(move || verify_result(&module, limits, expected.clone())),
-    })
+    benchmark_case(
+        counter_case_name(integer_type),
+        "count_to",
+        work,
+        expected.clone(),
+        expected,
+        "vm-counter-loop",
+        Some(integer_type.name()),
+    )
 }
 
 pub(super) fn integer_loop(work: usize) -> Result<Benchmark, String> {
@@ -30,33 +25,80 @@ pub(super) fn integer_loop(work: usize) -> Result<Benchmark, String> {
         .checked_mul(work.saturating_sub(1))
         .and_then(|value| value.checked_div(2))
         .ok_or_else(|| "work produces an i64 overflow".to_owned())?;
-    let source = format!(
-        "fn sum_to(limit: i64) -> i64 {{\n    let mut index = 0;\n    let mut total = 0;\n    while index < limit {{\n        total = total + index;\n        index = index + 1;\n    }}\n    total\n}}\nsum_to({work})\n"
-    );
+    benchmark_case(
+        "vm_integer_loop.rils",
+        "sum_to",
+        usize::try_from(work).unwrap_or(usize::MAX),
+        Value::I64(work),
+        Value::I64(expected),
+        "vm-integer-loop",
+        Some("i64"),
+    )
+}
+
+fn benchmark_case(
+    case_name: &'static str,
+    function: &'static str,
+    work: usize,
+    argument: Value,
+    expected: Value,
+    name: &'static str,
+    integer_type: Option<&'static str>,
+) -> Result<Benchmark, String> {
+    let source = read_case(case_name)?;
     let module = rils::compile(&source).map_err(|error| error.to_string())?;
-    let limits = execution_limits(usize::try_from(work).unwrap_or(usize::MAX));
-    verify_result(&module, limits, Value::I64(expected))?;
+    let host = BytecodeHost::standard();
+    let limits = execution_limits(work);
+    verify_result(
+        &module,
+        &host,
+        function,
+        limits,
+        argument.clone(),
+        expected.clone(),
+    )?;
 
     Ok(Benchmark {
-        name: "vm-integer-loop",
-        integer_type: Some("i64"),
-        run: Box::new(move || verify_result(&module, limits, Value::I64(expected))),
+        name,
+        case: case_name,
+        integer_type,
+        run: Box::new(move || {
+            verify_result(
+                &module,
+                &host,
+                function,
+                limits,
+                argument.clone(),
+                expected.clone(),
+            )
+        }),
     })
 }
 
 fn verify_result(
     module: &BytecodeModule,
+    host: &BytecodeHost,
+    function: &str,
     limits: ExecutionLimits,
+    argument: Value,
     expected: Value,
 ) -> Result<(), String> {
     let result = module
-        .execute_with_limits(limits)
+        .call_with_host_and_limits(function, vec![argument], host, limits)
         .map_err(|error| error.to_string())?;
     if result != expected {
         return Err(format!("expected {expected}, received {result}"));
     }
     black_box(result);
     Ok(())
+}
+
+fn read_case(name: &str) -> Result<String, String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("cases")
+        .join(name);
+    fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read `{}`: {error}", path.display()))
 }
 
 fn execution_limits(work: usize) -> ExecutionLimits {
@@ -66,15 +108,14 @@ fn execution_limits(work: usize) -> ExecutionLimits {
     )
 }
 
-fn typed_limit(work: usize, integer_type: IntegerType) -> Result<String, String> {
+fn counter_case_name(integer_type: IntegerType) -> &'static str {
     match integer_type {
-        IntegerType::I32 => i32::try_from(work).map(|value| value.to_string()),
-        IntegerType::U32 => u32::try_from(work).map(|value| value.to_string()),
-        IntegerType::I64 => i64::try_from(work).map(|value| value.to_string()),
-        IntegerType::U64 => u64::try_from(work).map(|value| value.to_string()),
-        IntegerType::Usize => Ok(work.to_string()),
+        IntegerType::I32 => "vm_counter_i32.rils",
+        IntegerType::U32 => "vm_counter_u32.rils",
+        IntegerType::I64 => "vm_counter_i64.rils",
+        IntegerType::U64 => "vm_counter_u64.rils",
+        IntegerType::Usize => "vm_counter_usize.rils",
     }
-    .map_err(|_| format!("work {work} does not fit in {}", integer_type.name()))
 }
 
 fn expected_value(work: usize, integer_type: IntegerType) -> Result<Value, String> {

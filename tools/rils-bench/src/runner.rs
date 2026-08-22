@@ -55,6 +55,7 @@ pub(crate) fn run() -> ExitCode {
     black_box(&samples);
     print_result(
         benchmark.name,
+        benchmark.case,
         benchmark.integer_type,
         args.work,
         args.warmups,
@@ -70,6 +71,7 @@ struct Sample {
 
 fn print_result(
     name: &str,
+    case: &str,
     integer_type: Option<&str>,
     work: usize,
     warmups: usize,
@@ -90,7 +92,7 @@ fn print_result(
         .map(|integer_type| format!("\"{integer_type}\""))
         .unwrap_or_else(|| "null".to_owned());
     println!(
-        "{{\"schema_version\":1,\"scenario\":\"{name}\",\"integer_type\":{integer_type},\"work\":{work},\"warmups\":{warmups},\"samples\":{},\"median_ns\":{median},\"p95_ns\":{p95},\"median_allocations\":{allocation_count},\"median_allocated_bytes\":{allocated_bytes},\"median_deallocated_bytes\":{deallocated_bytes},\"median_peak_live_bytes\":{peak_live_bytes}}}",
+        "{{\"schema_version\":1,\"scenario\":\"{name}\",\"case\":\"{case}\",\"integer_type\":{integer_type},\"work\":{work},\"warmups\":{warmups},\"samples\":{},\"median_ns\":{median},\"p95_ns\":{p95},\"median_allocations\":{allocation_count},\"median_allocated_bytes\":{allocated_bytes},\"median_deallocated_bytes\":{deallocated_bytes},\"median_peak_live_bytes\":{peak_live_bytes}}}",
         samples.len()
     );
 }
