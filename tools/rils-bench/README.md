@@ -3,7 +3,8 @@
 `rils-bench` is an opt-in benchmark tool. It measures public Rils APIs and deliberately does
 not add benchmark-only hooks to the runtime. Its Rils workloads live as editable files in
 `cases/`; the runner compiles those files during benchmark setup and supplies the workload as a
-function argument.
+function argument. `cases/rils.toml` also declares the directory as an independent Rils project,
+so workspace-wide Analyzer scans do not treat benchmark scripts as modules of the repository root.
 
 Run it from the repository root through the stable Python entry point:
 
