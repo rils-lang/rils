@@ -11,6 +11,11 @@
   `rils_cli` crate，仍生成名为 `rils` 的可执行文件；仓库内开发与验证请使用
   `cargo run -p rils_cli -- <arguments>`。发布脚本也会从 `rils_cli` 构建 CLI 产物。
 
+### Added
+
+- `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `script_paths` 中的
+  `main.rils` 并按项目配置加载模块和宿主 Manifest。
+
 ## 0.3.0 - 2026-08-22
 
 ### Breaking Changes

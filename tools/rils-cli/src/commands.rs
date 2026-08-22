@@ -5,7 +5,7 @@ use std::{
 };
 
 use clap::Parser;
-use rils::{BytecodeModule, Engine, HostContract, RilsLibrary};
+use rils::{BytecodeModule, Engine, HostContract, Project, ProjectKind, RilsLibrary};
 
 use crate::args::{Cli, CliCommand, HostManifestCommand, LibraryCommand};
 
@@ -26,7 +26,7 @@ pub(crate) fn run(arguments: Vec<String>) -> ExitCode {
             compile_file(&command.input, command.output.as_deref())
         }
         (Some(CliCommand::Verify { path }), None) => verify_bytecode(&path),
-        (Some(CliCommand::Run { path }), None) => run_bytecode(&path),
+        (Some(CliCommand::Run { path }), None) => run_path(&path),
         (Some(CliCommand::Library { command }), None) => match command {
             LibraryCommand::Compile(command) => {
                 compile_library(&command.input, command.output.as_deref())
@@ -327,11 +327,55 @@ fn run_bytecode(path: &str) -> ExitCode {
     }
 }
 
-fn run_source_file(path: &str) -> ExitCode {
+fn run_path(path: &str) -> ExitCode {
+    let path = Path::new(path);
+    if path.is_dir() {
+        return run_project(path);
+    }
+    run_bytecode(path.to_string_lossy().as_ref())
+}
+
+fn run_project(directory: &Path) -> ExitCode {
+    let manifest = directory.join("rils.toml");
+    if !manifest.is_file() {
+        eprintln!(
+            "`{}` is not a Rils project directory: missing rils.toml",
+            directory.display()
+        );
+        return ExitCode::FAILURE;
+    }
+    let project = match Project::from_file(&manifest) {
+        Ok(project) => project,
+        Err(error) => {
+            eprintln!("failed to load `{}`: {error}", manifest.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    if project.kind() != ProjectKind::Bin {
+        eprintln!(
+            "project `{}` is a library and cannot be run",
+            project.name()
+        );
+        return ExitCode::FAILURE;
+    }
+    let Some(entry) = project
+        .source_roots()
+        .iter()
+        .map(|source_root| source_root.join("main.rils"))
+        .find(|candidate| candidate.is_file())
+    else {
+        eprintln!("project `{}` has no main.rils entry point", project.name());
+        return ExitCode::FAILURE;
+    };
+    run_source_file(&entry)
+}
+
+fn run_source_file(path: impl AsRef<Path>) -> ExitCode {
+    let path = path.as_ref();
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) => {
-            eprintln!("failed to read `{path}`: {error}");
+            eprintln!("failed to read `{}`: {error}", path.display());
             return ExitCode::FAILURE;
         }
     };
@@ -339,7 +383,7 @@ fn run_source_file(path: &str) -> ExitCode {
     match Engine::new().eval_file(path) {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{}", error.render(path, &source));
+            eprintln!("{}", error.render(path.to_string_lossy().as_ref(), &source));
             ExitCode::FAILURE
         }
     }

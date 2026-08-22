@@ -45,7 +45,7 @@ task_board/
 ```
 
 ```console
-cargo run -p rils_cli -- examples/task_board/src/main.rils
+cargo run -p rils_cli -- run examples/task_board
 ```
 
 入口返回 `1222`。
@@ -66,7 +66,7 @@ telemetry_pipeline/
 ```
 
 ```console
-cargo run -p rils_cli -- examples/telemetry_pipeline/src/main.rils
+cargo run -p rils_cli -- run examples/telemetry_pipeline
 ```
 
 入口返回 `7703`。

@@ -60,3 +60,33 @@ fn compiles_verifies_and_runs_a_bytecode_module() {
 
     fs::remove_dir_all(&directory).expect("remove temporary CLI test directory");
 }
+
+#[test]
+fn runs_a_project_directory() {
+    let directory = temporary_directory();
+    let source_directory = directory.join("src");
+    fs::create_dir_all(&source_directory).expect("create project source directory");
+    fs::write(
+        directory.join("rils.toml"),
+        "[project]\nname = \"cli_project\"\nscript_paths = [\"src\"]\n",
+    )
+    .expect("write project manifest");
+    fs::write(
+        source_directory.join("main.rils"),
+        "fn main() -> i32 { 42 }\n",
+    )
+    .expect("write project entry");
+
+    let cli = env!("CARGO_BIN_EXE_rils");
+    let run = Command::new(cli)
+        .args(["run", directory.to_str().unwrap()])
+        .output()
+        .expect("run rils project directory");
+    assert!(
+        run.status.success(),
+        "project run failed: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    fs::remove_dir_all(&directory).expect("remove temporary CLI test directory");
+}
