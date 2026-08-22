@@ -58,7 +58,8 @@
 
 - 完善 CLI 的项目检查、模块图、Manifest 校验和诊断导出命令。
 - 提供标准库 API 目录和由 `rils_builtins` 生成的文档入口。
-- 建立解释器、内存字节码、磁盘字节码和 Analyzer 的持续性能回归。
+- 已建立独立的 `tools/rils-bench` release 基准工具和 `python tools/benchmark.py` 稳定入口；继续扩展
+  解释器、磁盘字节码和 Analyzer 场景，并在基线稳定后建立持续性能回归。
 - 增加跨平台原生构建与发布矩阵，并明确各宿主的 ABI/字节码兼容策略。
 
 ## 记录规则
