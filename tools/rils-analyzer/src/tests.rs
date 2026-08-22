@@ -251,6 +251,31 @@ fn hover_shows_enum_record_field_variant_context() {
 }
 
 #[test]
+fn hover_preserves_public_declaration_keywords() {
+    let text = "pub struct Item;\npub enum State { Idle }\npub fn ready() -> State { State::Idle }";
+    let uri = "file:///public-hover.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    for (name, detail) in [
+        ("Item", "pub struct Item"),
+        ("State", "pub enum State {\n    Idle,\n}"),
+        ("ready", "pub fn ready() -> State"),
+    ] {
+        let [line, character] = position(text, text.find(name).unwrap());
+        let hover = server
+            .hover(&json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }))
+            .unwrap();
+        assert_eq!(
+            hover["contents"]["value"].as_str(),
+            Some(format!("```rils\ncrate\n```\n\n```rils\n{detail}\n```").as_str())
+        );
+    }
+}
+
+#[test]
 fn classifies_self_receivers_and_references_as_keywords() {
     let text = r#"struct Counter { value: i32 }
 impl Counter {
@@ -321,7 +346,7 @@ impl Counter {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nfn new(value: i32) -> Self\n```")
+        Some("```rils\nCounter\n```\n\n```rils\nfn new(value: i32) -> Self\n```")
     );
     let definition = server
         .definition(&json!({
@@ -998,7 +1023,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         assert_eq!(
             hover["contents"]["value"].as_str(),
             Some(
-                "```rils\nunity_game::math\n```\n\n```rils\nstruct Sum {\n    value: i32,\n}\n```"
+                "```rils\nunity_game::math\n```\n\n```rils\npub struct Sum {\n    value: i32,\n}\n```"
             )
         );
     }
@@ -1015,7 +1040,9 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nfn sum(left: i32, right: i32) -> Sum\n```")
+        Some(
+            "```rils\nunity_game::math\n```\n\n```rils\npub fn sum(left: i32, right: i32) -> Sum\n```"
+        )
     );
     let use_hover = server
         .hover(&json!({
@@ -1318,7 +1345,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
     assert_eq!(
         board_hover["contents"]["value"].as_str(),
         Some(
-            "```rils\ntask_board::kanban\n```\n\n```rils\nstruct Board {\n    tasks: Vec<Task>,\n}\n```"
+            "```rils\ntask_board::kanban\n```\n\n```rils\npub struct Board {\n    tasks: Vec<Task>,\n}\n```"
         )
     );
 

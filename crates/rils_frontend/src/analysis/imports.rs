@@ -59,10 +59,9 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
                         .flatten(),
                     container: is_imported_item
                         .then(|| {
-                            exported.as_ref().and_then(|export| {
-                                matches!(export.kind, SymbolKind::Type | SymbolKind::Trait)
-                                    .then(|| SymbolContainer::Module(export.module_path.clone()))
-                            })
+                            exported
+                                .as_ref()
+                                .map(|export| SymbolContainer::Module(export.module_path.clone()))
                         })
                         .flatten(),
                 });
@@ -88,9 +87,7 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
             if let Some(detail) = exported.detail {
                 analyzer.set_last_detail(detail);
             }
-            if matches!(kind, SymbolKind::Type | SymbolKind::Trait) {
-                analyzer.set_last_container(SymbolContainer::Module(exported.module_path));
-            }
+            analyzer.set_last_container(SymbolContainer::Module(exported.module_path));
         }
     }
 }
@@ -134,8 +131,7 @@ fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {
                 span: Some(export.span),
                 id: None,
                 kind: export.kind,
-                container: matches!(export.kind, SymbolKind::Type | SymbolKind::Trait)
-                    .then(|| SymbolContainer::Module(export.module_path)),
+                container: Some(SymbolContainer::Module(export.module_path)),
             },
         );
     }

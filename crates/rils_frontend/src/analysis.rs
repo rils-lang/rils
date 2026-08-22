@@ -934,7 +934,19 @@ impl Analyzer {
 
     fn statement(&mut self, statement: &Stmt) {
         match statement {
-            Stmt::Public { statement, .. } => self.statement(statement),
+            Stmt::Public { statement, .. } => {
+                let first_symbol = self.result.symbols.len();
+                self.statement(statement);
+                if let Some(symbol) = self.result.symbols.get_mut(first_symbol)
+                    && symbol.is_definition
+                {
+                    if let Some(detail) = &mut symbol.detail {
+                        *detail = format!("pub {detail}");
+                    } else if symbol.kind == SymbolKind::Module {
+                        symbol.detail = Some(format!("pub mod {}", symbol.name));
+                    }
+                }
+            }
             Stmt::Module {
                 name,
                 name_span,
@@ -968,6 +980,9 @@ impl Analyzer {
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Function);
+                self.set_last_container(SymbolContainer::Module(
+                    self.module_path_for_definition(*name_span),
+                ));
                 self.set_last_detail(function_detail(
                     name,
                     generic_parameters,
@@ -1121,6 +1136,9 @@ impl Analyzer {
                 for method in methods {
                     self.definition_only(&method.name, method.name_span, SymbolKind::Method);
                     self.set_last_detail(impl_method_detail(method));
+                    if let Some(owner) = &self_type {
+                        self.set_last_container(SymbolContainer::Type(owner.clone()));
+                    }
                     for parameter in &method.generic_parameters {
                         self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                     }
@@ -1271,7 +1289,7 @@ impl Analyzer {
                             is_definition: false,
                             inferred_type: None,
                             detail: Some(method.detail),
-                            container: None,
+                            container: Some(SymbolContainer::Type(method.owner)),
                         });
                     }
                 }
@@ -1556,8 +1574,8 @@ impl Analyzer {
                 .unwrap_or(fallback_kind),
             is_definition: false,
             inferred_type: None,
-            detail: method.map(|method| method.detail),
-            container: None,
+            detail: method.as_ref().map(|method| method.detail.clone()),
+            container: method.map(|method| SymbolContainer::Type(method.owner)),
         });
     }
 
