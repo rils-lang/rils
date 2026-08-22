@@ -224,6 +224,10 @@
     "qualified-paths": {
       "patterns": [
         {
+          "name": "entity.name.namespace.rils",
+          "match": "(?<![_\\p{L}\\p{N}:])[_\\p{Ll}][_\\p{L}\\p{N}]*(?=::)|(?<=::)[_\\p{Ll}][_\\p{L}\\p{N}]*(?=::|$)"
+        },
+        {
           "match": "\\b(\\p{Lu}[_\\p{L}\\p{N}]*)(::)(\\p{Lu}[_\\p{L}\\p{N}]*)(?=\\s*(?:\\(|\\{|,|\\}|$))",
           "captures": {
             "1": {"name": "entity.name.type.rils"},

@@ -1034,7 +1034,13 @@ impl Analyzer {
                     if let EnumVariant::Record { fields, .. } = variant {
                         for field in fields {
                             self.definition_only(&field.name, field.span, SymbolKind::Field);
-                            self.set_last_container(SymbolContainer::Type(name.clone()));
+                            self.set_last_detail(format!(
+                                "field {}: {}",
+                                field.name, field.type_annotation
+                            ));
+                            self.set_last_container(SymbolContainer::Type(format!(
+                                "{name}::{variant_name}"
+                            )));
                         }
                     }
                 }

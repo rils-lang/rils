@@ -10,7 +10,7 @@ use rils_compiler::{HOST_CONTRACT_ABI_VERSION, HostContract};
 use rils_frontend::{
     FrontendError, FunctionSignature, SourceId, Span, Type,
     analysis::{
-        DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind,
+        DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind, SymbolOccurrence,
         analyze_with_source_id_and_external_exports_and_host_types,
     },
     ast::Stmt,

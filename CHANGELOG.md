@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Analyzer Hover 现在以高亮的项目/模块或所属类型路径作为标题，并显示精简的声明主体；字段显示
+  `name: Type`，枚举 record variant 字段会保留完整的 `Enum::Variant` 上下文。内建类型保持紧凑，
+  不显示项目路径。
+
 ## 0.3.0 - 2026-08-22
 
 ### Breaking Changes
