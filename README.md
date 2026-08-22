@@ -8,13 +8,13 @@ Rils（Rust-Inspired Lightweight Script）是一门面向嵌入场景的轻量�
 需要支持 Rust 2024 Edition 的稳定 Rust 工具链：
 
 ```console
-cargo run -- examples/hello.rils
+cargo run -p rils_cli -- examples/hello.rils
 ```
 
 不传脚本路径会进入 REPL：
 
 ```console
-cargo run
+cargo run -p rils_cli
 ```
 
 ## Rust 嵌入

@@ -179,6 +179,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rils_cli"
+version = "0.3.0"
+dependencies = [
+ "rils",
+]
+
+[[package]]
 name = "rils_compiler"
 version = "0.3.0"
 dependencies = [

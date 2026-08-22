@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- 根 `rils` crate 现在是纯 Rust 嵌入库，不再构建 `rils` binary。命令行工具迁移为 workspace 中不发布的
+  `rils_cli` crate，仍生成名为 `rils` 的可执行文件；仓库内开发与验证请使用
+  `cargo run -p rils_cli -- <arguments>`。发布脚本也会从 `rils_cli` 构建 CLI 产物。
+
 ## 0.3.0 - 2026-08-22
 
 ### Breaking Changes
