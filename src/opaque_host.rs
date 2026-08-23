@@ -12,6 +12,14 @@ pub struct OpaqueHostHandle {
     pub type_id: u32,
 }
 
+/// Canonical 16-byte payload for a manifest-declared inline host value.
+/// Individual fields are explicitly packed by the host according to the
+/// manifest layout; this never represents a native Rust or managed struct.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InlineHostValue {
+    pub bytes: [u8; 16],
+}
+
 /// Construct a host object value with the stable `HostHandle` runtime type.
 pub fn opaque_host_value(handle: OpaqueHostHandle) -> Value {
     opaque_host_value_typed(handle, "HostHandle", HashSet::new())
@@ -40,4 +48,23 @@ pub fn opaque_host_handle(value: &Value) -> Option<OpaqueHostHandle> {
         return None;
     };
     object.payload.downcast_ref::<OpaqueHostHandle>().copied()
+}
+
+pub fn inline_host_value_typed(bytes: [u8; 16], type_name: impl Into<String>) -> Value {
+    Value::HostObject(Rc::new(HostObject {
+        type_definition: Rc::new(HostType {
+            name: type_name.into(),
+            base_types: HashSet::new(),
+            copy: true,
+            methods: Default::default(),
+        }),
+        payload: Rc::new(InlineHostValue { bytes }),
+    }))
+}
+
+pub fn inline_host_value(value: &Value) -> Option<InlineHostValue> {
+    let Value::HostObject(object) = value else {
+        return None;
+    };
+    object.payload.downcast_ref::<InlineHostValue>().copied()
 }

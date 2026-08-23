@@ -79,14 +79,15 @@ pub use bytecode::{
     HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
     HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
     HostContract, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
-    HostTypeDeclaration, HostTypeTransport,
+    HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 pub use error::RilsError;
 pub use library::{LibraryFormatError, RilsLibrary};
 pub use limits::ExecutionLimits;
 pub use native_type::{NativeFunctionHandler, NativeTypeHandle};
 pub use opaque_host::{
-    OpaqueHostHandle, opaque_host_handle, opaque_host_value, opaque_host_value_typed,
+    InlineHostValue, OpaqueHostHandle, inline_host_value, inline_host_value_typed,
+    opaque_host_handle, opaque_host_value, opaque_host_value_typed,
 };
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,

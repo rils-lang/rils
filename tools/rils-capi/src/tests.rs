@@ -71,6 +71,53 @@ unsafe extern "C" fn handle_dispatcher(
     RILS_STATUS_OK
 }
 
+unsafe extern "C" fn inline_value_dispatcher(
+    _user_data: *mut c_void,
+    function_id: u64,
+    arguments: *const RilsValue,
+    argument_count: usize,
+    out_value: *mut RilsValue,
+    _out_error: *mut RilsSlice,
+) -> i32 {
+    if arguments.is_null() || out_value.is_null() {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    let arguments = unsafe { slice::from_raw_parts(arguments, argument_count) };
+    let component = |value: &RilsValue, index: usize| {
+        let word = if index < 2 { value.low } else { value.high };
+        f32::from_bits((word >> ((index & 1) * 32)) as u32)
+    };
+    let pack = |x: f32, y: f32, z: f32| RilsValue {
+        tag: RILS_VALUE_INLINE_VALUE,
+        reserved: 0,
+        low: u64::from(x.to_bits()) | (u64::from(y.to_bits()) << 32),
+        high: u64::from(z.to_bits()),
+    };
+    let result = match function_id {
+        201 if argument_count == 3 && arguments.iter().all(|value| value.tag == RILS_VALUE_F32) => {
+            pack(
+                f32::from_bits(arguments[0].low as u32),
+                f32::from_bits(arguments[1].low as u32),
+                f32::from_bits(arguments[2].low as u32),
+            )
+        }
+        202 if argument_count == 1 && arguments[0].tag == RILS_VALUE_INLINE_VALUE => RilsValue {
+            tag: RILS_VALUE_F32,
+            reserved: 0,
+            low: u64::from(
+                (component(&arguments[0], 0)
+                    + component(&arguments[0], 1)
+                    + component(&arguments[0], 2))
+                .to_bits(),
+            ),
+            high: 0,
+        },
+        _ => return RILS_STATUS_INVALID_ARGUMENT,
+    };
+    unsafe { out_value.write(result) };
+    RILS_STATUS_OK
+}
+
 fn bytes(value: &str) -> RilsSlice {
     RilsSlice {
         data: value.as_ptr(),
@@ -301,6 +348,109 @@ fn dispatches_named_host_types_with_inherited_receiver_methods() {
     );
     assert_eq!(result.tag, RILS_VALUE_I64);
     assert_eq!(result.low, 77);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn dispatches_inline_value_types_through_multiple_host_calls() {
+    let runtime = rils_runtime_create();
+    let types = [RilsHostTypeV2 {
+        name: bytes("unity_engine::Vector3"),
+        base_type: bytes(""),
+        value_layout: bytes("f32x3"),
+        transport_tag: RILS_VALUE_INLINE_VALUE,
+        kind: RILS_HOST_TYPE_VALUE,
+        reserved: 0,
+    }];
+    assert_eq!(
+        unsafe { rils_runtime_register_host_types_v2(runtime, types.as_ptr(), types.len()) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let scalar_parameters = [RilsHostParameter {
+        logical_type: bytes(""),
+        transport_tag: RILS_VALUE_F32,
+        reserved: 0,
+    }; 3];
+    let vector_parameter = [RilsHostParameter {
+        logical_type: bytes("unity_engine::Vector3"),
+        transport_tag: RILS_VALUE_INLINE_VALUE,
+        reserved: 0,
+    }];
+    let functions = [
+        RilsHostFunctionV2 {
+            function_id: 201,
+            name: bytes("unity_engine::vector3::new"),
+            capability: bytes("unity.math"),
+            parameters: scalar_parameters.as_ptr(),
+            parameter_count: scalar_parameters.len(),
+            return_parameter: vector_parameter[0],
+            receiver: 0,
+            reserved: 0,
+        },
+        RilsHostFunctionV2 {
+            function_id: 202,
+            name: bytes("unity_engine::vector3::component_sum"),
+            capability: bytes("unity.math"),
+            parameters: vector_parameter.as_ptr(),
+            parameter_count: vector_parameter.len(),
+            return_parameter: RilsHostParameter {
+                logical_type: bytes(""),
+                transport_tag: RILS_VALUE_F32,
+                reserved: 0,
+            },
+            receiver: 0,
+            reserved: 0,
+        },
+    ];
+    assert_eq!(
+        unsafe {
+            rils_runtime_register_host_functions_v2(runtime, functions.as_ptr(), functions.len())
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(
+        rils_runtime_set_host_dispatcher(runtime, Some(inline_value_dispatcher), ptr::null_mut()),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        unsafe { rils_runtime_allow_capability(runtime, bytes("unity.math")) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+
+    let source = "unity_engine::vector3::component_sum(unity_engine::vector3::new(1.25f32, 2.5f32, 3.75f32))";
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(
+                runtime,
+                bytes("inline-value.rils"),
+                bytes(source),
+                &mut module,
+            )
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(result.tag, RILS_VALUE_F32);
+    assert_eq!(f32::from_bits(result.low as u32), 7.5);
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
 }
 

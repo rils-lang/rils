@@ -1210,12 +1210,14 @@ impl Inferencer {
             && arguments.is_empty()
             && let Some(signature) = self.host_functions.get(&format!("{name}::{field}"))
         {
-            let parameters = signature
-                .parameters
-                .as_ref()
-                .map(|parameters| parameters.iter().skip(1).cloned().collect())
-                .unwrap_or_default();
-            return FunctionSignature::fixed(parameters, signature.return_type.clone()).as_type();
+            return match signature.parameters.as_ref() {
+                Some(parameters) => FunctionSignature::fixed(
+                    parameters.iter().skip(1).cloned().collect(),
+                    signature.return_type.clone(),
+                ),
+                None => FunctionSignature::variadic(signature.return_type.clone()),
+            }
+            .as_type();
         }
         let Type::Named { name, arguments } = object_type else {
             return Type::Unknown;

@@ -6,11 +6,18 @@ use serde_json::{Map, Value, json};
 mod binary_v2;
 mod types;
 
-pub use types::{HostTypeDeclaration, HostTypeTransport};
+pub use types::{
+    HOST_INLINE_VALUE_MAX_BYTES, HOST_INLINE_VALUE_MAX_FIELDS, HostTypeDeclaration,
+    HostTypeTransport, HostValueFieldType, HostValueLayout,
+};
 use types::{is_assignable, validate_type_graph, validate_type_name};
 
-pub const HOST_MANIFEST_FORMAT_VERSION: u32 = 2;
-pub const HOST_MANIFEST_JSON_FORMAT_VERSION: u32 = 2;
+pub const HOST_MANIFEST_FORMAT_VERSION: u32 = 4;
+pub const HOST_MANIFEST_JSON_FORMAT_VERSION: u32 = 4;
+const HOST_MANIFEST_V3_FORMAT_VERSION: u32 = 3;
+const HOST_MANIFEST_V3_JSON_FORMAT_VERSION: u32 = 3;
+const HOST_MANIFEST_V2_FORMAT_VERSION: u32 = 2;
+const HOST_MANIFEST_V2_JSON_FORMAT_VERSION: u32 = 2;
 const HOST_MANIFEST_LEGACY_FORMAT_VERSION: u32 = 1;
 const HOST_MANIFEST_LEGACY_JSON_FORMAT_VERSION: u32 = 1;
 pub const HOST_CONTRACT_ABI_VERSION: u32 = 1;
@@ -190,6 +197,9 @@ impl HostContract {
     ) -> Result<(), String> {
         let name = name.into();
         let base_type = base_type.map(Into::into);
+        if transport != HostTypeTransport::HostHandle {
+            return Err("inline host values must be registered with register_value_type".into());
+        }
         validate_type_name(&name)?;
         if let Some(base) = base_type.as_deref() {
             validate_type_name(base)?;
@@ -206,6 +216,35 @@ impl HostContract {
             name: name.clone(),
             base_type,
             transport,
+            value_layout: None,
+        };
+        match self.types.get(&name) {
+            Some(existing) if existing == &declaration => Ok(()),
+            Some(_) => Err(format!("host type `{name}` has conflicting declarations")),
+            None => {
+                self.types.insert(name, declaration);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn register_value_type(
+        &mut self,
+        name: impl Into<String>,
+        layout: HostValueLayout,
+    ) -> Result<(), String> {
+        let name = name.into();
+        validate_type_name(&name)?;
+        if self.types.len() >= HOST_MANIFEST_MAX_TYPES && !self.types.contains_key(&name) {
+            return Err(format!(
+                "host contract exceeds the {HOST_MANIFEST_MAX_TYPES} type limit"
+            ));
+        }
+        let declaration = HostTypeDeclaration {
+            name: name.clone(),
+            base_type: None,
+            transport: HostTypeTransport::InlineValue,
+            value_layout: Some(layout),
         };
         match self.types.get(&name) {
             Some(existing) if existing == &declaration => Ok(()),
@@ -302,8 +341,12 @@ impl HostContract {
                 "host contract exceeds the {HOST_MANIFEST_MAX_FUNCTIONS} function limit"
             ));
         }
-        if self.functions.contains_key(&name) {
-            return Err(format!("host function `{name}` is already declared"));
+        let overload_key = function_overload_key(&name, &signature);
+        if self.functions.contains_key(&overload_key) {
+            return Err(format!(
+                "host function `{name}` is already declared with mapped parameter signature `{}`",
+                format_parameter_list(&signature)
+            ));
         }
         if !self.function_ids.insert(function_id) {
             return Err(format!(
@@ -311,7 +354,7 @@ impl HostContract {
             ));
         }
         self.functions.insert(
-            name.clone(),
+            overload_key,
             HostFunctionDeclaration {
                 function_id,
                 name,
@@ -340,6 +383,22 @@ impl HostContract {
 
     pub fn is_type_assignable(&self, expected: &str, actual: &str) -> bool {
         is_assignable(&self.types, expected, actual)
+    }
+
+    pub fn type_assignment_distance(&self, expected: &str, actual: &str) -> Option<usize> {
+        if expected == actual {
+            return Some(0);
+        }
+        let mut distance = 0usize;
+        let mut current = self.types.get(actual)?;
+        while let Some(base) = current.base_type.as_deref() {
+            distance += 1;
+            if base == expected {
+                return Some(distance);
+            }
+            current = self.types.get(base)?;
+        }
+        None
     }
 
     pub fn type_lineage(&self, name: &str) -> Result<HashSet<String>, String> {
@@ -389,7 +448,26 @@ impl HostContract {
     }
 
     pub fn function(&self, name: &str) -> Option<&HostFunctionDeclaration> {
-        self.functions.get(name)
+        let mut overloads = self.functions_named(name);
+        let function = overloads.next()?;
+        overloads.next().is_none().then_some(function)
+    }
+
+    pub fn functions_named(&self, name: &str) -> impl Iterator<Item = &HostFunctionDeclaration> {
+        self.functions
+            .values()
+            .filter(move |function| function.name == name)
+    }
+
+    pub(crate) fn function_overloads(&self) -> HashMap<String, Vec<HostFunctionDeclaration>> {
+        let mut overloads = HashMap::<String, Vec<HostFunctionDeclaration>>::new();
+        for function in self.functions.values() {
+            overloads
+                .entry(function.name.clone())
+                .or_default()
+                .push(function.clone());
+        }
+        overloads
     }
 
     /// Merges another verified manifest fragment into this logical contract.
@@ -411,14 +489,21 @@ impl HostContract {
             self.register_module(&module.name, module.version)?;
         }
         for declaration in fragment.types() {
-            self.register_type(
-                &declaration.name,
-                declaration.base_type.as_deref(),
-                declaration.transport,
-            )?;
+            if let Some(layout) = declaration.value_layout {
+                self.register_value_type(&declaration.name, layout)?;
+            } else {
+                self.register_type(
+                    &declaration.name,
+                    declaration.base_type.as_deref(),
+                    declaration.transport,
+                )?;
+            }
         }
         for function in fragment.functions() {
-            if let Some(existing) = self.function(&function.name) {
+            if let Some(existing) = self
+                .functions_named(&function.name)
+                .find(|existing| existing.signature.parameters == function.signature.parameters)
+            {
                 if existing == function {
                     continue;
                 }
@@ -472,7 +557,9 @@ impl HostContract {
             .ok_or_else(|| "binary host manifest is shorter than its fixed header".to_string())?;
         match version {
             HOST_MANIFEST_LEGACY_FORMAT_VERSION => decode_binary_manifest(bytes),
-            HOST_MANIFEST_FORMAT_VERSION => binary_v2::decode(bytes),
+            HOST_MANIFEST_V2_FORMAT_VERSION
+            | HOST_MANIFEST_V3_FORMAT_VERSION
+            | HOST_MANIFEST_FORMAT_VERSION => binary_v2::decode(bytes),
             _ => Err(format!(
                 "unsupported binary host manifest format version {version}"
             )),
@@ -510,6 +597,8 @@ impl HostContract {
         )?;
         let format_version = required_u32(root, "format_version", "host manifest")?;
         if format_version != HOST_MANIFEST_JSON_FORMAT_VERSION
+            && format_version != HOST_MANIFEST_V3_JSON_FORMAT_VERSION
+            && format_version != HOST_MANIFEST_V2_JSON_FORMAT_VERSION
             && format_version != HOST_MANIFEST_LEGACY_JSON_FORMAT_VERSION
         {
             return Err(format!(
@@ -522,7 +611,7 @@ impl HostContract {
             return Err("host ABI and contract versions must be non-zero".into());
         }
         let mut contract = Self::with_versions(host_abi_version, contract_version)?;
-        if format_version == HOST_MANIFEST_JSON_FORMAT_VERSION {
+        if format_version >= HOST_MANIFEST_V2_JSON_FORMAT_VERSION {
             let types = required_array(root, "types", "host manifest")?;
             if types.len() > HOST_MANIFEST_MAX_TYPES {
                 return Err(format!(
@@ -530,7 +619,7 @@ impl HostContract {
                 ));
             }
             for declaration in types {
-                parse_type_declaration(&mut contract, declaration)?;
+                parse_type_declaration(&mut contract, declaration, format_version)?;
             }
             validate_type_graph(&contract.types)?;
         } else if root.contains_key("types") {
@@ -559,10 +648,15 @@ impl HostContract {
                 let expected = expected
                     .as_str()
                     .ok_or_else(|| "host manifest `contract_hash` must be a string".to_string())?;
-                let actual = if format_version == HOST_MANIFEST_LEGACY_JSON_FORMAT_VERSION {
-                    legacy_contract_hash(&contract)?
-                } else {
-                    contract.contract_hash()
+                let actual = match format_version {
+                    HOST_MANIFEST_LEGACY_JSON_FORMAT_VERSION => legacy_contract_hash(&contract)?,
+                    HOST_MANIFEST_V2_JSON_FORMAT_VERSION => {
+                        manifest_hash(&binary_v2::encode_legacy_v2(&contract)?)?
+                    }
+                    HOST_MANIFEST_V3_JSON_FORMAT_VERSION => {
+                        manifest_hash(&binary_v2::encode_legacy_v3(&contract)?)?
+                    }
+                    _ => contract.contract_hash(),
                 };
                 if expected != actual {
                     return Err(format!(
@@ -581,11 +675,13 @@ impl HostContract {
     }
 
     pub fn signatures(&self) -> HashMap<String, FunctionSignature> {
-        let mut signatures = self
-            .functions
-            .iter()
-            .map(|(name, function)| (name.clone(), function.signature.clone()))
-            .collect::<HashMap<_, _>>();
+        let mut grouped = HashMap::<String, Vec<FunctionSignature>>::new();
+        for function in self.functions.values() {
+            grouped
+                .entry(function.name.clone())
+                .or_default()
+                .push(function.signature.clone());
+        }
         for function in self.functions.values() {
             if function.receiver.is_some()
                 && let Some((_, method)) = function.name.rsplit_once("::")
@@ -596,25 +692,39 @@ impl HostContract {
                     .and_then(|parameters| parameters.first())
                     .and_then(named_type_name)
             {
-                signatures.insert(
-                    format!("{receiver_type}::{method}"),
-                    function.signature.clone(),
-                );
+                grouped
+                    .entry(format!("{receiver_type}::{method}"))
+                    .or_default()
+                    .push(function.signature.clone());
                 for declaration in self.types.values() {
-                    if is_assignable(&self.types, receiver_type, &declaration.name) {
-                        signatures.insert(
-                            format!("{}::{method}", declaration.name),
-                            function.signature.clone(),
-                        );
+                    if declaration.name != receiver_type
+                        && is_assignable(&self.types, receiver_type, &declaration.name)
+                    {
+                        grouped
+                            .entry(format!("{}::{method}", declaration.name))
+                            .or_default()
+                            .push(function.signature.clone());
                     }
                 }
             }
         }
-        signatures
+        grouped
+            .into_iter()
+            .map(|(name, overloads)| {
+                let signature = if overloads.len() == 1 {
+                    overloads.into_iter().next().expect("one overload")
+                } else {
+                    FunctionSignature::variadic(Type::Unknown)
+                };
+                (name, signature)
+            })
+            .collect()
     }
 
-    pub(crate) fn method_functions(&self) -> HashMap<String, HostFunctionDeclaration> {
-        let mut methods = HashMap::new();
+    pub(crate) fn method_function_overloads(
+        &self,
+    ) -> HashMap<String, Vec<HostFunctionDeclaration>> {
+        let mut methods = HashMap::<String, Vec<HostFunctionDeclaration>>::new();
         for function in self.functions.values() {
             if function.receiver.is_some()
                 && let Some((_, method)) = function.name.rsplit_once("::")
@@ -625,10 +735,18 @@ impl HostContract {
                     .and_then(|parameters| parameters.first())
                     .and_then(named_type_name)
             {
-                methods.insert(format!("{receiver_type}::{method}"), function.clone());
+                methods
+                    .entry(format!("{receiver_type}::{method}"))
+                    .or_default()
+                    .push(function.clone());
                 for declaration in self.types.values() {
-                    if is_assignable(&self.types, receiver_type, &declaration.name) {
-                        methods.insert(format!("{}::{method}", declaration.name), function.clone());
+                    if declaration.name != receiver_type
+                        && is_assignable(&self.types, receiver_type, &declaration.name)
+                    {
+                        methods
+                            .entry(format!("{}::{method}", declaration.name))
+                            .or_default()
+                            .push(function.clone());
                     }
                 }
             }
@@ -643,7 +761,7 @@ impl HostContract {
             .map(|declaration| {
                 let mut value = json!({
                     "name": declaration.name,
-                    "kind": "opaque",
+                    "kind": if declaration.value_layout.is_some() { "value" } else { "opaque" },
                     "transport": declaration.transport.as_str(),
                 });
                 if let Some(base_type) = declaration.base_type.as_deref() {
@@ -651,6 +769,12 @@ impl HostContract {
                         .as_object_mut()
                         .expect("host type JSON is an object")
                         .insert("base".into(), Value::String(base_type.into()));
+                }
+                if let Some(layout) = declaration.value_layout {
+                    value
+                        .as_object_mut()
+                        .expect("host type JSON is an object")
+                        .insert("layout".into(), Value::String(layout.canonical_name()));
                 }
                 value
             })
@@ -1032,6 +1156,13 @@ fn decode_binary_manifest(bytes: &[u8]) -> Result<HostContract, String> {
 
 fn legacy_contract_hash(contract: &HostContract) -> Result<String, String> {
     let bytes = encode_binary_manifest(contract)?;
+    manifest_hash(&bytes)
+}
+
+fn manifest_hash(bytes: &[u8]) -> Result<String, String> {
+    if bytes.len() < HOST_MANIFEST_HEADER_SIZE {
+        return Err("binary host manifest is shorter than its fixed header".into());
+    }
     let hash = u128::from_le_bytes(
         bytes[48..HOST_MANIFEST_HEADER_SIZE]
             .try_into()
@@ -1150,18 +1281,19 @@ fn decode_type_tag(tag: u8, allow_unit: bool) -> Result<Type, String> {
     }
 }
 
-fn parse_type_declaration(contract: &mut HostContract, value: &Value) -> Result<(), String> {
+fn parse_type_declaration(
+    contract: &mut HostContract,
+    value: &Value,
+    format_version: u32,
+) -> Result<(), String> {
     let declaration = expect_object(value, "host type")?;
     ensure_keys(
         declaration,
-        &["name", "kind", "base", "transport"],
+        &["name", "kind", "base", "layout", "transport"],
         "host type",
     )?;
     let name = required_string(declaration, "name", "host type")?;
     let kind = required_string(declaration, "kind", "host type")?;
-    if kind != "opaque" {
-        return Err(format!("unsupported host type kind `{kind}`"));
-    }
     let base_type = declaration
         .get("base")
         .map(|value| {
@@ -1170,11 +1302,31 @@ fn parse_type_declaration(contract: &mut HostContract, value: &Value) -> Result<
                 .ok_or_else(|| "host type `base` must be a string".to_string())
         })
         .transpose()?;
-    let transport = match required_string(declaration, "transport", "host type")? {
-        "HostHandle" => HostTypeTransport::HostHandle,
-        other => return Err(format!("unsupported host type transport `{other}`")),
-    };
-    contract.register_type(name, base_type, transport)
+    match kind {
+        "opaque" => {
+            if declaration.contains_key("layout") {
+                return Err("opaque host type cannot declare `layout`".into());
+            }
+            let transport = match required_string(declaration, "transport", "host type")? {
+                "HostHandle" => HostTypeTransport::HostHandle,
+                other => return Err(format!("unsupported opaque host type transport `{other}`")),
+            };
+            contract.register_type(name, base_type, transport)
+        }
+        "value" if format_version >= HOST_MANIFEST_V3_JSON_FORMAT_VERSION => {
+            if base_type.is_some() {
+                return Err("inline host value cannot declare `base`".into());
+            }
+            if required_string(declaration, "transport", "host type")? != "InlineValue" {
+                return Err("value host type must use `InlineValue` transport".into());
+            }
+            let layout =
+                HostValueLayout::parse(required_string(declaration, "layout", "host type")?)?;
+            contract.register_value_type(name, layout)
+        }
+        "value" => Err("host manifest v2 cannot declare inline value types".into()),
+        other => Err(format!("unsupported host type kind `{other}`")),
+    }
 }
 
 fn parse_module(contract: &mut HostContract, value: &Value) -> Result<(), String> {
@@ -1456,6 +1608,21 @@ fn type_name(ty: &Type) -> String {
     }
 }
 
+fn function_overload_key(name: &str, signature: &FunctionSignature) -> String {
+    format!("{name}\0{}", format_parameter_list(signature))
+}
+
+fn format_parameter_list(signature: &FunctionSignature) -> String {
+    signature
+        .parameters
+        .as_ref()
+        .expect("validated host signatures have fixed parameters")
+        .iter()
+        .map(type_name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn named_type_name(ty: &Type) -> Option<&str> {
     match ty {
         Type::Named { name, arguments } if arguments.is_empty() => Some(name),
@@ -1609,7 +1776,10 @@ mod tests {
             .unwrap();
 
         let bytes = contract.to_manifest_bytes().unwrap();
-        assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 2);
+        assert_eq!(
+            u32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+            HOST_MANIFEST_FORMAT_VERSION
+        );
         let decoded = HostContract::from_manifest_bytes(&bytes).unwrap();
         assert_eq!(decoded, contract);
         assert!(decoded.is_type_assignable("unity_engine::Object", "unity_engine::GameObject"));
@@ -1617,6 +1787,89 @@ mod tests {
         assert!(json.contains("\"transport\": \"HostHandle\""));
         assert!(json.contains("\"base\": \"unity_engine::Object\""));
         assert_eq!(HostContract::from_manifest_json(&json).unwrap(), contract);
+    }
+
+    #[test]
+    fn inline_value_types_round_trip_with_canonical_layouts() {
+        let mut contract = HostContract::new();
+        contract
+            .register_value_type("unity_engine::Vector3", HostValueLayout::F32x3)
+            .unwrap();
+        contract
+            .register_function(
+                91,
+                "unity_engine::vector3::zero",
+                FunctionSignature::fixed(Vec::new(), Type::named("unity_engine::Vector3")),
+                "unity.vector3",
+            )
+            .unwrap();
+
+        let bytes = contract.to_manifest_bytes().unwrap();
+        assert_eq!(HostContract::from_manifest_bytes(&bytes).unwrap(), contract);
+        let json = contract.to_manifest_json().unwrap();
+        assert!(json.contains("\"kind\": \"value\""));
+        assert!(json.contains("\"layout\": \"fields(f32,f32,f32)\""));
+        assert!(json.contains("\"transport\": \"InlineValue\""));
+        assert_eq!(HostContract::from_manifest_json(&json).unwrap(), contract);
+
+        let color32 = HostValueLayout::from_fields(&[
+            HostValueFieldType::U8,
+            HostValueFieldType::U8,
+            HostValueFieldType::U8,
+            HostValueFieldType::U8,
+        ])
+        .unwrap();
+        assert_eq!(color32.byte_len(), 4);
+        assert_eq!(color32.canonical_name(), "fields(u8,u8,u8,u8)");
+        assert_eq!(
+            HostValueLayout::parse("fields(u8,u8,u8,u8)").unwrap(),
+            color32
+        );
+        assert_eq!(
+            HostValueLayout::parse("f32x3").unwrap(),
+            HostValueLayout::F32x3
+        );
+        assert!(
+            HostValueLayout::from_fields(&[HostValueFieldType::F64; 3])
+                .unwrap_err()
+                .contains("16-byte ABI payload")
+        );
+
+        assert!(
+            contract
+                .register_type(
+                    "unity_engine::Broken",
+                    None::<&str>,
+                    HostTypeTransport::InlineValue,
+                )
+                .unwrap_err()
+                .contains("register_value_type")
+        );
+    }
+
+    #[test]
+    fn binary_v2_manifests_remain_loadable() {
+        let contract = example_contract();
+        let bytes = binary_v2::encode_legacy_v2(&contract).unwrap();
+        assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 2);
+        assert_eq!(HostContract::from_manifest_bytes(&bytes).unwrap(), contract);
+    }
+
+    #[test]
+    fn binary_v3_manifests_remain_loadable() {
+        let mut contract = HostContract::new();
+        contract
+            .register_value_type("unity_engine::Vector3", HostValueLayout::F32x3)
+            .unwrap();
+        let legacy = binary_v2::encode_legacy_v3(&contract).unwrap();
+        assert_eq!(
+            u32::from_le_bytes(legacy[8..12].try_into().unwrap()),
+            HOST_MANIFEST_V3_FORMAT_VERSION
+        );
+        assert_eq!(
+            HostContract::from_manifest_bytes(&legacy).unwrap(),
+            contract
+        );
     }
 
     #[test]
@@ -1655,7 +1908,7 @@ mod tests {
     }
 
     #[test]
-    fn binary_v1_manifests_remain_loadable_and_upgrade_to_v2() {
+    fn binary_v1_manifests_remain_loadable_and_upgrade_to_current_version() {
         let contract = example_contract();
         let legacy = encode_binary_manifest(&contract).unwrap();
         assert_eq!(u32::from_le_bytes(legacy[8..12].try_into().unwrap()), 1);
@@ -1667,8 +1920,58 @@ mod tests {
                     .try_into()
                     .unwrap()
             ),
+            HOST_MANIFEST_FORMAT_VERSION
+        );
+    }
+
+    #[test]
+    fn overloads_round_trip_and_mapped_signature_collisions_are_rejected() {
+        let mut contract = HostContract::new();
+        contract
+            .register_function(
+                100,
+                "unity_engine::math::pick",
+                FunctionSignature::fixed(
+                    vec![Type::Integer(IntegerType::I32)],
+                    Type::Integer(IntegerType::I32),
+                ),
+                "unity.math",
+            )
+            .unwrap();
+        contract
+            .register_function(
+                101,
+                "unity_engine::math::pick",
+                FunctionSignature::fixed(
+                    vec![Type::Float(FloatType::F32)],
+                    Type::Float(FloatType::F32),
+                ),
+                "unity.math",
+            )
+            .unwrap();
+
+        assert_eq!(
+            contract.functions_named("unity_engine::math::pick").count(),
             2
         );
+        assert!(contract.function("unity_engine::math::pick").is_none());
+        assert!(
+            contract
+                .register_function(
+                    102,
+                    "unity_engine::math::pick",
+                    FunctionSignature::fixed(vec![Type::Integer(IntegerType::I32)], Type::String,),
+                    "unity.math",
+                )
+                .unwrap_err()
+                .contains("mapped parameter signature")
+        );
+
+        let bytes = contract.to_manifest_bytes().unwrap();
+        let decoded = HostContract::from_manifest_bytes(&bytes).unwrap();
+        assert_eq!(decoded, contract);
+        let json = contract.to_manifest_json().unwrap();
+        assert_eq!(HostContract::from_manifest_json(&json).unwrap(), contract);
     }
 
     #[test]

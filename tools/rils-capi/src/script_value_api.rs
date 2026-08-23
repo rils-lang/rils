@@ -251,8 +251,8 @@ pub unsafe extern "C" fn rils_script_value_call_trait(
                 Type::Named { name, arguments }
                     if arguments.is_empty() && host_contract.host_type(&name).is_some() =>
                 {
-                    match host_contract.type_lineage(&name) {
-                        Ok(lineage) => Some((name, lineage)),
+                    match logical_host_type(&host_contract, &name) {
+                        Ok(logical) => Some(logical),
                         Err(message) => {
                             return fail(
                                 RILS_STATUS_INVALID_ARGUMENT,

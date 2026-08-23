@@ -977,6 +977,66 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
 }
 
 #[test]
+fn links_distinct_host_overloads_by_name_and_signature() {
+    let mut contract = HostContract::new();
+    contract
+        .register_function(
+            110,
+            "unity_engine::math::pick",
+            FunctionSignature::fixed(vec![Type::I32], Type::I32),
+            "unity.math",
+        )
+        .unwrap();
+    contract
+        .register_function(
+            111,
+            "unity_engine::math::pick",
+            FunctionSignature::fixed(
+                vec![Type::Float(FloatType::F32)],
+                Type::Float(FloatType::F32),
+            ),
+            "unity.math",
+        )
+        .unwrap();
+
+    let module = compile_with_host(
+        "let selected: i32 = unity_engine::math::pick(20i32); \
+         let ignored: f32 = unity_engine::math::pick(2.0f32); selected",
+        &contract,
+    )
+    .unwrap();
+    assert_eq!(module.imports().len(), 2);
+
+    let mut host = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION);
+    host.allow_capability("unity.math");
+    host.register_function(
+        "unity_engine::math::pick",
+        FunctionSignature::fixed(vec![Type::I32], Type::I32),
+        "unity.math",
+        |arguments| match arguments {
+            [Value::I32(value)] => Ok(Value::I32(value + 1)),
+            _ => Err("unexpected integer overload arguments".into()),
+        },
+    )
+    .unwrap();
+    host.register_function(
+        "unity_engine::math::pick",
+        FunctionSignature::fixed(
+            vec![Type::Float(FloatType::F32)],
+            Type::Float(FloatType::F32),
+        ),
+        "unity.math",
+        |arguments| match arguments {
+            [Value::F32(value)] => Ok(Value::F32(value + 0.5)),
+            _ => Err("unexpected float overload arguments".into()),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(21));
+}
+
+#[test]
 fn custom_host_contract_participates_in_static_type_checking() {
     let mut contract = HostContract::new();
     contract

@@ -21,6 +21,7 @@ pub struct Project {
     prelude: Option<PathBuf>,
     source_roots: Vec<PathBuf>,
     host_manifests: Vec<PathBuf>,
+    unity_binding_assemblies: Vec<String>,
     dependencies: BTreeMap<String, ProjectDependency>,
     modules: BTreeMap<String, ProjectFile>,
 }
@@ -60,6 +61,7 @@ struct ProjectBuild {
     source_roots: Vec<PathBuf>,
     configured_manifests: Vec<PathBuf>,
     configured_manifest_dirs: Vec<PathBuf>,
+    unity_binding_assemblies: Vec<String>,
     dependencies: BTreeMap<String, ProjectDependency>,
 }
 
@@ -149,6 +151,7 @@ impl Project {
             prelude: None,
             source_roots: vec![root],
             host_manifests,
+            unity_binding_assemblies: Vec::new(),
             dependencies: BTreeMap::new(),
             modules: BTreeMap::new(),
         })
@@ -207,6 +210,11 @@ impl Project {
             .map(|path| normalize_under_root(&root, &path, "library prelude"))
             .transpose()?;
         let dependencies = load_dependencies(&root, config.dependencies)?;
+        let unity_binding_assemblies = config
+            .unity
+            .and_then(|unity| unity.bindings)
+            .map_or_else(Vec::new, |bindings| bindings.assemblies);
+        validate_unity_binding_assemblies(&unity_binding_assemblies)?;
         Self::build(ProjectBuild {
             root,
             manifest_path: Some(path),
@@ -216,6 +224,7 @@ impl Project {
             source_roots,
             configured_manifests,
             configured_manifest_dirs,
+            unity_binding_assemblies,
             dependencies,
         })
     }
@@ -237,6 +246,7 @@ impl Project {
             source_roots: vec![root],
             configured_manifests: Vec::new(),
             configured_manifest_dirs: Vec::new(),
+            unity_binding_assemblies: Vec::new(),
             dependencies: BTreeMap::new(),
         })
     }
@@ -251,6 +261,7 @@ impl Project {
             source_roots,
             configured_manifests,
             configured_manifest_dirs,
+            unity_binding_assemblies,
             dependencies,
         } = input;
         let host_manifests =
@@ -276,6 +287,7 @@ impl Project {
             prelude,
             source_roots,
             host_manifests,
+            unity_binding_assemblies,
             dependencies,
             modules,
         })
@@ -315,6 +327,10 @@ impl Project {
 
     pub fn host_manifests(&self) -> &[PathBuf] {
         &self.host_manifests
+    }
+
+    pub fn unity_binding_assemblies(&self) -> &[String] {
+        &self.unity_binding_assemblies
     }
 
     pub fn dependencies(&self) -> impl ExactSizeIterator<Item = &ProjectDependency> {
@@ -393,6 +409,24 @@ struct ProjectConfig {
     dependencies: BTreeMap<String, DependencySection>,
     #[serde(default)]
     lib: Option<LibSection>,
+    unity: Option<UnitySection>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnitySection {
+    bindings: Option<UnityBindingsSection>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnityBindingsSection {
+    #[serde(default)]
+    assemblies: Vec<String>,
+    #[serde(default, rename = "manifest_dir")]
+    _manifest_dir: Option<PathBuf>,
+    #[serde(default, rename = "csharp_output")]
+    _csharp_output: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -716,6 +750,27 @@ fn validate_project_name(name: &str) -> Result<(), ProjectError> {
     }
 }
 
+fn validate_unity_binding_assemblies(assemblies: &[String]) -> Result<(), ProjectError> {
+    let mut seen = std::collections::HashSet::new();
+    for assembly in assemblies {
+        if assembly.is_empty()
+            || assembly
+                .split('.')
+                .any(|segment| segment.is_empty() || !is_identifier(segment))
+        {
+            return Err(project_error(format!(
+                "`{assembly}` is not a valid Unity assembly name"
+            )));
+        }
+        if !seen.insert(assembly) {
+            return Err(project_error(format!(
+                "Unity binding assembly `{assembly}` is configured more than once"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn is_identifier(value: &str) -> bool {
     if matches!(
         value,
@@ -794,6 +849,9 @@ mod tests {
 
                 [host]
                 manifest = ".rils/host.rilhm"
+
+                [unity.bindings]
+                assemblies = ["UnityEngine.CoreModule", "UnityEngine.PhysicsModule"]
             "#,
         )
         .unwrap();
@@ -805,6 +863,10 @@ mod tests {
         assert_eq!(
             project.host_manifest(),
             Some(root.join(".rils/host.rilhm").as_path())
+        );
+        assert_eq!(
+            project.unity_binding_assemblies(),
+            ["UnityEngine.CoreModule", "UnityEngine.PhysicsModule"]
         );
         fs::remove_dir_all(root).unwrap();
     }

@@ -5,6 +5,118 @@ using System.Text;
 
 namespace Rils.CSharp
 {
+    public enum RilsHostValueFieldType
+    {
+        Bool,
+        I8,
+        I16,
+        I32,
+        I64,
+        I128,
+        U8,
+        U16,
+        U32,
+        U64,
+        U128,
+        F32,
+        F64,
+    }
+
+    public sealed class RilsHostValueLayout : IEquatable<RilsHostValueLayout>
+    {
+        private const int MaxPayloadBytes = 16;
+        private const int MaxFields = 16;
+        private readonly RilsHostValueFieldType[] _fields;
+
+        private RilsHostValueLayout(params RilsHostValueFieldType[] fields)
+        {
+            if (fields == null) throw new ArgumentNullException(nameof(fields));
+            if (fields.Length == 0)
+                throw new ArgumentException("An inline host value layout must declare at least one field.", nameof(fields));
+            if (fields.Length > MaxFields)
+                throw new ArgumentException($"An inline host value layout cannot exceed {MaxFields} fields.", nameof(fields));
+            _fields = (RilsHostValueFieldType[])fields.Clone();
+            int byteLength = 0;
+            for (int index = 0; index < _fields.Length; index++)
+            {
+                byteLength = checked(byteLength + FieldByteLength(_fields[index]));
+            }
+            if (byteLength > MaxPayloadBytes)
+                throw new ArgumentException(
+                    $"The inline host value layout requires {byteLength} bytes, exceeding the {MaxPayloadBytes}-byte ABI payload.",
+                    nameof(fields));
+            ByteLength = byteLength;
+            var names = new string[_fields.Length];
+            for (int index = 0; index < _fields.Length; index++) names[index] = FieldName(_fields[index]);
+            CanonicalName = $"fields({string.Join(",", names)})";
+        }
+
+        public static RilsHostValueLayout F32x2 { get; } =
+            FromFields(RilsHostValueFieldType.F32, RilsHostValueFieldType.F32);
+        public static RilsHostValueLayout F32x3 { get; } =
+            FromFields(RilsHostValueFieldType.F32, RilsHostValueFieldType.F32, RilsHostValueFieldType.F32);
+        public static RilsHostValueLayout F32x4 { get; } =
+            FromFields(RilsHostValueFieldType.F32, RilsHostValueFieldType.F32,
+                RilsHostValueFieldType.F32, RilsHostValueFieldType.F32);
+
+        public static RilsHostValueLayout FromFields(params RilsHostValueFieldType[] fields) =>
+            new RilsHostValueLayout(fields);
+
+        public IReadOnlyList<RilsHostValueFieldType> Fields => Array.AsReadOnly(_fields);
+        public int ByteLength { get; }
+        public string CanonicalName { get; }
+
+        public bool Equals(RilsHostValueLayout? other)
+        {
+            if (ReferenceEquals(this, other)) return true;
+            if (other == null || _fields.Length != other._fields.Length) return false;
+            for (int index = 0; index < _fields.Length; index++)
+            {
+                if (_fields[index] != other._fields[index]) return false;
+            }
+            return true;
+        }
+
+        public override bool Equals(object? obj) => Equals(obj as RilsHostValueLayout);
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                for (int index = 0; index < _fields.Length; index++) hash = hash * 31 + (int)_fields[index];
+                return hash;
+            }
+        }
+
+        private static string FieldName(RilsHostValueFieldType field) => field switch
+        {
+            RilsHostValueFieldType.Bool => "bool",
+            RilsHostValueFieldType.I8 => "i8",
+            RilsHostValueFieldType.I16 => "i16",
+            RilsHostValueFieldType.I32 => "i32",
+            RilsHostValueFieldType.I64 => "i64",
+            RilsHostValueFieldType.I128 => "i128",
+            RilsHostValueFieldType.U8 => "u8",
+            RilsHostValueFieldType.U16 => "u16",
+            RilsHostValueFieldType.U32 => "u32",
+            RilsHostValueFieldType.U64 => "u64",
+            RilsHostValueFieldType.U128 => "u128",
+            RilsHostValueFieldType.F32 => "f32",
+            RilsHostValueFieldType.F64 => "f64",
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+
+        private static int FieldByteLength(RilsHostValueFieldType field) => field switch
+        {
+            RilsHostValueFieldType.Bool or RilsHostValueFieldType.I8 or RilsHostValueFieldType.U8 => 1,
+            RilsHostValueFieldType.I16 or RilsHostValueFieldType.U16 => 2,
+            RilsHostValueFieldType.I32 or RilsHostValueFieldType.U32 or RilsHostValueFieldType.F32 => 4,
+            RilsHostValueFieldType.I64 or RilsHostValueFieldType.U64 or RilsHostValueFieldType.F64 => 8,
+            RilsHostValueFieldType.I128 or RilsHostValueFieldType.U128 => 16,
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+    }
+
     public sealed class RilsHostTypeDescriptor
     {
         public RilsHostTypeDescriptor(
@@ -19,15 +131,36 @@ namespace Rils.CSharp
             if (string.Equals(name, baseTypeName, StringComparison.Ordinal))
                 throw new ArgumentException("A host type cannot inherit itself.", nameof(baseTypeName));
             if (transportTag != RilsValueTag.HostHandle)
-                throw new NotSupportedException("Manifest v2 currently supports HostHandle transport for named host types.");
+                throw new NotSupportedException("Opaque host types must use HostHandle transport.");
             Name = name;
             BaseTypeName = baseTypeName;
             TransportTag = transportTag;
+            Kind = RilsHostTypeKind.Opaque;
+            ValueLayout = null;
         }
+
+        private RilsHostTypeDescriptor(string name, RilsHostValueLayout valueLayout)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Host type name cannot be empty.", nameof(name));
+            Name = name;
+            BaseTypeName = null;
+            TransportTag = RilsValueTag.InlineValue;
+            Kind = RilsHostTypeKind.Value;
+            ValueLayout = valueLayout;
+        }
+
+        public static RilsHostTypeDescriptor InlineValue(
+            string name,
+            RilsHostValueLayout valueLayout) => new RilsHostTypeDescriptor(name, valueLayout);
 
         public string Name { get; }
         public string? BaseTypeName { get; }
         public RilsValueTag TransportTag { get; }
+        public RilsHostTypeKind Kind { get; }
+        public RilsHostValueLayout? ValueLayout { get; }
+
+        internal string? ValueLayoutName => ValueLayout?.CanonicalName;
     }
 
     /// Describes one host function independently from its managed implementation.
@@ -118,7 +251,7 @@ namespace Rils.CSharp
             var functionSnapshot = new RilsHostFunctionDescriptor[functions.Count];
 
             var ids = new HashSet<ulong>();
-            var names = new HashSet<string>(StringComparer.Ordinal);
+            var overloads = new HashSet<string>(StringComparer.Ordinal);
             string prefix = name + "::";
             for (int index = 0; index < functions.Count; index++)
             {
@@ -137,9 +270,11 @@ namespace Rils.CSharp
                 {
                     throw new ArgumentException($"Host function ID {function.FunctionId} is duplicated in module '{name}'.", nameof(functions));
                 }
-                if (!names.Add(function.Name))
+                if (!overloads.Add(FunctionOverloadKey(function)))
                 {
-                    throw new ArgumentException($"Host function '{function.Name}' is duplicated in module '{name}'.", nameof(functions));
+                    throw new ArgumentException(
+                        $"Host function '{function.Name}' has a duplicated mapped parameter signature in module '{name}'.",
+                        nameof(functions));
                 }
                 ValidateLogicalType(function.ReturnParameter, typeNames, function.Name);
                 for (int parameterIndex = 0; parameterIndex < function.Parameters.Count; parameterIndex++)
@@ -148,6 +283,20 @@ namespace Rils.CSharp
                 }
             }
             Functions = Array.AsReadOnly(functionSnapshot);
+        }
+
+        private static string FunctionOverloadKey(RilsHostFunctionDescriptor function)
+        {
+            var key = new System.Text.StringBuilder(function.Name);
+            key.Append('\0');
+            for (int index = 0; index < function.Parameters.Count; index++)
+            {
+                RilsHostParameter parameter = function.Parameters[index];
+                key.Append((int)parameter.Tag).Append(':')
+                    .Append((int)parameter.TransferMode).Append(':')
+                    .Append(parameter.LogicalTypeName).Append(';');
+            }
+            return key.ToString();
         }
 
         private static void ValidateLogicalType(
@@ -201,15 +350,25 @@ namespace Rils.CSharp
             {
                 throw new NotSupportedException("The current native host registration API only supports module version 1.");
             }
+            return Build(module.Types, module.Functions);
+        }
+
+        /// Builds one canonical .rilhm fragment from declarations that may span modules.
+        public static byte[] Build(
+            IReadOnlyList<RilsHostTypeDescriptor> types,
+            IReadOnlyList<RilsHostFunctionDescriptor> functions)
+        {
+            if (types == null) throw new ArgumentNullException(nameof(types));
+            if (functions == null) throw new ArgumentNullException(nameof(functions));
             using (var runtime = new RilsRuntime())
             {
-                for (int index = 0; index < module.Types.Count; index++)
+                for (int index = 0; index < types.Count; index++)
                 {
-                    RilsHostDeclarationInterop.Register(runtime, module.Types[index]);
+                    RilsHostDeclarationInterop.Register(runtime, types[index]);
                 }
-                for (int index = 0; index < module.Functions.Count; index++)
+                for (int index = 0; index < functions.Count; index++)
                 {
-                    RilsHostDeclarationInterop.Register(runtime, module.Functions[index]);
+                    RilsHostDeclarationInterop.Register(runtime, functions[index]);
                 }
                 return runtime.GetHostManifest();
             }

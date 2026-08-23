@@ -10,25 +10,47 @@ const NO_STRING_INDEX: u32 = u32::MAX;
 const NAMED_TYPE_BIT: u32 = 0x8000_0000;
 
 pub(super) fn encode(contract: &HostContract) -> Result<Vec<u8>, String> {
-    let mut string_set = BTreeSet::new();
+    encode_version(contract, HOST_MANIFEST_FORMAT_VERSION)
+}
+
+pub(super) fn encode_legacy_v2(contract: &HostContract) -> Result<Vec<u8>, String> {
+    if contract
+        .types
+        .values()
+        .any(|declaration| declaration.value_layout.is_some())
+    {
+        return Err("host manifest v2 cannot encode inline value types".into());
+    }
+    encode_version(contract, HOST_MANIFEST_V2_FORMAT_VERSION)
+}
+
+pub(super) fn encode_legacy_v3(contract: &HostContract) -> Result<Vec<u8>, String> {
+    encode_version(contract, HOST_MANIFEST_V3_FORMAT_VERSION)
+}
+
+fn encode_version(contract: &HostContract, format_version: u32) -> Result<Vec<u8>, String> {
+    let mut string_set = BTreeSet::<String>::new();
     for declaration in contract.types.values() {
-        string_set.insert(declaration.name.as_str());
+        string_set.insert(declaration.name.clone());
         if let Some(base_type) = declaration.base_type.as_deref() {
-            string_set.insert(base_type);
+            string_set.insert(base_type.to_owned());
+        }
+        if let Some(layout) = declaration.value_layout {
+            string_set.insert(layout.canonical_name());
         }
     }
     for module in contract.modules.values() {
-        string_set.insert(module.name.as_str());
+        string_set.insert(module.name.clone());
     }
     for function in contract.functions.values() {
-        string_set.insert(function.name.as_str());
-        string_set.insert(function.capability.as_str());
+        string_set.insert(function.name.clone());
+        string_set.insert(function.capability.clone());
     }
     let strings = string_set.into_iter().collect::<Vec<_>>();
     let string_indices = strings
         .iter()
         .enumerate()
-        .map(|(index, value)| (*value, index as u32))
+        .map(|(index, value)| (value.as_str(), index as u32))
         .collect::<HashMap<_, _>>();
     let type_indices = contract
         .types
@@ -54,15 +76,16 @@ pub(super) fn encode(contract: &HostContract) -> Result<Vec<u8>, String> {
     push_u32(&mut payload, contract.types.len() as u32);
     for declaration in contract.types.values() {
         push_u32(&mut payload, string_indices[declaration.name.as_str()]);
+        let layout_name = declaration
+            .value_layout
+            .map(HostValueLayout::canonical_name);
+        let relation = declaration.base_type.as_deref().or(layout_name.as_deref());
         push_u32(
             &mut payload,
-            declaration
-                .base_type
-                .as_deref()
-                .map_or(NO_STRING_INDEX, |base| string_indices[base]),
+            relation.map_or(NO_STRING_INDEX, |value| string_indices[value]),
         );
         payload.push(declaration.transport.as_tag());
-        payload.push(0); // opaque type
+        payload.push(u8::from(declaration.value_layout.is_some()));
         payload.extend_from_slice(&0u16.to_le_bytes());
     }
     for module in contract.modules.values() {
@@ -121,7 +144,7 @@ pub(super) fn encode(contract: &HostContract) -> Result<Vec<u8>, String> {
         .map_err(|_| "binary host manifest payload exceeds the u32 format limit")?;
     let mut manifest = Vec::with_capacity(HOST_MANIFEST_HEADER_SIZE + payload.len());
     manifest.extend_from_slice(&HOST_MANIFEST_MAGIC);
-    push_u32(&mut manifest, HOST_MANIFEST_FORMAT_VERSION);
+    push_u32(&mut manifest, format_version);
     push_u32(&mut manifest, HOST_MANIFEST_HEADER_SIZE as u32);
     push_u32(&mut manifest, contract.host_abi_version);
     push_u32(&mut manifest, contract.contract_version);
@@ -152,7 +175,10 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
         return Err("invalid binary host manifest magic".into());
     }
     let format_version = header.read_u32()?;
-    if format_version != HOST_MANIFEST_FORMAT_VERSION {
+    if format_version != HOST_MANIFEST_V2_FORMAT_VERSION
+        && format_version != HOST_MANIFEST_V3_FORMAT_VERSION
+        && format_version != HOST_MANIFEST_FORMAT_VERSION
+    {
         return Err(format!(
             "unsupported binary host manifest format version {format_version}"
         ));
@@ -242,18 +268,32 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
                 .try_into()
                 .expect("u16 has a fixed width"),
         );
-        if kind != 0 || reserved != 0 {
+        if reserved != 0
+            || kind > 1
+            || (format_version == HOST_MANIFEST_V2_FORMAT_VERSION && kind != 0)
+        {
             return Err("binary host type contains unsupported kind or reserved flags".into());
         }
         let name = indexed_string(&strings, name_index, "type name")?.to_owned();
         used_strings[name_index] = true;
-        let base_type = if base_index == NO_STRING_INDEX {
+        let relation = if base_index == NO_STRING_INDEX {
             None
         } else {
             let index = base_index as usize;
             let base = indexed_string(&strings, index, "base type")?.to_owned();
             used_strings[index] = true;
             Some(base)
+        };
+        let (base_type, value_layout) = match kind {
+            0 => (relation, None),
+            1 => {
+                let layout = relation
+                    .as_deref()
+                    .ok_or_else(|| "binary inline host value is missing its layout".to_string())
+                    .and_then(HostValueLayout::parse)?;
+                (None, Some(layout))
+            }
+            _ => unreachable!("host type kind was validated"),
         };
         if raw_types
             .last()
@@ -265,16 +305,21 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
             name,
             base_type,
             transport,
+            value_layout,
         });
     }
 
     let mut contract = HostContract::with_versions(host_abi_version, contract_version)?;
     for declaration in &raw_types {
-        contract.register_type(
-            &declaration.name,
-            declaration.base_type.as_deref(),
-            declaration.transport,
-        )?;
+        if let Some(layout) = declaration.value_layout {
+            contract.register_value_type(&declaration.name, layout)?;
+        } else {
+            contract.register_type(
+                &declaration.name,
+                declaration.base_type.as_deref(),
+                declaration.transport,
+            )?;
+        }
     }
     validate_type_graph(&contract.types)?;
 
@@ -327,10 +372,10 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
         let capability = indexed_string(&strings, capability_index, "function capability")?;
         used_strings[name_index] = true;
         used_strings[capability_index] = true;
-        if raw_functions
-            .last()
-            .is_some_and(|previous: &RawFunction| previous.name.as_str() >= name)
-        {
+        if raw_functions.last().is_some_and(|previous: &RawFunction| {
+            previous.name.as_str() > name
+                || (format_version < HOST_MANIFEST_FORMAT_VERSION && previous.name.as_str() == name)
+        }) {
             return Err("binary host manifest functions must be lexicographically sorted".into());
         }
         if split_function_name(name)?.0 != module {
@@ -372,16 +417,26 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
     let parameter_refs = (0..parameter_count)
         .map(|_| payload.read_u32())
         .collect::<Result<Vec<_>, _>>()?;
+    let mut previous_overload_key: Option<String> = None;
     for function in raw_functions {
         let end = function.parameter_start + function.parameter_count;
         let parameters = parameter_refs[function.parameter_start..end]
             .iter()
             .map(|reference| decode_type_ref(*reference, &type_names, false))
             .collect::<Result<Vec<_>, _>>()?;
+        let signature = FunctionSignature::fixed(parameters, function.return_type);
+        let overload_key = function_overload_key(&function.name, &signature);
+        if previous_overload_key
+            .as_ref()
+            .is_some_and(|previous| previous >= &overload_key)
+        {
+            return Err("binary host manifest overloads must be canonically sorted".into());
+        }
+        previous_overload_key = Some(overload_key);
         contract.register_function_with_options_and_receiver(
             function.function_id,
             function.name,
-            FunctionSignature::fixed(parameters, function.return_type),
+            signature,
             function.capability,
             function.call_kind,
             function.thread_affinity,

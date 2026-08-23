@@ -3,12 +3,13 @@ mod host;
 pub mod mir;
 
 pub use host::{
-    HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_MANIFEST_FORMAT_VERSION,
-    HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
-    HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
-    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
-    HostContract, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
-    HostTypeDeclaration, HostTypeTransport,
+    HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_INLINE_VALUE_MAX_BYTES,
+    HOST_INLINE_VALUE_MAX_FIELDS, HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE,
+    HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC,
+    HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES,
+    HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract,
+    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
+    HostTypeDeclaration, HostTypeTransport, HostValueFieldType, HostValueLayout,
 };
 
 mod ast {
@@ -160,8 +161,8 @@ pub fn compile_program_with_host_and_sources(
 #[cfg(test)]
 mod tests {
     use super::{compile, compile_with_host};
-    use crate::{HostContract, HostReceiver, HostTypeTransport};
-    use rils_frontend::{FunctionSignature, IntegerType, Type};
+    use crate::{HostContract, HostReceiver, HostTypeTransport, HostValueLayout};
+    use rils_frontend::{FloatType, FunctionSignature, IntegerType, Type};
 
     #[test]
     fn compiles_source_through_static_analysis_hir_and_mir() {
@@ -189,6 +190,24 @@ mod tests {
     }
 
     #[test]
+    fn rils_source_functions_remain_non_overloadable() {
+        let error = match compile(
+            "fn choose(value: i32) -> i32 { value } \
+             fn choose(value: f32) -> f32 { value }",
+        ) {
+            Ok(_) => panic!("Rils source functions must not define overloads"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .message
+                .contains("`choose` is already defined in this scope"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
     fn lowers_host_receiver_method_calls() {
         let mut host = HostContract::new();
         host.register_function_with_options_and_receiver(
@@ -206,6 +225,42 @@ mod tests {
             &host,
         )
         .expect("host receiver calls should lower");
+    }
+
+    #[test]
+    fn resolves_overloaded_host_receiver_methods() {
+        let mut host = HostContract::new();
+        host.register_type(
+            "unity_engine::Object",
+            None::<&str>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+        for (id, value_type) in [
+            (905, Type::Integer(IntegerType::I32)),
+            (906, Type::Float(FloatType::F32)),
+        ] {
+            host.register_function_with_options_and_receiver(
+                id,
+                "unity_engine::object::set_value",
+                FunctionSignature::fixed(
+                    vec![Type::named("unity_engine::Object"), value_type],
+                    Type::Unit,
+                ),
+                "unity.object",
+                crate::HostCallKind::Direct,
+                crate::HostThreadAffinity::MainThread,
+                Some(HostReceiver::RefMut),
+            )
+            .unwrap();
+        }
+
+        compile_with_host(
+            "fn update(mut object: unity_engine::Object) { \
+             object.set_value(1i32); object.set_value(1.0f32); }",
+            &host,
+        )
+        .expect("receiver overloads should resolve after adding the implicit receiver argument");
     }
 
     #[test]
@@ -253,6 +308,148 @@ mod tests {
             compile_with_host(source, &host)
                 .expect("imported host type identities should be canonical before lowering");
         }
+    }
+
+    #[test]
+    fn lowers_associated_host_functions_through_glob_imported_types() {
+        let mut host = HostContract::new();
+        host.register_value_type("unity_engine::Vector3", HostValueLayout::F32x3)
+            .unwrap();
+        host.register_function(
+            902,
+            "unity_engine::Vector3::new",
+            FunctionSignature::fixed(
+                vec![Type::Float(FloatType::F32); 3],
+                Type::named("unity_engine::Vector3"),
+            ),
+            "unity_engine.math",
+        )
+        .unwrap();
+
+        compile_with_host(
+            "use unity_engine::*; fn make() -> Vector3 { Vector3::new(1.0f32, 2.0f32, 3.0f32) }",
+            &host,
+        )
+        .expect("glob-imported host types should qualify their associated functions");
+    }
+
+    #[test]
+    fn resolves_host_overloads_by_exact_argument_types() {
+        let mut host = HostContract::new();
+        host.register_function(
+            910,
+            "unity_engine::math::pick",
+            FunctionSignature::fixed(
+                vec![Type::Integer(IntegerType::I32)],
+                Type::Integer(IntegerType::I32),
+            ),
+            "unity_engine.math",
+        )
+        .unwrap();
+        host.register_function(
+            911,
+            "unity_engine::math::pick",
+            FunctionSignature::fixed(
+                vec![Type::Float(FloatType::F32)],
+                Type::Float(FloatType::F32),
+            ),
+            "unity_engine.math",
+        )
+        .unwrap();
+
+        compile_with_host(
+            "use unity_engine::math::*; pick(1i32); pick(1.0f32);",
+            &host,
+        )
+        .expect("exact argument types should select different host overloads");
+        compile_with_host("use unity_engine::math::pick; pick(pick(1i32));", &host)
+            .expect("a selected overload return type should drive an enclosing overload call");
+
+        let error = match compile_with_host("use unity_engine::math::pick; pick(true);", &host) {
+            Ok(_) => panic!("an unmatched overload should fail before bytecode generation"),
+            Err(error) => error,
+        };
+        assert!(error.message.contains("no host overload"));
+        assert!(error.message.contains("pick(i32)"));
+        assert!(error.message.contains("pick(f32)"));
+    }
+
+    #[test]
+    fn prefers_the_nearest_host_base_type_and_reports_equal_candidates() {
+        let mut host = HostContract::new();
+        host.register_type(
+            "unity_engine::Object",
+            None::<&str>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+        host.register_type(
+            "unity_engine::Component",
+            Some("unity_engine::Object"),
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+        host.register_type(
+            "unity_engine::Transform",
+            Some("unity_engine::Component"),
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+        for (id, parameter) in [
+            (920, "unity_engine::Object"),
+            (921, "unity_engine::Component"),
+        ] {
+            host.register_function(
+                id,
+                "unity_engine::inspect",
+                FunctionSignature::fixed(vec![Type::named(parameter)], Type::Bool),
+                "unity_engine",
+            )
+            .unwrap();
+        }
+        compile_with_host(
+            "fn inspect_transform(value: unity_engine::Transform) -> bool { \
+             unity_engine::inspect(value) }",
+            &host,
+        )
+        .expect("the Component overload should beat the Object overload");
+
+        host.register_function(
+            922,
+            "unity_engine::compare",
+            FunctionSignature::fixed(
+                vec![
+                    Type::named("unity_engine::Object"),
+                    Type::named("unity_engine::Component"),
+                ],
+                Type::Bool,
+            ),
+            "unity_engine",
+        )
+        .unwrap();
+        host.register_function(
+            923,
+            "unity_engine::compare",
+            FunctionSignature::fixed(
+                vec![
+                    Type::named("unity_engine::Component"),
+                    Type::named("unity_engine::Object"),
+                ],
+                Type::Bool,
+            ),
+            "unity_engine",
+        )
+        .unwrap();
+        let error = match compile_with_host(
+            "fn compare_transform(value: unity_engine::Transform) -> bool { \
+             unity_engine::compare(value, value) }",
+            &host,
+        ) {
+            Ok(_) => panic!("equally specific overloads should be ambiguous"),
+            Err(error) => error,
+        };
+        assert!(error.message.contains("ambiguous host call"));
+        assert!(error.message.contains("explicit type annotations or casts"));
     }
 
     #[test]

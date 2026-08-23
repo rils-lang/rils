@@ -13,22 +13,43 @@
 - `rils` 不再在无参数时进入 REPL，而是显示帮助；请显式使用 `rils repl` 启动交互会话。
 - `.rilbc` 格式由 v5 提升为 v6：编译器会为已静态确定类型的整数二元运算写入专用指令。v6 loader
   会明确拒绝 v5 及更早的产物。
+- Host Manifest 二进制与 JSON 格式由 v2 提升为 v4：v3 新增无继承的字段化 inline value 类型，v4
+  新增同名不同参数签名的宿主 overload set；
+  `fields(...)` 可描述规范打包后不超过 16 字节的标量序列，旧 `f32x2/x3/x4` 输入保持可读。
+  Runtime、CLI 和 Analyzer 仍可读取 v1/v2/v3，重新导出或链接时统一写为 v4。Rils 源码函数仍禁止重载。
+- C ABI 由 version 4 提升为 version 5，新增 `RilsHostTypeV2`、
+  `rils_runtime_register_host_types_v2` 和 `RILS_VALUE_INLINE_VALUE`。inline payload 固定 16 字节，
+  以显式小端标量布局传输，不保证兼容宿主语言 struct 的内存布局。
 
 ### Migration
 
 - 升级到包含 v6 loader 的版本后，从源码重新生成所有 `.rilbc`、Unity `.bytes` 和嵌入
   `.rilslib` 的字节码模块。
+- 重新导出 Host Manifest v4，并将 native DLL、生成的 P/Invoke 与 `Rils.CSharp` facade 成套更新至
+  C ABI v5。使用值类型的宿主先通过 v2 类型注册接口声明 layout，再以逻辑类型名和
+  `InlineValue` transport 注册函数；不要直接 `memcpy` 宿主 struct。
 
 ### Added
 
 - `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `script_paths` 中的
   `main.rils` 并按项目配置加载模块和宿主 Manifest。
+- Host Contract、C ABI 与 `Rils.CSharp` 支持固定布局 inline host value；C# 提供
+  `RilsInlineValue`、字段化 `RilsHostValueLayout`、无分配 reader/writer、`NamedValue` 及显式规范打包接口。
+- Host Manifest 支持同名不同参数签名的宿主函数重载；编译器按精确参数类型和 Host 继承距离静态
+  选择唯一候选，字节码与运行时按名称和签名链接，Analyzer signature help 展示全部候选。
+- `rils.toml` 支持通过 `[unity.bindings].assemblies` 声明 Unity 绑定程序集；Unity Editor 扫描器会按
+  namespace/type 元数据分类并保留可表达的 overload，仅将映射后参数签名碰撞写入冲突报告。
+- Unity 绑定生成器从同一 Binding IR 输出 `.rils/manifest/unity/*.rilhm` 与项目级
+  `Assets/RilsGenerated/Bindings/*.g.cs` direct handler；提供仓库根 Python 入口及 `--check`，
+  Player 通过静态注册桥使用生成代码，无需运行时反射。
 
 ### Fixed
 
 - Analyzer Hover 现在以高亮的项目/模块或所属类型路径作为标题，并显示精简的声明主体；字段显示
   `name: Type`，枚举 record variant 字段会保留完整的 `Enum::Variant` 上下文。内建类型保持紧凑，
   不显示项目路径。
+- Host 类型通过 glob 导入后，其关联 Host 函数路径也会解析到规范类型路径；例如
+  `use unity_engine::*; Vector3::new(...)` 不再需要写完整模块名。
 
 ### Changed
 

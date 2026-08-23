@@ -270,39 +270,147 @@ pub unsafe extern "C" fn rils_runtime_register_host_types(
                     );
                 }
             };
-            declarations.push((name, base_type, transport));
+            declarations.push((name, base_type, transport, None));
         }
-        STATE.with(|state| {
-            let mut state = state.borrow_mut();
-            let Some(runtime) = state.runtimes.get_mut(runtime) else {
-                return fail(
-                    RILS_STATUS_INVALID_HANDLE,
-                    "invalid runtime handle",
-                    "",
-                    Span::default(),
-                );
-            };
-            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+        register_host_type_declarations(runtime, declarations)
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Registers opaque and inline value host types before v2 function declarations.
+///
+/// # Safety
+///
+/// `types` and every non-empty nested slice must remain readable for this call.
+pub unsafe extern "C" fn rils_runtime_register_host_types_v2(
+    runtime: Handle,
+    types: *const RilsHostTypeV2,
+    type_count: usize,
+) -> i32 {
+    status_entry(|| {
+        if type_count != 0 && types.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host type v2 array is null",
+                "",
+                Span::default(),
+            );
+        }
+        let descriptors = if type_count == 0 {
+            &[]
+        } else {
+            // SAFETY: The caller promises a readable array for this call.
+            unsafe { slice::from_raw_parts(types, type_count) }
+        };
+        let mut declarations = Vec::with_capacity(descriptors.len());
+        for descriptor in descriptors {
+            if descriptor.reserved != 0 {
                 return fail(
                     RILS_STATUS_INVALID_ARGUMENT,
-                    "host registry cannot change after freeze or module creation",
+                    "host type v2 reserved fields must be zero",
                     "",
                     Span::default(),
                 );
             }
-            let mut contract = runtime.host_contract.clone();
-            for (name, base_type, transport) in declarations {
-                if let Err(message) = contract.register_type(name, base_type.as_deref(), transport)
-                {
-                    return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+            let name = match unsafe { read_utf8(descriptor.name, "host type name") } {
+                Ok(value) => value.to_owned(),
+                Err(status) => return status,
+            };
+            let base_type = match unsafe { read_utf8(descriptor.base_type, "host base type") } {
+                Ok("") => None,
+                Ok(value) => Some(value.to_owned()),
+                Err(status) => return status,
+            };
+            let layout = match unsafe { read_utf8(descriptor.value_layout, "host value layout") } {
+                Ok("") => None,
+                Ok(value) => match HostValueLayout::parse(value) {
+                    Ok(layout) => Some(layout),
+                    Err(message) => {
+                        return fail(RILS_STATUS_UNSUPPORTED_VALUE, message, "", Span::default());
+                    }
+                },
+                Err(status) => return status,
+            };
+            let transport = match descriptor.transport_tag {
+                RILS_VALUE_HOST_HANDLE => HostTypeTransport::HostHandle,
+                RILS_VALUE_INLINE_VALUE => HostTypeTransport::InlineValue,
+                value => {
+                    return fail(
+                        RILS_STATUS_UNSUPPORTED_VALUE,
+                        format!("value tag {value} is not a supported host type transport"),
+                        "",
+                        Span::default(),
+                    );
                 }
+            };
+            let valid_kind = match descriptor.kind {
+                RILS_HOST_TYPE_OPAQUE => {
+                    transport == HostTypeTransport::HostHandle && layout.is_none()
+                }
+                RILS_HOST_TYPE_VALUE => {
+                    transport == HostTypeTransport::InlineValue
+                        && layout.is_some()
+                        && base_type.is_none()
+                }
+                _ => false,
+            };
+            if !valid_kind {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host type v2 kind, transport, base type, and layout are inconsistent",
+                    "",
+                    Span::default(),
+                );
             }
-            if let Err(message) = contract.to_manifest_bytes() {
+            declarations.push((name, base_type, transport, layout));
+        }
+        register_host_type_declarations(runtime, declarations)
+    })
+}
+
+fn register_host_type_declarations(
+    runtime_handle: Handle,
+    declarations: Vec<(
+        String,
+        Option<String>,
+        HostTypeTransport,
+        Option<HostValueLayout>,
+    )>,
+) -> i32 {
+    STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(runtime) = state.runtimes.get_mut(runtime_handle) else {
+            return fail(
+                RILS_STATUS_INVALID_HANDLE,
+                "invalid runtime handle",
+                "",
+                Span::default(),
+            );
+        };
+        if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host registry cannot change after freeze or module creation",
+                "",
+                Span::default(),
+            );
+        }
+        let mut contract = runtime.host_contract.clone();
+        for (name, base_type, transport, layout) in declarations {
+            let result = if let Some(layout) = layout {
+                contract.register_value_type(name, layout)
+            } else {
+                contract.register_type(name, base_type.as_deref(), transport)
+            };
+            if let Err(message) = result {
                 return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
             }
-            runtime.host_contract = contract;
-            RILS_STATUS_OK
-        })
+        }
+        if let Err(message) = contract.to_manifest_bytes() {
+            return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+        }
+        runtime.host_contract = contract;
+        RILS_STATUS_OK
     })
 }
 

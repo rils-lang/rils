@@ -83,6 +83,105 @@ fn provides_signature_help_for_host_functions() {
 }
 
 #[test]
+fn provides_all_host_overloads_in_signature_help() {
+    let mut contract = HostContract::new();
+    contract
+        .register_value_type(
+            "unity_engine::Vector3",
+            rils_compiler::HostValueLayout::F32x3,
+        )
+        .unwrap();
+    contract
+        .register_function(
+            110,
+            "unity_engine::Vector3::new",
+            FunctionSignature::fixed(
+                vec![Type::Float(rils_frontend::FloatType::F32); 2],
+                Type::named("unity_engine::Vector3"),
+            ),
+            "unity.math",
+        )
+        .unwrap();
+    contract
+        .register_function(
+            111,
+            "unity_engine::Vector3::new",
+            FunctionSignature::fixed(
+                vec![Type::Float(rils_frontend::FloatType::F32); 3],
+                Type::named("unity_engine::Vector3"),
+            ),
+            "unity.math",
+        )
+        .unwrap();
+    let host_functions = contract.signatures();
+    let text = "unity_engine::Vector3::new(1f32, ";
+    let uri = "file:///host-overloads.rils".to_owned();
+    let server = test_server(&uri, text, host_functions, contract);
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": text.len() }
+        }))
+        .unwrap();
+    assert_eq!(help["signatures"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        help["signatures"][0]["label"],
+        "fn new(f32, f32) -> unity_engine::Vector3"
+    );
+    assert_eq!(
+        help["signatures"][1]["label"],
+        "fn new(f32, f32, f32) -> unity_engine::Vector3"
+    );
+}
+
+#[test]
+fn provides_overloaded_host_receiver_signatures_without_the_receiver_parameter() {
+    let mut contract = HostContract::new();
+    contract
+        .register_type(
+            "unity_engine::Object",
+            None::<&str>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    for (id, parameter) in [
+        (120, Type::Integer(rils_frontend::IntegerType::I32)),
+        (121, Type::Float(rils_frontend::FloatType::F32)),
+    ] {
+        contract
+            .register_function_with_options_and_receiver(
+                id,
+                "unity_engine::object::set_value",
+                FunctionSignature::fixed(
+                    vec![Type::named("unity_engine::Object"), parameter],
+                    Type::Unit,
+                ),
+                "unity.object",
+                HostCallKind::Direct,
+                HostThreadAffinity::MainThread,
+                Some(HostReceiver::RefMut),
+            )
+            .unwrap();
+    }
+    let host_functions = contract.signatures();
+    let text = "fn set(mut object: unity_engine::Object) { object.set_value(1i32); }";
+    let cursor = text.find("set_value(").unwrap() + "set_value(".len();
+    let uri = "file:///host-method-overloads.rils".to_owned();
+    let server = test_server(&uri, text, host_functions, contract);
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": cursor }
+        }))
+        .unwrap();
+    assert_eq!(help["signatures"].as_array().unwrap().len(), 2);
+    assert_eq!(help["signatures"][0]["label"], "fn set_value(f32) -> ()");
+    assert_eq!(help["signatures"][1]["label"], "fn set_value(i32) -> ()");
+}
+
+#[test]
 fn provides_signature_help_for_builtin_methods() {
     let text = "let text = \"alpha\";\ntext.replace(\"a\", ";
     let uri = "file:///builtin-signature.rils".to_owned();

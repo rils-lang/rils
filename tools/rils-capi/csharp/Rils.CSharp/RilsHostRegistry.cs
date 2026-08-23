@@ -279,16 +279,22 @@ namespace Rils.CSharp
             byte[] baseType = type.BaseTypeName == null
                 ? Array.Empty<byte>()
                 : Encoding.UTF8.GetBytes(type.BaseTypeName);
+            byte[] valueLayout = type.ValueLayoutName == null
+                ? Array.Empty<byte>()
+                : Encoding.UTF8.GetBytes(type.ValueLayoutName);
             fixed (byte* namePointer = name)
             fixed (byte* baseTypePointer = baseType)
+            fixed (byte* valueLayoutPointer = valueLayout)
             {
-                var native = new NativeHostType
+                var native = new NativeHostTypeV2
                 {
                     Name = NativeInterop.Slice(namePointer, name.Length),
                     BaseType = NativeInterop.Slice(baseTypePointer, baseType.Length),
+                    ValueLayout = NativeInterop.Slice(valueLayoutPointer, valueLayout.Length),
                     TransportTag = type.TransportTag,
+                    Kind = type.Kind,
                 };
-                NativeInterop.Check(NativeMethods.RuntimeRegisterHostTypes(
+                NativeInterop.Check(NativeMethods.RuntimeRegisterHostTypesV2(
                     runtime.Handle,
                     &native,
                     new UIntPtr(1)));

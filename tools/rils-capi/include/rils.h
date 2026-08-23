@@ -45,6 +45,15 @@ typedef struct RilsHostType {
     uint32_t reserved;
 } RilsHostType;
 
+typedef struct RilsHostTypeV2 {
+    RilsSlice name;
+    RilsSlice base_type;
+    RilsSlice value_layout;
+    uint32_t transport_tag;
+    uint32_t kind;
+    uint32_t reserved;
+} RilsHostTypeV2;
+
 typedef struct RilsHostParameter {
     RilsSlice logical_type;
     uint32_t transport_tag;
@@ -99,7 +108,13 @@ enum RilsValueTag {
     RILS_VALUE_F32 = 14,
     RILS_VALUE_F64 = 15,
     RILS_VALUE_CHAR = 16,
-    RILS_VALUE_HOST_HANDLE = 17
+    RILS_VALUE_HOST_HANDLE = 17,
+    RILS_VALUE_INLINE_VALUE = 18
+};
+
+enum RilsHostTypeKind {
+    RILS_HOST_TYPE_OPAQUE = 0,
+    RILS_HOST_TYPE_VALUE = 1
 };
 
 RILS_API uint32_t rils_abi_version(void);
@@ -113,6 +128,10 @@ RILS_API int32_t rils_runtime_register_host_functions(
 RILS_API int32_t rils_runtime_register_host_types(
     RilsHandle runtime,
     const RilsHostType *types,
+    size_t type_count);
+RILS_API int32_t rils_runtime_register_host_types_v2(
+    RilsHandle runtime,
+    const RilsHostTypeV2 *types,
     size_t type_count);
 RILS_API int32_t rils_runtime_register_host_functions_v2(
     RilsHandle runtime,

@@ -507,7 +507,16 @@ impl<'a> Resolver<'a> {
                 }
             }
             Expr::Block(block) => self.resolve_block(block),
-            Expr::Literal { .. } | Expr::Variable { .. } | Expr::Path { .. } => {}
+            Expr::Path { segments, span } => {
+                if segments.len() > 1
+                    && let Some(canonical) = self.resolve_name(&segments[0], *span)
+                {
+                    let mut resolved = canonical.split("::").map(str::to_owned).collect::<Vec<_>>();
+                    resolved.extend(segments.iter().skip(1).cloned());
+                    *segments = resolved;
+                }
+            }
+            Expr::Literal { .. } | Expr::Variable { .. } => {}
         }
     }
 

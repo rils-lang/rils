@@ -8,7 +8,7 @@ static void Equal<T>(T expected, T actual, string label)
     }
 }
 
-Equal(4U, RilsRuntime.NativeAbiVersion, "ABI version");
+Equal(5U, RilsRuntime.NativeAbiVersion, "ABI version");
 
 ulong stableHostId = RilsHostStableId.FromCanonicalName(
     "UnityEngine.CoreModule:UnityEngine.Time.get_deltaTime():System.Single");
@@ -41,6 +41,43 @@ var mutableFunctions = new[] { immutableFunction };
 var immutableModule = new RilsHostModuleDescriptor("smoke", 1, mutableFunctions);
 mutableFunctions[0] = timeDescriptor;
 Equal("smoke::immutable", immutableModule.Functions[0].Name, "module function snapshot");
+var integerOverload = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("Smoke.Pick(System.Int32):System.Int32"),
+    "smoke::pick",
+    "smoke.overload",
+    new RilsHostParameter(RilsValueTag.I32),
+    new[] { new RilsHostParameter(RilsValueTag.I32) });
+var floatOverload = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("Smoke.Pick(System.Single):System.Single"),
+    "smoke::pick",
+    "smoke.overload",
+    new RilsHostParameter(RilsValueTag.F32),
+    new[] { new RilsHostParameter(RilsValueTag.F32) });
+var overloadModule = new RilsHostModuleDescriptor(
+    "smoke",
+    1,
+    new[] { integerOverload, floatOverload });
+Equal(2, overloadModule.Functions.Count, "host overload descriptors");
+try
+{
+    _ = new RilsHostModuleDescriptor(
+        "smoke",
+        1,
+        new[]
+        {
+            integerOverload,
+            new RilsHostFunctionDescriptor(
+                RilsHostStableId.FromCanonicalName("Smoke.PickDuplicate(System.Int32):System.String"),
+                "smoke::pick",
+                "smoke.overload",
+                new RilsHostParameter(RilsValueTag.Bool),
+                new[] { new RilsHostParameter(RilsValueTag.I32) }),
+        });
+    throw new InvalidOperationException("mapped overload collision was accepted");
+}
+catch (ArgumentException error) when (error.Message.Contains("mapped parameter signature"))
+{
+}
 byte[] timeManifest = RilsHostManifestBuilder.Build(timeModule);
 using (var runtime = new RilsRuntime())
 {
@@ -54,6 +91,27 @@ using (var runtime = new RilsRuntime())
         "managed-host-module-smoke.rils");
     using RilsInstance instance = module.CreateInstance();
     Equal(0.25F, instance.Execute().AsF32(), "descriptor-backed host dispatch");
+    runtime.Dispose();
+}
+
+using (var runtime = new RilsRuntime())
+{
+    runtime.RegisterHostManifest(RilsHostManifestBuilder.Build(overloadModule));
+    using var hosts = new RilsHostRegistry(runtime);
+    hosts.Register(new RilsHostFunction(
+        integerOverload,
+        arguments => RilsValue.From(arguments[0].AsI32() + 1)));
+    hosts.Register(new RilsHostFunction(
+        floatOverload,
+        arguments => RilsValue.From(arguments[0].AsF32() + 0.5F)));
+    hosts.AllowCapability("smoke.overload");
+    hosts.Freeze();
+    using RilsModule module = runtime.Compile(
+        "let selected: i32 = smoke::pick(20i32); " +
+        "let ignored: f32 = smoke::pick(2.0f32); selected",
+        "managed-host-overload-smoke.rils");
+    using RilsInstance instance = module.CreateInstance();
+    Equal(21, instance.Execute().AsI32(), "descriptor-backed host overload dispatch");
     runtime.Dispose();
 }
 
@@ -84,7 +142,7 @@ var objectModule = new RilsHostModuleDescriptor(
     new[] { objectType, derivedGameObjectType },
     new[] { getObjectDescriptor, instanceIdDescriptor });
 byte[] objectManifest = RilsHostManifestBuilder.Build(objectModule);
-Equal(2U, BitConverter.ToUInt32(objectManifest, 8), "host manifest format version");
+Equal(4U, BitConverter.ToUInt32(objectManifest, 8), "host manifest format version");
 using (var runtime = new RilsRuntime())
 {
     runtime.RegisterHostManifest(objectManifest);
@@ -124,6 +182,75 @@ using (var runtime = new RilsRuntime())
             RilsHostArgument.NamedHandle(new RilsObjectHandle(1, 77, 3, 9), "unity_engine::GameObject"))
             .AsI64(),
         "named host trait argument");
+    runtime.Dispose();
+}
+
+var vectorType = RilsHostTypeDescriptor.InlineValue(
+    "unity_engine::Vector3",
+    RilsHostValueLayout.F32x3);
+var mixedLayout = RilsHostValueLayout.FromFields(
+    RilsHostValueFieldType.U32,
+    RilsHostValueFieldType.U64,
+    RilsHostValueFieldType.U32);
+Equal("fields(u32,u64,u32)", mixedLayout.CanonicalName, "general inline layout name");
+Equal(16, mixedLayout.ByteLength, "general inline layout size");
+var mixedWriter = new RilsInlineValueWriter();
+mixedWriter.WriteU32(0x11223344U);
+mixedWriter.WriteU64(0x5566778899AABBCCUL);
+mixedWriter.WriteU32(0xDDEEFF00U);
+var mixedReader = new RilsInlineValueReader(mixedWriter.Build());
+Equal(0x11223344U, mixedReader.ReadU32(), "mixed inline first field");
+Equal(0x5566778899AABBCCUL, mixedReader.ReadU64(), "mixed inline crossing field");
+Equal(0xDDEEFF00U, mixedReader.ReadU32(), "mixed inline last field");
+RilsHostParameter vectorParameter = RilsHostParameter.NamedValue("unity_engine::Vector3");
+var vectorNewDescriptor = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("Smoke.Vector3.New(System.Single,System.Single,System.Single)"),
+    "unity_engine::vector3::new",
+    "unity.math",
+    vectorParameter,
+    new[]
+    {
+        new RilsHostParameter(RilsValueTag.F32),
+        new RilsHostParameter(RilsValueTag.F32),
+        new RilsHostParameter(RilsValueTag.F32),
+    });
+var vectorSumDescriptor = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("Smoke.Vector3.ComponentSum(UnityEngine.Vector3)"),
+    "unity_engine::vector3::component_sum",
+    "unity.math",
+    new RilsHostParameter(RilsValueTag.F32),
+    new[] { vectorParameter });
+var vectorModule = new RilsHostModuleDescriptor(
+    "unity_engine::vector3",
+    1,
+    new[] { vectorType },
+    new[] { vectorNewDescriptor, vectorSumDescriptor });
+byte[] vectorManifest = RilsHostManifestBuilder.Build(vectorModule);
+Equal(4U, BitConverter.ToUInt32(vectorManifest, 8), "inline value manifest format version");
+using (var runtime = new RilsRuntime())
+{
+    runtime.RegisterHostManifest(vectorManifest);
+    using var hosts = new RilsHostRegistry(runtime);
+    hosts.Register(new RilsHostFunction(
+        vectorNewDescriptor,
+        arguments => RilsValue.From(RilsInlineValue.FromF32(
+            arguments[0].AsF32(),
+            arguments[1].AsF32(),
+            arguments[2].AsF32()))));
+    hosts.Register(new RilsHostFunction(
+        vectorSumDescriptor,
+        arguments =>
+        {
+            RilsInlineValue vector = arguments[0].AsInlineValue();
+            return RilsValue.From(vector.GetF32(0) + vector.GetF32(1) + vector.GetF32(2));
+        }));
+    hosts.AllowCapability("unity.math");
+    hosts.Freeze();
+    using RilsModule module = runtime.Compile(
+        "unity_engine::vector3::component_sum(unity_engine::vector3::new(1.25f32, 2.5f32, 3.75f32))",
+        "managed-inline-value-smoke.rils");
+    using RilsInstance instance = module.CreateInstance();
+    Equal(7.5F, instance.Execute().AsF32(), "inline value host dispatch");
     runtime.Dispose();
 }
 

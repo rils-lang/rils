@@ -15,10 +15,11 @@ use std::{
 
 use rils::{
     BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostCallKind, HostContract,
-    HostReceiver, HostThreadAffinity, HostTypeTransport, IntegerType, Span, Type, Value,
+    HostReceiver, HostThreadAffinity, HostTypeTransport, HostValueLayout, IntegerType, Span, Type,
+    Value,
 };
 
-pub const RILS_ABI_VERSION: u32 = 4;
+pub const RILS_ABI_VERSION: u32 = 5;
 pub const RILS_STATUS_OK: i32 = 0;
 pub const RILS_STATUS_INVALID_ARGUMENT: i32 = 1;
 pub const RILS_STATUS_INVALID_HANDLE: i32 = 2;
@@ -46,6 +47,10 @@ pub const RILS_VALUE_F32: u32 = 14;
 pub const RILS_VALUE_F64: u32 = 15;
 pub const RILS_VALUE_CHAR: u32 = 16;
 pub const RILS_VALUE_HOST_HANDLE: u32 = 17;
+pub const RILS_VALUE_INLINE_VALUE: u32 = 18;
+
+pub const RILS_HOST_TYPE_OPAQUE: u32 = 0;
+pub const RILS_HOST_TYPE_VALUE: u32 = 1;
 
 type Handle = u64;
 
@@ -92,6 +97,17 @@ pub struct RilsHostType {
     pub name: RilsSlice,
     pub base_type: RilsSlice,
     pub transport_tag: u32,
+    pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RilsHostTypeV2 {
+    pub name: RilsSlice,
+    pub base_type: RilsSlice,
+    pub value_layout: RilsSlice,
+    pub transport_tag: u32,
+    pub kind: u32,
     pub reserved: u32,
 }
 
@@ -145,6 +161,14 @@ struct Runtime {
     dispatcher: Option<RilsHostDispatcher>,
     dispatcher_user_data: *mut c_void,
     host_frozen: bool,
+}
+
+#[derive(Clone)]
+struct LogicalHostType {
+    name: String,
+    base_types: HashSet<String>,
+    transport: HostTypeTransport,
+    value_layout: Option<HostValueLayout>,
 }
 
 #[derive(Clone)]
@@ -444,7 +468,7 @@ unsafe fn read_utf8(value: RilsSlice, label: &str) -> Result<&str, i32> {
 
 fn from_ffi_value(
     value: RilsValue,
-    logical_host_type: Option<&(String, HashSet<String>)>,
+    logical_host_type: Option<&LogicalHostType>,
 ) -> Result<Value, i32> {
     if value.reserved != 0 {
         return Err(fail(
@@ -555,6 +579,16 @@ fn from_ffi_value(
             Ok(Value::Char(scalar))
         }
         RILS_VALUE_HOST_HANDLE => {
+            if logical_host_type
+                .is_some_and(|logical| logical.transport != HostTypeTransport::HostHandle)
+            {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host handle transport does not match logical type",
+                    "",
+                    Span::default(),
+                ));
+            }
             let object_id = i64::from_le_bytes(value.low.to_le_bytes());
             let generation = (value.high >> 32) as u32;
             let type_id = value.high as u32;
@@ -573,10 +607,52 @@ fn from_ffi_value(
             };
             Ok(logical_host_type.map_or_else(
                 || rils::opaque_host_value(handle),
-                |(name, base_types)| {
-                    rils::opaque_host_value_typed(handle, name.clone(), base_types.clone())
+                |logical| {
+                    rils::opaque_host_value_typed(
+                        handle,
+                        logical.name.clone(),
+                        logical.base_types.clone(),
+                    )
                 },
             ))
+        }
+        RILS_VALUE_INLINE_VALUE => {
+            let Some(logical) = logical_host_type else {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline host value requires logical type metadata",
+                    "",
+                    Span::default(),
+                ));
+            };
+            if logical.transport != HostTypeTransport::InlineValue {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline value transport does not match logical type",
+                    "",
+                    Span::default(),
+                ));
+            }
+            let Some(layout) = logical.value_layout else {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline host value logical type has no layout",
+                    "",
+                    Span::default(),
+                ));
+            };
+            let mut bytes = [0u8; 16];
+            bytes[..8].copy_from_slice(&value.low.to_le_bytes());
+            bytes[8..].copy_from_slice(&value.high.to_le_bytes());
+            if bytes[layout.byte_len()..].iter().any(|byte| *byte != 0) {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline host value has non-zero padding bytes",
+                    "",
+                    Span::default(),
+                ));
+            }
+            Ok(rils::inline_host_value_typed(bytes, logical.name.clone()))
         }
         _ => Err(fail(
             RILS_STATUS_UNSUPPORTED_VALUE,
@@ -617,19 +693,27 @@ fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue, i32> {
         Value::F64(value) => scalar(RILS_VALUE_F64, value.to_bits(), 0),
         Value::Char(value) => scalar(RILS_VALUE_CHAR, u64::from(u32::from(value)), 0),
         Value::HostObject(object) => {
-            let Some(handle) = rils::opaque_host_handle(&Value::HostObject(object)) else {
+            let value = Value::HostObject(object);
+            if let Some(handle) = rils::opaque_host_handle(&value) {
+                scalar(
+                    RILS_VALUE_HOST_HANDLE,
+                    u64::from_le_bytes(handle.object_id.to_le_bytes()),
+                    (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
+                )
+            } else if let Some(inline) = rils::inline_host_value(&value) {
+                scalar(
+                    RILS_VALUE_INLINE_VALUE,
+                    u64::from_le_bytes(inline.bytes[..8].try_into().expect("fixed payload")),
+                    u64::from_le_bytes(inline.bytes[8..].try_into().expect("fixed payload")),
+                )
+            } else {
                 return Err(fail(
                     RILS_STATUS_INVALID_ARGUMENT,
-                    "host handle payload is invalid",
+                    "host object payload is not portable",
                     source_name,
                     Span::default(),
                 ));
-            };
-            scalar(
-                RILS_VALUE_HOST_HANDLE,
-                u64::from_le_bytes(handle.object_id.to_le_bytes()),
-                (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
-            )
+            }
         }
         other => {
             return Err(fail(
@@ -679,13 +763,28 @@ fn logical_type_from_transport(
     let declaration = contract
         .host_type(logical_type)
         .ok_or_else(|| format!("host type `{logical_type}` is not declared"))?;
-    let expected_tag = portable_tag_from_type(contract, &declaration.transport.as_type(), false)?;
+    let expected_tag = match declaration.transport {
+        HostTypeTransport::HostHandle => RILS_VALUE_HOST_HANDLE,
+        HostTypeTransport::InlineValue => RILS_VALUE_INLINE_VALUE,
+    };
     if transport_tag != expected_tag {
         return Err(format!(
             "host type `{logical_type}` requires transport tag {expected_tag}, found {transport_tag}"
         ));
     }
     Ok(Type::named(logical_type))
+}
+
+fn logical_host_type(contract: &HostContract, name: &str) -> Result<LogicalHostType, String> {
+    let declaration = contract
+        .host_type(name)
+        .ok_or_else(|| format!("host type `{name}` is not declared"))?;
+    Ok(LogicalHostType {
+        name: name.to_owned(),
+        base_types: contract.type_lineage(name)?,
+        transport: declaration.transport,
+        value_layout: declaration.value_layout,
+    })
 }
 
 fn portable_tag_from_type(
@@ -708,8 +807,9 @@ fn portable_tag_from_type(
         Type::Named { name, arguments } if arguments.is_empty() => contract
             .host_type(name)
             .ok_or_else(|| format!("host manifest type `{name}` is not declared"))
-            .and_then(|declaration| {
-                portable_tag_from_type(contract, &declaration.transport.as_type(), allow_unit)
+            .map(|declaration| match declaration.transport {
+                HostTypeTransport::HostHandle => RILS_VALUE_HOST_HANDLE,
+                HostTypeTransport::InlineValue => RILS_VALUE_INLINE_VALUE,
             }),
         _ => Err(format!(
             "host manifest type `{ty}` is not supported by the current C dispatcher ABI"
@@ -760,7 +860,7 @@ fn invoke_host_dispatcher(
     function_id: u64,
     function_name: &str,
     signature: &FunctionSignature,
-    logical_return_type: Option<&(String, HashSet<String>)>,
+    logical_return_type: Option<&LogicalHostType>,
     arguments: &[Value],
 ) -> Result<Value, String> {
     let parameters = signature
@@ -839,7 +939,7 @@ fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
             Type::Named { name, arguments }
                 if arguments.is_empty() && runtime.host_contract.host_type(name).is_some() =>
             {
-                Some((name.clone(), runtime.host_contract.type_lineage(name)?))
+                Some(logical_host_type(&runtime.host_contract, name)?)
             }
             _ => None,
         };

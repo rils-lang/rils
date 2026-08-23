@@ -25,7 +25,7 @@ pub(super) struct HostBinding {
 pub struct BytecodeHost {
     pub(super) abi_version: u32,
     pub(super) capabilities: HashSet<String>,
-    pub(super) functions: HashMap<String, HostBinding>,
+    pub(super) functions: HashMap<String, Vec<HostBinding>>,
 }
 
 impl BytecodeHost {
@@ -105,19 +105,20 @@ impl BytecodeHost {
         F: Fn(&[Value]) -> Result<Value, String> + 'static,
     {
         let name = name.into();
-        if self.functions.contains_key(&name) {
+        if self.functions.get(&name).is_some_and(|bindings| {
+            bindings
+                .iter()
+                .any(|binding| binding.signature == signature)
+        }) {
             return Err(format!(
-                "bytecode host function `{name}` is already registered"
+                "bytecode host function `{name}` is already registered with that signature"
             ));
         }
-        self.functions.insert(
-            name,
-            HostBinding {
-                signature,
-                capability: capability.into(),
-                function: Rc::new(function),
-            },
-        );
+        self.functions.entry(name).or_default().push(HostBinding {
+            signature,
+            capability: capability.into(),
+            function: Rc::new(function),
+        });
         Ok(())
     }
 
@@ -131,14 +132,11 @@ impl BytecodeHost {
                 .signature
                 .clone()
                 .ok_or_else(|| format!("standard function `{name}` has no signature"))?;
-            self.functions.insert(
-                name,
-                HostBinding {
-                    signature,
-                    capability: capability.into(),
-                    function: function.function.clone(),
-                },
-            );
+            self.functions.entry(name).or_default().push(HostBinding {
+                signature,
+                capability: capability.into(),
+                function: function.function.clone(),
+            });
         }
         Ok(())
     }

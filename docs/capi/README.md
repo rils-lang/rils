@@ -1,6 +1,6 @@
 # Rils C API 与 C# facade（实验）
 
-`rils_capi` 是宿主无关的原生 facade。当前只验证 Windows DLL，ABI 版本为 `4`。接口仍处于
+`rils_capi` 是宿主无关的原生 facade。当前只验证 Windows DLL，ABI 版本为 `5`。接口仍处于
 实验阶段，不承诺跨版本 ABI 稳定性，也不因本地构建或重新打包修改项目版本号。
 
 ## 构建
@@ -40,12 +40,13 @@ Runtime 还可在创建 module 前批量注册宿主函数描述、设置一个�
 module，冻结后也不能继续修改函数、dispatcher 或 capability。
 
 完整契约也可通过 `rils_runtime_register_host_manifest` 一次注册。该入口接受
-[Host Manifest v2](host-manifest.md) `.rilhm` 二进制数据；`rils_runtime_host_manifest_size` 和
+[Host Manifest v4](host-manifest.md) `.rilhm` 二进制数据；`rils_runtime_host_manifest_size` 和
 `rils_runtime_write_host_manifest` 可按两段式 API 导出经过 verifier 的规范二进制。JSON 只通过
 显式 CLI/Rust 工具进行导入导出，不属于 Runtime 默认路径。Manifest 声明 capability 不代表授权，
 仍需逐项调用 `rils_runtime_allow_capability`。
 
-第一阶段 dispatcher 参数和返回值限制为 `()`、`bool`、`i32/u32/i64/u64` 和 `f32/f64`。描述数组、
+dispatcher 契约参数和返回值支持 `()`、`bool`、`i32/u32/i64/u64`、`f32/f64`、命名 opaque handle
+以及 Manifest v4 声明的固定布局 inline value 和宿主函数 overload。描述数组、
 名称、capability 和参数 tag 只在注册调用期间借用，原生层会复制；dispatcher 的参数和错误切片只在
 一次回调期间有效。dispatcher 必须在创建 Runtime 的线程同步返回，不得重入 Rils C API。托管异常
 需要在 dispatcher 内转换成非零状态和 UTF-8 错误，不能越过反向 P/Invoke。
@@ -54,8 +55,9 @@ module，冻结后也不能继续修改函数、dispatcher 或 capability。
 C/C# 通过 generation handle 管理其生命周期。普通宿主调用
 值协议支持
 `()`、`bool`、全部定宽整数、`isize`/`usize`、`f32`/`f64` 和 `char`。`low`/`high` 保存整数位模式，
-浮点数使用 IEEE 位模式，`char` 使用 Unicode scalar value。字符串、数组、Option/Result、对象句柄
-尚未开放；dispatcher 的 UTF-8 string 值协议也留到下一阶段。
+浮点数使用 IEEE 位模式，`char` 使用 Unicode scalar value。`HostHandle` 使用 session 绑定的对象
+身份；`InlineValue` 使用 16 字节 payload，按声明的 `fields(...)` 标量序列以小端格式解释并校验尾部
+填充为零。字符串、数组、Option/Result 和 dispatcher 的 UTF-8 string 值协议仍留到后续阶段。
 
 句柄编码了类型、创建线程和 generation。所有句柄必须在创建它们的线程使用；空句柄、类型错误、
 跨 runtime、跨线程或释放后的句柄都返回 `RILS_STATUS_INVALID_HANDLE`。这是为 Unity 主线程调用模型

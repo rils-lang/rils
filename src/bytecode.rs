@@ -40,7 +40,7 @@ pub use rils_compiler::{
     HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS,
     HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract, HostFunctionDeclaration,
     HostModuleDeclaration, HostReceiver, HostThreadAffinity, HostTypeDeclaration,
-    HostTypeTransport,
+    HostTypeTransport, HostValueLayout,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -439,21 +439,24 @@ impl BytecodeModule {
                         Span::default(),
                     ));
                 }
-                let binding = host.functions.get(&import.name).ok_or_else(|| {
+                let bindings = host.functions.get(&import.name).ok_or_else(|| {
                     BytecodeError::new(
                         format!("missing bytecode import `{}`", import.name),
                         Span::default(),
                     )
                 })?;
+                let binding = bindings
+                    .iter()
+                    .find(|binding| binding.signature == import.signature)
+                    .ok_or_else(|| {
+                        BytecodeError::new(
+                            format!("signature mismatch for import `{}`", import.name),
+                            Span::default(),
+                        )
+                    })?;
                 if binding.capability != import.capability {
                     return Err(BytecodeError::new(
                         format!("capability mismatch for import `{}`", import.name),
-                        Span::default(),
-                    ));
-                }
-                if binding.signature != import.signature {
-                    return Err(BytecodeError::new(
-                        format!("signature mismatch for import `{}`", import.name),
                         Span::default(),
                     ));
                 }

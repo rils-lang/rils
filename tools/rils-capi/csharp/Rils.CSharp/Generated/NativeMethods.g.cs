@@ -38,6 +38,13 @@ public enum RilsValueTag : uint
     F64 = 15,
     Char = 16,
     HostHandle = 17,
+    InlineValue = 18,
+}
+
+public enum RilsHostTypeKind : uint
+{
+    Opaque = 0,
+    Value = 1,
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -74,6 +81,17 @@ internal struct NativeHostType
     internal NativeSlice Name;
     internal NativeSlice BaseType;
     internal RilsValueTag TransportTag;
+    internal uint Reserved;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHostTypeV2
+{
+    internal NativeSlice Name;
+    internal NativeSlice BaseType;
+    internal NativeSlice ValueLayout;
+    internal RilsValueTag TransportTag;
+    internal RilsHostTypeKind Kind;
     internal uint Reserved;
 }
 
@@ -128,6 +146,9 @@ internal static unsafe class NativeMethods
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_types")]
     internal static extern int RuntimeRegisterHostTypes(ulong runtime, NativeHostType* types, UIntPtr type_count);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_types_v2")]
+    internal static extern int RuntimeRegisterHostTypesV2(ulong runtime, NativeHostTypeV2* types, UIntPtr type_count);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_functions_v2")]
     internal static extern int RuntimeRegisterHostFunctionsV2(ulong runtime, NativeHostFunctionV2* functions, UIntPtr function_count);
