@@ -573,6 +573,11 @@ impl Analyzer {
             })
             .collect::<HashMap<_, _>>();
         for symbol in &mut self.result.symbols {
+            if symbol.is_definition {
+                if let Some(inferred_type) = inference.binding_types.get(&symbol.span) {
+                    symbol.inferred_type = Some(inferred_type.clone());
+                }
+            }
             if let Some(definition_span) = symbol.definition_span {
                 if symbol.definition_id.is_none() {
                     symbol.definition_id = definition_ids.get(&definition_span).copied();
@@ -1205,6 +1210,37 @@ impl Analyzer {
                 }
             }
             Expr::Path { segments, span } => {
+                // Host type resolution canonicalizes imported paths (for
+                // example `Color::new` becomes
+                // `unity_engine::Color::new`). Record the type segment at its
+                // actual source position so hover does not select the module
+                // segment for an imported host type.
+                if segments.len() > 1 {
+                    for end in (1..segments.len()).rev() {
+                        let candidate = segments[..=end].join("::");
+                        if self.host_types.contains(&candidate) {
+                            let start = span.start
+                                + segments[..end]
+                                    .iter()
+                                    .map(|segment| segment.len() + 2)
+                                    .sum::<usize>();
+                            let type_name = segments[end].clone();
+                            self.result.symbols.push(SymbolOccurrence {
+                                name: type_name.clone(),
+                                span: Span::new(start, start + type_name.len()),
+                                definition_span: None,
+                                symbol_id: None,
+                                definition_id: None,
+                                kind: SymbolKind::Type,
+                                is_definition: false,
+                                inferred_type: Some(Type::named(candidate)),
+                                detail: None,
+                                container: None,
+                            });
+                            break;
+                        }
+                    }
+                }
                 if let Some(name) = segments.first() {
                     self.reference(
                         name,

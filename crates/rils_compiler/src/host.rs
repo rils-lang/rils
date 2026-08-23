@@ -711,8 +711,19 @@ impl HostContract {
         grouped
             .into_iter()
             .map(|(name, overloads)| {
-                let signature = if overloads.len() == 1 {
-                    overloads.into_iter().next().expect("one overload")
+                // Receiver methods may already use the canonical
+                // `Type::member` path. In that case the direct declaration and
+                // the receiver index describe the same callable; do not turn
+                // that duplicate into a fake overload with an unknown
+                // signature.
+                let mut unique = Vec::new();
+                for overload in overloads {
+                    if !unique.contains(&overload) {
+                        unique.push(overload);
+                    }
+                }
+                let signature = if unique.len() == 1 {
+                    unique.into_iter().next().expect("one signature")
                 } else {
                     FunctionSignature::variadic(Type::Unknown)
                 };

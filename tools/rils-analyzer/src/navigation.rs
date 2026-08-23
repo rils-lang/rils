@@ -244,7 +244,9 @@ impl Server {
             (_, Some(inferred)) if symbol.kind == SymbolKind::Variable => {
                 format!("let {}: {inferred}", symbol.name)
             }
-            _ => format!("{} {}", kind_label(symbol.kind), symbol.name),
+            _ => self
+                .host_symbol_detail(&symbol.name)
+                .unwrap_or_else(|| format!("{} {}", kind_label(symbol.kind), symbol.name)),
         };
         let context = self
             .hover_path(&uri, symbol)
@@ -257,6 +259,59 @@ impl Server {
             },
             "range": range(&document.text, symbol.span)
         }))
+    }
+
+    /// Host manifest references do not have a source span to point at, but
+    /// they should still provide the same useful declaration text as native
+    /// symbols. Resolve an unannotated type occurrence against the manifest
+    /// and keep overload information for functions.
+    fn host_symbol_detail(&self, name: &str) -> Option<String> {
+        let mut types = self
+            .host_contract
+            .types()
+            .filter(|declaration| declaration.name.rsplit("::").next() == Some(name))
+            .collect::<Vec<_>>();
+        if !types.is_empty() {
+            types.sort_by(|left, right| left.name.cmp(&right.name));
+            let declaration = types[0];
+            // HostHandle values are opaque in Rils even when their managed
+            // implementation inherits UnityEngine.Object. Keep the hover in
+            // Rils terms and hide the managed class hierarchy.
+            return Some(format!("struct {}", declaration.name));
+        }
+        let mut functions = self
+            .host_contract
+            .functions()
+            .filter(|function| function.name.rsplit("::").next() == Some(name))
+            .collect::<Vec<_>>();
+        if functions.is_empty() {
+            return None;
+        }
+        functions.sort_by_key(|function| function.name.clone());
+        Some(
+            functions
+                .iter()
+                .map(|function| {
+                    let parameters = function
+                        .signature
+                        .parameters
+                        .as_ref()
+                        .map(|parameters| {
+                            parameters
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_else(|| "...".into());
+                    format!(
+                        "fn {}({parameters}) -> {}",
+                        function.name, function.signature.return_type
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
     }
 
     fn hover_path(&self, uri: &str, symbol: &SymbolOccurrence) -> Option<String> {

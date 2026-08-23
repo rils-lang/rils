@@ -732,6 +732,21 @@ impl Inferencer {
                 .get(&segments.join("::"))
                 .cloned()
                 .or_else(|| {
+                    // Host manifests expose associated functions under a
+                    // snake-case module (`unity_engine::color::new`) while
+                    // source paths use the host type (`Color::new`).
+                    let type_index = segments.len().checked_sub(2)?;
+                    let member = segments.last()?;
+                    let module = segments[..type_index].join("::");
+                    let type_module = snake_case(&segments[type_index]);
+                    let qualified = if module.is_empty() {
+                        format!("{type_module}::{member}")
+                    } else {
+                        format!("{module}::{type_module}::{member}")
+                    };
+                    self.host_functions.get(&qualified).cloned()
+                })
+                .or_else(|| {
                     crate::standard_library::standard_function_signature(&segments.join("::"))
                 })
                 .map(|signature| signature.as_type())
@@ -1219,6 +1234,30 @@ impl Inferencer {
             }
             .as_type();
         }
+        // Manifest functions use module paths for their names (for example
+        // `unity_engine::game_object::transform`) while the receiver type is
+        // carried as the first signature parameter.
+        if let Type::Named { name, arguments } = object_type
+            && arguments.is_empty()
+            && let Some(signature) =
+                self.host_functions
+                    .iter()
+                    .find_map(|(qualified, signature)| {
+                        let member = qualified.rsplit("::").next()?;
+                        let parameters = signature.parameters.as_ref()?;
+                        (member == field && parameters.first() == Some(&Type::named(name)))
+                            .then_some(signature)
+                    })
+        {
+            return match signature.parameters.as_ref() {
+                Some(parameters) => FunctionSignature::fixed(
+                    parameters.iter().skip(1).cloned().collect(),
+                    signature.return_type.clone(),
+                ),
+                None => FunctionSignature::variadic(signature.return_type.clone()),
+            }
+            .as_type();
+        }
         let Type::Named { name, arguments } = object_type else {
             return Type::Unknown;
         };
@@ -1326,6 +1365,21 @@ impl Inferencer {
         self.scopes.pop();
         result
     }
+}
+
+fn snake_case(name: &str) -> String {
+    let mut output = String::with_capacity(name.len());
+    for (index, character) in name.chars().enumerate() {
+        if character.is_uppercase() {
+            if index != 0 {
+                output.push('_');
+            }
+            output.extend(character.to_lowercase());
+        } else {
+            output.push(character);
+        }
+    }
+    output
 }
 
 fn impl_parameter_type(parameter: &Parameter, target: &Type) -> Type {

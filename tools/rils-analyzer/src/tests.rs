@@ -7,10 +7,12 @@ use rils_compiler::{
     HostCallKind, HostContract, HostReceiver, HostThreadAffinity, HostTypeTransport,
 };
 use rils_frontend::FunctionSignature;
+use rils_frontend::analysis::analyze_with_source_id_and_external_exports_and_host_types;
 use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    path::Path,
 };
 
 #[test]
@@ -328,6 +330,116 @@ fn hover_keeps_builtin_types_compact() {
         hover["contents"]["value"].as_str(),
         Some("```rils\ntype u32\n```")
     );
+}
+
+#[test]
+fn hover_describes_manifest_host_types() {
+    let text = "let value: unity_engine::GameObject = value;";
+    let uri = "file:///host-type-hover.rils".to_owned();
+    let mut contract = HostContract::new();
+    contract
+        .register_type(
+            "unity_engine::Object",
+            None::<&str>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    contract
+        .register_type(
+            "unity_engine::GameObject",
+            Some("unity_engine::Object"),
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    let host_types = contract
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect::<HashSet<_>>();
+    let (connection, _client) = Connection::memory();
+    let mut documents = HashMap::new();
+    documents.insert(
+        uri.clone(),
+        Document {
+            source_id: SourceId::UNKNOWN,
+            text: text.into(),
+            analysis: analyze_with_source_id_and_external_exports_and_host_types(
+                text,
+                SourceId::UNKNOWN,
+                &HashMap::new(),
+                &host_types,
+                &HashMap::new(),
+            ),
+        },
+    );
+    let server = Server {
+        connection,
+        documents,
+        workspace_documents: HashSet::new(),
+        host_contract: contract,
+        host_functions: HashMap::new(),
+        host_types,
+        projects: Vec::new(),
+        next_source_id: 1,
+    };
+    let [line, character] = position(text, text.find("GameObject").unwrap());
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    assert!(
+        hover["contents"]["value"]
+            .as_str()
+            .is_some_and(|value| { value.contains("struct unity_engine::GameObject") })
+    );
+}
+
+#[test]
+fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(
+        root.join("integrations/RilsForUnity/Assets/RilsTests/Lifecycle/Lifecycle.rils"),
+    )
+    .unwrap();
+    let bytes = fs::read(
+        root.join("integrations/RilsForUnity/.rils/manifest/unity/UnityEngine_CoreModule.rilhm"),
+    )
+    .unwrap();
+    let contract = HostContract::from_manifest_bytes(&bytes).unwrap();
+    let host_functions = contract.signatures();
+    let host_types = contract
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        host_functions
+            .get("unity_engine::GameObject::transform")
+            .map(|signature| signature.return_type.clone()),
+        Some(Type::named("unity_engine::Transform"))
+    );
+    let analysis = analyze_with_source_id_and_external_exports_and_host_types(
+        &source,
+        SourceId::UNKNOWN,
+        &host_functions,
+        &host_types,
+        &HashMap::new(),
+    )
+    .unwrap();
+    let transform = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "transform")
+        .unwrap();
+    assert_eq!(
+        transform.inferred_type,
+        Some(Type::named("unity_engine::Transform"))
+    );
+    assert!(analysis.symbols.iter().any(|symbol| {
+        symbol.name == "Color"
+            && symbol.kind == rils_frontend::analysis::SymbolKind::Type
+            && symbol.inferred_type == Some(Type::named("unity_engine::Color"))
+    }));
 }
 
 #[test]
