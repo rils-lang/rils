@@ -60,7 +60,7 @@ Read [references/bytecode-and-csharp.md](references/bytecode-and-csharp.md) when
 ## Validate changes
 
 1. Run the project's documented Rils analyzer, check, or test command.
-2. If working in the Rils source repository, run a script with `cargo run -- path/to/script.rils` and add an example or automated test when changing reusable language behavior.
+2. If working in the Rils source repository, run a script with `cargo run -p rils_cli -- path/to/script.rils` and add an example or automated test when changing reusable language behavior.
 3. For bytecode packaging changes, exercise `rils compile`, `rils verify`, and `rils run`; test corrupt or incompatible input as well as a valid round trip.
 4. For C# facade changes, regenerate low-level bindings with the repository's Python generator, build the facade, and run its managed/native smoke test.
 5. If the Unity project owns validation, run its EditMode or PlayMode tests and confirm diagnostics retain the `.rils` file and source span.

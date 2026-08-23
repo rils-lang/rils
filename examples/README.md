@@ -20,7 +20,7 @@
 运行单文件示例：
 
 ```console
-cargo run -- examples/domain_model.rils
+cargo run -p rils_cli -- examples/domain_model.rils
 ```
 
 `standard_fs.rils` 会在当前目录短暂创建并删除 `rils-standard-library-example.txt`，因此自动测试只
@@ -45,7 +45,7 @@ task_board/
 ```
 
 ```console
-cargo run -- examples/task_board/src/main.rils
+cargo run -p rils_cli -- run examples/task_board
 ```
 
 入口返回 `1222`。
@@ -66,7 +66,7 @@ telemetry_pipeline/
 ```
 
 ```console
-cargo run -- examples/telemetry_pipeline/src/main.rils
+cargo run -p rils_cli -- run examples/telemetry_pipeline
 ```
 
 入口返回 `7703`。

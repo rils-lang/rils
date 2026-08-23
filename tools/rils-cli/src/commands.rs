@@ -1,80 +1,55 @@
 use std::{
-    env, fs,
-    io::{self, Write},
+    fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
 
-use rils::{BytecodeModule, Engine, HostContract, RilsLibrary};
+use clap::{CommandFactory, Parser};
+use rils::{BytecodeModule, Engine, HostContract, Project, ProjectKind, RilsLibrary};
 
-fn main() -> ExitCode {
-    let arguments: Vec<String> = env::args().skip(1).collect();
-    match arguments.as_slice() {
-        [] => repl(),
-        [command, input] if command == "compile" => compile_file(input, None),
-        [command, input, option, output] if command == "compile" && option == "-o" => {
-            compile_file(input, Some(output))
-        }
-        [command, path] if command == "verify" => verify_bytecode(path),
-        [command, path] if command == "run" => run_bytecode(path),
-        [command, action, input] if command == "library" && action == "compile" => {
-            compile_library(input, None)
-        }
-        [command, action, input, option, output]
-            if command == "library" && action == "compile" && option == "-o" =>
-        {
-            compile_library(input, Some(output))
-        }
-        [command, action, path] if command == "library" && action == "verify" => {
-            verify_library(path)
-        }
-        [command, action, input] if command == "host-manifest" && action == "compile" => {
-            compile_host_manifest(input, None)
-        }
-        [command, action, input, option, output]
-            if command == "host-manifest" && action == "compile" && option == "-o" =>
-        {
-            compile_host_manifest(input, Some(output))
-        }
-        [command, action, input] if command == "host-manifest" && action == "export-json" => {
-            export_host_manifest_json(input, None)
-        }
-        [command, action, input, option, output]
-            if command == "host-manifest" && action == "export-json" && option == "-o" =>
-        {
-            export_host_manifest_json(input, Some(output))
-        }
-        [command, action, input, option, output]
-            if command == "host-manifest" && action == "link" && option == "-o" =>
-        {
-            link_host_manifests(input, output)
-        }
-        [path]
-            if Path::new(path)
+use crate::args::{Cli, CliCommand, HostManifestCommand, LibraryCommand};
+
+pub(crate) fn run(arguments: Vec<String>) -> ExitCode {
+    let cli = Cli::try_parse_from(std::iter::once("rils".to_owned()).chain(arguments))
+        .unwrap_or_else(|error| error.exit());
+    match (cli.command, cli.script) {
+        (None, None) => print_help(),
+        (None, Some(path))
+            if Path::new(&path)
                 .extension()
                 .is_some_and(|extension| extension == "rilbc") =>
         {
-            run_bytecode(path)
+            run_bytecode(&path)
         }
-        [path] => run_source_file(path),
-        _ => {
-            print_usage();
-            ExitCode::from(2)
+        (None, Some(path)) => run_source_file(&path),
+        (Some(CliCommand::Repl), None) => crate::repl::run(),
+        (Some(CliCommand::Compile(command)), None) => {
+            compile_file(&command.input, command.output.as_deref())
         }
+        (Some(CliCommand::Verify { path }), None) => verify_bytecode(&path),
+        (Some(CliCommand::Run { path }), None) => run_path(&path),
+        (Some(CliCommand::Library { command }), None) => match command {
+            LibraryCommand::Compile(command) => {
+                compile_library(&command.input, command.output.as_deref())
+            }
+            LibraryCommand::Verify { path } => verify_library(&path),
+        },
+        (Some(CliCommand::HostManifest { command }), None) => match command {
+            HostManifestCommand::Compile(command) => {
+                compile_host_manifest(&command.input, command.output.as_deref())
+            }
+            HostManifestCommand::ExportJson(command) => {
+                export_host_manifest_json(&command.input, command.output.as_deref())
+            }
+            HostManifestCommand::Link { input, output } => link_host_manifests(&input, &output),
+        },
+        (_, Some(_)) => unreachable!("clap does not allow a command and script together"),
     }
 }
 
-fn print_usage() {
-    eprintln!("usage:");
-    eprintln!("  rils [script.rils]");
-    eprintln!("  rils compile <script.rils> [-o output.rilbc]");
-    eprintln!("  rils verify <module.rilbc>");
-    eprintln!("  rils run <module.rilbc>");
-    eprintln!("  rils library compile <directory|rils.toml|source.rils> [-o output.rilslib]");
-    eprintln!("  rils library verify <library.rilslib>");
-    eprintln!("  rils host-manifest compile <contract.json> [-o contract.rilhm]");
-    eprintln!("  rils host-manifest export-json <contract.rilhm> [-o contract.json]");
-    eprintln!("  rils host-manifest link <directory|rils.toml> -o contract.rilhm");
+fn print_help() -> ExitCode {
+    print!("{}", Cli::command().render_help());
+    ExitCode::SUCCESS
 }
 
 fn compile_library(input: &str, output: Option<&str>) -> ExitCode {
@@ -358,11 +333,55 @@ fn run_bytecode(path: &str) -> ExitCode {
     }
 }
 
-fn run_source_file(path: &str) -> ExitCode {
+fn run_path(path: &str) -> ExitCode {
+    let path = Path::new(path);
+    if path.is_dir() {
+        return run_project(path);
+    }
+    run_bytecode(path.to_string_lossy().as_ref())
+}
+
+fn run_project(directory: &Path) -> ExitCode {
+    let manifest = directory.join("rils.toml");
+    if !manifest.is_file() {
+        eprintln!(
+            "`{}` is not a Rils project directory: missing rils.toml",
+            directory.display()
+        );
+        return ExitCode::FAILURE;
+    }
+    let project = match Project::from_file(&manifest) {
+        Ok(project) => project,
+        Err(error) => {
+            eprintln!("failed to load `{}`: {error}", manifest.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    if project.kind() != ProjectKind::Bin {
+        eprintln!(
+            "project `{}` is a library and cannot be run",
+            project.name()
+        );
+        return ExitCode::FAILURE;
+    }
+    let Some(entry) = project
+        .source_roots()
+        .iter()
+        .map(|source_root| source_root.join("main.rils"))
+        .find(|candidate| candidate.is_file())
+    else {
+        eprintln!("project `{}` has no main.rils entry point", project.name());
+        return ExitCode::FAILURE;
+    };
+    run_source_file(&entry)
+}
+
+fn run_source_file(path: impl AsRef<Path>) -> ExitCode {
+    let path = path.as_ref();
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) => {
-            eprintln!("failed to read `{path}`: {error}");
+            eprintln!("failed to read `{}`: {error}", path.display());
             return ExitCode::FAILURE;
         }
     };
@@ -370,46 +389,8 @@ fn run_source_file(path: &str) -> ExitCode {
     match Engine::new().eval_file(path) {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{}", error.render(path, &source));
+            eprintln!("{}", error.render(path.to_string_lossy().as_ref(), &source));
             ExitCode::FAILURE
         }
     }
-}
-
-fn repl() -> ExitCode {
-    println!("Rils 0.1.0 — type `exit` to leave");
-    let mut engine = Engine::new();
-    let stdin = io::stdin();
-
-    loop {
-        print!("> ");
-        if io::stdout().flush().is_err() {
-            return ExitCode::FAILURE;
-        }
-
-        let mut line = String::new();
-        match stdin.read_line(&mut line) {
-            Ok(0) => break,
-            Ok(_) => {}
-            Err(error) => {
-                eprintln!("failed to read input: {error}");
-                return ExitCode::FAILURE;
-            }
-        }
-
-        if matches!(line.trim(), "exit" | "quit") {
-            break;
-        }
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        match engine.eval(&line) {
-            Ok(value) if value != rils::Value::Unit => println!("{value}"),
-            Ok(_) => {}
-            Err(error) => eprintln!("{}", error.render("<repl>", &line)),
-        }
-    }
-
-    ExitCode::SUCCESS
 }

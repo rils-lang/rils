@@ -205,7 +205,7 @@ def main() -> int:
     run([cargo, "fmt", "--check"])
     run([cargo, "test", "--workspace"])
     run([cargo, "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])
-    run([cargo, "build", "--release", "-p", "rils", "-p", "rils_analyzer"])
+    run([cargo, "build", "--release", "-p", "rils_cli", "-p", "rils_analyzer"])
 
     copy_binary(target_directory, artifact_directory, "rils")
     copy_binary(target_directory, artifact_directory, "rils-analyzer")
