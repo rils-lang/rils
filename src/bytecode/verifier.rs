@@ -334,6 +334,22 @@ impl BytecodeModule {
                         ));
                     }
                 }
+                Instruction::IntegerBinary {
+                    destination,
+                    left,
+                    right,
+                    ..
+                } => {
+                    if invalid_register(*destination)
+                        || invalid_register(*left)
+                        || invalid_register(*right)
+                    {
+                        return Err(BytecodeError::new(
+                            "invalid integer binary operands",
+                            instruction.span,
+                        ));
+                    }
+                }
                 Instruction::Call {
                     destination,
                     function: callee,

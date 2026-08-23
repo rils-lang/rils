@@ -1,0 +1,17 @@
+[package]
+name = "rils_bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Repeatable performance benchmarks for Rils"
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rils-bench"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+rils = { path = "../..", version = "0.3.0" }

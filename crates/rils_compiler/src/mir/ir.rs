@@ -148,6 +148,7 @@ pub enum MirInstruction {
         left: Register,
         operator: BinaryOp,
         right: Register,
+        integer: Option<IntegerType>,
     },
     Call {
         destination: Register,

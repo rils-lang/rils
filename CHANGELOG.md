@@ -11,6 +11,13 @@
   `rils_cli` crate，仍生成名为 `rils` 的可执行文件；仓库内开发与验证请使用
   `cargo run -p rils_cli -- <arguments>`。发布脚本也会从 `rils_cli` 构建 CLI 产物。
 - `rils` 不再在无参数时进入 REPL，而是显示帮助；请显式使用 `rils repl` 启动交互会话。
+- `.rilbc` 格式由 v5 提升为 v6：编译器会为已静态确定类型的整数二元运算写入专用指令。v6 loader
+  会明确拒绝 v5 及更早的产物。
+
+### Migration
+
+- 升级到包含 v6 loader 的版本后，从源码重新生成所有 `.rilbc`、Unity `.bytes` 和嵌入
+  `.rilslib` 的字节码模块。
 
 ### Added
 
@@ -22,6 +29,11 @@
 - Analyzer Hover 现在以高亮的项目/模块或所属类型路径作为标题，并显示精简的声明主体；字段显示
   `name: Type`，枚举 record variant 字段会保留完整的 `Enum::Variant` 上下文。内建类型保持紧凑，
   不显示项目路径。
+
+### Changed
+
+- VM 对静态类型已知的整数二元运算使用类型专用分派，减少热循环中的数值类型匹配；动态或非整数
+  运算继续使用通用指令路径。
 
 ## 0.3.0 - 2026-08-22
 

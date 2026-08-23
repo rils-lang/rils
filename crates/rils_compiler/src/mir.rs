@@ -410,6 +410,7 @@ impl Builder {
                 left,
                 operator,
                 right,
+                integer,
                 span,
             } => {
                 let left = self.expression(left)?;
@@ -421,6 +422,7 @@ impl Builder {
                         left,
                         operator: *operator,
                         right,
+                        integer: *integer,
                     },
                     *span,
                 );

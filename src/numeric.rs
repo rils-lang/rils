@@ -458,3 +458,54 @@ pub(crate) fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Va
         )),
     }
 }
+
+/// Executes an integer operation whose operand type has already been proven by the compiler.
+///
+/// The VM still validates dynamic values at its trust boundary, but this avoids dispatching
+/// across every numeric representation for each integer instruction.
+#[inline]
+pub(crate) fn integer_binary_typed(
+    left: Value,
+    integer: IntegerType,
+    operator: BinaryOp,
+    right: Value,
+) -> Result<Value, String> {
+    if matches!(operator, BinaryOp::Equal | BinaryOp::NotEqual) {
+        let equal = left == right;
+        return Ok(Value::Bool(if operator == BinaryOp::Equal {
+            equal
+        } else {
+            !equal
+        }));
+    }
+
+    macro_rules! typed {
+        ($value:ident, $constructor:path) => {
+            match (left, right) {
+                (Value::$value(left), Value::$value(right)) => {
+                    integer_binary!(left, operator, right, $constructor)
+                }
+                (left, right) => Err(format!(
+                    "typed integer operator expects {integer}, found {} and {}",
+                    left.type_name(),
+                    right.type_name()
+                )),
+            }
+        };
+    }
+
+    match integer {
+        IntegerType::I8 => typed!(I8, Value::I8),
+        IntegerType::I16 => typed!(I16, Value::I16),
+        IntegerType::I32 => typed!(I32, Value::I32),
+        IntegerType::I64 => typed!(I64, Value::I64),
+        IntegerType::I128 => typed!(I128, Value::I128),
+        IntegerType::Isize => typed!(Isize, Value::Isize),
+        IntegerType::U8 => typed!(U8, Value::U8),
+        IntegerType::U16 => typed!(U16, Value::U16),
+        IntegerType::U32 => typed!(U32, Value::U32),
+        IntegerType::U64 => typed!(U64, Value::U64),
+        IntegerType::U128 => typed!(U128, Value::U128),
+        IntegerType::Usize => typed!(Usize, Value::Usize),
+    }
+}

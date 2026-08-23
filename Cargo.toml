@@ -32,7 +32,8 @@ members = [
     "crates/rils_project",
     "tools/rils-capi",
     "tools/rils-analyzer",
-    "tools/rils-cli"
+    "tools/rils-cli",
+    "tools/rils-bench",
 ]
 resolver = "3"
 

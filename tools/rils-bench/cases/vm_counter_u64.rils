@@ -1,0 +1,7 @@
+pub fn count_to(limit: u64) -> u64 {
+    let mut index: u64 = 0;
+    while index < limit {
+        index = index + 1;
+    }
+    index
+}

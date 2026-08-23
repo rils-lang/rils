@@ -282,6 +282,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rils_bench"
+version = "0.3.0"
+dependencies = [
+ "clap",
+ "rils",
+]
+
+[[package]]
 name = "rils_builtins"
 version = "0.3.0"
 
