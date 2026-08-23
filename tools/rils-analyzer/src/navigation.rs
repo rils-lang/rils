@@ -214,7 +214,7 @@ impl Server {
     }
 
     pub(super) fn hover(&self, params: &Value) -> Result<Value, AnyError> {
-        let (_, document, offset) = self.document_and_offset(params)?;
+        let (uri, document, offset) = self.document_and_offset(params)?;
         let Some(analysis) = analysis(document) else {
             return Ok(Value::Null);
         };
@@ -226,7 +226,13 @@ impl Server {
             return Ok(Value::Null);
         };
         let detail = match (&symbol.detail, &symbol.inferred_type) {
+            (Some(detail), _) if symbol.kind == SymbolKind::Field => {
+                detail.strip_prefix("field ").unwrap_or(detail).to_owned()
+            }
             (Some(detail), _) => detail.clone(),
+            (_, Some(inferred)) if symbol.kind == SymbolKind::Field => {
+                format!("{}: {inferred}", symbol.name)
+            }
             (_, Some(inferred))
                 if matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method) =>
             {
@@ -240,18 +246,64 @@ impl Server {
             }
             _ => format!("{} {}", kind_label(symbol.kind), symbol.name),
         };
-        let context = match &symbol.container {
-            Some(SymbolContainer::Module(module)) => format!("\n\nmodule `{module}`"),
-            Some(SymbolContainer::Type(owner)) => format!("\n\ntype `{owner}`"),
-            None => String::new(),
-        };
+        let context = self
+            .hover_path(&uri, symbol)
+            .map(|path| format!("```rils\n{path}\n```\n\n"))
+            .unwrap_or_default();
         Ok(json!({
             "contents": {
                 "kind": "markdown",
-                "value": format!("```rils\n{detail}\n```{context}")
+                "value": format!("{context}```rils\n{detail}\n```")
             },
             "range": range(&document.text, symbol.span)
         }))
+    }
+
+    fn hover_path(&self, uri: &str, symbol: &SymbolOccurrence) -> Option<String> {
+        let definition_uri = symbol
+            .definition_span
+            .and_then(|span| {
+                self.documents
+                    .iter()
+                    .find(|(_, document)| document.source_id == span.source)
+                    .map(|(uri, _)| uri.as_str())
+            })
+            .unwrap_or(uri);
+        let path = file_uri_to_path(definition_uri)?;
+        let project = self
+            .projects
+            .iter()
+            .find(|project| project.module_for_file(&path).is_some());
+        let Some(project) = project else {
+            return match &symbol.container {
+                Some(SymbolContainer::Module(module)) => Some(module.clone()),
+                Some(SymbolContainer::Type(owner)) => Some(owner.clone()),
+                None => None,
+            };
+        };
+        let file = project.module_for_file(&path)?;
+        let module = match &symbol.container {
+            Some(SymbolContainer::Module(module)) => {
+                if module == "crate" {
+                    String::new()
+                } else {
+                    module.clone()
+                }
+            }
+            Some(SymbolContainer::Type(owner)) => {
+                if file.module_path.is_empty() {
+                    owner.clone()
+                } else {
+                    format!("{}::{owner}", file.module_path)
+                }
+            }
+            None => return None,
+        };
+        Some(if module.is_empty() || module == "crate" {
+            project.name().to_owned()
+        } else {
+            format!("{}::{module}", project.name())
+        })
     }
 }
 

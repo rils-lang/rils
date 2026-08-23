@@ -205,8 +205,74 @@ fn hover_shows_expanded_type_aliases() {
         hover
             .pointer("/contents/value")
             .and_then(|value| value.as_str()),
-        Some("```rils\ntype IntBox = Box<i32>\n```\n\nmodule `crate`")
+        Some("```rils\ncrate\n```\n\n```rils\ntype IntBox = Box<i32>\n```")
     );
+}
+
+#[test]
+fn hover_keeps_builtin_types_compact() {
+    let uri = "file:///builtin-hover.rils".to_owned();
+    let server = test_server(
+        &uri,
+        "let value: u32 = 1;",
+        HashMap::new(),
+        HostContract::new(),
+    );
+
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": 11 }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some("```rils\ntype u32\n```")
+    );
+}
+
+#[test]
+fn hover_shows_enum_record_field_variant_context() {
+    let text = "enum Test {\n    Foo { x: i32, y: i32 },\n}";
+    let uri = "file:///enum-record-field-hover.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+    let [line, character] = position(text, text.find("x:").unwrap());
+
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some("```rils\nTest::Foo\n```\n\n```rils\nx: i32\n```")
+    );
+}
+
+#[test]
+fn hover_preserves_public_declaration_keywords() {
+    let text = "pub struct Item;\npub enum State { Idle }\npub fn ready() -> State { State::Idle }";
+    let uri = "file:///public-hover.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+
+    for (name, detail) in [
+        ("Item", "pub struct Item"),
+        ("State", "pub enum State {\n    Idle,\n}"),
+        ("ready", "pub fn ready() -> State"),
+    ] {
+        let [line, character] = position(text, text.find(name).unwrap());
+        let hover = server
+            .hover(&json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }))
+            .unwrap();
+        assert_eq!(
+            hover["contents"]["value"].as_str(),
+            Some(format!("```rils\ncrate\n```\n\n```rils\n{detail}\n```").as_str())
+        );
+    }
 }
 
 #[test]
@@ -257,7 +323,7 @@ impl Counter {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nstruct Counter {\n    value: i32,\n}\n```\n\nmodule `crate`")
+        Some("```rils\ncrate\n```\n\n```rils\nstruct Counter {\n    value: i32,\n}\n```")
     );
     let definition = server
         .definition(&json!({
@@ -280,7 +346,7 @@ impl Counter {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nfn new(value: i32) -> Self\n```")
+        Some("```rils\nCounter\n```\n\n```rils\nfn new(value: i32) -> Self\n```")
     );
     let definition = server
         .definition(&json!({
@@ -956,7 +1022,9 @@ fn completes_project_modules_public_items_and_crate_aliases() {
             .unwrap();
         assert_eq!(
             hover["contents"]["value"].as_str(),
-            Some("```rils\nstruct Sum {\n    value: i32,\n}\n```\n\nmodule `math`")
+            Some(
+                "```rils\nunity_game::math\n```\n\n```rils\npub struct Sum {\n    value: i32,\n}\n```"
+            )
         );
     }
 
@@ -972,7 +1040,9 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nfn sum(left: i32, right: i32) -> Sum\n```")
+        Some(
+            "```rils\nunity_game::math\n```\n\n```rils\npub fn sum(left: i32, right: i32) -> Sum\n```"
+        )
     );
     let use_hover = server
         .hover(&json!({
@@ -1003,7 +1073,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert_eq!(
         field_hover["contents"]["value"].as_str(),
-        Some("```rils\nfield value: i32\n```\n\ntype `Sum`")
+        Some("```rils\nunity_game::math::Sum\n```\n\n```rils\nvalue: i32\n```")
     );
     let field_definition = server
         .definition(&json!({
@@ -1185,7 +1255,7 @@ fn enum_variant_paths_go_to_variant_declarations() {
         .unwrap();
     assert_eq!(
         pattern_type_hover["contents"]["value"].as_str(),
-        Some("```rils\nenum Priority {\n    Low,\n    High,\n}\n```\n\nmodule `crate`")
+        Some("```rils\ncrate\n```\n\n```rils\nenum Priority {\n    Low,\n    High,\n}\n```")
     );
     let pattern_type_definition = server
         .definition(&json!({
@@ -1209,7 +1279,7 @@ fn enum_variant_paths_go_to_variant_declarations() {
         .unwrap();
     assert_eq!(
         variant_hover["contents"]["value"].as_str(),
-        Some("```rils\nPriority::Low\n```\n\ntype `Priority`")
+        Some("```rils\nPriority\n```\n\n```rils\nPriority::Low\n```")
     );
 }
 
@@ -1266,6 +1336,19 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
             }))
     );
 
+    let board_hover = server
+        .hover(&json!({
+            "textDocument": { "uri": vscode_uri },
+            "position": { "line": 2, "character": 12 }
+        }))
+        .unwrap();
+    assert_eq!(
+        board_hover["contents"]["value"].as_str(),
+        Some(
+            "```rils\ntask_board::kanban\n```\n\n```rils\npub struct Board {\n    tasks: Vec<Task>,\n}\n```"
+        )
+    );
+
     for (line, character, expected) in [(18, 31, "Vec<Task>"), (37, 13, "i32")] {
         let hover = server
             .hover(&json!({
@@ -1277,9 +1360,9 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
             hover["contents"]["value"].as_str(),
             Some(
                 format!(
-                    "```rils\nfield {}: {expected}\n```\n\ntype `{}`",
+                    "```rils\ntask_board::kanban::{}\n```\n\n```rils\n{}: {expected}\n```",
+                    if line == 18 { "Board" } else { "Summary" },
                     if line == 18 { "tasks" } else { "active" },
-                    if line == 18 { "Board" } else { "Summary" }
                 )
                 .as_str()
             )
