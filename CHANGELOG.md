@@ -7,6 +7,10 @@
 
 ### Breaking Changes
 
+- C ABI 由 version 5 提升为 version 6，新增 `rils_runtime_set_output_callback`；native DLL、
+  生成的 P/Invoke 与 `Rils.CSharp` facade 必须成套更新。
+- `print!` / `println!` 改为 Rust 风格格式字符串语法；除空的 `println!()` 外，首参数必须是
+  编译期字符串字面量。原来的 `println!(a, b)` 需要迁移为 `println!("{} {}", a, b)`。
 - 根 `rils` crate 现在是纯 Rust 嵌入库，不再构建 `rils` binary。命令行工具迁移为 workspace 中不发布的
   `rils_cli` crate，仍生成名为 `rils` 的可执行文件；仓库内开发与验证请使用
   `cargo run -p rils_cli -- <arguments>`。发布脚本也会从 `rils_cli` 构建 CLI 产物。
@@ -23,6 +27,8 @@
 
 ### Migration
 
+- 将 Python 式多参数输出迁移为格式占位符；格式化参数现在只会被借用，打印后仍可继续使用非
+  `Copy` 值。
 - 升级到包含 v6 loader 的版本后，从源码重新生成所有 `.rilbc`、Unity `.bytes` 和嵌入
   `.rilslib` 的字节码模块。
 - 重新导出 Host Manifest v4，并将 native DLL、生成的 P/Invoke 与 `Rils.CSharp` facade 成套更新至
@@ -31,6 +37,17 @@
 
 ### Added
 
+- `Engine`、`BytecodeHost`、C ABI 与 `Rils.CSharp` 现在支持同步文本输出回调；回调保留
+  `print!` 与 `println!` 的换行边界，未配置时继续输出到标准终端。
+- 增加保留逻辑类型、portable host value 与 `Display`/`Debug` 格式说明的宿主值格式化回调；
+  C#/Unity 可在文本输出前还原 inline value 或 handle 并使用对应托管对象的格式化结果。
+- C ABI 与 `Rils.CSharp` 增加一次允许全部 Rils 标准库宿主能力的入口，能力集合直接从
+  `rils_builtins` 声明派生；Host Registry 冻结后仍会保留标准库实现和输出回调。
+- 增加共享的格式字符串解析与检查，支持 `Display` 的 `{}`、`Debug` 的 `{:?}` / `{:#?}`、
+  整数进制、浮点科学计数法、宽度、对齐、填充、符号、零填充、精度和花括号转义；解释器与
+  字节码标准输出使用同一实现。
+- 增加内建 `core::fmt::{Display, Debug, Formatter, FormatError}` 声明和
+  `#[derive(Debug)]`；Struct 与 enum 派生会补充泛型 `Debug` 约束并支持漂亮输出。
 - `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `script_paths` 中的
   `main.rils` 并按项目配置加载模块和宿主 Manifest。
 - Host Contract、C ABI 与 `Rils.CSharp` 支持固定布局 inline host value；C# 提供

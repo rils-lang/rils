@@ -556,6 +556,11 @@ impl Analyzer {
         self.result
             .diagnostics
             .extend(crate::trait_check::analyze(program));
+        self.result.diagnostics.extend(crate::format_check::analyze(
+            program,
+            &inference.expression_types,
+            &self.host_types,
+        ));
         self.result
             .diagnostics
             .sort_by_key(|diagnostic| (diagnostic.span.start, diagnostic.span.end));

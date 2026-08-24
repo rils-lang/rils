@@ -1189,6 +1189,100 @@ fn enum_payload_equal(left: &EnumPayload, right: &EnumPayload) -> bool {
 
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            return match self {
+                Self::Tuple(sequence) => {
+                    let elements = sequence.elements.borrow();
+                    let mut tuple = f.debug_tuple("");
+                    for slot in elements.iter() {
+                        match &slot.value {
+                            Some(value) => {
+                                tuple.field(value);
+                            }
+                            None => {
+                                tuple.field(&"<moved>");
+                            }
+                        }
+                    }
+                    tuple.finish()
+                }
+                Self::Array(sequence) | Self::Vec(sequence) => {
+                    let elements = sequence.elements.borrow();
+                    let mut list = f.debug_list();
+                    for slot in elements.iter() {
+                        match &slot.value {
+                            Some(value) => {
+                                list.entry(value);
+                            }
+                            None => {
+                                list.entry(&"<moved>");
+                            }
+                        }
+                    }
+                    list.finish()
+                }
+                Self::Option { value: None, .. } => f.write_str("None"),
+                Self::Option {
+                    value: Some(value), ..
+                } => f.debug_tuple("Some").field(value).finish(),
+                Self::Result {
+                    value: Ok(value), ..
+                } => f.debug_tuple("Ok").field(value).finish(),
+                Self::Result {
+                    value: Err(value), ..
+                } => f.debug_tuple("Err").field(value).finish(),
+                Self::Struct(instance) => {
+                    let fields = instance.fields.borrow();
+                    let mut structure = f.debug_struct(&instance.type_definition.name);
+                    for field in &instance.type_definition.fields {
+                        match &fields[&field.name].value {
+                            Some(value) => {
+                                structure.field(&field.name, value);
+                            }
+                            None => {
+                                structure.field(&field.name, &"<moved>");
+                            }
+                        }
+                    }
+                    structure.finish()
+                }
+                Self::Enum(instance) => {
+                    let name = format!("{}::{}", instance.type_definition.name, instance.variant);
+                    match &instance.payload {
+                        EnumPayload::Unit => f.write_str(&name),
+                        EnumPayload::Tuple(values) => {
+                            let mut tuple = f.debug_tuple(&name);
+                            for value in values {
+                                tuple.field(value);
+                            }
+                            tuple.finish()
+                        }
+                        EnumPayload::Record(values) => {
+                            let variant = instance
+                                .type_definition
+                                .variants
+                                .iter()
+                                .find(|variant| enum_variant_name(variant) == instance.variant)
+                                .expect("enum instance refers to a declared variant");
+                            let EnumVariant::Record { fields, .. } = variant else {
+                                unreachable!()
+                            };
+                            let mut structure = f.debug_struct(&name);
+                            for field in fields {
+                                structure.field(&field.name, &values[&field.name]);
+                            }
+                            structure.finish()
+                        }
+                    }
+                }
+                Self::Reference(reference) => match reference.read() {
+                    Ok(value) => write!(f, "{value:#?}"),
+                    Err(_) => f.write_str("<invalid reference>"),
+                },
+                Self::String(value) => write!(f, "{value:#?}"),
+                _ => write!(f, "{self}"),
+            };
+        }
         match self {
             Self::String(value) => write!(f, "{value:?}"),
             _ => write!(f, "{self}"),

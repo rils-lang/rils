@@ -19,7 +19,7 @@ use rils::{
     Value,
 };
 
-pub const RILS_ABI_VERSION: u32 = 5;
+pub const RILS_ABI_VERSION: u32 = 6;
 pub const RILS_STATUS_OK: i32 = 0;
 pub const RILS_STATUS_INVALID_ARGUMENT: i32 = 1;
 pub const RILS_STATUS_INVALID_HANDLE: i32 = 2;
@@ -141,6 +141,19 @@ pub type RilsHostDispatcher = unsafe extern "C" fn(
     out_error: *mut RilsSlice,
 ) -> i32;
 
+pub type RilsOutputCallback =
+    unsafe extern "C" fn(user_data: *mut c_void, text: RilsSlice, newline: u32);
+pub type RilsHostValueFormatCallback = unsafe extern "C" fn(
+    user_data: *mut c_void,
+    logical_type: RilsSlice,
+    value: RilsValue,
+    kind: u32,
+    alternate: u32,
+    precision: usize,
+    buffer: *mut u8,
+    capacity: usize,
+) -> usize;
+
 #[derive(Default)]
 struct LastError {
     code: i32,
@@ -160,6 +173,10 @@ struct Runtime {
     allowed_capabilities: HashSet<String>,
     dispatcher: Option<RilsHostDispatcher>,
     dispatcher_user_data: *mut c_void,
+    output_callback: Option<RilsOutputCallback>,
+    output_user_data: *mut c_void,
+    host_value_formatter: Option<RilsHostValueFormatCallback>,
+    host_value_formatter_user_data: *mut c_void,
     host_frozen: bool,
 }
 
@@ -922,8 +939,20 @@ fn invoke_host_dispatcher(
 fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
     let mut host = BytecodeHost::standard();
     for capability in &runtime.allowed_capabilities {
-        host.allow_capability(capability.clone());
+        if BytecodeHost::standard_library_capabilities().contains(&capability.as_str()) {
+            host.enable_standard_library_capability(capability)?;
+        } else {
+            host.allow_capability(capability.clone());
+        }
     }
+    if runtime.allowed_capabilities.contains("std::io") {
+        configure_output_handler(&mut host, runtime.output_callback, runtime.output_user_data)?;
+    }
+    configure_host_value_formatter(
+        &mut host,
+        runtime.host_value_formatter,
+        runtime.host_value_formatter_user_data,
+    );
     let dispatcher = runtime.dispatcher;
     for function in runtime.host_contract.functions() {
         let dispatcher = dispatcher.ok_or_else(|| {
@@ -961,6 +990,113 @@ fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
         )?;
     }
     Ok(host)
+}
+
+fn configure_output_handler(
+    host: &mut BytecodeHost,
+    callback: Option<RilsOutputCallback>,
+    user_data: *mut c_void,
+) -> Result<(), String> {
+    if let Some(callback) = callback {
+        let user_data = user_data as usize;
+        host.set_output_handler(move |text, newline| {
+            let slice = RilsSlice {
+                data: text.as_ptr(),
+                length: text.len(),
+            };
+            // SAFETY: The callback and user data remain owned by the embedding runtime;
+            // the UTF-8 slice is readable only for this synchronous callback.
+            unsafe { callback(user_data as *mut c_void, slice, u32::from(newline)) };
+            Ok(())
+        })
+    } else {
+        host.enable_standard_io()
+    }
+}
+
+fn configure_host_value_formatter(
+    host: &mut BytecodeHost,
+    callback: Option<RilsHostValueFormatCallback>,
+    user_data: *mut c_void,
+) {
+    let Some(callback) = callback else {
+        host.reset_host_value_formatter();
+        return;
+    };
+    let user_data = user_data as usize;
+    host.set_host_value_formatter(move |value, spec| {
+        let Value::HostObject(object) = value else {
+            return Ok(None);
+        };
+        let native = if let Some(handle) = rils::opaque_host_handle(value) {
+            RilsValue {
+                tag: RILS_VALUE_HOST_HANDLE,
+                low: u64::from_le_bytes(handle.object_id.to_le_bytes()),
+                high: (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
+                ..RilsValue::default()
+            }
+        } else if let Some(inline) = rils::inline_host_value(value) {
+            RilsValue {
+                tag: RILS_VALUE_INLINE_VALUE,
+                low: u64::from_le_bytes(inline.bytes[..8].try_into().expect("fixed payload")),
+                high: u64::from_le_bytes(inline.bytes[8..].try_into().expect("fixed payload")),
+                ..RilsValue::default()
+            }
+        } else {
+            return Ok(None);
+        };
+        let logical_type = RilsSlice {
+            data: object.type_definition.name.as_ptr(),
+            length: object.type_definition.name.len(),
+        };
+        let kind = match spec.kind {
+            rils::HostFormatKind::Display => 0,
+            rils::HostFormatKind::Debug => 1,
+        };
+        let precision = spec.precision.unwrap_or(usize::MAX);
+        // SAFETY: The embedding host owns the callback and user data. All inputs are call-scoped.
+        let required = unsafe {
+            callback(
+                user_data as *mut c_void,
+                logical_type,
+                native,
+                kind,
+                u32::from(spec.alternate),
+                precision,
+                ptr::null_mut(),
+                0,
+            )
+        };
+        if required == usize::MAX {
+            return Ok(None);
+        }
+        let mut buffer = vec![0u8; required];
+        // SAFETY: `buffer` is writable for its reported capacity during this synchronous call.
+        let written = unsafe {
+            callback(
+                user_data as *mut c_void,
+                logical_type,
+                native,
+                kind,
+                u32::from(spec.alternate),
+                precision,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+            )
+        };
+        if written == usize::MAX {
+            return Ok(None);
+        }
+        if written > buffer.len() {
+            return Err(
+                "host value formatter output changed between buffer query and write".into(),
+            );
+        }
+        buffer.truncate(written);
+        String::from_utf8(buffer)
+            .map(Some)
+            .map_err(|_| "host value formatter returned invalid UTF-8".into())
+    });
 }
 
 mod error_api;

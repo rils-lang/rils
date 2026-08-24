@@ -8,6 +8,6 @@ fn roundtrip(path: string) -> Result<string, Error> {
 }
 
 match roundtrip("rils-standard-library-example.txt") {
-    Ok(text) => println!(text),
-    Err(error) => println!("filesystem error:", error.kind, error.message),
+    Ok(text) => println!("{}", text),
+    Err(error) => println!("filesystem error: {} {}", error.kind, error.message),
 }

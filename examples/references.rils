@@ -25,5 +25,5 @@ let copied = clone(&counter);
 assert!(copied.value == 42);
 
 counter.set(7);
-println!(counter.value);
+println!("{}", counter.value);
 counter.value

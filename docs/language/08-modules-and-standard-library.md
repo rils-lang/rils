@@ -6,8 +6,8 @@
 
 | 名称 | 类别 | 说明 |
 | --- | --- | --- |
-| `print!(values...)` | 宏 | 连续输出，不换行，返回 `()` |
-| `println!(values...)` | 宏 | 以空格分隔输出并换行，返回 `()` |
+| `print!(format, values...)` | 宏 | 按 Rust 风格格式串输出，不换行，返回 `()` |
+| `println!(format, values...)` | 宏 | 按 Rust 风格格式串输出并换行，返回 `()`；也支持空的 `println!()` |
 | `assert!(condition, message?)` | 宏 | 要求布尔条件为真 |
 | `type_of(value)` | 函数 | 返回运行时类型名称 |
 | `clone(&value)` | 函数 | 显式创建拥有型值的独立副本 |
@@ -116,6 +116,26 @@ prelude
 
 常用 Option、Result、Vec 和迭代器名字仍由 prelude 自动提供。`std::io::print` 与
 `std::io::println` 当前是底层函数；日常输出仍推荐 `print!` 和 `println!` 宏。
+
+格式串必须是编译期字符串字面量，占位符与参数数量会在宏展开期检查：
+
+```rils
+println!("name = {}, count = {}", name, count);
+println!("state = {:?}", state);
+println!("state = {:#?}", state);
+println!("flags = {:#x}", flags);
+println!("escaped braces: {{}}");
+```
+
+`{}` 使用 `Display`，`{:?}` 与 `{:#?}` 使用 `Debug`；后者启用多行漂亮输出。整数支持
+`b`、`o`、`x`、`X`，浮点支持 `e`、`E`，并支持固定宽度、左右/居中对齐、填充、正号、
+零填充和精度。格式化参数只会被临时借用，不会因为输出而 move 非 `Copy` 值。
+Manifest 声明的 inline host value 与 handle 可以由嵌入宿主安装 formatter；Rils 会把逻辑
+类型、portable value 和格式说明交给宿主，再对返回文本应用宽度与对齐。未识别的宿主类型
+回退为 `<logical_type>`。
+自定义类型可实现 `core::fmt::Display` 或 `core::fmt::Debug`，并通过传入的
+`&mut core::fmt::Formatter` 的 `write_str` 方法产生文本；该方法返回
+`Result<(), core::fmt::FormatError>`。
 
 ### IO 与文件系统
 

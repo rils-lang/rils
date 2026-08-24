@@ -132,6 +132,82 @@ fn raw_bytes(value: &[u8]) -> RilsSlice {
     }
 }
 
+unsafe extern "C" fn output_callback(user_data: *mut c_void, text: RilsSlice, newline: u32) {
+    // SAFETY: The test keeps the Vec alive and exclusively borrowed during script execution.
+    let events = unsafe { &mut *(user_data.cast::<Vec<(String, bool)>>()) };
+    // SAFETY: The runtime guarantees a readable callback-scoped UTF-8 slice.
+    let bytes = unsafe { slice::from_raw_parts(text.data, text.length) };
+    events.push((String::from_utf8(bytes.to_vec()).unwrap(), newline != 0));
+}
+
+unsafe extern "C" fn inline_value_formatter(
+    _user_data: *mut c_void,
+    logical_type: RilsSlice,
+    value: RilsValue,
+    kind: u32,
+    _alternate: u32,
+    _precision: usize,
+    buffer: *mut u8,
+    capacity: usize,
+) -> usize {
+    // SAFETY: The runtime guarantees readable callback-scoped slices.
+    let logical_type = unsafe { slice::from_raw_parts(logical_type.data, logical_type.length) };
+    if logical_type != b"unity_engine::Vector3" || value.tag != RILS_VALUE_INLINE_VALUE || kind != 0
+    {
+        return usize::MAX;
+    }
+    let x = f32::from_bits(value.low as u32);
+    let y = f32::from_bits((value.low >> 32) as u32);
+    let z = f32::from_bits(value.high as u32);
+    let rendered = format!("Vector3({x}, {y}, {z})");
+    if !buffer.is_null() && capacity >= rendered.len() {
+        // SAFETY: The runtime supplies a writable buffer with the reported capacity.
+        unsafe { ptr::copy_nonoverlapping(rendered.as_ptr(), buffer, rendered.len()) };
+    }
+    rendered.len()
+}
+
+#[test]
+fn routes_formatted_output_through_the_runtime_callback() {
+    let runtime = rils_runtime_create();
+    let mut events = Vec::new();
+    assert_eq!(
+        rils_runtime_set_output_callback(
+            runtime,
+            Some(output_callback),
+            (&mut events as *mut Vec<(String, bool)>).cast(),
+        ),
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_allow_standard_library(runtime), RILS_STATUS_OK);
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+    let source = r#"
+        let _ = std::fs::try_exists("definitely-missing-rils-standard-library-smoke");
+        print!("value={}", 7);
+        println!(" done");
+    "#;
+    let mut module = 0;
+    assert_eq!(
+        unsafe { rils_module_compile(runtime, bytes("output.rils"), bytes(source), &mut module) },
+        RILS_STATUS_OK
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        events,
+        [("value=7".to_string(), false), (" done".to_string(), true)]
+    );
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
 #[test]
 fn registers_freezes_and_dispatches_custom_host_functions() {
     let runtime = rils_runtime_create();
@@ -354,6 +430,7 @@ fn dispatches_named_host_types_with_inherited_receiver_methods() {
 #[test]
 fn dispatches_inline_value_types_through_multiple_host_calls() {
     let runtime = rils_runtime_create();
+    let mut output = Vec::new();
     let types = [RilsHostTypeV2 {
         name: bytes("unity_engine::Vector3"),
         base_type: bytes(""),
@@ -417,12 +494,33 @@ fn dispatches_inline_value_types_through_multiple_host_calls() {
         RILS_STATUS_OK
     );
     assert_eq!(
+        rils_runtime_set_output_callback(
+            runtime,
+            Some(output_callback),
+            (&mut output as *mut Vec<(String, bool)>).cast(),
+        ),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        rils_runtime_set_host_value_formatter(
+            runtime,
+            Some(inline_value_formatter),
+            ptr::null_mut(),
+        ),
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_allow_standard_library(runtime), RILS_STATUS_OK);
+    assert_eq!(
         unsafe { rils_runtime_allow_capability(runtime, bytes("unity.math")) },
         RILS_STATUS_OK
     );
     assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
 
-    let source = "unity_engine::vector3::component_sum(unity_engine::vector3::new(1.25f32, 2.5f32, 3.75f32))";
+    let source = r#"
+        let value = unity_engine::vector3::new(1.25f32, 2.5f32, 3.75f32);
+        println!("value={}", value);
+        unity_engine::vector3::component_sum(value)
+    "#;
     let mut module = 0;
     assert_eq!(
         unsafe {
@@ -451,6 +549,10 @@ fn dispatches_inline_value_types_through_multiple_host_calls() {
     );
     assert_eq!(result.tag, RILS_VALUE_F32);
     assert_eq!(f32::from_bits(result.low as u32), 7.5);
+    assert_eq!(
+        output,
+        [("value=Vector3(1.25, 2.5, 3.75)".to_string(), true)]
+    );
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
 }
 

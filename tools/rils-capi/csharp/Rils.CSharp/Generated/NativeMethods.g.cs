@@ -47,6 +47,12 @@ public enum RilsHostTypeKind : uint
     Value = 1,
 }
 
+public enum RilsFormatKind : uint
+{
+    Display = 0,
+    Debug = 1,
+}
+
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct NativeSlice
 {
@@ -125,6 +131,23 @@ internal unsafe delegate int NativeHostDispatcher(
     NativeValue* outValue,
     NativeSlice* outError);
 
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate void NativeOutputCallback(
+    IntPtr userData,
+    NativeSlice text,
+    uint newline);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal unsafe delegate UIntPtr NativeHostValueFormatCallback(
+    IntPtr userData,
+    NativeSlice logicalType,
+    NativeValue value,
+    uint kind,
+    uint alternate,
+    UIntPtr precision,
+    byte* buffer,
+    UIntPtr capacity);
+
 internal static unsafe class NativeMethods
 {
     internal const string LibraryName = "rils_capi";
@@ -165,8 +188,17 @@ internal static unsafe class NativeMethods
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_host_dispatcher")]
     internal static extern int RuntimeSetHostDispatcher(ulong runtime, NativeHostDispatcher dispatcher, IntPtr user_data);
 
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_output_callback")]
+    internal static extern int RuntimeSetOutputCallback(ulong runtime, NativeOutputCallback? callback, IntPtr user_data);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_host_value_formatter")]
+    internal static extern int RuntimeSetHostValueFormatter(ulong runtime, NativeHostValueFormatCallback? callback, IntPtr user_data);
+
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_allow_capability")]
     internal static extern int RuntimeAllowCapability(ulong runtime, NativeSlice capability);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_allow_standard_library")]
+    internal static extern int RuntimeAllowStandardLibrary(ulong runtime);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_freeze_host_registry")]
     internal static extern int RuntimeFreezeHostRegistry(ulong runtime);

@@ -159,6 +159,22 @@ mod tests {
     }
 
     #[test]
+    fn validates_standard_format_macros() {
+        let tokens = lexer::lex("println!(\"value = {} {:#?}\", value, state)").unwrap();
+        expand(tokens, STANDARD_NATIVE_MACROS).expect("valid Rust-style format invocation");
+
+        for source in [
+            "println!(value)",
+            "println!(\"{}\")",
+            "println!(\"plain\", value)",
+            "println!(\"{\")",
+        ] {
+            let error = expand(lexer::lex(source).unwrap(), STANDARD_NATIVE_MACROS).unwrap_err();
+            assert!(!error.message.is_empty(), "{source}");
+        }
+    }
+
+    #[test]
     fn forwards_index_comparisons_without_recursive_matching() {
         let tokens = lexer::lex("assert!(values[0usize] == \"expected\")").unwrap();
         let expanded = expand(tokens, STANDARD_NATIVE_MACROS).unwrap();

@@ -88,7 +88,7 @@ let value = nil;
 
 ```rust
 fn log(message: string) -> () {
-    println!(message);
+    println!("{}", message);
 }
 
 let result: () = log("hello");
@@ -148,7 +148,7 @@ Option 不参与隐式真值转换。推荐使用模式匹配：
 
 ```rust
 match user {
-    Some(value) => println!(value),
+    Some(value) => println!("{}", value),
     None => println!("not found"),
 }
 ```

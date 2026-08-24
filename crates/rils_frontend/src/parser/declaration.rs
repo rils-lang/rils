@@ -320,6 +320,7 @@ impl Parser {
         let right = self.expect(&TokenKind::RightBrace, "expected `}` after enum variants")?;
         self.generic_scopes.pop();
         Ok(Stmt::Enum {
+            attributes: Vec::new(),
             name,
             name_span,
             generic_parameters,

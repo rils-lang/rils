@@ -49,7 +49,7 @@ let label = if score >= 60 {
 ```rust
 let mut index = 0;
 while index < 3 {
-    println!(index);
+    println!("{}", index);
     index = index + 1;
 }
 ```

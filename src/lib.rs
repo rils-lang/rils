@@ -1,12 +1,14 @@
 pub mod bytecode;
 mod environment;
 mod error;
+mod formatting;
 mod hash_collections;
 mod interpreter;
 mod library;
 mod limits;
 mod native_type;
 mod numeric;
+mod output;
 mod runtime_type;
 mod standard_library;
 mod value;
@@ -69,6 +71,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt, fs,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 pub use bytecode::{
@@ -89,6 +92,7 @@ pub use opaque_host::{
     InlineHostValue, OpaqueHostHandle, inline_host_value, inline_host_value_typed,
     opaque_host_handle, opaque_host_value, opaque_host_value_typed,
 };
+pub use output::{HostFormatKind, HostFormatSpec, HostValueFormatter, OutputHandler};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,
@@ -127,6 +131,30 @@ impl Engine {
 
     pub fn set_execution_limits(&mut self, limits: ExecutionLimits) {
         self.interpreter.set_execution_limits(limits);
+    }
+
+    pub fn set_output_handler<F>(&mut self, handler: F)
+    where
+        F: Fn(&str, bool) -> Result<(), String> + 'static,
+    {
+        self.interpreter.set_output_handler(Rc::new(handler));
+    }
+
+    pub fn reset_output_handler(&mut self) {
+        self.interpreter
+            .set_output_handler(output::default_output_handler());
+    }
+
+    pub fn set_host_value_formatter<F>(&mut self, formatter: F)
+    where
+        F: Fn(&Value, HostFormatSpec) -> Result<Option<String>, String> + 'static,
+    {
+        self.interpreter
+            .set_host_value_formatter(Some(Rc::new(formatter)));
+    }
+
+    pub fn reset_host_value_formatter(&mut self) {
+        self.interpreter.set_host_value_formatter(None);
     }
 
     pub fn register_module(&mut self, path: &str) -> Result<(), String> {

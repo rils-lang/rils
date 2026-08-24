@@ -702,7 +702,7 @@ fn links_and_executes_core_imports() {
 fn compiles_and_executes_standard_native_macros() {
     let module = compile(
         r#"
-            print!();
+            print!("");
             println!();
             assert!(true, "must remain true");
             42

@@ -23,6 +23,7 @@ use crate::{
 mod core_imports;
 mod encoder;
 mod format;
+mod formatting;
 mod host;
 mod verifier;
 mod vm;
@@ -264,6 +265,7 @@ impl BytecodeModule {
         VirtualMachine::new_call(
             self,
             imports,
+            host.host_value_formatter.clone(),
             crate::ExecutionLimits {
                 max_steps,
                 ..crate::ExecutionLimits::default()
@@ -317,7 +319,7 @@ impl BytecodeModule {
     ) -> Result<Value, BytecodeError> {
         self.verify()?;
         let imports = self.link(host)?;
-        VirtualMachine::new(self, imports, limits).execute()
+        VirtualMachine::new(self, imports, host.host_value_formatter.clone(), limits).execute()
     }
 
     /// Calls a named bytecode function without executing the module entry point.
@@ -378,7 +380,15 @@ impl BytecodeModule {
             ));
         }
         let imports = self.link(host)?;
-        VirtualMachine::new_call(self, imports, limits, function, arguments)?.execute()
+        VirtualMachine::new_call(
+            self,
+            imports,
+            host.host_value_formatter.clone(),
+            limits,
+            function,
+            arguments,
+        )?
+        .execute()
     }
 
     pub fn imports(&self) -> &[BytecodeImport] {

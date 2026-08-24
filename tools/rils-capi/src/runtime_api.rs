@@ -19,6 +19,10 @@ pub extern "C" fn rils_runtime_create() -> Handle {
                 allowed_capabilities: HashSet::new(),
                 dispatcher: None,
                 dispatcher_user_data: ptr::null_mut(),
+                output_callback: None,
+                output_user_data: ptr::null_mut(),
+                host_value_formatter: None,
+                host_value_formatter_user_data: ptr::null_mut(),
                 host_frozen: false,
             })
         })
@@ -82,6 +86,62 @@ pub extern "C" fn rils_runtime_set_max_steps(runtime: Handle, max_steps: u64) ->
                 );
             };
             runtime.max_steps = max_steps;
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rils_runtime_set_output_callback(
+    runtime: Handle,
+    callback: Option<RilsOutputCallback>,
+    user_data: *mut c_void,
+) -> i32 {
+    status_entry(|| {
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            let result = configure_output_handler(&mut runtime.host, callback, user_data);
+            match result {
+                Ok(()) => {
+                    runtime.allowed_capabilities.insert("std::io".to_string());
+                    runtime.output_callback = callback;
+                    runtime.output_user_data = user_data;
+                    RILS_STATUS_OK
+                }
+                Err(message) => fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default()),
+            }
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rils_runtime_set_host_value_formatter(
+    runtime: Handle,
+    callback: Option<RilsHostValueFormatCallback>,
+    user_data: *mut c_void,
+) -> i32 {
+    status_entry(|| {
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            configure_host_value_formatter(&mut runtime.host, callback, user_data);
+            runtime.host_value_formatter = callback;
+            runtime.host_value_formatter_user_data = user_data;
             RILS_STATUS_OK
         })
     })
@@ -838,6 +898,40 @@ pub unsafe extern "C" fn rils_runtime_allow_capability(
                 );
             }
             runtime.allowed_capabilities.insert(capability);
+            RILS_STATUS_OK
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rils_runtime_allow_standard_library(runtime: Handle) -> i32 {
+    status_entry(|| {
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let Some(runtime) = state.runtimes.get_mut(runtime) else {
+                return fail(
+                    RILS_STATUS_INVALID_HANDLE,
+                    "invalid runtime handle",
+                    "",
+                    Span::default(),
+                );
+            };
+            if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "standard-library capabilities cannot change after freeze or module creation",
+                    "",
+                    Span::default(),
+                );
+            }
+            if let Err(message) = runtime.host.enable_standard_library() {
+                return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+            }
+            runtime.allowed_capabilities.extend(
+                BytecodeHost::standard_library_capabilities()
+                    .into_iter()
+                    .map(str::to_owned),
+            );
             RILS_STATUS_OK
         })
     })

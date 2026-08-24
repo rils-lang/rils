@@ -47,6 +47,9 @@
 
 ### 宿主与部署
 
+- 在现有 host value formatter 与文本输出 callback 之上增加日志级别，并允许宿主定制未知
+  host type 的 fallback 策略。
+
 - 在保持宿主无关的前提下继续扩展 C ABI 的核心生命周期、值交换和诊断能力。
 - 为自动生成的 Unity direct C# handler 增加显式 override 层，使少量需要自定义语义、错误映射或
   性能特化的 Core API 可以替换自动绑定；继续补齐 enum、常量和超过 16 字节的 struct transport，

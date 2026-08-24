@@ -8,7 +8,22 @@ static void Equal<T>(T expected, T actual, string label)
     }
 }
 
-Equal(5U, RilsRuntime.NativeAbiVersion, "ABI version");
+Equal(6U, RilsRuntime.NativeAbiVersion, "ABI version");
+
+using (var runtime = new RilsRuntime())
+{
+    var output = new List<(string Text, bool Newline)>();
+    runtime.SetOutputHandler((text, newline) => output.Add((text, newline)));
+    runtime.AllowStandardLibrary();
+    using RilsModule module = runtime.Compile(
+        "print!(\"value={}\", 7); println!(\" done\");",
+        "managed-output-smoke.rils");
+    using RilsInstance instance = module.CreateInstance();
+    instance.Execute();
+    Equal(2, output.Count, "managed output event count");
+    Equal(("value=7", false), output[0], "managed print callback");
+    Equal((" done", true), output[1], "managed println callback");
+}
 
 ulong stableHostId = RilsHostStableId.FromCanonicalName(
     "UnityEngine.CoreModule:UnityEngine.Time.get_deltaTime():System.Single");

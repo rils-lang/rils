@@ -1,6 +1,58 @@
 use super::*;
 
 #[test]
+fn checks_format_traits_and_typed_specifiers() {
+    let valid = analyze(
+        r#"
+            #[derive(Debug)] struct State { value: i32 }
+            let state = State { value: 7 };
+            println!("state={:#?} hex={:#x} exp={:.2e}", state, 15u32, 1.25f64);
+            state.value
+        "#,
+    )
+    .unwrap();
+    assert!(valid.diagnostics.is_empty(), "{:?}", valid.diagnostics);
+
+    let invalid = analyze(
+        r#"
+            struct State { value: i32 }
+            let state = State { value: 7 };
+            println!("{} {:?} {:x} {:e}", state, state, "text", 1i32);
+        "#,
+    )
+    .unwrap();
+    let messages = invalid
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("does not implement `Display`")),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("does not implement `Debug`")),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("requires an integer")),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("requires a float")),
+        "{messages:?}"
+    );
+}
+
+#[test]
 fn resolves_local_definitions_and_references() {
     let source = "let value = 42; value";
     let analysis = analyze_with_source_id(source, SourceId::new(7), &HashMap::new()).unwrap();

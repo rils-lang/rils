@@ -7,6 +7,20 @@ using System.Text;
 
 namespace Rils.CSharp
 {
+    public readonly struct RilsHostFormatSpec
+    {
+        public RilsHostFormatSpec(RilsFormatKind kind, bool alternate = false, int? precision = null)
+        {
+            Kind = kind;
+            Alternate = alternate;
+            Precision = precision;
+        }
+
+        public RilsFormatKind Kind { get; }
+        public bool Alternate { get; }
+        public int? Precision { get; }
+    }
+
     internal static unsafe class NativeInterop
     {
         internal static void Check(int status)
@@ -39,7 +53,7 @@ namespace Rils.CSharp
             return new RilsException(status, message, sourceName, spanStart, spanEnd);
         }
 
-        private static string ReadUtf8(NativeSlice slice)
+        internal static string ReadUtf8(NativeSlice slice)
         {
             ulong length = slice.Length.ToUInt64();
             if (length == 0)
@@ -60,6 +74,10 @@ namespace Rils.CSharp
     {
         private readonly int _ownerThreadId;
         private readonly List<RilsModule> _modules = new List<RilsModule>();
+        private NativeOutputCallback? _nativeOutputCallback;
+        private Action<string, bool>? _outputHandler;
+        private NativeHostValueFormatCallback? _nativeHostValueFormatter;
+        private Func<string, RilsValue, RilsHostFormatSpec, string?>? _hostValueFormatter;
         private ulong _handle;
 
         public RilsRuntime()
@@ -80,6 +98,97 @@ namespace Rils.CSharp
         {
             EnsureUsable();
             NativeInterop.Check(NativeMethods.RuntimeSetMaxSteps(_handle, maxSteps));
+        }
+
+        /// Routes formatted print output to a managed callback. Pass null to restore stdout.
+        /// The callback runs synchronously on the thread executing Rils and must not throw.
+        public void SetOutputHandler(Action<string, bool>? handler)
+        {
+            EnsureUsable();
+            _outputHandler = handler;
+            _nativeOutputCallback = handler == null ? null : DispatchOutput;
+            NativeInterop.Check(NativeMethods.RuntimeSetOutputCallback(
+                _handle,
+                _nativeOutputCallback,
+                IntPtr.Zero));
+        }
+
+        private void DispatchOutput(IntPtr userData, NativeSlice text, uint newline)
+        {
+            try
+            {
+                _outputHandler?.Invoke(NativeInterop.ReadUtf8(text), newline != 0);
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Rils output handler threw an exception: {exception}");
+            }
+        }
+
+        /// Routes portable host values through a managed formatter before print output is emitted.
+        /// Returning null keeps the runtime's fallback representation for an unknown logical type.
+        public unsafe void SetHostValueFormatter(
+            Func<string, RilsValue, RilsHostFormatSpec, string?>? formatter)
+        {
+            EnsureUsable();
+            _hostValueFormatter = formatter;
+            _nativeHostValueFormatter = formatter == null ? null : DispatchHostValueFormat;
+            NativeInterop.Check(NativeMethods.RuntimeSetHostValueFormatter(
+                _handle,
+                _nativeHostValueFormatter,
+                IntPtr.Zero));
+        }
+
+        private unsafe UIntPtr DispatchHostValueFormat(
+            IntPtr userData,
+            NativeSlice logicalType,
+            NativeValue value,
+            uint kind,
+            uint alternate,
+            UIntPtr precision,
+            byte* buffer,
+            UIntPtr capacity)
+        {
+            try
+            {
+                ulong rawPrecision = precision.ToUInt64();
+                ulong absentPrecision = UIntPtr.Size == 8 ? ulong.MaxValue : uint.MaxValue;
+                int? managedPrecision = rawPrecision == absentPrecision
+                    ? null
+                    : checked((int)rawPrecision);
+                string? formatted = _hostValueFormatter?.Invoke(
+                    NativeInterop.ReadUtf8(logicalType),
+                    RilsValue.FromNative(value),
+                    new RilsHostFormatSpec(
+                        (RilsFormatKind)kind,
+                        alternate != 0,
+                        managedPrecision));
+                if (formatted == null) return UIntPtr.Size == 8
+                    ? new UIntPtr(ulong.MaxValue)
+                    : new UIntPtr(uint.MaxValue);
+                byte[] bytes = Encoding.UTF8.GetBytes(formatted);
+                if (buffer != null && capacity.ToUInt64() >= (ulong)bytes.Length)
+                {
+                    fixed (byte* source = bytes)
+                    {
+                        Buffer.MemoryCopy(
+                            source,
+                            buffer,
+                            checked((long)capacity.ToUInt64()),
+                            bytes.Length);
+                    }
+                }
+                return new UIntPtr(checked((uint)bytes.Length));
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Rils host value formatter threw an exception: {exception}");
+                return UIntPtr.Size == 8
+                    ? new UIntPtr(ulong.MaxValue)
+                    : new UIntPtr(uint.MaxValue);
+            }
         }
 
         public unsafe void RegisterHostManifest(byte[] manifest)
@@ -139,6 +248,13 @@ namespace Rils.CSharp
                     _handle,
                     NativeInterop.Slice(pointer, bytes.Length)));
             }
+        }
+
+        /// Enables every host-backed capability provided by the Rils standard library.
+        public void AllowStandardLibrary()
+        {
+            EnsureUsable();
+            NativeInterop.Check(NativeMethods.RuntimeAllowStandardLibrary(_handle));
         }
 
         public unsafe RilsModule Compile(string source, string sourceName = "<memory>")
@@ -231,6 +347,10 @@ namespace Rils.CSharp
             }
             NativeInterop.Check(NativeMethods.RuntimeDestroy(_handle));
             _handle = 0;
+            _nativeOutputCallback = null;
+            _outputHandler = null;
+            _nativeHostValueFormatter = null;
+            _hostValueFormatter = null;
         }
 
         internal ulong Handle

@@ -48,6 +48,71 @@ fn derives_default_for_unit_structs() {
 }
 
 #[test]
+fn derives_debug_for_structs_and_enums() {
+    let source = r#"
+        #[derive(Debug)]
+        struct Point { x: i32, y: i32 }
+        #[derive(Debug)]
+        enum Shape { Empty, Point(Point) }
+        let point = Point { x: 1, y: 2 };
+        println!("point = {:#?}", point);
+        point.x
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(1));
+    let module = crate::compile(source).expect("Debug derives should compile to bytecode");
+    let mut host = crate::BytecodeHost::standard();
+    host.enable_standard_io().unwrap();
+    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(1));
+}
+
+#[test]
+fn bytecode_formatting_calls_custom_traits_and_nested_debug() {
+    let source = r#"
+        struct Label { value: i32 }
+        impl core::fmt::Display for Label {
+            fn fmt(&self, formatter: &mut core::fmt::Formatter) -> Result<(), core::fmt::FormatError> {
+                formatter.write_str("custom label")
+            }
+        }
+        impl core::fmt::Debug for Label {
+            fn fmt(&self, formatter: &mut core::fmt::Formatter) -> Result<(), core::fmt::FormatError> {
+                formatter.write_str("debug label")
+            }
+        }
+        #[derive(Debug)]
+        struct Wrapper { label: Label }
+        let label = Label { value: 1 };
+        println!("{}", label);
+        let wrapper = Wrapper { label: Label { value: 2 } };
+        println!("{:?}", wrapper);
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::Unit);
+    let module = compile(source).unwrap();
+    let captured = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let output = captured.clone();
+    let mut host = BytecodeHost::standard();
+    host.allow_capability("std::io");
+    host.register_function(
+        "std::io::println",
+        FunctionSignature::variadic(Type::Unit),
+        "std::io",
+        move |arguments| {
+            let Value::String(value) = &arguments[1] else {
+                return Err("expected formatted output".into());
+            };
+            output.borrow_mut().push(value.to_string());
+            Ok(Value::Unit)
+        },
+    )
+    .unwrap();
+    module.execute_with_host(&host).unwrap();
+    assert_eq!(
+        captured.borrow().as_slice(),
+        ["custom label", "Wrapper { label: debug label }"]
+    );
+}
+
+#[test]
 fn self_paths_resolve_to_the_current_impl_type() {
     let source = r#"
         struct Counter { value: i32 }
@@ -2364,6 +2429,28 @@ fn former_print_functions_require_macro_invocation_syntax() {
 }
 
 #[test]
+fn engine_output_handler_receives_formatted_print_boundaries() {
+    let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let captured = events.clone();
+    let mut engine = Engine::new();
+    engine.set_output_handler(move |text, newline| {
+        captured.borrow_mut().push((text.to_owned(), newline));
+        Ok(())
+    });
+    engine
+        .eval(r#"print!("value={}", 7); println!(" done"); println!();"#)
+        .unwrap();
+    assert_eq!(
+        events.borrow().as_slice(),
+        [
+            ("value=7".to_string(), false),
+            (" done".to_string(), true),
+            (String::new(), true),
+        ]
+    );
+}
+
+#[test]
 fn standard_native_assert_macro_executes() {
     assert_eq!(eval("assert!(true)").unwrap(), Value::Unit);
     let error = eval("macro println($value) { $value }").unwrap_err();
@@ -2788,7 +2875,7 @@ fn nested_modules_and_builtin_module_paths_execute() {
                 }
                 let value = outer::inner::answer();
                 let optional = core::option::Some(value);
-                std::io::println("module answer:", value);
+                std::io::println("module answer: {}", value);
                 unwrap(optional)
             "#,
         ),

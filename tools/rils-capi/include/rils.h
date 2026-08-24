@@ -79,6 +79,31 @@ typedef int32_t (*RilsHostDispatcher)(
     RilsValue *out_value,
     RilsSlice *out_error);
 
+/* Called synchronously while Rils executes. `text` is UTF-8 and is valid only for the duration of
+ * the callback. The callback must copy data it needs to retain and must not re-enter the runtime. */
+typedef void (*RilsOutputCallback)(
+    void *user_data,
+    RilsSlice text,
+    uint32_t newline);
+
+/* Formats one portable host value. `precision` is SIZE_MAX when unspecified. Return SIZE_MAX to
+ * decline formatting; otherwise return the required UTF-8 byte length. The runtime first queries
+ * with a NULL buffer, then calls again with sufficient caller-owned storage. */
+typedef size_t (*RilsHostValueFormatCallback)(
+    void *user_data,
+    RilsSlice logical_type,
+    RilsValue value,
+    uint32_t kind,
+    uint32_t alternate,
+    size_t precision,
+    uint8_t *buffer,
+    size_t capacity);
+
+enum RilsFormatKind {
+    RILS_FORMAT_DISPLAY = 0,
+    RILS_FORMAT_DEBUG = 1
+};
+
 enum RilsStatus {
     RILS_STATUS_OK = 0,
     RILS_STATUS_INVALID_ARGUMENT = 1,
@@ -150,7 +175,20 @@ RILS_API int32_t rils_runtime_set_host_dispatcher(
     RilsHandle runtime,
     RilsHostDispatcher dispatcher,
     void *user_data);
+/* Installs a runtime-scoped output callback and enables the `std::io` capability. Passing NULL
+ * restores standard output. The caller owns `user_data` and must keep it valid until the callback
+ * is replaced or the runtime is destroyed. */
+RILS_API int32_t rils_runtime_set_output_callback(
+    RilsHandle runtime,
+    RilsOutputCallback callback,
+    void *user_data);
+RILS_API int32_t rils_runtime_set_host_value_formatter(
+    RilsHandle runtime,
+    RilsHostValueFormatCallback callback,
+    void *user_data);
 RILS_API int32_t rils_runtime_allow_capability(RilsHandle runtime, RilsSlice capability);
+/* Enables every host-backed capability in the Rils standard library known to this runtime. */
+RILS_API int32_t rils_runtime_allow_standard_library(RilsHandle runtime);
 RILS_API int32_t rils_runtime_freeze_host_registry(RilsHandle runtime);
 RILS_API int32_t rils_module_compile(
     RilsHandle runtime,

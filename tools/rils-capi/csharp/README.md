@@ -14,6 +14,34 @@ using var instance = module.CreateInstance();
 int answer = instance.Call("add", 20, 22).AsI32();
 ```
 
+格式化输出可以重定向到托管宿主；第二个参数表示这次输出是否以换行结束：
+
+```csharp
+runtime.SetOutputHandler((text, newline) =>
+{
+    Console.Write(text);
+    if (newline) Console.WriteLine();
+});
+```
+
+回调在执行 Rils 的同一线程同步触发，不应抛出异常或重入同一个 runtime。传入 `null` 会恢复
+默认标准输出。
+
+宿主类型可以在最终文本输出前交给托管 formatter：
+
+```csharp
+runtime.SetHostValueFormatter((logicalType, value, spec) =>
+    logicalType == "my_host::Point"
+        ? DecodePoint(value.AsInlineValue()).ToString()
+        : null);
+```
+
+回调收到 Manifest 中的逻辑类型、portable `RilsValue` 和 `Display`/`Debug` 格式说明；返回
+`null` 会使用 Rils 的 `<logical_type>` fallback。Unity 生成绑定会自动安装对应映射。
+
+完整嵌入环境可以在冻结 Host Registry 前调用 `runtime.AllowStandardLibrary()`，一次允许当前
+运行时提供的全部 `std::*` 宿主能力；仍可用 `AllowCapability` 实施更细粒度的沙箱策略。
+
 需要使用外部模块时，让原生编译器从入口文件加载：
 
 ```csharp
