@@ -5,9 +5,16 @@ Rils（Rust-Inspired Lightweight Script）是一门面向嵌入场景的轻量�
 
 ## 快速开始
 
-从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载当前平台的 Rils 环境包，解压后将
-其中的 `bin` 目录加入 `PATH`。环境包已经包含 `rils` 和 `rils-analyzer`，使用 Rils 不需要安装
-Rust 工具链。完整步骤参见[安装与环境包](docs/installation.md)。
+从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载当前平台的 `rils-up-init`，将带
+平台后缀的文件重命名为 `rils-up-init`（Windows 为 `.exe`），安装稳定工具链并按提示将
+`.rils/bin` 加入 `PATH`：
+
+```console
+rils-up-init install stable
+```
+
+`rils-up` 会成套管理 `rils` 和 `rils-analyzer` 的版本，普通用户不需要 Rust 工具链。离线环境包、
+版本切换和项目版本固定参见[安装与环境包](docs/installation.md)。
 
 运行单文件脚本：
 

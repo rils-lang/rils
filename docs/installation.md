@@ -5,7 +5,37 @@ Rils 的 GitHub Release 为常用桌面和服务器平台提供预编译环境�
 
 ## 下载
 
-在 [GitHub Releases](https://github.com/rils-lang/rils/releases) 中选择与系统匹配的归档：
+推荐先从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载当前平台的
+`rils-up-init`，它是无需 Rust 工具链的原生版本管理器。Windows 可以直接运行 `.exe`；Linux 和
+macOS 首次下载后需要赋予执行权限。可以将带平台后缀的下载文件重命名为 `rils-up-init`（Windows
+为 `rils-up-init.exe`），随后安装当前稳定版：
+
+```console
+rils-up-init install stable
+```
+
+安装完成后，将提示的 `.rils/bin` 目录加入 `PATH`。此后使用固定的 `rils-up` 命令管理版本：
+
+```console
+rils-up update
+rils-up install 0.4.0
+rils-up default 0.4.0
+rils-up list
+```
+
+常用管理命令：
+
+| 命令 | 作用 |
+| --- | --- |
+| `rils-up install <version>` | 下载并校验指定版本；首次安装会自动成为默认版本 |
+| `rils-up update` | 安装最新稳定版并将其设为全局默认版本 |
+| `rils-up default <version>` | 切换全局默认版本，不重新下载 |
+| `rils-up list` | 列出本机安装的全部版本 |
+| `rils-up which [rils-analyzer]` | 显示当前选择的真实可执行文件及版本 |
+| `rils-up uninstall <version>` | 删除非默认版本 |
+| `rils-up home` | 显示 Rils 安装目录 |
+
+也可以直接选择与系统匹配的离线归档：
 
 | 系统 | 架构 | 文件名后缀 |
 | --- | --- | --- |
@@ -26,7 +56,8 @@ Rils 的 GitHub Release 为常用桌面和服务器平台提供预编译环境�
 rils-<version>-<platform>/
 ├── bin/
 │   ├── rils
-│   └── rils-analyzer
+│   ├── rils-analyzer
+│   └── rils-up
 ├── docs/
 ├── examples/
 ├── README.md
@@ -50,6 +81,25 @@ rils repl
 
 VS Code 插件的正式平台包会自带匹配的 Analyzer；只有其他编辑器或自定义 LSP 客户端需要直接配置
 `rils-analyzer` 命令。
+
+## 切换版本
+
+`PATH` 中的 `rils` 和 `rils-analyzer` 是由 `rils-up` 安装的固定代理。真实工具链位于
+`.rils/toolchains/<version>/bin`；切换默认版本只会原子更新 `.rils/settings.toml`，下一次启动命令
+时代理会选择新的真实可执行文件。已经运行的 REPL、脚本和 Analyzer 不受中途切换影响。
+
+在项目根目录固定版本：
+
+```console
+rils-up override set 0.4.0
+```
+
+这会写入 `.rils-version`。选择顺序为 `RILS_TOOLCHAIN` 环境变量、从当前目录向上找到的最近
+`.rils-version`、全局默认版本。也可以仅为一次命令选择版本：
+
+```console
+rils +0.3.0 script.rils
+```
 
 ## 从源码构建
 
