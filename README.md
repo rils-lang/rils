@@ -5,16 +5,20 @@ Rils（Rust-Inspired Lightweight Script）是一门面向嵌入场景的轻量�
 
 ## 快速开始
 
-需要支持 Rust 2024 Edition 的稳定 Rust 工具链：
+从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载当前平台的 Rils 环境包，解压后将
+其中的 `bin` 目录加入 `PATH`。环境包已经包含 `rils` 和 `rils-analyzer`，使用 Rils 不需要安装
+Rust 工具链。完整步骤参见[安装与环境包](docs/installation.md)。
+
+运行单文件脚本：
 
 ```console
-cargo run -p rils_cli -- examples/hello.rils
+rils examples/hello.rils
 ```
 
 通过 `repl` 命令进入 REPL：
 
 ```console
-cargo run -p rils_cli -- repl
+rils repl
 ```
 
 ## Rust 嵌入
@@ -57,6 +61,7 @@ script_paths = ["scripts"]
 ## 文档
 
 - [可运行示例](examples/README.md)
+- [安装与环境包](docs/installation.md)
 - [语言手册](docs/language/README.md)
 - [项目模型](docs/project.md)
 - [项目依赖与打包](docs/project-dependencies-and-packaging.md)
