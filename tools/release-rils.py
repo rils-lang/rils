@@ -7,7 +7,6 @@ import argparse
 from collections import defaultdict
 import heapq
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -155,14 +154,6 @@ def wait_for_crate(package: str, version: str) -> None:
     )
 
 
-def copy_binary(target_directory: Path, artifact_directory: Path, name: str) -> None:
-    suffix = ".exe" if os.name == "nt" else ""
-    source = target_directory / "release" / f"{name}{suffix}"
-    if not source.is_file():
-        raise RuntimeError(f"Expected release artifact was not created: {source}")
-    shutil.copy2(source, artifact_directory / source.name)
-
-
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -205,10 +196,16 @@ def main() -> int:
     run([cargo, "fmt", "--check"])
     run([cargo, "test", "--workspace"])
     run([cargo, "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])
-    run([cargo, "build", "--release", "-p", "rils_cli", "-p", "rils_analyzer"])
-
-    copy_binary(target_directory, artifact_directory, "rils")
-    copy_binary(target_directory, artifact_directory, "rils-analyzer")
+    run(
+        [
+            sys.executable,
+            str(REPOSITORY_ROOT / "tools" / "package-rils.py"),
+            "--expected-version",
+            version,
+            "--output-dir",
+            str(artifact_directory),
+        ]
+    )
 
     if args.publish:
         for index, package in enumerate(order):
@@ -221,12 +218,7 @@ def main() -> int:
 
     print("Rils release completed successfully:")
     for artifact in sorted(artifact_directory.iterdir()):
-        if artifact.is_file() and artifact.name in {
-            "rils",
-            "rils.exe",
-            "rils-analyzer",
-            "rils-analyzer.exe",
-        }:
+        if artifact.is_file():
             print(f"  {artifact.name}")
     return 0
 
