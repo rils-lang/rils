@@ -94,10 +94,15 @@ npm run check
 
 Open `editors/vscode-rils` as a VS Code workspace and press `F5`. The included
 launch configuration starts an Extension Development Host. The extension uses
-`rils.server.path` when configured, then its bundled Analyzer. During repository
-development it selects the newest Analyzer build from the workspace's
-`target/release` and `target/debug` directories, and finally falls back to
-`rils-analyzer` on `PATH`.
+`rils.server.path` when configured, then the `rils-up` managed Analyzer under
+`RILS_HOME/bin` (or `.rils/bin` in the user home), followed by its bundled
+Analyzer. During repository development it can select the newest Analyzer build
+from the workspace's `target/release` and `target/debug` directories, and finally
+falls back to `rils-analyzer` on `PATH`. Reload the editor after changing the
+active `rils-up` toolchain so the LSP process starts with the new version. The
+Analyzer starts in the first workspace folder, allowing its `.rils-version` to
+select the project toolchain; use `rils.server.path` when a multi-root workspace
+needs a different explicit Analyzer.
 
 For another analyzer location, set `rils.server.path`.
 

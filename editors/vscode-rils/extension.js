@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const vscode = require("vscode");
 const {
@@ -22,6 +23,11 @@ function resolveServer(context) {
   const executable = process.platform === "win32"
     ? "rils-analyzer.exe"
     : "rils-analyzer";
+  const rilsHome = process.env.RILS_HOME?.trim() || path.join(os.homedir(), ".rils");
+  const managed = path.join(rilsHome, "bin", executable);
+  if (fs.existsSync(managed)) {
+    return managed;
+  }
   const bundled = path.join(context.extensionPath, "server", executable);
   if (fs.existsSync(bundled)) {
     return bundled;
@@ -83,10 +89,12 @@ function resolveHostManifestPaths() {
 }
 
 async function activate(context) {
+  const workspaceDirectory = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const serverOptions = {
     command: resolveServer(context),
     args: [],
     transport: TransportKind.stdio,
+    options: workspaceDirectory ? { cwd: workspaceDirectory } : undefined,
   };
   const clientOptions = {
     documentSelector: [
