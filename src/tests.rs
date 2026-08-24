@@ -3179,6 +3179,42 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
 }
 
 #[test]
+fn project_modules_can_use_standard_native_macros() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-project-native-macro-test-{}-{unique}",
+        std::process::id()
+    ));
+    let scripts = root.join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(
+        root.join("rils.toml"),
+        "[project]\nname = \"native_macros\"\nscript_paths = [\"scripts\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        scripts.join("checks.rils"),
+        r#"
+            pub fn verify() {
+                assert!(true, "assert should expand outside the entry module");
+                print!("print should expand outside the entry module");
+                println!("println should expand outside the entry module");
+            }
+        "#,
+    )
+    .unwrap();
+    let entry = scripts.join("main.rils");
+    std::fs::write(&entry, "fn main() { crate::checks::verify(); }").unwrap();
+
+    compile_file(&entry).expect("standard native macros should compile in project modules");
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn project_entries_support_grouped_and_glob_imports() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

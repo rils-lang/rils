@@ -897,7 +897,7 @@ fn compile_project_file_with_host(
             &mut program.statements,
             path,
             project,
-            &[],
+            macros::STANDARD_NATIVE_MACROS,
             &mut sources,
             require_entry,
         )

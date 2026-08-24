@@ -62,6 +62,8 @@
 
 ### Fixed
 
+- 项目级文件编译现在会为入口之外的模块注册标准原生宏；多文件项目中的 `assert!`、`print!` 和
+  `println!` 不再被误报为未知宏。
 - 共享同一返回类型的 Host overload 现在会把该返回类型继续传递给未标注的局部变量，链式 receiver
   调用不再因为前端把 overload set 压缩为未知返回类型而要求显式类型标注。
 - Analyzer Hover 现在按解析后的完整 Host 函数路径归组 overload；不同模块中的同名函数不再被误当成
