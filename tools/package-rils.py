@@ -182,6 +182,23 @@ def write_checksum(archive_path: Path) -> Path:
     return checksum_path
 
 
+def copy_manager(
+    binary_directory: Path,
+    output_directory: Path,
+    package_platform: str,
+    executable_suffix: str,
+    manager_version: str,
+) -> tuple[Path, Path]:
+    manager_suffix = ".exe" if executable_suffix else ""
+    manager_path = output_directory / (
+        f"rils-up-{manager_version}-{package_platform}{manager_suffix}"
+    )
+    shutil.copy2(binary_directory / f"rils-up{executable_suffix}", manager_path)
+    if not executable_suffix:
+        manager_path.chmod(manager_path.stat().st_mode | 0o111)
+    return manager_path, write_checksum(manager_path)
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -197,6 +214,15 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--expected-version",
         help="fail unless the workspace version matches this value",
+    )
+    parser.add_argument(
+        "--expected-manager-version",
+        help="fail unless the rils-up version matches this value",
+    )
+    parser.add_argument(
+        "--manager-only",
+        action="store_true",
+        help="build only the independently versioned rils-up asset",
     )
     parser.add_argument(
         "--skip-build",
@@ -216,34 +242,51 @@ def main() -> int:
             f"Workspace version {version} does not match expected version "
             f"{args.expected_version}"
         )
+    if (
+        args.expected_manager_version is not None
+        and manager_version != args.expected_manager_version
+    ):
+        raise RuntimeError(
+            f"rils-up version {manager_version} does not match expected version "
+            f"{args.expected_manager_version}"
+        )
 
     target = resolve_target(args.target, rustc)
     package_platform, executable_suffix, archive_format = PACKAGE_TARGETS[target]
     binary_directory = cargo_target_directory / target / "release"
     if not args.skip_build:
-        run(
-            [
-                cargo,
-                "build",
-                "--locked",
-                "--release",
-                "--target",
-                target,
-                "-p",
-                "rils_cli",
-                "-p",
-                "rils_analyzer",
-                "-p",
-                "rils_up",
-            ]
-        )
+        packages = ["rils_up"] if args.manager_only else [
+            "rils_cli",
+            "rils_analyzer",
+            "rils_up",
+        ]
+        command = [cargo, "build", "--locked", "--release", "--target", target]
+        for package in packages:
+            command.extend(["-p", package])
+        run(command)
 
     output_directory = args.output_dir
     if output_directory is None:
-        output_directory = cargo_target_directory / "release-artifacts" / f"v{version}"
+        release_name = (
+            f"rils-up-v{manager_version}" if args.manager_only else f"v{version}"
+        )
+        output_directory = cargo_target_directory / "release-artifacts" / release_name
     elif not output_directory.is_absolute():
         output_directory = REPOSITORY_ROOT / output_directory
     output_directory.mkdir(parents=True, exist_ok=True)
+
+    manager_path, manager_checksum_path = copy_manager(
+        binary_directory,
+        output_directory,
+        package_platform,
+        executable_suffix,
+        manager_version,
+    )
+    if args.manager_only:
+        print("rils-up package completed successfully:")
+        print(f"  {manager_path}")
+        print(f"  {manager_checksum_path}")
+        return 0
 
     package_name = f"rils-{version}-{package_platform}"
     temporary_directory = output_directory / f".rils-package-{uuid.uuid4().hex}"
@@ -256,17 +299,6 @@ def main() -> int:
     finally:
         shutil.rmtree(temporary_directory)
     checksum_path = write_checksum(archive_path)
-    manager_suffix = ".exe" if executable_suffix else ""
-    manager_path = output_directory / (
-        f"rils-up-{manager_version}-{package_platform}{manager_suffix}"
-    )
-    shutil.copy2(
-        binary_directory / f"rils-up{executable_suffix}", manager_path
-    )
-    if not executable_suffix:
-        manager_path.chmod(manager_path.stat().st_mode | 0o111)
-    manager_checksum_path = write_checksum(manager_path)
-
     print("Rils package completed successfully:")
     print(f"  {archive_path}")
     print(f"  {checksum_path}")

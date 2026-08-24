@@ -13,7 +13,7 @@ use zip::ZipArchive;
 
 use crate::{config, platform};
 
-const DEFAULT_REPOSITORY: &str = "rils-lang/rils";
+pub(crate) const DEFAULT_REPOSITORY: &str = "rils-lang/rils";
 const USER_AGENT: &str = "rils-up (https://github.com/rils-lang/rils)";
 const MAX_METADATA_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_ASSET_BYTES: u64 = 512 * 1024 * 1024;
@@ -183,7 +183,7 @@ fn fetch_release(requested: &str) -> Result<Release, String> {
         .map_err(|error| format!("GitHub returned invalid release metadata: {error}"))
 }
 
-fn download(url: &str, maximum_bytes: u64) -> Result<Vec<u8>, String> {
+pub(crate) fn download(url: &str, maximum_bytes: u64) -> Result<Vec<u8>, String> {
     let response = ureq::get(url)
         .set("Accept", "application/vnd.github+json")
         .set("User-Agent", USER_AGENT)
@@ -209,7 +209,7 @@ fn download(url: &str, maximum_bytes: u64) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn verify_checksum(name: &str, archive: &[u8], checksums: &[u8]) -> Result<(), String> {
+pub(crate) fn verify_checksum(name: &str, archive: &[u8], checksums: &[u8]) -> Result<(), String> {
     let checksums = std::str::from_utf8(checksums)
         .map_err(|error| format!("SHA256SUMS is not UTF-8: {error}"))?;
     let expected = checksums

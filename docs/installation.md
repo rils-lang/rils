@@ -34,6 +34,7 @@ rils-up list
 | `rils-up which [rils-analyzer]` | 显示当前选择的真实可执行文件及版本 |
 | `rils-up uninstall <version>` | 删除非默认版本 |
 | `rils-up home` | 显示 Rils 安装目录 |
+| `rils-up self update` | 从独立的 `rils-up-v*` Release 更新全局管理器和代理 |
 
 也可以直接选择与系统匹配的离线归档：
 
@@ -104,6 +105,10 @@ VS Code 插件的正式平台包会自带匹配的 Analyzer；只有其他编辑
 
 切换默认版本只会原子更新 `.rils/settings.toml`，下一次启动命令时代理会选择新的真实可执行文件。
 已经运行的 REPL、脚本和 Analyzer 不受中途切换影响。
+
+`rils-up self update` 只更新全局管理器，不安装、删除或切换任何 Rils toolchain。Windows 会启动下载
+的新管理器作为辅助进程，在当前进程退出后替换 `rils-up.exe`；若 Analyzer 正在占用旧代理，管理器
+保持现有代理可用，并在后续不再占用时刷新。Linux 和 macOS 直接使用原子文件替换。
 
 在项目根目录固定版本：
 

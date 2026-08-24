@@ -1,8 +1,11 @@
-use std::{env, path::Path};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
 use clap::{Parser, Subcommand};
 
-use crate::{config, install, shim};
+use crate::{config, install, self_update, shim};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -42,6 +45,17 @@ enum Command {
     Uninstall { toolchain: String },
     /// Print the Rils installation directory.
     Home,
+    /// Manage the independently versioned rils-up executable.
+    #[command(name = "self")]
+    Self_ {
+        #[command(subcommand)]
+        command: SelfCommand,
+    },
+    #[command(name = "__complete-self-update", hide = true)]
+    CompleteSelfUpdate {
+        #[arg(long)]
+        home: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -54,9 +68,20 @@ enum OverrideCommand {
     Show,
 }
 
+#[derive(Debug, Subcommand)]
+enum SelfCommand {
+    /// Update rils-up without changing any installed Rils toolchain.
+    Update,
+}
+
 pub(crate) fn run() -> Result<u8, String> {
     let cli = Cli::parse();
+    if let Command::CompleteSelfUpdate { home } = cli.command {
+        self_update::complete_scheduled_update(&home)?;
+        return Ok(0);
+    }
     let home = config::rils_home()?;
+    self_update::refresh_proxies_if_managed(&home);
     match cli.command {
         Command::Install { toolchain } => {
             let result = install::install(&home, &toolchain)?;
@@ -88,6 +113,20 @@ pub(crate) fn run() -> Result<u8, String> {
             println!("Uninstalled Rils {version}");
         }
         Command::Home => println!("{}", home.display()),
+        Command::Self_ { command } => match command {
+            SelfCommand::Update => match self_update::update(&home)? {
+                self_update::UpdateStatus::Current(version) => {
+                    println!("rils-up {version} is already current");
+                }
+                self_update::UpdateStatus::Updated(version) => {
+                    println!("Updated rils-up to {version}");
+                }
+                self_update::UpdateStatus::Scheduled(version) => {
+                    println!("rils-up {version} will finish installing after this process exits");
+                }
+            },
+        },
+        Command::CompleteSelfUpdate { .. } => unreachable!(),
     }
     Ok(0)
 }

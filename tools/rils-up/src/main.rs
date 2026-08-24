@@ -2,6 +2,7 @@ mod args;
 mod config;
 mod install;
 mod platform;
+mod self_update;
 mod shim;
 
 use std::process::ExitCode;

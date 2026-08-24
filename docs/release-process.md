@@ -62,7 +62,8 @@ C API 或 C# 改动还必须验证绑定生成、托管构建和真实动态库 
 - 主 crate、主项目依赖的本地 crate、Analyzer 和 VS Code 插件以主项目版本为基线保持一致。
 - `rils-up` 使用独立版本线并全局只安装一份；Rils toolchain 发版不得自动递增管理器版本，也不得在
   每个 toolchain 目录中重复打包管理器。安装器或 Release 可以携带经过兼容性验证的独立
-  `rils-up` 资产。
+  `rils-up` 资产。独立发布使用 `rils-up-vX.Y.Z` tag，触发多平台管理器工作流；tag 版本必须与
+  `tools/rils-up/Cargo.toml` 一致。`rils-up self update` 只选择带 `SHA256SUMS` 的最高稳定管理器资产。
 - `CHANGELOG.md` 的 `Unreleased` 只记录尚未发布的内容；正式发布时仅归档该版本实际完成的用户可见
   变更。
 - Host Manifest、C ABI 与 `.rilbc` 的版本独立维护。它们发生不兼容变化时，release notes 必须说明

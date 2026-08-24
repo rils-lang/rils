@@ -115,7 +115,11 @@ pub(crate) fn atomic_write(path: &Path, contents: &[u8]) -> Result<(), String> {
     let temporary = parent.join(format!(".rils-up-{}-{nonce}.tmp", std::process::id()));
     fs::write(&temporary, contents)
         .map_err(|error| format!("Could not write {}: {error}", temporary.display()))?;
-    replace_file(&temporary, path)
+    let result = replace_file(&temporary, path);
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 #[cfg(not(windows))]
