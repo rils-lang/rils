@@ -225,28 +225,40 @@ impl Server {
         else {
             return Ok(Value::Null);
         };
-        let detail = match (&symbol.detail, &symbol.inferred_type) {
-            (Some(detail), _) if symbol.kind == SymbolKind::Field => {
-                detail.strip_prefix("field ").unwrap_or(detail).to_owned()
+        let host_detail = (!symbol.is_definition
+            && (symbol
+                .detail
+                .as_deref()
+                .is_some_and(|detail| detail.starts_with("host "))
+                || (symbol.definition_span.is_none()
+                    && symbol.symbol_id.is_none()
+                    && symbol.definition_id.is_none())))
+        .then(|| self.host_symbol_detail(document, offset, &symbol.name))
+        .flatten();
+        let detail = if let Some(host_detail) = host_detail {
+            host_detail
+        } else {
+            match (&symbol.detail, &symbol.inferred_type) {
+                (Some(detail), _) if symbol.kind == SymbolKind::Field => {
+                    detail.strip_prefix("field ").unwrap_or(detail).to_owned()
+                }
+                (Some(detail), _) => detail.clone(),
+                (_, Some(inferred)) if symbol.kind == SymbolKind::Field => {
+                    format!("{}: {inferred}", symbol.name)
+                }
+                (_, Some(inferred))
+                    if matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method) =>
+                {
+                    function_declaration(&symbol.name, inferred)
+                }
+                (_, Some(inferred)) if symbol.kind == SymbolKind::Parameter => {
+                    format!("parameter {}: {inferred}", symbol.name)
+                }
+                (_, Some(inferred)) if symbol.kind == SymbolKind::Variable => {
+                    format!("let {}: {inferred}", symbol.name)
+                }
+                _ => format!("{} {}", kind_label(symbol.kind), symbol.name),
             }
-            (Some(detail), _) => detail.clone(),
-            (_, Some(inferred)) if symbol.kind == SymbolKind::Field => {
-                format!("{}: {inferred}", symbol.name)
-            }
-            (_, Some(inferred))
-                if matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method) =>
-            {
-                function_declaration(&symbol.name, inferred)
-            }
-            (_, Some(inferred)) if symbol.kind == SymbolKind::Parameter => {
-                format!("parameter {}: {inferred}", symbol.name)
-            }
-            (_, Some(inferred)) if symbol.kind == SymbolKind::Variable => {
-                format!("let {}: {inferred}", symbol.name)
-            }
-            _ => self
-                .host_symbol_detail(&symbol.name)
-                .unwrap_or_else(|| format!("{} {}", kind_label(symbol.kind), symbol.name)),
         };
         let context = self
             .hover_path(&uri, symbol)
@@ -265,53 +277,79 @@ impl Server {
     /// they should still provide the same useful declaration text as native
     /// symbols. Resolve an unannotated type occurrence against the manifest
     /// and keep overload information for functions.
-    fn host_symbol_detail(&self, name: &str) -> Option<String> {
+    fn host_symbol_detail(&self, document: &Document, offset: usize, name: &str) -> Option<String> {
+        let resolved = qualified_path_at(&document.text, offset)
+            .map(|path| resolve_path_alias(&document.text, &path))
+            .or_else(|| imported_path_at(document, offset));
         let mut types = self
             .host_contract
             .types()
-            .filter(|declaration| declaration.name.rsplit("::").next() == Some(name))
+            .filter(|declaration| {
+                resolved.as_ref().map_or_else(
+                    || declaration.name.rsplit("::").next() == Some(name),
+                    |resolved| declaration.name == *resolved,
+                )
+            })
             .collect::<Vec<_>>();
         if !types.is_empty() {
             types.sort_by(|left, right| left.name.cmp(&right.name));
+            types.dedup_by(|left, right| left.name == right.name);
+            if resolved.is_none() && types.len() != 1 {
+                return None;
+            }
             let declaration = types[0];
             // HostHandle values are opaque in Rils even when their managed
             // implementation inherits UnityEngine.Object. Keep the hover in
             // Rils terms and hide the managed class hierarchy.
             return Some(format!("struct {}", declaration.name));
         }
-        let mut functions = self
+        let functions = self
             .host_contract
             .functions()
-            .filter(|function| function.name.rsplit("::").next() == Some(name))
+            .filter(|function| {
+                resolved.as_ref().map_or_else(
+                    || function.name.rsplit("::").next() == Some(name),
+                    |resolved| function.name == *resolved,
+                )
+            })
             .collect::<Vec<_>>();
         if functions.is_empty() {
             return None;
         }
-        functions.sort_by_key(|function| function.name.clone());
-        Some(
-            functions
+        if resolved.is_none()
+            && functions
                 .iter()
-                .map(|function| {
-                    let parameters = function
-                        .signature
-                        .parameters
-                        .as_ref()
-                        .map(|parameters| {
-                            parameters
-                                .iter()
-                                .map(ToString::to_string)
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        })
-                        .unwrap_or_else(|| "...".into());
-                    format!(
-                        "fn {}({parameters}) -> {}",
-                        function.name, function.signature.return_type
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
+                .map(|function| function.name.as_str())
+                .collect::<HashSet<_>>()
+                .len()
+                != 1
+        {
+            return None;
+        }
+        let mut declarations = functions
+            .iter()
+            .map(|function| {
+                let parameters = function
+                    .signature
+                    .parameters
+                    .as_ref()
+                    .map(|parameters| {
+                        parameters
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_else(|| "...".into());
+                format!(
+                    "fn {}({parameters}) -> {}",
+                    function.name, function.signature.return_type
+                )
+            })
+            .collect::<Vec<_>>();
+        declarations.sort();
+        declarations.dedup();
+        Some(declarations.join("\n"))
     }
 
     fn hover_path(&self, uri: &str, symbol: &SymbolOccurrence) -> Option<String> {

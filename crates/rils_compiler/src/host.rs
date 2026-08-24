@@ -725,7 +725,20 @@ impl HostContract {
                 let signature = if unique.len() == 1 {
                     unique.into_iter().next().expect("one signature")
                 } else {
-                    FunctionSignature::variadic(Type::Unknown)
+                    let common_return = unique
+                        .first()
+                        .map(|signature| signature.return_type.clone())
+                        .filter(|return_type| {
+                            unique
+                                .iter()
+                                .all(|signature| signature.return_type == *return_type)
+                        })
+                        .unwrap_or(Type::Unknown);
+                    // The frontend signature table cannot represent overload sets yet.
+                    // Keep the call variadic so HIR remains responsible for selecting
+                    // the exact parameter list, but preserve a return type shared by
+                    // every overload so chained calls and inferred locals stay typed.
+                    FunctionSignature::variadic(common_return)
                 };
                 (name, signature)
             })

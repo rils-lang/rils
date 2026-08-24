@@ -45,6 +45,10 @@
 
 ### Fixed
 
+- 共享同一返回类型的 Host overload 现在会把该返回类型继续传递给未标注的局部变量，链式 receiver
+  调用不再因为前端把 overload set 压缩为未知返回类型而要求显式类型标注。
+- Analyzer Hover 现在按解析后的完整 Host 函数路径归组 overload；不同模块中的同名函数不再被误当成
+  同一组候选展示。
 - Analyzer Hover 现在以高亮的项目/模块或所属类型路径作为标题，并显示精简的声明主体；字段显示
   `name: Type`，枚举 record variant 字段会保留完整的 `Enum::Variant` 上下文。内建类型保持紧凑，
   不显示项目路径。

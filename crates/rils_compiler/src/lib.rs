@@ -264,6 +264,76 @@ mod tests {
     }
 
     #[test]
+    fn preserves_inferred_host_receiver_types_through_local_bindings() {
+        let mut host = HostContract::new();
+        for name in ["unity_engine::GameObject", "unity_engine::Transform"] {
+            host.register_type(name, None::<&str>, HostTypeTransport::HostHandle)
+                .unwrap();
+        }
+        host.register_value_type("unity_engine::Vector3", HostValueLayout::F32x3)
+            .unwrap();
+        for (id, name, receiver, return_type) in [
+            (
+                930,
+                "unity_engine::game_object::transform",
+                "unity_engine::GameObject",
+                Type::named("unity_engine::Transform"),
+            ),
+            (
+                931,
+                "unity_engine::transform::local_position",
+                "unity_engine::Transform",
+                Type::named("unity_engine::Vector3"),
+            ),
+            (
+                932,
+                "unity_engine::Vector3::x",
+                "unity_engine::Vector3",
+                Type::Float(FloatType::F32),
+            ),
+        ] {
+            host.register_function_with_options_and_receiver(
+                id,
+                name,
+                FunctionSignature::fixed(vec![Type::named(receiver)], return_type),
+                "unity.generated",
+                crate::HostCallKind::Direct,
+                crate::HostThreadAffinity::MainThread,
+                Some(HostReceiver::Ref),
+            )
+            .unwrap();
+        }
+        for (id, parameter_count) in [(933, 2), (934, 3)] {
+            host.register_function(
+                id,
+                "unity_engine::Vector3::new",
+                FunctionSignature::fixed(
+                    vec![Type::Float(FloatType::F32); parameter_count],
+                    Type::named("unity_engine::Vector3"),
+                ),
+                "unity.generated",
+            )
+            .unwrap();
+        }
+
+        compile_with_host(
+            "fn read(go: unity_engine::GameObject) -> f32 { \
+             let transform = go.transform(); \
+             let position = transform.local_position(); \
+             position.x() }",
+            &host,
+        )
+        .expect("inferred host return types should remain available during HIR lowering");
+
+        compile_with_host(
+            "let position = unity_engine::Vector3::new(1.0f32, 2.0f32, 3.0f32); \
+             position.x();",
+            &host,
+        )
+        .expect("a common overload return type should flow into a local receiver");
+    }
+
+    #[test]
     fn lowers_inherited_named_host_receiver_methods() {
         let mut host = HostContract::new();
         host.register_type(

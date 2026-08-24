@@ -396,6 +396,44 @@ fn hover_describes_manifest_host_types() {
 }
 
 #[test]
+fn host_function_hover_groups_overloads_by_qualified_path() {
+    let mut contract = HostContract::new();
+    for (id, name, parameter) in [
+        (130, "alpha::load", Type::I32),
+        (
+            131,
+            "alpha::load",
+            Type::Float(rils_frontend::FloatType::F32),
+        ),
+        (132, "beta::load", Type::Bool),
+    ] {
+        contract
+            .register_function(
+                id,
+                name,
+                FunctionSignature::fixed(vec![parameter], Type::Unit),
+                "test.host",
+            )
+            .unwrap();
+    }
+    let text = "alpha::load(1i32);";
+    let uri = "file:///qualified-host-overload-hover.rils".to_owned();
+    let server = test_server(&uri, text, contract.signatures(), contract);
+    let [line, character] = position(text, text.find("load").unwrap());
+
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    let value = hover["contents"]["value"].as_str().unwrap();
+    assert!(value.contains("fn alpha::load(i32) -> ()"), "{value}");
+    assert!(value.contains("fn alpha::load(f32) -> ()"), "{value}");
+    assert!(!value.contains("beta::load"), "{value}");
+}
+
+#[test]
 fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(
@@ -435,6 +473,19 @@ fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
         transform.inferred_type,
         Some(Type::named("unity_engine::Transform"))
     );
+    for (name, expected) in [
+        ("actual", "unity_engine::Vector3"),
+        ("planar", "unity_engine::Vector2"),
+        ("identity", "unity_engine::Quaternion"),
+        ("tint", "unity_engine::Color"),
+    ] {
+        let binding = analysis
+            .symbols
+            .iter()
+            .find(|symbol| symbol.is_definition && symbol.name == name)
+            .unwrap();
+        assert_eq!(binding.inferred_type, Some(Type::named(expected)), "{name}");
+    }
     assert!(analysis.symbols.iter().any(|symbol| {
         symbol.name == "Color"
             && symbol.kind == rils_frontend::analysis::SymbolKind::Type
