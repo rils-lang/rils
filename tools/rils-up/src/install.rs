@@ -56,26 +56,61 @@ pub(crate) fn install(home: &Path, requested: &str) -> Result<InstallResult, Str
         .find(|asset| asset.name == "SHA256SUMS")
         .ok_or_else(|| format!("Release v{version} does not contain SHA256SUMS"))?;
 
-    fs::create_dir_all(home.join("toolchains"))
-        .map_err(|error| format!("Could not create the Rils home: {error}"))?;
-    install_manager_proxies(home)?;
-    let target = home.join("toolchains").join(&version);
-    if target.is_dir() {
-        ensure_default(home, &version)?;
-        return Ok(InstallResult {
-            version,
-            installed: false,
-        });
-    }
-
     println!("Downloading {archive_name}");
     let checksums = download(&checksums_asset.browser_download_url, MAX_METADATA_BYTES)?;
     let archive_bytes = download(&archive_asset.browser_download_url, MAX_ASSET_BYTES)?;
     verify_checksum(&archive_name, &archive_bytes, &checksums)?;
 
+    install_archive(home, &version, &archive_name, &archive_bytes, None)
+}
+
+pub(crate) fn install_local_archive(
+    home: &Path,
+    version: &str,
+    archive_bytes: &[u8],
+    manager_bytes: &[u8],
+) -> Result<InstallResult, String> {
+    let version = config::validate_toolchain(version)?;
+    let platform = platform::package_platform()?;
+    let archive_name = format!(
+        "rils-{version}-{platform}.{}",
+        platform::archive_extension()
+    );
+    install_archive(
+        home,
+        &version,
+        &archive_name,
+        archive_bytes,
+        Some(manager_bytes),
+    )
+}
+
+fn install_archive(
+    home: &Path,
+    version: &str,
+    archive_name: &str,
+    archive_bytes: &[u8],
+    manager_bytes: Option<&[u8]>,
+) -> Result<InstallResult, String> {
+    let platform = platform::package_platform()?;
+    fs::create_dir_all(home.join("toolchains"))
+        .map_err(|error| format!("Could not create the Rils home: {error}"))?;
+    match manager_bytes {
+        Some(bytes) => install_manager_bytes(home, bytes, None)?,
+        None => install_manager_proxies(home)?,
+    }
+    let target = home.join("toolchains").join(version);
+    if target.is_dir() {
+        ensure_default(home, version)?;
+        return Ok(InstallResult {
+            version: version.to_owned(),
+            installed: false,
+        });
+    }
+
     let staging = StagingDirectory::new(home)?;
-    let archive_path = staging.path.join(&archive_name);
-    fs::write(&archive_path, &archive_bytes)
+    let archive_path = staging.path.join(archive_name);
+    fs::write(&archive_path, archive_bytes)
         .map_err(|error| format!("Could not write {}: {error}", archive_path.display()))?;
     extract_archive(&archive_path, &staging.path)?;
     let extracted = staging.path.join(format!("rils-{version}-{platform}"));
@@ -86,9 +121,9 @@ pub(crate) fn install(home: &Path, requested: &str) -> Result<InstallResult, Str
             target.display()
         )
     })?;
-    ensure_default(home, &version)?;
+    ensure_default(home, version)?;
     Ok(InstallResult {
-        version,
+        version: version.to_owned(),
         installed: true,
     })
 }
@@ -355,19 +390,25 @@ fn validate_extracted_toolchain(root: &Path) -> Result<(), String> {
 fn install_manager_proxies(home: &Path) -> Result<(), String> {
     let source = std::env::current_exe()
         .map_err(|error| format!("Could not locate the running rils-up: {error}"))?;
+    let bytes = fs::read(&source)
+        .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
+    install_manager_bytes(home, &bytes, Some(&source))
+}
+
+fn install_manager_bytes(
+    home: &Path,
+    bytes: &[u8],
+    running_source: Option<&Path>,
+) -> Result<(), String> {
     let bin = home.join("bin");
     fs::create_dir_all(&bin)
         .map_err(|error| format!("Could not create {}: {error}", bin.display()))?;
     for command in ["rils-up", "rils", "rils-analyzer"] {
         let destination = bin.join(platform::executable_name(command));
-        if paths_refer_to_same_file(&source, &destination) {
+        if running_source.is_some_and(|source| paths_refer_to_same_file(source, &destination)) {
             continue;
         }
-        let mut bytes = Vec::new();
-        File::open(&source)
-            .and_then(|mut file| file.read_to_end(&mut bytes))
-            .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
-        config::atomic_write(&destination, &bytes)?;
+        config::atomic_write(&destination, bytes)?;
         set_executable_permissions(&destination, Some(0o755))?;
     }
     Ok(())

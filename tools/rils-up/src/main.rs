@@ -1,6 +1,7 @@
 mod args;
 mod config;
 mod install;
+mod local_installer;
 mod platform;
 mod self_update;
 mod shim;
@@ -8,9 +9,10 @@ mod shim;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    let result = match shim::invoked_proxy() {
-        Some(command) => shim::run(command),
-        None => args::run(),
+    let result = match (local_installer::invoked_installer(), shim::invoked_proxy()) {
+        (true, _) => local_installer::run(),
+        (false, Some(command)) => shim::run(command),
+        (false, None) => args::run(),
     };
     match result {
         Ok(code) => ExitCode::from(code),

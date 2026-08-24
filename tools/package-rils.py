@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import platform
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -26,6 +27,8 @@ PACKAGE_TARGETS = {
     "x86_64-apple-darwin": ("macos-x86_64", "", "tar.gz"),
     "aarch64-apple-darwin": ("macos-aarch64", "", "tar.gz"),
 }
+INSTALLER_MAGIC = b"RILS-INSTALL-V1!"
+INSTALLER_VERSION_BYTES = 64
 
 
 def command_path(name: str) -> str:
@@ -199,6 +202,39 @@ def copy_manager(
     return manager_path, write_checksum(manager_path)
 
 
+def create_installer(
+    manager_binary: Path,
+    archive_path: Path,
+    output_directory: Path,
+    version: str,
+    package_platform: str,
+    executable_suffix: str,
+) -> tuple[Path, Path]:
+    version_bytes = version.encode("utf-8")
+    if len(version_bytes) > INSTALLER_VERSION_BYTES:
+        raise RuntimeError("Rils version is too long for the installer footer")
+    installer_suffix = ".exe" if executable_suffix else ""
+    installer_path = output_directory / (
+        f"rils-installer-{version}-{package_platform}{installer_suffix}"
+    )
+    digest = hashlib.sha256()
+    payload_length = archive_path.stat().st_size
+    with installer_path.open("wb") as installer:
+        with manager_binary.open("rb") as manager:
+            shutil.copyfileobj(manager, installer)
+        with archive_path.open("rb") as archive:
+            for chunk in iter(lambda: archive.read(1024 * 1024), b""):
+                digest.update(chunk)
+                installer.write(chunk)
+        installer.write(struct.pack("<Q", payload_length))
+        installer.write(digest.digest())
+        installer.write(version_bytes.ljust(INSTALLER_VERSION_BYTES, b"\0"))
+        installer.write(INSTALLER_MAGIC)
+    if not executable_suffix:
+        installer_path.chmod(installer_path.stat().st_mode | 0o111)
+    return installer_path, write_checksum(installer_path)
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -299,11 +335,21 @@ def main() -> int:
     finally:
         shutil.rmtree(temporary_directory)
     checksum_path = write_checksum(archive_path)
+    installer_path, installer_checksum_path = create_installer(
+        binary_directory / f"rils-up{executable_suffix}",
+        archive_path,
+        output_directory,
+        version,
+        package_platform,
+        executable_suffix,
+    )
     print("Rils package completed successfully:")
     print(f"  {archive_path}")
     print(f"  {checksum_path}")
     print(f"  {manager_path}")
     print(f"  {manager_checksum_path}")
+    print(f"  {installer_path}")
+    print(f"  {installer_checksum_path}")
     return 0
 
 
