@@ -2,6 +2,7 @@ mod args;
 mod config;
 mod install;
 mod local_installer;
+mod path_env;
 mod platform;
 mod self_update;
 mod shim;

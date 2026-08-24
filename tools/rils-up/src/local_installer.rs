@@ -1,12 +1,12 @@
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
 };
 
 use sha2::{Digest, Sha256};
 
-use crate::{config, install};
+use crate::{config, install, path_env};
 
 const INSTALLER_MAGIC: &[u8; 16] = b"RILS-INSTALL-V1!";
 const VERSION_FIELD_BYTES: usize = 64;
@@ -25,28 +25,137 @@ pub(crate) fn invoked_installer() -> bool {
 }
 
 pub(crate) fn run() -> Result<u8, String> {
-    if std::env::args_os()
-        .skip(1)
-        .any(|argument| matches!(argument.to_str(), Some("-h" | "--help")))
-    {
-        println!("Install the embedded Rils toolchain into the user RILS_HOME");
-        println!("\nUsage: rils-installer-<version>-<platform>");
+    let options = InstallerOptions::parse()?;
+    let _pause = PauseOnExit::new(!options.yes);
+    match run_with_options(&options) {
+        Ok(code) => Ok(code),
+        Err(error) => {
+            eprintln!("\nInstallation failed: {error}");
+            Ok(1)
+        }
+    }
+}
+
+fn run_with_options(options: &InstallerOptions) -> Result<u8, String> {
+    if options.help {
+        println!("Install the embedded Rils toolchain into the user RILS_HOME.");
+        println!("\nUsage: rils-installer-<version>-<platform> [--yes] [--no-path]");
+        println!("\n  --yes     Install without confirmation or a final pause");
+        println!("  --no-path Do not add the Rils bin directory to the user PATH");
         return Ok(0);
     }
     let executable = std::env::current_exe()
         .map_err(|error| format!("Could not locate the installer executable: {error}"))?;
     let payload = read_payload(&executable)?;
     let home = config::rils_home()?;
+    let bin = home.join("bin");
+    println!("Rils local installer");
+    println!("--------------------");
+    println!("Rils version : {}", payload.version);
+    println!("Install path : {}", home.display());
+    println!(
+        "User PATH   : {}",
+        if options.no_path {
+            "leave unchanged"
+        } else {
+            "add the Rils bin directory"
+        }
+    );
+    if !options.yes && !confirm_install()? {
+        println!("\nInstallation cancelled. No files were changed.");
+        return Ok(0);
+    }
+    println!("\nInstalling...");
     let result =
         install::install_local_archive(&home, &payload.version, &payload.bytes, &payload.manager)?;
-    if result.installed {
-        println!("Installed Rils {}", result.version);
+    let path_changed = if options.no_path {
+        false
     } else {
-        println!("Rils {} is already installed", result.version);
+        path_env::ensure_on_user_path(&bin)?
+    };
+    if result.installed {
+        println!("\nInstalled Rils {} successfully.", result.version);
+    } else {
+        println!("\nRils {} was already installed.", result.version);
     }
-    println!("rils-up installed at {}", home.join("bin").display());
-    println!("Add that directory to PATH, then run `rils --version`");
+    println!("rils-up path: {}", bin.display());
+    if options.no_path {
+        println!("PATH was not changed (--no-path). Add the directory above manually.");
+    } else if path_changed {
+        println!("The Rils bin directory was added to your user PATH.");
+        println!("Open a new terminal, then run `rils --version`.");
+    } else {
+        println!("The Rils bin directory is already present in your user PATH.");
+    }
     Ok(0)
+}
+
+struct InstallerOptions {
+    help: bool,
+    yes: bool,
+    no_path: bool,
+}
+
+impl Default for InstallerOptions {
+    fn default() -> Self {
+        Self {
+            help: false,
+            yes: false,
+            no_path: !cfg!(windows),
+        }
+    }
+}
+
+impl InstallerOptions {
+    fn parse() -> Result<Self, String> {
+        let mut options = Self::default();
+        for argument in std::env::args().skip(1) {
+            match argument.as_str() {
+                "-h" | "--help" => options.help = true,
+                "-y" | "--yes" => options.yes = true,
+                "--no-path" => options.no_path = true,
+                _ => return Err(format!("Unknown installer option: {argument}")),
+            }
+        }
+        Ok(options)
+    }
+}
+
+struct PauseOnExit {
+    enabled: bool,
+}
+
+impl PauseOnExit {
+    fn new(enabled: bool) -> Self {
+        Self { enabled }
+    }
+}
+
+impl Drop for PauseOnExit {
+    fn drop(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        print!("\nPress Enter to close this window...");
+        let _ = io::stdout().flush();
+        let mut input = String::new();
+        let _ = io::stdin().read_line(&mut input);
+    }
+}
+
+fn confirm_install() -> Result<bool, String> {
+    print!("\nContinue with installation? [Y/n] ");
+    io::stdout()
+        .flush()
+        .map_err(|error| format!("Could not write the installer prompt: {error}"))?;
+    let mut answer = String::new();
+    io::stdin()
+        .read_line(&mut answer)
+        .map_err(|error| format!("Could not read the installer response: {error}"))?;
+    Ok(matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "" | "y" | "yes"
+    ))
 }
 
 struct InstallerPayload {
@@ -99,7 +208,7 @@ fn read_payload(path: &Path) -> Result<InstallerPayload, String> {
     file.seek(SeekFrom::Start(0))
         .map_err(|error| format!("Could not locate embedded rils-up: {error}"))?;
     let mut manager = Vec::with_capacity(payload_offset as usize);
-    file.by_ref()
+    Read::by_ref(&mut file)
         .take(payload_offset)
         .read_to_end(&mut manager)
         .map_err(|error| format!("Could not read embedded rils-up: {error}"))?;

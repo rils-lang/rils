@@ -1,20 +1,31 @@
 # 安装与环境包
 
-Rils 的 GitHub Release 为常用桌面和服务器平台提供预编译环境包。普通用户只需下载和解压，不需要
+Rils 的 GitHub Release 为常用桌面和服务器平台提供自包含安装器与预编译环境包。普通用户不需要
 安装 Rust、Cargo 或克隆源码仓库。
 
 ## 下载
 
-推荐先从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载当前平台的独立
-`rils-up`，它是无需 Rust 工具链的原生版本管理器。Windows 可以直接运行 `.exe`；Linux 和 macOS
-首次下载后需要赋予执行权限。可以将带版本和平台后缀的下载文件重命名为 `rils-up`（Windows 为
-`rils-up.exe`），随后安装当前稳定版：
+Windows 推荐从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载
+`rils-installer-<version>-windows-x86_64.exe` 并双击运行。安装器会先显示 Rils 版本、目标目录和
+PATH 变更，确认后将工具链、全局 `rils-up` 及固定代理安装到 `~/.rils`，自动把 `.rils/bin`
+加入用户 `PATH`，并在结束时等待确认后关闭。打开新终端即可使用 `rils`。
+
+自动化环境可以跳过交互，也可以明确禁止修改 PATH：
+
+```console
+rils-installer-<version>-windows-x86_64.exe --yes
+rils-installer-<version>-windows-x86_64.exe --yes --no-path
+```
+
+Linux、macOS 以及只需要版本管理器的用户，可以下载独立 `rils-up`。首次下载后赋予执行权限，
+将带版本和平台后缀的文件重命名为 `rils-up`，随后安装当前稳定版：
 
 ```console
 rils-up install stable
 ```
 
-安装完成后，将提示的 `.rils/bin` 目录加入 `PATH`。此后使用固定的 `rils-up` 命令管理版本：
+若没有使用 Windows 安装器，请将提示的 `.rils/bin` 目录加入 `PATH`。此后使用固定的 `rils-up`
+命令管理版本：
 
 ```console
 rils-up update
