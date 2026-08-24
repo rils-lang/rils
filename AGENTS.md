@@ -20,6 +20,9 @@
 # 版本规范
 
 - 主 crate、主项目依赖的本地 crate、Analyzer 和编辑器插件以主项目版本为基线保持一致。
+- `rils-up` 是全局单例的工具链管理器，使用独立版本线，不跟随 Rils toolchain 版本自动递增；其版本
+  更新同样必须先获得同意。各版本 toolchain 只包含 `rils`、`rils-analyzer` 及对应资源，不重复
+  携带 `rils-up`。
 - 不要因为本地构建、重新打包或尚未发布的实现自动修改版本号。
 - 任何 crate 或插件的版本号更新都必须先获得同意。
 - 尚未正式发布的变化记录在根目录 `CHANGELOG.md` 的 `Unreleased` 中，不因写入 changelog 自动修改版本号。

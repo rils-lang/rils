@@ -46,7 +46,7 @@ def run(command: list[str], *, capture_output: bool = False) -> subprocess.Compl
     )
 
 
-def cargo_metadata(cargo: str) -> tuple[str, Path]:
+def cargo_metadata(cargo: str) -> tuple[str, str, Path]:
     result = run(
         [cargo, "metadata", "--format-version", "1", "--no-deps"],
         capture_output=True,
@@ -58,7 +58,17 @@ def cargo_metadata(cargo: str) -> tuple[str, Path]:
     )
     if root_package is None:
         raise RuntimeError("The rils package is missing from the Cargo workspace")
-    return str(root_package["version"]), Path(metadata["target_directory"])
+    manager_package = next(
+        (package for package in metadata["packages"] if package["name"] == "rils_up"),
+        None,
+    )
+    if manager_package is None:
+        raise RuntimeError("The rils_up package is missing from the Cargo workspace")
+    return (
+        str(root_package["version"]),
+        str(manager_package["version"]),
+        Path(metadata["target_directory"]),
+    )
 
 
 def host_rust_target(rustc: str) -> str:
@@ -104,7 +114,7 @@ def resolve_target(explicit_target: str | None, rustc: str | None) -> str:
 def copy_package_contents(staging_root: Path, binary_directory: Path, suffix: str) -> None:
     bin_directory = staging_root / "bin"
     bin_directory.mkdir(parents=True)
-    for name in ("rils", "rils-analyzer", "rils-up"):
+    for name in ("rils", "rils-analyzer"):
         source = binary_directory / f"{name}{suffix}"
         if not source.is_file():
             raise RuntimeError(f"Expected release binary was not created: {source}")
@@ -200,7 +210,7 @@ def main() -> int:
     args = parse_arguments()
     cargo = command_path("cargo")
     rustc = None if args.target is not None else command_path("rustc")
-    version, cargo_target_directory = cargo_metadata(cargo)
+    version, manager_version, cargo_target_directory = cargo_metadata(cargo)
     if args.expected_version is not None and version != args.expected_version:
         raise RuntimeError(
             f"Workspace version {version} does not match expected version "
@@ -246,22 +256,22 @@ def main() -> int:
     finally:
         shutil.rmtree(temporary_directory)
     checksum_path = write_checksum(archive_path)
-    bootstrap_suffix = ".exe" if executable_suffix else ""
-    bootstrap_path = output_directory / (
-        f"rils-up-init-{package_platform}{bootstrap_suffix}"
+    manager_suffix = ".exe" if executable_suffix else ""
+    manager_path = output_directory / (
+        f"rils-up-{manager_version}-{package_platform}{manager_suffix}"
     )
     shutil.copy2(
-        binary_directory / f"rils-up{executable_suffix}", bootstrap_path
+        binary_directory / f"rils-up{executable_suffix}", manager_path
     )
     if not executable_suffix:
-        bootstrap_path.chmod(bootstrap_path.stat().st_mode | 0o111)
-    bootstrap_checksum_path = write_checksum(bootstrap_path)
+        manager_path.chmod(manager_path.stat().st_mode | 0o111)
+    manager_checksum_path = write_checksum(manager_path)
 
     print("Rils package completed successfully:")
     print(f"  {archive_path}")
     print(f"  {checksum_path}")
-    print(f"  {bootstrap_path}")
-    print(f"  {bootstrap_checksum_path}")
+    print(f"  {manager_path}")
+    print(f"  {manager_checksum_path}")
     return 0
 
 

@@ -23,9 +23,10 @@
 
 - 发布流程现在可以生成包含 `rils`、`rils-analyzer`、示例和许可证的预编译平台环境包；GitHub
   Release 工作流会为 Windows、Linux 和 macOS 汇总归档及 SHA-256 校验文件，用户无需 Rust 工具链。
-- 新增原生 `rils-up` 版本管理器和 `rils-up-init` 引导程序。不同版本安装到相互隔离的 toolchain
-  目录，固定代理根据环境变量、项目 `.rils-version` 或全局默认配置选择 `rils` 与
-  `rils-analyzer`，并支持一次性的 `rils +<version>` 调用。
+- 新增独立版本的原生 `rils-up` 管理器，初始版本为 0.1.0，不随 Rils toolchain 版本递增。不同 Rils
+  版本安装到相互隔离的 toolchain 目录，全局唯一的管理器和固定代理根据环境变量、项目
+  `.rils-version` 或全局默认配置选择 `rils` 与 `rils-analyzer`，并支持一次性的
+  `rils +<version>` 调用。
 - `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `script_paths` 中的
   `main.rils` 并按项目配置加载模块和宿主 Manifest。
 

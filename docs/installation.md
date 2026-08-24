@@ -5,13 +5,13 @@ Rils 的 GitHub Release 为常用桌面和服务器平台提供预编译环境�
 
 ## 下载
 
-推荐先从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载当前平台的
-`rils-up-init`，它是无需 Rust 工具链的原生版本管理器。Windows 可以直接运行 `.exe`；Linux 和
-macOS 首次下载后需要赋予执行权限。可以将带平台后缀的下载文件重命名为 `rils-up-init`（Windows
-为 `rils-up-init.exe`），随后安装当前稳定版：
+推荐先从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载当前平台的独立
+`rils-up`，它是无需 Rust 工具链的原生版本管理器。Windows 可以直接运行 `.exe`；Linux 和 macOS
+首次下载后需要赋予执行权限。可以将带版本和平台后缀的下载文件重命名为 `rils-up`（Windows 为
+`rils-up.exe`），随后安装当前稳定版：
 
 ```console
-rils-up-init install stable
+rils-up install stable
 ```
 
 安装完成后，将提示的 `.rils/bin` 目录加入 `PATH`。此后使用固定的 `rils-up` 命令管理版本：
@@ -56,8 +56,7 @@ rils-up list
 rils-<version>-<platform>/
 ├── bin/
 │   ├── rils
-│   ├── rils-analyzer
-│   └── rils-up
+│   └── rils-analyzer
 ├── docs/
 ├── examples/
 ├── README.md
@@ -84,9 +83,27 @@ VS Code 插件的正式平台包会自带匹配的 Analyzer；只有其他编辑
 
 ## 切换版本
 
-`PATH` 中的 `rils` 和 `rils-analyzer` 是由 `rils-up` 安装的固定代理。真实工具链位于
-`.rils/toolchains/<version>/bin`；切换默认版本只会原子更新 `.rils/settings.toml`，下一次启动命令
-时代理会选择新的真实可执行文件。已经运行的 REPL、脚本和 Analyzer 不受中途切换影响。
+`rils-up` 使用独立版本并全局只安装一份，不属于任何 Rils toolchain。`PATH` 中的 `rils` 和
+`rils-analyzer` 是它安装的固定代理，真实工具链位于 `.rils/toolchains/<version>/bin`：
+
+```text
+~/.rils/
+├── bin/
+│   ├── rils-up
+│   ├── rils
+│   └── rils-analyzer
+├── settings.toml
+└── toolchains/
+    ├── 0.4.0/bin/
+    │   ├── rils
+    │   └── rils-analyzer
+    └── 0.4.1/bin/
+        ├── rils
+        └── rils-analyzer
+```
+
+切换默认版本只会原子更新 `.rils/settings.toml`，下一次启动命令时代理会选择新的真实可执行文件。
+已经运行的 REPL、脚本和 Analyzer 不受中途切换影响。
 
 在项目根目录固定版本：
 

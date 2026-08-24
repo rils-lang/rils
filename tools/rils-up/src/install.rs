@@ -340,7 +340,7 @@ fn extract_tar_gz(archive_path: &Path, destination: &Path) -> Result<(), String>
 }
 
 fn validate_extracted_toolchain(root: &Path) -> Result<(), String> {
-    for command in ["rils", "rils-analyzer", "rils-up"] {
+    for command in ["rils", "rils-analyzer"] {
         let path = root.join("bin").join(platform::executable_name(command));
         if !path.is_file() {
             return Err(format!(
