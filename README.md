@@ -5,17 +5,9 @@ Rils（Rust-Inspired Lightweight Script）是一门面向嵌入场景的轻量�
 
 ## 快速开始
 
-Windows 推荐从 [GitHub Releases](https://github.com/rils-lang/rils/releases) 下载
-`rils-installer-<version>-windows-x86_64.exe` 并双击运行。安装器会显示版本和目标目录、请求确认，
-将完整工具链安装到 `~/.rils`，并自动把 `.rils/bin` 加入用户 `PATH`。打开新终端后即可验证：
-
 ```console
 rils --version
 ```
-
-Linux、macOS 以及只需要版本管理器的用户也可以下载独立 `rils-up`，再运行
-`rils-up install stable`。`rils-up` 会成套管理 `rils` 和 `rils-analyzer` 的版本，普通用户不需要
-Rust 工具链。安装方式、版本切换和项目版本固定参见[安装与环境包](docs/installation.md)。
 
 运行单文件脚本：
 
@@ -41,30 +33,21 @@ let value = module.execute()?;
 `Engine::set_max_call_depth` 或 `BytecodeModule::execute_with_limits` 配置调用深度和指令步数预算；
 超过预算会返回运行时错误，不会继续递归直到宿主线程栈溢出。
 
-需要加载多文件项目或预编译模块时，可使用 `compile_file`、`BytecodeModule::read_file` 和 CLI
-的 `compile`、`verify`、`run` 命令。
+字符串形式的 `eval` 和 `compile` 不会隐式访问文件。多文件加载、项目配置与预编译字节码分别参见
+[项目模型](docs/project.md)和[字节码设计](docs/bytecode.md)。
 
-项目推荐在根目录提供 `rils.toml`：
+## Unity 嵌入
 
-```toml
-[project]
-name = "game_scripts"
-script_paths = ["scripts"]
-```
+Unity 项目通过独立的 [RilsForUnity](https://github.com/rils-lang/RilsForUnity) 包接入。Editor 会把
+`.rils` 源文件导入为经过验证的字节码资产，并为其中的 `RilsBehaviour` 实现生成可挂载入口；在场景中
+添加 `RilsBehaviour` 组件并指定对应入口资产，即可由 Unity 生命周期驱动脚本。Player 只加载字节码，
+不需要携带 Rils 源码或 Rust 工具链。
 
-项目脚本会自动映射为模块，并支持 `crate`、`self`、`super` 路径。可执行入口提供零参数
-`fn main()` 即可。
-
-## 当前迭代重点
-
-- 语言内置 `Default` 与 `#[derive(Default)]`，派生 Struct 的每个字段都必须满足 `Default`；Trait
-  可以声明 supertrait。
-- `.rilbc` v5 保留经过 verifier 校验的 trait implementation 身份，宿主可以发现实现、用
-  `Default::default()` 构造持久脚本值并按 trait 方法调用。
-- 项目支持路径源码依赖和实验性的 `.rilslib` 导出/验证。开发期仍以自动编译源码依赖为默认流程；
-  入口到共享 `.rilslib` 的动态链接尚未完成。
-- Host Manifest v2 支持命名宿主类型、单继承和独立 ABI transport；C ABI version 4 与 C# facade
-  可以注册并调用保留逻辑类型身份的宿主对象。
+当前集成面向 Unity 2022.3 LTS 和 Windows x86_64。Unity API 调用必须位于创建运行时的主线程；
+跨边界目前支持基础标量与 session 绑定的 Unity 对象句柄，字符串、集合和 Unity 值类型仍在扩展中。
+安装、脚本模板和生命周期示例参见
+[RilsForUnity 使用说明](https://github.com/rils-lang/RilsForUnity/blob/main/Packages/com.rils-lang.rils-for-unity/README.md)，
+底层对象所有权与线程边界参见 [Unity 互操作边界](docs/unity-interoperability.md)。
 
 ## 文档
 
