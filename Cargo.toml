@@ -33,6 +33,7 @@ members = [
     "tools/rils-capi",
     "tools/rils-analyzer",
     "tools/rils-cli",
+    "tools/rils-up",
     "tools/rils-bench",
 ]
 resolver = "3"

@@ -8,8 +8,8 @@
 ### Breaking Changes
 
 - 根 `rils` crate 现在是纯 Rust 嵌入库，不再构建 `rils` binary。命令行工具迁移为 workspace 中不发布的
-  `rils_cli` crate，仍生成名为 `rils` 的可执行文件；仓库内开发与验证请使用
-  `cargo run -p rils_cli -- <arguments>`。发布脚本也会从 `rils_cli` 构建 CLI 产物。
+  `rils_cli` crate，仍生成名为 `rils` 的可执行文件；面向用户的说明和示例统一使用 `rils` 命令，
+  仓库内部再由发布工具负责构建 CLI 产物。
 - `rils` 不再在无参数时进入 REPL，而是显示帮助；请显式使用 `rils repl` 启动交互会话。
 - `.rilbc` 格式由 v5 提升为 v6：编译器会为已静态确定类型的整数二元运算写入专用指令。v6 loader
   会明确拒绝 v5 及更早的产物。
@@ -21,6 +21,16 @@
 
 ### Added
 
+- Windows Release 新增自包含的交互式本地安装器：安装前显示版本、目标目录和 PATH 变更并请求确认，
+  将 Rils toolchain 与全局 `rils-up` 安装到 `~/.rils`，自动更新用户 `PATH`，安装结束后保持终端可见；
+  自动化环境可使用 `--yes`，或通过 `--no-path` 禁止修改 PATH。
+- 发布流程现在可以生成包含 `rils`、`rils-analyzer`、示例和许可证的预编译平台环境包；GitHub
+  Release 工作流会为 Windows、Linux 和 macOS 汇总归档及 SHA-256 校验文件，用户无需 Rust 工具链。
+- 新增独立版本的原生 `rils-up` 管理器，初始版本为 0.1.0，不随 Rils toolchain 版本递增。不同 Rils
+  版本安装到相互隔离的 toolchain 目录，全局唯一的管理器和固定代理根据环境变量、项目
+  `.rils-version` 或全局默认配置选择 `rils` 与 `rils-analyzer`，并支持一次性的
+  `rils +<version>` 调用。`rils-up self update` 从独立多平台 Release 校验并更新管理器，不改变任何
+  已安装或当前选中的 Rils toolchain。
 - `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `script_paths` 中的
   `main.rils` 并按项目配置加载模块和宿主 Manifest。
 

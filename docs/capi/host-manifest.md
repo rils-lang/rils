@@ -197,7 +197,8 @@ receiver 的实际类型和继承链提供宿主方法补全。
 
 ## 大规模基准
 
-从仓库根目录运行：
+以下命令只用于 Rils 仓库维护者评估内部实现，普通用户和 Rils 项目不需要 Rust 工具链。从仓库根
+目录运行：
 
 ```text
 cargo run --release --example host_manifest_bench

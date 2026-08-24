@@ -55,7 +55,7 @@
         "rils.server.path": {
           "type": "string",
           "default": "",
-          "description": "Path to the rils-analyzer executable. When empty, the extension uses its bundled analyzer, a workspace build, or PATH."
+          "description": "Path to the rils-analyzer executable. When empty, the extension uses the rils-up managed analyzer, its bundled analyzer, a workspace build, or PATH."
         },
         "rils.hostManifest.path": {
           "type": "string",
