@@ -104,7 +104,7 @@ def resolve_target(explicit_target: str | None, rustc: str | None) -> str:
 def copy_package_contents(staging_root: Path, binary_directory: Path, suffix: str) -> None:
     bin_directory = staging_root / "bin"
     bin_directory.mkdir(parents=True)
-    for name in ("rils", "rils-analyzer"):
+    for name in ("rils", "rils-analyzer", "rils-up"):
         source = binary_directory / f"{name}{suffix}"
         if not source.is_file():
             raise RuntimeError(f"Expected release binary was not created: {source}")
@@ -223,6 +223,8 @@ def main() -> int:
                 "rils_cli",
                 "-p",
                 "rils_analyzer",
+                "-p",
+                "rils_up",
             ]
         )
 
@@ -244,10 +246,22 @@ def main() -> int:
     finally:
         shutil.rmtree(temporary_directory)
     checksum_path = write_checksum(archive_path)
+    bootstrap_suffix = ".exe" if executable_suffix else ""
+    bootstrap_path = output_directory / (
+        f"rils-up-init-{package_platform}{bootstrap_suffix}"
+    )
+    shutil.copy2(
+        binary_directory / f"rils-up{executable_suffix}", bootstrap_path
+    )
+    if not executable_suffix:
+        bootstrap_path.chmod(bootstrap_path.stat().st_mode | 0o111)
+    bootstrap_checksum_path = write_checksum(bootstrap_path)
 
     print("Rils package completed successfully:")
     print(f"  {archive_path}")
     print(f"  {checksum_path}")
+    print(f"  {bootstrap_path}")
+    print(f"  {bootstrap_checksum_path}")
     return 0
 
 

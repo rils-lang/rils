@@ -1,0 +1,28 @@
+[package]
+name = "rils_up"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Toolchain installer and version manager for Rils"
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rils-up"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+flate2 = "1.0"
+semver = "1.0"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2 = "0.10"
+tar = "0.4"
+toml.workspace = true
+ureq = { version = "2.12", features = ["tls"] }
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
