@@ -84,6 +84,26 @@ impl Interpreter {
                     span,
                 )?;
                 validate_native_arguments(function.signature.as_ref(), arguments, span)?;
+                if matches!(
+                    function.binding_name,
+                    "#rils_native_print" | "#rils_native_println"
+                ) {
+                    if arguments.is_empty() && function.binding_name == "#rils_native_println" {
+                        (self.output_handler)("", true)
+                            .map_err(|message| RuntimeError::new(message, span))?;
+                        return Ok(Value::Unit);
+                    }
+                    let Some(Value::String(format)) = arguments.first() else {
+                        return Err(RuntimeError::new(
+                            format!("{}! requires a format string", function.name),
+                            span,
+                        ));
+                    };
+                    let output = self.format_arguments(format, &arguments[1..], span)?;
+                    (self.output_handler)(&output, function.binding_name == "#rils_native_println")
+                        .map_err(|message| RuntimeError::new(message, span))?;
+                    return Ok(Value::Unit);
+                }
                 let value = (function.function)(arguments)
                     .map_err(|message| RuntimeError::new(message, span))?;
                 validate_native_return(function.signature.as_ref(), value, span, function.name)
@@ -662,27 +682,35 @@ impl Interpreter {
                     method: BuiltinMethod::FloatIntrinsic(intrinsic.id),
                 })))
             }
-            Value::HostObject(instance) => instance
-                .type_definition
-                .methods
-                .borrow()
-                .get(name)
-                .cloned()
-                .map(|function| {
-                    Value::HostBoundMethod(Rc::new(HostBoundMethod {
+            Value::HostObject(instance) => {
+                if let Some((id, _)) = builtin_runtime_member(&object, name) {
+                    return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                         receiver: Rc::new(object.clone()),
-                        function,
-                    }))
-                })
-                .ok_or_else(|| {
-                    RuntimeError::new(
-                        format!(
-                            "type `{}` has no method `{name}`",
-                            instance.type_definition.name
-                        ),
-                        span,
-                    )
-                }),
+                        method: BuiltinMethod::Runtime(id),
+                    })));
+                }
+                instance
+                    .type_definition
+                    .methods
+                    .borrow()
+                    .get(name)
+                    .cloned()
+                    .map(|function| {
+                        Value::HostBoundMethod(Rc::new(HostBoundMethod {
+                            receiver: Rc::new(object.clone()),
+                            function,
+                        }))
+                    })
+                    .ok_or_else(|| {
+                        RuntimeError::new(
+                            format!(
+                                "type `{}` has no method `{name}`",
+                                instance.type_definition.name
+                            ),
+                            span,
+                        )
+                    })
+            }
             value if builtin_runtime_member(value, name).is_some() => {
                 let (id, _) = builtin_runtime_member(value, name).expect("member was checked");
                 Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
@@ -1055,6 +1083,7 @@ pub(super) fn builtin_runtime_member(
         Value::Option { .. } => "Option",
         Value::Result { .. } => "Result",
         Value::SequenceIterator(_) => "Iterator",
+        Value::HostObject(object) if object.type_definition.name == "Formatter" => "Formatter",
         _ => return None,
     };
     let member = rils_builtins::builtin_member(owner, name)?;

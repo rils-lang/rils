@@ -53,7 +53,7 @@ Record 模式当前必须列出全部字段；尚未支持 Rust 的 `..` 剩余�
 ```rust
 match value {
     Some(number) => {
-        println!(number);
+        println!("{}", number);
         number
     }
     None => 0,

@@ -6,8 +6,8 @@
 
 | 名称 | 类别 | 说明 |
 | --- | --- | --- |
-| `print!(values...)` | 宏 | 连续输出，不换行，返回 `()` |
-| `println!(values...)` | 宏 | 以空格分隔输出并换行，返回 `()` |
+| `print!(format, values...)` | 宏 | 按 Rust 风格格式串输出，不换行，返回 `()` |
+| `println!(format, values...)` | 宏 | 按 Rust 风格格式串输出并换行，返回 `()`；也支持空的 `println!()` |
 | `assert!(condition, message?)` | 宏 | 要求布尔条件为真 |
 | `type_of(value)` | 函数 | 返回运行时类型名称 |
 | `clone(&value)` | 函数 | 显式创建拥有型值的独立副本 |
@@ -61,7 +61,7 @@ manifests = ["generated/extra.rilhm"] # 可选的额外 fragment
 多个 fragment 中幂等出现；ABI/contract/module 版本、函数名称、签名或全局 function ID 冲突都会
 使整个项目加载失败。旧的 `[host].manifest` 单文件配置继续兼容。
 
-Host Manifest v2 可以声明命名宿主类型和单继承。类型路径可直接用于标注和推断，不需要在 Rils
+Host Manifest v5 可以声明命名宿主类型、opaque 对象单继承、固定布局 inline value、宿主 enum 和宿主函数 overload。类型路径可直接用于标注和推断，不需要在 Rils
 源码中重复声明：
 
 ```rils
@@ -84,8 +84,13 @@ fn inspect(object: GameObject) {
 显式导入、别名或完整限定名，不能按导入顺序静默选择。
 
 派生宿主类型可传给基类参数，并继承基类的 receiver 方法。它们在 Rils 中保持不同的逻辑类型，在
-宿主 ABI 上则按 manifest 声明降级到 transport；当前命名类型使用 `HostHandle`。这不会改变 Rils
+宿主 ABI 上则按 manifest 声明降级到 transport；对象使用 `HostHandle`，固定布局值使用
+`InlineValue`。这不会改变 Rils
 拥有型 struct/enum 的语义，也不允许脚本访问宿主 payload。
+
+宿主 enum 是普通 Rils enum，可以构造枚举项、参与 `match`，也可以通过固有 `impl` 增加脚本侧方法。
+带 flags 标记的宿主 enum 仍保持 enum 身份，并自动实现内建 marker trait `BitFlags`；未知的组合位在
+跨宿主调用时会保留，`match` 可用通配分支处理。底层整数只属于 ABI transport，不是源码类型。
 
 没有 `rils.toml` 时保留旧的单文件兼容模式：`mod name;` 依次查找同目录的 `name.rils` 与
 `name/mod.rils`。项目模式只保留 `mod name { ... }` 作为局部内联模块，外部 `mod name;` 会给出
@@ -115,6 +120,26 @@ prelude
 
 常用 Option、Result、Vec 和迭代器名字仍由 prelude 自动提供。`std::io::print` 与
 `std::io::println` 当前是底层函数；日常输出仍推荐 `print!` 和 `println!` 宏。
+
+格式串必须是编译期字符串字面量，占位符与参数数量会在宏展开期检查：
+
+```rils
+println!("name = {}, count = {}", name, count);
+println!("state = {:?}", state);
+println!("state = {:#?}", state);
+println!("flags = {:#x}", flags);
+println!("escaped braces: {{}}");
+```
+
+`{}` 使用 `Display`，`{:?}` 与 `{:#?}` 使用 `Debug`；后者启用多行漂亮输出。整数支持
+`b`、`o`、`x`、`X`，浮点支持 `e`、`E`，并支持固定宽度、左右/居中对齐、填充、正号、
+零填充和精度。格式化参数只会被临时借用，不会因为输出而 move 非 `Copy` 值。
+Manifest 声明的 inline host value 与 handle 可以由嵌入宿主安装 formatter；Rils 会把逻辑
+类型、portable value 和格式说明交给宿主，再对返回文本应用宽度与对齐。未识别的宿主类型
+回退为 `<logical_type>`。
+自定义类型可实现 `core::fmt::Display` 或 `core::fmt::Debug`，并通过传入的
+`&mut core::fmt::Formatter` 的 `write_str` 方法产生文本；该方法返回
+`Result<(), core::fmt::FormatError>`。
 
 ### IO 与文件系统
 

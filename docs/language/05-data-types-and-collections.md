@@ -17,7 +17,7 @@ let mut point: Point = Point {
     y: 4.0,
 };
 
-println!(point.x);
+println!("{}", point.x);
 point.x = 10.0;
 
 struct Marker;

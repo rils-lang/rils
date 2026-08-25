@@ -624,6 +624,23 @@ impl<'a> Checker<'a> {
                 arguments,
                 span,
             } => {
+                if matches!(
+                    callee_name(callee),
+                    Some("#rils_native_print" | "#rils_native_println")
+                ) {
+                    let callee = self.expression(callee);
+                    self.discard(callee);
+                    for (index, argument) in arguments.iter().enumerate() {
+                        if index > 0 && place_key(argument).is_some() {
+                            let value = self.borrow_place(argument, false, argument.span());
+                            self.discard(value);
+                        } else {
+                            let value = self.expression(argument);
+                            self.discard(value);
+                        }
+                    }
+                    return self.typed_value(expression);
+                }
                 let receiver = if let Expr::Member { object, name, .. } = callee.as_ref() {
                     self.receiver_effect(object, name)
                 } else {

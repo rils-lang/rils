@@ -35,19 +35,23 @@ function resolveServer(context) {
 
   const workspaceCandidates = [];
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    for (const profile of ["release", "debug"]) {
-      const candidate = path.join(
-        folder.uri.fsPath,
-        "target",
-        profile,
-        executable,
-      );
-      if (fs.existsSync(candidate)) {
-        workspaceCandidates.push({
-          path: candidate,
-          modified: fs.statSync(candidate).mtimeMs,
-        });
+    // A Unity integration project lives below the Rils repository and usually
+    // has no local target directory. Walk its parents so the analyzer built by
+    // the workspace is preferred over an unrelated executable on PATH.
+    let directory = folder.uri.fsPath;
+    while (directory) {
+      for (const profile of ["release", "debug"]) {
+        const candidate = path.join(directory, "target", profile, executable);
+        if (fs.existsSync(candidate)) {
+          workspaceCandidates.push({
+            path: candidate,
+            modified: fs.statSync(candidate).mtimeMs,
+          });
+        }
       }
+      const parent = path.dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
     }
   }
   workspaceCandidates.sort((left, right) => right.modified - left.modified);

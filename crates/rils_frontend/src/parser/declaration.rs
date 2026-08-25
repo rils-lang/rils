@@ -320,6 +320,7 @@ impl Parser {
         let right = self.expect(&TokenKind::RightBrace, "expected `}` after enum variants")?;
         self.generic_scopes.pop();
         Ok(Stmt::Enum {
+            attributes: Vec::new(),
             name,
             name_span,
             generic_parameters,
@@ -426,7 +427,14 @@ impl Parser {
                     definition_span: None,
                     is_builtin: matches!(
                         bound.as_str(),
-                        "Copy" | "Clone" | "Default" | "Eq" | "Hash" | "Iterator" | "IntoIterator"
+                        "Copy"
+                            | "Clone"
+                            | "Default"
+                            | "Eq"
+                            | "Hash"
+                            | "BitFlags"
+                            | "Iterator"
+                            | "IntoIterator"
                     ),
                     arguments: Vec::new(),
                 });

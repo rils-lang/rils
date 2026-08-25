@@ -47,9 +47,13 @@
 
 ### 宿主与部署
 
+- 在现有 host value formatter 与文本输出 callback 之上增加日志级别，并允许宿主定制未知
+  host type 的 fallback 策略。
+
 - 在保持宿主无关的前提下继续扩展 C ABI 的核心生命周期、值交换和诊断能力。
-- 在 Host Manifest v2 已有命名类型、单继承和 `HostHandle` transport 的基础上，继续设计 enum、
-  常量与 value-struct transport，并同步扩展 Unity 的类型目录与绑定生成流程。
+- 为自动生成的 Unity direct C# handler 增加显式 override 层，使少量需要自定义语义、错误映射或
+  性能特化的 Core API 可以替换自动绑定；继续补齐 enum、常量和超过 16 字节的 struct transport，
+  无法表达的同签名碰撞仍要求 override 或手写 facade。
 - 编译后按实际 host imports 裁剪或外置运行时契约，避免完整 Unity manifest 在每个脚本资产中重复内嵌。
 - 将 Unity、UE 等引擎集成维护在各自独立仓库和插件工程中。
 - 评估可选 Rust AOT 后端；AOT 不替代字节码验证、能力隔离和资源限制。

@@ -1,12 +1,14 @@
 pub mod bytecode;
 mod environment;
 mod error;
+mod formatting;
 mod hash_collections;
 mod interpreter;
 mod library;
 mod limits;
 mod native_type;
 mod numeric;
+mod output;
 mod runtime_type;
 mod standard_library;
 mod value;
@@ -32,13 +34,7 @@ pub mod analysis {
         source: &str,
         host: &crate::HostContract,
     ) -> Result<DocumentAnalysis, crate::RilsError> {
-        let signatures = host.signatures();
-        let host_types = host
-            .types()
-            .map(|declaration| declaration.name.clone())
-            .collect();
-        rils_frontend::analysis::analyze_with_host_declarations(source, &signatures, &host_types)
-            .map_err(Into::into)
+        rils_compiler::analyze_with_host(source, host).map_err(Into::into)
     }
 }
 
@@ -69,6 +65,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt, fs,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 pub use bytecode::{
@@ -78,16 +75,18 @@ pub use bytecode::{
     HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
     HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
     HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
-    HostContract, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
-    HostTypeDeclaration, HostTypeTransport,
+    HostContract, HostEnumDefinition, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver,
+    HostThreadAffinity, HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 pub use error::RilsError;
 pub use library::{LibraryFormatError, RilsLibrary};
 pub use limits::ExecutionLimits;
 pub use native_type::{NativeFunctionHandler, NativeTypeHandle};
 pub use opaque_host::{
-    OpaqueHostHandle, opaque_host_handle, opaque_host_value, opaque_host_value_typed,
+    InlineHostValue, OpaqueHostHandle, host_enum_raw, host_enum_value, inline_host_value,
+    inline_host_value_typed, opaque_host_handle, opaque_host_value, opaque_host_value_typed,
 };
+pub use output::{HostFormatKind, HostFormatSpec, HostValueFormatter, OutputHandler};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,
@@ -126,6 +125,30 @@ impl Engine {
 
     pub fn set_execution_limits(&mut self, limits: ExecutionLimits) {
         self.interpreter.set_execution_limits(limits);
+    }
+
+    pub fn set_output_handler<F>(&mut self, handler: F)
+    where
+        F: Fn(&str, bool) -> Result<(), String> + 'static,
+    {
+        self.interpreter.set_output_handler(Rc::new(handler));
+    }
+
+    pub fn reset_output_handler(&mut self) {
+        self.interpreter
+            .set_output_handler(output::default_output_handler());
+    }
+
+    pub fn set_host_value_formatter<F>(&mut self, formatter: F)
+    where
+        F: Fn(&Value, HostFormatSpec) -> Result<Option<String>, String> + 'static,
+    {
+        self.interpreter
+            .set_host_value_formatter(Some(Rc::new(formatter)));
+    }
+
+    pub fn reset_host_value_formatter(&mut self) {
+        self.interpreter.set_host_value_formatter(None);
     }
 
     pub fn register_module(&mut self, path: &str) -> Result<(), String> {
@@ -868,7 +891,7 @@ fn compile_project_file_with_host(
             &mut program.statements,
             path,
             project,
-            &[],
+            macros::STANDARD_NATIVE_MACROS,
             &mut sources,
             require_entry,
         )

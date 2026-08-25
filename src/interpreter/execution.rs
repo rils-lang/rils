@@ -472,19 +472,19 @@ impl Interpreter {
                 let trait_definition = trait_name
                     .as_ref()
                     .map(|trait_name| {
-                        environment
-                            .borrow()
-                            .get(trait_name)
-                            .ok_or_else(|| {
-                                RuntimeError::new(format!("unknown trait `{trait_name}`"), *span)
-                            })
-                            .and_then(|value| match value {
+                        let path = trait_name
+                            .split("::")
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>();
+                        resolve_visible_path(&path, &environment, *span).and_then(|value| {
+                            match value {
                                 Value::TraitType(definition) => Ok(definition),
                                 _ => Err(RuntimeError::new(
                                     format!("`{trait_name}` is not a trait"),
                                     *span,
                                 )),
-                            })
+                            }
+                        })
                     })
                     .transpose()?;
                 let associated_type_values = if let Some(definition) = &trait_definition {

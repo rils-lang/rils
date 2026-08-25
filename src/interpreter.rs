@@ -14,6 +14,7 @@ mod call;
 mod construction;
 mod evaluation;
 mod execution;
+mod formatting;
 mod operators;
 mod pattern;
 mod place;
@@ -36,10 +37,10 @@ use crate::{
     value::{
         BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance,
         EnumPayload, EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod,
-        HostFunction, HostFunctionHandler, HostType, ModuleValue, NativeFunction, RangeValue,
-        ReferenceValue, SequenceIteratorValue, SequenceValue, StructInstance, StructType,
-        TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value, VariantConstructor,
-        enum_variant_name,
+        HostFunction, HostFunctionHandler, HostObject, HostType, ModuleValue, NativeFunction,
+        RangeValue, ReferenceValue, SequenceIteratorValue, SequenceValue, StructInstance,
+        StructType, TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value,
+        VariantConstructor, enum_variant_name,
     },
 };
 
@@ -77,6 +78,8 @@ pub struct Interpreter {
     function_depth: usize,
     pending_return: Option<Value>,
     pending_loop_flow: Option<Flow>,
+    output_handler: Rc<crate::OutputHandler>,
+    host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
 }
 
 impl Default for Interpreter {
@@ -96,6 +99,8 @@ impl Interpreter {
             function_depth: 0,
             pending_return: None,
             pending_loop_flow: None,
+            output_handler: crate::output::default_output_handler(),
+            host_value_formatter: None,
         }
     }
 
@@ -109,6 +114,17 @@ impl Interpreter {
 
     pub fn set_execution_limits(&mut self, limits: crate::ExecutionLimits) {
         self.limits = limits;
+    }
+
+    pub(crate) fn set_output_handler(&mut self, handler: Rc<crate::OutputHandler>) {
+        self.output_handler = handler;
+    }
+
+    pub(crate) fn set_host_value_formatter(
+        &mut self,
+        formatter: Option<Rc<crate::HostValueFormatter>>,
+    ) {
+        self.host_value_formatter = formatter;
     }
 
     pub(crate) fn register_native_function(

@@ -178,6 +178,7 @@ pub enum Stmt {
         span: Span,
     },
     Enum {
+        attributes: Vec<Attribute>,
         name: String,
         name_span: Span,
         generic_parameters: Vec<GenericParameter>,

@@ -45,6 +45,14 @@ enum VariantDefinition {
     Record(HashMap<String, Type>),
 }
 
+fn qualified_type_name(prefix: &[String], name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{}::{name}", prefix.join("::"))
+    }
+}
+
 pub(crate) fn infer_with_host_functions(
     program: &Program,
     host_functions: &HashMap<String, FunctionSignature>,
@@ -134,7 +142,7 @@ impl Inferencer {
             numeric_fixed: HashMap::new(),
             host_functions: host_functions.clone(),
         };
-        inferencer.collect_type_definitions(&program.statements);
+        inferencer.collect_type_definitions(&program.statements, &mut Vec::new());
         inferencer
     }
 
@@ -292,7 +300,7 @@ impl Inferencer {
         }
     }
 
-    fn collect_type_definitions(&mut self, statements: &[Stmt]) {
+    fn collect_type_definitions(&mut self, statements: &[Stmt], prefix: &mut Vec<String>) {
         for statement in statements {
             let statement = match statement {
                 Stmt::Public { statement, .. } => statement.as_ref(),
@@ -300,32 +308,37 @@ impl Inferencer {
             };
             match statement {
                 Stmt::Module {
+                    name,
                     statements: Some(statements),
                     ..
-                } => self.collect_type_definitions(statements),
+                } => {
+                    prefix.push(name.clone());
+                    self.collect_type_definitions(statements, prefix);
+                    prefix.pop();
+                }
                 Stmt::Struct {
                     name,
                     generic_parameters,
                     fields,
                     ..
                 } => {
-                    self.types.insert(
-                        name.clone(),
-                        TypeDefinition {
-                            generic_parameters: generic_parameters
-                                .iter()
-                                .map(|parameter| parameter.name.clone())
-                                .collect(),
-                            fields: fields
-                                .iter()
-                                .map(|field| (field.name.clone(), field.type_annotation.clone()))
-                                .collect(),
-                            variants: HashMap::new(),
-                            methods: HashMap::new(),
-                            implemented_traits: HashSet::new(),
-                            associated_types: HashMap::new(),
-                        },
-                    );
+                    let definition = TypeDefinition {
+                        generic_parameters: generic_parameters
+                            .iter()
+                            .map(|parameter| parameter.name.clone())
+                            .collect(),
+                        fields: fields
+                            .iter()
+                            .map(|field| (field.name.clone(), field.type_annotation.clone()))
+                            .collect(),
+                        variants: HashMap::new(),
+                        methods: HashMap::new(),
+                        implemented_traits: HashSet::new(),
+                        associated_types: HashMap::new(),
+                    };
+                    let qualified = qualified_type_name(prefix, name);
+                    self.types.insert(qualified, definition.clone());
+                    self.types.entry(name.clone()).or_insert(definition);
                 }
                 Stmt::Enum {
                     name,
@@ -360,9 +373,11 @@ impl Inferencer {
                         };
                         definition.variants.insert(variant_name.clone(), payload);
                         self.variant_owners
-                            .insert(variant_name.clone(), name.clone());
+                            .insert(variant_name.clone(), qualified_type_name(prefix, name));
                     }
-                    self.types.insert(name.clone(), definition);
+                    let qualified = qualified_type_name(prefix, name);
+                    self.types.insert(qualified, definition.clone());
+                    self.types.entry(name.clone()).or_insert(definition);
                 }
                 Stmt::Impl {
                     target,
@@ -731,6 +746,21 @@ impl Inferencer {
                 .host_functions
                 .get(&segments.join("::"))
                 .cloned()
+                .or_else(|| {
+                    // Host manifests expose associated functions under a
+                    // snake-case module (`unity_engine::color::new`) while
+                    // source paths use the host type (`Color::new`).
+                    let type_index = segments.len().checked_sub(2)?;
+                    let member = segments.last()?;
+                    let module = segments[..type_index].join("::");
+                    let type_module = snake_case(&segments[type_index]);
+                    let qualified = if module.is_empty() {
+                        format!("{type_module}::{member}")
+                    } else {
+                        format!("{module}::{type_module}::{member}")
+                    };
+                    self.host_functions.get(&qualified).cloned()
+                })
                 .or_else(|| {
                     crate::standard_library::standard_function_signature(&segments.join("::"))
                 })
@@ -1210,12 +1240,38 @@ impl Inferencer {
             && arguments.is_empty()
             && let Some(signature) = self.host_functions.get(&format!("{name}::{field}"))
         {
-            let parameters = signature
-                .parameters
-                .as_ref()
-                .map(|parameters| parameters.iter().skip(1).cloned().collect())
-                .unwrap_or_default();
-            return FunctionSignature::fixed(parameters, signature.return_type.clone()).as_type();
+            return match signature.parameters.as_ref() {
+                Some(parameters) => FunctionSignature::fixed(
+                    parameters.iter().skip(1).cloned().collect(),
+                    signature.return_type.clone(),
+                ),
+                None => FunctionSignature::variadic(signature.return_type.clone()),
+            }
+            .as_type();
+        }
+        // Manifest functions use module paths for their names (for example
+        // `unity_engine::game_object::transform`) while the receiver type is
+        // carried as the first signature parameter.
+        if let Type::Named { name, arguments } = object_type
+            && arguments.is_empty()
+            && let Some(signature) =
+                self.host_functions
+                    .iter()
+                    .find_map(|(qualified, signature)| {
+                        let member = qualified.rsplit("::").next()?;
+                        let parameters = signature.parameters.as_ref()?;
+                        (member == field && parameters.first() == Some(&Type::named(name)))
+                            .then_some(signature)
+                    })
+        {
+            return match signature.parameters.as_ref() {
+                Some(parameters) => FunctionSignature::fixed(
+                    parameters.iter().skip(1).cloned().collect(),
+                    signature.return_type.clone(),
+                ),
+                None => FunctionSignature::variadic(signature.return_type.clone()),
+            }
+            .as_type();
         }
         let Type::Named { name, arguments } = object_type else {
             return Type::Unknown;
@@ -1324,6 +1380,21 @@ impl Inferencer {
         self.scopes.pop();
         result
     }
+}
+
+fn snake_case(name: &str) -> String {
+    let mut output = String::with_capacity(name.len());
+    for (index, character) in name.chars().enumerate() {
+        if character.is_uppercase() {
+            if index != 0 {
+                output.push('_');
+            }
+            output.extend(character.to_lowercase());
+        } else {
+            output.push(character);
+        }
+    }
+    output
 }
 
 fn impl_parameter_type(parameter: &Parameter, target: &Type) -> Type {

@@ -11,11 +11,10 @@ impl Server {
             } else {
                 let mut source = document.text.clone();
                 source.insert_str(offset, "__rils_completion");
-                recovered = analyze_with_source_id_and_external_exports_and_host_types(
+                recovered = analyze_with_host_and_source_id_and_external_exports(
                     &source,
                     document.source_id,
-                    &self.host_functions,
-                    &self.host_types,
+                    &self.host_contract,
                     &HashMap::new(),
                 )
                 .ok()
@@ -24,8 +23,7 @@ impl Server {
                         &document.text,
                         dot_offset,
                         document.source_id,
-                        &self.host_functions,
-                        &self.host_types,
+                        &self.host_contract,
                     )
                 });
                 recovered.as_ref()
@@ -51,11 +49,22 @@ impl Server {
                             .and_then(|symbol| symbol.inferred_type.as_ref())
                     })
             }) {
+                let mut inherent_items = current_analysis
+                    .map(|analysis| {
+                        inherent_method_completions(
+                            analysis,
+                            &document.text,
+                            receiver_type,
+                            &member_prefix,
+                        )
+                    })
+                    .unwrap_or_default();
                 if let Type::Named { name, arguments } = receiver_type
                     && arguments.is_empty()
                     && (name == "HostHandle" || self.host_contract.host_type(name).is_some())
                 {
-                    let mut items = self
+                    inherent_items.extend(
+                        self
                         .host_contract
                         .receiver_methods(name)
                         .into_iter()
@@ -75,12 +84,13 @@ impl Server {
                                     }
                                 })
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    items.sort_by(|left, right| {
+                        }),
+                    );
+                    inherent_items.sort_by(|left, right| {
                         left["label"].as_str().cmp(&right["label"].as_str())
                     });
-                    return Ok(json!(items));
+                    inherent_items.dedup_by(|left, right| left["label"] == right["label"]);
+                    return Ok(json!(inherent_items));
                 }
                 if receiver_type.is_integer() {
                     let items = rils_builtins::INTEGER_INTRINSICS
@@ -107,22 +117,34 @@ impl Server {
                             .then_some("Iterator")
                     });
                 if let Some(owner) = owner {
-                    let items = rils_builtins::builtin(owner)
-                        .into_iter()
-                        .flat_map(|declaration| declaration.members)
-                        .filter(|member| {
-                            member.kind == rils_builtins::BuiltinMemberKind::Method
-                                && member.name.starts_with(&member_prefix)
-                                && (owner != "Iterator"
-                                    || rils_frontend::standard_library::builtin_owner_name(
-                                        receiver_type,
-                                    )
-                                    .is_some()
-                                    || rils_builtins::is_iterator_default_method(member.name))
-                        })
-                        .map(|member| builtin_member_completion(receiver_type, member))
-                        .collect::<Vec<_>>();
-                    return Ok(json!(items));
+                    inherent_items.extend(
+                        rils_builtins::builtin(owner)
+                            .into_iter()
+                            .flat_map(|declaration| declaration.members)
+                            .filter(|member| {
+                                member.kind == rils_builtins::BuiltinMemberKind::Method
+                                    && member.name.starts_with(&member_prefix)
+                                    && (owner != "Iterator"
+                                        || rils_frontend::standard_library::builtin_owner_name(
+                                            receiver_type,
+                                        )
+                                        .is_some()
+                                        || rils_builtins::is_iterator_default_method(member.name))
+                            })
+                            .map(|member| builtin_member_completion(receiver_type, member)),
+                    );
+                    inherent_items.sort_by(|left, right| {
+                        left["label"].as_str().cmp(&right["label"].as_str())
+                    });
+                    inherent_items.dedup_by(|left, right| left["label"] == right["label"]);
+                    return Ok(json!(inherent_items));
+                }
+                if !inherent_items.is_empty() {
+                    inherent_items.sort_by(|left, right| {
+                        left["label"].as_str().cmp(&right["label"].as_str())
+                    });
+                    inherent_items.dedup_by(|left, right| left["label"] == right["label"]);
+                    return Ok(json!(inherent_items));
                 }
             }
         }
@@ -193,6 +215,38 @@ impl Server {
             return Ok(json!(items));
         }
         let qualifier = resolve_path_alias(&document.text, &qualifier);
+        if let Some(declaration) = self.host_contract.host_type(&qualifier)
+            && let Some(enum_definition) = &declaration.enum_definition
+        {
+            let items = enum_definition
+                .variants
+                .iter()
+                .filter(|(name, _)| name.starts_with(&member_prefix))
+                .map(|(name, raw)| {
+                    let enum_kind = if enum_definition.flags {
+                        format!(
+                            "{} flags enum ({}, BitFlags)",
+                            qualifier, enum_definition.underlying_type
+                        )
+                    } else {
+                        format!("{} enum ({})", qualifier, enum_definition.underlying_type)
+                    };
+                    json!({
+                        "label": name,
+                        "filterText": name,
+                        "insertText": name,
+                        "kind": 20,
+                        "detail": format!("{qualifier}::{name} = 0x{raw:x}"),
+                        "documentation": {
+                            "kind": "markdown",
+                            "value": format!("`{enum_kind}`\n\nRaw value: `0x{raw:x}`")
+                        },
+                        "sortText": format!("0_{name}")
+                    })
+                })
+                .collect::<Vec<_>>();
+            return Ok(json!(items));
+        }
         let nested_prefix = format!("{qualifier}::");
         let mut module_names = HashSet::new();
         let mut items = Vec::new();
@@ -229,6 +283,27 @@ impl Server {
                     "sortText": format!("0_{child}")
                 }));
             }
+        }
+        for declaration in self.host_contract.types() {
+            let Some(remainder) = declaration.name.strip_prefix(&nested_prefix) else {
+                continue;
+            };
+            let child = remainder.split("::").next().unwrap_or(remainder);
+            if !child.starts_with(&member_prefix) || !module_names.insert(child.to_owned()) {
+                continue;
+            }
+            let is_nested_module = remainder.contains("::");
+            let full_name = format!("{qualifier}::{child}");
+            items.push(json!({
+                "label": child,
+                "kind": if is_nested_module { 9 } else { 13 },
+                "detail": if is_nested_module {
+                    format!("host module {full_name}")
+                } else {
+                    format!("host type {full_name}")
+                },
+                "sortText": format!("0_{child}")
+            }));
         }
         for function in self.host_contract.functions() {
             let Ok((module, name)) = split_qualified_name(&function.name) else {
@@ -345,12 +420,54 @@ impl Server {
     }
 }
 
+fn inherent_method_completions(
+    analysis: &DocumentAnalysis,
+    source: &str,
+    receiver_type: &Type,
+    prefix: &str,
+) -> Vec<Value> {
+    let Type::Named { name, .. } = receiver_type else {
+        return Vec::new();
+    };
+    analysis
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            symbol.is_definition
+                && symbol.kind == SymbolKind::Method
+                && symbol.name.starts_with(prefix)
+                && symbol.container.as_ref().is_some_and(|container| {
+                    let SymbolContainer::Type(owner) = container else {
+                        return false;
+                    };
+                    owner == name || resolve_path_alias(source, owner) == *name
+                })
+        })
+        .map(|symbol| {
+            let detail = symbol
+                .detail
+                .clone()
+                .unwrap_or_else(|| format!("fn {}", symbol.name));
+            json!({
+                "label": detail,
+                "filterText": symbol.name,
+                "insertText": symbol.name,
+                "kind": 2,
+                "detail": detail,
+                "documentation": {
+                    "kind": "markdown",
+                    "value": format!("Rils method implemented for `{name}`")
+                }
+            })
+        })
+        .collect()
+}
+
 fn recover_member_completion_analysis(
     source: &str,
     dot_offset: usize,
     source_id: SourceId,
-    host_functions: &HashMap<String, FunctionSignature>,
-    host_types: &HashSet<String>,
+    host_contract: &HostContract,
 ) -> Option<DocumentAnalysis> {
     source[..dot_offset]
         .match_indices(';')
@@ -358,11 +475,10 @@ fn recover_member_completion_analysis(
         .rev()
         .find_map(|end| {
             let candidate = close_open_delimiters(&source[..end]);
-            analyze_with_source_id_and_external_exports_and_host_types(
+            analyze_with_host_and_source_id_and_external_exports(
                 &candidate,
                 source_id,
-                host_functions,
-                host_types,
+                host_contract,
                 &HashMap::new(),
             )
             .ok()

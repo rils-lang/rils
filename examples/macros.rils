@@ -12,7 +12,7 @@ macro bindings {
 
 macro print_all {
     ($($value:expr),*) => {{
-        $(println!($value);)*
+        $(println!("{}", $value);)*
     }}
 }
 

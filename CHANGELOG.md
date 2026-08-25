@@ -7,17 +7,40 @@
 
 ### Breaking Changes
 
+- Host Manifest 二进制与 JSON 格式提升为 v5，新增完整 portable scalar 编码、enum 底层整数、枚举项和
+  flags 元数据；Runtime、CLI 与 Analyzer 仍可读取 v1-v4，重新导出或链接时统一写为 v5。
+- C ABI 提升为 version 7，新增 `RilsHostTypeV3`、宿主 enum 注册和拥有型 `RILS_VALUE_STRING` 句柄协议；
+  native DLL、生成的 P/Invoke 与 `Rils.CSharp` facade 必须成套更新。
+- C ABI 由 version 5 提升为 version 6，新增 `rils_runtime_set_output_callback`；native DLL、
+  生成的 P/Invoke 与 `Rils.CSharp` facade 必须成套更新。
+- `print!` / `println!` 改为 Rust 风格格式字符串语法；除空的 `println!()` 外，首参数必须是
+  编译期字符串字面量。原来的 `println!(a, b)` 需要迁移为 `println!("{} {}", a, b)`。
 - 根 `rils` crate 现在是纯 Rust 嵌入库，不再构建 `rils` binary。命令行工具迁移为 workspace 中不发布的
   `rils_cli` crate，仍生成名为 `rils` 的可执行文件；面向用户的说明和示例统一使用 `rils` 命令，
   仓库内部再由发布工具负责构建 CLI 产物。
 - `rils` 不再在无参数时进入 REPL，而是显示帮助；请显式使用 `rils repl` 启动交互会话。
 - `.rilbc` 格式由 v5 提升为 v6：编译器会为已静态确定类型的整数二元运算写入专用指令。v6 loader
   会明确拒绝 v5 及更早的产物。
+- Host Manifest 二进制与 JSON 格式由 v2 提升为 v4：v3 新增无继承的字段化 inline value 类型，v4
+  新增同名不同参数签名的宿主 overload set；
+  `fields(...)` 可描述规范打包后不超过 16 字节的标量序列，旧 `f32x2/x3/x4` 输入保持可读。
+  Runtime、CLI 和 Analyzer 仍可读取 v1/v2/v3，重新导出或链接时统一写为 v4。Rils 源码函数仍禁止重载。
+- C ABI 由 version 4 提升为 version 5，新增 `RilsHostTypeV2`、
+  `rils_runtime_register_host_types_v2` 和 `RILS_VALUE_INLINE_VALUE`。inline payload 固定 16 字节，
+  以显式小端标量布局传输，不保证兼容宿主语言 struct 的内存布局。
 
 ### Migration
 
+- 重新生成 Host Manifest v5，并将 native DLL、P/Invoke 和 `Rils.CSharp` facade 成套更新到 C ABI v7。
+  字符串接收方必须通过 `rils_string_size/write` 复制内容并用 `rils_string_destroy` 消费句柄；宿主 enum
+  应通过 v3 类型表声明枚举项，不再把逻辑 enum 暴露成普通整数类型。
+- 将 Python 式多参数输出迁移为格式占位符；格式化参数现在只会被借用，打印后仍可继续使用非
+  `Copy` 值。
 - 升级到包含 v6 loader 的版本后，从源码重新生成所有 `.rilbc`、Unity `.bytes` 和嵌入
   `.rilslib` 的字节码模块。
+- 重新导出 Host Manifest v4，并将 native DLL、生成的 P/Invoke 与 `Rils.CSharp` facade 成套更新至
+  C ABI v5。使用值类型的宿主先通过 v2 类型注册接口声明 layout，再以逻辑类型名和
+  `InlineValue` transport 注册函数；不要直接 `memcpy` 宿主 struct。
 
 ### Added
 
@@ -31,14 +54,54 @@
   `.rils-version` 或全局默认配置选择 `rils` 与 `rils-analyzer`，并支持一次性的
   `rils +<version>` 调用。`rils-up self update` 从独立多平台 Release 校验并更新管理器，不改变任何
   已安装或当前选中的 Rils toolchain。
+- Host Manifest、编译器、Analyzer、C ABI、C# facade 与 Unity 绑定生成器现已贯通 C# enum；Rils 侧
+  获得可 `match`、可写固有 `impl` 的真实 enum，嵌套 enum 保留规范模块路径，`[Flags]` 自动实现
+  `BitFlags` 并保留未命名组合的原始位模式。
+- C dispatcher 与 `Rils.CSharp` 支持拥有型 UTF-8 string 参数和返回值；字符串句柄具有线程约束和
+  明确的创建、复制、消费/销毁规则。
+- Unity API 扫描与 handler 生成支持 `sbyte/short/byte/ushort/char/string`，并改进映射后同名成员的
+  getter/setter 与非 `()` 返回值优先规则，避免稳定 API 被无信息量候选遮蔽。
+- `Engine`、`BytecodeHost`、C ABI 与 `Rils.CSharp` 现在支持同步文本输出回调；回调保留
+  `print!` 与 `println!` 的换行边界，未配置时继续输出到标准终端。
+- 增加保留逻辑类型、portable host value 与 `Display`/`Debug` 格式说明的宿主值格式化回调；
+  C#/Unity 可在文本输出前还原 inline value 或 handle 并使用对应托管对象的格式化结果。
+- C ABI 与 `Rils.CSharp` 增加一次允许全部 Rils 标准库宿主能力的入口，能力集合直接从
+  `rils_builtins` 声明派生；Host Registry 冻结后仍会保留标准库实现和输出回调。
+- 增加共享的格式字符串解析与检查，支持 `Display` 的 `{}`、`Debug` 的 `{:?}` / `{:#?}`、
+  整数进制、浮点科学计数法、宽度、对齐、填充、符号、零填充、精度和花括号转义；解释器与
+  字节码标准输出使用同一实现。
+- 增加内建 `core::fmt::{Display, Debug, Formatter, FormatError}` 声明和
+  `#[derive(Debug)]`；Struct 与 enum 派生会补充泛型 `Debug` 约束并支持漂亮输出。
 - `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `script_paths` 中的
   `main.rils` 并按项目配置加载模块和宿主 Manifest。
+- Host Contract、C ABI 与 `Rils.CSharp` 支持固定布局 inline host value；C# 提供
+  `RilsInlineValue`、字段化 `RilsHostValueLayout`、无分配 reader/writer、`NamedValue` 及显式规范打包接口。
+- Host Manifest 支持同名不同参数签名的宿主函数重载；编译器按精确参数类型和 Host 继承距离静态
+  选择唯一候选，字节码与运行时按名称和签名链接，Analyzer signature help 展示全部候选。
+- `rils.toml` 支持通过 `[unity.bindings].assemblies` 声明 Unity 绑定程序集；Unity Editor 扫描器会按
+  namespace/type 元数据分类并保留可表达的 overload，仅将映射后参数签名碰撞写入冲突报告。
+- Unity 绑定生成器从同一 Binding IR 输出 `.rils/manifest/unity/*.rilhm` 与项目级
+  `Assets/RilsGenerated/Bindings/*.g.cs` direct handler；提供仓库根 Python 入口及 `--check`，
+  Player 通过静态注册桥使用生成代码，无需运行时反射。
 
 ### Fixed
 
+- Analyzer 现在正确识别 Host enum 与 variant：Hover 显示底层整数类型、原始值及 `BitFlags` 信息，
+  并按当前 token 区分 `Enum` 与 `Enum::Variant`；Host 类型保留 Manifest 模块路径，项目符号统一以
+  `crate` 为 Hover 根路径。注入的 Host enum 虚拟声明不再污染文件开头或其他模块的语义着色，表达式
+  与 pattern 中的枚举项现在使用一致的 variant 分类。补全同时包含枚举项元数据和 Rils 侧为 Host
+  类型声明的固有 `impl` 方法。
+- 项目级文件编译现在会为入口之外的模块注册标准原生宏；多文件项目中的 `assert!`、`print!` 和
+  `println!` 不再被误报为未知宏。
+- 共享同一返回类型的 Host overload 现在会把该返回类型继续传递给未标注的局部变量，链式 receiver
+  调用不再因为前端把 overload set 压缩为未知返回类型而要求显式类型标注。
+- Analyzer Hover 现在按解析后的完整 Host 函数路径归组 overload；不同模块中的同名函数不再被误当成
+  同一组候选展示。
 - Analyzer Hover 现在以高亮的项目/模块或所属类型路径作为标题，并显示精简的声明主体；字段显示
   `name: Type`，枚举 record variant 字段会保留完整的 `Enum::Variant` 上下文。内建类型保持紧凑，
   不显示项目路径。
+- Host 类型通过 glob 导入后，其关联 Host 函数路径也会解析到规范类型路径；例如
+  `use unity_engine::*; Vector3::new(...)` 不再需要写完整模块名。
 
 ### Changed
 

@@ -1,9 +1,9 @@
 use crate::kanban::Summary;
 
 pub fn print_summary(summary: &Summary) -> i32 {
-    std::io::println("active tasks:", summary.active);
-    std::io::println("completed tasks:", summary.completed);
-    std::io::println("planning score:", summary.total_score);
+    std::io::println("active tasks: {}", summary.active);
+    std::io::println("completed tasks: {}", summary.completed);
+    std::io::println("planning score: {}", summary.total_score);
 
     summary.completed * 1000 + summary.active * 100 + summary.total_score
 }

@@ -42,6 +42,10 @@ The Analyzer uses the contract for diagnostics and type checking. Typing a quali
 show the function signature and required capability. Module aliases such as
 `use unity_engine::math as math; math::` are supported.
 
+Host enum completion shows each variant's raw value and underlying integer type. Flags enums are identified by
+their `BitFlags` implementation, and hover distinguishes host enum types from ordinary structs. Methods declared
+in a Rils inherent `impl` for a host enum or another host type are included in receiver member completion.
+
 Project modules use the same completion flow. After `crate::`, `self::`, `super::`, a module path, or a
 `use` alias, the Analyzer lists child modules and public declarations from the target `.rils` file.
 

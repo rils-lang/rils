@@ -1,6 +1,6 @@
 use super::*;
 
-struct Frame {
+pub(super) struct Frame {
     function: usize,
     registers: Vec<Option<Value>>,
     locals: Vec<StorageRef>,
@@ -37,12 +37,13 @@ enum PlaceContainer {
 }
 
 pub(super) struct VirtualMachine<'a> {
-    module: &'a BytecodeModule,
-    imports: Vec<Rc<BytecodeHostHandler>>,
-    frames: Vec<Frame>,
-    steps: usize,
-    max_steps: usize,
-    max_call_depth: usize,
+    pub(super) module: &'a BytecodeModule,
+    pub(super) imports: Vec<Rc<BytecodeHostHandler>>,
+    pub(super) host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
+    pub(super) frames: Vec<Frame>,
+    pub(super) steps: usize,
+    pub(super) max_steps: usize,
+    pub(super) max_call_depth: usize,
     root_is_module_entry: bool,
 }
 
@@ -50,12 +51,14 @@ impl<'a> VirtualMachine<'a> {
     pub(super) fn new(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
+        host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
         limits: crate::ExecutionLimits,
     ) -> Self {
         let entry = &module.functions[module.entry];
         Self {
             module,
             imports,
+            host_value_formatter,
             frames: vec![Frame {
                 function: module.entry,
                 registers: vec![None; entry.register_count],
@@ -73,6 +76,7 @@ impl<'a> VirtualMachine<'a> {
     pub(super) fn new_call(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
+        host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
         limits: crate::ExecutionLimits,
         function: usize,
         arguments: Vec<Value>,
@@ -102,6 +106,7 @@ impl<'a> VirtualMachine<'a> {
         Ok(Self {
             module,
             imports,
+            host_value_formatter,
             frames: vec![Frame {
                 function,
                 registers: vec![None; callee.register_count],
@@ -576,8 +581,51 @@ impl<'a> VirtualMachine<'a> {
                             }
                         }
                     }
-                    let value = (self.imports[import])(&arguments)
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    let value = match declaration.name.as_str() {
+                        "core::fmt::write_str" => {
+                            let buffer = crate::formatting::buffer_from_value(&arguments[0])
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                            let Value::String(value) = &arguments[1] else {
+                                return Err(BytecodeError::new(
+                                    "Formatter::write_str expects string",
+                                    instruction.span,
+                                ));
+                            };
+                            buffer.write_str(value);
+                            super::formatting::format_ok()
+                        }
+                        "core::fmt::write_derived_debug" => self.write_derived_debug_import(
+                            &arguments[0],
+                            &arguments[1],
+                            instruction.span,
+                        )?,
+                        "std::io::print" | "std::io::println" => {
+                            if arguments.is_empty() && declaration.name == "std::io::println" {
+                                (self.imports[import])(&arguments).map_err(|message| {
+                                    BytecodeError::new(message, instruction.span)
+                                })?
+                            } else {
+                                let Some(Value::String(format)) = arguments.first() else {
+                                    return Err(BytecodeError::new(
+                                        "output function requires a format string",
+                                        instruction.span,
+                                    ));
+                                };
+                                let output = self.format_import_arguments(
+                                    format,
+                                    &arguments[1..],
+                                    instruction.span,
+                                )?;
+                                (self.imports[import])(&[
+                                    Value::String("{}".into()),
+                                    Value::String(output.into()),
+                                ])
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?
+                            }
+                        }
+                        _ => (self.imports[import])(&arguments)
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                    };
                     if !declaration.signature.return_type.accepts(&value) {
                         return Err(BytecodeError::new(
                             format!(

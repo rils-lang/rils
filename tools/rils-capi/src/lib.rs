@@ -6,7 +6,7 @@
 
 use std::{
     cell::{Cell, RefCell},
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::c_void,
     panic::{AssertUnwindSafe, catch_unwind},
     ptr, slice,
@@ -15,10 +15,11 @@ use std::{
 
 use rils::{
     BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostCallKind, HostContract,
-    HostReceiver, HostThreadAffinity, HostTypeTransport, IntegerType, Span, Type, Value,
+    HostReceiver, HostThreadAffinity, HostTypeTransport, HostValueLayout, IntegerType, Span, Type,
+    Value,
 };
 
-pub const RILS_ABI_VERSION: u32 = 4;
+pub const RILS_ABI_VERSION: u32 = 7;
 pub const RILS_STATUS_OK: i32 = 0;
 pub const RILS_STATUS_INVALID_ARGUMENT: i32 = 1;
 pub const RILS_STATUS_INVALID_HANDLE: i32 = 2;
@@ -46,6 +47,12 @@ pub const RILS_VALUE_F32: u32 = 14;
 pub const RILS_VALUE_F64: u32 = 15;
 pub const RILS_VALUE_CHAR: u32 = 16;
 pub const RILS_VALUE_HOST_HANDLE: u32 = 17;
+pub const RILS_VALUE_INLINE_VALUE: u32 = 18;
+pub const RILS_VALUE_STRING: u32 = 19;
+
+pub const RILS_HOST_TYPE_OPAQUE: u32 = 0;
+pub const RILS_HOST_TYPE_VALUE: u32 = 1;
+pub const RILS_HOST_TYPE_ENUM: u32 = 2;
 
 type Handle = u64;
 
@@ -97,6 +104,39 @@ pub struct RilsHostType {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+pub struct RilsHostTypeV2 {
+    pub name: RilsSlice,
+    pub base_type: RilsSlice,
+    pub value_layout: RilsSlice,
+    pub transport_tag: u32,
+    pub kind: u32,
+    pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RilsHostEnumVariant {
+    pub name: RilsSlice,
+    pub raw_low: u64,
+    pub raw_high: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RilsHostTypeV3 {
+    pub name: RilsSlice,
+    pub base_type: RilsSlice,
+    pub value_layout: RilsSlice,
+    pub enum_variants: *const RilsHostEnumVariant,
+    pub enum_variant_count: usize,
+    pub transport_tag: u32,
+    pub kind: u32,
+    pub enum_flags: u32,
+    pub reserved: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct RilsHostParameter {
     pub logical_type: RilsSlice,
     pub transport_tag: u32,
@@ -125,6 +165,19 @@ pub type RilsHostDispatcher = unsafe extern "C" fn(
     out_error: *mut RilsSlice,
 ) -> i32;
 
+pub type RilsOutputCallback =
+    unsafe extern "C" fn(user_data: *mut c_void, text: RilsSlice, newline: u32);
+pub type RilsHostValueFormatCallback = unsafe extern "C" fn(
+    user_data: *mut c_void,
+    logical_type: RilsSlice,
+    value: RilsValue,
+    kind: u32,
+    alternate: u32,
+    precision: usize,
+    buffer: *mut u8,
+    capacity: usize,
+) -> usize;
+
 #[derive(Default)]
 struct LastError {
     code: i32,
@@ -144,7 +197,19 @@ struct Runtime {
     allowed_capabilities: HashSet<String>,
     dispatcher: Option<RilsHostDispatcher>,
     dispatcher_user_data: *mut c_void,
+    output_callback: Option<RilsOutputCallback>,
+    output_user_data: *mut c_void,
+    host_value_formatter: Option<RilsHostValueFormatCallback>,
+    host_value_formatter_user_data: *mut c_void,
     host_frozen: bool,
+}
+
+#[derive(Clone)]
+struct LogicalHostType {
+    name: String,
+    base_types: HashSet<String>,
+    transport: HostTypeTransport,
+    value_layout: Option<HostValueLayout>,
 }
 
 #[derive(Clone)]
@@ -244,6 +309,8 @@ struct State {
     modules: SlotMap<Module>,
     instances: SlotMap<Instance>,
     script_values: SlotMap<ScriptValue>,
+    strings: HashMap<Handle, String>,
+    next_string_id: u32,
 }
 
 impl Default for State {
@@ -253,7 +320,86 @@ impl Default for State {
             modules: SlotMap::new(2),
             instances: SlotMap::new(3),
             script_values: SlotMap::new(0),
+            strings: HashMap::new(),
+            next_string_id: 1,
         }
+    }
+}
+
+fn insert_string(value: String) -> Result<Handle, i32> {
+    STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        let id = state.next_string_id;
+        if id == 0 || id >= (1 << 30) {
+            return Err(fail(
+                RILS_STATUS_UNSUPPORTED_VALUE,
+                "thread-local string handle space is exhausted",
+                "",
+                Span::default(),
+            ));
+        }
+        state.next_string_id += 1;
+        let thread = THREAD_ID.with(|thread| *thread) as u64;
+        // Generation zero is deliberately invalid for every ordinary SlotMap
+        // handle, keeping transferred string handles in a disjoint namespace.
+        let handle = (thread << 46) | u64::from(id);
+        state.strings.insert(handle, value);
+        Ok(handle)
+    })
+}
+
+fn string_handle_is_current_thread(handle: Handle) -> bool {
+    let low = (handle & 0x3fff_ffff) as u32;
+    let generation = ((handle >> 30) & 0xffff) as u32;
+    let thread = ((handle >> 46) & 0xffff) as u16;
+    let kind = (handle >> 62) as u8;
+    low != 0 && generation == 0 && kind == 0 && thread == THREAD_ID.with(|current| *current)
+}
+
+fn take_string(handle: Handle) -> Result<String, i32> {
+    if !string_handle_is_current_thread(handle) {
+        return Err(fail(
+            RILS_STATUS_INVALID_HANDLE,
+            "invalid or cross-thread string handle",
+            "",
+            Span::default(),
+        ));
+    }
+    STATE.with(|state| {
+        state.borrow_mut().strings.remove(&handle).ok_or_else(|| {
+            fail(
+                RILS_STATUS_INVALID_HANDLE,
+                "invalid, consumed, or destroyed string handle",
+                "",
+                Span::default(),
+            )
+        })
+    })
+}
+
+fn discard_ffi_string(value: RilsValue) {
+    if value.tag == RILS_VALUE_STRING && string_handle_is_current_thread(value.low) {
+        STATE.with(|state| {
+            state.borrow_mut().strings.remove(&value.low);
+        });
+    }
+}
+
+struct FfiStringInputGuard<'a>(&'a [RilsValue]);
+
+impl Drop for FfiStringInputGuard<'_> {
+    fn drop(&mut self) {
+        for value in self.0 {
+            discard_ffi_string(*value);
+        }
+    }
+}
+
+struct FfiStringValueGuard(RilsValue);
+
+impl Drop for FfiStringValueGuard {
+    fn drop(&mut self) {
+        discard_ffi_string(self.0);
     }
 }
 
@@ -444,7 +590,7 @@ unsafe fn read_utf8(value: RilsSlice, label: &str) -> Result<&str, i32> {
 
 fn from_ffi_value(
     value: RilsValue,
-    logical_host_type: Option<&(String, HashSet<String>)>,
+    logical_host_type: Option<&LogicalHostType>,
 ) -> Result<Value, i32> {
     if value.reserved != 0 {
         return Err(fail(
@@ -554,7 +700,21 @@ fn from_ffi_value(
                 })?;
             Ok(Value::Char(scalar))
         }
+        RILS_VALUE_STRING => {
+            require_zero_high()?;
+            take_string(value.low).map(|value| Value::String(value.into()))
+        }
         RILS_VALUE_HOST_HANDLE => {
+            if logical_host_type
+                .is_some_and(|logical| logical.transport != HostTypeTransport::HostHandle)
+            {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host handle transport does not match logical type",
+                    "",
+                    Span::default(),
+                ));
+            }
             let object_id = i64::from_le_bytes(value.low.to_le_bytes());
             let generation = (value.high >> 32) as u32;
             let type_id = value.high as u32;
@@ -573,10 +733,52 @@ fn from_ffi_value(
             };
             Ok(logical_host_type.map_or_else(
                 || rils::opaque_host_value(handle),
-                |(name, base_types)| {
-                    rils::opaque_host_value_typed(handle, name.clone(), base_types.clone())
+                |logical| {
+                    rils::opaque_host_value_typed(
+                        handle,
+                        logical.name.clone(),
+                        logical.base_types.clone(),
+                    )
                 },
             ))
+        }
+        RILS_VALUE_INLINE_VALUE => {
+            let Some(logical) = logical_host_type else {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline host value requires logical type metadata",
+                    "",
+                    Span::default(),
+                ));
+            };
+            if logical.transport != HostTypeTransport::InlineValue {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline value transport does not match logical type",
+                    "",
+                    Span::default(),
+                ));
+            }
+            let Some(layout) = logical.value_layout else {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline host value logical type has no layout",
+                    "",
+                    Span::default(),
+                ));
+            };
+            let mut bytes = [0u8; 16];
+            bytes[..8].copy_from_slice(&value.low.to_le_bytes());
+            bytes[8..].copy_from_slice(&value.high.to_le_bytes());
+            if bytes[layout.byte_len()..].iter().any(|byte| *byte != 0) {
+                return Err(fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "inline host value has non-zero padding bytes",
+                    "",
+                    Span::default(),
+                ));
+            }
+            Ok(rils::inline_host_value_typed(bytes, logical.name.clone()))
         }
         _ => Err(fail(
             RILS_STATUS_UNSUPPORTED_VALUE,
@@ -616,20 +818,29 @@ fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue, i32> {
         Value::F32(value) => scalar(RILS_VALUE_F32, u64::from(value.to_bits()), 0),
         Value::F64(value) => scalar(RILS_VALUE_F64, value.to_bits(), 0),
         Value::Char(value) => scalar(RILS_VALUE_CHAR, u64::from(u32::from(value)), 0),
+        Value::String(value) => scalar(RILS_VALUE_STRING, insert_string(value.to_string())?, 0),
         Value::HostObject(object) => {
-            let Some(handle) = rils::opaque_host_handle(&Value::HostObject(object)) else {
+            let value = Value::HostObject(object);
+            if let Some(handle) = rils::opaque_host_handle(&value) {
+                scalar(
+                    RILS_VALUE_HOST_HANDLE,
+                    u64::from_le_bytes(handle.object_id.to_le_bytes()),
+                    (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
+                )
+            } else if let Some(inline) = rils::inline_host_value(&value) {
+                scalar(
+                    RILS_VALUE_INLINE_VALUE,
+                    u64::from_le_bytes(inline.bytes[..8].try_into().expect("fixed payload")),
+                    u64::from_le_bytes(inline.bytes[8..].try_into().expect("fixed payload")),
+                )
+            } else {
                 return Err(fail(
                     RILS_STATUS_INVALID_ARGUMENT,
-                    "host handle payload is invalid",
+                    "host object payload is not portable",
                     source_name,
                     Span::default(),
                 ));
-            };
-            scalar(
-                RILS_VALUE_HOST_HANDLE,
-                u64::from_le_bytes(handle.object_id.to_le_bytes()),
-                (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
-            )
+            }
         }
         other => {
             return Err(fail(
@@ -654,12 +865,22 @@ fn portable_type_from_tag(tag: u32, allow_unit: bool) -> Result<Type, String> {
     match tag {
         RILS_VALUE_UNIT if allow_unit => Ok(Type::Unit),
         RILS_VALUE_BOOL => Ok(Type::Bool),
+        RILS_VALUE_I8 => Ok(Type::Integer(IntegerType::I8)),
+        RILS_VALUE_I16 => Ok(Type::Integer(IntegerType::I16)),
         RILS_VALUE_I32 => Ok(Type::Integer(IntegerType::I32)),
         RILS_VALUE_I64 => Ok(Type::Integer(IntegerType::I64)),
+        RILS_VALUE_I128 => Ok(Type::Integer(IntegerType::I128)),
+        RILS_VALUE_ISIZE => Ok(Type::Integer(IntegerType::Isize)),
+        RILS_VALUE_U8 => Ok(Type::Integer(IntegerType::U8)),
+        RILS_VALUE_U16 => Ok(Type::Integer(IntegerType::U16)),
         RILS_VALUE_U32 => Ok(Type::Integer(IntegerType::U32)),
         RILS_VALUE_U64 => Ok(Type::Integer(IntegerType::U64)),
+        RILS_VALUE_U128 => Ok(Type::Integer(IntegerType::U128)),
+        RILS_VALUE_USIZE => Ok(Type::Integer(IntegerType::Usize)),
         RILS_VALUE_F32 => Ok(Type::Float(FloatType::F32)),
         RILS_VALUE_F64 => Ok(Type::Float(FloatType::F64)),
+        RILS_VALUE_CHAR => Ok(Type::Char),
+        RILS_VALUE_STRING => Ok(Type::String),
         RILS_VALUE_HOST_HANDLE => Ok(Type::named("HostHandle")),
         _ => Err(format!(
             "value tag {tag} is not supported by the portable host contract"
@@ -679,13 +900,33 @@ fn logical_type_from_transport(
     let declaration = contract
         .host_type(logical_type)
         .ok_or_else(|| format!("host type `{logical_type}` is not declared"))?;
-    let expected_tag = portable_tag_from_type(contract, &declaration.transport.as_type(), false)?;
+    let expected_tag = match declaration.transport {
+        HostTypeTransport::HostHandle => RILS_VALUE_HOST_HANDLE,
+        HostTypeTransport::InlineValue => RILS_VALUE_INLINE_VALUE,
+        HostTypeTransport::Enum => declaration
+            .enum_definition
+            .as_ref()
+            .map(|definition| portable_integer_tag(definition.underlying_type))
+            .ok_or_else(|| format!("host enum `{logical_type}` has no enum metadata"))?,
+    };
     if transport_tag != expected_tag {
         return Err(format!(
             "host type `{logical_type}` requires transport tag {expected_tag}, found {transport_tag}"
         ));
     }
     Ok(Type::named(logical_type))
+}
+
+fn logical_host_type(contract: &HostContract, name: &str) -> Result<LogicalHostType, String> {
+    let declaration = contract
+        .host_type(name)
+        .ok_or_else(|| format!("host type `{name}` is not declared"))?;
+    Ok(LogicalHostType {
+        name: name.to_owned(),
+        base_types: contract.type_lineage(name)?,
+        transport: declaration.transport,
+        value_layout: declaration.value_layout,
+    })
 }
 
 fn portable_tag_from_type(
@@ -696,24 +937,57 @@ fn portable_tag_from_type(
     match ty {
         Type::Unit if allow_unit => Ok(RILS_VALUE_UNIT),
         Type::Bool => Ok(RILS_VALUE_BOOL),
+        Type::Integer(IntegerType::I8) => Ok(RILS_VALUE_I8),
+        Type::Integer(IntegerType::I16) => Ok(RILS_VALUE_I16),
         Type::Integer(IntegerType::I32) => Ok(RILS_VALUE_I32),
         Type::Integer(IntegerType::I64) => Ok(RILS_VALUE_I64),
+        Type::Integer(IntegerType::I128) => Ok(RILS_VALUE_I128),
+        Type::Integer(IntegerType::Isize) => Ok(RILS_VALUE_ISIZE),
+        Type::Integer(IntegerType::U8) => Ok(RILS_VALUE_U8),
+        Type::Integer(IntegerType::U16) => Ok(RILS_VALUE_U16),
         Type::Integer(IntegerType::U32) => Ok(RILS_VALUE_U32),
         Type::Integer(IntegerType::U64) => Ok(RILS_VALUE_U64),
+        Type::Integer(IntegerType::U128) => Ok(RILS_VALUE_U128),
+        Type::Integer(IntegerType::Usize) => Ok(RILS_VALUE_USIZE),
         Type::Float(FloatType::F32) => Ok(RILS_VALUE_F32),
         Type::Float(FloatType::F64) => Ok(RILS_VALUE_F64),
+        Type::Char => Ok(RILS_VALUE_CHAR),
+        Type::String => Ok(RILS_VALUE_STRING),
         Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => {
             Ok(RILS_VALUE_HOST_HANDLE)
         }
         Type::Named { name, arguments } if arguments.is_empty() => contract
             .host_type(name)
             .ok_or_else(|| format!("host manifest type `{name}` is not declared"))
-            .and_then(|declaration| {
-                portable_tag_from_type(contract, &declaration.transport.as_type(), allow_unit)
+            .map(|declaration| match declaration.transport {
+                HostTypeTransport::HostHandle => RILS_VALUE_HOST_HANDLE,
+                HostTypeTransport::InlineValue => RILS_VALUE_INLINE_VALUE,
+                HostTypeTransport::Enum => declaration
+                    .enum_definition
+                    .as_ref()
+                    .map(|definition| portable_integer_tag(definition.underlying_type))
+                    .expect("validated host enum declarations have metadata"),
             }),
         _ => Err(format!(
             "host manifest type `{ty}` is not supported by the current C dispatcher ABI"
         )),
+    }
+}
+
+fn portable_integer_tag(integer: IntegerType) -> u32 {
+    match integer {
+        IntegerType::I8 => RILS_VALUE_I8,
+        IntegerType::I16 => RILS_VALUE_I16,
+        IntegerType::I32 => RILS_VALUE_I32,
+        IntegerType::I64 => RILS_VALUE_I64,
+        IntegerType::I128 => RILS_VALUE_I128,
+        IntegerType::Isize => RILS_VALUE_ISIZE,
+        IntegerType::U8 => RILS_VALUE_U8,
+        IntegerType::U16 => RILS_VALUE_U16,
+        IntegerType::U32 => RILS_VALUE_U32,
+        IntegerType::U64 => RILS_VALUE_U64,
+        IntegerType::U128 => RILS_VALUE_U128,
+        IntegerType::Usize => RILS_VALUE_USIZE,
     }
 }
 
@@ -754,15 +1028,107 @@ fn copy_callback_error(error: RilsSlice) -> String {
     )
 }
 
-fn invoke_host_dispatcher(
+fn to_ffi_host_argument(
+    value: &Value,
+    expected: &Type,
+    contract: &HostContract,
+) -> Result<RilsValue, i32> {
+    if let Type::Named { name, arguments } = expected
+        && arguments.is_empty()
+        && let Some(definition) = contract
+            .host_type(name)
+            .and_then(|declaration| declaration.enum_definition.as_ref())
+    {
+        let raw = rils::host_enum_raw(value, name, definition)
+            .map_err(|message| fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default()))?;
+        return Ok(enum_raw_to_ffi(raw, definition.underlying_type));
+    }
+    to_ffi_value(value.clone(), "")
+}
+
+fn enum_raw_to_ffi(raw: u128, underlying: IntegerType) -> RilsValue {
+    let (tag, low, high) = match underlying {
+        IntegerType::I8 => (RILS_VALUE_I8, (raw as u8 as i8 as i64) as u64, 0),
+        IntegerType::I16 => (RILS_VALUE_I16, (raw as u16 as i16 as i64) as u64, 0),
+        IntegerType::I32 => (RILS_VALUE_I32, (raw as u32 as i32 as i64) as u64, 0),
+        IntegerType::I64 => (RILS_VALUE_I64, raw as u64, 0),
+        IntegerType::I128 => (RILS_VALUE_I128, raw as u64, (raw >> 64) as u64),
+        IntegerType::Isize => (RILS_VALUE_ISIZE, (raw as usize as isize as i64) as u64, 0),
+        IntegerType::U8 => (RILS_VALUE_U8, raw as u8 as u64, 0),
+        IntegerType::U16 => (RILS_VALUE_U16, raw as u16 as u64, 0),
+        IntegerType::U32 => (RILS_VALUE_U32, raw as u32 as u64, 0),
+        IntegerType::U64 => (RILS_VALUE_U64, raw as u64, 0),
+        IntegerType::U128 => (RILS_VALUE_U128, raw as u64, (raw >> 64) as u64),
+        IntegerType::Usize => (RILS_VALUE_USIZE, raw as usize as u64, 0),
+    };
+    RilsValue {
+        tag,
+        reserved: 0,
+        low,
+        high,
+    }
+}
+
+fn from_ffi_host_enum(
+    value: RilsValue,
+    type_name: &str,
+    definition: &rils::HostEnumDefinition,
+) -> Result<Value, i32> {
+    let expected_tag = portable_integer_tag(definition.underlying_type);
+    if value.tag != expected_tag {
+        return Err(fail(
+            RILS_STATUS_INVALID_ARGUMENT,
+            format!(
+                "host enum `{type_name}` requires value tag {expected_tag}, found {}",
+                value.tag
+            ),
+            "",
+            Span::default(),
+        ));
+    }
+    let integer = from_ffi_value(value, None)?;
+    let raw = match integer {
+        Value::I8(value) => value as u8 as u128,
+        Value::I16(value) => value as u16 as u128,
+        Value::I32(value) => value as u32 as u128,
+        Value::I64(value) => value as u64 as u128,
+        Value::I128(value) => value as u128,
+        Value::Isize(value) => value as usize as u128,
+        Value::U8(value) => u128::from(value),
+        Value::U16(value) => u128::from(value),
+        Value::U32(value) => u128::from(value),
+        Value::U64(value) => u128::from(value),
+        Value::U128(value) => value,
+        Value::Usize(value) => value as u128,
+        _ => unreachable!("host enum transport tag was checked as an integer"),
+    };
+    rils::host_enum_value(type_name, definition, raw)
+        .map_err(|message| fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default()))
+}
+
+struct HostDispatcherInvocation<'a> {
     dispatcher: RilsHostDispatcher,
     user_data: *mut c_void,
     function_id: u64,
-    function_name: &str,
-    signature: &FunctionSignature,
-    logical_return_type: Option<&(String, HashSet<String>)>,
+    function_name: &'a str,
+    signature: &'a FunctionSignature,
+    contract: &'a HostContract,
+    logical_return_type: Option<&'a LogicalHostType>,
+}
+
+fn invoke_host_dispatcher(
+    invocation: HostDispatcherInvocation<'_>,
     arguments: &[Value],
 ) -> Result<Value, String> {
+    let HostDispatcherInvocation {
+        dispatcher,
+        user_data,
+        function_id,
+        function_name,
+        signature,
+        contract,
+        logical_return_type,
+    } = invocation;
     let parameters = signature
         .parameters
         .as_ref()
@@ -782,11 +1148,19 @@ fn invoke_host_dispatcher(
             ));
         }
     }
-    let encoded = arguments
-        .iter()
-        .cloned()
-        .map(|value| to_ffi_value(value, "").map_err(|_| current_error_message()))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut encoded = Vec::with_capacity(arguments.len());
+    for (value, parameter) in arguments.iter().zip(parameters) {
+        match to_ffi_host_argument(value, parameter, contract) {
+            Ok(value) => encoded.push(value),
+            Err(_) => {
+                for value in encoded {
+                    discard_ffi_string(value);
+                }
+                return Err(current_error_message());
+            }
+        }
+    }
+    let _encoded_string_guard = FfiStringInputGuard(&encoded);
     let mut result = RilsValue::default();
     let mut error = RilsSlice::default();
     let _callback_guard = HostCallbackGuard::enter()?;
@@ -803,13 +1177,23 @@ fn invoke_host_dispatcher(
         )
     };
     if status != RILS_STATUS_OK {
+        let _result_string_guard = FfiStringValueGuard(result);
         return Err(format!(
             "host function `{function_name}` failed with status {status}: {}",
             copy_callback_error(error)
         ));
     }
-    let result =
-        from_ffi_value(result, logical_return_type).map_err(|_| current_error_message())?;
+    let _result_string_guard = FfiStringValueGuard(result);
+    let result = if let Type::Named { name, arguments } = &signature.return_type
+        && arguments.is_empty()
+        && let Some(definition) = contract
+            .host_type(name)
+            .and_then(|declaration| declaration.enum_definition.as_ref())
+    {
+        from_ffi_host_enum(result, name, definition).map_err(|_| current_error_message())?
+    } else {
+        from_ffi_value(result, logical_return_type).map_err(|_| current_error_message())?
+    };
     signature.return_type.constrain(&result).ok_or_else(|| {
         format!(
             "host function `{function_name}` returned `{}`, expected `{}`",
@@ -822,8 +1206,20 @@ fn invoke_host_dispatcher(
 fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
     let mut host = BytecodeHost::standard();
     for capability in &runtime.allowed_capabilities {
-        host.allow_capability(capability.clone());
+        if BytecodeHost::standard_library_capabilities().contains(&capability.as_str()) {
+            host.enable_standard_library_capability(capability)?;
+        } else {
+            host.allow_capability(capability.clone());
+        }
     }
+    if runtime.allowed_capabilities.contains("std::io") {
+        configure_output_handler(&mut host, runtime.output_callback, runtime.output_user_data)?;
+    }
+    configure_host_value_formatter(
+        &mut host,
+        runtime.host_value_formatter,
+        runtime.host_value_formatter_user_data,
+    );
     let dispatcher = runtime.dispatcher;
     for function in runtime.host_contract.functions() {
         let dispatcher = dispatcher.ok_or_else(|| {
@@ -835,11 +1231,16 @@ fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
         let signature = function.signature.clone();
         let callback_name = function_name.clone();
         let callback_signature = signature.clone();
+        let callback_contract = runtime.host_contract.clone();
         let logical_return_type = match &signature.return_type {
             Type::Named { name, arguments }
-                if arguments.is_empty() && runtime.host_contract.host_type(name).is_some() =>
+                if arguments.is_empty()
+                    && runtime
+                        .host_contract
+                        .host_type(name)
+                        .is_some_and(|declaration| declaration.enum_definition.is_none()) =>
             {
-                Some((name.clone(), runtime.host_contract.type_lineage(name)?))
+                Some(logical_host_type(&runtime.host_contract, name)?)
             }
             _ => None,
         };
@@ -849,12 +1250,15 @@ fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
             function.capability.clone(),
             move |arguments| {
                 invoke_host_dispatcher(
-                    dispatcher,
-                    user_data,
-                    function_id,
-                    &callback_name,
-                    &callback_signature,
-                    logical_return_type.as_ref(),
+                    HostDispatcherInvocation {
+                        dispatcher,
+                        user_data,
+                        function_id,
+                        function_name: &callback_name,
+                        signature: &callback_signature,
+                        contract: &callback_contract,
+                        logical_return_type: logical_return_type.as_ref(),
+                    },
                     arguments,
                 )
             },
@@ -863,17 +1267,126 @@ fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
     Ok(host)
 }
 
+fn configure_output_handler(
+    host: &mut BytecodeHost,
+    callback: Option<RilsOutputCallback>,
+    user_data: *mut c_void,
+) -> Result<(), String> {
+    if let Some(callback) = callback {
+        let user_data = user_data as usize;
+        host.set_output_handler(move |text, newline| {
+            let slice = RilsSlice {
+                data: text.as_ptr(),
+                length: text.len(),
+            };
+            // SAFETY: The callback and user data remain owned by the embedding runtime;
+            // the UTF-8 slice is readable only for this synchronous callback.
+            unsafe { callback(user_data as *mut c_void, slice, u32::from(newline)) };
+            Ok(())
+        })
+    } else {
+        host.enable_standard_io()
+    }
+}
+
+fn configure_host_value_formatter(
+    host: &mut BytecodeHost,
+    callback: Option<RilsHostValueFormatCallback>,
+    user_data: *mut c_void,
+) {
+    let Some(callback) = callback else {
+        host.reset_host_value_formatter();
+        return;
+    };
+    let user_data = user_data as usize;
+    host.set_host_value_formatter(move |value, spec| {
+        let Value::HostObject(object) = value else {
+            return Ok(None);
+        };
+        let native = if let Some(handle) = rils::opaque_host_handle(value) {
+            RilsValue {
+                tag: RILS_VALUE_HOST_HANDLE,
+                low: u64::from_le_bytes(handle.object_id.to_le_bytes()),
+                high: (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
+                ..RilsValue::default()
+            }
+        } else if let Some(inline) = rils::inline_host_value(value) {
+            RilsValue {
+                tag: RILS_VALUE_INLINE_VALUE,
+                low: u64::from_le_bytes(inline.bytes[..8].try_into().expect("fixed payload")),
+                high: u64::from_le_bytes(inline.bytes[8..].try_into().expect("fixed payload")),
+                ..RilsValue::default()
+            }
+        } else {
+            return Ok(None);
+        };
+        let logical_type = RilsSlice {
+            data: object.type_definition.name.as_ptr(),
+            length: object.type_definition.name.len(),
+        };
+        let kind = match spec.kind {
+            rils::HostFormatKind::Display => 0,
+            rils::HostFormatKind::Debug => 1,
+        };
+        let precision = spec.precision.unwrap_or(usize::MAX);
+        // SAFETY: The embedding host owns the callback and user data. All inputs are call-scoped.
+        let required = unsafe {
+            callback(
+                user_data as *mut c_void,
+                logical_type,
+                native,
+                kind,
+                u32::from(spec.alternate),
+                precision,
+                ptr::null_mut(),
+                0,
+            )
+        };
+        if required == usize::MAX {
+            return Ok(None);
+        }
+        let mut buffer = vec![0u8; required];
+        // SAFETY: `buffer` is writable for its reported capacity during this synchronous call.
+        let written = unsafe {
+            callback(
+                user_data as *mut c_void,
+                logical_type,
+                native,
+                kind,
+                u32::from(spec.alternate),
+                precision,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+            )
+        };
+        if written == usize::MAX {
+            return Ok(None);
+        }
+        if written > buffer.len() {
+            return Err(
+                "host value formatter output changed between buffer query and write".into(),
+            );
+        }
+        buffer.truncate(written);
+        String::from_utf8(buffer)
+            .map(Some)
+            .map_err(|_| "host value formatter returned invalid UTF-8".into())
+    });
+}
+
 mod error_api;
 mod instance_api;
 mod module_api;
 mod runtime_api;
 mod script_value_api;
+mod string_api;
 
 pub use error_api::*;
 pub use instance_api::*;
 pub use module_api::*;
 pub use runtime_api::*;
 pub use script_value_api::*;
+pub use string_api::*;
 
 #[cfg(test)]
 mod tests;

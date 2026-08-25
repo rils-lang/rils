@@ -7,10 +7,12 @@ use rils_compiler::{
     HostCallKind, HostContract, HostReceiver, HostThreadAffinity, HostTypeTransport,
 };
 use rils_frontend::FunctionSignature;
+use rils_frontend::analysis::analyze_with_source_id_and_external_exports_and_host_types;
 use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    path::Path,
 };
 
 #[test]
@@ -83,6 +85,105 @@ fn provides_signature_help_for_host_functions() {
 }
 
 #[test]
+fn provides_all_host_overloads_in_signature_help() {
+    let mut contract = HostContract::new();
+    contract
+        .register_value_type(
+            "unity_engine::Vector3",
+            rils_compiler::HostValueLayout::F32x3,
+        )
+        .unwrap();
+    contract
+        .register_function(
+            110,
+            "unity_engine::Vector3::new",
+            FunctionSignature::fixed(
+                vec![Type::Float(rils_frontend::FloatType::F32); 2],
+                Type::named("unity_engine::Vector3"),
+            ),
+            "unity.math",
+        )
+        .unwrap();
+    contract
+        .register_function(
+            111,
+            "unity_engine::Vector3::new",
+            FunctionSignature::fixed(
+                vec![Type::Float(rils_frontend::FloatType::F32); 3],
+                Type::named("unity_engine::Vector3"),
+            ),
+            "unity.math",
+        )
+        .unwrap();
+    let host_functions = contract.signatures();
+    let text = "unity_engine::Vector3::new(1f32, ";
+    let uri = "file:///host-overloads.rils".to_owned();
+    let server = test_server(&uri, text, host_functions, contract);
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": text.len() }
+        }))
+        .unwrap();
+    assert_eq!(help["signatures"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        help["signatures"][0]["label"],
+        "fn new(f32, f32) -> unity_engine::Vector3"
+    );
+    assert_eq!(
+        help["signatures"][1]["label"],
+        "fn new(f32, f32, f32) -> unity_engine::Vector3"
+    );
+}
+
+#[test]
+fn provides_overloaded_host_receiver_signatures_without_the_receiver_parameter() {
+    let mut contract = HostContract::new();
+    contract
+        .register_type(
+            "unity_engine::Object",
+            None::<&str>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    for (id, parameter) in [
+        (120, Type::Integer(rils_frontend::IntegerType::I32)),
+        (121, Type::Float(rils_frontend::FloatType::F32)),
+    ] {
+        contract
+            .register_function_with_options_and_receiver(
+                id,
+                "unity_engine::object::set_value",
+                FunctionSignature::fixed(
+                    vec![Type::named("unity_engine::Object"), parameter],
+                    Type::Unit,
+                ),
+                "unity.object",
+                HostCallKind::Direct,
+                HostThreadAffinity::MainThread,
+                Some(HostReceiver::RefMut),
+            )
+            .unwrap();
+    }
+    let host_functions = contract.signatures();
+    let text = "fn set(mut object: unity_engine::Object) { object.set_value(1i32); }";
+    let cursor = text.find("set_value(").unwrap() + "set_value(".len();
+    let uri = "file:///host-method-overloads.rils".to_owned();
+    let server = test_server(&uri, text, host_functions, contract);
+
+    let help = server
+        .signature_help(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": cursor }
+        }))
+        .unwrap();
+    assert_eq!(help["signatures"].as_array().unwrap().len(), 2);
+    assert_eq!(help["signatures"][0]["label"], "fn set_value(f32) -> ()");
+    assert_eq!(help["signatures"][1]["label"], "fn set_value(i32) -> ()");
+}
+
+#[test]
 fn provides_signature_help_for_builtin_methods() {
     let text = "let text = \"alpha\";\ntext.replace(\"a\", ";
     let uri = "file:///builtin-signature.rils".to_owned();
@@ -151,19 +252,157 @@ fn test_server(
         Document {
             source_id: SourceId::UNKNOWN,
             text: text.into(),
-            analysis: rils_frontend::analysis::analyze_with_host_functions(text, &host_functions),
+            analysis: rils_compiler::analyze_with_host_and_source_id_and_external_exports(
+                text,
+                SourceId::UNKNOWN,
+                &host_contract,
+                &HashMap::new(),
+            ),
         },
     );
+    let host_types = host_contract
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
     Server {
         connection,
         documents,
         workspace_documents: HashSet::new(),
         host_contract,
         host_functions,
-        host_types: HashSet::new(),
+        host_types,
         projects: Vec::new(),
         next_source_id: 1,
     }
+}
+
+#[test]
+fn completes_manifest_enum_variants() {
+    let mut contract = HostContract::new();
+    contract
+        .register_enum_type(
+            "unity_engine::CameraType",
+            rils_frontend::IntegerType::I32,
+            false,
+            [("Game".to_owned(), 1), ("SceneView".to_owned(), 2)],
+        )
+        .unwrap();
+    let text = "unity_engine::CameraType::";
+    let uri = "file:///host-enum-completion.rils".to_owned();
+    let server = test_server(&uri, text, contract.signatures(), contract);
+
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": text.len() }
+        }))
+        .unwrap();
+    assert!(
+        items.as_array().is_some_and(|items| {
+            items.iter().any(|item| completion_named(item, "Game"))
+                && items.iter().any(|item| completion_named(item, "SceneView"))
+        }),
+        "{items}"
+    );
+}
+
+#[test]
+fn host_enum_completion_describes_flags_and_script_methods() {
+    let mut contract = HostContract::new();
+    contract
+        .register_enum_type(
+            "unity_engine::HideFlags",
+            rils_frontend::IntegerType::I32,
+            true,
+            [("None".to_owned(), 0), ("HideInHierarchy".to_owned(), 1)],
+        )
+        .unwrap();
+    let text = r#"use unity_engine::HideFlags;
+impl HideFlags {
+    fn is_visible(&self) -> bool { true }
+}
+let flags = HideFlags::None;
+flags.is"#;
+    let uri = "file:///host-flags-completion.rils".to_owned();
+    let server = test_server(&uri, text, contract.signatures(), contract);
+
+    let methods = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 5, "character": 8 }
+        }))
+        .unwrap();
+    assert!(
+        methods.as_array().is_some_and(|items| {
+            items.iter().any(|item| {
+                completion_named(item, "is_visible")
+                    && item["detail"] == "fn is_visible(&self) -> bool"
+            })
+        }),
+        "{methods}"
+    );
+
+    let variants = server
+        .completion(&json!({
+            "textDocument": { "uri": "file:///host-flags-completion.rils" },
+            "position": { "line": 4, "character": 23 }
+        }))
+        .unwrap();
+    assert!(
+        variants
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| {
+                completion_named(item, "HideInHierarchy")
+                    && item["documentation"]["value"]
+                        .as_str()
+                        .is_some_and(|value| value.contains("BitFlags"))
+            })),
+        "{variants}"
+    );
+}
+
+#[test]
+fn hover_describes_host_enums_and_variants() {
+    let mut contract = HostContract::new();
+    contract
+        .register_enum_type(
+            "unity_engine::HideFlags",
+            rils_frontend::IntegerType::I32,
+            true,
+            [("None".to_owned(), 0), ("HideInHierarchy".to_owned(), 1)],
+        )
+        .unwrap();
+    let text = "use unity_engine::HideFlags;\nlet flags = HideFlags::HideInHierarchy;";
+    let uri = "file:///host-flags-hover.rils".to_owned();
+    let server = test_server(&uri, text, contract.signatures(), contract);
+
+    let type_offset = text.find("HideFlags").unwrap();
+    let [line, character] = position(text, type_offset);
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some(
+            "`unity_engine`\n\n```rils\n// host enum: i32, implements BitFlags\nenum HideFlags {\n    HideInHierarchy,\n    None,\n}\n```"
+        )
+    );
+
+    let variant_offset = text.rfind("HideInHierarchy").unwrap();
+    let [line, character] = position(text, variant_offset);
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": "file:///host-flags-hover.rils" },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    assert_eq!(
+        hover["contents"]["value"].as_str(),
+        Some("`unity_engine::HideFlags`\n\n```rils\nvariant HideFlags::HideInHierarchy = 0x1\n```")
+    );
 }
 
 fn completion_named(item: &serde_json::Value, name: &str) -> bool {
@@ -205,7 +444,7 @@ fn hover_shows_expanded_type_aliases() {
         hover
             .pointer("/contents/value")
             .and_then(|value| value.as_str()),
-        Some("```rils\ncrate\n```\n\n```rils\ntype IntBox = Box<i32>\n```")
+        Some("`crate`\n\n```rils\ntype IntBox = Box<i32>\n```")
     );
 }
 
@@ -232,6 +471,226 @@ fn hover_keeps_builtin_types_compact() {
 }
 
 #[test]
+fn hover_describes_manifest_host_types() {
+    let text = "let value: unity_engine::GameObject = value;";
+    let uri = "file:///host-type-hover.rils".to_owned();
+    let mut contract = HostContract::new();
+    contract
+        .register_type(
+            "unity_engine::Object",
+            None::<&str>,
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    contract
+        .register_type(
+            "unity_engine::GameObject",
+            Some("unity_engine::Object"),
+            HostTypeTransport::HostHandle,
+        )
+        .unwrap();
+    let host_types = contract
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect::<HashSet<_>>();
+    let (connection, _client) = Connection::memory();
+    let mut documents = HashMap::new();
+    documents.insert(
+        uri.clone(),
+        Document {
+            source_id: SourceId::UNKNOWN,
+            text: text.into(),
+            analysis: analyze_with_source_id_and_external_exports_and_host_types(
+                text,
+                SourceId::UNKNOWN,
+                &HashMap::new(),
+                &host_types,
+                &HashMap::new(),
+            ),
+        },
+    );
+    let server = Server {
+        connection,
+        documents,
+        workspace_documents: HashSet::new(),
+        host_contract: contract,
+        host_functions: HashMap::new(),
+        host_types,
+        projects: Vec::new(),
+        next_source_id: 1,
+    };
+    let [line, character] = position(text, text.find("GameObject").unwrap());
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    assert!(
+        hover["contents"]["value"]
+            .as_str()
+            .is_some_and(|value| { value.contains("struct GameObject") })
+    );
+}
+
+#[test]
+fn host_function_hover_groups_overloads_by_qualified_path() {
+    let mut contract = HostContract::new();
+    for (id, name, parameter) in [
+        (130, "alpha::load", Type::I32),
+        (
+            131,
+            "alpha::load",
+            Type::Float(rils_frontend::FloatType::F32),
+        ),
+        (132, "beta::load", Type::Bool),
+    ] {
+        contract
+            .register_function(
+                id,
+                name,
+                FunctionSignature::fixed(vec![parameter], Type::Unit),
+                "test.host",
+            )
+            .unwrap();
+    }
+    let text = "alpha::load(1i32);";
+    let uri = "file:///qualified-host-overload-hover.rils".to_owned();
+    let server = test_server(&uri, text, contract.signatures(), contract);
+    let [line, character] = position(text, text.find("load").unwrap());
+
+    let hover = server
+        .hover(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    let value = hover["contents"]["value"].as_str().unwrap();
+    assert!(value.contains("fn alpha::load(i32) -> ()"), "{value}");
+    assert!(value.contains("fn alpha::load(f32) -> ()"), "{value}");
+    assert!(!value.contains("beta::load"), "{value}");
+}
+
+#[test]
+fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(
+        root.join("integrations/RilsForUnity/Assets/RilsTests/Lifecycle/Lifecycle.rils"),
+    )
+    .unwrap();
+    let bytes = fs::read(
+        root.join("integrations/RilsForUnity/.rils/manifest/unity/UnityEngine_CoreModule.rilhm"),
+    )
+    .unwrap();
+    let contract = HostContract::from_manifest_bytes(&bytes).unwrap();
+    let host_functions = contract.signatures();
+    let host_types = contract
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        host_functions
+            .get("unity_engine::GameObject::transform")
+            .map(|signature| signature.return_type.clone()),
+        Some(Type::named("unity_engine::Transform"))
+    );
+    let analysis = analyze_with_source_id_and_external_exports_and_host_types(
+        &source,
+        SourceId::UNKNOWN,
+        &host_functions,
+        &host_types,
+        &HashMap::new(),
+    )
+    .unwrap();
+    let transform = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "transform")
+        .unwrap();
+    assert_eq!(
+        transform.inferred_type,
+        Some(Type::named("unity_engine::Transform"))
+    );
+    let expected = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "expected")
+        .unwrap();
+    assert_eq!(
+        expected.inferred_type,
+        Some(Type::named("unity_engine::Vector3"))
+    );
+    assert!(analysis.symbols.iter().any(|symbol| {
+        symbol.name == "Vector2"
+            && symbol.kind == rils_frontend::analysis::SymbolKind::Type
+            && symbol.inferred_type == Some(Type::named("unity_engine::Vector2"))
+    }));
+}
+
+#[test]
+fn host_binding_fixtures_analyze_against_generated_unity_manifest() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let bytes = fs::read(
+        root.join("integrations/RilsForUnity/.rils/manifest/unity/UnityEngine_CoreModule.rilhm"),
+    )
+    .unwrap();
+    let contract = HostContract::from_manifest_bytes(&bytes).unwrap();
+
+    for fixture in ["UnityStrings.rils", "UnityEnums.rils", "UnityFlags.rils"] {
+        let source = fs::read_to_string(
+            root.join("integrations/RilsForUnity/Assets/RilsTests/HostBindings")
+                .join(fixture),
+        )
+        .unwrap();
+        let analysis = rils_compiler::analyze_with_host_and_source_id_and_external_exports(
+            &source,
+            SourceId::UNKNOWN,
+            &contract,
+            &HashMap::new(),
+        );
+        assert!(analysis.is_ok(), "{fixture}: {analysis:?}");
+        let analysis = analysis.unwrap();
+        assert!(
+            analysis.diagnostics.iter().all(|diagnostic| {
+                diagnostic.severity != rils_frontend::analysis::DiagnosticSeverity::Error
+            }),
+            "{fixture} contains analyzer errors"
+        );
+        assert!(
+            analysis.symbols.iter().all(|symbol| {
+                symbol.span.start < symbol.span.end && symbol.span.end <= source.len()
+            }),
+            "{fixture} contains a synthetic or out-of-range editor symbol"
+        );
+        for symbol in analysis
+            .symbols
+            .iter()
+            .filter(|symbol| symbol.kind == rils_frontend::analysis::SymbolKind::Variant)
+        {
+            assert_eq!(
+                &source[symbol.span.start..symbol.span.end],
+                symbol.name,
+                "{fixture} variant token points at unrelated source"
+            );
+        }
+        if fixture == "UnityFlags.rils" {
+            assert_eq!(
+                analysis
+                    .symbols
+                    .iter()
+                    .filter(|symbol| {
+                        symbol.kind == rils_frontend::analysis::SymbolKind::Variant
+                            && symbol.name == "HideInHierarchy"
+                    })
+                    .count(),
+                2,
+                "expression and pattern variants must receive the same semantic classification"
+            );
+        }
+    }
+}
+
+#[test]
 fn hover_shows_enum_record_field_variant_context() {
     let text = "enum Test {\n    Foo { x: i32, y: i32 },\n}";
     let uri = "file:///enum-record-field-hover.rils".to_owned();
@@ -246,7 +705,7 @@ fn hover_shows_enum_record_field_variant_context() {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nTest::Foo\n```\n\n```rils\nx: i32\n```")
+        Some("`Test::Foo`\n\n```rils\nx: i32\n```")
     );
 }
 
@@ -270,7 +729,7 @@ fn hover_preserves_public_declaration_keywords() {
             .unwrap();
         assert_eq!(
             hover["contents"]["value"].as_str(),
-            Some(format!("```rils\ncrate\n```\n\n```rils\n{detail}\n```").as_str())
+            Some(format!("`crate`\n\n```rils\n{detail}\n```").as_str())
         );
     }
 }
@@ -323,7 +782,7 @@ impl Counter {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\ncrate\n```\n\n```rils\nstruct Counter {\n    value: i32,\n}\n```")
+        Some("`crate`\n\n```rils\nstruct Counter {\n    value: i32,\n}\n```")
     );
     let definition = server
         .definition(&json!({
@@ -346,7 +805,7 @@ impl Counter {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nCounter\n```\n\n```rils\nfn new(value: i32) -> Self\n```")
+        Some("`Counter`\n\n```rils\nfn new(value: i32) -> Self\n```")
     );
     let definition = server
         .definition(&json!({
@@ -1022,9 +1481,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
             .unwrap();
         assert_eq!(
             hover["contents"]["value"].as_str(),
-            Some(
-                "```rils\nunity_game::math\n```\n\n```rils\npub struct Sum {\n    value: i32,\n}\n```"
-            )
+            Some("`crate::math`\n\n```rils\npub struct Sum {\n    value: i32,\n}\n```")
         );
     }
 
@@ -1040,9 +1497,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some(
-            "```rils\nunity_game::math\n```\n\n```rils\npub fn sum(left: i32, right: i32) -> Sum\n```"
-        )
+        Some("`crate::math`\n\n```rils\npub fn sum(left: i32, right: i32) -> Sum\n```")
     );
     let use_hover = server
         .hover(&json!({
@@ -1073,7 +1528,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         .unwrap();
     assert_eq!(
         field_hover["contents"]["value"].as_str(),
-        Some("```rils\nunity_game::math::Sum\n```\n\n```rils\nvalue: i32\n```")
+        Some("`crate::math::Sum`\n\n```rils\nvalue: i32\n```")
     );
     let field_definition = server
         .definition(&json!({
@@ -1255,7 +1710,7 @@ fn enum_variant_paths_go_to_variant_declarations() {
         .unwrap();
     assert_eq!(
         pattern_type_hover["contents"]["value"].as_str(),
-        Some("```rils\ncrate\n```\n\n```rils\nenum Priority {\n    Low,\n    High,\n}\n```")
+        Some("`crate`\n\n```rils\nenum Priority {\n    Low,\n    High,\n}\n```")
     );
     let pattern_type_definition = server
         .definition(&json!({
@@ -1279,7 +1734,7 @@ fn enum_variant_paths_go_to_variant_declarations() {
         .unwrap();
     assert_eq!(
         variant_hover["contents"]["value"].as_str(),
-        Some("```rils\nPriority\n```\n\n```rils\nPriority::Low\n```")
+        Some("`Priority`\n\n```rils\nPriority::Low\n```")
     );
 }
 
@@ -1344,9 +1799,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
         .unwrap();
     assert_eq!(
         board_hover["contents"]["value"].as_str(),
-        Some(
-            "```rils\ntask_board::kanban\n```\n\n```rils\npub struct Board {\n    tasks: Vec<Task>,\n}\n```"
-        )
+        Some("`crate::kanban`\n\n```rils\npub struct Board {\n    tasks: Vec<Task>,\n}\n```")
     );
 
     for (line, character, expected) in [(18, 31, "Vec<Task>"), (37, 13, "i32")] {
@@ -1360,7 +1813,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
             hover["contents"]["value"].as_str(),
             Some(
                 format!(
-                    "```rils\ntask_board::kanban::{}\n```\n\n```rils\n{}: {expected}\n```",
+                    "`crate::kanban::{}`\n\n```rils\n{}: {expected}\n```",
                     if line == 18 { "Board" } else { "Summary" },
                     if line == 18 { "tasks" } else { "active" },
                 )

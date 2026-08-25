@@ -6,12 +6,13 @@ use std::{
 };
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
-use rils_compiler::{HOST_CONTRACT_ABI_VERSION, HostContract};
+use rils_compiler::{
+    HOST_CONTRACT_ABI_VERSION, HostContract, analyze_with_host_and_source_id_and_external_exports,
+};
 use rils_frontend::{
     FrontendError, FunctionSignature, SourceId, Span, Type,
     analysis::{
         DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind, SymbolOccurrence,
-        analyze_with_source_id_and_external_exports_and_host_types,
     },
     ast::Stmt,
     lexer::{lex, lex_with_source_id},
@@ -184,11 +185,10 @@ impl Server {
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri);
-        let analysis = analyze_with_source_id_and_external_exports_and_host_types(
+        let analysis = analyze_with_host_and_source_id_and_external_exports(
             &text,
             source_id,
-            &self.host_functions,
-            &self.host_types,
+            &self.host_contract,
             &HashMap::new(),
         );
         self.documents.insert(
@@ -292,11 +292,10 @@ impl Server {
                 uri,
                 Document {
                     source_id,
-                    analysis: analyze_with_source_id_and_external_exports_and_host_types(
+                    analysis: analyze_with_host_and_source_id_and_external_exports(
                         &text,
                         source_id,
-                        &self.host_functions,
-                        &self.host_types,
+                        &self.host_contract,
                         &HashMap::new(),
                     ),
                     text,
@@ -311,11 +310,10 @@ impl Server {
     fn reanalyze_documents(&mut self) {
         let exports = project_index::collect_external_exports(self);
         for document in self.documents.values_mut() {
-            document.analysis = analyze_with_source_id_and_external_exports_and_host_types(
+            document.analysis = analyze_with_host_and_source_id_and_external_exports(
                 &document.text,
                 document.source_id,
-                &self.host_functions,
-                &self.host_types,
+                &self.host_contract,
                 &exports,
             );
         }

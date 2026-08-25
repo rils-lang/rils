@@ -17,7 +17,7 @@ Rils Analyzer 通过 LSP 提供诊断、补全、Hover、定义跳转、引用�
 补全来源包括：
 
 - 共享内建目录中的模块、类型、构造函数、关联项和方法；
-- Host Manifest 中声明的模块与函数；
+- Host Manifest 中声明的模块、类型、enum variant 与函数；
 - 项目模块中的公开函数、类型、trait 和子模块；
 - 任意可解析 receiver 的成员和 Iterator 等 trait 默认方法。
 

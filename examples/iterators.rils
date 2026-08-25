@@ -37,11 +37,11 @@ for value in CountTo { end: 5 } {
     total = total + value;
 }
 
-println!("sum:", total);
+println!("sum: {}", total);
 
 let mut range_total = 0;
 for value in 0..5 {
     range_total = range_total + value;
 }
-println!("range sum:", range_total);
+println!("range sum: {}", range_total);
 total + range_total

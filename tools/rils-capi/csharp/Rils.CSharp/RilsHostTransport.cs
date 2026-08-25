@@ -108,11 +108,13 @@ namespace Rils.CSharp
             RilsHostTransferMode transferMode = RilsHostTransferMode.Copy,
             string? logicalTypeName = null)
         {
-            if (logicalTypeName != null &&
-                (tag != RilsValueTag.HostHandle || transferMode != RilsHostTransferMode.Handle))
+            if (logicalTypeName != null && !(
+                tag == RilsValueTag.HostHandle && transferMode == RilsHostTransferMode.Handle ||
+                tag == RilsValueTag.InlineValue && transferMode == RilsHostTransferMode.Copy ||
+                IsIntegerTag(tag) && transferMode == RilsHostTransferMode.Copy))
             {
                 throw new ArgumentException(
-                    "Named host types must currently lower to handle transport.",
+                    "Named host types must use handle or inline-value transport.",
                     nameof(logicalTypeName));
             }
             Tag = tag;
@@ -122,7 +124,8 @@ namespace Rils.CSharp
 
         public RilsValueTag Tag { get; }
         public RilsHostTransferMode TransferMode { get; }
-        /// The Manifest v2 logical type name. Current named types use HostHandle transport.
+        /// The Manifest v5 logical type name. Named types use HostHandle,
+        /// InlineValue, or a declared enum integer transport.
         public string? LogicalTypeName { get; }
 
         public static RilsHostParameter NamedHandle(string logicalTypeName)
@@ -136,6 +139,44 @@ namespace Rils.CSharp
                 RilsHostTransferMode.Handle,
                 logicalTypeName);
         }
+
+        public static RilsHostParameter NamedValue(string logicalTypeName)
+        {
+            if (string.IsNullOrWhiteSpace(logicalTypeName))
+            {
+                throw new ArgumentException("Logical host type name cannot be empty.", nameof(logicalTypeName));
+            }
+            return new RilsHostParameter(
+                RilsValueTag.InlineValue,
+                RilsHostTransferMode.Copy,
+                logicalTypeName);
+        }
+
+        public static RilsHostParameter NamedEnum(
+            string logicalTypeName,
+            RilsValueTag underlyingTag)
+        {
+            if (string.IsNullOrWhiteSpace(logicalTypeName))
+            {
+                throw new ArgumentException("Logical host enum type name cannot be empty.", nameof(logicalTypeName));
+            }
+            if (!IsIntegerTag(underlyingTag))
+            {
+                throw new ArgumentException("Host enum transport must use an integer tag.", nameof(underlyingTag));
+            }
+            return new RilsHostParameter(
+                underlyingTag,
+                RilsHostTransferMode.Copy,
+                logicalTypeName);
+        }
+
+        private static bool IsIntegerTag(RilsValueTag tag) => tag switch
+        {
+            RilsValueTag.I8 or RilsValueTag.I16 or RilsValueTag.I32 or RilsValueTag.I64 or
+            RilsValueTag.I128 or RilsValueTag.Isize or RilsValueTag.U8 or RilsValueTag.U16 or
+            RilsValueTag.U32 or RilsValueTag.U64 or RilsValueTag.U128 or RilsValueTag.Usize => true,
+            _ => false,
+        };
     }
 
     /// A value crossing from managed code into a Rils call together with its
@@ -170,5 +211,10 @@ namespace Rils.CSharp
             new RilsHostArgument(
                 RilsValue.From(value),
                 RilsHostParameter.NamedHandle(logicalTypeName));
+
+        public static RilsHostArgument NamedValue(RilsInlineValue value, string logicalTypeName) =>
+            new RilsHostArgument(
+                RilsValue.From(value),
+                RilsHostParameter.NamedValue(logicalTypeName));
     }
 }

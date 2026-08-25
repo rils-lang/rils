@@ -22,10 +22,68 @@ use imports::*;
 pub use ir::*;
 use symbols::*;
 
+fn overload_score(host: &HostContract, expected: &[Type], actual: &[Type]) -> Option<usize> {
+    expected
+        .iter()
+        .zip(actual)
+        .try_fold(0usize, |score, (expected, actual)| {
+            if expected == actual {
+                return Some(score);
+            }
+            if matches!(
+                actual,
+                Type::Unknown | Type::IntegerVariable(_) | Type::FloatVariable(_)
+            ) {
+                return Some(score + 100);
+            }
+            match (expected, actual) {
+                (
+                    Type::Named {
+                        name: expected,
+                        arguments: expected_arguments,
+                    },
+                    Type::Named {
+                        name: actual,
+                        arguments: actual_arguments,
+                    },
+                ) if expected_arguments.is_empty()
+                    && actual_arguments.is_empty()
+                    && host.is_type_assignable(expected, actual) =>
+                {
+                    Some(score + host.type_assignment_distance(expected, actual)?)
+                }
+                _ => None,
+            }
+        })
+}
+
+fn format_host_candidates(candidates: &[HostFunctionDeclaration]) -> String {
+    candidates
+        .iter()
+        .map(|candidate| {
+            format!(
+                "  {}({}) -> {}",
+                candidate.name,
+                candidate
+                    .signature
+                    .parameters
+                    .as_ref()
+                    .expect("host signatures are fixed")
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                candidate.signature.return_type
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn collect_host_use_aliases(
     statements: &[Stmt],
     prefix: &mut Vec<String>,
-    functions: &mut HashMap<String, HostFunctionDeclaration>,
+    functions: &mut HashMap<String, Vec<HostFunctionDeclaration>>,
 ) {
     for statement in statements {
         let statement = match statement {
@@ -51,14 +109,14 @@ fn collect_host_use_aliases(
                         }
                         continue;
                     }
-                    let declaration = candidates
+                    let declarations = candidates
                         .iter()
                         .find_map(|candidate| functions.get(candidate))
                         .cloned();
-                    if let Some(declaration) = declaration {
+                    if let Some(declarations) = declarations {
                         functions.insert(
                             qualified_name(prefix, import.binding_name().expect("single import")),
-                            declaration,
+                            declarations,
                         );
                     }
                 }
@@ -92,8 +150,9 @@ struct ProgramLowerer {
     method_names: HashMap<String, Option<MethodInfo>>,
     types: HashMap<String, TypeId>,
     type_definitions: Vec<HirTypeDefinition>,
-    host_functions: HashMap<String, HostFunctionDeclaration>,
-    host_methods: HashMap<String, HostFunctionDeclaration>,
+    host_functions: HashMap<String, Vec<HostFunctionDeclaration>>,
+    host_methods: HashMap<String, Vec<HostFunctionDeclaration>>,
+    host_contract: HostContract,
     expression_types: HashMap<Span, Type>,
 }
 
@@ -179,12 +238,9 @@ impl ProgramLowerer {
             &mut types,
             &public_symbols,
         );
-        let mut host_functions = host
-            .functions()
-            .map(|function| (function.name.clone(), function.clone()))
-            .collect::<HashMap<_, _>>();
+        let mut host_functions = host.function_overloads();
         collect_host_use_aliases(&program.statements, &mut Vec::new(), &mut host_functions);
-        let host_methods = host.method_functions();
+        let host_methods = host.method_function_overloads();
         Ok(Self {
             functions,
             methods,
@@ -193,6 +249,7 @@ impl ProgramLowerer {
             type_definitions,
             host_functions,
             host_methods,
+            host_contract: host.clone(),
             expression_types: expression_types.clone(),
         })
     }
@@ -228,6 +285,7 @@ impl ProgramLowerer {
                 &self.types,
                 &self.host_functions,
                 &self.host_methods,
+                &self.host_contract,
                 &self.expression_types,
                 generated.clone(),
             )
@@ -262,6 +320,7 @@ impl ProgramLowerer {
                     &self.types,
                     &self.host_functions,
                     &self.host_methods,
+                    &self.host_contract,
                     &self.expression_types,
                     generated.clone(),
                 )
@@ -293,8 +352,9 @@ struct FunctionLowerer<'a> {
     methods: &'a HashMap<String, MethodInfo>,
     method_names: &'a HashMap<String, Option<MethodInfo>>,
     types: &'a HashMap<String, TypeId>,
-    host_functions: &'a HashMap<String, HostFunctionDeclaration>,
-    host_methods: &'a HashMap<String, HostFunctionDeclaration>,
+    host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
+    host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
+    host_contract: &'a HostContract,
     expression_types: &'a HashMap<Span, Type>,
     namespace: String,
     self_type: Option<String>,
@@ -316,8 +376,9 @@ impl<'a> FunctionLowerer<'a> {
         methods: &'a HashMap<String, MethodInfo>,
         method_names: &'a HashMap<String, Option<MethodInfo>>,
         types: &'a HashMap<String, TypeId>,
-        host_functions: &'a HashMap<String, HostFunctionDeclaration>,
-        host_methods: &'a HashMap<String, HostFunctionDeclaration>,
+        host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
+        host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
+        host_contract: &'a HostContract,
         expression_types: &'a HashMap<Span, Type>,
         generated: GeneratedFunctions,
     ) -> Self {
@@ -328,6 +389,7 @@ impl<'a> FunctionLowerer<'a> {
             types,
             host_functions,
             host_methods,
+            host_contract,
             expression_types,
             namespace: String::new(),
             self_type: None,
@@ -501,6 +563,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.types,
                     self.host_functions,
                     self.host_methods,
+                    self.host_contract,
                     self.expression_types,
                     self.generated.clone(),
                 );
@@ -862,7 +925,7 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    if let Some(function) = self.host_function(&key).cloned() {
+                    if let Some(function) = self.host_function(&key, arguments, *span)? {
                         return Ok(HirExpression::CallImport {
                             name: function.name,
                             signature: function.signature,
@@ -975,7 +1038,7 @@ impl<'a> FunctionLowerer<'a> {
                             });
                         }
                     }
-                    if let Some(host) = self.host_method(object, name).cloned() {
+                    if let Some(host) = self.host_method(object, name, arguments, *span)? {
                         let receiver = match host.receiver {
                             Some(crate::host::HostReceiver::Value) => ReceiverMode::Owned,
                             Some(crate::host::HostReceiver::Ref) => {
@@ -1062,7 +1125,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
                 if let Expr::Variable { name, .. } = callee.as_ref()
                     && self.lookup(name).is_none()
-                    && let Some(function) = self.host_function(name).cloned()
+                    && let Some(function) = self.host_function(name, arguments, *span)?
                 {
                     return Ok(HirExpression::CallImport {
                         name: function.name,
@@ -1370,29 +1433,160 @@ impl<'a> FunctionLowerer<'a> {
         self.symbol_id(self.functions, name)
     }
 
-    fn host_function(&self, name: &str) -> Option<&HostFunctionDeclaration> {
+    fn host_function(
+        &self,
+        name: &str,
+        arguments: &[Expr],
+        span: Span,
+    ) -> Result<Option<HostFunctionDeclaration>, CompileError> {
+        self.host_function_candidates(name)
+            .map(|functions| self.select_host_overload(functions, arguments, None, span))
+            .transpose()
+    }
+
+    fn host_function_candidates(&self, name: &str) -> Option<&[HostFunctionDeclaration]> {
         let name = self.anchored_name(name);
         if !self.namespace.is_empty() {
             let relative = format!("{}::{name}", self.namespace);
-            if let Some(function) = self.host_functions.get(&relative) {
-                return Some(function);
+            if let Some(functions) = self.host_functions.get(&relative) {
+                return Some(functions);
             }
         }
-        self.host_functions.get(&name)
+        self.host_functions.get(&name).map(Vec::as_slice)
     }
 
-    fn host_method(&self, object: &Expr, name: &str) -> Option<&HostFunctionDeclaration> {
+    fn host_method(
+        &self,
+        object: &Expr,
+        name: &str,
+        call_arguments: &[Expr],
+        span: Span,
+    ) -> Result<Option<HostFunctionDeclaration>, CompileError> {
+        let object_type = self.expression_type_for_overload(object)?;
         let Type::Named {
             name: receiver_type,
-            arguments,
-        } = self.expression_types.get(&object.span())?
+            arguments: type_arguments,
+        } = &object_type
         else {
-            return None;
+            return Ok(None);
         };
-        if !arguments.is_empty() {
-            return None;
+        if !type_arguments.is_empty() {
+            return Ok(None);
         }
-        self.host_methods.get(&format!("{receiver_type}::{name}"))
+        self.host_methods
+            .get(&format!("{receiver_type}::{name}"))
+            .map(|functions| {
+                self.select_host_overload(functions, call_arguments, Some(object), span)
+            })
+            .transpose()
+    }
+
+    fn select_host_overload(
+        &self,
+        candidates: &[HostFunctionDeclaration],
+        arguments: &[Expr],
+        receiver: Option<&Expr>,
+        span: Span,
+    ) -> Result<HostFunctionDeclaration, CompileError> {
+        let actual_types = receiver
+            .into_iter()
+            .chain(arguments)
+            .map(|argument| self.expression_type_for_overload(argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut matches = candidates
+            .iter()
+            .filter_map(|candidate| {
+                let expected = candidate.signature.parameters.as_ref()?;
+                (expected.len() == actual_types.len())
+                    .then(|| overload_score(self.host_contract, expected, &actual_types))?
+                    .map(|score| (score, candidate))
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by_key(|(score, candidate)| (*score, candidate.function_id));
+        let name = candidates
+            .first()
+            .map(|candidate| candidate.name.as_str())
+            .unwrap_or("<unknown>");
+        let Some((best_score, best)) = matches.first().copied() else {
+            return Err(CompileError::unsupported(
+                format!(
+                    "no host overload of `{name}` accepts ({})\navailable candidates:\n{}",
+                    actual_types
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    format_host_candidates(candidates)
+                ),
+                span,
+            ));
+        };
+        if matches
+            .get(1)
+            .is_some_and(|(score, _)| *score == best_score)
+        {
+            return Err(CompileError::unsupported(
+                format!(
+                    "ambiguous host call `{name}` for arguments ({})\ncandidates:\n{}\nadd explicit type annotations or casts to select one overload",
+                    actual_types
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    format_host_candidates(
+                        &matches
+                            .iter()
+                            .take_while(|(score, _)| *score == best_score)
+                            .map(|(_, candidate)| (*candidate).clone())
+                            .collect::<Vec<_>>()
+                    )
+                ),
+                span,
+            ));
+        }
+        Ok(best.clone())
+    }
+
+    fn expression_type_for_overload(&self, expression: &Expr) -> Result<Type, CompileError> {
+        if let Expr::Call {
+            callee,
+            arguments,
+            span,
+        } = expression
+        {
+            let direct_name = match callee.as_ref() {
+                Expr::Path { segments, .. } => Some(self.resolve_self_path(segments).join("::")),
+                Expr::Variable { name, .. } if self.lookup(name).is_none() => Some(name.clone()),
+                _ => None,
+            };
+            if let Some(name) = direct_name
+                && let Some(candidates) = self.host_function_candidates(&name)
+            {
+                return self
+                    .select_host_overload(candidates, arguments, None, *span)
+                    .map(|function| function.signature.return_type);
+            }
+            if let Expr::Member { object, name, .. } = callee.as_ref() {
+                let receiver_type = self.expression_type_for_overload(object)?;
+                if let Type::Named {
+                    name: receiver_type,
+                    arguments: type_arguments,
+                } = receiver_type
+                    && type_arguments.is_empty()
+                    && let Some(candidates) =
+                        self.host_methods.get(&format!("{receiver_type}::{name}"))
+                {
+                    return self
+                        .select_host_overload(candidates, arguments, Some(object), *span)
+                        .map(|function| function.signature.return_type);
+                }
+            }
+        }
+        Ok(self
+            .expression_types
+            .get(&expression.span())
+            .cloned()
+            .unwrap_or(Type::Unknown))
     }
 
     fn scoped_name(&self, name: &str) -> String {

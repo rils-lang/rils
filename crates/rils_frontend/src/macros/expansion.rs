@@ -49,6 +49,9 @@ pub(super) fn expand_sequence(
         }
 
         let (input, next) = invocation_input(tokens, current + 2, call_span)?;
+        if matches!(name.as_str(), "print" | "println") {
+            validate_format_invocation(&name, &input, call_span)?;
+        }
         let Some((arm, bindings)) = definition
             .arms
             .iter()
@@ -78,6 +81,84 @@ pub(super) fn expand_sequence(
         current = next;
     }
     Ok(output)
+}
+
+fn validate_format_invocation(
+    name: &str,
+    input: &[Token],
+    call_span: Span,
+) -> Result<(), ParseError> {
+    let arguments = top_level_arguments(input);
+    if arguments.is_empty() {
+        return if name == "println" {
+            Ok(())
+        } else {
+            Err(error("macro `print` requires a format string", call_span))
+        };
+    }
+    let [
+        Token {
+            kind: TokenKind::String(format),
+            span,
+        },
+    ] = arguments[0]
+    else {
+        return Err(error(
+            format!("macro `{name}` requires a string literal as its first argument"),
+            arguments[0].first().map_or(call_span, |token| token.span),
+        ));
+    };
+    let pieces = crate::format::parse_format_string(format)
+        .map_err(|format_error| error(format_error.message, *span))?;
+    let value_count = arguments.len() - 1;
+    let mut used = vec![false; value_count];
+    for piece in pieces {
+        let crate::format::FormatPiece::Placeholder { argument, .. } = piece else {
+            continue;
+        };
+        let Some(slot) = used.get_mut(argument) else {
+            return Err(error(
+                format!(
+                    "format placeholder references argument {argument}, but only {value_count} value argument(s) were supplied"
+                ),
+                *span,
+            ));
+        };
+        *slot = true;
+    }
+    if let Some(unused) = used.iter().position(|used| !used) {
+        return Err(error(
+            format!("format argument {} is never used", unused + 1),
+            arguments[unused + 1]
+                .first()
+                .map_or(call_span, |token| token.span),
+        ));
+    }
+    Ok(())
+}
+
+fn top_level_arguments(tokens: &[Token]) -> Vec<&[Token]> {
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+    let mut arguments = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0usize;
+    for (index, token) in tokens.iter().enumerate() {
+        match token.kind {
+            TokenKind::LeftParen | TokenKind::LeftBrace | TokenKind::LeftBracket => depth += 1,
+            TokenKind::RightParen | TokenKind::RightBrace | TokenKind::RightBracket => {
+                depth = depth.saturating_sub(1);
+            }
+            TokenKind::Comma if depth == 0 => {
+                arguments.push(&tokens[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    arguments.push(&tokens[start..]);
+    arguments
 }
 
 pub(super) fn invocation_input(

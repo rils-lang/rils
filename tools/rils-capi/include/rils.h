@@ -45,6 +45,33 @@ typedef struct RilsHostType {
     uint32_t reserved;
 } RilsHostType;
 
+typedef struct RilsHostTypeV2 {
+    RilsSlice name;
+    RilsSlice base_type;
+    RilsSlice value_layout;
+    uint32_t transport_tag;
+    uint32_t kind;
+    uint32_t reserved;
+} RilsHostTypeV2;
+
+typedef struct RilsHostEnumVariant {
+    RilsSlice name;
+    uint64_t raw_low;
+    uint64_t raw_high;
+} RilsHostEnumVariant;
+
+typedef struct RilsHostTypeV3 {
+    RilsSlice name;
+    RilsSlice base_type;
+    RilsSlice value_layout;
+    const RilsHostEnumVariant *enum_variants;
+    size_t enum_variant_count;
+    uint32_t transport_tag;
+    uint32_t kind;
+    uint32_t enum_flags;
+    uint32_t reserved;
+} RilsHostTypeV3;
+
 typedef struct RilsHostParameter {
     RilsSlice logical_type;
     uint32_t transport_tag;
@@ -69,6 +96,31 @@ typedef int32_t (*RilsHostDispatcher)(
     size_t argument_count,
     RilsValue *out_value,
     RilsSlice *out_error);
+
+/* Called synchronously while Rils executes. `text` is UTF-8 and is valid only for the duration of
+ * the callback. The callback must copy data it needs to retain and must not re-enter the runtime. */
+typedef void (*RilsOutputCallback)(
+    void *user_data,
+    RilsSlice text,
+    uint32_t newline);
+
+/* Formats one portable host value. `precision` is SIZE_MAX when unspecified. Return SIZE_MAX to
+ * decline formatting; otherwise return the required UTF-8 byte length. The runtime first queries
+ * with a NULL buffer, then calls again with sufficient caller-owned storage. */
+typedef size_t (*RilsHostValueFormatCallback)(
+    void *user_data,
+    RilsSlice logical_type,
+    RilsValue value,
+    uint32_t kind,
+    uint32_t alternate,
+    size_t precision,
+    uint8_t *buffer,
+    size_t capacity);
+
+enum RilsFormatKind {
+    RILS_FORMAT_DISPLAY = 0,
+    RILS_FORMAT_DEBUG = 1
+};
 
 enum RilsStatus {
     RILS_STATUS_OK = 0,
@@ -99,7 +151,16 @@ enum RilsValueTag {
     RILS_VALUE_F32 = 14,
     RILS_VALUE_F64 = 15,
     RILS_VALUE_CHAR = 16,
-    RILS_VALUE_HOST_HANDLE = 17
+    RILS_VALUE_HOST_HANDLE = 17,
+    RILS_VALUE_INLINE_VALUE = 18,
+    /* `low` owns a thread-bound RilsHandle. The receiver must consume or destroy it. */
+    RILS_VALUE_STRING = 19
+};
+
+enum RilsHostTypeKind {
+    RILS_HOST_TYPE_OPAQUE = 0,
+    RILS_HOST_TYPE_VALUE = 1,
+    RILS_HOST_TYPE_ENUM = 2
 };
 
 RILS_API uint32_t rils_abi_version(void);
@@ -113,6 +174,14 @@ RILS_API int32_t rils_runtime_register_host_functions(
 RILS_API int32_t rils_runtime_register_host_types(
     RilsHandle runtime,
     const RilsHostType *types,
+    size_t type_count);
+RILS_API int32_t rils_runtime_register_host_types_v2(
+    RilsHandle runtime,
+    const RilsHostTypeV2 *types,
+    size_t type_count);
+RILS_API int32_t rils_runtime_register_host_types_v3(
+    RilsHandle runtime,
+    const RilsHostTypeV3 *types,
     size_t type_count);
 RILS_API int32_t rils_runtime_register_host_functions_v2(
     RilsHandle runtime,
@@ -131,7 +200,20 @@ RILS_API int32_t rils_runtime_set_host_dispatcher(
     RilsHandle runtime,
     RilsHostDispatcher dispatcher,
     void *user_data);
+/* Installs a runtime-scoped output callback and enables the `std::io` capability. Passing NULL
+ * restores standard output. The caller owns `user_data` and must keep it valid until the callback
+ * is replaced or the runtime is destroyed. */
+RILS_API int32_t rils_runtime_set_output_callback(
+    RilsHandle runtime,
+    RilsOutputCallback callback,
+    void *user_data);
+RILS_API int32_t rils_runtime_set_host_value_formatter(
+    RilsHandle runtime,
+    RilsHostValueFormatCallback callback,
+    void *user_data);
 RILS_API int32_t rils_runtime_allow_capability(RilsHandle runtime, RilsSlice capability);
+/* Enables every host-backed capability in the Rils standard library known to this runtime. */
+RILS_API int32_t rils_runtime_allow_standard_library(RilsHandle runtime);
 RILS_API int32_t rils_runtime_freeze_host_registry(RilsHandle runtime);
 RILS_API int32_t rils_module_compile(
     RilsHandle runtime,
@@ -220,6 +302,16 @@ RILS_API int32_t rils_script_value_call_trait(
     const RilsHostParameter *argument_types,
     size_t argument_count,
     RilsValue *out_value);
+
+/* String handles are thread-bound. `RILS_VALUE_STRING` transfers ownership to the receiver. */
+RILS_API int32_t rils_string_create(RilsSlice utf8, RilsHandle *out_string);
+RILS_API int32_t rils_string_size(RilsHandle string, size_t *out_size);
+RILS_API int32_t rils_string_write(
+    RilsHandle string,
+    uint8_t *buffer,
+    size_t buffer_capacity,
+    size_t *out_written);
+RILS_API int32_t rils_string_destroy(RilsHandle string);
 
 RILS_API int32_t rils_last_error_code(void);
 RILS_API RilsSlice rils_last_error_message(void);

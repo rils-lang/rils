@@ -260,7 +260,27 @@ pub fn analyze_with_source_id_and_external_exports_and_host_types(
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
 ) -> Result<DocumentAnalysis, FrontendError> {
     let tokens = crate::lexer::lex_with_source_id(source, source_id).map_err(FrontendError::Lex)?;
-    let mut program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
+    let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
+    Ok(
+        analyze_program_with_source_id_and_external_exports_and_host_types(
+            &program,
+            source_id,
+            host_functions,
+            host_types,
+            external_exports,
+        ),
+    )
+}
+
+#[doc(hidden)]
+pub fn analyze_program_with_source_id_and_external_exports_and_host_types(
+    program: &Program,
+    source_id: SourceId,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+    external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+) -> DocumentAnalysis {
+    let mut program = program.clone();
     let resolution_errors = crate::resolve_host_type_names(&mut program, host_types);
     let mut analysis = Analyzer::new(
         source_id,
@@ -271,7 +291,7 @@ pub fn analyze_with_source_id_and_external_exports_and_host_types(
     )
     .analyze(&program);
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
-    Ok(analysis)
+    analysis
 }
 
 fn append_host_type_resolution_errors(
@@ -556,6 +576,11 @@ impl Analyzer {
         self.result
             .diagnostics
             .extend(crate::trait_check::analyze(program));
+        self.result.diagnostics.extend(crate::format_check::analyze(
+            program,
+            &inference.expression_types,
+            &self.host_types,
+        ));
         self.result
             .diagnostics
             .sort_by_key(|diagnostic| (diagnostic.span.start, diagnostic.span.end));
@@ -573,6 +598,11 @@ impl Analyzer {
             })
             .collect::<HashMap<_, _>>();
         for symbol in &mut self.result.symbols {
+            if symbol.is_definition {
+                if let Some(inferred_type) = inference.binding_types.get(&symbol.span) {
+                    symbol.inferred_type = Some(inferred_type.clone());
+                }
+            }
             if let Some(definition_span) = symbol.definition_span {
                 if symbol.definition_id.is_none() {
                     symbol.definition_id = definition_ids.get(&definition_span).copied();
@@ -599,6 +629,12 @@ impl Analyzer {
                     .and_then(|id| definition_details.get(&id).cloned());
             }
         }
+        // Host declarations injected by an embedding compiler have empty
+        // synthetic spans. They participate in name and type resolution but
+        // must never become editor symbols for the user's source document.
+        self.result
+            .symbols
+            .retain(|symbol| symbol.span.start < symbol.span.end);
         self.result.inlay_hints = inference
             .hints
             .into_iter()
@@ -875,34 +911,51 @@ impl Analyzer {
     }
 
     fn collect_enum_variants(&mut self, statements: &[Stmt]) {
-        for statement in statements {
-            if let Stmt::Public { statement, .. } = statement {
-                self.collect_enum_variants(std::slice::from_ref(statement));
-                continue;
-            }
-            if let Stmt::Module {
-                statements: Some(statements),
-                ..
-            } = statement
-            {
-                self.collect_enum_variants(statements);
-                continue;
-            }
-            let Stmt::Enum { name, variants, .. } = statement else {
-                continue;
-            };
-            for variant in variants {
-                let (variant_name, span) = enum_variant_name_and_span(variant);
-                self.enum_variants.insert(
-                    (name.clone(), variant_name.into()),
-                    EnumVariantSymbol {
-                        span,
-                        detail: enum_variant_declaration(name, variant),
-                        owner: name.clone(),
-                    },
-                );
+        fn visit(
+            statements: &[Stmt],
+            prefix: &mut Vec<String>,
+            output: &mut HashMap<(String, String), EnumVariantSymbol>,
+        ) {
+            for statement in statements {
+                let statement = match statement {
+                    Stmt::Public { statement, .. } => statement.as_ref(),
+                    statement => statement,
+                };
+                if let Stmt::Module {
+                    name,
+                    statements: Some(statements),
+                    ..
+                } = statement
+                {
+                    prefix.push(name.clone());
+                    visit(statements, prefix, output);
+                    prefix.pop();
+                    continue;
+                }
+                let Stmt::Enum { name, variants, .. } = statement else {
+                    continue;
+                };
+                let owner = prefix
+                    .iter()
+                    .chain(std::iter::once(name))
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("::");
+                for variant in variants {
+                    let (variant_name, span) = enum_variant_name_and_span(variant);
+                    output.insert(
+                        (owner.clone(), variant_name.into()),
+                        EnumVariantSymbol {
+                            span,
+                            detail: enum_variant_declaration(name, variant),
+                            owner: owner.clone(),
+                        },
+                    );
+                }
             }
         }
+
+        visit(statements, &mut Vec::new(), &mut self.enum_variants);
     }
 
     fn macros(&mut self, program: &Program) {
@@ -1205,6 +1258,33 @@ impl Analyzer {
                 }
             }
             Expr::Path { segments, span } => {
+                // Host type resolution canonicalizes imported paths (for
+                // example `Color::new` becomes
+                // `unity_engine::Color::new`). Record the type segment at its
+                // actual source position so hover does not select the module
+                // segment for an imported host type.
+                if segments.len() > 1 {
+                    for end in (1..segments.len()).rev() {
+                        let candidate = segments[..=end].join("::");
+                        if self.host_types.contains(&candidate) {
+                            let type_span = source_path_segment_span(segments, end, *span);
+                            let type_name = segments[end].clone();
+                            self.result.symbols.push(SymbolOccurrence {
+                                name: type_name.clone(),
+                                span: type_span,
+                                definition_span: None,
+                                symbol_id: None,
+                                definition_id: None,
+                                kind: SymbolKind::Type,
+                                is_definition: false,
+                                inferred_type: Some(Type::named(candidate)),
+                                detail: None,
+                                container: None,
+                            });
+                            break;
+                        }
+                    }
+                }
                 if let Some(name) = segments.first() {
                     self.reference(
                         name,
@@ -1294,7 +1374,7 @@ impl Analyzer {
                     }
                 }
                 if !segments.is_empty() {
-                    self.variant_symbol_for_path(segments, *span);
+                    self.variant_symbol_for_path(segments, *span, true);
                 }
             }
             Expr::QualifiedPath {
@@ -1351,7 +1431,7 @@ impl Analyzer {
                         SymbolKind::Type,
                     );
                 }
-                self.variant_symbol_for_path(path, *span);
+                self.variant_symbol_for_path(path, *span, false);
                 for field in fields {
                     self.record_field_symbol(path.last().map(String::as_str), field);
                     self.expression(&field.value);
@@ -1442,20 +1522,20 @@ impl Analyzer {
     fn pattern(&mut self, pattern: &Pattern) {
         match pattern {
             Pattern::Wildcard { .. } | Pattern::Literal { .. } | Pattern::None { .. } => {}
-            Pattern::Path { path, span } => self.pattern_variant_symbols(path, *span),
+            Pattern::Path { path, span } => self.pattern_variant_symbols(path, *span, true),
             Pattern::Binding { name, span } => {
                 self.define(name, *span, SymbolKind::Variable);
             }
             Pattern::Some { inner, .. } => self.pattern(inner),
             Pattern::Ok { inner, .. } | Pattern::Err { inner, .. } => self.pattern(inner),
             Pattern::TupleVariant { path, fields, span } => {
-                self.pattern_variant_symbols(path, *span);
+                self.pattern_variant_symbols(path, *span, false);
                 for field in fields {
                     self.pattern(field);
                 }
             }
             Pattern::Record { path, fields, span } => {
-                self.pattern_variant_symbols(path, *span);
+                self.pattern_variant_symbols(path, *span, false);
                 for (_, pattern) in fields {
                     self.pattern(pattern);
                 }
@@ -1472,10 +1552,19 @@ impl Analyzer {
     }
 
     fn define(&mut self, name: &str, span: Span, kind: SymbolKind) {
-        if self
-            .scopes
-            .last()
-            .is_some_and(|scope| scope.contains_key(name))
+        let merges_host_module = kind == SymbolKind::Module
+            && self
+                .scopes
+                .last()
+                .and_then(|scope| scope.get(name))
+                .is_some_and(|definition| {
+                    definition.kind == SymbolKind::Module && definition.span.is_none()
+                });
+        if !merges_host_module
+            && self
+                .scopes
+                .last()
+                .is_some_and(|scope| scope.contains_key(name))
         {
             self.result.diagnostics.push(AnalysisDiagnostic::error(
                 format!("`{name}` is already defined in this scope"),
@@ -1483,11 +1572,12 @@ impl Analyzer {
             ));
         }
         let id = self.definition_only(name, span, kind);
+        let is_synthetic = span.start == span.end;
         self.scopes.last_mut().expect("scope exists").insert(
             name.into(),
             Definition {
-                span: Some(span),
-                id: Some(id),
+                span: (!is_synthetic).then_some(span),
+                id: (!is_synthetic).then_some(id),
                 kind,
                 container: None,
             },
@@ -1579,23 +1669,37 @@ impl Analyzer {
         });
     }
 
-    fn variant_symbol_for_path(&mut self, path: &[String], symbol_span: Span) {
-        let [enum_name, variant_name] = path else {
+    fn variant_symbol_for_path(
+        &mut self,
+        path: &[String],
+        symbol_span: Span,
+        path_ends_at_variant: bool,
+    ) {
+        let Some((variant_name, owner_segments)) = path.split_last() else {
             return;
         };
+        let enum_name = owner_segments.join("::");
         let Some(variant) = self
             .enum_variants
-            .get(&(enum_name.clone(), variant_name.clone()))
+            .get(&(enum_name, variant_name.clone()))
             .cloned()
         else {
             return;
         };
-        let variant_start = symbol_span.start + enum_name.len() + 2;
-        let variant_span = Span::in_source(
-            symbol_span.source,
-            variant_start,
-            variant_start + variant_name.len(),
-        );
+        let variant_span = if path_ends_at_variant {
+            Span::in_source(
+                symbol_span.source,
+                symbol_span.end.saturating_sub(variant_name.len()),
+                symbol_span.end,
+            )
+        } else {
+            let start = symbol_span.start
+                + path[..path.len() - 1]
+                    .iter()
+                    .map(|segment| segment.len() + 2)
+                    .sum::<usize>();
+            Span::in_source(symbol_span.source, start, start + variant_name.len())
+        };
         self.result.symbols.push(SymbolOccurrence {
             name: variant_name.clone(),
             span: variant_span,
@@ -1610,19 +1714,43 @@ impl Analyzer {
         });
     }
 
-    fn pattern_variant_symbols(&mut self, path: &[String], symbol_span: Span) {
-        if let [enum_name, ..] = path {
-            self.reference(
-                enum_name,
-                Span::in_source(
-                    symbol_span.source,
-                    symbol_span.start,
-                    symbol_span.start + enum_name.len(),
-                ),
-                SymbolKind::Type,
-            );
+    fn pattern_variant_symbols(
+        &mut self,
+        path: &[String],
+        symbol_span: Span,
+        path_ends_at_variant: bool,
+    ) {
+        if path.len() >= 2 {
+            let type_index = path.len() - 2;
+            let type_name = &path[type_index];
+            let type_span = if path_ends_at_variant {
+                source_path_segment_span(path, type_index, symbol_span)
+            } else {
+                let start = symbol_span.start
+                    + path[..type_index]
+                        .iter()
+                        .map(|segment| segment.len() + 2)
+                        .sum::<usize>();
+                Span::in_source(symbol_span.source, start, start + type_name.len())
+            };
+            if path.len() == 2 {
+                self.reference(type_name, type_span, SymbolKind::Type);
+            } else {
+                self.result.symbols.push(SymbolOccurrence {
+                    name: type_name.clone(),
+                    span: type_span,
+                    definition_span: None,
+                    symbol_id: None,
+                    definition_id: None,
+                    kind: SymbolKind::Type,
+                    is_definition: false,
+                    inferred_type: Some(Type::named(path[..path.len() - 1].join("::"))),
+                    detail: None,
+                    container: None,
+                });
+            }
         }
-        self.variant_symbol_for_path(path, symbol_span);
+        self.variant_symbol_for_path(path, symbol_span, path_ends_at_variant);
     }
 
     fn type_references(&mut self, program: &Program) {
@@ -1959,7 +2087,12 @@ fn enum_variant_name_and_span(variant: &EnumVariant) -> (&str, Span) {
         EnumVariant::Unit { name, span }
         | EnumVariant::Tuple { name, span, .. }
         | EnumVariant::Record { name, span, .. } => {
-            (name, Span::new(span.start, span.start + name.len()))
+            let name_span = if span.start == span.end {
+                *span
+            } else {
+                Span::in_source(span.source, span.start, span.start + name.len())
+            };
+            (name, name_span)
         }
     }
 }
@@ -2038,6 +2171,32 @@ fn trait_detail(
 
 fn member_name_span(span: Span, name: &str) -> Span {
     Span::new(span.end.saturating_sub(name.len()), span.end)
+}
+
+fn source_path_segment_span(path: &[String], index: usize, span: Span) -> Span {
+    let canonical_length =
+        path.iter().map(String::len).sum::<usize>() + path.len().saturating_sub(1) * 2;
+    if canonical_length == span.end.saturating_sub(span.start) {
+        let start = span.start
+            + path[..index]
+                .iter()
+                .map(|segment| segment.len() + 2)
+                .sum::<usize>();
+        return Span::in_source(span.source, start, start + path[index].len());
+    }
+
+    // Host resolution expands an imported type's first source token into its
+    // canonical module segments. Recover the original token from the suffix,
+    // whose spelling and length are unchanged.
+    let suffix_length = path[index + 1..]
+        .iter()
+        .map(|segment| segment.len() + 2)
+        .sum::<usize>();
+    Span::in_source(
+        span.source,
+        span.start,
+        span.end.saturating_sub(suffix_length),
+    )
 }
 
 fn collect_self_type_references(program: &Program) -> HashMap<Span, String> {

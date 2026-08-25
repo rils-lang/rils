@@ -16,13 +16,18 @@ Rils 与 Unity 的主要调用方向是 **Rils → C# facade → Unity API**。C
 
 ## 宿主函数声明
 
-每个宿主函数声明参数/返回值的逻辑类型、ABI transport、capability 和线程策略。当前 C# facade 已经能声明命名 Unity 对象类型，并把它们以 `HostHandle` transport 跨越 ABI；字符串、集合、值类型和结构化错误缓冲区仍需后续 ABI 扩展。
+每个宿主函数声明参数/返回值的逻辑类型、ABI transport、capability 和线程策略。C# facade 可将命名
+Unity 对象以 `HostHandle` 跨越 ABI；符合规则且规范编码不超过 16 字节的 struct 使用字段化
+`InlineValue` 传递。`Vector2`、`Vector3`、`Quaternion`、`Color` 都由公开实例字段自动得到
+`fields(f32,...)` 布局，而不是按类型名特判。字符串使用拥有型 UTF-8 句柄；C# enum 保持为真实
+Rils enum，仅在 C ABI 边界转换为底层整数。集合和结构化错误缓冲区仍需后续 ABI 扩展。
 
 ## 线程与错误
 
 Unity API 默认要求主线程。跨线程调用必须返回明确错误，不能在底层隐式阻塞切换线程。宿主错误使用稳定错误码和消息模型，当前原生 ABI 暂统一映射为执行错误。
 
-当前命名宿主类型和 v2 函数注册接口使用 C ABI version 4。原生库与 C# facade 必须成套更新；旧的 version 3 库不包含类型表注册入口。opaque script value 与 trait 调用接口继续保持兼容。
+当前 enum/string 注册与传输使用 C ABI version 7 和 Host Manifest v5。原生库、生成的 P/Invoke 与 C# facade
+必须成套更新；version 4 只支持 opaque 类型表。opaque script value 与 trait 调用接口继续保持兼容。
 
 ## Unity 生命周期资产
 
@@ -50,28 +55,57 @@ impl RilsBehaviour for PlayerBehaviour {
 ## Unity 宿主 manifest
 
 Unity 集成使用项目根目录下的 `.rils/manifest/` 作为生成的二进制宿主契约目录，
-不把 manifest 放进 `Assets`，也不把它作为 Unity 资源提交。Editor 与 Player 共享
-`UnityEngineBindingCatalog` 中的模块 descriptor：Editor 从 descriptor 为
-`unity_engine::object`、`game_object`、`component`、`transform` 和 `time` 分别生成
-`.rils/manifest/unity-engine/*.rilhm`，Player 从同一 descriptor 绑定静态 C# handler。
+不把 manifest 放进 `Assets`，也不把它作为 Unity 资源提交。Editor 扫描 `rils.toml` 指定的程序集
+并建立统一 Binding IR，再从同一 IR 生成 `.rils/manifest/unity/*.rilhm` 和
+`Assets/RilsGenerated/Bindings/*.g.cs`。前者只供 Rils 编译器、Analyzer 和导入器使用，不经过
+AssetDatabase；后者由 Unity 编译为 Mono/IL2CPP 可直接调用的静态 C# handler。
 生成 manifest 不执行 handler，也不创建假的 Unity 对象表。
 
-Editor 启动时会逐模块比较当前内容；文件缺失、损坏、已经过期或属于旧模块集合时会原子同步并
-自动重新导入 `.rils` 资产。菜单 `Rils > Generate Unity Host Manifest` 仍可用于显式强制重建。
+菜单 `Rils > Generate Unity Bindings` 会同步两类输出并清理各自拥有目录内的过期生成文件；
+`Rils > Check Generated Unity Bindings` 只比较内容，不修改输出。仓库根目录也提供
+`python tools/generate-unity-bindings.py [--project <UnityProject>] [--check]` 稳定入口。
 导入器会用这些 fragment 校验带有 `unity_engine::*` 调用的脚本，并把合并后的 manifest 字节保存到对应的
 `RilsScriptAsset` 主资产。其 `RilsEntryAsset` 子资产共享这些数据，不重复存储。多个 fragment 会按路径排序后合并。这样 Player 运行时只依赖导入资产，不需要访问
 工程根目录的 `.rils` 文件；`.rils/manifest/*.rilhm` 作为动态生成物由集成项目的
 局部 `.gitignore` 忽略。
 
-生成的 Host Manifest v2 声明以下首批命名类型：
+生成的 Host Manifest v5 按程序集保存 fragment，声明扫描得到的所有可表达命名类型；例如：
 
 ```text
 unity_engine::Object
 ├─ unity_engine::Component
+│  ├─ unity_engine::Behaviour
+│  │  └─ unity_engine::MonoBehaviour
 │  └─ unity_engine::Transform
 └─ unity_engine::GameObject
+
+inline values:
+├─ unity_engine::Vector2     fields(f32,f32)
+├─ unity_engine::Vector3     fields(f32,f32,f32)
+├─ unity_engine::Quaternion  fields(f32,f32,f32,f32)
+└─ unity_engine::Color       fields(f32,f32,f32,f32)
+
+enums:
+├─ unity_engine::CameraType
+├─ unity_engine::camera::MonoOrStereoscopicEye
+└─ unity_engine::HideFlags   [Flags] + BitFlags
 ```
 
 Rils 源码、编译器和 Analyzer 保留这些逻辑类型，派生对象可以传给基类参数，也能调用基类 receiver
-方法。dispatcher 边界仍统一降级为 `HostHandle`，因此不暴露 Unity 对象指针或托管对象布局。
-enum、常量与 Unity value struct transport 尚未纳入当前目录。
+方法。对象在 dispatcher 边界降级为 `HostHandle`；值类型按小端 IEEE-754 分量显式打包到 16 字节，
+不能直接复制 Unity 托管 struct 布局。生成 handler 使用 `RilsInlineValueReader/Writer` 逐字段转换，
+或通过 `UnityObjectHandleTable` 解析对象，不在 Player 中反射调用 Unity API。
+
+Unity 工程在 `rils.toml` 中只选择要扫描的程序集；namespace 自动映射为 snake_case Rils module：
+
+```toml
+[unity.bindings]
+assemblies = ["UnityEngine.CoreModule", "UnityEngine.PhysicsModule"]
+```
+
+菜单 `Rils > Generate Unity Bindings` 扫描当前 Editor 实际加载的程序集，并将可传输类型、成员、
+跳过原因和映射签名冲突写入 `.rils/generated/unity-bindings-report.json`。可表达的 C# overload 会保留
+相同 Rils 名称和不同参数签名；`ref struct`、普通 managed
+class、泛型调用、`ref/out/in` 参数、无法传输的字段及超过 payload 上限的 struct 都会明确进入报告。
+不支持的类型、废弃 API、`ref/out/in`、开放泛型、超出 16 字节的值布局以及映射签名冲突都会写入
+报告而不会生成不可编译的 handler。合法重载保留同一个 Rils 名称，由编译器按参数签名静态选择。

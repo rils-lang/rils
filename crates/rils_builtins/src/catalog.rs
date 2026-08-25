@@ -86,6 +86,8 @@ pub enum RuntimeMemberId {
     HashSetDifference = 151,
     HashSetSymmetricDifference = 152,
     HashSetIntoIter = 153,
+    FormatterWriteStr = 180,
+    FormatterWriteDerivedDebug = 181,
     ResultIsOk = 48,
     ResultIsErr = 49,
     ResultUnwrap = 50,
@@ -213,6 +215,8 @@ impl RuntimeMemberId {
             Self::HashSetDifference => "core::hash_set::difference",
             Self::HashSetSymmetricDifference => "core::hash_set::symmetric_difference",
             Self::HashSetIntoIter => "core::hash_set::into_iter",
+            Self::FormatterWriteStr => "core::fmt::write_str",
+            Self::FormatterWriteDerivedDebug => "core::fmt::write_derived_debug",
             Self::SequenceIntoIter
             | Self::IteratorIntoIter
             | Self::IteratorMap
@@ -301,6 +305,18 @@ macro_rules! member {
             value_type: None,
             receiver: Some(ReceiverMode::$receiver),
             runtime: Some(RuntimeMemberId::$runtime),
+            type_parameters: &[],
+            documentation: $documentation,
+        }
+    };
+    ($name:literal, method $receiver:ident [$($parameter:expr),* $(,)?] -> $result:expr, $documentation:literal) => {
+        BuiltinMember {
+            name: $name,
+            kind: BuiltinMemberKind::Method,
+            signature: Some(BuiltinSignature { parameters: &[$($parameter),*], result: $result, variadic: false }),
+            value_type: None,
+            receiver: Some(ReceiverMode::$receiver),
+            runtime: None,
             type_parameters: &[],
             documentation: $documentation,
         }
@@ -484,6 +500,32 @@ const CLONE_MEMBERS: &[BuiltinMember] = &[
 ];
 const DEFAULT_MEMBERS: &[BuiltinMember] = &[
     member!("default", associated [] -> TypePattern::SelfType, "Constructs the default value for this type."),
+];
+const FORMATTER: TypePattern = TypePattern::Named {
+    path: "Formatter",
+    arguments: &[],
+};
+const MUT_FORMATTER: TypePattern = TypePattern::Reference {
+    mutable: true,
+    inner: &FORMATTER,
+};
+const FORMAT_ERROR: TypePattern = TypePattern::Named {
+    path: "FormatError",
+    arguments: &[],
+};
+const FORMAT_RESULT: TypePattern = TypePattern::Result {
+    ok: &TypePattern::Unit,
+    error: &FORMAT_ERROR,
+};
+const FORMATTER_MEMBERS: &[BuiltinMember] = &[
+    member!("write_str", method Mutable [STRING] -> FORMAT_RESULT, FormatterWriteStr, "Appends text to this formatting destination."),
+    member!("write_derived_debug", method Mutable [TypePattern::Reference { mutable: false, inner: &TypePattern::Unknown }] -> FORMAT_RESULT, FormatterWriteDerivedDebug, "Writes the structural Debug representation used by derived implementations."),
+];
+const DISPLAY_MEMBERS: &[BuiltinMember] = &[
+    member!("fmt", method Shared [MUT_FORMATTER] -> FORMAT_RESULT, "Writes the user-facing representation into a formatter."),
+];
+const DEBUG_MEMBERS: &[BuiltinMember] = &[
+    member!("fmt", method Shared [MUT_FORMATTER] -> FORMAT_RESULT, "Writes the diagnostic representation into a formatter."),
 ];
 const VEC_MEMBERS: &[BuiltinMember] = &[
     member!("new", associated [] -> TypePattern::SelfType, "Creates an empty Vec."),
@@ -683,6 +725,38 @@ pub const BUILTINS: &[BuiltinDeclaration] = &[
         "Types with a canonical default value."
     ),
     builtin!(
+        "Formatter",
+        Struct,
+        [],
+        FORMATTER_MEMBERS,
+        BuiltinBackend::Runtime,
+        "A transient formatting destination supplied by format macros."
+    ),
+    builtin!(
+        "FormatError",
+        Struct,
+        [],
+        &[],
+        BuiltinBackend::Runtime,
+        "An error produced while formatting a value."
+    ),
+    builtin!(
+        "Display",
+        Trait,
+        [],
+        DISPLAY_MEMBERS,
+        BuiltinBackend::Metadata,
+        "User-facing textual formatting."
+    ),
+    builtin!(
+        "Debug",
+        Trait,
+        [],
+        DEBUG_MEMBERS,
+        BuiltinBackend::Metadata,
+        "Diagnostic textual formatting."
+    ),
+    builtin!(
         "Eq",
         Trait,
         [],
@@ -697,6 +771,14 @@ pub const BUILTINS: &[BuiltinDeclaration] = &[
         &[],
         BuiltinBackend::Metadata,
         "Values that can be used as hash collection keys."
+    ),
+    builtin!(
+        "BitFlags",
+        Trait,
+        [],
+        &[],
+        BuiltinBackend::Metadata,
+        "Enum values whose discriminants may be combined as a bit set."
     ),
     builtin!(
         "Iterator",
@@ -747,6 +829,19 @@ pub fn builtin_function(path: &str) -> Option<&'static BuiltinDeclaration> {
     builtin(path).filter(|item| item.kind == BuiltinKind::Function)
 }
 
+pub fn standard_host_capabilities() -> Vec<&'static str> {
+    let mut capabilities = BUILTINS
+        .iter()
+        .filter_map(|item| match item.backend {
+            BuiltinBackend::Host(capability) if capability.starts_with("std::") => Some(capability),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    capabilities.sort_unstable();
+    capabilities.dedup();
+    capabilities
+}
+
 pub fn builtin_member(owner: &str, name: &str) -> Option<&'static BuiltinMember> {
     builtin(owner)?
         .members
@@ -759,13 +854,14 @@ pub fn builtin_module_members(path: &str) -> &'static [&'static str] {
         "std" => &["collections", "io", "fs"],
         "std::collections" => &["Vec", "HashMap", "HashSet"],
         "core" => &[
-            "option", "result", "iter", "clone", "default", "cmp", "hash",
+            "option", "result", "iter", "clone", "default", "fmt", "cmp", "hash",
         ],
         "core::option" => &["Option", "Some", "None"],
         "core::result" => &["Result", "Ok", "Err"],
         "core::iter" => &["Iterator", "IntoIterator", "Range"],
         "core::clone" => &["Copy", "Clone", "clone"],
         "core::default" => &["Default"],
+        "core::fmt" => &["Display", "Debug", "Formatter", "FormatError"],
         "core::cmp" => &["Eq"],
         "core::hash" => &["Hash"],
         _ => &[],

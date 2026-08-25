@@ -235,14 +235,15 @@ impl Parser {
                 Stmt::Public { statement, .. } => statement.as_mut(),
                 statement => statement,
             };
-            let Stmt::Struct {
-                attributes: target, ..
-            } = target
-            else {
-                return Err(ParseError {
-                    message: "attributes are currently supported on structs only".into(),
-                    span: attributes[0].span,
-                });
+            let target = match target {
+                Stmt::Struct { attributes, .. } | Stmt::Enum { attributes, .. } => attributes,
+                _ => {
+                    return Err(ParseError {
+                        message: "attributes are currently supported on structs and enums only"
+                            .into(),
+                        span: attributes[0].span,
+                    });
+                }
             };
             target.extend(attributes);
             return Ok(statement);

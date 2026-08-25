@@ -71,6 +71,132 @@ unsafe extern "C" fn handle_dispatcher(
     RILS_STATUS_OK
 }
 
+unsafe extern "C" fn inline_value_dispatcher(
+    _user_data: *mut c_void,
+    function_id: u64,
+    arguments: *const RilsValue,
+    argument_count: usize,
+    out_value: *mut RilsValue,
+    _out_error: *mut RilsSlice,
+) -> i32 {
+    if arguments.is_null() || out_value.is_null() {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    let arguments = unsafe { slice::from_raw_parts(arguments, argument_count) };
+    let component = |value: &RilsValue, index: usize| {
+        let word = if index < 2 { value.low } else { value.high };
+        f32::from_bits((word >> ((index & 1) * 32)) as u32)
+    };
+    let pack = |x: f32, y: f32, z: f32| RilsValue {
+        tag: RILS_VALUE_INLINE_VALUE,
+        reserved: 0,
+        low: u64::from(x.to_bits()) | (u64::from(y.to_bits()) << 32),
+        high: u64::from(z.to_bits()),
+    };
+    let result = match function_id {
+        201 if argument_count == 3 && arguments.iter().all(|value| value.tag == RILS_VALUE_F32) => {
+            pack(
+                f32::from_bits(arguments[0].low as u32),
+                f32::from_bits(arguments[1].low as u32),
+                f32::from_bits(arguments[2].low as u32),
+            )
+        }
+        202 if argument_count == 1 && arguments[0].tag == RILS_VALUE_INLINE_VALUE => RilsValue {
+            tag: RILS_VALUE_F32,
+            reserved: 0,
+            low: u64::from(
+                (component(&arguments[0], 0)
+                    + component(&arguments[0], 1)
+                    + component(&arguments[0], 2))
+                .to_bits(),
+            ),
+            high: 0,
+        },
+        _ => return RILS_STATUS_INVALID_ARGUMENT,
+    };
+    unsafe { out_value.write(result) };
+    RILS_STATUS_OK
+}
+
+unsafe extern "C" fn enum_dispatcher(
+    _user_data: *mut c_void,
+    function_id: u64,
+    arguments: *const RilsValue,
+    argument_count: usize,
+    out_value: *mut RilsValue,
+    _out_error: *mut RilsSlice,
+) -> i32 {
+    if function_id != 301 || argument_count != 1 || arguments.is_null() || out_value.is_null() {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    let arguments = unsafe { slice::from_raw_parts(arguments, argument_count) };
+    if arguments[0].tag != RILS_VALUE_I32 || arguments[0].low != 1 {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    unsafe {
+        out_value.write(RilsValue {
+            tag: RILS_VALUE_I32,
+            reserved: 0,
+            low: 3,
+            high: 0,
+        });
+    }
+    RILS_STATUS_OK
+}
+
+unsafe extern "C" fn string_dispatcher(
+    _user_data: *mut c_void,
+    function_id: u64,
+    arguments: *const RilsValue,
+    argument_count: usize,
+    out_value: *mut RilsValue,
+    _out_error: *mut RilsSlice,
+) -> i32 {
+    if function_id != 401 || argument_count != 1 || arguments.is_null() || out_value.is_null() {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: The runtime provides one callback-scoped argument.
+    let argument = unsafe { *arguments };
+    if argument.tag != RILS_VALUE_STRING || argument.reserved != 0 || argument.high != 0 {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    let mut size = 0;
+    if unsafe { rils_string_size(argument.low, &mut size) } != RILS_STATUS_OK {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    let mut utf8 = vec![0; size];
+    let mut written = 0;
+    // SAFETY: `utf8` provides writable storage of the reported size.
+    if unsafe { rils_string_write(argument.low, utf8.as_mut_ptr(), utf8.len(), &mut written) }
+        != RILS_STATUS_OK
+    {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    if rils_string_destroy(argument.low) != RILS_STATUS_OK {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    utf8.truncate(written);
+    let Ok(input) = String::from_utf8(utf8) else {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    };
+    let output = format!("received:{input}");
+    let mut output_handle = 0;
+    // SAFETY: The output string remains readable for this call.
+    if unsafe { rils_string_create(bytes(&output), &mut output_handle) } != RILS_STATUS_OK {
+        return RILS_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: The runtime provides writable output storage.
+    unsafe {
+        out_value.write(RilsValue {
+            tag: RILS_VALUE_STRING,
+            reserved: 0,
+            low: output_handle,
+            high: 0,
+        });
+    }
+    RILS_STATUS_OK
+}
+
 fn bytes(value: &str) -> RilsSlice {
     RilsSlice {
         data: value.as_ptr(),
@@ -83,6 +209,82 @@ fn raw_bytes(value: &[u8]) -> RilsSlice {
         data: value.as_ptr(),
         length: value.len(),
     }
+}
+
+unsafe extern "C" fn output_callback(user_data: *mut c_void, text: RilsSlice, newline: u32) {
+    // SAFETY: The test keeps the Vec alive and exclusively borrowed during script execution.
+    let events = unsafe { &mut *(user_data.cast::<Vec<(String, bool)>>()) };
+    // SAFETY: The runtime guarantees a readable callback-scoped UTF-8 slice.
+    let bytes = unsafe { slice::from_raw_parts(text.data, text.length) };
+    events.push((String::from_utf8(bytes.to_vec()).unwrap(), newline != 0));
+}
+
+unsafe extern "C" fn inline_value_formatter(
+    _user_data: *mut c_void,
+    logical_type: RilsSlice,
+    value: RilsValue,
+    kind: u32,
+    _alternate: u32,
+    _precision: usize,
+    buffer: *mut u8,
+    capacity: usize,
+) -> usize {
+    // SAFETY: The runtime guarantees readable callback-scoped slices.
+    let logical_type = unsafe { slice::from_raw_parts(logical_type.data, logical_type.length) };
+    if logical_type != b"unity_engine::Vector3" || value.tag != RILS_VALUE_INLINE_VALUE || kind != 0
+    {
+        return usize::MAX;
+    }
+    let x = f32::from_bits(value.low as u32);
+    let y = f32::from_bits((value.low >> 32) as u32);
+    let z = f32::from_bits(value.high as u32);
+    let rendered = format!("Vector3({x}, {y}, {z})");
+    if !buffer.is_null() && capacity >= rendered.len() {
+        // SAFETY: The runtime supplies a writable buffer with the reported capacity.
+        unsafe { ptr::copy_nonoverlapping(rendered.as_ptr(), buffer, rendered.len()) };
+    }
+    rendered.len()
+}
+
+#[test]
+fn routes_formatted_output_through_the_runtime_callback() {
+    let runtime = rils_runtime_create();
+    let mut events = Vec::new();
+    assert_eq!(
+        rils_runtime_set_output_callback(
+            runtime,
+            Some(output_callback),
+            (&mut events as *mut Vec<(String, bool)>).cast(),
+        ),
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_allow_standard_library(runtime), RILS_STATUS_OK);
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+    let source = r#"
+        let _ = std::fs::try_exists("definitely-missing-rils-standard-library-smoke");
+        print!("value={}", 7);
+        println!(" done");
+    "#;
+    let mut module = 0;
+    assert_eq!(
+        unsafe { rils_module_compile(runtime, bytes("output.rils"), bytes(source), &mut module) },
+        RILS_STATUS_OK
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        events,
+        [("value=7".to_string(), false), (" done".to_string(), true)]
+    );
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
 }
 
 #[test]
@@ -301,6 +503,266 @@ fn dispatches_named_host_types_with_inherited_receiver_methods() {
     );
     assert_eq!(result.tag, RILS_VALUE_I64);
     assert_eq!(result.low, 77);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn dispatches_inline_value_types_through_multiple_host_calls() {
+    let runtime = rils_runtime_create();
+    let mut output = Vec::new();
+    let types = [RilsHostTypeV2 {
+        name: bytes("unity_engine::Vector3"),
+        base_type: bytes(""),
+        value_layout: bytes("f32x3"),
+        transport_tag: RILS_VALUE_INLINE_VALUE,
+        kind: RILS_HOST_TYPE_VALUE,
+        reserved: 0,
+    }];
+    assert_eq!(
+        unsafe { rils_runtime_register_host_types_v2(runtime, types.as_ptr(), types.len()) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let scalar_parameters = [RilsHostParameter {
+        logical_type: bytes(""),
+        transport_tag: RILS_VALUE_F32,
+        reserved: 0,
+    }; 3];
+    let vector_parameter = [RilsHostParameter {
+        logical_type: bytes("unity_engine::Vector3"),
+        transport_tag: RILS_VALUE_INLINE_VALUE,
+        reserved: 0,
+    }];
+    let functions = [
+        RilsHostFunctionV2 {
+            function_id: 201,
+            name: bytes("unity_engine::vector3::new"),
+            capability: bytes("unity.math"),
+            parameters: scalar_parameters.as_ptr(),
+            parameter_count: scalar_parameters.len(),
+            return_parameter: vector_parameter[0],
+            receiver: 0,
+            reserved: 0,
+        },
+        RilsHostFunctionV2 {
+            function_id: 202,
+            name: bytes("unity_engine::vector3::component_sum"),
+            capability: bytes("unity.math"),
+            parameters: vector_parameter.as_ptr(),
+            parameter_count: vector_parameter.len(),
+            return_parameter: RilsHostParameter {
+                logical_type: bytes(""),
+                transport_tag: RILS_VALUE_F32,
+                reserved: 0,
+            },
+            receiver: 0,
+            reserved: 0,
+        },
+    ];
+    assert_eq!(
+        unsafe {
+            rils_runtime_register_host_functions_v2(runtime, functions.as_ptr(), functions.len())
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(
+        rils_runtime_set_host_dispatcher(runtime, Some(inline_value_dispatcher), ptr::null_mut()),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        rils_runtime_set_output_callback(
+            runtime,
+            Some(output_callback),
+            (&mut output as *mut Vec<(String, bool)>).cast(),
+        ),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        rils_runtime_set_host_value_formatter(
+            runtime,
+            Some(inline_value_formatter),
+            ptr::null_mut(),
+        ),
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_allow_standard_library(runtime), RILS_STATUS_OK);
+    assert_eq!(
+        unsafe { rils_runtime_allow_capability(runtime, bytes("unity.math")) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+
+    let source = r#"
+        let value = unity_engine::vector3::new(1.25f32, 2.5f32, 3.75f32);
+        println!("value={}", value);
+        unity_engine::vector3::component_sum(value)
+    "#;
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(
+                runtime,
+                bytes("inline-value.rils"),
+                bytes(source),
+                &mut module,
+            )
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(result.tag, RILS_VALUE_F32);
+    assert_eq!(f32::from_bits(result.low as u32), 7.5);
+    assert_eq!(
+        output,
+        [("value=Vector3(1.25, 2.5, 3.75)".to_string(), true)]
+    );
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn dispatches_real_host_enums_and_preserves_unknown_flags_combinations() {
+    let runtime = rils_runtime_create();
+    let camera_variants = [
+        RilsHostEnumVariant {
+            name: bytes("Game"),
+            raw_low: 1,
+            raw_high: 0,
+        },
+        RilsHostEnumVariant {
+            name: bytes("SceneView"),
+            raw_low: 2,
+            raw_high: 0,
+        },
+    ];
+    let flag_variants = [
+        RilsHostEnumVariant {
+            name: bytes("None"),
+            raw_low: 0,
+            raw_high: 0,
+        },
+        RilsHostEnumVariant {
+            name: bytes("HideInHierarchy"),
+            raw_low: 1,
+            raw_high: 0,
+        },
+        RilsHostEnumVariant {
+            name: bytes("HideInInspector"),
+            raw_low: 2,
+            raw_high: 0,
+        },
+    ];
+    let types = [
+        RilsHostTypeV3 {
+            name: bytes("unity_engine::CameraType"),
+            base_type: bytes(""),
+            value_layout: bytes(""),
+            enum_variants: camera_variants.as_ptr(),
+            enum_variant_count: camera_variants.len(),
+            transport_tag: RILS_VALUE_I32,
+            kind: RILS_HOST_TYPE_ENUM,
+            enum_flags: 0,
+            reserved: 0,
+        },
+        RilsHostTypeV3 {
+            name: bytes("unity_engine::HideFlags"),
+            base_type: bytes(""),
+            value_layout: bytes(""),
+            enum_variants: flag_variants.as_ptr(),
+            enum_variant_count: flag_variants.len(),
+            transport_tag: RILS_VALUE_I32,
+            kind: RILS_HOST_TYPE_ENUM,
+            enum_flags: 1,
+            reserved: 0,
+        },
+    ];
+    assert_eq!(
+        unsafe { rils_runtime_register_host_types_v3(runtime, types.as_ptr(), types.len()) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let parameters = [RilsHostParameter {
+        logical_type: bytes("unity_engine::CameraType"),
+        transport_tag: RILS_VALUE_I32,
+        reserved: 0,
+    }];
+    let function = RilsHostFunctionV2 {
+        function_id: 301,
+        name: bytes("unity_engine::camera::flags_for"),
+        capability: bytes("unity.camera"),
+        parameters: parameters.as_ptr(),
+        parameter_count: parameters.len(),
+        return_parameter: RilsHostParameter {
+            logical_type: bytes("unity_engine::HideFlags"),
+            transport_tag: RILS_VALUE_I32,
+            reserved: 0,
+        },
+        receiver: 0,
+        reserved: 0,
+    };
+    assert_eq!(
+        unsafe { rils_runtime_register_host_functions_v2(runtime, &function, 1) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(
+        rils_runtime_set_host_dispatcher(runtime, Some(enum_dispatcher), ptr::null_mut()),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        unsafe { rils_runtime_allow_capability(runtime, bytes("unity.camera")) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+
+    let source = r#"
+        use unity_engine::{CameraType, HideFlags};
+        let flags = unity_engine::camera::flags_for(CameraType::Game);
+        match flags {
+            HideFlags::None => 0,
+            _ => 1,
+        }
+    "#;
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(runtime, bytes("host-enum.rils"), bytes(source), &mut module)
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(result.tag, RILS_VALUE_I32);
+    assert_eq!(result.low, 1);
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
 }
 
@@ -554,14 +1016,103 @@ fn rejects_conflicting_host_manifest_fragments_without_partial_registration() {
 }
 
 #[test]
-fn rejects_manifest_types_not_yet_supported_by_c_dispatcher() {
+fn string_handles_round_trip_utf8_and_reject_consumed_handles() {
+    for value in ["", "Rils", "你好，Unity 👋"] {
+        let mut handle = 0;
+        assert_eq!(
+            unsafe { rils_string_create(bytes(value), &mut handle) },
+            RILS_STATUS_OK
+        );
+        let mut size = usize::MAX;
+        assert_eq!(
+            unsafe { rils_string_size(handle, &mut size) },
+            RILS_STATUS_OK
+        );
+        assert_eq!(size, value.len());
+        let mut buffer = vec![0; size];
+        let mut written = usize::MAX;
+        assert_eq!(
+            unsafe { rils_string_write(handle, buffer.as_mut_ptr(), buffer.len(), &mut written) },
+            RILS_STATUS_OK
+        );
+        assert_eq!(written, value.len());
+        assert_eq!(buffer, value.as_bytes());
+        assert_eq!(rils_string_destroy(handle), RILS_STATUS_OK);
+        assert_eq!(
+            unsafe { rils_string_size(handle, &mut size) },
+            RILS_STATUS_INVALID_HANDLE
+        );
+    }
+}
+
+#[test]
+fn failed_calls_destroy_all_transferred_string_arguments() {
+    let runtime = rils_runtime_create();
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(
+                runtime,
+                bytes("string-cleanup.rils"),
+                bytes("pub fn consume(flag: bool, text: string) { }"),
+                &mut module,
+            )
+        },
+        RILS_STATUS_OK
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut string = 0;
+    assert_eq!(
+        unsafe { rils_string_create(bytes("transferred"), &mut string) },
+        RILS_STATUS_OK
+    );
+    let arguments = [
+        RilsValue {
+            tag: RILS_VALUE_BOOL,
+            low: 2,
+            ..RilsValue::default()
+        },
+        RilsValue {
+            tag: RILS_VALUE_STRING,
+            low: string,
+            ..RilsValue::default()
+        },
+    ];
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe {
+            rils_instance_call(
+                runtime,
+                instance,
+                bytes("consume"),
+                arguments.as_ptr(),
+                arguments.len(),
+                &mut result,
+            )
+        },
+        RILS_STATUS_INVALID_ARGUMENT
+    );
+    let mut size = 0;
+    assert_eq!(
+        unsafe { rils_string_size(string, &mut size) },
+        RILS_STATUS_INVALID_HANDLE
+    );
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
+fn dispatches_strings_through_owned_abi_handles() {
     let mut contract = HostContract::new();
     contract
         .register_function(
-            200,
-            "unity_engine::debug::log",
-            FunctionSignature::fixed(vec![Type::String], Type::Unit),
-            "unity.debug",
+            401,
+            "host::echo",
+            FunctionSignature::fixed(vec![Type::String], Type::String),
+            "host.string",
         )
         .unwrap();
     let manifest = contract.to_manifest_bytes().unwrap();
@@ -569,9 +1120,47 @@ fn rejects_manifest_types_not_yet_supported_by_c_dispatcher() {
     // SAFETY: The manifest bytes remain readable for the call.
     assert_eq!(
         unsafe { rils_runtime_register_host_manifest(runtime, raw_bytes(&manifest)) },
-        RILS_STATUS_UNSUPPORTED_VALUE
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
     );
-    assert!(current_error_message().contains("string"));
+    assert_eq!(
+        rils_runtime_set_host_dispatcher(runtime, Some(string_dispatcher), ptr::null_mut()),
+        RILS_STATUS_OK
+    );
+    assert_eq!(
+        unsafe { rils_runtime_allow_capability(runtime, bytes("host.string")) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(rils_runtime_freeze_host_registry(runtime), RILS_STATUS_OK);
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(
+                runtime,
+                bytes("host-string.rils"),
+                bytes(r#"host::echo("你好，Unity 👋") == "received:你好，Unity 👋""#),
+                &mut module,
+            )
+        },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK,
+        "{}",
+        current_error_message()
+    );
+    assert_eq!(result.tag, RILS_VALUE_BOOL);
+    assert_eq!(result.low, 1);
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
 }
 

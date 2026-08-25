@@ -44,7 +44,8 @@ Unity 项目通过独立的 [RilsForUnity](https://github.com/rils-lang/RilsForU
 不需要携带 Rils 源码或 Rust 工具链。
 
 当前集成面向 Unity 2022.3 LTS 和 Windows x86_64。Unity API 调用必须位于创建运行时的主线程；
-跨边界目前支持基础标量与 session 绑定的 Unity 对象句柄，字符串、集合和 Unity 值类型仍在扩展中。
+跨边界目前支持基础标量、UTF-8 字符串、固定布局 Unity 值类型、真实 enum 与 session 绑定的 Unity
+对象句柄；集合仍需通过宿主 API 或自定义绑定转换。
 安装、脚本模板和生命周期示例参见
 [RilsForUnity 使用说明](https://github.com/rils-lang/RilsForUnity/blob/main/Packages/com.rils-lang.rils-for-unity/README.md)，
 底层对象所有权与线程边界参见 [Unity 互操作边界](docs/unity-interoperability.md)。

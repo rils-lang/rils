@@ -183,7 +183,7 @@ fn trait_types_compatible(expected: &Type, actual: &Type) -> bool {
                 arguments: actual_arguments,
             },
         ) => {
-            expected_name == actual_name
+            nominal_names_compatible(expected_name, actual_name)
                 && expected_arguments.len() == actual_arguments.len()
                 && expected_arguments
                     .iter()
@@ -192,6 +192,14 @@ fn trait_types_compatible(expected: &Type, actual: &Type) -> bool {
         }
         _ => expected == actual,
     }
+}
+
+fn nominal_names_compatible(expected: &str, actual: &str) -> bool {
+    expected == actual
+        || matches!(
+            (expected.rsplit("::").next(), actual.rsplit("::").next()),
+            (Some("Formatter"), Some("Formatter")) | (Some("FormatError"), Some("FormatError"))
+        )
 }
 
 pub(super) fn substitute_self(value: &Type, target: &Type) -> Type {

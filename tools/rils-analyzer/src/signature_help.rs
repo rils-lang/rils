@@ -14,48 +14,160 @@ impl Server {
             recovered = recover_analysis(self, document, offset);
             recovered.as_ref()
         };
-        let Some((name, signature)) = current_analysis
+        let signatures = if let Some(signatures) =
+            self.host_signatures_at_call(current_analysis, &document.text, context.open)
+        {
+            signatures
+        } else if let Some((name, signature)) = current_analysis
             .and_then(|analysis| signature_at_call(analysis, &document.text, context.open))
             .or_else(|| {
                 current_analysis.and_then(|analysis| {
                     builtin_signature_at_call(analysis, &document.text, context.open)
                 })
             })
-            .or_else(|| self.host_signature_at_call(&document.text, context.open))
-        else {
+        {
+            vec![(name, signature)]
+        } else {
             return Ok(Value::Null);
         };
-        let parameters = signature.parameters.clone().unwrap_or_default();
+        let active_signature = signatures
+            .iter()
+            .position(|(_, signature)| {
+                signature
+                    .parameters
+                    .as_ref()
+                    .is_some_and(|parameters| context.argument < parameters.len())
+            })
+            .unwrap_or(0);
+        let parameters = signatures[active_signature]
+            .1
+            .parameters
+            .clone()
+            .unwrap_or_default();
         let active_parameter = if parameters.is_empty() {
             0
         } else {
             context.argument.min(parameters.len() - 1)
         };
-        let labels = parameters
+        let signature_items = signatures
             .iter()
-            .map(ToString::to_string)
+            .map(|(name, signature)| {
+                let labels = signature
+                    .parameters
+                    .as_ref()
+                    .into_iter()
+                    .flatten()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                json!({
+                    "label": signature_declaration(name, signature),
+                    "parameters": labels.iter().map(|label| json!({ "label": label })).collect::<Vec<_>>()
+                })
+            })
             .collect::<Vec<_>>();
         Ok(json!({
-            "signatures": [{
-                "label": signature_declaration(&name, &signature),
-                "parameters": labels.iter().map(|label| json!({ "label": label })).collect::<Vec<_>>()
-            }],
-            "activeSignature": 0,
+            "signatures": signature_items,
+            "activeSignature": active_signature,
             "activeParameter": active_parameter
         }))
     }
 
-    fn host_signature_at_call(
+    fn host_signatures_at_call(
         &self,
+        analysis: Option<&DocumentAnalysis>,
         text: &str,
         open: usize,
-    ) -> Option<(String, FunctionSignature)> {
+    ) -> Option<Vec<(String, FunctionSignature)>> {
+        if let Some(analysis) = analysis
+            && let Some((name, receiver_type)) = member_call_receiver(analysis, text, open)
+        {
+            let receiver_type = match receiver_type {
+                Type::Reference { inner, .. } => inner.as_ref(),
+                receiver_type => receiver_type,
+            };
+            if let Type::Named {
+                name: receiver_type,
+                arguments,
+            } = receiver_type
+                && arguments.is_empty()
+            {
+                let signatures = self
+                    .host_contract
+                    .receiver_methods(receiver_type)
+                    .into_iter()
+                    .filter(|function| {
+                        function
+                            .name
+                            .rsplit_once("::")
+                            .is_some_and(|(_, member)| member == name)
+                    })
+                    .map(|function| {
+                        let mut signature = function.signature.clone();
+                        if let Some(parameters) = signature.parameters.as_mut()
+                            && !parameters.is_empty()
+                        {
+                            parameters.remove(0);
+                        }
+                        (name.clone(), signature)
+                    })
+                    .collect::<Vec<_>>();
+                if !signatures.is_empty() {
+                    return Some(signatures);
+                }
+            }
+        }
         let path = qualified_path_before(text, open)?;
         let resolved = resolve_path_alias(text, &path);
-        let signature = self.host_functions.get(&resolved)?.clone();
         let name = resolved.rsplit("::").next()?.to_owned();
-        Some((name, signature))
+        let signatures = self
+            .host_contract
+            .functions_named(&resolved)
+            .map(|function| {
+                let mut signature = function.signature.clone();
+                if function.receiver.is_some()
+                    && let Some(parameters) = signature.parameters.as_mut()
+                    && !parameters.is_empty()
+                {
+                    parameters.remove(0);
+                }
+                (name.clone(), signature)
+            })
+            .collect::<Vec<_>>();
+        (!signatures.is_empty()).then_some(signatures)
     }
+}
+
+fn member_call_receiver<'a>(
+    analysis: &'a DocumentAnalysis,
+    text: &str,
+    open: usize,
+) -> Option<(String, &'a Type)> {
+    let name = identifier_before(text, open)?.to_owned();
+    let name_start = text[..open].trim_end().len().checked_sub(name.len())?;
+    let dot = name_start.checked_sub(1)?;
+    if text.as_bytes().get(dot) != Some(&b'.') {
+        return None;
+    }
+    let receiver_type = analysis
+        .expression_types
+        .iter()
+        .filter(|(span, _)| span.end == dot)
+        .max_by_key(|(span, _)| span.start)
+        .map(|(_, ty)| ty)
+        .or_else(|| {
+            let receiver = identifier_before(text, dot)?;
+            analysis
+                .symbols
+                .iter()
+                .filter(|symbol| {
+                    symbol.name == receiver
+                        && symbol.span.start < dot
+                        && symbol.inferred_type.is_some()
+                })
+                .max_by_key(|symbol| symbol.span.start)
+                .and_then(|symbol| symbol.inferred_type.as_ref())
+        })?;
+    Some((name, receiver_type))
 }
 
 fn builtin_signature_at_call(
@@ -176,11 +288,10 @@ fn recover_analysis(
     for insertion in ["1i32)", "1i32);", "()", "());"] {
         let mut source = document.text.clone();
         source.insert_str(offset, insertion);
-        if let Ok(analysis) = analyze_with_source_id_and_external_exports_and_host_types(
+        if let Ok(analysis) = analyze_with_host_and_source_id_and_external_exports(
             &source,
             document.source_id,
-            &server.host_functions,
-            &server.host_types,
+            &server.host_contract,
             &HashMap::new(),
         ) {
             return Some(analysis);

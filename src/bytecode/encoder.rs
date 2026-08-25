@@ -279,7 +279,8 @@ fn encode_function(
                         capability,
                         arguments,
                     } => {
-                        let import = if let Some(import) = import_ids.get(&name).copied() {
+                        let import_key = format!("{name}\0{signature:?}");
+                        let import = if let Some(import) = import_ids.get(&import_key).copied() {
                             let existing = &imports[import];
                             if existing.signature != signature || existing.capability != capability
                             {
@@ -297,7 +298,7 @@ fn encode_function(
                                 abi_version: BYTECODE_HOST_ABI_VERSION,
                                 capability,
                             });
-                            import_ids.insert(name, import);
+                            import_ids.insert(import_key, import);
                             import
                         };
                         Instruction::CallImport {

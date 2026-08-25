@@ -23,6 +23,7 @@ use crate::{
 mod core_imports;
 mod encoder;
 mod format;
+mod formatting;
 mod host;
 mod verifier;
 mod vm;
@@ -38,9 +39,9 @@ pub use rils_compiler::{
     HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION,
     HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES,
     HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS,
-    HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract, HostFunctionDeclaration,
-    HostModuleDeclaration, HostReceiver, HostThreadAffinity, HostTypeDeclaration,
-    HostTypeTransport,
+    HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract, HostEnumDefinition,
+    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
+    HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -264,6 +265,7 @@ impl BytecodeModule {
         VirtualMachine::new_call(
             self,
             imports,
+            host.host_value_formatter.clone(),
             crate::ExecutionLimits {
                 max_steps,
                 ..crate::ExecutionLimits::default()
@@ -317,7 +319,7 @@ impl BytecodeModule {
     ) -> Result<Value, BytecodeError> {
         self.verify()?;
         let imports = self.link(host)?;
-        VirtualMachine::new(self, imports, limits).execute()
+        VirtualMachine::new(self, imports, host.host_value_formatter.clone(), limits).execute()
     }
 
     /// Calls a named bytecode function without executing the module entry point.
@@ -378,7 +380,15 @@ impl BytecodeModule {
             ));
         }
         let imports = self.link(host)?;
-        VirtualMachine::new_call(self, imports, limits, function, arguments)?.execute()
+        VirtualMachine::new_call(
+            self,
+            imports,
+            host.host_value_formatter.clone(),
+            limits,
+            function,
+            arguments,
+        )?
+        .execute()
     }
 
     pub fn imports(&self) -> &[BytecodeImport] {
@@ -439,21 +449,24 @@ impl BytecodeModule {
                         Span::default(),
                     ));
                 }
-                let binding = host.functions.get(&import.name).ok_or_else(|| {
+                let bindings = host.functions.get(&import.name).ok_or_else(|| {
                     BytecodeError::new(
                         format!("missing bytecode import `{}`", import.name),
                         Span::default(),
                     )
                 })?;
+                let binding = bindings
+                    .iter()
+                    .find(|binding| binding.signature == import.signature)
+                    .ok_or_else(|| {
+                        BytecodeError::new(
+                            format!("signature mismatch for import `{}`", import.name),
+                            Span::default(),
+                        )
+                    })?;
                 if binding.capability != import.capability {
                     return Err(BytecodeError::new(
                         format!("capability mismatch for import `{}`", import.name),
-                        Span::default(),
-                    ));
-                }
-                if binding.signature != import.signature {
-                    return Err(BytecodeError::new(
-                        format!("signature mismatch for import `{}`", import.name),
                         Span::default(),
                     ));
                 }

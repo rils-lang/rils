@@ -22,7 +22,7 @@ impl Point {
 }
 
 let point = Point::new(3.0, 4.0);
-println!(point.length_squared());
+println!("{}", point.length_squared());
 ```
 
 规则如下：
@@ -266,6 +266,42 @@ impl<T> Describe for Wrapper<T> {
     }
 }
 ```
+
+`Debug` 是内建格式化 trait，Struct 与 enum 可以通过派生生成结构化调试表示：
+
+```rils
+#[derive(Default, Debug)]
+struct State<T> {
+    value: T,
+}
+
+#[derive(Debug)]
+enum Message {
+    Empty,
+    Text(string),
+}
+
+println!("state = {:?}", state);
+println!("state = {:#?}", state);
+```
+
+派生会递归检查字段并为泛型参数补充 `Debug` bound；字段格式化会继续调用字段类型自己的
+`Debug::fmt`。`Display` 表示面向用户的稳定文本形式，不会自动派生。自定义实现通过
+`Formatter::write_str` 写入结果：
+
+```rils
+impl core::fmt::Display for Point {
+    fn fmt(
+        &self,
+        formatter: &mut core::fmt::Formatter,
+    ) -> Result<(), core::fmt::FormatError> {
+        formatter.write_str("point")
+    }
+}
+```
+
+`Formatter` 由格式化宏临时提供，不能由脚本自行构造或保存。解释器和字节码 VM 都会在 `{}`、
+`{:?}` 处调用实际 trait 实现；`#[derive(Debug)]` 也使用同一分派通路。
 
 当前暂不支持：
 

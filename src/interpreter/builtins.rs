@@ -5,13 +5,17 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         NativeFunction {
             binding_name: "#rils_native_print",
             name: "print",
-            min_arity: 0,
+            min_arity: 1,
             max_arity: usize::MAX,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
             function: |arguments| {
-                for value in arguments {
-                    print!("{value}");
-                }
+                let Some(Value::String(format)) = arguments.first() else {
+                    return Err("print! requires a format string".into());
+                };
+                print!(
+                    "{}",
+                    crate::formatting::format_arguments(format, &arguments[1..])?
+                );
                 Ok(Value::Unit)
             },
         },
@@ -22,13 +26,17 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             max_arity: usize::MAX,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
             function: |arguments| {
-                for (index, value) in arguments.iter().enumerate() {
-                    if index > 0 {
-                        print!(" ");
-                    }
-                    print!("{value}");
+                if arguments.is_empty() {
+                    println!();
+                    return Ok(Value::Unit);
                 }
-                println!();
+                let Some(Value::String(format)) = arguments.first() else {
+                    return Err("println! requires a format string".into());
+                };
+                println!(
+                    "{}",
+                    crate::formatting::format_arguments(format, &arguments[1..])?
+                );
                 Ok(Value::Unit)
             },
         },
@@ -305,6 +313,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     }
 
     install_builtin_traits(environment);
+    install_format_types(environment);
     environment
         .borrow_mut()
         .define("Vec", Value::BuiltinType(BuiltinType::Vec), false, None);
@@ -447,6 +456,15 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
         ],
     );
     let default = module("default", vec![("Default", get("Default"))]);
+    let fmt = module(
+        "fmt",
+        vec![
+            ("Display", get("Display")),
+            ("Debug", get("Debug")),
+            ("Formatter", get("Formatter")),
+            ("FormatError", get("FormatError")),
+        ],
+    );
     let hash = module("hash", vec![("Hash", get("Hash"))]);
     let cmp = module("cmp", vec![("Eq", get("Eq"))]);
     let core = module(
@@ -457,6 +475,7 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
             ("iter", iter),
             ("clone", clone),
             ("default", default),
+            ("fmt", fmt),
             ("hash", hash),
             ("cmp", cmp),
         ],
@@ -513,6 +532,34 @@ fn install_builtin_modules(environment: &EnvironmentRef) {
         .define("prelude", prelude, false, None);
 }
 
+fn install_format_types(environment: &EnvironmentRef) {
+    environment.borrow_mut().define(
+        "Formatter",
+        Value::HostType(Rc::new(HostType {
+            name: "Formatter".into(),
+            base_types: HashSet::new(),
+            copy: false,
+            methods: RefCell::new(HashMap::new()),
+        })),
+        false,
+        None,
+    );
+    environment.borrow_mut().define(
+        "FormatError",
+        Value::StructType(Rc::new(StructType {
+            name: "FormatError".into(),
+            generic_parameters: Vec::new(),
+            fields: Vec::new(),
+            methods: Default::default(),
+            trait_methods: Default::default(),
+            implemented_traits: Default::default(),
+            associated_types: Default::default(),
+        })),
+        false,
+        None,
+    );
+}
+
 fn install_builtin_traits(environment: &EnvironmentRef) {
     let span = Span::default();
     let self_type = Type::named("Self");
@@ -524,6 +571,12 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
         mutable: true,
         inner: Box::new(self_type.clone()),
     };
+    let formatter = Type::named("Formatter");
+    let mutable_formatter = Type::Reference {
+        mutable: true,
+        inner: Box::new(formatter),
+    };
+    let format_result = Type::Result(Box::new(Type::Unit), Box::new(Type::named("FormatError")));
     let Type::Function {
         parameters: Some(default_parameters),
         return_type: default_return,
@@ -578,6 +631,64 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                     })
                     .collect(),
                 return_type: Some(*default_return),
+                span,
+            }],
+        },
+        TraitType {
+            name: "Display".into(),
+            bounds: Vec::new(),
+            associated_types: Vec::new(),
+            methods: vec![TraitMethod {
+                name: "fmt".into(),
+                name_span: span,
+                generic_parameters: Vec::new(),
+                parameters: vec![
+                    Parameter {
+                        name: "self".into(),
+                        mutable: false,
+                        type_annotation: Some(Type::Reference {
+                            mutable: false,
+                            inner: Box::new(self_type.clone()),
+                        }),
+                        span,
+                    },
+                    Parameter {
+                        name: "formatter".into(),
+                        mutable: false,
+                        type_annotation: Some(mutable_formatter.clone()),
+                        span,
+                    },
+                ],
+                return_type: Some(format_result.clone()),
+                span,
+            }],
+        },
+        TraitType {
+            name: "Debug".into(),
+            bounds: Vec::new(),
+            associated_types: Vec::new(),
+            methods: vec![TraitMethod {
+                name: "fmt".into(),
+                name_span: span,
+                generic_parameters: Vec::new(),
+                parameters: vec![
+                    Parameter {
+                        name: "self".into(),
+                        mutable: false,
+                        type_annotation: Some(Type::Reference {
+                            mutable: false,
+                            inner: Box::new(self_type.clone()),
+                        }),
+                        span,
+                    },
+                    Parameter {
+                        name: "formatter".into(),
+                        mutable: false,
+                        type_annotation: Some(mutable_formatter),
+                        span,
+                    },
+                ],
+                return_type: Some(format_result),
                 span,
             }],
         },

@@ -22,7 +22,7 @@ Copy 值。其他值默认拥有唯一所有者，赋值、传参和返回会移
 ```rust
 let text = "hello";
 let moved = text;
-println!(text); // error: use of moved value `text`
+println!("{}", text); // 只借用 `text`，不会 move
 ```
 
 需要独立副本时必须显式克隆。`clone` 接受引用，因此不会移动原值：

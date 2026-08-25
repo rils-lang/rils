@@ -48,6 +48,21 @@ impl Interpreter {
                     .clone_owned()
                     .map_err(|message| RuntimeError::new(message, span))
             }
+            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::FormatterWriteStr) => {
+                let buffer = super::formatting::formatter_buffer(&method.receiver, span)?;
+                let Value::String(value) = &arguments[0] else {
+                    return Err(RuntimeError::new(
+                        "Formatter::write_str expects string",
+                        span,
+                    ));
+                };
+                buffer.write_str(value);
+                Ok(format_ok())
+            }
+            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::FormatterWriteDerivedDebug) => {
+                self.write_derived_debug(&method.receiver, &arguments[0], span)?;
+                Ok(format_ok())
+            }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::RuntimeMemberId::HashMapLen
                 | rils_builtins::RuntimeMemberId::HashMapIsEmpty
@@ -686,6 +701,14 @@ fn read_builtin_receiver(value: &Value, span: Span) -> Result<Value, RuntimeErro
             .read()
             .map_err(|message| RuntimeError::new(message, span)),
         value => Ok(value.clone()),
+    }
+}
+
+fn format_ok() -> Value {
+    Value::Result {
+        value: Ok(Rc::new(Value::Unit)),
+        ok_type: Some(Type::Unit),
+        error_type: Some(Type::named("FormatError")),
     }
 }
 
