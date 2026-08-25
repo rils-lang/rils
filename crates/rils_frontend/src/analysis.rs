@@ -260,7 +260,27 @@ pub fn analyze_with_source_id_and_external_exports_and_host_types(
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
 ) -> Result<DocumentAnalysis, FrontendError> {
     let tokens = crate::lexer::lex_with_source_id(source, source_id).map_err(FrontendError::Lex)?;
-    let mut program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
+    let program = crate::parser::parse(tokens).map_err(FrontendError::Parse)?;
+    Ok(
+        analyze_program_with_source_id_and_external_exports_and_host_types(
+            &program,
+            source_id,
+            host_functions,
+            host_types,
+            external_exports,
+        ),
+    )
+}
+
+#[doc(hidden)]
+pub fn analyze_program_with_source_id_and_external_exports_and_host_types(
+    program: &Program,
+    source_id: SourceId,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+    external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+) -> DocumentAnalysis {
+    let mut program = program.clone();
     let resolution_errors = crate::resolve_host_type_names(&mut program, host_types);
     let mut analysis = Analyzer::new(
         source_id,
@@ -271,7 +291,7 @@ pub fn analyze_with_source_id_and_external_exports_and_host_types(
     )
     .analyze(&program);
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
-    Ok(analysis)
+    analysis
 }
 
 fn append_host_type_resolution_errors(
@@ -1513,10 +1533,19 @@ impl Analyzer {
     }
 
     fn define(&mut self, name: &str, span: Span, kind: SymbolKind) {
-        if self
-            .scopes
-            .last()
-            .is_some_and(|scope| scope.contains_key(name))
+        let merges_host_module = kind == SymbolKind::Module
+            && self
+                .scopes
+                .last()
+                .and_then(|scope| scope.get(name))
+                .is_some_and(|definition| {
+                    definition.kind == SymbolKind::Module && definition.span.is_none()
+                });
+        if !merges_host_module
+            && self
+                .scopes
+                .last()
+                .is_some_and(|scope| scope.contains_key(name))
         {
             self.result.diagnostics.push(AnalysisDiagnostic::error(
                 format!("`{name}` is already defined in this scope"),

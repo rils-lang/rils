@@ -180,16 +180,17 @@ pub unsafe extern "C" fn rils_instance_call(
                 Span::default(),
             );
         }
-        // SAFETY: The function-name range is read only during this call.
-        let function_name = match unsafe { read_utf8(function_name, "function name") } {
-            Ok(value) => value,
-            Err(status) => return status,
-        };
         // SAFETY: Null is accepted only for an empty slice; otherwise the caller promises readability.
         let arguments = if argument_count == 0 {
             &[]
         } else {
             unsafe { slice::from_raw_parts(arguments, argument_count) }
+        };
+        let _string_guard = FfiStringInputGuard(arguments);
+        // SAFETY: The function-name range is read only during this call.
+        let function_name = match unsafe { read_utf8(function_name, "function name") } {
+            Ok(value) => value,
+            Err(status) => return status,
         };
         let arguments = match arguments
             .iter()

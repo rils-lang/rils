@@ -39,12 +39,14 @@ public enum RilsValueTag : uint
     Char = 16,
     HostHandle = 17,
     InlineValue = 18,
+    String = 19,
 }
 
 public enum RilsHostTypeKind : uint
 {
     Opaque = 0,
     Value = 1,
+    Enum = 2,
 }
 
 public enum RilsFormatKind : uint
@@ -98,6 +100,28 @@ internal struct NativeHostTypeV2
     internal NativeSlice ValueLayout;
     internal RilsValueTag TransportTag;
     internal RilsHostTypeKind Kind;
+    internal uint Reserved;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHostEnumVariant
+{
+    internal NativeSlice Name;
+    internal ulong RawLow;
+    internal ulong RawHigh;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHostTypeV3
+{
+    internal NativeSlice Name;
+    internal NativeSlice BaseType;
+    internal NativeSlice ValueLayout;
+    internal NativeHostEnumVariant* EnumVariants;
+    internal UIntPtr EnumVariantCount;
+    internal RilsValueTag TransportTag;
+    internal RilsHostTypeKind Kind;
+    internal uint EnumFlags;
     internal uint Reserved;
 }
 
@@ -159,106 +183,121 @@ internal static unsafe class NativeMethods
     internal static extern ulong RuntimeCreate();
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_destroy")]
-    internal static extern int RuntimeDestroy(ulong runtime);
+    internal static extern int RuntimeDestroy(ulong @runtime);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_max_steps")]
-    internal static extern int RuntimeSetMaxSteps(ulong runtime, ulong max_steps);
+    internal static extern int RuntimeSetMaxSteps(ulong @runtime, ulong @max_steps);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_functions")]
-    internal static extern int RuntimeRegisterHostFunctions(ulong runtime, NativeHostFunction* functions, UIntPtr function_count);
+    internal static extern int RuntimeRegisterHostFunctions(ulong @runtime, NativeHostFunction* @functions, UIntPtr @function_count);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_types")]
-    internal static extern int RuntimeRegisterHostTypes(ulong runtime, NativeHostType* types, UIntPtr type_count);
+    internal static extern int RuntimeRegisterHostTypes(ulong @runtime, NativeHostType* @types, UIntPtr @type_count);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_types_v2")]
-    internal static extern int RuntimeRegisterHostTypesV2(ulong runtime, NativeHostTypeV2* types, UIntPtr type_count);
+    internal static extern int RuntimeRegisterHostTypesV2(ulong @runtime, NativeHostTypeV2* @types, UIntPtr @type_count);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_types_v3")]
+    internal static extern int RuntimeRegisterHostTypesV3(ulong @runtime, NativeHostTypeV3* @types, UIntPtr @type_count);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_functions_v2")]
-    internal static extern int RuntimeRegisterHostFunctionsV2(ulong runtime, NativeHostFunctionV2* functions, UIntPtr function_count);
+    internal static extern int RuntimeRegisterHostFunctionsV2(ulong @runtime, NativeHostFunctionV2* @functions, UIntPtr @function_count);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_register_host_manifest")]
-    internal static extern int RuntimeRegisterHostManifest(ulong runtime, NativeSlice manifest);
+    internal static extern int RuntimeRegisterHostManifest(ulong @runtime, NativeSlice @manifest);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_host_manifest_size")]
-    internal static extern int RuntimeHostManifestSize(ulong runtime, out UIntPtr out_size);
+    internal static extern int RuntimeHostManifestSize(ulong @runtime, out UIntPtr @out_size);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_write_host_manifest")]
-    internal static extern int RuntimeWriteHostManifest(ulong runtime, byte* buffer, UIntPtr buffer_capacity, out UIntPtr out_written);
+    internal static extern int RuntimeWriteHostManifest(ulong @runtime, byte* @buffer, UIntPtr @buffer_capacity, out UIntPtr @out_written);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_host_dispatcher")]
-    internal static extern int RuntimeSetHostDispatcher(ulong runtime, NativeHostDispatcher dispatcher, IntPtr user_data);
+    internal static extern int RuntimeSetHostDispatcher(ulong @runtime, NativeHostDispatcher @dispatcher, IntPtr @user_data);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_output_callback")]
-    internal static extern int RuntimeSetOutputCallback(ulong runtime, NativeOutputCallback? callback, IntPtr user_data);
+    internal static extern int RuntimeSetOutputCallback(ulong @runtime, NativeOutputCallback? @callback, IntPtr @user_data);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_set_host_value_formatter")]
-    internal static extern int RuntimeSetHostValueFormatter(ulong runtime, NativeHostValueFormatCallback? callback, IntPtr user_data);
+    internal static extern int RuntimeSetHostValueFormatter(ulong @runtime, NativeHostValueFormatCallback? @callback, IntPtr @user_data);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_allow_capability")]
-    internal static extern int RuntimeAllowCapability(ulong runtime, NativeSlice capability);
+    internal static extern int RuntimeAllowCapability(ulong @runtime, NativeSlice @capability);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_allow_standard_library")]
-    internal static extern int RuntimeAllowStandardLibrary(ulong runtime);
+    internal static extern int RuntimeAllowStandardLibrary(ulong @runtime);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_runtime_freeze_host_registry")]
-    internal static extern int RuntimeFreezeHostRegistry(ulong runtime);
+    internal static extern int RuntimeFreezeHostRegistry(ulong @runtime);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_compile")]
-    internal static extern int ModuleCompile(ulong runtime, NativeSlice source_name, NativeSlice source, out ulong out_module);
+    internal static extern int ModuleCompile(ulong @runtime, NativeSlice @source_name, NativeSlice @source, out ulong @out_module);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_compile_file")]
-    internal static extern int ModuleCompileFile(ulong runtime, NativeSlice path, out ulong out_module);
+    internal static extern int ModuleCompileFile(ulong @runtime, NativeSlice @path, out ulong @out_module);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_load_bytecode")]
-    internal static extern int ModuleLoadBytecode(ulong runtime, NativeSlice bytecode, out ulong out_module);
+    internal static extern int ModuleLoadBytecode(ulong @runtime, NativeSlice @bytecode, out ulong @out_module);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_load_bytecode_file")]
-    internal static extern int ModuleLoadBytecodeFile(ulong runtime, NativeSlice path, out ulong out_module);
+    internal static extern int ModuleLoadBytecodeFile(ulong @runtime, NativeSlice @path, out ulong @out_module);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_validate_host")]
-    internal static extern int ModuleValidateHost(ulong runtime, ulong module);
+    internal static extern int ModuleValidateHost(ulong @runtime, ulong @module);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_trait_implementation_count")]
-    internal static extern int ModuleTraitImplementationCount(ulong runtime, ulong module, NativeSlice trait_name, NativeSlice source_name, out UIntPtr out_count);
+    internal static extern int ModuleTraitImplementationCount(ulong @runtime, ulong @module, NativeSlice @trait_name, NativeSlice @source_name, out UIntPtr @out_count);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_trait_implementation_name_size")]
-    internal static extern int ModuleTraitImplementationNameSize(ulong runtime, ulong module, NativeSlice trait_name, NativeSlice source_name, UIntPtr index, out UIntPtr out_size);
+    internal static extern int ModuleTraitImplementationNameSize(ulong @runtime, ulong @module, NativeSlice @trait_name, NativeSlice @source_name, UIntPtr @index, out UIntPtr @out_size);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_write_trait_implementation_name")]
-    internal static extern int ModuleWriteTraitImplementationName(ulong runtime, ulong module, NativeSlice trait_name, NativeSlice source_name, UIntPtr index, byte* buffer, UIntPtr buffer_capacity, out UIntPtr out_written);
+    internal static extern int ModuleWriteTraitImplementationName(ulong @runtime, ulong @module, NativeSlice @trait_name, NativeSlice @source_name, UIntPtr @index, byte* @buffer, UIntPtr @buffer_capacity, out UIntPtr @out_written);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_bytecode_size")]
-    internal static extern int ModuleBytecodeSize(ulong runtime, ulong module, out UIntPtr out_size);
+    internal static extern int ModuleBytecodeSize(ulong @runtime, ulong @module, out UIntPtr @out_size);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_write_bytecode")]
-    internal static extern int ModuleWriteBytecode(ulong runtime, ulong module, byte* buffer, UIntPtr buffer_capacity, out UIntPtr out_written);
+    internal static extern int ModuleWriteBytecode(ulong @runtime, ulong @module, byte* @buffer, UIntPtr @buffer_capacity, out UIntPtr @out_written);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_write_bytecode_file")]
-    internal static extern int ModuleWriteBytecodeFile(ulong runtime, ulong module, NativeSlice path);
+    internal static extern int ModuleWriteBytecodeFile(ulong @runtime, ulong @module, NativeSlice @path);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_module_destroy")]
-    internal static extern int ModuleDestroy(ulong runtime, ulong module);
+    internal static extern int ModuleDestroy(ulong @runtime, ulong @module);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_instance_create")]
-    internal static extern int InstanceCreate(ulong runtime, ulong module, out ulong out_instance);
+    internal static extern int InstanceCreate(ulong @runtime, ulong @module, out ulong @out_instance);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_instance_destroy")]
-    internal static extern int InstanceDestroy(ulong runtime, ulong instance);
+    internal static extern int InstanceDestroy(ulong @runtime, ulong @instance);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_instance_execute")]
-    internal static extern int InstanceExecute(ulong runtime, ulong instance, out NativeValue out_value);
+    internal static extern int InstanceExecute(ulong @runtime, ulong @instance, out NativeValue @out_value);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_instance_call")]
-    internal static extern int InstanceCall(ulong runtime, ulong instance, NativeSlice function_name, NativeValue* arguments, UIntPtr argument_count, out NativeValue out_value);
+    internal static extern int InstanceCall(ulong @runtime, ulong @instance, NativeSlice @function_name, NativeValue* @arguments, UIntPtr @argument_count, out NativeValue @out_value);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_script_value_create_default")]
-    internal static extern int ScriptValueCreateDefault(ulong runtime, ulong instance, NativeSlice target, out ulong out_value);
+    internal static extern int ScriptValueCreateDefault(ulong @runtime, ulong @instance, NativeSlice @target, out ulong @out_value);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_script_value_destroy")]
-    internal static extern int ScriptValueDestroy(ulong runtime, ulong value);
+    internal static extern int ScriptValueDestroy(ulong @runtime, ulong @value);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_script_value_call_trait")]
-    internal static extern int ScriptValueCallTrait(ulong runtime, ulong instance, ulong value, NativeSlice trait_name, NativeSlice method_name, NativeValue* arguments, NativeHostParameter* argument_types, UIntPtr argument_count, out NativeValue out_value);
+    internal static extern int ScriptValueCallTrait(ulong @runtime, ulong @instance, ulong @value, NativeSlice @trait_name, NativeSlice @method_name, NativeValue* @arguments, NativeHostParameter* @argument_types, UIntPtr @argument_count, out NativeValue @out_value);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_string_create")]
+    internal static extern int StringCreate(NativeSlice @utf8, out ulong @out_string);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_string_size")]
+    internal static extern int StringSize(ulong @string, out UIntPtr @out_size);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_string_write")]
+    internal static extern int StringWrite(ulong @string, byte* @buffer, UIntPtr @buffer_capacity, out UIntPtr @out_written);
+
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_string_destroy")]
+    internal static extern int StringDestroy(ulong @string);
 
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "rils_last_error_code")]
     internal static extern int LastErrorCode();

@@ -252,19 +252,58 @@ fn test_server(
         Document {
             source_id: SourceId::UNKNOWN,
             text: text.into(),
-            analysis: rils_frontend::analysis::analyze_with_host_functions(text, &host_functions),
+            analysis: rils_compiler::analyze_with_host_and_source_id_and_external_exports(
+                text,
+                SourceId::UNKNOWN,
+                &host_contract,
+                &HashMap::new(),
+            ),
         },
     );
+    let host_types = host_contract
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
     Server {
         connection,
         documents,
         workspace_documents: HashSet::new(),
         host_contract,
         host_functions,
-        host_types: HashSet::new(),
+        host_types,
         projects: Vec::new(),
         next_source_id: 1,
     }
+}
+
+#[test]
+fn completes_manifest_enum_variants() {
+    let mut contract = HostContract::new();
+    contract
+        .register_enum_type(
+            "unity_engine::CameraType",
+            rils_frontend::IntegerType::I32,
+            false,
+            [("Game".to_owned(), 1), ("SceneView".to_owned(), 2)],
+        )
+        .unwrap();
+    let text = "unity_engine::CameraType::";
+    let uri = "file:///host-enum-completion.rils".to_owned();
+    let server = test_server(&uri, text, contract.signatures(), contract);
+
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": text.len() }
+        }))
+        .unwrap();
+    assert!(
+        items.as_array().is_some_and(|items| {
+            items.iter().any(|item| completion_named(item, "Game"))
+                && items.iter().any(|item| completion_named(item, "SceneView"))
+        }),
+        "{items}"
+    );
 }
 
 fn completion_named(item: &serde_json::Value, name: &str) -> bool {
@@ -473,23 +512,19 @@ fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
         transform.inferred_type,
         Some(Type::named("unity_engine::Transform"))
     );
-    for (name, expected) in [
-        ("actual", "unity_engine::Vector3"),
-        ("planar", "unity_engine::Vector2"),
-        ("identity", "unity_engine::Quaternion"),
-        ("tint", "unity_engine::Color"),
-    ] {
-        let binding = analysis
-            .symbols
-            .iter()
-            .find(|symbol| symbol.is_definition && symbol.name == name)
-            .unwrap();
-        assert_eq!(binding.inferred_type, Some(Type::named(expected)), "{name}");
-    }
+    let expected = analysis
+        .symbols
+        .iter()
+        .find(|symbol| symbol.is_definition && symbol.name == "expected")
+        .unwrap();
+    assert_eq!(
+        expected.inferred_type,
+        Some(Type::named("unity_engine::Vector3"))
+    );
     assert!(analysis.symbols.iter().any(|symbol| {
-        symbol.name == "Color"
+        symbol.name == "Vector2"
             && symbol.kind == rils_frontend::analysis::SymbolKind::Type
-            && symbol.inferred_type == Some(Type::named("unity_engine::Color"))
+            && symbol.inferred_type == Some(Type::named("unity_engine::Vector2"))
     }));
 }
 

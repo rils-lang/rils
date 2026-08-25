@@ -45,6 +45,14 @@ enum VariantDefinition {
     Record(HashMap<String, Type>),
 }
 
+fn qualified_type_name(prefix: &[String], name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{}::{name}", prefix.join("::"))
+    }
+}
+
 pub(crate) fn infer_with_host_functions(
     program: &Program,
     host_functions: &HashMap<String, FunctionSignature>,
@@ -134,7 +142,7 @@ impl Inferencer {
             numeric_fixed: HashMap::new(),
             host_functions: host_functions.clone(),
         };
-        inferencer.collect_type_definitions(&program.statements);
+        inferencer.collect_type_definitions(&program.statements, &mut Vec::new());
         inferencer
     }
 
@@ -292,7 +300,7 @@ impl Inferencer {
         }
     }
 
-    fn collect_type_definitions(&mut self, statements: &[Stmt]) {
+    fn collect_type_definitions(&mut self, statements: &[Stmt], prefix: &mut Vec<String>) {
         for statement in statements {
             let statement = match statement {
                 Stmt::Public { statement, .. } => statement.as_ref(),
@@ -300,32 +308,37 @@ impl Inferencer {
             };
             match statement {
                 Stmt::Module {
+                    name,
                     statements: Some(statements),
                     ..
-                } => self.collect_type_definitions(statements),
+                } => {
+                    prefix.push(name.clone());
+                    self.collect_type_definitions(statements, prefix);
+                    prefix.pop();
+                }
                 Stmt::Struct {
                     name,
                     generic_parameters,
                     fields,
                     ..
                 } => {
-                    self.types.insert(
-                        name.clone(),
-                        TypeDefinition {
-                            generic_parameters: generic_parameters
-                                .iter()
-                                .map(|parameter| parameter.name.clone())
-                                .collect(),
-                            fields: fields
-                                .iter()
-                                .map(|field| (field.name.clone(), field.type_annotation.clone()))
-                                .collect(),
-                            variants: HashMap::new(),
-                            methods: HashMap::new(),
-                            implemented_traits: HashSet::new(),
-                            associated_types: HashMap::new(),
-                        },
-                    );
+                    let definition = TypeDefinition {
+                        generic_parameters: generic_parameters
+                            .iter()
+                            .map(|parameter| parameter.name.clone())
+                            .collect(),
+                        fields: fields
+                            .iter()
+                            .map(|field| (field.name.clone(), field.type_annotation.clone()))
+                            .collect(),
+                        variants: HashMap::new(),
+                        methods: HashMap::new(),
+                        implemented_traits: HashSet::new(),
+                        associated_types: HashMap::new(),
+                    };
+                    let qualified = qualified_type_name(prefix, name);
+                    self.types.insert(qualified, definition.clone());
+                    self.types.entry(name.clone()).or_insert(definition);
                 }
                 Stmt::Enum {
                     name,
@@ -360,9 +373,11 @@ impl Inferencer {
                         };
                         definition.variants.insert(variant_name.clone(), payload);
                         self.variant_owners
-                            .insert(variant_name.clone(), name.clone());
+                            .insert(variant_name.clone(), qualified_type_name(prefix, name));
                     }
-                    self.types.insert(name.clone(), definition);
+                    let qualified = qualified_type_name(prefix, name);
+                    self.types.insert(qualified, definition.clone());
+                    self.types.entry(name.clone()).or_insert(definition);
                 }
                 Stmt::Impl {
                     target,

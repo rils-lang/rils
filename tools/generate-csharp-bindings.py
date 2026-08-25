@@ -22,6 +22,12 @@ def pascal(value: str) -> str:
     return "".join(part.capitalize() for part in value.split("_") if part)
 
 
+def csharp_identifier(value: str) -> str:
+    # Prefixing with @ keeps C header parameter names readable while allowing
+    # names such as `string` that are contextual or reserved in C#.
+    return f"@{value}"
+
+
 def enum_source(header: str, c_name: str, prefix: str, underlying: str) -> str:
     match = next((item for item in ENUM_RE.finditer(header) if item.group(1) == c_name), None)
     if match is None:
@@ -55,6 +61,7 @@ def parameter(c_parameter: str) -> str:
         (r"const RilsHostFunction \*(\w+)", lambda name: f"NativeHostFunction* {name}"),
         (r"const RilsHostType \*(\w+)", lambda name: f"NativeHostType* {name}"),
         (r"const RilsHostTypeV2 \*(\w+)", lambda name: f"NativeHostTypeV2* {name}"),
+        (r"const RilsHostTypeV3 \*(\w+)", lambda name: f"NativeHostTypeV3* {name}"),
         (r"const RilsHostFunctionV2 \*(\w+)", lambda name: f"NativeHostFunctionV2* {name}"),
         (r"const RilsHostParameter \*(\w+)", lambda name: f"NativeHostParameter* {name}"),
         (r"RilsHandle \*(\w+)", lambda name: f"out ulong {name}"),
@@ -77,7 +84,7 @@ def parameter(c_parameter: str) -> str:
     for pattern, render in patterns:
         match = re.fullmatch(pattern, value)
         if match:
-            return render(match.group(1))
+            return render(csharp_identifier(match.group(1)))
     raise RuntimeError(f"unsupported C parameter: {value}")
 
 
@@ -168,6 +175,28 @@ internal struct NativeHostTypeV2
     internal NativeSlice ValueLayout;
     internal RilsValueTag TransportTag;
     internal RilsHostTypeKind Kind;
+    internal uint Reserved;
+}}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeHostEnumVariant
+{{
+    internal NativeSlice Name;
+    internal ulong RawLow;
+    internal ulong RawHigh;
+}}
+
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct NativeHostTypeV3
+{{
+    internal NativeSlice Name;
+    internal NativeSlice BaseType;
+    internal NativeSlice ValueLayout;
+    internal NativeHostEnumVariant* EnumVariants;
+    internal UIntPtr EnumVariantCount;
+    internal RilsValueTag TransportTag;
+    internal RilsHostTypeKind Kind;
+    internal uint EnumFlags;
     internal uint Reserved;
 }}
 

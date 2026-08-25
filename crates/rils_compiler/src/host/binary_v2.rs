@@ -6,6 +6,7 @@ use super::*;
 
 const TYPE_ENTRY_SIZE: usize = 12;
 const FUNCTION_ENTRY_SIZE: usize = 36;
+const ENUM_VARIANT_ENTRY_SIZE: usize = 24;
 const NO_STRING_INDEX: u32 = u32::MAX;
 const NAMED_TYPE_BIT: u32 = 0x8000_0000;
 
@@ -28,7 +29,28 @@ pub(super) fn encode_legacy_v3(contract: &HostContract) -> Result<Vec<u8>, Strin
     encode_version(contract, HOST_MANIFEST_V3_FORMAT_VERSION)
 }
 
+pub(super) fn encode_legacy_v4(contract: &HostContract) -> Result<Vec<u8>, String> {
+    if contract
+        .types
+        .values()
+        .any(|declaration| declaration.enum_definition.is_some())
+    {
+        return Err("host manifest v4 cannot encode enum types".into());
+    }
+    encode_version(contract, HOST_MANIFEST_V4_FORMAT_VERSION)
+}
+
 fn encode_version(contract: &HostContract, format_version: u32) -> Result<Vec<u8>, String> {
+    if format_version < HOST_MANIFEST_FORMAT_VERSION
+        && contract
+            .types
+            .values()
+            .any(|declaration| declaration.enum_definition.is_some())
+    {
+        return Err(format!(
+            "host manifest v{format_version} cannot encode enum types"
+        ));
+    }
     let mut string_set = BTreeSet::<String>::new();
     for declaration in contract.types.values() {
         string_set.insert(declaration.name.clone());
@@ -37,6 +59,9 @@ fn encode_version(contract: &HostContract, format_version: u32) -> Result<Vec<u8
         }
         if let Some(layout) = declaration.value_layout {
             string_set.insert(layout.canonical_name());
+        }
+        if let Some(enum_definition) = declaration.enum_definition.as_ref() {
+            string_set.extend(enum_definition.variants.keys().cloned());
         }
     }
     for module in contract.modules.values() {
@@ -84,9 +109,15 @@ fn encode_version(contract: &HostContract, format_version: u32) -> Result<Vec<u8
             &mut payload,
             relation.map_or(NO_STRING_INDEX, |value| string_indices[value]),
         );
-        payload.push(declaration.transport.as_tag());
-        payload.push(u8::from(declaration.value_layout.is_some()));
-        payload.extend_from_slice(&0u16.to_le_bytes());
+        if let Some(enum_definition) = declaration.enum_definition.as_ref() {
+            payload.push(encode_integer_type(enum_definition.underlying_type));
+            payload.push(2);
+            payload.extend_from_slice(&u16::from(enum_definition.flags).to_le_bytes());
+        } else {
+            payload.push(declaration.transport.as_tag());
+            payload.push(u8::from(declaration.value_layout.is_some()));
+            payload.extend_from_slice(&0u16.to_le_bytes());
+        }
     }
     for module in contract.modules.values() {
         push_u32(&mut payload, string_indices[module.name.as_str()]);
@@ -116,7 +147,12 @@ fn encode_version(contract: &HostContract, format_version: u32) -> Result<Vec<u8
         );
         push_u32(
             &mut payload,
-            encode_type_ref(&function.signature.return_type, &type_indices, true)?,
+            encode_type_ref(
+                &function.signature.return_type,
+                &type_indices,
+                true,
+                format_version,
+            )?,
         );
         payload.push(match function.call_kind {
             HostCallKind::Direct => 0,
@@ -129,11 +165,35 @@ fn encode_version(contract: &HostContract, format_version: u32) -> Result<Vec<u8
         for parameter in parameters {
             push_u32(
                 &mut parameter_types,
-                encode_type_ref(parameter, &type_indices, false)?,
+                encode_type_ref(parameter, &type_indices, false, format_version)?,
             );
         }
     }
     payload.extend_from_slice(&parameter_types);
+    if format_version >= HOST_MANIFEST_FORMAT_VERSION {
+        let enum_variant_count = contract
+            .types
+            .values()
+            .filter_map(|declaration| declaration.enum_definition.as_ref())
+            .map(|definition| definition.variants.len())
+            .sum::<usize>();
+        push_u32(
+            &mut payload,
+            u32::try_from(enum_variant_count)
+                .map_err(|_| "host enum variant table exceeds the u32 format limit")?,
+        );
+        for (type_index, declaration) in contract.types.values().enumerate() {
+            let Some(enum_definition) = declaration.enum_definition.as_ref() else {
+                continue;
+            };
+            for (name, raw) in &enum_definition.variants {
+                push_u32(&mut payload, type_index as u32);
+                push_u32(&mut payload, string_indices[name.as_str()]);
+                push_u64(&mut payload, *raw as u64);
+                push_u64(&mut payload, (*raw >> 64) as u64);
+            }
+        }
+    }
 
     if payload.len().saturating_add(HOST_MANIFEST_HEADER_SIZE) > HOST_MANIFEST_MAX_BYTES {
         return Err(format!(
@@ -177,6 +237,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
     let format_version = header.read_u32()?;
     if format_version != HOST_MANIFEST_V2_FORMAT_VERSION
         && format_version != HOST_MANIFEST_V3_FORMAT_VERSION
+        && format_version != HOST_MANIFEST_V4_FORMAT_VERSION
         && format_version != HOST_MANIFEST_FORMAT_VERSION
     {
         return Err(format!(
@@ -240,6 +301,11 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
         > module_count
             .saturating_add(function_count.saturating_mul(2))
             .saturating_add(type_count.saturating_mul(2))
+            .saturating_add(if format_version >= HOST_MANIFEST_FORMAT_VERSION {
+                HOST_MANIFEST_MAX_ENUM_VARIANTS
+            } else {
+                0
+            })
     {
         return Err("binary host manifest string count exceeds the canonical maximum".into());
     }
@@ -250,6 +316,9 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
         })
         .and_then(|size| size.checked_add(function_count.checked_mul(FUNCTION_ENTRY_SIZE)?))
         .and_then(|size| size.checked_add(parameter_count.checked_mul(4)?))
+        .and_then(|size| {
+            size.checked_add(usize::from(format_version >= HOST_MANIFEST_FORMAT_VERSION) * 4)
+        })
         .ok_or_else(|| "binary host manifest table size overflow".to_string())?;
     if payload.remaining() < minimum_table_len {
         return Err("binary host manifest payload is too short for its declared tables".into());
@@ -260,7 +329,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
     for _ in 0..type_count {
         let name_index = payload.read_u32()? as usize;
         let base_index = payload.read_u32()?;
-        let transport = HostTypeTransport::from_tag(payload.read_u8()?)?;
+        let transport_tag = payload.read_u8()?;
         let kind = payload.read_u8()?;
         let reserved = u16::from_le_bytes(
             payload
@@ -268,8 +337,9 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
                 .try_into()
                 .expect("u16 has a fixed width"),
         );
-        if reserved != 0
-            || kind > 1
+        if kind > u8::from(format_version >= HOST_MANIFEST_FORMAT_VERSION) + 1
+            || (kind != 2 && reserved != 0)
+            || (kind == 2 && reserved & !1 != 0)
             || (format_version == HOST_MANIFEST_V2_FORMAT_VERSION && kind != 0)
         {
             return Err("binary host type contains unsupported kind or reserved flags".into());
@@ -284,14 +354,39 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
             used_strings[index] = true;
             Some(base)
         };
-        let (base_type, value_layout) = match kind {
-            0 => (relation, None),
+        let (base_type, value_layout, enum_definition, transport) = match kind {
+            0 => (
+                relation,
+                None,
+                None,
+                HostTypeTransport::from_tag(transport_tag)?,
+            ),
             1 => {
                 let layout = relation
                     .as_deref()
                     .ok_or_else(|| "binary inline host value is missing its layout".to_string())
                     .and_then(HostValueLayout::parse)?;
-                (None, Some(layout))
+                (
+                    None,
+                    Some(layout),
+                    None,
+                    HostTypeTransport::from_tag(transport_tag)?,
+                )
+            }
+            2 => {
+                if relation.is_some() {
+                    return Err("binary host enum cannot declare a type relation".into());
+                }
+                (
+                    None,
+                    None,
+                    Some(HostEnumDefinition {
+                        underlying_type: decode_integer_type(transport_tag)?,
+                        flags: reserved & 1 != 0,
+                        variants: Default::default(),
+                    }),
+                    HostTypeTransport::Enum,
+                )
             }
             _ => unreachable!("host type kind was validated"),
         };
@@ -306,23 +401,11 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
             base_type,
             transport,
             value_layout,
+            enum_definition,
         });
     }
 
     let mut contract = HostContract::with_versions(host_abi_version, contract_version)?;
-    for declaration in &raw_types {
-        if let Some(layout) = declaration.value_layout {
-            contract.register_value_type(&declaration.name, layout)?;
-        } else {
-            contract.register_type(
-                &declaration.name,
-                declaration.base_type.as_deref(),
-                declaration.transport,
-            )?;
-        }
-    }
-    validate_type_graph(&contract.types)?;
-
     let mut module_names: Vec<String> = Vec::with_capacity(module_count);
     for _ in 0..module_count {
         let name_index = payload.read_u32()? as usize;
@@ -341,8 +424,9 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
 
     let type_names = raw_types
         .iter()
-        .map(|declaration| declaration.name.as_str())
+        .map(|declaration| declaration.name.clone())
         .collect::<Vec<_>>();
+    let type_name_refs = type_names.iter().map(String::as_str).collect::<Vec<_>>();
     let mut raw_functions = Vec::with_capacity(function_count);
     let mut next_parameter = 0usize;
     for _ in 0..function_count {
@@ -374,7 +458,8 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
         used_strings[capability_index] = true;
         if raw_functions.last().is_some_and(|previous: &RawFunction| {
             previous.name.as_str() > name
-                || (format_version < HOST_MANIFEST_FORMAT_VERSION && previous.name.as_str() == name)
+                || (format_version < HOST_MANIFEST_V4_FORMAT_VERSION
+                    && previous.name.as_str() == name)
         }) {
             return Err("binary host manifest functions must be lexicographically sorted".into());
         }
@@ -398,7 +483,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
             capability: capability.to_owned(),
             parameter_start,
             parameter_count: function_parameter_count,
-            return_type: decode_type_ref(return_type_ref, &type_names, true)?,
+            return_type: decode_type_ref(return_type_ref, &type_name_refs, true, format_version)?,
             call_kind,
             thread_affinity,
             receiver,
@@ -407,22 +492,104 @@ pub(super) fn decode(bytes: &[u8]) -> Result<HostContract, String> {
     if next_parameter != parameter_count {
         return Err("binary host manifest parameter count does not match function ranges".into());
     }
-    if payload.remaining() != parameter_count.saturating_mul(4) {
+    let enum_extension_bytes = usize::from(format_version >= HOST_MANIFEST_FORMAT_VERSION) * 4;
+    if payload.remaining()
+        < parameter_count
+            .saturating_mul(4)
+            .saturating_add(enum_extension_bytes)
+    {
         return Err(format!(
             "binary host manifest parameter table has {} bytes, expected {}",
             payload.remaining(),
-            parameter_count.saturating_mul(4)
+            parameter_count
+                .saturating_mul(4)
+                .saturating_add(enum_extension_bytes)
         ));
     }
     let parameter_refs = (0..parameter_count)
         .map(|_| payload.read_u32())
         .collect::<Result<Vec<_>, _>>()?;
+    if format_version >= HOST_MANIFEST_FORMAT_VERSION {
+        let enum_variant_count = payload.read_u32()? as usize;
+        if enum_variant_count > HOST_MANIFEST_MAX_ENUM_VARIANTS {
+            return Err(format!(
+                "host manifest exceeds the {HOST_MANIFEST_MAX_ENUM_VARIANTS} enum variant limit"
+            ));
+        }
+        let expected_bytes = enum_variant_count
+            .checked_mul(ENUM_VARIANT_ENTRY_SIZE)
+            .ok_or_else(|| "binary host enum variant table size overflow".to_string())?;
+        if payload.remaining() != expected_bytes {
+            return Err(format!(
+                "binary host enum variant table has {} bytes, expected {expected_bytes}",
+                payload.remaining()
+            ));
+        }
+        let mut previous: Option<(usize, String)> = None;
+        for _ in 0..enum_variant_count {
+            let type_index = payload.read_u32()? as usize;
+            let name_index = payload.read_u32()? as usize;
+            let low = payload.read_u64()?;
+            let high = payload.read_u64()?;
+            let name = indexed_string(&strings, name_index, "enum variant name")?.to_owned();
+            used_strings[name_index] = true;
+            let declaration = raw_types.get_mut(type_index).ok_or_else(|| {
+                format!("binary host enum variant type index {type_index} is invalid")
+            })?;
+            let definition = declaration.enum_definition.as_mut().ok_or_else(|| {
+                format!(
+                    "binary host enum variant references non-enum type `{}`",
+                    declaration.name
+                )
+            })?;
+            if previous
+                .as_ref()
+                .is_some_and(|(previous_type, previous_name)| {
+                    *previous_type > type_index
+                        || (*previous_type == type_index && previous_name.as_str() >= name.as_str())
+                })
+            {
+                return Err("binary host enum variants must be canonically sorted".into());
+            }
+            previous = Some((type_index, name.clone()));
+            let raw = u128::from(low) | (u128::from(high) << 64);
+            validate_enum_raw_value(definition.underlying_type, raw)?;
+            if definition.variants.insert(name, raw).is_some() {
+                return Err("binary host enum variant is duplicated".into());
+            }
+        }
+    } else if payload.remaining() != 0 {
+        return Err("binary host manifest contains trailing payload bytes".into());
+    }
+
+    for declaration in &raw_types {
+        if let Some(definition) = declaration.enum_definition.as_ref() {
+            contract.register_enum_type(
+                &declaration.name,
+                definition.underlying_type,
+                definition.flags,
+                definition
+                    .variants
+                    .iter()
+                    .map(|(name, raw)| (name.clone(), *raw)),
+            )?;
+        } else if let Some(layout) = declaration.value_layout {
+            contract.register_value_type(&declaration.name, layout)?;
+        } else {
+            contract.register_type(
+                &declaration.name,
+                declaration.base_type.as_deref(),
+                declaration.transport,
+            )?;
+        }
+    }
+    validate_type_graph(&contract.types)?;
     let mut previous_overload_key: Option<String> = None;
     for function in raw_functions {
         let end = function.parameter_start + function.parameter_count;
         let parameters = parameter_refs[function.parameter_start..end]
             .iter()
-            .map(|reference| decode_type_ref(*reference, &type_names, false))
+            .map(|reference| decode_type_ref(*reference, &type_name_refs, false, format_version))
             .collect::<Result<Vec<_>, _>>()?;
         let signature = FunctionSignature::fixed(parameters, function.return_type);
         let overload_key = function_overload_key(&function.name, &signature);
@@ -498,6 +665,7 @@ fn encode_type_ref(
     ty: &Type,
     type_indices: &HashMap<&str, u32>,
     allow_unit: bool,
+    format_version: u32,
 ) -> Result<u32, String> {
     let primitive = match ty {
         Type::Unit if allow_unit => Some(0),
@@ -511,6 +679,31 @@ fn encode_type_ref(
         Type::Float(FloatType::F64) => Some(7),
         Type::String => Some(8),
         Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => Some(9),
+        Type::Integer(IntegerType::I8) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(10)
+        }
+        Type::Integer(IntegerType::I16) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(11)
+        }
+        Type::Integer(IntegerType::I128) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(12)
+        }
+        Type::Integer(IntegerType::Isize) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(13)
+        }
+        Type::Integer(IntegerType::U8) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(14)
+        }
+        Type::Integer(IntegerType::U16) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(15)
+        }
+        Type::Integer(IntegerType::U128) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(16)
+        }
+        Type::Integer(IntegerType::Usize) if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Some(17)
+        }
+        Type::Char if format_version >= HOST_MANIFEST_FORMAT_VERSION => Some(18),
         Type::Named { name, arguments } if arguments.is_empty() => {
             let index = *type_indices
                 .get(name.as_str())
@@ -522,7 +715,12 @@ fn encode_type_ref(
     primitive.ok_or_else(|| format!("host type `{ty}` cannot be encoded in binary manifest v2"))
 }
 
-fn decode_type_ref(reference: u32, type_names: &[&str], allow_unit: bool) -> Result<Type, String> {
+fn decode_type_ref(
+    reference: u32,
+    type_names: &[&str],
+    allow_unit: bool,
+    format_version: u32,
+) -> Result<Type, String> {
     if reference & NAMED_TYPE_BIT != 0 {
         let index = (reference & !NAMED_TYPE_BIT) as usize;
         let name = type_names
@@ -542,7 +740,61 @@ fn decode_type_ref(reference: u32, type_names: &[&str], allow_unit: bool) -> Res
         7 => Ok(Type::Float(FloatType::F64)),
         8 => Ok(Type::String),
         9 => Ok(Type::named("HostHandle")),
+        10 if format_version >= HOST_MANIFEST_FORMAT_VERSION => Ok(Type::Integer(IntegerType::I8)),
+        11 if format_version >= HOST_MANIFEST_FORMAT_VERSION => Ok(Type::Integer(IntegerType::I16)),
+        12 if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Ok(Type::Integer(IntegerType::I128))
+        }
+        13 if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Ok(Type::Integer(IntegerType::Isize))
+        }
+        14 if format_version >= HOST_MANIFEST_FORMAT_VERSION => Ok(Type::Integer(IntegerType::U8)),
+        15 if format_version >= HOST_MANIFEST_FORMAT_VERSION => Ok(Type::Integer(IntegerType::U16)),
+        16 if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Ok(Type::Integer(IntegerType::U128))
+        }
+        17 if format_version >= HOST_MANIFEST_FORMAT_VERSION => {
+            Ok(Type::Integer(IntegerType::Usize))
+        }
+        18 if format_version >= HOST_MANIFEST_FORMAT_VERSION => Ok(Type::Char),
         value => Err(format!("unsupported binary host type reference {value}")),
+    }
+}
+
+fn encode_integer_type(value: IntegerType) -> u8 {
+    match value {
+        IntegerType::I8 => 1,
+        IntegerType::I16 => 2,
+        IntegerType::I32 => 3,
+        IntegerType::I64 => 4,
+        IntegerType::I128 => 5,
+        IntegerType::Isize => 6,
+        IntegerType::U8 => 7,
+        IntegerType::U16 => 8,
+        IntegerType::U32 => 9,
+        IntegerType::U64 => 10,
+        IntegerType::U128 => 11,
+        IntegerType::Usize => 12,
+    }
+}
+
+fn decode_integer_type(value: u8) -> Result<IntegerType, String> {
+    match value {
+        1 => Ok(IntegerType::I8),
+        2 => Ok(IntegerType::I16),
+        3 => Ok(IntegerType::I32),
+        4 => Ok(IntegerType::I64),
+        5 => Ok(IntegerType::I128),
+        6 => Ok(IntegerType::Isize),
+        7 => Ok(IntegerType::U8),
+        8 => Ok(IntegerType::U16),
+        9 => Ok(IntegerType::U32),
+        10 => Ok(IntegerType::U64),
+        11 => Ok(IntegerType::U128),
+        12 => Ok(IntegerType::Usize),
+        other => Err(format!(
+            "unsupported host enum integer transport tag {other}"
+        )),
     }
 }
 

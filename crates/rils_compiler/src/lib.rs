@@ -6,10 +6,11 @@ pub use host::{
     HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_INLINE_VALUE_MAX_BYTES,
     HOST_INLINE_VALUE_MAX_FIELDS, HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE,
     HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC,
-    HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES,
-    HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract,
-    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
-    HostTypeDeclaration, HostTypeTransport, HostValueFieldType, HostValueLayout,
+    HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_ENUM_VARIANTS, HOST_MANIFEST_MAX_FUNCTIONS,
+    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
+    HostContract, HostEnumDefinition, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver,
+    HostThreadAffinity, HostTypeDeclaration, HostTypeTransport, HostValueFieldType,
+    HostValueLayout,
 };
 
 mod ast {
@@ -25,11 +26,11 @@ mod types {
     pub(crate) use rils_frontend::types::*;
 }
 
-use std::{error::Error, fmt};
+use std::{collections::BTreeMap, error::Error, fmt};
 
 use rils_frontend::{
     analysis::DiagnosticSeverity,
-    ast::Program,
+    ast::{EnumVariant, Program, Stmt},
     source::{SourceFile, Span},
 };
 
@@ -108,6 +109,58 @@ pub fn compile_with_host(
     compile_program_with_host(&program, host)
 }
 
+pub fn analyze_with_host(
+    source: &str,
+    host: &HostContract,
+) -> Result<rils_frontend::analysis::DocumentAnalysis, rils_frontend::FrontendError> {
+    let tokens = rils_frontend::lexer::lex(source).map_err(rils_frontend::FrontendError::Lex)?;
+    let mut program =
+        rils_frontend::parser::parse(tokens).map_err(rils_frontend::FrontendError::Parse)?;
+    inject_host_enum_declarations(&mut program, host);
+    let signatures = host.signatures();
+    let host_types = host
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
+    Ok(
+        rils_frontend::analysis::analyze_program_with_host_declarations(
+            &program,
+            &signatures,
+            &host_types,
+        ),
+    )
+}
+
+pub fn analyze_with_host_and_source_id_and_external_exports(
+    source: &str,
+    source_id: rils_frontend::SourceId,
+    host: &HostContract,
+    external_exports: &std::collections::HashMap<
+        String,
+        Vec<rils_frontend::analysis::ExternalModuleExport>,
+    >,
+) -> Result<rils_frontend::analysis::DocumentAnalysis, rils_frontend::FrontendError> {
+    let tokens = rils_frontend::lexer::lex_with_source_id(source, source_id)
+        .map_err(rils_frontend::FrontendError::Lex)?;
+    let mut program =
+        rils_frontend::parser::parse(tokens).map_err(rils_frontend::FrontendError::Parse)?;
+    inject_host_enum_declarations(&mut program, host);
+    let signatures = host.signatures();
+    let host_types = host
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
+    Ok(
+        rils_frontend::analysis::analyze_program_with_source_id_and_external_exports_and_host_types(
+            &program,
+            source_id,
+            &signatures,
+            &host_types,
+            external_exports,
+        ),
+    )
+}
+
 pub fn compile_program(program: &Program) -> Result<mir::MirProgram, CompileError> {
     compile_program_with_host(program, &HostContract::new())
 }
@@ -125,6 +178,7 @@ pub fn compile_program_with_host_and_sources(
     sources: Vec<SourceFile>,
 ) -> Result<mir::MirProgram, CompileError> {
     let mut program = program.clone();
+    inject_host_enum_declarations(&mut program, host);
     let signatures = host.signatures();
     let host_types = host
         .types()
@@ -158,6 +212,86 @@ pub fn compile_program_with_host_and_sources(
     )?)
 }
 
+#[derive(Default)]
+struct HostEnumModule {
+    enums: Vec<(String, Vec<String>)>,
+    children: BTreeMap<String, HostEnumModule>,
+}
+
+fn inject_host_enum_declarations(program: &mut Program, host: &HostContract) {
+    let mut root = HostEnumModule::default();
+    let mut flag_types = Vec::new();
+    for declaration in host.types() {
+        let Some(definition) = declaration.enum_definition.as_ref() else {
+            continue;
+        };
+        let mut segments = declaration.name.split("::").collect::<Vec<_>>();
+        let Some(name) = segments.pop() else {
+            continue;
+        };
+        let mut module = &mut root;
+        for segment in segments {
+            module = module.children.entry(segment.to_owned()).or_default();
+        }
+        module.enums.push((
+            name.to_owned(),
+            definition.variants.keys().cloned().collect(),
+        ));
+        if definition.flags {
+            flag_types.push(declaration.name.clone());
+        }
+    }
+    let mut declarations = host_enum_module_statements(root);
+    declarations.extend(flag_types.into_iter().map(|name| Stmt::Impl {
+        generic_parameters: Vec::new(),
+        trait_name: Some("BitFlags".into()),
+        target: rils_frontend::Type::named(name),
+        associated_types: Vec::new(),
+        methods: Vec::new(),
+        span: Span::default(),
+    }));
+    program.statements.splice(0..0, declarations);
+}
+
+fn host_enum_module_statements(module: HostEnumModule) -> Vec<Stmt> {
+    let mut statements = module
+        .enums
+        .into_iter()
+        .map(|(name, variants)| Stmt::Public {
+            statement: Box::new(Stmt::Enum {
+                attributes: Vec::new(),
+                name: name.clone(),
+                name_span: Span::default(),
+                generic_parameters: Vec::new(),
+                variants: variants
+                    .into_iter()
+                    .map(|name| EnumVariant::Unit {
+                        name,
+                        span: Span::default(),
+                    })
+                    .collect(),
+                span: Span::default(),
+            }),
+            span: Span::default(),
+        })
+        .collect::<Vec<_>>();
+    statements.extend(
+        module
+            .children
+            .into_iter()
+            .map(|(name, child)| Stmt::Public {
+                statement: Box::new(Stmt::Module {
+                    name: name.clone(),
+                    name_span: Span::default(),
+                    statements: Some(host_enum_module_statements(child)),
+                    span: Span::default(),
+                }),
+                span: Span::default(),
+            }),
+    );
+    statements
+}
+
 #[cfg(test)]
 mod tests {
     use super::{compile, compile_with_host};
@@ -177,6 +311,57 @@ mod tests {
                 .iter()
                 .all(|function| !function.blocks.is_empty())
         );
+    }
+
+    #[test]
+    fn host_enum_variants_are_real_extensible_rils_enums() {
+        let mut host = HostContract::new();
+        host.register_enum_type(
+            "unity_engine::CameraType",
+            IntegerType::I32,
+            false,
+            [("Game".to_owned(), 1), ("SceneView".to_owned(), 2)],
+        )
+        .unwrap();
+
+        compile_with_host(
+            r#"
+                use unity_engine::CameraType;
+                impl CameraType {
+                    fn is_game(&self) -> bool {
+                        match self {
+                            CameraType::Game => true,
+                            CameraType::SceneView => false,
+                        }
+                    }
+                }
+                CameraType::Game.is_game()
+            "#,
+            &host,
+        )
+        .expect("host enums should use normal enum construction, matching, and impls");
+    }
+
+    #[test]
+    fn flags_host_enums_automatically_implement_bit_flags() {
+        let mut host = HostContract::new();
+        host.register_enum_type(
+            "unity_engine::HideFlags",
+            IntegerType::I32,
+            true,
+            [("None".to_owned(), 0), ("HideInHierarchy".to_owned(), 1)],
+        )
+        .unwrap();
+
+        compile_with_host(
+            r#"
+                use unity_engine::HideFlags;
+                fn accepts_flags<T: BitFlags>(value: T) -> T { value }
+                accepts_flags(HideFlags::HideInHierarchy)
+            "#,
+            &host,
+        )
+        .expect("flags enums should satisfy the built-in BitFlags bound");
     }
 
     #[test]

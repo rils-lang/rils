@@ -7,6 +7,10 @@
 
 ### Breaking Changes
 
+- Host Manifest 二进制与 JSON 格式提升为 v5，新增完整 portable scalar 编码、enum 底层整数、枚举项和
+  flags 元数据；Runtime、CLI 与 Analyzer 仍可读取 v1-v4，重新导出或链接时统一写为 v5。
+- C ABI 提升为 version 7，新增 `RilsHostTypeV3`、宿主 enum 注册和拥有型 `RILS_VALUE_STRING` 句柄协议；
+  native DLL、生成的 P/Invoke 与 `Rils.CSharp` facade 必须成套更新。
 - C ABI 由 version 5 提升为 version 6，新增 `rils_runtime_set_output_callback`；native DLL、
   生成的 P/Invoke 与 `Rils.CSharp` facade 必须成套更新。
 - `print!` / `println!` 改为 Rust 风格格式字符串语法；除空的 `println!()` 外，首参数必须是
@@ -27,6 +31,9 @@
 
 ### Migration
 
+- 重新生成 Host Manifest v5，并将 native DLL、P/Invoke 和 `Rils.CSharp` facade 成套更新到 C ABI v7。
+  字符串接收方必须通过 `rils_string_size/write` 复制内容并用 `rils_string_destroy` 消费句柄；宿主 enum
+  应通过 v3 类型表声明枚举项，不再把逻辑 enum 暴露成普通整数类型。
 - 将 Python 式多参数输出迁移为格式占位符；格式化参数现在只会被借用，打印后仍可继续使用非
   `Copy` 值。
 - 升级到包含 v6 loader 的版本后，从源码重新生成所有 `.rilbc`、Unity `.bytes` 和嵌入
@@ -37,6 +44,13 @@
 
 ### Added
 
+- Host Manifest、编译器、Analyzer、C ABI、C# facade 与 Unity 绑定生成器现已贯通 C# enum；Rils 侧
+  获得可 `match`、可写固有 `impl` 的真实 enum，嵌套 enum 保留规范模块路径，`[Flags]` 自动实现
+  `BitFlags` 并保留未命名组合的原始位模式。
+- C dispatcher 与 `Rils.CSharp` 支持拥有型 UTF-8 string 参数和返回值；字符串句柄具有线程约束和
+  明确的创建、复制、消费/销毁规则。
+- Unity API 扫描与 handler 生成支持 `sbyte/short/byte/ushort/char/string`，并改进映射后同名成员的
+  getter/setter 与非 `()` 返回值优先规则，避免稳定 API 被无信息量候选遮蔽。
 - `Engine`、`BytecodeHost`、C ABI 与 `Rils.CSharp` 现在支持同步文本输出回调；回调保留
   `print!` 与 `println!` 的换行边界，未配置时继续输出到标准终端。
 - 增加保留逻辑类型、portable host value 与 `Display`/`Debug` 格式说明的宿主值格式化回调；

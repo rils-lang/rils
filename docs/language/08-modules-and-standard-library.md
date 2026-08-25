@@ -61,7 +61,7 @@ manifests = ["generated/extra.rilhm"] # 可选的额外 fragment
 多个 fragment 中幂等出现；ABI/contract/module 版本、函数名称、签名或全局 function ID 冲突都会
 使整个项目加载失败。旧的 `[host].manifest` 单文件配置继续兼容。
 
-Host Manifest v4 可以声明命名宿主类型、opaque 对象单继承、固定布局 inline value 和宿主函数 overload。类型路径可直接用于标注和推断，不需要在 Rils
+Host Manifest v5 可以声明命名宿主类型、opaque 对象单继承、固定布局 inline value、宿主 enum 和宿主函数 overload。类型路径可直接用于标注和推断，不需要在 Rils
 源码中重复声明：
 
 ```rils
@@ -87,6 +87,10 @@ fn inspect(object: GameObject) {
 宿主 ABI 上则按 manifest 声明降级到 transport；对象使用 `HostHandle`，固定布局值使用
 `InlineValue`。这不会改变 Rils
 拥有型 struct/enum 的语义，也不允许脚本访问宿主 payload。
+
+宿主 enum 是普通 Rils enum，可以构造枚举项、参与 `match`，也可以通过固有 `impl` 增加脚本侧方法。
+带 flags 标记的宿主 enum 仍保持 enum 身份，并自动实现内建 marker trait `BitFlags`；未知的组合位在
+跨宿主调用时会保留，`match` 可用通配分支处理。底层整数只属于 ABI transport，不是源码类型。
 
 没有 `rils.toml` 时保留旧的单文件兼容模式：`mod name;` 依次查找同目录的 `name.rils` 与
 `name/mod.rils`。项目模式只保留 `mod name { ... }` 作为局部内联模块，外部 `mod name;` 会给出

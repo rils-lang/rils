@@ -19,13 +19,14 @@ Rils 与 Unity 的主要调用方向是 **Rils → C# facade → Unity API**。C
 每个宿主函数声明参数/返回值的逻辑类型、ABI transport、capability 和线程策略。C# facade 可将命名
 Unity 对象以 `HostHandle` 跨越 ABI；符合规则且规范编码不超过 16 字节的 struct 使用字段化
 `InlineValue` 传递。`Vector2`、`Vector3`、`Quaternion`、`Color` 都由公开实例字段自动得到
-`fields(f32,...)` 布局，而不是按类型名特判。字符串、集合和结构化错误缓冲区仍需后续 ABI 扩展。
+`fields(f32,...)` 布局，而不是按类型名特判。字符串使用拥有型 UTF-8 句柄；C# enum 保持为真实
+Rils enum，仅在 C ABI 边界转换为底层整数。集合和结构化错误缓冲区仍需后续 ABI 扩展。
 
 ## 线程与错误
 
 Unity API 默认要求主线程。跨线程调用必须返回明确错误，不能在底层隐式阻塞切换线程。宿主错误使用稳定错误码和消息模型，当前原生 ABI 暂统一映射为执行错误。
 
-当前 inline type 注册使用 C ABI version 5 和 Host Manifest v4。原生库、生成的 P/Invoke 与 C# facade
+当前 enum/string 注册与传输使用 C ABI version 7 和 Host Manifest v5。原生库、生成的 P/Invoke 与 C# facade
 必须成套更新；version 4 只支持 opaque 类型表。opaque script value 与 trait 调用接口继续保持兼容。
 
 ## Unity 生命周期资产
@@ -68,7 +69,7 @@ AssetDatabase；后者由 Unity 编译为 Mono/IL2CPP 可直接调用的静态 C
 工程根目录的 `.rils` 文件；`.rils/manifest/*.rilhm` 作为动态生成物由集成项目的
 局部 `.gitignore` 忽略。
 
-生成的 Host Manifest v4 按程序集保存 fragment，声明扫描得到的所有可表达命名类型；例如：
+生成的 Host Manifest v5 按程序集保存 fragment，声明扫描得到的所有可表达命名类型；例如：
 
 ```text
 unity_engine::Object
@@ -83,6 +84,11 @@ inline values:
 ├─ unity_engine::Vector3     fields(f32,f32,f32)
 ├─ unity_engine::Quaternion  fields(f32,f32,f32,f32)
 └─ unity_engine::Color       fields(f32,f32,f32,f32)
+
+enums:
+├─ unity_engine::CameraType
+├─ unity_engine::camera::MonoOrStereoscopicEye
+└─ unity_engine::HideFlags   [Flags] + BitFlags
 ```
 
 Rils 源码、编译器和 Analyzer 保留这些逻辑类型，派生对象可以传给基类参数，也能调用基类 receiver

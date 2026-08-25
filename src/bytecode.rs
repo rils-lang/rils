@@ -39,9 +39,9 @@ pub use rils_compiler::{
     HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION,
     HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES,
     HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS,
-    HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract, HostFunctionDeclaration,
-    HostModuleDeclaration, HostReceiver, HostThreadAffinity, HostTypeDeclaration,
-    HostTypeTransport, HostValueLayout,
+    HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract, HostEnumDefinition,
+    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
+    HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

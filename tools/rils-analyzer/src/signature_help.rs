@@ -288,11 +288,10 @@ fn recover_analysis(
     for insertion in ["1i32)", "1i32);", "()", "());"] {
         let mut source = document.text.clone();
         source.insert_str(offset, insertion);
-        if let Ok(analysis) = analyze_with_source_id_and_external_exports_and_host_types(
+        if let Ok(analysis) = analyze_with_host_and_source_id_and_external_exports(
             &source,
             document.source_id,
-            &server.host_functions,
-            &server.host_types,
+            &server.host_contract,
             &HashMap::new(),
         ) {
             return Some(analysis);

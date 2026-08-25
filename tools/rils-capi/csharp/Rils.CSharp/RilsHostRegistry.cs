@@ -282,22 +282,53 @@ namespace Rils.CSharp
             byte[] valueLayout = type.ValueLayoutName == null
                 ? Array.Empty<byte>()
                 : Encoding.UTF8.GetBytes(type.ValueLayoutName);
-            fixed (byte* namePointer = name)
-            fixed (byte* baseTypePointer = baseType)
-            fixed (byte* valueLayoutPointer = valueLayout)
+            var variantNames = new byte[type.EnumVariants.Count][];
+            var variantPins = new GCHandle[type.EnumVariants.Count];
+            NativeHostEnumVariant* variants =
+                stackalloc NativeHostEnumVariant[Math.Max(type.EnumVariants.Count, 1)];
+            try
             {
-                var native = new NativeHostTypeV2
+                for (int index = 0; index < type.EnumVariants.Count; index++)
                 {
-                    Name = NativeInterop.Slice(namePointer, name.Length),
-                    BaseType = NativeInterop.Slice(baseTypePointer, baseType.Length),
-                    ValueLayout = NativeInterop.Slice(valueLayoutPointer, valueLayout.Length),
-                    TransportTag = type.TransportTag,
-                    Kind = type.Kind,
-                };
-                NativeInterop.Check(NativeMethods.RuntimeRegisterHostTypesV2(
-                    runtime.Handle,
-                    &native,
-                    new UIntPtr(1)));
+                    RilsHostEnumVariantDescriptor variant = type.EnumVariants[index];
+                    variantNames[index] = Encoding.UTF8.GetBytes(variant.Name);
+                    variantPins[index] = GCHandle.Alloc(variantNames[index], GCHandleType.Pinned);
+                    variants[index] = new NativeHostEnumVariant
+                    {
+                        Name = NativeInterop.Slice(
+                            (byte*)variantPins[index].AddrOfPinnedObject(),
+                            variantNames[index].Length),
+                        RawLow = variant.RawLow,
+                        RawHigh = variant.RawHigh,
+                    };
+                }
+                fixed (byte* namePointer = name)
+                fixed (byte* baseTypePointer = baseType)
+                fixed (byte* valueLayoutPointer = valueLayout)
+                {
+                    var native = new NativeHostTypeV3
+                    {
+                        Name = NativeInterop.Slice(namePointer, name.Length),
+                        BaseType = NativeInterop.Slice(baseTypePointer, baseType.Length),
+                        ValueLayout = NativeInterop.Slice(valueLayoutPointer, valueLayout.Length),
+                        EnumVariants = variants,
+                        EnumVariantCount = new UIntPtr(checked((uint)type.EnumVariants.Count)),
+                        TransportTag = type.TransportTag,
+                        Kind = type.Kind,
+                        EnumFlags = type.IsFlagsEnum ? 1U : 0U,
+                    };
+                    NativeInterop.Check(NativeMethods.RuntimeRegisterHostTypesV3(
+                        runtime.Handle,
+                        &native,
+                        new UIntPtr(1)));
+                }
+            }
+            finally
+            {
+                for (int index = 0; index < variantPins.Length; index++)
+                {
+                    if (variantPins[index].IsAllocated) variantPins[index].Free();
+                }
             }
         }
 

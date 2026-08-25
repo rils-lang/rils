@@ -428,6 +428,176 @@ pub unsafe extern "C" fn rils_runtime_register_host_types_v2(
     })
 }
 
+#[unsafe(no_mangle)]
+/// Registers opaque, inline value, and enum host types.
+///
+/// # Safety
+///
+/// `types` and every non-empty nested slice/array must remain readable for this call.
+pub unsafe extern "C" fn rils_runtime_register_host_types_v3(
+    runtime: Handle,
+    types: *const RilsHostTypeV3,
+    type_count: usize,
+) -> i32 {
+    status_entry(|| {
+        if type_count != 0 && types.is_null() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host type v3 array is null",
+                "",
+                Span::default(),
+            );
+        }
+        let descriptors = if type_count == 0 {
+            &[]
+        } else {
+            // SAFETY: The caller promises a readable array for this call.
+            unsafe { slice::from_raw_parts(types, type_count) }
+        };
+        for descriptor in descriptors {
+            if descriptor.reserved != 0 || descriptor.enum_flags & !1 != 0 {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host type v3 reserved fields or enum flags are invalid",
+                    "",
+                    Span::default(),
+                );
+            }
+            let name = match unsafe { read_utf8(descriptor.name, "host type name") } {
+                Ok(value) => value.to_owned(),
+                Err(status) => return status,
+            };
+            if descriptor.kind != RILS_HOST_TYPE_ENUM {
+                if descriptor.enum_variant_count != 0 || descriptor.enum_flags != 0 {
+                    return fail(
+                        RILS_STATUS_INVALID_ARGUMENT,
+                        "non-enum host type v3 declarations cannot contain enum metadata",
+                        "",
+                        Span::default(),
+                    );
+                }
+                let v2 = RilsHostTypeV2 {
+                    name: descriptor.name,
+                    base_type: descriptor.base_type,
+                    value_layout: descriptor.value_layout,
+                    transport_tag: descriptor.transport_tag,
+                    kind: descriptor.kind,
+                    reserved: 0,
+                };
+                // SAFETY: `v2` and all referenced slices remain valid for this call.
+                let status = unsafe { rils_runtime_register_host_types_v2(runtime, &v2, 1) };
+                if status != RILS_STATUS_OK {
+                    return status;
+                }
+                continue;
+            }
+            let base = match unsafe { read_utf8(descriptor.base_type, "host enum base type") } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+            let layout = match unsafe { read_utf8(descriptor.value_layout, "host enum layout") } {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
+            if !base.is_empty() || !layout.is_empty() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host enum type cannot declare a base type or inline layout",
+                    "",
+                    Span::default(),
+                );
+            }
+            let underlying_type = match portable_type_from_tag(descriptor.transport_tag, false) {
+                Ok(Type::Integer(integer))
+                    if !matches!(integer, IntegerType::Isize | IntegerType::Usize) =>
+                {
+                    integer
+                }
+                _ => {
+                    return fail(
+                        RILS_STATUS_UNSUPPORTED_VALUE,
+                        "host enum transport must use a fixed-width integer value tag",
+                        "",
+                        Span::default(),
+                    );
+                }
+            };
+            if descriptor.enum_variant_count != 0 && descriptor.enum_variants.is_null() {
+                return fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "host enum variant array is null",
+                    "",
+                    Span::default(),
+                );
+            }
+            let variants = if descriptor.enum_variant_count == 0 {
+                &[]
+            } else {
+                // SAFETY: The caller promises a readable variant array for this call.
+                unsafe {
+                    slice::from_raw_parts(descriptor.enum_variants, descriptor.enum_variant_count)
+                }
+            };
+            let mut declarations = Vec::with_capacity(variants.len());
+            for variant in variants {
+                let variant_name = match unsafe { read_utf8(variant.name, "host enum variant") } {
+                    Ok(value) => value.to_owned(),
+                    Err(status) => return status,
+                };
+                declarations.push((
+                    variant_name,
+                    u128::from(variant.raw_low) | (u128::from(variant.raw_high) << 64),
+                ));
+            }
+            let status = register_host_enum_declaration(
+                runtime,
+                name,
+                underlying_type,
+                descriptor.enum_flags & 1 != 0,
+                declarations,
+            );
+            if status != RILS_STATUS_OK {
+                return status;
+            }
+        }
+        RILS_STATUS_OK
+    })
+}
+
+fn register_host_enum_declaration(
+    runtime_handle: Handle,
+    name: String,
+    underlying_type: IntegerType,
+    flags: bool,
+    variants: Vec<(String, u128)>,
+) -> i32 {
+    STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(runtime) = state.runtimes.get_mut(runtime_handle) else {
+            return fail(
+                RILS_STATUS_INVALID_HANDLE,
+                "invalid runtime handle",
+                "",
+                Span::default(),
+            );
+        };
+        if runtime.host_frozen || !runtime.modules.is_empty() || !runtime.instances.is_empty() {
+            return fail(
+                RILS_STATUS_INVALID_ARGUMENT,
+                "host registry cannot change after freeze or module creation",
+                "",
+                Span::default(),
+            );
+        }
+        let mut contract = runtime.host_contract.clone();
+        if let Err(message) = contract.register_enum_type(name, underlying_type, flags, variants) {
+            return fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default());
+        }
+        runtime.host_contract = contract;
+        RILS_STATUS_OK
+    })
+}
+
 fn register_host_type_declarations(
     runtime_handle: Handle,
     declarations: Vec<(

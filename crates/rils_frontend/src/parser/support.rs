@@ -162,6 +162,7 @@ impl Parser {
                                 | "Default"
                                 | "Eq"
                                 | "Hash"
+                                | "BitFlags"
                                 | "Iterator"
                                 | "IntoIterator"
                         ),

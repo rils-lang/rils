@@ -260,12 +260,14 @@ namespace Rils.CSharp
     {
         private readonly ulong _low;
         private readonly ulong _high;
+        private readonly string? _string;
 
-        private RilsValue(RilsValueTag tag, ulong low, ulong high = 0)
+        private RilsValue(RilsValueTag tag, ulong low, ulong high = 0, string? managedString = null)
         {
             Tag = tag;
             _low = low;
             _high = high;
+            _string = managedString;
         }
 
         public RilsValueTag Tag { get; }
@@ -288,6 +290,11 @@ namespace Rils.CSharp
         public static RilsValue From(double value) => new RilsValue(RilsValueTag.F64, unchecked((ulong)BitConverter.DoubleToInt64Bits(value)));
         public static RilsValue From(char value) => From(new RilsChar(value));
         public static RilsValue From(RilsChar value) => new RilsValue(RilsValueTag.Char, value.Value);
+        public static RilsValue From(string value) => new RilsValue(
+            RilsValueTag.String,
+            0,
+            0,
+            value ?? throw new ArgumentNullException(nameof(value)));
         public static RilsValue From(RilsObjectHandle value) => new RilsValue(
             RilsValueTag.HostHandle,
             unchecked((ulong)value.ObjectId),
@@ -311,6 +318,7 @@ namespace Rils.CSharp
         public float AsF32() { Require(RilsValueTag.F32); return BitConverter.Int32BitsToSingle(unchecked((int)_low)); }
         public double AsF64() { Require(RilsValueTag.F64); return BitConverter.Int64BitsToDouble(unchecked((long)_low)); }
         public RilsChar AsChar() { Require(RilsValueTag.Char); return new RilsChar(checked((uint)_low)); }
+        public string AsString() { Require(RilsValueTag.String); return _string!; }
         public RilsObjectHandle AsHostHandle(ulong sessionId)
         {
             Require(RilsValueTag.HostHandle);
@@ -324,8 +332,12 @@ namespace Rils.CSharp
             return new RilsInlineValue(_low, _high);
         }
 
-        internal NativeValue ToNative() => new NativeValue { Tag = Tag, Low = _low, High = _high };
-        internal static RilsValue FromNative(NativeValue value) => new RilsValue(value.Tag, value.Low, value.High);
+        internal NativeValue ToNative() => Tag == RilsValueTag.String
+            ? new NativeValue { Tag = Tag, Low = NativeInterop.CreateString(_string!), High = 0 }
+            : new NativeValue { Tag = Tag, Low = _low, High = _high };
+        internal static RilsValue FromNative(NativeValue value) => value.Tag == RilsValueTag.String
+            ? From(NativeInterop.TakeString(value.Low))
+            : new RilsValue(value.Tag, value.Low, value.High);
 
         private void Require(RilsValueTag expected)
         {
@@ -335,9 +347,10 @@ namespace Rils.CSharp
             }
         }
 
-        public bool Equals(RilsValue other) => Tag == other.Tag && _low == other._low && _high == other._high;
+        public bool Equals(RilsValue other) => Tag == other.Tag && _low == other._low &&
+            _high == other._high && string.Equals(_string, other._string, StringComparison.Ordinal);
         public override bool Equals(object? obj) => obj is RilsValue other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Tag, _low, _high);
+        public override int GetHashCode() => HashCode.Combine(Tag, _low, _high, _string);
         public static bool operator ==(RilsValue left, RilsValue right) => left.Equals(right);
         public static bool operator !=(RilsValue left, RilsValue right) => !left.Equals(right);
 
@@ -353,5 +366,6 @@ namespace Rils.CSharp
         public static implicit operator RilsValue(float value) => From(value);
         public static implicit operator RilsValue(double value) => From(value);
         public static implicit operator RilsValue(char value) => From(value);
+        public static implicit operator RilsValue(string value) => From(value);
     }
 }

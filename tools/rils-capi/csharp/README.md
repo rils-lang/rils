@@ -88,12 +88,12 @@ python tools/generate-csharp-bindings.py
 python tools/generate-csharp-bindings.py --check
 ```
 
-当前高层封装支持 C ABI 已开放的全部普通调用标量与固定布局 inline host value。
+当前高层封装支持 C ABI 已开放的全部普通调用标量、拥有型 UTF-8 string、宿主 enum 与固定布局 inline host value。
 `RilsInt128`/`RilsUInt128` 使用高低 64 位保存，`RilsChar` 保存完整 Unicode scalar value；
 `RilsInlineValue` 通过无分配 reader/writer 按 `fields(...)` 声明显式打包小端标量字段；旧
 `f32x2/f32x3/f32x4` 布局仍可读取。`RilsRuntime.RegisterHostManifest(byte[])` 和
 `GetHostManifest()` 注册、导出 `.rilhm` 二进制契约，不使用 JSON。生成的低层 P/Invoke 已包含标量
-HostContract dispatcher 入口；高层静态 dispatcher/Attribute 注册、字符串、集合和 Option/Result
+HostContract dispatcher 入口；string 在 dispatcher 边界立即复制并消费原生句柄。集合和 Option/Result
 等待后续扩展。
 
 ## 宿主 Binding IR
@@ -105,12 +105,13 @@ HostContract dispatcher 入口；高层静态 dispatcher/Attribute 注册、字�
 `.rilhm`，不安装 dispatcher，也不需要创建假的宿主运行时对象；Player 再通过
 `new RilsHostFunction(descriptor, handler)` 绑定真实实现。
 
-`RilsHostTypeDescriptor` 声明 Host Manifest v4 命名类型；opaque 对象可以声明基类，
+`RilsHostTypeDescriptor` 声明 Host Manifest v5 命名类型；opaque 对象可以声明基类，
 `InlineValue(name, layout)` 声明固定布局值类型。
 `RilsHostParameter.NamedHandle("path::Type")` 在函数签名中引用该逻辑类型，并明确使用
-`HostHandle` 作为 ABI transport；`NamedValue` 使用 `InlineValue` transport。`RilsHostManifestBuilder` 会先注册类型再注册函数。Player 侧也应
+`HostHandle` 作为 ABI transport；`NamedValue` 使用 `InlineValue` transport；`Enum` 与 `NamedEnum`
+声明枚举项、flags 标记和底层整数 transport。`RilsHostManifestBuilder` 会先注册类型再注册函数。Player 侧也应
 先调用 `RilsHostRegistry.Register(type)`，或先加载包含类型表的 manifest，再绑定 handler。
-enum、常量和其他 value layout 尚未实现，不应在 C# 或 Unity 侧另建不兼容格式。
+其他 value layout 尚未实现，不应在 C# 或 Unity 侧另建不兼容格式。
 
 ## 导出到 Unity
 

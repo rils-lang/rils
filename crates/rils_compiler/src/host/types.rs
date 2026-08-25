@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
-use rils_frontend::Type;
+use rils_frontend::{IntegerType, Type};
 
 use super::{HOST_MANIFEST_MAX_NAME_BYTES, is_identifier};
 
@@ -10,6 +10,7 @@ use super::{HOST_MANIFEST_MAX_NAME_BYTES, is_identifier};
 pub enum HostTypeTransport {
     HostHandle,
     InlineValue,
+    Enum,
 }
 
 impl HostTypeTransport {
@@ -17,13 +18,15 @@ impl HostTypeTransport {
         match self {
             Self::HostHandle => "HostHandle",
             Self::InlineValue => "InlineValue",
+            Self::Enum => "Integer",
         }
     }
 
-    pub(crate) const fn as_tag(self) -> u8 {
+    pub(crate) fn as_tag(self) -> u8 {
         match self {
             Self::HostHandle => 9,
             Self::InlineValue => 10,
+            Self::Enum => panic!("host enum transports encode their underlying integer"),
         }
     }
 
@@ -41,6 +44,7 @@ impl HostTypeTransport {
         match self {
             Self::HostHandle => Type::named("HostHandle"),
             Self::InlineValue => Type::named("InlineValue"),
+            Self::Enum => Type::Unknown,
         }
     }
 }
@@ -231,6 +235,14 @@ pub struct HostTypeDeclaration {
     pub base_type: Option<String>,
     pub transport: HostTypeTransport,
     pub value_layout: Option<HostValueLayout>,
+    pub enum_definition: Option<HostEnumDefinition>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostEnumDefinition {
+    pub underlying_type: IntegerType,
+    pub flags: bool,
+    pub variants: BTreeMap<String, u128>,
 }
 
 pub(crate) fn validate_type_name(name: &str) -> Result<(), String> {
@@ -247,24 +259,44 @@ pub(crate) fn validate_type_graph(
     types: &BTreeMap<String, HostTypeDeclaration>,
 ) -> Result<(), String> {
     for declaration in types.values() {
-        match (declaration.transport, declaration.value_layout) {
-            (HostTypeTransport::HostHandle, None) => {}
-            (HostTypeTransport::InlineValue, Some(_)) if declaration.base_type.is_none() => {}
-            (HostTypeTransport::HostHandle, Some(_)) => {
+        match (
+            declaration.transport,
+            declaration.value_layout,
+            declaration.enum_definition.as_ref(),
+        ) {
+            (HostTypeTransport::HostHandle, None, None) => {}
+            (HostTypeTransport::InlineValue, Some(_), None) if declaration.base_type.is_none() => {}
+            (HostTypeTransport::Enum, None, Some(_)) => {
+                if declaration.base_type.is_some() {
+                    return Err(format!(
+                        "host enum type `{}` cannot inherit another host type",
+                        declaration.name
+                    ));
+                }
+            }
+            (HostTypeTransport::HostHandle, Some(_), _) => {
                 return Err(format!(
                     "opaque host type `{}` cannot declare an inline value layout",
                     declaration.name
                 ));
             }
-            (HostTypeTransport::InlineValue, None) => {
+            (HostTypeTransport::InlineValue, None, _) => {
                 return Err(format!(
                     "inline host type `{}` must declare a value layout",
                     declaration.name
                 ));
             }
-            (HostTypeTransport::InlineValue, Some(_)) => {
+            (HostTypeTransport::InlineValue, Some(_), _) => {
                 return Err(format!(
                     "inline host type `{}` cannot inherit another host type",
+                    declaration.name
+                ));
+            }
+            (HostTypeTransport::HostHandle, None, Some(_))
+            | (HostTypeTransport::Enum, _, None)
+            | (HostTypeTransport::Enum, Some(_), Some(_)) => {
+                return Err(format!(
+                    "host enum type `{}` has inconsistent transport metadata",
                     declaration.name
                 ));
             }

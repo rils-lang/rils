@@ -34,13 +34,7 @@ pub mod analysis {
         source: &str,
         host: &crate::HostContract,
     ) -> Result<DocumentAnalysis, crate::RilsError> {
-        let signatures = host.signatures();
-        let host_types = host
-            .types()
-            .map(|declaration| declaration.name.clone())
-            .collect();
-        rils_frontend::analysis::analyze_with_host_declarations(source, &signatures, &host_types)
-            .map_err(Into::into)
+        rils_compiler::analyze_with_host(source, host).map_err(Into::into)
     }
 }
 
@@ -81,16 +75,16 @@ pub use bytecode::{
     HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
     HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
     HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
-    HostContract, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
-    HostTypeDeclaration, HostTypeTransport, HostValueLayout,
+    HostContract, HostEnumDefinition, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver,
+    HostThreadAffinity, HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 pub use error::RilsError;
 pub use library::{LibraryFormatError, RilsLibrary};
 pub use limits::ExecutionLimits;
 pub use native_type::{NativeFunctionHandler, NativeTypeHandle};
 pub use opaque_host::{
-    InlineHostValue, OpaqueHostHandle, inline_host_value, inline_host_value_typed,
-    opaque_host_handle, opaque_host_value, opaque_host_value_typed,
+    InlineHostValue, OpaqueHostHandle, host_enum_raw, host_enum_value, inline_host_value,
+    inline_host_value_typed, opaque_host_handle, opaque_host_value, opaque_host_value_typed,
 };
 pub use output::{HostFormatKind, HostFormatSpec, HostValueFormatter, OutputHandler};
 pub use rils_frontend::{

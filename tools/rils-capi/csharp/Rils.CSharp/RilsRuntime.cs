@@ -43,6 +43,43 @@ namespace Rils.CSharp
             return new NativeSlice { Data = data, Length = new UIntPtr(checked((uint)length)) };
         }
 
+        internal static ulong CreateString(string value)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(value);
+            fixed (byte* pointer = bytes)
+            {
+                Check(NativeMethods.StringCreate(Slice(pointer, bytes.Length), out ulong handle));
+                return handle;
+            }
+        }
+
+        internal static string TakeString(ulong handle)
+        {
+            try
+            {
+                Check(NativeMethods.StringSize(handle, out UIntPtr nativeSize));
+                ulong size = nativeSize.ToUInt64();
+                if (size > int.MaxValue)
+                    throw new InvalidOperationException("Native Rils string exceeds the managed array limit.");
+                byte[] bytes = new byte[checked((int)size)];
+                fixed (byte* pointer = bytes)
+                {
+                    Check(NativeMethods.StringWrite(
+                        handle,
+                        pointer,
+                        new UIntPtr(checked((uint)bytes.Length)),
+                        out UIntPtr written));
+                    if (written.ToUInt64() != size)
+                        throw new InvalidOperationException("Native Rils string length changed while copying.");
+                }
+                return Encoding.UTF8.GetString(bytes);
+            }
+            finally
+            {
+                Check(NativeMethods.StringDestroy(handle));
+            }
+        }
+
         private static RilsException ReadError(RilsStatus status)
         {
             // Error getters do not clear or replace the thread-local native error.

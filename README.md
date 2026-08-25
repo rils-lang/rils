@@ -51,8 +51,8 @@ script_paths = ["scripts"]
   `Default::default()` 构造持久脚本值并按 trait 方法调用。
 - 项目支持路径源码依赖和实验性的 `.rilslib` 导出/验证。开发期仍以自动编译源码依赖为默认流程；
   入口到共享 `.rilslib` 的动态链接尚未完成。
-- Host Manifest v2 支持命名宿主类型、单继承和独立 ABI transport；C ABI version 4 与 C# facade
-  可以注册并调用保留逻辑类型身份的宿主对象。
+- Host Manifest v5 支持命名宿主类型、单继承、inline value、真实宿主 enum 和独立 ABI transport；
+  C ABI version 7 与 C# facade 还支持拥有型 UTF-8 string transport。
 
 ## 文档
 

@@ -8,7 +8,7 @@ static void Equal<T>(T expected, T actual, string label)
     }
 }
 
-Equal(6U, RilsRuntime.NativeAbiVersion, "ABI version");
+Equal(7U, RilsRuntime.NativeAbiVersion, "ABI version");
 
 using (var runtime = new RilsRuntime())
 {
@@ -130,6 +130,45 @@ using (var runtime = new RilsRuntime())
     runtime.Dispose();
 }
 
+var cameraType = RilsHostTypeDescriptor.Enum(
+    "unity_engine::CameraType",
+    RilsValueTag.I32,
+    flags: false,
+    new[]
+    {
+        new RilsHostEnumVariantDescriptor("Game", 1),
+        new RilsHostEnumVariantDescriptor("SceneView", 2),
+    });
+RilsHostParameter cameraParameter = RilsHostParameter.NamedEnum(
+    "unity_engine::CameraType",
+    RilsValueTag.I32);
+var cameraEchoDescriptor = new RilsHostFunctionDescriptor(
+    RilsHostStableId.FromCanonicalName("Smoke.CameraEcho(UnityEngine.CameraType):UnityEngine.CameraType"),
+    "unity_engine::camera::echo",
+    "unity.camera",
+    cameraParameter,
+    new[] { cameraParameter });
+var cameraModule = new RilsHostModuleDescriptor(
+    "unity_engine::camera",
+    1,
+    new[] { cameraType },
+    new[] { cameraEchoDescriptor });
+using (var runtime = new RilsRuntime())
+{
+    runtime.RegisterHostManifest(RilsHostManifestBuilder.Build(cameraModule));
+    using var hosts = new RilsHostRegistry(runtime);
+    hosts.Register(new RilsHostFunction(cameraEchoDescriptor, arguments => arguments[0]));
+    hosts.AllowCapability("unity.camera");
+    hosts.Freeze();
+    using RilsModule module = runtime.Compile(
+        "match unity_engine::camera::echo(unity_engine::CameraType::Game) { " +
+        "unity_engine::CameraType::Game => true, _ => false }",
+        "managed-host-enum-smoke.rils");
+    using RilsInstance instance = module.CreateInstance();
+    Equal(true, instance.Execute().AsBool(), "real host enum dispatch");
+    runtime.Dispose();
+}
+
 RilsHostParameter gameObjectType = RilsHostParameter.NamedHandle("unity_engine::GameObject");
 Equal(RilsValueTag.HostHandle, gameObjectType.Tag, "named handle transport");
 Equal("unity_engine::GameObject", gameObjectType.LogicalTypeName, "named handle logical type");
@@ -157,7 +196,7 @@ var objectModule = new RilsHostModuleDescriptor(
     new[] { objectType, derivedGameObjectType },
     new[] { getObjectDescriptor, instanceIdDescriptor });
 byte[] objectManifest = RilsHostManifestBuilder.Build(objectModule);
-Equal(4U, BitConverter.ToUInt32(objectManifest, 8), "host manifest format version");
+Equal(5U, BitConverter.ToUInt32(objectManifest, 8), "host manifest format version");
 using (var runtime = new RilsRuntime())
 {
     runtime.RegisterHostManifest(objectManifest);
@@ -241,7 +280,7 @@ var vectorModule = new RilsHostModuleDescriptor(
     new[] { vectorType },
     new[] { vectorNewDescriptor, vectorSumDescriptor });
 byte[] vectorManifest = RilsHostManifestBuilder.Build(vectorModule);
-Equal(4U, BitConverter.ToUInt32(vectorManifest, 8), "inline value manifest format version");
+Equal(5U, BitConverter.ToUInt32(vectorManifest, 8), "inline value manifest format version");
 using (var runtime = new RilsRuntime())
 {
     runtime.RegisterHostManifest(vectorManifest);
@@ -316,6 +355,7 @@ using (var runtime = new RilsRuntime())
         pub fn echo_i128(value: i128) -> i128 { value }
         pub fn echo_char(value: char) -> char { value }
         pub fn echo_f32(value: f32) -> f32 { value }
+        pub fn echo_string(value: string) -> string { value }
         """,
         "managed-smoke.rils");
     using RilsInstance instance = module.CreateInstance();
@@ -328,6 +368,7 @@ using (var runtime = new RilsRuntime())
     var scalar = new RilsChar(0x1F642);
     Equal(scalar, instance.Call("echo_char", RilsValue.From(scalar)).AsChar(), "char call");
     Equal(1.25F, instance.Call("echo_f32", 1.25F).AsF32(), "f32 call");
+    Equal("你好，Rils 👋", instance.Call("echo_string", "你好，Rils 👋").AsString(), "string call");
 
     byte[] image = module.GetBytecode();
     using RilsModule loadedModule = runtime.LoadBytecode(image);

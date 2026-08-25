@@ -773,6 +773,14 @@ pub const BUILTINS: &[BuiltinDeclaration] = &[
         "Values that can be used as hash collection keys."
     ),
     builtin!(
+        "BitFlags",
+        Trait,
+        [],
+        &[],
+        BuiltinBackend::Metadata,
+        "Enum values whose discriminants may be combined as a bit set."
+    ),
+    builtin!(
         "Iterator",
         Trait,
         [],

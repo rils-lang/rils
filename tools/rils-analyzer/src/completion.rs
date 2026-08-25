@@ -11,11 +11,10 @@ impl Server {
             } else {
                 let mut source = document.text.clone();
                 source.insert_str(offset, "__rils_completion");
-                recovered = analyze_with_source_id_and_external_exports_and_host_types(
+                recovered = analyze_with_host_and_source_id_and_external_exports(
                     &source,
                     document.source_id,
-                    &self.host_functions,
-                    &self.host_types,
+                    &self.host_contract,
                     &HashMap::new(),
                 )
                 .ok()
@@ -24,8 +23,7 @@ impl Server {
                         &document.text,
                         dot_offset,
                         document.source_id,
-                        &self.host_functions,
-                        &self.host_types,
+                        &self.host_contract,
                     )
                 });
                 recovered.as_ref()
@@ -193,6 +191,24 @@ impl Server {
             return Ok(json!(items));
         }
         let qualifier = resolve_path_alias(&document.text, &qualifier);
+        if let Some(declaration) = self.host_contract.host_type(&qualifier)
+            && let Some(enum_definition) = &declaration.enum_definition
+        {
+            let items = enum_definition
+                .variants
+                .iter()
+                .filter(|(name, _)| name.starts_with(&member_prefix))
+                .map(|(name, raw)| {
+                    json!({
+                        "label": name,
+                        "kind": 20,
+                        "detail": format!("{qualifier}::{name} = 0x{raw:x}"),
+                        "sortText": format!("0_{name}")
+                    })
+                })
+                .collect::<Vec<_>>();
+            return Ok(json!(items));
+        }
         let nested_prefix = format!("{qualifier}::");
         let mut module_names = HashSet::new();
         let mut items = Vec::new();
@@ -229,6 +245,27 @@ impl Server {
                     "sortText": format!("0_{child}")
                 }));
             }
+        }
+        for declaration in self.host_contract.types() {
+            let Some(remainder) = declaration.name.strip_prefix(&nested_prefix) else {
+                continue;
+            };
+            let child = remainder.split("::").next().unwrap_or(remainder);
+            if !child.starts_with(&member_prefix) || !module_names.insert(child.to_owned()) {
+                continue;
+            }
+            let is_nested_module = remainder.contains("::");
+            let full_name = format!("{qualifier}::{child}");
+            items.push(json!({
+                "label": child,
+                "kind": if is_nested_module { 9 } else { 13 },
+                "detail": if is_nested_module {
+                    format!("host module {full_name}")
+                } else {
+                    format!("host type {full_name}")
+                },
+                "sortText": format!("0_{child}")
+            }));
         }
         for function in self.host_contract.functions() {
             let Ok((module, name)) = split_qualified_name(&function.name) else {
@@ -349,8 +386,7 @@ fn recover_member_completion_analysis(
     source: &str,
     dot_offset: usize,
     source_id: SourceId,
-    host_functions: &HashMap<String, FunctionSignature>,
-    host_types: &HashSet<String>,
+    host_contract: &HostContract,
 ) -> Option<DocumentAnalysis> {
     source[..dot_offset]
         .match_indices(';')
@@ -358,11 +394,10 @@ fn recover_member_completion_analysis(
         .rev()
         .find_map(|end| {
             let candidate = close_open_delimiters(&source[..end]);
-            analyze_with_source_id_and_external_exports_and_host_types(
+            analyze_with_host_and_source_id_and_external_exports(
                 &candidate,
                 source_id,
-                host_functions,
-                host_types,
+                host_contract,
                 &HashMap::new(),
             )
             .ok()

@@ -54,6 +54,24 @@ typedef struct RilsHostTypeV2 {
     uint32_t reserved;
 } RilsHostTypeV2;
 
+typedef struct RilsHostEnumVariant {
+    RilsSlice name;
+    uint64_t raw_low;
+    uint64_t raw_high;
+} RilsHostEnumVariant;
+
+typedef struct RilsHostTypeV3 {
+    RilsSlice name;
+    RilsSlice base_type;
+    RilsSlice value_layout;
+    const RilsHostEnumVariant *enum_variants;
+    size_t enum_variant_count;
+    uint32_t transport_tag;
+    uint32_t kind;
+    uint32_t enum_flags;
+    uint32_t reserved;
+} RilsHostTypeV3;
+
 typedef struct RilsHostParameter {
     RilsSlice logical_type;
     uint32_t transport_tag;
@@ -134,12 +152,15 @@ enum RilsValueTag {
     RILS_VALUE_F64 = 15,
     RILS_VALUE_CHAR = 16,
     RILS_VALUE_HOST_HANDLE = 17,
-    RILS_VALUE_INLINE_VALUE = 18
+    RILS_VALUE_INLINE_VALUE = 18,
+    /* `low` owns a thread-bound RilsHandle. The receiver must consume or destroy it. */
+    RILS_VALUE_STRING = 19
 };
 
 enum RilsHostTypeKind {
     RILS_HOST_TYPE_OPAQUE = 0,
-    RILS_HOST_TYPE_VALUE = 1
+    RILS_HOST_TYPE_VALUE = 1,
+    RILS_HOST_TYPE_ENUM = 2
 };
 
 RILS_API uint32_t rils_abi_version(void);
@@ -157,6 +178,10 @@ RILS_API int32_t rils_runtime_register_host_types(
 RILS_API int32_t rils_runtime_register_host_types_v2(
     RilsHandle runtime,
     const RilsHostTypeV2 *types,
+    size_t type_count);
+RILS_API int32_t rils_runtime_register_host_types_v3(
+    RilsHandle runtime,
+    const RilsHostTypeV3 *types,
     size_t type_count);
 RILS_API int32_t rils_runtime_register_host_functions_v2(
     RilsHandle runtime,
@@ -277,6 +302,16 @@ RILS_API int32_t rils_script_value_call_trait(
     const RilsHostParameter *argument_types,
     size_t argument_count,
     RilsValue *out_value);
+
+/* String handles are thread-bound. `RILS_VALUE_STRING` transfers ownership to the receiver. */
+RILS_API int32_t rils_string_create(RilsSlice utf8, RilsHandle *out_string);
+RILS_API int32_t rils_string_size(RilsHandle string, size_t *out_size);
+RILS_API int32_t rils_string_write(
+    RilsHandle string,
+    uint8_t *buffer,
+    size_t buffer_capacity,
+    size_t *out_written);
+RILS_API int32_t rils_string_destroy(RilsHandle string);
 
 RILS_API int32_t rils_last_error_code(void);
 RILS_API RilsSlice rils_last_error_message(void);

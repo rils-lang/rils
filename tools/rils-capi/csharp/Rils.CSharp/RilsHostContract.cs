@@ -117,6 +117,22 @@ namespace Rils.CSharp
         };
     }
 
+    public readonly struct RilsHostEnumVariantDescriptor
+    {
+        public RilsHostEnumVariantDescriptor(string name, ulong rawLow, ulong rawHigh = 0)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Host enum variant name cannot be empty.", nameof(name));
+            Name = name;
+            RawLow = rawLow;
+            RawHigh = rawHigh;
+        }
+
+        public string Name { get; }
+        public ulong RawLow { get; }
+        public ulong RawHigh { get; }
+    }
+
     public sealed class RilsHostTypeDescriptor
     {
         public RilsHostTypeDescriptor(
@@ -137,6 +153,7 @@ namespace Rils.CSharp
             TransportTag = transportTag;
             Kind = RilsHostTypeKind.Opaque;
             ValueLayout = null;
+            EnumVariants = Array.Empty<RilsHostEnumVariantDescriptor>();
         }
 
         private RilsHostTypeDescriptor(string name, RilsHostValueLayout valueLayout)
@@ -148,19 +165,66 @@ namespace Rils.CSharp
             TransportTag = RilsValueTag.InlineValue;
             Kind = RilsHostTypeKind.Value;
             ValueLayout = valueLayout;
+            EnumVariants = Array.Empty<RilsHostEnumVariantDescriptor>();
+        }
+
+        private RilsHostTypeDescriptor(
+            string name,
+            RilsValueTag underlyingTag,
+            bool flags,
+            IReadOnlyList<RilsHostEnumVariantDescriptor> variants)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Host enum type name cannot be empty.", nameof(name));
+            if (!IsFixedWidthInteger(underlyingTag))
+                throw new ArgumentException("Host enum transport must be a fixed-width integer tag.", nameof(underlyingTag));
+            if (variants == null) throw new ArgumentNullException(nameof(variants));
+            var snapshot = new RilsHostEnumVariantDescriptor[variants.Count];
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            for (int index = 0; index < variants.Count; index++)
+            {
+                RilsHostEnumVariantDescriptor variant = variants[index];
+                if (!names.Add(variant.Name))
+                    throw new ArgumentException($"Host enum variant '{variant.Name}' is duplicated.", nameof(variants));
+                snapshot[index] = variant;
+            }
+            Name = name;
+            BaseTypeName = null;
+            TransportTag = underlyingTag;
+            Kind = RilsHostTypeKind.Enum;
+            ValueLayout = null;
+            IsFlagsEnum = flags;
+            EnumVariants = Array.AsReadOnly(snapshot);
         }
 
         public static RilsHostTypeDescriptor InlineValue(
             string name,
             RilsHostValueLayout valueLayout) => new RilsHostTypeDescriptor(name, valueLayout);
 
+        public static RilsHostTypeDescriptor Enum(
+            string name,
+            RilsValueTag underlyingTag,
+            bool flags,
+            IReadOnlyList<RilsHostEnumVariantDescriptor> variants) =>
+            new RilsHostTypeDescriptor(name, underlyingTag, flags, variants);
+
         public string Name { get; }
         public string? BaseTypeName { get; }
         public RilsValueTag TransportTag { get; }
         public RilsHostTypeKind Kind { get; }
         public RilsHostValueLayout? ValueLayout { get; }
+        public bool IsFlagsEnum { get; }
+        public IReadOnlyList<RilsHostEnumVariantDescriptor> EnumVariants { get; }
 
         internal string? ValueLayoutName => ValueLayout?.CanonicalName;
+
+        private static bool IsFixedWidthInteger(RilsValueTag tag) => tag switch
+        {
+            RilsValueTag.I8 or RilsValueTag.I16 or RilsValueTag.I32 or RilsValueTag.I64 or
+            RilsValueTag.I128 or RilsValueTag.U8 or RilsValueTag.U16 or RilsValueTag.U32 or
+            RilsValueTag.U64 or RilsValueTag.U128 => true,
+            _ => false,
+        };
     }
 
     /// Describes one host function independently from its managed implementation.
