@@ -49,11 +49,22 @@ impl Server {
                             .and_then(|symbol| symbol.inferred_type.as_ref())
                     })
             }) {
+                let mut inherent_items = current_analysis
+                    .map(|analysis| {
+                        inherent_method_completions(
+                            analysis,
+                            &document.text,
+                            receiver_type,
+                            &member_prefix,
+                        )
+                    })
+                    .unwrap_or_default();
                 if let Type::Named { name, arguments } = receiver_type
                     && arguments.is_empty()
                     && (name == "HostHandle" || self.host_contract.host_type(name).is_some())
                 {
-                    let mut items = self
+                    inherent_items.extend(
+                        self
                         .host_contract
                         .receiver_methods(name)
                         .into_iter()
@@ -73,12 +84,13 @@ impl Server {
                                     }
                                 })
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    items.sort_by(|left, right| {
+                        }),
+                    );
+                    inherent_items.sort_by(|left, right| {
                         left["label"].as_str().cmp(&right["label"].as_str())
                     });
-                    return Ok(json!(items));
+                    inherent_items.dedup_by(|left, right| left["label"] == right["label"]);
+                    return Ok(json!(inherent_items));
                 }
                 if receiver_type.is_integer() {
                     let items = rils_builtins::INTEGER_INTRINSICS
@@ -105,22 +117,34 @@ impl Server {
                             .then_some("Iterator")
                     });
                 if let Some(owner) = owner {
-                    let items = rils_builtins::builtin(owner)
-                        .into_iter()
-                        .flat_map(|declaration| declaration.members)
-                        .filter(|member| {
-                            member.kind == rils_builtins::BuiltinMemberKind::Method
-                                && member.name.starts_with(&member_prefix)
-                                && (owner != "Iterator"
-                                    || rils_frontend::standard_library::builtin_owner_name(
-                                        receiver_type,
-                                    )
-                                    .is_some()
-                                    || rils_builtins::is_iterator_default_method(member.name))
-                        })
-                        .map(|member| builtin_member_completion(receiver_type, member))
-                        .collect::<Vec<_>>();
-                    return Ok(json!(items));
+                    inherent_items.extend(
+                        rils_builtins::builtin(owner)
+                            .into_iter()
+                            .flat_map(|declaration| declaration.members)
+                            .filter(|member| {
+                                member.kind == rils_builtins::BuiltinMemberKind::Method
+                                    && member.name.starts_with(&member_prefix)
+                                    && (owner != "Iterator"
+                                        || rils_frontend::standard_library::builtin_owner_name(
+                                            receiver_type,
+                                        )
+                                        .is_some()
+                                        || rils_builtins::is_iterator_default_method(member.name))
+                            })
+                            .map(|member| builtin_member_completion(receiver_type, member)),
+                    );
+                    inherent_items.sort_by(|left, right| {
+                        left["label"].as_str().cmp(&right["label"].as_str())
+                    });
+                    inherent_items.dedup_by(|left, right| left["label"] == right["label"]);
+                    return Ok(json!(inherent_items));
+                }
+                if !inherent_items.is_empty() {
+                    inherent_items.sort_by(|left, right| {
+                        left["label"].as_str().cmp(&right["label"].as_str())
+                    });
+                    inherent_items.dedup_by(|left, right| left["label"] == right["label"]);
+                    return Ok(json!(inherent_items));
                 }
             }
         }
@@ -199,10 +223,24 @@ impl Server {
                 .iter()
                 .filter(|(name, _)| name.starts_with(&member_prefix))
                 .map(|(name, raw)| {
+                    let enum_kind = if enum_definition.flags {
+                        format!(
+                            "{} flags enum ({}, BitFlags)",
+                            qualifier, enum_definition.underlying_type
+                        )
+                    } else {
+                        format!("{} enum ({})", qualifier, enum_definition.underlying_type)
+                    };
                     json!({
                         "label": name,
+                        "filterText": name,
+                        "insertText": name,
                         "kind": 20,
                         "detail": format!("{qualifier}::{name} = 0x{raw:x}"),
+                        "documentation": {
+                            "kind": "markdown",
+                            "value": format!("`{enum_kind}`\n\nRaw value: `0x{raw:x}`")
+                        },
                         "sortText": format!("0_{name}")
                     })
                 })
@@ -380,6 +418,49 @@ impl Server {
             items.extend(public_completion_items(statement, member_prefix));
         }
     }
+}
+
+fn inherent_method_completions(
+    analysis: &DocumentAnalysis,
+    source: &str,
+    receiver_type: &Type,
+    prefix: &str,
+) -> Vec<Value> {
+    let Type::Named { name, .. } = receiver_type else {
+        return Vec::new();
+    };
+    analysis
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            symbol.is_definition
+                && symbol.kind == SymbolKind::Method
+                && symbol.name.starts_with(prefix)
+                && symbol.container.as_ref().is_some_and(|container| {
+                    let SymbolContainer::Type(owner) = container else {
+                        return false;
+                    };
+                    owner == name || resolve_path_alias(source, owner) == *name
+                })
+        })
+        .map(|symbol| {
+            let detail = symbol
+                .detail
+                .clone()
+                .unwrap_or_else(|| format!("fn {}", symbol.name));
+            json!({
+                "label": detail,
+                "filterText": symbol.name,
+                "insertText": symbol.name,
+                "kind": 2,
+                "detail": detail,
+                "documentation": {
+                    "kind": "markdown",
+                    "value": format!("Rils method implemented for `{name}`")
+                }
+            })
+        })
+        .collect()
 }
 
 fn recover_member_completion_analysis(

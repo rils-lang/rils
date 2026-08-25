@@ -218,23 +218,49 @@ impl Server {
         let Some(analysis) = analysis(document) else {
             return Ok(Value::Null);
         };
-        let Some(symbol) = analysis
+        let symbol = analysis
             .symbols
             .iter()
-            .find(|symbol| symbol.span.start <= offset && offset <= symbol.span.end)
-        else {
+            .find(|symbol| symbol.span.start <= offset && offset <= symbol.span.end);
+        if symbol.is_none()
+            && let Some(detail) = self.host_symbol_detail(document, offset, "")
+        {
+            let context = self
+                .host_type_hover_path(document, offset)
+                .map(|path| format!("`{path}`\n\n"))
+                .unwrap_or_default();
+            return Ok(json!({
+                "contents": {
+                    "kind": "markdown",
+                    "value": format!("{context}```rils\n{detail}\n```")
+                }
+            }));
+        }
+        let Some(symbol) = symbol else {
             return Ok(Value::Null);
         };
-        let host_detail = (!symbol.is_definition
-            && (symbol
-                .detail
-                .as_deref()
-                .is_some_and(|detail| detail.starts_with("host "))
-                || (symbol.definition_span.is_none()
-                    && symbol.symbol_id.is_none()
-                    && symbol.definition_id.is_none())))
+        let manifest_path = host_path_at(document, offset);
+        let is_explicit_manifest_symbol = manifest_path.as_deref().is_some_and(|path| {
+            self.host_contract.host_type(path).is_some()
+                || path.rsplit_once("::").is_some_and(|(owner, variant)| {
+                    self.host_contract
+                        .host_type(owner)
+                        .and_then(|declaration| declaration.enum_definition.as_ref())
+                        .is_some_and(|definition| definition.variants.contains_key(variant))
+                })
+        });
+        let host_detail = (is_explicit_manifest_symbol
+            || (!symbol.is_definition
+                && (symbol
+                    .detail
+                    .as_deref()
+                    .is_some_and(|detail| detail.starts_with("host "))
+                    || (symbol.definition_span.is_none()
+                        && symbol.symbol_id.is_none()
+                        && symbol.definition_id.is_none()))))
         .then(|| self.host_symbol_detail(document, offset, &symbol.name))
         .flatten();
+        let is_host_symbol = host_detail.is_some();
         let detail = if let Some(host_detail) = host_detail {
             host_detail
         } else {
@@ -260,10 +286,15 @@ impl Server {
                 _ => format!("{} {}", kind_label(symbol.kind), symbol.name),
             }
         };
-        let context = self
-            .hover_path(&uri, symbol)
-            .map(|path| format!("```rils\n{path}\n```\n\n"))
-            .unwrap_or_default();
+        let context = if is_host_symbol {
+            self.host_type_hover_path(document, offset)
+                .map(|path| format!("`{path}`\n\n"))
+                .unwrap_or_default()
+        } else {
+            self.hover_path(&uri, symbol)
+                .map(|path| format!("`{path}`\n\n"))
+                .unwrap_or_default()
+        };
         Ok(json!({
             "contents": {
                 "kind": "markdown",
@@ -278,9 +309,16 @@ impl Server {
     /// symbols. Resolve an unannotated type occurrence against the manifest
     /// and keep overload information for functions.
     fn host_symbol_detail(&self, document: &Document, offset: usize, name: &str) -> Option<String> {
-        let resolved = qualified_path_at(&document.text, offset)
-            .map(|path| resolve_path_alias(&document.text, &path))
-            .or_else(|| imported_path_at(document, offset));
+        let resolved = host_path_at(document, offset);
+        if let Some(resolved) = resolved.as_deref()
+            && let Some((owner, variant)) = resolved.rsplit_once("::")
+            && let Some(declaration) = self.host_contract.host_type(owner)
+            && let Some(enum_definition) = &declaration.enum_definition
+            && let Some(raw) = enum_definition.variants.get(variant)
+        {
+            let owner = owner.rsplit("::").next().unwrap_or(owner);
+            return Some(format!("variant {owner}::{variant} = 0x{raw:x}"));
+        }
         let mut types = self
             .host_contract
             .types()
@@ -298,10 +336,32 @@ impl Server {
                 return None;
             }
             let declaration = types[0];
+            let type_name = declaration
+                .name
+                .rsplit("::")
+                .next()
+                .unwrap_or(&declaration.name);
+            if let Some(enum_definition) = &declaration.enum_definition {
+                let flags = if enum_definition.flags {
+                    ", implements BitFlags"
+                } else {
+                    ""
+                };
+                let variants = enum_definition
+                    .variants
+                    .keys()
+                    .map(|variant| format!("    {variant},"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Some(format!(
+                    "// host enum: {}{flags}\nenum {} {{\n{variants}\n}}",
+                    enum_definition.underlying_type, type_name
+                ));
+            }
             // HostHandle values are opaque in Rils even when their managed
             // implementation inherits UnityEngine.Object. Keep the hover in
             // Rils terms and hide the managed class hierarchy.
-            return Some(format!("struct {}", declaration.name));
+            return Some(format!("struct {type_name}"));
         }
         let functions = self
             .host_contract
@@ -352,6 +412,21 @@ impl Server {
         Some(declarations.join("\n"))
     }
 
+    fn host_type_hover_path(&self, document: &Document, offset: usize) -> Option<String> {
+        let resolved = host_path_at(document, offset)?;
+        if self.host_contract.host_type(&resolved).is_some() {
+            return resolved
+                .rsplit_once("::")
+                .map(|(module, _)| module.to_owned());
+        }
+        let (owner, variant) = resolved.rsplit_once("::")?;
+        self.host_contract
+            .host_type(owner)
+            .and_then(|declaration| declaration.enum_definition.as_ref())
+            .filter(|definition| definition.variants.contains_key(variant))
+            .map(|_| owner.to_owned())
+    }
+
     fn hover_path(&self, uri: &str, symbol: &SymbolOccurrence) -> Option<String> {
         let definition_uri = symbol
             .definition_span
@@ -393,9 +468,9 @@ impl Server {
             None => return None,
         };
         Some(if module.is_empty() || module == "crate" {
-            project.name().to_owned()
+            "crate".to_owned()
         } else {
-            format!("{}::{module}", project.name())
+            format!("crate::{module}")
         })
     }
 }
@@ -428,6 +503,38 @@ fn imported_path_at(document: &Document, offset: usize) -> Option<String> {
         }
     }
     None
+}
+
+fn host_path_at(document: &Document, offset: usize) -> Option<String> {
+    qualified_path_through_identifier_at(&document.text, offset)
+        .map(|path| resolve_path_alias(&document.text, &path))
+        .or_else(|| imported_path_at(document, offset))
+}
+
+/// Return only the qualified path through the identifier under the cursor.
+/// For `CameraType::Game`, hovering `CameraType` must not include `::Game`,
+/// while hovering `Game` must see the complete variant path.
+fn qualified_path_through_identifier_at(text: &str, offset: usize) -> Option<String> {
+    let offset = floor_char_boundary(text, offset.min(text.len()));
+    let path_character =
+        |character: char| character == ':' || character == '_' || character.is_alphanumeric();
+    let identifier_character = |character: char| character == '_' || character.is_alphanumeric();
+    let mut start = offset;
+    for (index, character) in text[..offset].char_indices().rev() {
+        if !path_character(character) {
+            break;
+        }
+        start = index;
+    }
+    let mut end = offset;
+    for (relative, character) in text[offset..].char_indices() {
+        if !identifier_character(character) {
+            break;
+        }
+        end = offset + relative + character.len_utf8();
+    }
+    let path = text[start..end].trim_matches(':');
+    path.contains("::").then(|| path.to_owned())
 }
 
 fn identifier_at(text: &str, offset: usize) -> Option<&str> {

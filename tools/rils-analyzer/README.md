@@ -29,11 +29,14 @@ The executable is written to `target/debug/rils-analyzer` (or
 - verified `.rilhm` Host Manifest loading through the LSP `initializationOptions.hostManifestPaths`
 - recursive `.rils/manifest` discovery and deterministic multi-fragment contract merging
 - host module/member completion after `::`, including `use ... as ...` module aliases, signatures, and capabilities
+- host enum and variant hover, including underlying integer types, raw values, and `BitFlags` metadata
+- host enum variant and script-defined inherent method completion
 - project module and public-item completion after `crate::`, `self::`, `super::`, or a `use` alias
 
 Host manifests are binary runtime contracts. Each configured file is verified before its symbols are added to
 diagnostics, type inference, hover, semantic tokens, and completion. Multiple manifests must use the same host ABI
 and contract version and cannot contain conflicting declarations.
+
 - inferred return, local binding, and pattern binding type hints
 - complete higher-order function signatures such as `fn() -> fn() -> i32`
 

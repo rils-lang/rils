@@ -76,6 +76,11 @@
 
 ### Fixed
 
+- Analyzer 现在正确识别 Host enum 与 variant：Hover 显示底层整数类型、原始值及 `BitFlags` 信息，
+  并按当前 token 区分 `Enum` 与 `Enum::Variant`；Host 类型保留 Manifest 模块路径，项目符号统一以
+  `crate` 为 Hover 根路径。注入的 Host enum 虚拟声明不再污染文件开头或其他模块的语义着色，表达式
+  与 pattern 中的枚举项现在使用一致的 variant 分类。补全同时包含枚举项元数据和 Rils 侧为 Host
+  类型声明的固有 `impl` 方法。
 - 项目级文件编译现在会为入口之外的模块注册标准原生宏；多文件项目中的 `assert!`、`print!` 和
   `println!` 不再被误报为未知宏。
 - 共享同一返回类型的 Host overload 现在会把该返回类型继续传递给未标注的局部变量，链式 receiver

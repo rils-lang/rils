@@ -503,20 +503,55 @@ impl<'a> Resolver<'a> {
             Expr::Match { value, arms, .. } => {
                 self.resolve_expression(value);
                 for arm in arms {
+                    self.resolve_pattern(&mut arm.pattern);
                     self.resolve_expression(&mut arm.expression);
                 }
             }
             Expr::Block(block) => self.resolve_block(block),
             Expr::Path { segments, span } => {
-                if segments.len() > 1
-                    && let Some(canonical) = self.resolve_name(&segments[0], *span)
-                {
-                    let mut resolved = canonical.split("::").map(str::to_owned).collect::<Vec<_>>();
-                    resolved.extend(segments.iter().skip(1).cloned());
-                    *segments = resolved;
-                }
+                self.resolve_path(segments, *span);
             }
             Expr::Literal { .. } | Expr::Variable { .. } => {}
+        }
+    }
+
+    fn resolve_pattern(&mut self, pattern: &mut crate::ast::Pattern) {
+        use crate::ast::Pattern;
+
+        match pattern {
+            Pattern::Path { path, span }
+            | Pattern::TupleVariant { path, span, .. }
+            | Pattern::Record { path, span, .. } => self.resolve_path(path, *span),
+            Pattern::Some { inner, .. }
+            | Pattern::Ok { inner, .. }
+            | Pattern::Err { inner, .. } => self.resolve_pattern(inner),
+            Pattern::Wildcard { .. }
+            | Pattern::Binding { .. }
+            | Pattern::Literal { .. }
+            | Pattern::None { .. } => {}
+        }
+        match pattern {
+            Pattern::TupleVariant { fields, .. } => {
+                for field in fields {
+                    self.resolve_pattern(field);
+                }
+            }
+            Pattern::Record { fields, .. } => {
+                for (_, field) in fields {
+                    self.resolve_pattern(field);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn resolve_path(&mut self, segments: &mut Vec<String>, span: Span) {
+        if segments.len() > 1
+            && let Some(canonical) = self.resolve_name(&segments[0], span)
+        {
+            let mut resolved = canonical.split("::").map(str::to_owned).collect::<Vec<_>>();
+            resolved.extend(segments.iter().skip(1).cloned());
+            *segments = resolved;
         }
     }
 
