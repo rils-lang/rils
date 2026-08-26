@@ -23,12 +23,19 @@ fn loads_complete_configured_project() {
     assert_eq!(project.host_manifests().len(), 2);
     let dependency = project.dependency("rils_for_unity").unwrap();
 
-    assert_eq!(dependency.source_roots, vec![dependency.root.join("src")]);
+    assert_eq!(
+        dependency.source_roots,
+        vec![
+            dependency.root.join("src"),
+            dependency.root.join("extra-src"),
+        ]
+    );
     assert_eq!(
         dependency.prelude,
         Some(dependency.root.join("src/prelude.rils"))
     );
     assert!(project.module("rils_for_unity::behaviour").is_some());
+    assert!(project.module("rils_for_unity::utility").is_some());
     assert_eq!(project.dependencies().len(), 1);
     assert_eq!(
         project.unity_binding_assemblies(),

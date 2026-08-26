@@ -29,7 +29,29 @@ struct ProjectConfig {
 struct ProjectSection {
     name: String,
     #[serde(default)]
-    script_paths: Vec<PathBuf>,
+    src: SourcePaths,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SourcePaths {
+    One(PathBuf),
+    Many(Vec<PathBuf>),
+}
+
+impl Default for SourcePaths {
+    fn default() -> Self {
+        Self::Many(Vec::new())
+    }
+}
+
+impl SourcePaths {
+    fn into_paths(self) -> Vec<PathBuf> {
+        match self {
+            Self::One(path) => vec![path],
+            Self::Many(paths) => paths,
+        }
+    }
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -79,7 +101,7 @@ pub(crate) fn load_project(path: PathBuf) -> Result<ProjectBuild, ProjectError> 
         .project
         .ok_or_else(|| project_error("rils.toml is missing `[project]`"))?;
     validate_project_name(&project.name)?;
-    let source_roots = script_paths(project.script_paths)
+    let source_roots = source_paths(project.src)
         .into_iter()
         .map(|path| normalize_under_root(&root, &path, "script path"))
         .collect::<Result<Vec<_>, _>>()?;
@@ -204,7 +226,7 @@ fn read_dependency_metadata(root: &Path) -> Result<DependencyMetadata, ProjectEr
         });
     };
     validate_project_name(&project.name)?;
-    let source_roots = script_paths(project.script_paths)
+    let source_roots = source_paths(project.src)
         .into_iter()
         .map(|path| normalize_under_root(root, &path, "dependency script path"))
         .collect::<Result<Vec<_>, _>>()?;
@@ -214,7 +236,8 @@ fn read_dependency_metadata(root: &Path) -> Result<DependencyMetadata, ProjectEr
         prelude: config.lib.and_then(|library| library.prelude),
     })
 }
-fn script_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+fn source_paths(paths: SourcePaths) -> Vec<PathBuf> {
+    let paths = paths.into_paths();
     if paths.is_empty() {
         vec![PathBuf::from(".")]
     } else {

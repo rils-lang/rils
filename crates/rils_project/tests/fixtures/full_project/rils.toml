@@ -1,6 +1,6 @@
 [project]
 name = "unity_game"
-script_paths = ["scripts"]
+src = "scripts"
 
 [lib]
 prelude = "scripts/prelude.rils"
