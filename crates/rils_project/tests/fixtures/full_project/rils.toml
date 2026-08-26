@@ -1,0 +1,17 @@
+[project]
+name = "unity_game"
+script_paths = ["scripts"]
+
+[lib]
+prelude = "scripts/prelude.rils"
+
+[host]
+manifests = ["generated/project.rilhm"]
+manifest_dirs = ["generated/modules"]
+
+[unity.bindings]
+assemblies = ["UnityEngine.CoreModule"]
+
+[dependencies.rils_for_unity]
+path = "Packages/rils_for_unity"
+prelude = true
