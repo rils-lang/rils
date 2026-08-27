@@ -110,8 +110,8 @@ pub fn erased_builtin_import_signature(import: &str) -> Option<FunctionSignature
         .flat_map(|declaration| declaration.members)
         .filter(|member| {
             member
-                .runtime
-                .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
+                .builtin_id
+                .and_then(rils_builtins::BuiltinId::bytecode_import)
                 == Some(import)
         })
         .filter_map(erased_builtin_member_signature);
@@ -361,6 +361,26 @@ mod tests {
         let signature = erased_builtin_import_signature("core::value::replace").unwrap();
         assert!(signature.parameters.is_none());
         assert_eq!(signature.return_type, Type::Unknown);
+    }
+
+    #[test]
+    fn derived_debug_import_has_one_reference_layer_per_argument() {
+        assert_eq!(
+            erased_builtin_import_signature("core::fmt::write_derived_debug"),
+            Some(FunctionSignature::fixed(
+                vec![
+                    Type::Reference {
+                        mutable: true,
+                        inner: Box::new(Type::Unknown),
+                    },
+                    Type::Reference {
+                        mutable: false,
+                        inner: Box::new(Type::Unknown),
+                    },
+                ],
+                Type::Result(Box::new(Type::Unit), Box::new(Type::named("FormatError")),),
+            ))
+        );
     }
 
     #[test]

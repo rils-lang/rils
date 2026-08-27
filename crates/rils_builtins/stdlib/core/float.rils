@@ -1,0 +1,70 @@
+/// Declares the shared intrinsic API for one concrete floating-point primitive.
+macro float_impl($float_type) {
+impl $float_type {
+    /// Returns whether the value is NaN.
+    fn is_nan(self) -> bool {}
+    /// Returns whether the value is positive or negative infinity.
+    fn is_infinite(self) -> bool {}
+    /// Returns whether the value is neither infinite nor NaN.
+    fn is_finite(self) -> bool {}
+    /// Returns whether the value is neither zero, subnormal, infinite nor NaN.
+    fn is_normal(self) -> bool {}
+    /// Returns whether the sign is positive, including positive zero and positive NaN.
+    fn is_sign_positive(self) -> bool {}
+    /// Returns whether the sign is negative, including negative zero and negative NaN.
+    fn is_sign_negative(self) -> bool {}
+    /// Returns the absolute value.
+    fn abs(self) -> Self {}
+    /// Returns 1 or -1 according to the sign, preserving NaN.
+    fn signum(self) -> Self {}
+    /// Returns the magnitude of self with the sign of the argument.
+    fn copysign(self, sign: Self) -> Self {}
+    /// Returns the greatest integer less than or equal to the value.
+    fn floor(self) -> Self {}
+    /// Returns the smallest integer greater than or equal to the value.
+    fn ceil(self) -> Self {}
+    /// Rounds to the nearest integer, with halfway cases away from zero.
+    fn round(self) -> Self {}
+    /// Returns the integer part of the value.
+    fn trunc(self) -> Self {}
+    /// Returns the fractional part of the value.
+    fn fract(self) -> Self {}
+    /// Returns the square root, or NaN for a negative value.
+    fn sqrt(self) -> Self {}
+    /// Returns the reciprocal.
+    fn recip(self) -> Self {}
+    /// Returns the minimum, ignoring NaN when exactly one operand is NaN.
+    fn min(self, other: Self) -> Self {}
+    /// Returns the maximum, ignoring NaN when exactly one operand is NaN.
+    fn max(self, other: Self) -> Self {}
+    /// Restricts the value to the inclusive interval, failing for invalid bounds.
+    fn clamp(self, minimum: Self, maximum: Self) -> Self {}
+    /// Computes self * a + b with one rounding operation.
+    fn mul_add(self, multiplier: Self, addend: Self) -> Self {}
+
+    /// The smallest finite value.
+    #[constant]
+    fn MIN() -> Self {}
+    /// The largest finite value.
+    #[constant]
+    fn MAX() -> Self {}
+    /// The difference between 1 and the next representable value.
+    #[constant]
+    fn EPSILON() -> Self {}
+    /// The smallest positive normal value.
+    #[constant]
+    fn MIN_POSITIVE() -> Self {}
+    /// A not-a-number value.
+    #[constant]
+    fn NAN() -> Self {}
+    /// Positive infinity.
+    #[constant]
+    fn INFINITY() -> Self {}
+    /// Negative infinity.
+    #[constant]
+    fn NEG_INFINITY() -> Self {}
+}
+}
+
+float_impl!(f32)
+float_impl!(f64)

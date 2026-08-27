@@ -1,0 +1,2 @@
+/// Enum values whose discriminants may be combined as a bit set.
+pub trait BitFlags {}

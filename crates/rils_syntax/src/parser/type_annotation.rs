@@ -112,6 +112,9 @@ impl Parser {
         }
 
         let (name, name_span) = self.expect_path_segment("expected type name")?;
+        if name == "_" {
+            return Ok(Type::Unknown);
+        }
         let generic_definition = self
             .generic_scopes
             .iter()

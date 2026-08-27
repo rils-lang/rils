@@ -1,0 +1,29 @@
+/// Constructs a present Option value.
+pub fn Some<T>(value: T) -> Option<T> {}
+
+/// Constructs a successful Result value.
+pub fn Ok<T, E>(value: T) -> Result<T, E> {}
+
+/// Constructs an error Result value.
+pub fn Err<T, E>(error: E) -> Result<T, E> {}
+
+/// Tests whether an Option contains a value.
+pub fn is_some<T>(value: Option<T>) -> bool {}
+
+/// Tests whether an Option is empty.
+pub fn is_none<T>(value: Option<T>) -> bool {}
+
+/// Tests whether a Result is Ok.
+pub fn is_ok<T, E>(value: Result<T, E>) -> bool {}
+
+/// Tests whether a Result is Err.
+pub fn is_err<T, E>(value: Result<T, E>) -> bool {}
+
+/// Extracts an Option or Result success value.
+pub fn unwrap(value: _) -> _ {}
+
+/// Extracts a value or returns a default.
+pub fn unwrap_or<T>(value: _, default: T) -> T {}
+
+/// Explicitly duplicates an owned value.
+pub fn clone<T>(value: &T) -> T {}

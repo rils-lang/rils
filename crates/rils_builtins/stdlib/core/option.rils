@@ -1,0 +1,46 @@
+/// An optional value.
+pub enum Option<T> {
+    /// An absent optional value.
+    None,
+
+    /// A present optional value.
+    Some(T),
+}
+
+impl<T> Option<T> {
+    /// Returns true when a value is present.
+    fn is_some(&self) -> bool {}
+
+    /// Returns true when no value is present.
+    fn is_none(&self) -> bool {}
+
+    /// Returns the present value or fails.
+    fn unwrap(self) -> T {}
+
+    /// Returns the present value or the supplied default.
+    fn unwrap_or(self, default: T) -> T {}
+
+    /// Returns the present value or fails with the supplied message.
+    fn expect(self, message: string) -> T {}
+
+    /// Moves the value out, leaving None.
+    fn take(&mut self) -> Self {}
+
+    /// Returns this Option when present, otherwise the supplied Option.
+    fn or(self, other: Self) -> Self {}
+
+    /// Returns the present Option only when exactly one operand is present.
+    fn xor(self, other: Self) -> Self {}
+
+    /// Replaces the contained value and returns the previous Option.
+    fn replace(&mut self, value: T) -> Self {}
+
+    /// Maps a present value with the supplied function.
+    fn map<U>(self, transform: fn(T) -> U) -> Option<U> {}
+
+    /// Calls the supplied function for a present value and flattens its Option result.
+    fn and_then<U>(self, transform: fn(T) -> Option<U>) -> Option<U> {}
+
+    /// Calls the supplied fallback only when the Option is None.
+    fn or_else(self, fallback: fn() -> Option<T>) -> Self {}
+}

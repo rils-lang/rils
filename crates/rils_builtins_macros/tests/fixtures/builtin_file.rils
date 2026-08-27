@@ -1,0 +1,18 @@
+pub enum Fixture<T> {
+    /// No value is present.
+    Empty,
+
+    /// One value is present.
+    Value(T),
+}
+
+impl<T> Fixture<T> {
+    /// Consumes the fixture.
+    fn owned(self) -> T {}
+
+    /// Checks the fixture.
+    fn shared(&self) -> bool {}
+
+    /// Replaces the fixture value.
+    fn mutable(&mut self, value: T) {}
+}

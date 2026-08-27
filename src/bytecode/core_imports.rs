@@ -69,8 +69,8 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
         .flat_map(|declaration| declaration.members)
     {
         let Some(name) = member
-            .runtime
-            .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
+            .builtin_id
+            .and_then(rils_builtins::BuiltinId::bytecode_import)
         else {
             continue;
         };

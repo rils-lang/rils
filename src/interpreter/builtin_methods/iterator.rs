@@ -81,15 +81,16 @@ impl IteratorCursor {
     }
 }
 
+#[allow(non_upper_case_globals)]
 impl Interpreter {
     pub(super) fn call_iterator_default_method(
         &mut self,
-        id: rils_builtins::RuntimeMemberId,
+        id: rils_builtins::BuiltinId,
         receiver: &Value,
         arguments: &[Value],
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        use rils_builtins::RuntimeMemberId::*;
+        use rils_builtins::builtin_ids::*;
 
         let mut iterator = IteratorCursor::new(receiver, span)?;
         let source_type = iterator.element_type();

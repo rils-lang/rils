@@ -28,7 +28,9 @@ members = [
     ".",
     "crates/rils_compiler",
     "crates/rils_frontend",
+    "crates/rils_syntax",
     "crates/rils_builtins",
+    "crates/rils_builtins_macros",
     "crates/rils_project",
     "tools/rils-capi",
     "tools/rils-analyzer",
@@ -48,7 +50,9 @@ repository = "https://github.com/rils-lang/rils"
 [workspace.dependencies]
 rils_compiler = { version = "0.3.0", path = "crates/rils_compiler" }
 rils_frontend = { version = "0.3.0", path = "crates/rils_frontend" }
+rils_syntax = { version = "0.3.0", path = "crates/rils_syntax" }
 rils_builtins = { version = "0.3.0", path = "crates/rils_builtins" }
+rils_builtins_macros = { version = "0.3.0", path = "crates/rils_builtins_macros" }
 rils_project = { version = "0.3.0", path = "crates/rils_project" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

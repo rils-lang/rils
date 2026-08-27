@@ -1,0 +1,17 @@
+/// A fixed-length owned sequence.
+pub struct Array<T>;
+
+impl<T> Array<T> {
+    /// Returns the element count.
+    #[runtime(core::sequence::len)]
+    fn len(&self) -> usize {}
+    /// Returns true when the array has no elements.
+    #[runtime(core::sequence::is_empty)]
+    fn is_empty(&self) -> bool {}
+    /// Returns true when an equal element is present.
+    #[runtime(core::sequence::contains)]
+    fn contains(&self, value: &T) -> bool {}
+    /// Consumes the array and creates an iterator.
+    #[runtime(core::sequence::into_iter)]
+    fn into_iter(self) -> Iterator<T> {}
+}

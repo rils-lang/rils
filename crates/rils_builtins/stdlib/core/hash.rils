@@ -1,0 +1,2 @@
+/// Values that can be used as hash collection keys.
+pub trait Hash {}

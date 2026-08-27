@@ -99,21 +99,21 @@ pub(super) fn builtin_method_import(
         .iter()
         .filter(|declaration| owner.is_none_or(|owner| declaration.path == owner))
         .flat_map(|declaration| declaration.members)
-        .filter(|member| member.name == name && member.runtime.is_some());
+        .filter(|member| member.name == name && member.builtin_id.is_some());
     let member = candidates.next().or_else(|| {
         (name == "clone")
             .then(|| rils_builtins::builtin_member("Clone", "clone"))
             .flatten()
     })?;
-    let runtime = member.runtime?;
+    let runtime = member.builtin_id?;
     let import = runtime.bytecode_import()?;
     let receiver_mode = member.receiver?;
     if owner.is_none()
         && candidates.any(|candidate| {
             candidate.receiver != Some(receiver_mode)
                 || candidate
-                    .runtime
-                    .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
+                    .builtin_id
+                    .and_then(rils_builtins::BuiltinId::bytecode_import)
                     != Some(import)
         })
     {

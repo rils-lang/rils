@@ -1,0 +1,10 @@
+/// A transient formatting destination supplied by format macros.
+pub struct Formatter;
+
+impl Formatter {
+    /// Appends text to this formatting destination.
+    fn write_str(&mut self, value: string) -> Result<(), FormatError> {}
+
+    /// Writes the structural Debug representation used by derived implementations.
+    fn write_derived_debug(&mut self, value: &_) -> Result<(), FormatError> {}
+}

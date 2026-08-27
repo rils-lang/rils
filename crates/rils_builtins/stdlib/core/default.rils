@@ -1,0 +1,6 @@
+/// Types with a canonical default value.
+pub trait Default {
+    /// Constructs the default value for this type.
+    #[metadata]
+    fn default() -> Self;
+}

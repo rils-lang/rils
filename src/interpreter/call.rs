@@ -257,7 +257,7 @@ impl Interpreter {
                     return self.call(
                         Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(receiver.clone()),
-                            method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
+                            method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
                         })),
                         &arguments[1..],
                         span,
@@ -268,10 +268,10 @@ impl Interpreter {
                     let method = match (selector.trait_name.as_str(), selector.method_name.as_str())
                     {
                         ("Iterator", "next") => {
-                            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeNext)
+                            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext)
                         }
                         ("IntoIterator", "into_iter") => {
-                            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeIntoIter)
+                            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeIntoIter)
                         }
                         _ => {
                             return Err(RuntimeError::new(
@@ -298,20 +298,20 @@ impl Interpreter {
                     actual_target,
                 ) {
                     ("IntoIterator", "into_iter", Type::Array { .. }) => Some(
-                        BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceIntoIter),
+                        BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIntoIter),
                     ),
                     ("IntoIterator", "into_iter", Type::Named { name, arguments })
                         if name == "Vec" && arguments.len() == 1 =>
                     {
                         Some(BuiltinMethod::Runtime(
-                            rils_builtins::RuntimeMemberId::SequenceIntoIter,
+                            rils_builtins::BuiltinId::SequenceIntoIter,
                         ))
                     }
                     ("Iterator", "next", Type::Named { name, arguments })
                         if name == "SequenceIterator" && arguments.len() == 1 =>
                     {
                         Some(BuiltinMethod::Runtime(
-                            rils_builtins::RuntimeMemberId::IteratorNext,
+                            rils_builtins::BuiltinId::IteratorNext,
                         ))
                     }
                     _ => None,
@@ -889,7 +889,7 @@ impl Interpreter {
                     _ if name == "clone" => {
                         Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
+                            method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
                         })))
                     }
                     value => Err(RuntimeError::new(
@@ -900,7 +900,7 @@ impl Interpreter {
             }
             _ if name == "clone" => Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(object),
-                method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
+                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
             }))),
             _ => Err(RuntimeError::new(
                 format!("{} has no member `{name}`", object.type_name()),
@@ -931,7 +931,7 @@ impl Interpreter {
             if trait_methods.borrow().contains_key("Iterator")
                 && rils_builtins::is_iterator_default_method(name)
                 && let Some(member) = rils_builtins::builtin_member("Iterator", name)
-                && let (Some(method), Some(_)) = (member.runtime, member.receiver)
+                && let (Some(method), Some(_)) = (member.builtin_id, member.receiver)
             {
                 return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(receiver),
@@ -941,7 +941,7 @@ impl Interpreter {
             if name == "clone" {
                 return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(receiver),
-                    method: BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone),
+                    method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
                 })));
             }
             return Err(RuntimeError::new(
@@ -1072,7 +1072,7 @@ fn builtin_default_value(ty: &Type) -> Option<Value> {
 pub(super) fn builtin_runtime_member(
     value: &Value,
     name: &str,
-) -> Option<(rils_builtins::RuntimeMemberId, rils_builtins::ReceiverMode)> {
+) -> Option<(rils_builtins::BuiltinId, rils_builtins::ReceiverMode)> {
     let owner = match value {
         Value::Array(_) => "Array",
         Value::String(_) => "string",
@@ -1087,7 +1087,7 @@ pub(super) fn builtin_runtime_member(
         _ => return None,
     };
     let member = rils_builtins::builtin_member(owner, name)?;
-    Some((member.runtime?, member.receiver?))
+    Some((member.builtin_id?, member.receiver?))
 }
 
 fn validate_native_arguments(

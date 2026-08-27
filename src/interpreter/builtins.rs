@@ -599,6 +599,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: vec![TraitMethod {
+                attributes: Vec::new(),
                 name: "clone".into(),
                 name_span: span,
                 generic_parameters: Vec::new(),
@@ -617,6 +618,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: vec![TraitMethod {
+                attributes: Vec::new(),
                 name: "default".into(),
                 name_span: span,
                 generic_parameters: Vec::new(),
@@ -639,6 +641,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: vec![TraitMethod {
+                attributes: Vec::new(),
                 name: "fmt".into(),
                 name_span: span,
                 generic_parameters: Vec::new(),
@@ -668,6 +671,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             bounds: Vec::new(),
             associated_types: Vec::new(),
             methods: vec![TraitMethod {
+                attributes: Vec::new(),
                 name: "fmt".into(),
                 name_span: span,
                 generic_parameters: Vec::new(),
@@ -715,6 +719,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                 span,
             }],
             methods: vec![TraitMethod {
+                attributes: Vec::new(),
                 name: "next".into(),
                 name_span: span,
                 generic_parameters: Vec::new(),
@@ -744,6 +749,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                 span,
             }],
             methods: vec![TraitMethod {
+                attributes: Vec::new(),
                 name: "into_iter".into(),
                 name_span: span,
                 generic_parameters: Vec::new(),

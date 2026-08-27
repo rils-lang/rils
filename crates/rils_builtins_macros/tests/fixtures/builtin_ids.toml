@@ -1,0 +1,10 @@
+[core]
+clone = 0x0001
+
+[core.vec]
+push = 0x0200
+
+[core.fixture]
+owned = 0x1000
+shared = 0x1001
+mutable = 0x1002

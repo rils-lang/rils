@@ -7,6 +7,8 @@ publish = ["crates-io"]
 description = "Shared built-in API metadata for the Rils toolchain"
 license.workspace = true
 repository.workspace = true
-include = ["/Cargo.toml", "/README.md", "/src/**"]
+include = ["/Cargo.toml", "/README.md", "/builtin_ids.toml", "/src/**", "/stdlib/**"]
 
 [dependencies]
+rils_builtins_macros.workspace = true
+rils_syntax.workspace = true

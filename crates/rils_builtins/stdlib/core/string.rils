@@ -1,0 +1,62 @@
+/// An owned UTF-8 string.
+impl string {
+    /// Returns the UTF-8 byte length.
+    fn len(&self) -> usize {}
+
+    /// Returns true when the string has no bytes.
+    fn is_empty(&self) -> bool {}
+
+    /// Returns true when the substring is present.
+    fn contains(&self, pattern: string) -> bool {}
+
+    /// Tests the string prefix.
+    fn starts_with(&self, prefix: string) -> bool {}
+
+    /// Tests the string suffix.
+    fn ends_with(&self, suffix: string) -> bool {}
+
+    /// Returns the byte offset of the first match.
+    fn find(&self, pattern: string) -> Option<usize> {}
+
+    /// Returns a string without leading or trailing whitespace.
+    fn trim(&self) -> string {}
+
+    /// Replaces every matching substring.
+    fn replace(&self, from: string, to: string) -> string {}
+
+    /// Returns a string without leading whitespace.
+    fn trim_start(&self) -> string {}
+
+    /// Returns a string without trailing whitespace.
+    fn trim_end(&self) -> string {}
+
+    /// Returns the Unicode lowercase mapping.
+    fn to_lowercase(&self) -> string {}
+
+    /// Returns the Unicode uppercase mapping.
+    fn to_uppercase(&self) -> string {}
+
+    /// Repeats the string n times.
+    fn repeat(&self, count: usize) -> string {}
+
+    /// Returns the byte offset of the final match.
+    fn rfind(&self, pattern: string) -> Option<usize> {}
+
+    /// Removes one matching prefix.
+    fn strip_prefix(&self, prefix: string) -> Option<string> {}
+
+    /// Removes one matching suffix.
+    fn strip_suffix(&self, suffix: string) -> Option<string> {}
+
+    /// Iterates over Unicode scalar values.
+    fn chars(&self) -> Iterator<char> {}
+
+    /// Iterates over UTF-8 bytes.
+    fn bytes(&self) -> Iterator<u8> {}
+
+    /// Iterates over lines without their terminators.
+    fn lines(&self) -> Iterator<string> {}
+
+    /// Iterates over substrings separated by the pattern.
+    fn split(&self, pattern: string) -> Iterator<string> {}
+}

@@ -1,0 +1,52 @@
+/// A growable owned sequence.
+pub struct Vec<T>;
+
+impl<T> Vec<T> {
+    /// Creates an empty Vec.
+    #[metadata]
+    fn new() -> Self {}
+
+    /// Creates a Vec from an owned array.
+    #[metadata]
+    fn from(values: _) -> Self {}
+
+    /// Returns the element count.
+    #[runtime(core::sequence::len)]
+    fn len(&self) -> usize {}
+
+    /// Returns true when the Vec has no elements.
+    #[runtime(core::sequence::is_empty)]
+    fn is_empty(&self) -> bool {}
+
+    /// Appends one element.
+    fn push(&mut self, value: T) {}
+
+    /// Removes and returns the last element.
+    fn pop(&mut self) -> Option<T> {}
+
+    /// Removes all elements.
+    fn clear(&mut self) {}
+
+    /// Shortens the Vec to at most the supplied length.
+    fn truncate(&mut self, length: usize) {}
+
+    /// Returns true when an equal element is present.
+    #[runtime(core::sequence::contains)]
+    fn contains(&self, value: &T) -> bool {}
+
+    /// Inserts an element at the supplied index.
+    fn insert(&mut self, index: usize, value: T) {}
+
+    /// Removes and returns the element at the supplied index.
+    fn remove(&mut self, index: usize) -> T {}
+
+    /// Removes an element by replacing it with the final element.
+    fn swap_remove(&mut self, index: usize) -> T {}
+
+    /// Moves every element from another Vec into this Vec.
+    fn extend(&mut self, other: Self) {}
+
+    /// Consumes the Vec and creates an iterator.
+    #[runtime(core::sequence::into_iter)]
+    fn into_iter(self) -> Iterator<T> {}
+}

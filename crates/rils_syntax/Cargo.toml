@@ -1,0 +1,12 @@
+[package]
+name = "rils_syntax"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+description = "Shared lexer, parser, AST, and syntax types for Rils"
+license.workspace = true
+repository.workspace = true
+include = ["/Cargo.toml", "/README.md", "/src/**"]
+
+[dependencies]

@@ -152,9 +152,12 @@ tag/字段编码，每个 Span 都携带 SourceId。加载器限制文件为 64 
 现有 verifier，函数、常量、类型、导入、寄存器、局部槽位和跳转索引都不会被信任。未知必需
 section 拒绝加载，未知可选 section 在完成边界验证后跳过。
 
-由于语言当前存在 `usize`/`isize`，v6 记录目标指针宽度，32 位和 64 位产物不允许交叉加载，避免
+由于语言当前存在 `usize`/`isize`，格式会记录目标指针宽度，32 位和 64 位产物不允许交叉加载，避免
 发生静默截断。`format version`、`language version` 和 `host ABI` 分别检查。当前格式仍处于 0.4.0
 实验期，后续不兼容调整会提升格式版本；尚未承诺长期跨版本兼容。
+
+格式 v7 使用统一的 32 位稳定 `BuiltinId` 编码 intrinsic 调用。普通 runtime 成员和编译器/VM
+intrinsic 共用同一 ID 空间，执行后端不再决定身份；loader 会拒绝未在内建声明表中登记的 intrinsic ID。
 
 格式 v6 在 v5 的 trait implementation 表之外增加带显式 `IntegerType` 的 `IntegerBinary` 指令。
 静态分析无法证明类型的运算、浮点运算和字符串拼接仍使用通用 `Binary` 指令。旧 loader 不会误读

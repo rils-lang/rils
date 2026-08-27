@@ -79,6 +79,7 @@ pub enum EnumVariant {
 
 #[derive(Clone, Debug)]
 pub struct ImplMethod {
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub name_span: Span,
     pub generic_parameters: Vec<GenericParameter>,
@@ -90,6 +91,7 @@ pub struct ImplMethod {
 
 #[derive(Clone, Debug)]
 pub struct TraitMethod {
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub name_span: Span,
     pub generic_parameters: Vec<GenericParameter>,
@@ -161,6 +163,7 @@ pub enum Stmt {
         span: Span,
     },
     Function {
+        attributes: Vec<Attribute>,
         name: String,
         name_span: Span,
         generic_parameters: Vec<GenericParameter>,

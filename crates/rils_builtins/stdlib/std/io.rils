@@ -1,0 +1,19 @@
+/// Reads one line from standard input.
+pub fn read_line() -> Result<string, std::io::Error> {}
+
+/// Prints values without a trailing newline.
+#[variadic]
+pub fn print() {}
+
+/// Prints values followed by a newline.
+#[variadic]
+pub fn println() {}
+
+/// Writes a value to standard output.
+pub fn write(value: _) -> Result<(), std::io::Error> {}
+
+/// Writes a value and a newline.
+pub fn write_line(value: _) -> Result<(), std::io::Error> {}
+
+/// Flushes standard output.
+pub fn flush() -> Result<(), std::io::Error> {}

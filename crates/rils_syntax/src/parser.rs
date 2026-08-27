@@ -24,17 +24,38 @@ pub struct ParseError {
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<Program, ParseError> {
-    parse_with_native_macros(tokens, crate::macros::STANDARD_NATIVE_MACROS)
+    parse_with_options(tokens, crate::macros::STANDARD_NATIVE_MACROS, false)
 }
 
 pub fn parse_with_native_macros(
     tokens: Vec<Token>,
     native_macros: &[crate::macros::NativeMacroDefinition],
 ) -> Result<Program, ParseError> {
+    parse_with_options(tokens, native_macros, false)
+}
+
+/// Parses trusted standard-library declarations, whose callback signatures may
+/// contain lexical reference parameters without constructing an owned reference value.
+pub fn parse_builtin_declarations(tokens: Vec<Token>) -> Result<Program, ParseError> {
+    parse_with_options(tokens, crate::macros::STANDARD_NATIVE_MACROS, true)
+}
+
+fn parse_with_options(
+    tokens: Vec<Token>,
+    native_macros: &[crate::macros::NativeMacroDefinition],
+    allow_nested_parameter_references: bool,
+) -> Result<Program, ParseError> {
     validate_delimiters(&tokens)?;
     let expansion = crate::macros::expand(tokens, native_macros)?;
-    let mut program = Parser::new(expansion.tokens, expansion.macros).parse_program()?;
-    crate::derive::expand(&mut program)?;
+    let mut program = Parser::new(
+        expansion.tokens,
+        expansion.macros,
+        allow_nested_parameter_references,
+    )
+    .parse_program()?;
+    if !allow_nested_parameter_references {
+        crate::derive::expand(&mut program)?;
+    }
     Ok(program)
 }
 
@@ -125,7 +146,7 @@ pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
     let mut fragment = mask_macro_invocations(tokens);
     let end = fragment.last().map_or(0, |token| token.span.end);
     fragment.push(Token::new(TokenKind::Eof, Span::new(end, end)));
-    let mut parser = Parser::new(fragment, Vec::new());
+    let mut parser = Parser::new(fragment, Vec::new(), false);
     parser.expression().is_ok() && parser.check(&TokenKind::Eof)
 }
 
@@ -200,10 +221,15 @@ struct Parser {
     macros: Vec<MacroSymbol>,
     loop_depth: usize,
     block_depth: usize,
+    allow_nested_parameter_references: bool,
 }
 
 impl Parser {
-    fn new(tokens: Vec<Token>, macros: Vec<MacroSymbol>) -> Self {
+    fn new(
+        tokens: Vec<Token>,
+        macros: Vec<MacroSymbol>,
+        allow_nested_parameter_references: bool,
+    ) -> Self {
         Self {
             tokens,
             current: 0,
@@ -212,6 +238,7 @@ impl Parser {
             macros,
             loop_depth: 0,
             block_depth: 0,
+            allow_nested_parameter_references,
         }
     }
 
@@ -236,7 +263,9 @@ impl Parser {
                 statement => statement,
             };
             let target = match target {
-                Stmt::Struct { attributes, .. } | Stmt::Enum { attributes, .. } => attributes,
+                Stmt::Struct { attributes, .. }
+                | Stmt::Enum { attributes, .. }
+                | Stmt::Function { attributes, .. } => attributes,
                 _ => {
                     return Err(ParseError {
                         message: "attributes are currently supported on structs and enums only"

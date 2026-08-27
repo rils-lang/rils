@@ -4,10 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = ["crates-io"]
-description = "Syntax and type model for the Rils scripting language"
+description = "Static analysis and semantic frontend for the Rils scripting language"
 license.workspace = true
 repository.workspace = true
 include = ["/Cargo.toml", "/src/**"]
 
 [dependencies]
 rils_builtins.workspace = true
+rils_syntax.workspace = true

@@ -786,7 +786,7 @@ enum Instruction {
     },
     CallIntrinsic {
         destination: usize,
-        intrinsic: rils_builtins::IntrinsicId,
+        intrinsic: rils_builtins::BuiltinId,
         target: Option<IntegerType>,
         arguments: Vec<usize>,
     },

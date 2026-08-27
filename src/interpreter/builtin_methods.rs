@@ -31,13 +31,13 @@ impl Interpreter {
                 crate::numeric::execute_intrinsic(id, None, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeIntoIter) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeIntoIter) => {
                 Ok((*method.receiver).clone())
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::IteratorIntoIter) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter) => {
                 Ok((*method.receiver).clone())
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::Clone) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone) => {
                 let value = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference
                         .read()
@@ -48,7 +48,7 @@ impl Interpreter {
                     .clone_owned()
                     .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::FormatterWriteStr) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::FormatterWriteStr) => {
                 let buffer = super::formatting::formatter_buffer(&method.receiver, span)?;
                 let Value::String(value) = &arguments[0] else {
                     return Err(RuntimeError::new(
@@ -59,35 +59,35 @@ impl Interpreter {
                 buffer.write_str(value);
                 Ok(format_ok())
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::FormatterWriteDerivedDebug) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::FormatterWriteDerivedDebug) => {
                 self.write_derived_debug(&method.receiver, &arguments[0], span)?;
                 Ok(format_ok())
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::HashMapLen
-                | rils_builtins::RuntimeMemberId::HashMapIsEmpty
-                | rils_builtins::RuntimeMemberId::HashMapClear
-                | rils_builtins::RuntimeMemberId::HashMapContainsKey
-                | rils_builtins::RuntimeMemberId::HashMapInsert
-                | rils_builtins::RuntimeMemberId::HashMapGetCloned
-                | rils_builtins::RuntimeMemberId::HashMapRemove
-                | rils_builtins::RuntimeMemberId::HashMapKeysCloned
-                | rils_builtins::RuntimeMemberId::HashMapValuesCloned
-                | rils_builtins::RuntimeMemberId::HashMapIntoIter
-                | rils_builtins::RuntimeMemberId::HashSetLen
-                | rils_builtins::RuntimeMemberId::HashSetIsEmpty
-                | rils_builtins::RuntimeMemberId::HashSetClear
-                | rils_builtins::RuntimeMemberId::HashSetContains
-                | rils_builtins::RuntimeMemberId::HashSetInsert
-                | rils_builtins::RuntimeMemberId::HashSetRemove
-                | rils_builtins::RuntimeMemberId::HashSetIsSubset
-                | rils_builtins::RuntimeMemberId::HashSetIsSuperset
-                | rils_builtins::RuntimeMemberId::HashSetIsDisjoint
-                | rils_builtins::RuntimeMemberId::HashSetUnion
-                | rils_builtins::RuntimeMemberId::HashSetIntersection
-                | rils_builtins::RuntimeMemberId::HashSetDifference
-                | rils_builtins::RuntimeMemberId::HashSetSymmetricDifference
-                | rils_builtins::RuntimeMemberId::HashSetIntoIter),
+                id @ (rils_builtins::BuiltinId::HashMapLen
+                | rils_builtins::BuiltinId::HashMapIsEmpty
+                | rils_builtins::BuiltinId::HashMapClear
+                | rils_builtins::BuiltinId::HashMapContainsKey
+                | rils_builtins::BuiltinId::HashMapInsert
+                | rils_builtins::BuiltinId::HashMapGetCloned
+                | rils_builtins::BuiltinId::HashMapRemove
+                | rils_builtins::BuiltinId::HashMapKeysCloned
+                | rils_builtins::BuiltinId::HashMapValuesCloned
+                | rils_builtins::BuiltinId::HashMapIntoIter
+                | rils_builtins::BuiltinId::HashSetLen
+                | rils_builtins::BuiltinId::HashSetIsEmpty
+                | rils_builtins::BuiltinId::HashSetClear
+                | rils_builtins::BuiltinId::HashSetContains
+                | rils_builtins::BuiltinId::HashSetInsert
+                | rils_builtins::BuiltinId::HashSetRemove
+                | rils_builtins::BuiltinId::HashSetIsSubset
+                | rils_builtins::BuiltinId::HashSetIsSuperset
+                | rils_builtins::BuiltinId::HashSetIsDisjoint
+                | rils_builtins::BuiltinId::HashSetUnion
+                | rils_builtins::BuiltinId::HashSetIntersection
+                | rils_builtins::BuiltinId::HashSetDifference
+                | rils_builtins::BuiltinId::HashSetSymmetricDifference
+                | rils_builtins::BuiltinId::HashSetIntoIter),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
@@ -99,7 +99,7 @@ impl Interpreter {
                 )
                 .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::RangeNext) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(
                         "Range::next requires a mutable range binding",
@@ -130,7 +130,7 @@ impl Interpreter {
                     element_type: Some(element_type),
                 })
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceLen) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceLen) => {
                 let value = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference
                         .read()
@@ -147,7 +147,7 @@ impl Interpreter {
                 };
                 Ok(Value::Usize(length))
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceIsEmpty) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIsEmpty) => {
                 let value = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference
                         .read()
@@ -167,7 +167,7 @@ impl Interpreter {
                 };
                 Ok(Value::Bool(empty))
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceContains) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceContains) => {
                 let value = read_builtin_receiver(method.receiver.as_ref(), span)?;
                 let sequence = match value {
                     Value::Array(sequence) | Value::Vec(sequence) => sequence,
@@ -186,7 +186,7 @@ impl Interpreter {
                     .any(|slot| slot.value.as_ref() == Some(&needle));
                 Ok(Value::Bool(contains))
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::VecPush) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPush) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(
                         "Vec::push requires a mutable binding",
@@ -228,7 +228,7 @@ impl Interpreter {
                 });
                 Ok(Value::Unit)
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::VecPop) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPop) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(
                         "Vec::pop requires a mutable binding",
@@ -265,8 +265,7 @@ impl Interpreter {
                 })
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::VecClear
-                | rils_builtins::RuntimeMemberId::VecTruncate),
+                id @ (rils_builtins::BuiltinId::VecClear | rils_builtins::BuiltinId::VecTruncate),
             ) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(
@@ -283,7 +282,7 @@ impl Interpreter {
                 else {
                     return Err(RuntimeError::new("receiver is not Vec", span));
                 };
-                let length = if id == rils_builtins::RuntimeMemberId::VecClear {
+                let length = if id == rils_builtins::BuiltinId::VecClear {
                     0
                 } else {
                     let Value::Usize(length) = arguments[0] else {
@@ -308,9 +307,9 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::VecInsert
-                | rils_builtins::RuntimeMemberId::VecRemove
-                | rils_builtins::RuntimeMemberId::VecSwapRemove),
+                id @ (rils_builtins::BuiltinId::VecInsert
+                | rils_builtins::BuiltinId::VecRemove
+                | rils_builtins::BuiltinId::VecSwapRemove),
             ) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(
@@ -337,7 +336,7 @@ impl Interpreter {
                         span,
                     ));
                 }
-                if id == rils_builtins::RuntimeMemberId::VecInsert {
+                if id == rils_builtins::BuiltinId::VecInsert {
                     if index > elements.len() {
                         return Err(RuntimeError::new(
                             format!("index {index} is out of bounds for insertion"),
@@ -377,7 +376,7 @@ impl Interpreter {
                         span,
                     ));
                 }
-                let slot = if id == rils_builtins::RuntimeMemberId::VecRemove {
+                let slot = if id == rils_builtins::BuiltinId::VecRemove {
                     elements.remove(index)
                 } else {
                     elements.swap_remove(index)
@@ -386,7 +385,7 @@ impl Interpreter {
                     RuntimeError::new(format!("element at index {index} has been moved"), span)
                 })
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::VecExtend) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecExtend) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(
                         "Vec::extend requires a mutable binding",
@@ -441,7 +440,7 @@ impl Interpreter {
                     .extend(source_elements.drain(..));
                 Ok(Value::Unit)
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::SequenceIntoIter) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIntoIter) => {
                 let sequence = match method.receiver.as_ref() {
                     Value::Array(sequence) | Value::Vec(sequence) => sequence,
                     _ => {
@@ -478,7 +477,7 @@ impl Interpreter {
                     element_type,
                 })))
             }
-            BuiltinMethod::Runtime(rils_builtins::RuntimeMemberId::IteratorNext) => {
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorNext) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {
                     return Err(RuntimeError::new(
                         "Iterator::next requires a mutable binding",
@@ -504,78 +503,78 @@ impl Interpreter {
                 })
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::IteratorCount
-                | rils_builtins::RuntimeMemberId::IteratorLast
-                | rils_builtins::RuntimeMemberId::IteratorNth
-                | rils_builtins::RuntimeMemberId::IteratorCollectVec
-                | rils_builtins::RuntimeMemberId::IteratorTake
-                | rils_builtins::RuntimeMemberId::IteratorSkip
-                | rils_builtins::RuntimeMemberId::IteratorRev
-                | rils_builtins::RuntimeMemberId::IteratorMap
-                | rils_builtins::RuntimeMemberId::IteratorFilter
-                | rils_builtins::RuntimeMemberId::IteratorFilterMap
-                | rils_builtins::RuntimeMemberId::IteratorFold
-                | rils_builtins::RuntimeMemberId::IteratorForEach
-                | rils_builtins::RuntimeMemberId::IteratorAny
-                | rils_builtins::RuntimeMemberId::IteratorAll
-                | rils_builtins::RuntimeMemberId::IteratorFind
-                | rils_builtins::RuntimeMemberId::IteratorPosition
-                | rils_builtins::RuntimeMemberId::IteratorEnumerate),
+                id @ (rils_builtins::BuiltinId::IteratorCount
+                | rils_builtins::BuiltinId::IteratorLast
+                | rils_builtins::BuiltinId::IteratorNth
+                | rils_builtins::BuiltinId::IteratorCollectVec
+                | rils_builtins::BuiltinId::IteratorTake
+                | rils_builtins::BuiltinId::IteratorSkip
+                | rils_builtins::BuiltinId::IteratorRev
+                | rils_builtins::BuiltinId::IteratorMap
+                | rils_builtins::BuiltinId::IteratorFilter
+                | rils_builtins::BuiltinId::IteratorFilterMap
+                | rils_builtins::BuiltinId::IteratorFold
+                | rils_builtins::BuiltinId::IteratorForEach
+                | rils_builtins::BuiltinId::IteratorAny
+                | rils_builtins::BuiltinId::IteratorAll
+                | rils_builtins::BuiltinId::IteratorFind
+                | rils_builtins::BuiltinId::IteratorPosition
+                | rils_builtins::BuiltinId::IteratorEnumerate),
             ) => self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span),
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::ResultIsOk
-                | rils_builtins::RuntimeMemberId::ResultIsErr
-                | rils_builtins::RuntimeMemberId::ResultUnwrap
-                | rils_builtins::RuntimeMemberId::ResultUnwrapOr
-                | rils_builtins::RuntimeMemberId::ResultExpect
-                | rils_builtins::RuntimeMemberId::ResultOk
-                | rils_builtins::RuntimeMemberId::ResultErr
-                | rils_builtins::RuntimeMemberId::ResultMap
-                | rils_builtins::RuntimeMemberId::ResultMapErr
-                | rils_builtins::RuntimeMemberId::ResultAndThen
-                | rils_builtins::RuntimeMemberId::ResultOrElse),
+                id @ (rils_builtins::BuiltinId::ResultIsOk
+                | rils_builtins::BuiltinId::ResultIsErr
+                | rils_builtins::BuiltinId::ResultUnwrap
+                | rils_builtins::BuiltinId::ResultUnwrapOr
+                | rils_builtins::BuiltinId::ResultExpect
+                | rils_builtins::BuiltinId::ResultOk
+                | rils_builtins::BuiltinId::ResultErr
+                | rils_builtins::BuiltinId::ResultMap
+                | rils_builtins::BuiltinId::ResultMapErr
+                | rils_builtins::BuiltinId::ResultAndThen
+                | rils_builtins::BuiltinId::ResultOrElse),
             )
             | BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::ResultUnwrapErr
-                | rils_builtins::RuntimeMemberId::ResultExpectErr),
+                id @ (rils_builtins::BuiltinId::ResultUnwrapErr
+                | rils_builtins::BuiltinId::ResultExpectErr),
             )
             | BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::OptionIsSome
-                | rils_builtins::RuntimeMemberId::OptionIsNone
-                | rils_builtins::RuntimeMemberId::OptionUnwrap
-                | rils_builtins::RuntimeMemberId::OptionUnwrapOr
-                | rils_builtins::RuntimeMemberId::OptionExpect
-                | rils_builtins::RuntimeMemberId::OptionTake
-                | rils_builtins::RuntimeMemberId::OptionOr
-                | rils_builtins::RuntimeMemberId::OptionXor
-                | rils_builtins::RuntimeMemberId::OptionMap
-                | rils_builtins::RuntimeMemberId::OptionAndThen
-                | rils_builtins::RuntimeMemberId::OptionOrElse),
+                id @ (rils_builtins::BuiltinId::OptionIsSome
+                | rils_builtins::BuiltinId::OptionIsNone
+                | rils_builtins::BuiltinId::OptionUnwrap
+                | rils_builtins::BuiltinId::OptionUnwrapOr
+                | rils_builtins::BuiltinId::OptionExpect
+                | rils_builtins::BuiltinId::OptionTake
+                | rils_builtins::BuiltinId::OptionOr
+                | rils_builtins::BuiltinId::OptionXor
+                | rils_builtins::BuiltinId::OptionMap
+                | rils_builtins::BuiltinId::OptionAndThen
+                | rils_builtins::BuiltinId::OptionOrElse),
             )
-            | BuiltinMethod::Runtime(id @ rils_builtins::RuntimeMemberId::OptionReplace) => {
+            | BuiltinMethod::Runtime(id @ rils_builtins::BuiltinId::OptionReplace) => {
                 self.call_option_result_method(id, method.receiver.as_ref(), arguments, span)
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::RuntimeMemberId::StringLen
-                | rils_builtins::RuntimeMemberId::StringIsEmpty
-                | rils_builtins::RuntimeMemberId::StringContains
-                | rils_builtins::RuntimeMemberId::StringStartsWith
-                | rils_builtins::RuntimeMemberId::StringEndsWith
-                | rils_builtins::RuntimeMemberId::StringFind
-                | rils_builtins::RuntimeMemberId::StringTrim
-                | rils_builtins::RuntimeMemberId::StringReplace
-                | rils_builtins::RuntimeMemberId::StringTrimStart
-                | rils_builtins::RuntimeMemberId::StringTrimEnd
-                | rils_builtins::RuntimeMemberId::StringToLowercase
-                | rils_builtins::RuntimeMemberId::StringToUppercase
-                | rils_builtins::RuntimeMemberId::StringRepeat
-                | rils_builtins::RuntimeMemberId::StringRfind
-                | rils_builtins::RuntimeMemberId::StringStripPrefix
-                | rils_builtins::RuntimeMemberId::StringStripSuffix
-                | rils_builtins::RuntimeMemberId::StringChars
-                | rils_builtins::RuntimeMemberId::StringBytes
-                | rils_builtins::RuntimeMemberId::StringLines
-                | rils_builtins::RuntimeMemberId::StringSplit),
+                id @ (rils_builtins::BuiltinId::StringLen
+                | rils_builtins::BuiltinId::StringIsEmpty
+                | rils_builtins::BuiltinId::StringContains
+                | rils_builtins::BuiltinId::StringStartsWith
+                | rils_builtins::BuiltinId::StringEndsWith
+                | rils_builtins::BuiltinId::StringFind
+                | rils_builtins::BuiltinId::StringTrim
+                | rils_builtins::BuiltinId::StringReplace
+                | rils_builtins::BuiltinId::StringTrimStart
+                | rils_builtins::BuiltinId::StringTrimEnd
+                | rils_builtins::BuiltinId::StringToLowercase
+                | rils_builtins::BuiltinId::StringToUppercase
+                | rils_builtins::BuiltinId::StringRepeat
+                | rils_builtins::BuiltinId::StringRfind
+                | rils_builtins::BuiltinId::StringStripPrefix
+                | rils_builtins::BuiltinId::StringStripSuffix
+                | rils_builtins::BuiltinId::StringChars
+                | rils_builtins::BuiltinId::StringBytes
+                | rils_builtins::BuiltinId::StringLines
+                | rils_builtins::BuiltinId::StringSplit),
             ) => {
                 let receiver = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference
@@ -601,41 +600,39 @@ impl Interpreter {
                     None => Err(RuntimeError::new("missing string argument", span)),
                 };
                 match id {
-                    rils_builtins::RuntimeMemberId::StringLen => Ok(Value::Usize(value.len())),
-                    rils_builtins::RuntimeMemberId::StringIsEmpty => {
-                        Ok(Value::Bool(value.is_empty()))
-                    }
-                    rils_builtins::RuntimeMemberId::StringContains => {
+                    rils_builtins::BuiltinId::StringLen => Ok(Value::Usize(value.len())),
+                    rils_builtins::BuiltinId::StringIsEmpty => Ok(Value::Bool(value.is_empty())),
+                    rils_builtins::BuiltinId::StringContains => {
                         Ok(Value::Bool(value.contains(string_argument(0)?)))
                     }
-                    rils_builtins::RuntimeMemberId::StringStartsWith => {
+                    rils_builtins::BuiltinId::StringStartsWith => {
                         Ok(Value::Bool(value.starts_with(string_argument(0)?)))
                     }
-                    rils_builtins::RuntimeMemberId::StringEndsWith => {
+                    rils_builtins::BuiltinId::StringEndsWith => {
                         Ok(Value::Bool(value.ends_with(string_argument(0)?)))
                     }
-                    rils_builtins::RuntimeMemberId::StringFind => Ok(Value::Option {
+                    rils_builtins::BuiltinId::StringFind => Ok(Value::Option {
                         value: value
                             .find(string_argument(0)?)
                             .map(|offset| Rc::new(Value::Usize(offset))),
                         element_type: Some(Type::USIZE),
                     }),
-                    rils_builtins::RuntimeMemberId::StringTrim => {
+                    rils_builtins::BuiltinId::StringTrim => {
                         Ok(Value::String(Rc::from(value.trim())))
                     }
-                    rils_builtins::RuntimeMemberId::StringTrimStart => {
+                    rils_builtins::BuiltinId::StringTrimStart => {
                         Ok(Value::String(Rc::from(value.trim_start())))
                     }
-                    rils_builtins::RuntimeMemberId::StringTrimEnd => {
+                    rils_builtins::BuiltinId::StringTrimEnd => {
                         Ok(Value::String(Rc::from(value.trim_end())))
                     }
-                    rils_builtins::RuntimeMemberId::StringToLowercase => {
+                    rils_builtins::BuiltinId::StringToLowercase => {
                         Ok(Value::String(Rc::from(value.to_lowercase())))
                     }
-                    rils_builtins::RuntimeMemberId::StringToUppercase => {
+                    rils_builtins::BuiltinId::StringToUppercase => {
                         Ok(Value::String(Rc::from(value.to_uppercase())))
                     }
-                    rils_builtins::RuntimeMemberId::StringRepeat => {
+                    rils_builtins::BuiltinId::StringRepeat => {
                         let Some(Value::Usize(count)) = arguments.first() else {
                             return Err(RuntimeError::new(
                                 "string repeat count must be usize",
@@ -644,16 +641,16 @@ impl Interpreter {
                         };
                         Ok(Value::String(Rc::from(value.repeat(*count))))
                     }
-                    rils_builtins::RuntimeMemberId::StringRfind => Ok(Value::Option {
+                    rils_builtins::BuiltinId::StringRfind => Ok(Value::Option {
                         value: value
                             .rfind(string_argument(0)?)
                             .map(|offset| Rc::new(Value::Usize(offset))),
                         element_type: Some(Type::USIZE),
                     }),
-                    rils_builtins::RuntimeMemberId::StringStripPrefix
-                    | rils_builtins::RuntimeMemberId::StringStripSuffix => {
+                    rils_builtins::BuiltinId::StringStripPrefix
+                    | rils_builtins::BuiltinId::StringStripSuffix => {
                         let pattern = string_argument(0)?;
-                        let stripped = if id == rils_builtins::RuntimeMemberId::StringStripPrefix {
+                        let stripped = if id == rils_builtins::BuiltinId::StringStripPrefix {
                             value.strip_prefix(pattern)
                         } else {
                             value.strip_suffix(pattern)
@@ -663,34 +660,38 @@ impl Interpreter {
                             element_type: Some(Type::String),
                         })
                     }
-                    rils_builtins::RuntimeMemberId::StringChars => Ok(string_iterator(
+                    rils_builtins::BuiltinId::StringChars => Ok(string_iterator(
                         value.chars().map(Value::Char).collect(),
                         Type::Char,
                     )),
-                    rils_builtins::RuntimeMemberId::StringBytes => Ok(string_iterator(
+                    rils_builtins::BuiltinId::StringBytes => Ok(string_iterator(
                         value.bytes().map(Value::U8).collect(),
                         Type::Integer(crate::IntegerType::U8),
                     )),
-                    rils_builtins::RuntimeMemberId::StringLines => Ok(string_iterator(
+                    rils_builtins::BuiltinId::StringLines => Ok(string_iterator(
                         value
                             .lines()
                             .map(|line| Value::String(Rc::from(line)))
                             .collect(),
                         Type::String,
                     )),
-                    rils_builtins::RuntimeMemberId::StringSplit => Ok(string_iterator(
+                    rils_builtins::BuiltinId::StringSplit => Ok(string_iterator(
                         value
                             .split(string_argument(0)?)
                             .map(|part| Value::String(Rc::from(part)))
                             .collect(),
                         Type::String,
                     )),
-                    rils_builtins::RuntimeMemberId::StringReplace => Ok(Value::String(Rc::from(
+                    rils_builtins::BuiltinId::StringReplace => Ok(Value::String(Rc::from(
                         value.replace(string_argument(0)?, string_argument(1)?),
                     ))),
                     _ => unreachable!(),
                 }
             }
+            BuiltinMethod::Runtime(id) => Err(RuntimeError::new(
+                format!("unknown runtime member ID {:#x}", id.as_raw()),
+                span,
+            )),
         }
     }
 }

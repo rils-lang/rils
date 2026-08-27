@@ -1,0 +1,216 @@
+# Stable built-in IDs. Reserve each documented 0x100 block for its module.
+
+# General core operations: 0x0000-0x00FF.
+[core]
+clone = 0x0001
+
+# Sequence operations: 0x0100-0x01FF.
+[core.sequence]
+len = 0x0100
+into_iter = 0x0101
+is_empty = 0x0102
+contains = 0x0103
+
+# Vec operations: 0x0200-0x02FF.
+[core.vec]
+push = 0x0200
+pop = 0x0201
+clear = 0x0202
+truncate = 0x0203
+insert = 0x0204
+remove = 0x0205
+swap_remove = 0x0206
+extend = 0x0207
+
+# Iterator operations: 0x0300-0x03FF.
+[core.iterator]
+next = 0x0300
+count = 0x0301
+last = 0x0302
+nth = 0x0303
+collect_vec = 0x0304
+take = 0x0305
+skip = 0x0306
+rev = 0x0307
+into_iter = 0x0308
+map = 0x0309
+filter = 0x030A
+filter_map = 0x030B
+fold = 0x030C
+for_each = 0x030D
+any = 0x030E
+all = 0x030F
+find = 0x0310
+position = 0x0311
+enumerate = 0x0312
+
+# Range operations: 0x0400-0x04FF.
+[core.range]
+next = 0x0400
+into_iter = 0x0401
+
+# HashMap operations: 0x0500-0x05FF.
+[core.hash_map]
+len = 0x0500
+is_empty = 0x0501
+clear = 0x0502
+contains_key = 0x0503
+insert = 0x0504
+get_cloned = 0x0505
+remove = 0x0506
+keys_cloned = 0x0507
+values_cloned = 0x0508
+into_iter = 0x0509
+
+# HashSet operations: 0x0600-0x06FF.
+[core.hash_set]
+len = 0x0600
+is_empty = 0x0601
+clear = 0x0602
+contains = 0x0603
+insert = 0x0604
+remove = 0x0605
+is_subset = 0x0606
+is_superset = 0x0607
+is_disjoint = 0x0608
+union = 0x0609
+intersection = 0x060A
+difference = 0x060B
+symmetric_difference = 0x060C
+into_iter = 0x060D
+
+# Formatting operations: 0x0700-0x07FF.
+[core.fmt]
+write_str = 0x0700
+write_derived_debug = 0x0701
+
+# Result operations: 0x0800-0x08FF.
+[core.result]
+is_ok = 0x0800
+is_err = 0x0801
+unwrap = 0x0802
+unwrap_or = 0x0803
+expect = 0x0804
+ok = 0x0805
+err = 0x0806
+unwrap_err = 0x0807
+expect_err = 0x0808
+map = 0x0809
+map_err = 0x080A
+and_then = 0x080B
+or_else = 0x080C
+
+# Option operations: 0x0900-0x09FF.
+[core.option]
+is_some = 0x0900
+is_none = 0x0901
+unwrap = 0x0902
+unwrap_or = 0x0903
+expect = 0x0904
+take = 0x0905
+or = 0x0906
+xor = 0x0907
+replace = 0x0908
+map = 0x0909
+and_then = 0x090A
+or_else = 0x090B
+
+# String operations: 0x0A00-0x0AFF.
+[core.string]
+len = 0x0A00
+is_empty = 0x0A01
+contains = 0x0A02
+starts_with = 0x0A03
+ends_with = 0x0A04
+find = 0x0A05
+trim = 0x0A06
+replace = 0x0A07
+trim_start = 0x0A08
+trim_end = 0x0A09
+to_lowercase = 0x0A0A
+to_uppercase = 0x0A0B
+repeat = 0x0A0C
+rfind = 0x0A0D
+strip_prefix = 0x0A0E
+strip_suffix = 0x0A0F
+chars = 0x0A10
+bytes = 0x0A11
+lines = 0x0A12
+split = 0x0A13
+
+# Integer intrinsic operations: 0x0B00-0x0BFF.
+[core.integer]
+try_from = 0x0B00
+to_f32 = 0x0B01
+to_f64 = 0x0B02
+
+checked_add = 0x0B10
+checked_sub = 0x0B11
+checked_mul = 0x0B12
+checked_div = 0x0B13
+checked_rem = 0x0B14
+checked_neg = 0x0B15
+checked_abs = 0x0B16
+checked_pow = 0x0B17
+checked_shl = 0x0B18
+checked_shr = 0x0B19
+
+wrapping_add = 0x0B20
+wrapping_sub = 0x0B21
+wrapping_mul = 0x0B22
+wrapping_neg = 0x0B23
+wrapping_pow = 0x0B24
+wrapping_shl = 0x0B25
+wrapping_shr = 0x0B26
+
+saturating_add = 0x0B30
+saturating_sub = 0x0B31
+saturating_mul = 0x0B32
+saturating_neg = 0x0B33
+saturating_abs = 0x0B34
+saturating_pow = 0x0B35
+
+overflowing_add = 0x0B40
+overflowing_sub = 0x0B41
+overflowing_mul = 0x0B42
+overflowing_neg = 0x0B43
+overflowing_abs = 0x0B44
+overflowing_pow = 0x0B45
+overflowing_shl = 0x0B46
+overflowing_shr = 0x0B47
+
+count_ones = 0x0B50
+count_zeros = 0x0B51
+leading_zeros = 0x0B52
+trailing_zeros = 0x0B53
+rotate_left = 0x0B54
+rotate_right = 0x0B55
+pow = 0x0B56
+div_euclid = 0x0B57
+rem_euclid = 0x0B58
+abs = 0x0B59
+swap_bytes = 0x0B5A
+reverse_bits = 0x0B5B
+
+# Floating-point intrinsic operations: 0x0C00-0x0CFF.
+[core.float]
+is_nan = 0x0C00
+is_infinite = 0x0C01
+is_finite = 0x0C02
+is_normal = 0x0C03
+is_sign_positive = 0x0C04
+is_sign_negative = 0x0C05
+abs = 0x0C06
+signum = 0x0C07
+copysign = 0x0C08
+floor = 0x0C09
+ceil = 0x0C0A
+round = 0x0C0B
+trunc = 0x0C0C
+fract = 0x0C0D
+sqrt = 0x0C0E
+recip = 0x0C0F
+min = 0x0C10
+max = 0x0C11
+clamp = 0x0C12
+mul_add = 0x0C13

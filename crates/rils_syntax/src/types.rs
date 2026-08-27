@@ -2,7 +2,95 @@ use std::{collections::HashMap, fmt};
 
 use crate::source::Span;
 
-pub use rils_builtins::IntegerType;
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IntegerType {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    Isize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    Usize,
+}
+
+impl IntegerType {
+    pub const ALL: [Self; 12] = [
+        Self::I8,
+        Self::I16,
+        Self::I32,
+        Self::I64,
+        Self::I128,
+        Self::Isize,
+        Self::U8,
+        Self::U16,
+        Self::U32,
+        Self::U64,
+        Self::U128,
+        Self::Usize,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::Isize => "isize",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+            Self::Usize => "usize",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+
+    pub const fn is_signed(self) -> bool {
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128 | Self::Isize
+        )
+    }
+
+    pub const fn bits(self) -> u32 {
+        match self {
+            Self::I8 | Self::U8 => 8,
+            Self::I16 | Self::U16 => 16,
+            Self::I32 | Self::U32 => 32,
+            Self::I64 | Self::U64 => 64,
+            Self::I128 | Self::U128 => 128,
+            Self::Isize | Self::Usize => usize::BITS,
+        }
+    }
+
+    pub const fn can_cast_losslessly_to(self, target: Self) -> bool {
+        match (self.is_signed(), target.is_signed()) {
+            (true, true) | (false, false) | (true, false) => target.bits() >= self.bits(),
+            (false, true) => target.bits() > self.bits(),
+        }
+    }
+
+    pub const fn can_represent_all(self, source: Self) -> bool {
+        source.can_cast_losslessly_to(self)
+    }
+}
+
+impl fmt::Display for IntegerType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum FloatType {
