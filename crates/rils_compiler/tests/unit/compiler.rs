@@ -40,6 +40,60 @@ fn resolved_definition_selects_between_same_named_inherent_methods() {
 }
 
 #[test]
+fn semantic_call_identity_covers_trait_ufcs_modules_and_imports() {
+    compile(
+        r#"
+            trait Read {
+                fn read(&self) -> i32;
+            }
+
+            struct Left { value: i32 }
+            struct Right { value: i32 }
+            struct Owned { value: i32 }
+
+            impl Owned {
+                fn read(self) -> i32 { self.value }
+            }
+
+            impl Read for Left {
+                fn read(&self) -> i32 { self.value }
+            }
+
+            impl Read for Right {
+                fn read(&self) -> i32 { self.value }
+            }
+
+            mod values {
+                pub fn answer() -> i32 { 42 }
+
+                pub fn local_answer() -> i32 {
+                    answer()
+                }
+            }
+
+            use values::answer as imported_answer;
+
+            let left = Left { value: 1 };
+            left.read();
+            <Left as Read>::read(&left);
+            values::local_answer();
+            imported_answer();
+
+            let module_function = values::answer;
+            module_function();
+            let imported_function = imported_answer;
+            imported_function();
+            let owned = Owned { value: 2 };
+            let bound_method = owned.read;
+            bound_method();
+            let trait_function = <Left as Read>::read;
+            trait_function(&left)
+        "#,
+    )
+    .expect("frontend identities should select every user-defined direct call");
+}
+
+#[test]
 fn host_enum_variants_are_real_extensible_rils_enums() {
     let mut host = HostContract::new();
     host.register_enum_type(

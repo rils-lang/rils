@@ -409,7 +409,6 @@ pub(super) fn collect_method_symbols(
     prefix: &mut Vec<String>,
     next_function_id: &mut FunctionId,
     methods: &mut HashMap<String, MethodInfo>,
-    method_names: &mut HashMap<String, Option<MethodInfo>>,
 ) {
     for statement in statements {
         match unwrapped_statement(statement) {
@@ -437,10 +436,6 @@ pub(super) fn collect_method_symbols(
                         method_key(&target_name, trait_name.as_deref(), &method.name),
                         info,
                     );
-                    method_names
-                        .entry(method.name.clone())
-                        .and_modify(|value| *value = None)
-                        .or_insert(Some(info));
                 }
             }
             Stmt::Module {
@@ -449,13 +444,7 @@ pub(super) fn collect_method_symbols(
                 ..
             } => {
                 prefix.push(name.clone());
-                collect_method_symbols(
-                    module_statements,
-                    prefix,
-                    next_function_id,
-                    methods,
-                    method_names,
-                );
+                collect_method_symbols(module_statements, prefix, next_function_id, methods);
                 prefix.pop();
             }
             _ => {}
@@ -535,13 +524,6 @@ pub(super) fn qualified_name(prefix: &[String], name: &str) -> String {
         name.to_string()
     } else {
         format!("{}::{name}", prefix.join("::"))
-    }
-}
-
-pub(super) fn nominal_type_name(ty: &Type) -> Option<&str> {
-    match ty {
-        Type::Named { name, .. } => Some(name),
-        _ => None,
     }
 }
 

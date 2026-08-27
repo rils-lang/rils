@@ -3,9 +3,13 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     BodyId, DefId, ExprId, ImplId, SourceId, Span, Type,
     analysis::SymbolOccurrence,
-    ast::{Block, Expr, Program, Stmt},
+    ast::{Expr, Program, Stmt},
     types::FunctionSignature,
 };
+
+mod visit;
+
+use visit::visit_statements;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SymbolKind {
@@ -199,6 +203,11 @@ pub enum ResolvedCall {
     Host {
         path: String,
     },
+    Import {
+        name: String,
+        signature: FunctionSignature,
+        capability: String,
+    },
 }
 
 /// Semantic side tables produced by frontend analysis.
@@ -210,6 +219,7 @@ pub struct TypeckResults {
     expression_ids: HashMap<Span, ExprId>,
     expression_types: HashMap<ExprId, Type>,
     resolved_calls: HashMap<ExprId, ResolvedCall>,
+    resolved_values: HashMap<ExprId, DefId>,
 }
 
 impl TypeckResults {
@@ -234,6 +244,7 @@ impl TypeckResults {
             expression_ids,
             expression_types: types_by_id,
             resolved_calls: HashMap::new(),
+            resolved_values: HashMap::new(),
         }
     }
 
@@ -271,6 +282,11 @@ impl TypeckResults {
             .and_then(|id| self.resolved_call(id))
     }
 
+    pub fn resolved_value_at(&self, span: Span) -> Option<DefId> {
+        self.expression_id(span)
+            .and_then(|id| self.resolved_values.get(&id).copied())
+    }
+
     pub fn resolved_call_containing(
         &self,
         source: SourceId,
@@ -293,6 +309,12 @@ impl TypeckResults {
             self.resolved_calls.insert(id, call);
         }
     }
+
+    fn resolve_value(&mut self, span: Span, definition: DefId) {
+        if let Some(id) = self.expression_id(span) {
+            self.resolved_values.insert(id, definition);
+        }
+    }
 }
 
 pub(crate) fn resolve_program_calls(
@@ -302,35 +324,82 @@ pub(crate) fn resolve_program_calls(
     results: &mut TypeckResults,
 ) {
     let mut iterator_types = HashSet::new();
+    let mut callables = CallableDefinitions::default();
     collect_trait_implementations(
         &program.statements,
         &mut Vec::new(),
         "Iterator",
         &mut iterator_types,
     );
-    visit_statements(&program.statements, &mut |expression| {
-        let Expr::Call { callee, span, .. } = expression else {
-            return;
-        };
-        if let Some(call) = resolve_callee(
-            callee,
-            definitions,
-            host_functions,
-            &iterator_types,
-            results,
-        ) {
-            results.resolve_call(*span, call);
-        }
-    });
+    collect_callable_definitions(
+        &program.statements,
+        &mut Vec::new(),
+        definitions,
+        &mut callables,
+    );
+    collect_callable_aliases(&program.statements, &mut Vec::new(), &mut callables);
+    collect_host_aliases(
+        &program.statements,
+        &mut Vec::new(),
+        host_functions,
+        &mut callables.host_aliases,
+    );
+    visit_statements(
+        &program.statements,
+        &mut Vec::new(),
+        None,
+        &mut |expression, namespace, self_type| {
+            if let Some(definition) = callables.resolve(expression, results, namespace, self_type) {
+                results.resolve_value(expression.span(), definition);
+            }
+            let Expr::Call { callee, span, .. } = expression else {
+                return;
+            };
+            let context = CallResolutionContext {
+                definitions,
+                callables: &callables,
+                host_functions,
+                iterator_types: &iterator_types,
+                results,
+                namespace,
+                self_type,
+            };
+            if let Some(call) = resolve_callee(callee, &context) {
+                results.resolve_call(*span, call);
+            }
+        },
+    );
 }
 
-fn resolve_callee(
-    callee: &Expr,
-    definitions: &DefMap,
-    host_functions: &HashMap<String, FunctionSignature>,
-    iterator_types: &HashSet<String>,
-    results: &TypeckResults,
-) -> Option<ResolvedCall> {
+struct CallResolutionContext<'a> {
+    definitions: &'a DefMap,
+    callables: &'a CallableDefinitions,
+    host_functions: &'a HashMap<String, FunctionSignature>,
+    iterator_types: &'a HashSet<String>,
+    results: &'a TypeckResults,
+    namespace: &'a [String],
+    self_type: Option<&'a str>,
+}
+
+fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<ResolvedCall> {
+    let CallResolutionContext {
+        definitions,
+        callables,
+        host_functions,
+        iterator_types,
+        results,
+        namespace,
+        self_type,
+    } = context;
+    if let Some(definition) = callables.resolve(callee, results, namespace, *self_type) {
+        return Some(ResolvedCall::Definition(definition));
+    }
+    if let Some(definition) = callables.resolve_untyped_member(callee) {
+        return Some(ResolvedCall::Definition(definition));
+    }
+    if let Some(path) = callables.resolve_host(callee, host_functions, namespace, *self_type) {
+        return Some(ResolvedCall::Host { path });
+    }
     if let Some(definition) = callee_definition(callee, definitions) {
         return Some(ResolvedCall::Definition(definition));
     }
@@ -362,24 +431,455 @@ fn resolve_callee(
             let member = crate::standard_library::builtin_owner_name(receiver)
                 .and_then(|owner| rils_builtins::builtin_member(owner, name))
                 .or(iterator_member)
-                .or_else(|| unqualified_builtin_member(name))?;
-            Some(ResolvedCall::Builtin {
-                id: member.builtin_id?,
-                kind: BuiltinCallKind::Runtime,
-                receiver: member.receiver,
-            })
-        }
-        Expr::Path { segments, .. } => {
-            let path = segments.join("::");
+                .or_else(|| unqualified_builtin_member(name));
+            if let Some(member) = member {
+                return Some(ResolvedCall::Builtin {
+                    id: member.builtin_id?,
+                    kind: BuiltinCallKind::Runtime,
+                    receiver: member.receiver,
+                });
+            }
+            let Type::Named { name: owner, .. } = receiver else {
+                return None;
+            };
+            let path = format!("{owner}::{name}");
             host_functions
                 .contains_key(&path)
                 .then_some(ResolvedCall::Host { path })
         }
-        Expr::Variable { name, .. } => host_functions
-            .contains_key(name)
-            .then(|| ResolvedCall::Host { path: name.clone() }),
+        Expr::Path { segments, .. } => {
+            let path = segments.join("::");
+            if let [type_name, member] = segments.as_slice()
+                && crate::IntegerType::from_name(type_name).is_some()
+                && let Some(intrinsic) = rils_builtins::integer_associated_function(member)
+            {
+                return Some(ResolvedCall::Builtin {
+                    id: intrinsic.id,
+                    kind: BuiltinCallKind::Intrinsic,
+                    receiver: None,
+                });
+            }
+            if let Some(import) = builtin_associated_import(&path) {
+                return Some(import);
+            }
+            standard_import(&path).or_else(|| {
+                host_functions
+                    .contains_key(&path)
+                    .then_some(ResolvedCall::Host { path })
+            })
+        }
+        Expr::Variable { name, .. } => native_macro_import(name)
+            .or_else(|| standard_import(name))
+            .or_else(|| {
+                host_functions
+                    .contains_key(name)
+                    .then(|| ResolvedCall::Host { path: name.clone() })
+            }),
         _ => None,
     }
+}
+
+fn builtin_associated_import(path: &str) -> Option<ResolvedCall> {
+    let (owner_path, member_name) = path.rsplit_once("::")?;
+    let owner = owner_path.rsplit("::").next()?;
+    let member = rils_builtins::builtin_member(owner, member_name)?;
+    let name = member.runtime_import?;
+    let signature =
+        crate::standard_library::builtin_associated_function_signature(owner, member_name)?;
+    Some(ResolvedCall::Import {
+        name: name.into(),
+        signature,
+        capability: "core".into(),
+    })
+}
+
+fn standard_import(path: &str) -> Option<ResolvedCall> {
+    let declaration = rils_builtins::builtin_function(path)?;
+    let signature = crate::standard_library::standard_function_signature(path)?;
+    let capability = match declaration.backend {
+        rils_builtins::BuiltinBackend::Host(capability) => capability,
+        rils_builtins::BuiltinBackend::Runtime => "core",
+        rils_builtins::BuiltinBackend::Intrinsic | rils_builtins::BuiltinBackend::Metadata => {
+            return None;
+        }
+    };
+    Some(ResolvedCall::Import {
+        name: path.into(),
+        signature,
+        capability: capability.into(),
+    })
+}
+
+fn native_macro_import(name: &str) -> Option<ResolvedCall> {
+    let (path, capability, signature) = match name {
+        "#rils_native_print" => (
+            "std::io::print",
+            "std::io",
+            crate::standard_library::standard_function_signature("std::io::print")?,
+        ),
+        "#rils_native_println" => (
+            "std::io::println",
+            "std::io",
+            crate::standard_library::standard_function_signature("std::io::println")?,
+        ),
+        "#rils_native_assert" => (
+            "core::assert",
+            "core",
+            FunctionSignature::variadic(Type::Unit),
+        ),
+        _ => return None,
+    };
+    Some(ResolvedCall::Import {
+        name: path.into(),
+        signature,
+        capability: capability.into(),
+    })
+}
+
+#[derive(Default)]
+struct CallableDefinitions {
+    functions: HashMap<String, DefId>,
+    methods: Vec<MethodDefinition>,
+    host_aliases: HashMap<String, String>,
+    path_aliases: HashMap<String, String>,
+}
+
+struct MethodDefinition {
+    owner: String,
+    trait_name: Option<String>,
+    name: String,
+    definition: DefId,
+}
+
+impl CallableDefinitions {
+    fn resolve(
+        &self,
+        callee: &Expr,
+        results: &TypeckResults,
+        namespace: &[String],
+        self_type: Option<&str>,
+    ) -> Option<DefId> {
+        match callee {
+            Expr::Variable { name, .. } => self
+                .functions
+                .get(&self.resolve_path(namespace, self_type, name))
+                .copied(),
+            Expr::Path { segments, .. } => {
+                let path = self.resolve_path(namespace, self_type, &segments.join("::"));
+                if let Some(definition) = self.functions.get(&path) {
+                    return Some(*definition);
+                }
+                let (owner, name) = path.rsplit_once("::")?;
+                unique_method(self.methods.iter().filter(|method| {
+                    owner_matches(&method.owner, owner)
+                        && method.name == name
+                        && method.trait_name.is_none()
+                }))
+            }
+            Expr::QualifiedPath {
+                target,
+                trait_name,
+                member,
+                ..
+            } => {
+                let Type::Named { name: owner, .. } = target else {
+                    return None;
+                };
+                let owner = contextual_name(namespace, self_type, owner);
+                let trait_name = contextual_name(namespace, self_type, trait_name);
+                unique_method(self.methods.iter().filter(|method| {
+                    owner_matches(&method.owner, &owner)
+                        && method.trait_name.as_deref() == Some(trait_name.as_str())
+                        && method.name == *member
+                }))
+            }
+            Expr::Member { object, name, .. } => {
+                let receiver = results.expression_type_at(object.span())?;
+                let receiver = match receiver {
+                    Type::Reference { inner, .. } => inner.as_ref(),
+                    receiver => receiver,
+                };
+                let Type::Named { name: owner, .. } = receiver else {
+                    return None;
+                };
+                let owner = contextual_name(namespace, self_type, owner);
+                let inherent = self.methods.iter().filter(|method| {
+                    owner_matches(&method.owner, &owner)
+                        && method.name == *name
+                        && method.trait_name.is_none()
+                });
+                unique_method(inherent).or_else(|| {
+                    unique_method(self.methods.iter().filter(|method| {
+                        owner_matches(&method.owner, &owner)
+                            && method.name == *name
+                            && method.trait_name.is_some()
+                    }))
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn resolve_host(
+        &self,
+        callee: &Expr,
+        host_functions: &HashMap<String, FunctionSignature>,
+        namespace: &[String],
+        self_type: Option<&str>,
+    ) -> Option<String> {
+        let name = match callee {
+            Expr::Variable { name, .. } => contextual_name(namespace, self_type, name),
+            Expr::Path { segments, .. } => {
+                contextual_name(namespace, self_type, &segments.join("::"))
+            }
+            _ => return None,
+        };
+        self.host_aliases
+            .get(&name)
+            .cloned()
+            .or_else(|| host_functions.contains_key(&name).then_some(name))
+    }
+
+    fn resolve_untyped_member(&self, callee: &Expr) -> Option<DefId> {
+        let Expr::Member { name, .. } = callee else {
+            return None;
+        };
+        unique_method(self.methods.iter().filter(|method| method.name == *name))
+    }
+
+    fn resolve_path(&self, namespace: &[String], self_type: Option<&str>, name: &str) -> String {
+        let name = contextual_name(namespace, self_type, name);
+        let alias = self
+            .path_aliases
+            .iter()
+            .filter(|(alias, _)| name == alias.as_str() || name.starts_with(&format!("{alias}::")))
+            .max_by_key(|(alias, _)| alias.len());
+        match alias {
+            Some((alias, target)) => format!("{target}{}", &name[alias.len()..]),
+            None => name,
+        }
+    }
+}
+
+fn owner_matches(candidate: &str, requested: &str) -> bool {
+    candidate == requested
+        || (!requested.contains("::") && candidate.ends_with(&format!("::{requested}")))
+}
+
+fn unique_method<'a>(mut methods: impl Iterator<Item = &'a MethodDefinition>) -> Option<DefId> {
+    let first = methods.next()?.definition;
+    methods.next().is_none().then_some(first)
+}
+
+fn collect_callable_definitions(
+    statements: &[Stmt],
+    namespace: &mut Vec<String>,
+    definitions: &DefMap,
+    output: &mut CallableDefinitions,
+) {
+    for statement in statements {
+        let statement = match statement {
+            Stmt::Public { statement, .. } => statement.as_ref(),
+            statement => statement,
+        };
+        match statement {
+            Stmt::Module {
+                name,
+                statements: Some(statements),
+                ..
+            } => {
+                namespace.push(name.clone());
+                collect_callable_definitions(statements, namespace, definitions, output);
+                namespace.pop();
+            }
+            Stmt::Function {
+                name, name_span, ..
+            } => {
+                if let Some(definition) = definitions.resolution(*name_span) {
+                    output
+                        .functions
+                        .insert(qualified_name(namespace, name), definition);
+                }
+            }
+            Stmt::Impl {
+                target,
+                trait_name,
+                methods,
+                ..
+            } => {
+                let Type::Named { name: owner, .. } = target else {
+                    continue;
+                };
+                let owner = qualified_name(namespace, owner);
+                let trait_name = trait_name
+                    .as_ref()
+                    .map(|trait_name| qualified_name(namespace, trait_name));
+                output.methods.extend(methods.iter().filter_map(|method| {
+                    Some(MethodDefinition {
+                        owner: owner.clone(),
+                        trait_name: trait_name.clone(),
+                        name: method.name.clone(),
+                        definition: definitions.resolution(method.name_span)?,
+                    })
+                }));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_host_aliases(
+    statements: &[Stmt],
+    namespace: &mut Vec<String>,
+    host_functions: &HashMap<String, FunctionSignature>,
+    output: &mut HashMap<String, String>,
+) {
+    for statement in statements {
+        let statement = match statement {
+            Stmt::Public { statement, .. } => statement.as_ref(),
+            statement => statement,
+        };
+        match statement {
+            Stmt::Module {
+                name,
+                statements: Some(statements),
+                ..
+            } => {
+                namespace.push(name.clone());
+                collect_host_aliases(statements, namespace, host_functions, output);
+                namespace.pop();
+            }
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    let path = import.path.join("::");
+                    if import.kind == crate::ast::UseImportKind::Glob {
+                        let prefix = format!("{path}::");
+                        for candidate in host_functions.keys() {
+                            let Some(member) = candidate.strip_prefix(&prefix) else {
+                                continue;
+                            };
+                            if !member.contains("::") {
+                                output.insert(qualified_name(namespace, member), candidate.clone());
+                            }
+                        }
+                    } else if host_functions.contains_key(&path)
+                        && let Some(binding) = import.binding_name()
+                    {
+                        output.insert(qualified_name(namespace, binding), path);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_callable_aliases(
+    statements: &[Stmt],
+    namespace: &mut Vec<String>,
+    callables: &mut CallableDefinitions,
+) {
+    for statement in statements {
+        let statement = match statement {
+            Stmt::Public { statement, .. } => statement.as_ref(),
+            statement => statement,
+        };
+        match statement {
+            Stmt::Module {
+                name,
+                statements: Some(statements),
+                ..
+            } => {
+                namespace.push(name.clone());
+                collect_callable_aliases(statements, namespace, callables);
+                namespace.pop();
+            }
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    let path = contextual_name(namespace, None, &import.path.join("::"));
+                    if import.kind == crate::ast::UseImportKind::Glob {
+                        let prefix = format!("{path}::");
+                        let aliases = callables
+                            .functions
+                            .iter()
+                            .filter_map(|(candidate, definition)| {
+                                let member = candidate.strip_prefix(&prefix)?;
+                                (!member.contains("::")).then_some((member.to_owned(), *definition))
+                            })
+                            .collect::<Vec<_>>();
+                        for (member, definition) in aliases {
+                            callables
+                                .functions
+                                .insert(qualified_name(namespace, &member), definition);
+                        }
+                        let modules = callables
+                            .functions
+                            .keys()
+                            .filter_map(|candidate| {
+                                let remaining = candidate.strip_prefix(&prefix)?;
+                                remaining
+                                    .split_once("::")
+                                    .map(|(module, _)| module.to_owned())
+                            })
+                            .collect::<HashSet<_>>();
+                        for module in modules {
+                            callables.path_aliases.insert(
+                                qualified_name(namespace, &module),
+                                format!("{path}::{module}"),
+                            );
+                        }
+                    } else if let Some(binding) = import.binding_name() {
+                        let binding = qualified_name(namespace, binding);
+                        if let Some(definition) = callables.functions.get(&path).copied() {
+                            callables.functions.insert(binding, definition);
+                        } else if callables
+                            .functions
+                            .keys()
+                            .any(|candidate| candidate.starts_with(&format!("{path}::")))
+                        {
+                            callables.path_aliases.insert(binding, path);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn qualified_name(namespace: &[String], name: &str) -> String {
+    if namespace.is_empty() || name.contains("::") {
+        name.to_owned()
+    } else {
+        format!("{}::{name}", namespace.join("::"))
+    }
+}
+
+fn contextual_name(namespace: &[String], self_type: Option<&str>, name: &str) -> String {
+    if name == "Self" {
+        return self_type.unwrap_or(name).to_owned();
+    }
+    if let Some(suffix) = name.strip_prefix("Self::") {
+        return self_type
+            .map(|self_type| format!("{self_type}::{suffix}"))
+            .unwrap_or_else(|| name.to_owned());
+    }
+    if let Some(name) = name.strip_prefix("crate::") {
+        return name.to_owned();
+    }
+    if let Some(name) = name.strip_prefix("self::") {
+        return qualified_name(namespace, name);
+    }
+    if name.starts_with("super::") {
+        let mut parent = namespace.to_vec();
+        let mut remainder = name;
+        while let Some(stripped) = remainder.strip_prefix("super::") {
+            parent.pop();
+            remainder = stripped;
+        }
+        return qualified_name(&parent, remainder);
+    }
+    qualified_name(namespace, name)
 }
 
 fn collect_trait_implementations(
@@ -449,142 +949,6 @@ fn callee_definition(callee: &Expr, definitions: &DefMap) -> Option<DefId> {
 
 fn member_span(span: Span, name: &str) -> Span {
     Span::in_source(span.source, span.end.saturating_sub(name.len()), span.end)
-}
-
-fn visit_statements(statements: &[Stmt], visitor: &mut impl FnMut(&Expr)) {
-    for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
-        match statement {
-            Stmt::Module {
-                statements: Some(statements),
-                ..
-            } => visit_statements(statements, visitor),
-            Stmt::Let { initializer, .. } => visit_expression(initializer, visitor),
-            Stmt::Function { body, .. } => visit_block(body, visitor),
-            Stmt::Impl { methods, .. } => {
-                for method in methods {
-                    visit_block(&method.body, visitor);
-                }
-            }
-            Stmt::While {
-                condition, body, ..
-            } => {
-                visit_expression(condition, visitor);
-                visit_block(body, visitor);
-            }
-            Stmt::Loop { body, .. } => visit_block(body, visitor),
-            Stmt::For { iterable, body, .. } => {
-                visit_expression(iterable, visitor);
-                visit_block(body, visitor);
-            }
-            Stmt::Return { value, .. } | Stmt::Break { value, .. } => {
-                if let Some(value) = value {
-                    visit_expression(value, visitor);
-                }
-            }
-            Stmt::Expr { expression, .. } => visit_expression(expression, visitor),
-            Stmt::Module {
-                statements: None, ..
-            }
-            | Stmt::Use { .. }
-            | Stmt::Struct { .. }
-            | Stmt::Enum { .. }
-            | Stmt::TypeAlias { .. }
-            | Stmt::Trait { .. }
-            | Stmt::Continue { .. } => {}
-            Stmt::Public { .. } => unreachable!("public statements were unwrapped"),
-        }
-    }
-}
-
-fn visit_block(block: &Block, visitor: &mut impl FnMut(&Expr)) {
-    visit_statements(&block.statements, visitor);
-}
-
-fn visit_expression(expression: &Expr, visitor: &mut impl FnMut(&Expr)) {
-    visitor(expression);
-    match expression {
-        Expr::Member { object, .. }
-        | Expr::Borrow { target: object, .. }
-        | Expr::Unary {
-            operand: object, ..
-        }
-        | Expr::Cast {
-            operand: object, ..
-        }
-        | Expr::Try {
-            operand: object, ..
-        } => visit_expression(object, visitor),
-        Expr::Index { object, index, .. } => {
-            visit_expression(object, visitor);
-            visit_expression(index, visitor);
-        }
-        Expr::Tuple { elements, .. } | Expr::Array { elements, .. } => {
-            for element in elements {
-                visit_expression(element, visitor);
-            }
-            if let Expr::Array {
-                repeat: Some(repeat),
-                ..
-            } = expression
-            {
-                visit_expression(repeat, visitor);
-            }
-        }
-        Expr::RecordLiteral { fields, .. } => {
-            for field in fields {
-                visit_expression(&field.value, visitor);
-            }
-        }
-        Expr::Assign { target, value, .. } => {
-            visit_expression(target, visitor);
-            visit_expression(value, visitor);
-        }
-        Expr::Binary { left, right, .. }
-        | Expr::Logical { left, right, .. }
-        | Expr::Range {
-            start: left,
-            end: right,
-            ..
-        } => {
-            visit_expression(left, visitor);
-            visit_expression(right, visitor);
-        }
-        Expr::Call {
-            callee, arguments, ..
-        } => {
-            visit_expression(callee, visitor);
-            for argument in arguments {
-                visit_expression(argument, visitor);
-            }
-        }
-        Expr::If {
-            condition,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            visit_expression(condition, visitor);
-            visit_block(then_branch, visitor);
-            if let Some(else_branch) = else_branch {
-                visit_expression(else_branch, visitor);
-            }
-        }
-        Expr::Match { value, arms, .. } => {
-            visit_expression(value, visitor);
-            for arm in arms {
-                visit_expression(&arm.expression, visitor);
-            }
-        }
-        Expr::Block(block) => visit_block(block, visitor),
-        Expr::Literal { .. }
-        | Expr::Variable { .. }
-        | Expr::Path { .. }
-        | Expr::QualifiedPath { .. } => {}
-    }
 }
 
 #[cfg(test)]

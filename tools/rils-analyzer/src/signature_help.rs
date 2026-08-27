@@ -200,6 +200,12 @@ fn semantic_signature_at_call(
             }
         }
         rils_frontend::ResolvedCall::Host { .. } => None,
+        rils_frontend::ResolvedCall::Import {
+            name, signature, ..
+        } => Some((
+            name.rsplit("::").next().unwrap_or(name).to_owned(),
+            signature.clone(),
+        )),
     }
 }
 
