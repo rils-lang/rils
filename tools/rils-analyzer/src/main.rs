@@ -12,7 +12,8 @@ use rils_compiler::{
     analyze_with_host_and_source_id_and_external_exports,
 };
 use rils_frontend::{
-    FrontendError, FunctionSignature, SourceDatabase, SourceId, Span, Type,
+    DefinitionData, FrontendError, FunctionSignature, ProjectSemanticIndex, SourceDatabase,
+    SourceId, Span, Type,
     analysis::{
         DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind, SymbolOccurrence,
     },
@@ -26,9 +27,6 @@ use serde_json::{Value, json};
 type AnyError = Box<dyn Error + Send + Sync>;
 
 mod project_index;
-mod project_semantics;
-
-use project_semantics::ProjectSemanticIndex;
 
 struct Document {
     source_id: SourceId,
@@ -355,6 +353,7 @@ impl Server {
                 )
             });
         }
+        self.rebuild_project_semantics();
     }
 
     fn rebuild_project_semantics(&mut self) {
@@ -362,16 +361,35 @@ impl Server {
             .projects
             .iter()
             .map(|project| {
-                (
-                    project.root().to_path_buf(),
-                    ProjectSemanticIndex::build(project, &self.documents),
-                )
+                let mut index = ProjectSemanticIndex::default();
+                for file in project.modules() {
+                    if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
+                        index.register(&file.module_path, document.source_id);
+                        if let Ok(analysis) = &document.analysis {
+                            index.index_def_map(&analysis.def_map);
+                        }
+                    }
+                }
+                (project.root().to_path_buf(), index)
             })
             .collect();
     }
 
     fn project_semantics(&self, project: &Project) -> Option<&ProjectSemanticIndex> {
         self.project_semantics.get(project.root())
+    }
+
+    fn document_uri_for_source(&self, source: SourceId) -> Option<&str> {
+        self.documents
+            .iter()
+            .find(|(_, document)| document.source_id == source)
+            .map(|(uri, _)| uri.as_str())
+    }
+
+    fn project_definition_by_id(&self, id: rils_frontend::DefId) -> Option<&DefinitionData> {
+        self.project_semantics
+            .values()
+            .find_map(|index| index.definition(id))
     }
 
     fn publish_all_diagnostics(&mut self) -> Result<(), AnyError> {

@@ -430,6 +430,10 @@ fn load_file_modules(
         return load_external_modules(statements, base, native_macros, &mut loading, sources);
     }
     let entry = project.module_for_file(entry_path);
+    let entry_source = sources.source_id(entry_path);
+    let entry_module_path = entry_source
+        .and_then(|source| sources.module_path(source))
+        .map(str::to_owned);
     let entry_is_prelude = project.prelude().is_some_and(|prelude_path| {
         prelude_path == entry_path
             || entry_path.canonicalize().is_ok_and(|entry_path| {
@@ -474,8 +478,14 @@ fn load_file_modules(
         root.statements.extend(prelude.statements);
     }
     for file in project.modules() {
-        let module_statements = if entry.is_some_and(|entry| file.module_path == entry.module_path)
-        {
+        let file_source = sources
+            .source_id(&file.path)
+            .expect("project modules were registered before loading");
+        let module_path = sources
+            .module_path(file_source)
+            .expect("registered project source has a module identity")
+            .to_owned();
+        let module_statements = if entry_source == Some(file_source) {
             entry_statements.clone()
         } else {
             let source = fs::read_to_string(&file.path)
@@ -485,13 +495,12 @@ fn load_file_modules(
             reject_external_module_declarations(&program.statements)?;
             program.statements
         };
-        insert_project_module(&mut root, &file.module_path, module_statements);
+        insert_project_module(&mut root, &module_path, module_statements);
     }
     *statements = project_module_statements(root);
     if require_entry {
-        let mut entry_path = entry
-            .expect("executable project entries cannot be library preludes")
-            .module_path
+        let mut entry_path = entry_module_path
+            .expect("executable project entries must have a module identity")
             .split("::")
             .map(str::to_owned)
             .collect::<Vec<_>>();

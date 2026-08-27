@@ -142,6 +142,7 @@ fn public_export(
     Some(ExternalModuleExport {
         name: name.clone(),
         span,
+        definition_id: analysis.and_then(|analysis| analysis.def_map.resolution(span)),
         kind,
         inferred_type: analysis.and_then(|analysis| {
             analysis

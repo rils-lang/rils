@@ -15,6 +15,7 @@ use super::{
 pub(super) struct ModuleExport {
     pub(super) name: String,
     pub(super) span: Span,
+    pub(super) definition_id: Option<crate::DefId>,
     pub(super) kind: SymbolKind,
     pub(super) inferred_type: Option<crate::types::Type>,
     pub(super) detail: Option<String>,
@@ -35,9 +36,13 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
                 analyzer.result.symbols.push(SymbolOccurrence {
                     name: segment.clone(),
                     span: *segment_span,
-                    definition_span: None,
+                    definition_span: is_imported_item
+                        .then(|| exported.as_ref().map(|export| export.span))
+                        .flatten(),
                     symbol_id: None,
-                    definition_id: None,
+                    definition_id: is_imported_item
+                        .then(|| exported.as_ref().and_then(|export| export.definition_id))
+                        .flatten(),
                     kind: if is_imported_item {
                         exported
                             .as_ref()
@@ -129,7 +134,7 @@ fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {
             export.name,
             Definition {
                 span: Some(export.span),
-                id: None,
+                id: export.definition_id,
                 kind: export.kind,
                 container: Some(SymbolContainer::Module(export.module_path)),
             },
@@ -202,6 +207,7 @@ fn public_export(statement: &Stmt, module_path: &str) -> Option<ModuleExport> {
     Some(ModuleExport {
         name: name.clone(),
         span,
+        definition_id: None,
         kind,
         inferred_type: None,
         detail: None,

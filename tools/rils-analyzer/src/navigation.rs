@@ -22,6 +22,15 @@ impl Server {
         }
         let target_id = symbol.symbol_id.or(symbol.definition_id);
         if let Some(target_id) = target_id {
+            if let Some(definition) = self.project_definition_by_id(target_id)
+                && let Some(target_uri) = self.document_uri_for_source(definition.span.source)
+                && let Some(target_document) = self.documents.get(target_uri)
+            {
+                return Ok(json!({
+                    "uri": target_uri,
+                    "range": range(&target_document.text, definition.span)
+                }));
+            }
             for (candidate_uri, candidate_document) in &self.documents {
                 let Some(candidate_analysis) = analysis(candidate_document) else {
                     continue;
@@ -200,15 +209,15 @@ impl Server {
             .map(|qualified| resolve_path_alias(&document.text, &qualified))
             .or_else(|| imported_path_at(self, document, offset))?;
         let (qualifier, member) = qualified.rsplit_once("::")?;
-        let target = if let Some(index) = self.project_semantics(project) {
+        let target_uri = if let Some(index) = self.project_semantics(project) {
             let module = index.resolve(document.source_id, qualifier)?;
-            index.file(module.id)?.to_path_buf()
+            self.document_uri_for_source(module.source?)?.to_owned()
         } else {
             let current = &project.module_for_file(&path)?.module_path;
             let module_path = resolve_project_path(current, qualifier)?;
-            project.module(&module_path)?.path.clone()
+            path_to_file_uri(&project.module(&module_path)?.path)
         };
-        Some((path_to_file_uri(&target), member.to_owned()))
+        Some((target_uri, member.to_owned()))
     }
 
     pub(super) fn hover(&self, params: &Value) -> Result<Value, AnyError> {

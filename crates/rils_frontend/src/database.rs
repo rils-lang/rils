@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{FrontendError, ModuleId, SourceFile, SourceId, ast::Program};
+use crate::{
+    DefId, DefMap, DefinitionData, FrontendError, ModuleId, SourceFile, SourceId, ast::Program,
+};
 
 #[derive(Clone, Debug)]
 struct SourceEntry {
@@ -159,6 +161,52 @@ pub struct ModuleGraph {
     modules: Vec<ModuleData>,
     by_path: HashMap<String, ModuleId>,
     by_source: HashMap<SourceId, ModuleId>,
+}
+
+/// Module identities shared by every consumer of one project's sources.
+///
+/// File discovery remains outside the frontend. Callers register the module
+/// paths and stable source identities supplied by their project loader, then
+/// use this index for path resolution instead of rebuilding string maps.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProjectSemanticIndex {
+    modules: ModuleGraph,
+    definitions: HashMap<DefId, DefinitionData>,
+}
+
+impl ProjectSemanticIndex {
+    pub fn register(&mut self, path: &str, source: SourceId) -> ModuleId {
+        self.modules.register(path, source)
+    }
+
+    pub fn module(&self, source: SourceId) -> Option<&ModuleData> {
+        self.modules.module_for_source(source)
+    }
+
+    pub fn resolve(&self, source: SourceId, qualifier: &str) -> Option<&ModuleData> {
+        let current = self.module(source)?;
+        self.modules.resolve(current.id, qualifier)
+    }
+
+    pub fn children(&self, module: ModuleId) -> impl Iterator<Item = &ModuleData> {
+        self.modules.children(module)
+    }
+
+    pub fn modules(&self) -> impl ExactSizeIterator<Item = &ModuleData> {
+        self.modules.modules()
+    }
+
+    pub fn index_def_map(&mut self, def_map: &DefMap) {
+        self.definitions.extend(
+            def_map
+                .definitions()
+                .map(|definition| (definition.id, definition.clone())),
+        );
+    }
+
+    pub fn definition(&self, id: DefId) -> Option<&DefinitionData> {
+        self.definitions.get(&id)
+    }
 }
 
 impl ModuleGraph {

@@ -14,7 +14,7 @@ mod type_inference;
 
 pub use rils_syntax::{ast, default, format, lexer, macros, parser, source, token, types};
 
-pub use database::{ModuleData, ModuleGraph, SourceDatabase};
+pub use database::{ModuleData, ModuleGraph, ProjectSemanticIndex, SourceDatabase};
 pub use error::FrontendError;
 pub use host_type_resolution::{HostTypeResolutionError, resolve_host_type_names};
 pub use resolution::{

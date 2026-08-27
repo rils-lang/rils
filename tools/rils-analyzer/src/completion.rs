@@ -358,7 +358,7 @@ impl Server {
         else {
             return;
         };
-        let (module_path, children, target_file) = if let Some(index) =
+        let (module_path, children, target_uri) = if let Some(index) =
             self.project_semantics(project)
             && let Some(document) = self.documents.get(uri)
             && let Some(module) = index.resolve(document.source_id, qualifier)
@@ -369,7 +369,10 @@ impl Server {
                     .children(module.id)
                     .filter_map(|child| child.path.rsplit("::").next().map(str::to_owned))
                     .collect::<Vec<_>>(),
-                index.file(module.id).map(Path::to_path_buf),
+                module
+                    .source
+                    .and_then(|source| self.document_uri_for_source(source))
+                    .map(str::to_owned),
             )
         } else {
             let current = project
@@ -395,8 +398,10 @@ impl Server {
                         .then(|| remainder.split("::").next().unwrap_or(remainder).to_owned())
                 })
                 .collect::<Vec<_>>();
-            let target_file = project.module(&module_path).map(|file| file.path.clone());
-            (module_path, children, target_file)
+            let target_uri = project
+                .module(&module_path)
+                .map(|file| path_to_file_uri(&file.path));
+            (module_path, children, target_uri)
         };
         for child in children {
             if child.starts_with(member_prefix) && module_names.insert(child.to_owned()) {
@@ -408,12 +413,15 @@ impl Server {
                 }));
             }
         }
-        let Some(target_file) = target_file else {
+        let Some(target_uri) = target_uri else {
             return;
         };
-        let program = if let Some(document) = self.documents.get(&path_to_file_uri(&target_file)) {
+        let program = if let Some(document) = self.documents.get(&target_uri) {
             self.parsed_document(document)
         } else {
+            let Some(target_file) = file_uri_to_path(&target_uri) else {
+                return;
+            };
             let Ok(text) = fs::read_to_string(&target_file) else {
                 return;
             };

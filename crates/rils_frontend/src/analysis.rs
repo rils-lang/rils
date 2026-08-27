@@ -23,6 +23,7 @@ use imports::{ModuleExport, collect_module_exports};
 pub struct ExternalModuleExport {
     pub name: String,
     pub span: Span,
+    pub definition_id: Option<SymbolId>,
     pub kind: SymbolKind,
     pub inferred_type: Option<Type>,
     pub detail: Option<String>,
@@ -338,6 +339,7 @@ impl Analyzer {
                     .map(|export| ModuleExport {
                         name: export.name.clone(),
                         span: export.span,
+                        definition_id: export.definition_id,
                         kind: export.kind,
                         inferred_type: export.inferred_type.clone(),
                         detail: export.detail.clone(),

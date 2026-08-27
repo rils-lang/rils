@@ -69,3 +69,41 @@ fn module_graph_resolves_sources_relative_paths_and_children() {
         vec![bar]
     );
 }
+
+#[test]
+fn project_semantic_index_exposes_one_shared_module_view() {
+    let mut index = ProjectSemanticIndex::default();
+    let main_source = SourceId::new(10);
+    let child_source = SourceId::new(11);
+    index.register("main", main_source);
+    let child = index.register("feature::child", child_source);
+
+    assert_eq!(index.module(child_source).unwrap().id, child);
+    assert_eq!(
+        index
+            .resolve(main_source, "crate::feature::child")
+            .unwrap()
+            .id,
+        child
+    );
+    assert!(index.modules().any(|module| module.id == child));
+}
+
+#[test]
+fn project_semantic_index_collects_document_definitions() {
+    let source = SourceId::new(20);
+    let analysis =
+        crate::analysis::analyze_with_source_id("fn value() { 1 }", source, &HashMap::new())
+            .unwrap();
+    let definition = analysis
+        .def_map
+        .definitions()
+        .find(|definition| definition.name == "value")
+        .unwrap()
+        .clone();
+    let mut index = ProjectSemanticIndex::default();
+
+    index.index_def_map(&analysis.def_map);
+
+    assert_eq!(index.definition(definition.id), Some(&definition));
+}

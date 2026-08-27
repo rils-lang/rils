@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rils_frontend::{ModuleGraph, SourceDatabase};
+use rils_frontend::{ProjectSemanticIndex, SourceDatabase};
 
 use crate::{Project, RilsError, SourceFile, SourceId, ast, lexer, macros, parser};
 
@@ -11,7 +11,7 @@ use crate::{Project, RilsError, SourceFile, SourceId, ast, lexer, macros, parser
 pub(crate) struct SourceRegistry {
     by_path: HashMap<PathBuf, SourceId>,
     database: SourceDatabase,
-    modules: ModuleGraph,
+    modules: ProjectSemanticIndex,
 }
 
 impl SourceRegistry {
@@ -43,6 +43,16 @@ impl SourceRegistry {
             .clone();
         self.database.set_source_with_id(id, name, source);
         id
+    }
+
+    pub(crate) fn source_id(&self, path: &Path) -> Option<SourceId> {
+        self.by_path.get(&source_path_key(path)).copied()
+    }
+
+    pub(crate) fn module_path(&self, source: SourceId) -> Option<&str> {
+        self.modules
+            .module(source)
+            .map(|module| module.path.as_str())
     }
 
     pub(crate) fn source_files(&self) -> Vec<SourceFile> {
