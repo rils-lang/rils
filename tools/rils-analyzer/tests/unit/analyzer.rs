@@ -272,6 +272,7 @@ fn test_server(
         host_functions,
         host_types,
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     }
@@ -432,6 +433,7 @@ fn hover_shows_expanded_type_aliases() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -519,6 +521,7 @@ fn hover_describes_manifest_host_types() {
         host_functions: HashMap::new(),
         host_types,
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -873,6 +876,7 @@ fn completes_host_modules_functions_and_aliases() {
         host_functions,
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -974,6 +978,7 @@ fn completes_inherited_methods_for_named_host_types() {
         host_functions,
         host_types,
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -1017,6 +1022,7 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -1086,6 +1092,7 @@ fn completes_float_intrinsic_methods() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 2,
         sources: SourceDatabase::default(),
     };
@@ -1144,6 +1151,7 @@ text."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 2,
         sources: SourceDatabase::default(),
     };
@@ -1194,6 +1202,7 @@ text."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 3,
         sources: SourceDatabase::default(),
     };
@@ -1331,6 +1340,7 @@ iterator."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 2,
         sources: SourceDatabase::default(),
     };
@@ -1391,6 +1401,7 @@ iterator."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 2,
         sources: SourceDatabase::default(),
     };
@@ -1453,6 +1464,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: vec![project],
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -1768,6 +1780,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: workspace_projects(&examples).unwrap(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -1898,6 +1911,7 @@ fn loads_binary_host_manifest_from_initialization_options() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -1965,6 +1979,7 @@ fn discovers_and_merges_default_manifest_directory() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: vec![Project::from_root(&root).unwrap()],
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };

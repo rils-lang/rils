@@ -26,6 +26,9 @@ use serde_json::{Value, json};
 type AnyError = Box<dyn Error + Send + Sync>;
 
 mod project_index;
+mod project_semantics;
+
+use project_semantics::ProjectSemanticIndex;
 
 struct Document {
     source_id: SourceId,
@@ -70,6 +73,7 @@ fn main() -> Result<(), AnyError> {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        project_semantics: HashMap::new(),
         next_source_id: 1,
         sources: SourceDatabase::default(),
     };
@@ -89,6 +93,7 @@ struct Server {
     host_functions: HashMap<String, FunctionSignature>,
     host_types: HashSet<String>,
     projects: Vec<Project>,
+    project_semantics: HashMap<PathBuf, ProjectSemanticIndex>,
     next_source_id: u32,
     sources: SourceDatabase,
 }
@@ -104,6 +109,7 @@ impl Server {
             .flatten()
             .filter(|project| seen.insert(project.root().to_path_buf()))
             .collect();
+        self.project_semantics.clear();
         Ok(())
     }
 
@@ -337,6 +343,7 @@ impl Server {
             self.sources
                 .set_source_with_id(document.source_id, uri.clone(), document.text.clone());
         }
+        self.rebuild_project_semantics();
         let exports = project_index::collect_external_exports(self);
         for document in self.documents.values_mut() {
             document.analysis = self.sources.parse(document.source_id).map(|program| {
@@ -348,6 +355,23 @@ impl Server {
                 )
             });
         }
+    }
+
+    fn rebuild_project_semantics(&mut self) {
+        self.project_semantics = self
+            .projects
+            .iter()
+            .map(|project| {
+                (
+                    project.root().to_path_buf(),
+                    ProjectSemanticIndex::build(project, &self.documents),
+                )
+            })
+            .collect();
+    }
+
+    fn project_semantics(&self, project: &Project) -> Option<&ProjectSemanticIndex> {
+        self.project_semantics.get(project.root())
     }
 
     fn publish_all_diagnostics(&mut self) -> Result<(), AnyError> {

@@ -158,11 +158,13 @@ pub struct ModuleData {
 pub struct ModuleGraph {
     modules: Vec<ModuleData>,
     by_path: HashMap<String, ModuleId>,
+    by_source: HashMap<SourceId, ModuleId>,
 }
 
 impl ModuleGraph {
     pub fn register(&mut self, path: &str, source: SourceId) -> ModuleId {
-        let mut parent = None;
+        let root = self.ensure_root();
+        let mut parent = Some(root);
         let mut current = String::new();
         for segment in path.split("::").filter(|segment| !segment.is_empty()) {
             if !current.is_empty() {
@@ -184,22 +186,17 @@ impl ModuleGraph {
             };
             parent = Some(id);
         }
-        let id = parent.unwrap_or_else(|| {
-            if let Some(id) = self.by_path.get("").copied() {
-                id
-            } else {
-                let id = self.next_id();
-                self.by_path.insert(String::new(), id);
-                self.modules.push(ModuleData {
-                    id,
-                    path: String::new(),
-                    parent: None,
-                    source: None,
-                });
-                id
-            }
-        });
-        self.modules[id.0 as usize].source = Some(source);
+        let id = if current.is_empty() {
+            root
+        } else {
+            parent.expect("non-empty module has a final segment")
+        };
+        if let Some(previous) = self.modules[id.0 as usize].source.replace(source) {
+            self.by_source.remove(&previous);
+        }
+        if let Some(previous) = self.by_source.insert(source, id) {
+            assert_eq!(previous, id, "source registered for multiple modules");
+        }
         id
     }
 
@@ -211,6 +208,41 @@ impl ModuleGraph {
         self.by_path.get(path).and_then(|id| self.module(*id))
     }
 
+    pub fn module_for_source(&self, source: SourceId) -> Option<&ModuleData> {
+        self.by_source.get(&source).and_then(|id| self.module(*id))
+    }
+
+    pub fn resolve(&self, current: ModuleId, qualifier: &str) -> Option<&ModuleData> {
+        let mut segments = qualifier.split("::").filter(|segment| !segment.is_empty());
+        let first = segments.next()?;
+        let mut resolved = match first {
+            "crate" => Vec::new(),
+            "self" => module_path_segments(&self.module(current)?.path),
+            "super" => {
+                let mut path = module_path_segments(&self.module(current)?.path);
+                path.pop()?;
+                path
+            }
+            name => vec![name.to_owned()],
+        };
+        for segment in segments {
+            match segment {
+                "crate" | "self" => {}
+                "super" => {
+                    resolved.pop()?;
+                }
+                name => resolved.push(name.to_owned()),
+            }
+        }
+        self.module_by_path(&resolved.join("::"))
+    }
+
+    pub fn children(&self, parent: ModuleId) -> impl Iterator<Item = &ModuleData> {
+        self.modules
+            .iter()
+            .filter(move |module| module.parent == Some(parent))
+    }
+
     pub fn modules(&self) -> impl ExactSizeIterator<Item = &ModuleData> {
         self.modules.iter()
     }
@@ -218,6 +250,28 @@ impl ModuleGraph {
     fn next_id(&self) -> ModuleId {
         ModuleId::new(self.modules.len().try_into().expect("module ID overflow"))
     }
+
+    fn ensure_root(&mut self) -> ModuleId {
+        if let Some(id) = self.by_path.get("").copied() {
+            return id;
+        }
+        let id = self.next_id();
+        self.by_path.insert(String::new(), id);
+        self.modules.push(ModuleData {
+            id,
+            path: String::new(),
+            parent: None,
+            source: None,
+        });
+        id
+    }
+}
+
+fn module_path_segments(path: &str) -> Vec<String> {
+    path.split("::")
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 #[cfg(test)]

@@ -196,14 +196,19 @@ impl Server {
             .projects
             .iter()
             .find(|project| project.module_for_file(&path).is_some())?;
-        let current = &project.module_for_file(&path)?.module_path;
         let qualified = qualified_path_at(&document.text, offset)
             .map(|qualified| resolve_path_alias(&document.text, &qualified))
             .or_else(|| imported_path_at(self, document, offset))?;
         let (qualifier, member) = qualified.rsplit_once("::")?;
-        let module_path = resolve_project_path(current, qualifier)?;
-        let file = project.module(&module_path)?;
-        Some((path_to_file_uri(&file.path), member.to_owned()))
+        let target = if let Some(index) = self.project_semantics(project) {
+            let module = index.resolve(document.source_id, qualifier)?;
+            index.file(module.id)?.to_path_buf()
+        } else {
+            let current = &project.module_for_file(&path)?.module_path;
+            let module_path = resolve_project_path(current, qualifier)?;
+            project.module(&module_path)?.path.clone()
+        };
+        Some((path_to_file_uri(&target), member.to_owned()))
     }
 
     pub(super) fn hover(&self, params: &Value) -> Result<Value, AnyError> {
@@ -443,6 +448,15 @@ impl Server {
             };
         };
         let file = project.module_for_file(&path)?;
+        let module_path = self
+            .documents
+            .get(definition_uri)
+            .and_then(|document| {
+                self.project_semantics(project)
+                    .and_then(|index| index.module(document.source_id))
+            })
+            .map(|module| module.path.as_str())
+            .unwrap_or(&file.module_path);
         let module = match &symbol.container {
             Some(SymbolContainer::Module(module)) => {
                 if module == "crate" {
@@ -452,10 +466,10 @@ impl Server {
                 }
             }
             Some(SymbolContainer::Type(owner)) => {
-                if file.module_path.is_empty() {
+                if module_path.is_empty() {
                     owner.clone()
                 } else {
-                    format!("{}::{owner}", file.module_path)
+                    format!("{module_path}::{owner}")
                 }
             }
             None => return None,

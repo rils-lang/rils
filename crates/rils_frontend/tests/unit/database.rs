@@ -49,3 +49,23 @@ fn module_graph_creates_stable_parent_nodes() {
     assert_eq!(graph.module(child).unwrap().source, Some(source));
     assert_eq!(graph.register("foo::bar", source), child);
 }
+
+#[test]
+fn module_graph_resolves_sources_relative_paths_and_children() {
+    let mut graph = ModuleGraph::default();
+    let main = graph.register("main", SourceId::new(1));
+    let foo = graph.register("foo", SourceId::new(2));
+    let bar = graph.register("foo::bar", SourceId::new(3));
+
+    assert_eq!(graph.module_for_source(SourceId::new(3)).unwrap().id, bar);
+    assert_eq!(graph.resolve(main, "crate::foo::bar").unwrap().id, bar);
+    assert_eq!(graph.resolve(bar, "self").unwrap().id, bar);
+    assert_eq!(graph.resolve(bar, "super").unwrap().id, foo);
+    assert_eq!(
+        graph
+            .children(foo)
+            .map(|module| module.id)
+            .collect::<Vec<_>>(),
+        vec![bar]
+    );
+}

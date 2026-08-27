@@ -49,12 +49,12 @@ pub(super) fn collect_external_exports(
                 .documents
                 .get(&uri)
                 .and_then(|document| document.analysis.as_ref().ok());
-            collect_statements(
-                &program.statements,
-                &project_file.module_path,
-                analysis,
-                &mut exports,
-            );
+            let module_path = server
+                .project_semantics(project)
+                .and_then(|index| index.module(source_id))
+                .map(|module| module.path.as_str())
+                .unwrap_or(&project_file.module_path);
+            collect_statements(&program.statements, module_path, analysis, &mut exports);
         }
     }
     exports

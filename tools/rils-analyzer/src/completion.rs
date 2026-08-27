@@ -358,45 +358,63 @@ impl Server {
         else {
             return;
         };
-        let current = project
-            .module_for_file(&path)
-            .map(|file| file.module_path.as_str())
-            .unwrap_or_default();
-        let Some(module_path) = resolve_project_path(current, qualifier) else {
-            return;
-        };
-        let nested_prefix = if module_path.is_empty() {
-            String::new()
+        let (module_path, children, target_file) = if let Some(index) =
+            self.project_semantics(project)
+            && let Some(document) = self.documents.get(uri)
+            && let Some(module) = index.resolve(document.source_id, qualifier)
+        {
+            (
+                module.path.clone(),
+                index
+                    .children(module.id)
+                    .filter_map(|child| child.path.rsplit("::").next().map(str::to_owned))
+                    .collect::<Vec<_>>(),
+                index.file(module.id).map(Path::to_path_buf),
+            )
         } else {
-            format!("{module_path}::")
-        };
-        for file in project.modules() {
-            if file.module_path == module_path {
-                continue;
-            }
-            let Some(remainder) = file.module_path.strip_prefix(&nested_prefix) else {
-                continue;
+            let current = project
+                .module_for_file(&path)
+                .map(|file| file.module_path.as_str())
+                .unwrap_or_default();
+            let Some(module_path) = resolve_project_path(current, qualifier) else {
+                return;
             };
-            if remainder.is_empty() {
-                continue;
-            }
-            let child = remainder.split("::").next().unwrap_or(remainder);
+            let nested_prefix = if module_path.is_empty() {
+                String::new()
+            } else {
+                format!("{module_path}::")
+            };
+            let children = project
+                .modules()
+                .filter_map(|file| {
+                    if file.module_path == module_path {
+                        return None;
+                    }
+                    let remainder = file.module_path.strip_prefix(&nested_prefix)?;
+                    (!remainder.is_empty())
+                        .then(|| remainder.split("::").next().unwrap_or(remainder).to_owned())
+                })
+                .collect::<Vec<_>>();
+            let target_file = project.module(&module_path).map(|file| file.path.clone());
+            (module_path, children, target_file)
+        };
+        for child in children {
             if child.starts_with(member_prefix) && module_names.insert(child.to_owned()) {
                 items.push(json!({
                     "label": child,
                     "kind": 9,
-                    "detail": format!("module {}", join_module_path(&module_path, child)),
+                    "detail": format!("module {}", join_module_path(&module_path, &child)),
                     "sortText": format!("0_{child}")
                 }));
             }
         }
-        let Some(file) = project.module(&module_path) else {
+        let Some(target_file) = target_file else {
             return;
         };
-        let program = if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
+        let program = if let Some(document) = self.documents.get(&path_to_file_uri(&target_file)) {
             self.parsed_document(document)
         } else {
-            let Ok(text) = fs::read_to_string(&file.path) else {
+            let Ok(text) = fs::read_to_string(&target_file) else {
                 return;
             };
             lex(&text).ok().and_then(|tokens| parse(tokens).ok())
