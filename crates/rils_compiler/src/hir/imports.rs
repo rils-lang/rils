@@ -4,117 +4,71 @@ use crate::types::{FunctionSignature, Type};
 
 use super::ReceiverMode;
 pub(super) fn core_import_signature(name: &str) -> Option<FunctionSignature> {
-    Some(match name {
-        "type_of" => FunctionSignature::fixed(vec![Type::Unknown], Type::String),
-        "clone" => FunctionSignature::fixed(
-            vec![Type::Reference {
-                mutable: false,
-                inner: Box::new(Type::Unknown),
-            }],
-            Type::Unknown,
-        ),
-        "is_ok" | "is_err" | "is_some" | "is_none" => {
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Bool)
-        }
-        "unwrap" => FunctionSignature::fixed(vec![Type::Unknown], Type::Unknown),
-        "unwrap_or" => FunctionSignature::fixed(vec![Type::Unknown, Type::Unknown], Type::Unknown),
-        _ => return None,
-    })
+    let declaration = rils_builtins::builtin_function(name)?;
+    (declaration.backend == rils_builtins::BuiltinBackend::Runtime)
+        .then(|| rils_frontend::standard_library::standard_function_signature(name))
+        .flatten()
 }
 
 pub(super) fn native_macro_import(
     name: &str,
 ) -> Option<(&'static str, FunctionSignature, &'static str)> {
-    Some(match name {
-        "#rils_native_print" => (
-            "std::io::print",
-            FunctionSignature::variadic(Type::Unit),
-            "std::io",
-        ),
-        "#rils_native_println" => (
-            "std::io::println",
-            FunctionSignature::variadic(Type::Unit),
-            "std::io",
-        ),
-        "#rils_native_assert" => (
-            "core::assert",
-            FunctionSignature::variadic(Type::Unit),
-            "core",
-        ),
+    let (path, capability) = match name {
+        "#rils_native_print" => ("std::io::print", "std::io"),
+        "#rils_native_println" => ("std::io::println", "std::io"),
+        "#rils_native_assert" => {
+            return Some((
+                "core::assert",
+                FunctionSignature::variadic(Type::Unit),
+                "core",
+            ));
+        }
         _ => return None,
-    })
+    };
+    Some((
+        path,
+        rils_frontend::standard_library::standard_function_signature(path)
+            .expect("native macro target is declared in rils_builtins"),
+        capability,
+    ))
 }
 
 pub(super) fn collection_import_signature(name: &str) -> Option<(&'static str, FunctionSignature)> {
-    Some(match name {
-        "Vec::new" | "std::collections::Vec::new" => (
-            "core::vec::new",
-            FunctionSignature::fixed(
-                Vec::new(),
-                Type::Named {
-                    name: "Vec".into(),
-                    arguments: vec![Type::Unknown],
-                },
-            ),
-        ),
-        "Vec::from" | "std::collections::Vec::from" => (
-            "core::vec::from",
-            FunctionSignature::fixed(
-                vec![Type::Unknown],
-                Type::Named {
-                    name: "Vec".into(),
-                    arguments: vec![Type::Unknown],
-                },
-            ),
-        ),
-        "HashMap::new" | "std::collections::HashMap::new" => (
-            "core::hash_map::new",
-            FunctionSignature::fixed(
-                Vec::new(),
-                Type::Named {
-                    name: "HashMap".into(),
-                    arguments: vec![Type::Unknown, Type::Unknown],
-                },
-            ),
-        ),
-        "HashSet::new" | "std::collections::HashSet::new" => (
-            "core::hash_set::new",
-            FunctionSignature::fixed(
-                Vec::new(),
-                Type::Named {
-                    name: "HashSet".into(),
-                    arguments: vec![Type::Unknown],
-                },
-            ),
-        ),
-        _ => return None,
-    })
+    let mut segments = name.rsplit("::");
+    let member_name = segments.next()?;
+    let owner = segments.next()?;
+    let member = rils_builtins::builtin_member(owner, member_name)?;
+    let runtime_import = member.runtime_import?;
+    let signature =
+        rils_frontend::standard_library::builtin_associated_function_signature(owner, member_name)?;
+    Some((runtime_import, signature))
 }
 
-pub(super) fn builtin_method_import(
+pub(super) fn builtin_method_runtime(
     owner: Option<&str>,
     name: &str,
-) -> Option<(&'static str, FunctionSignature, ReceiverMode)> {
+) -> Option<(rils_builtins::BuiltinId, ReceiverMode)> {
     let mut candidates = rils_builtins::BUILTINS
         .iter()
         .filter(|declaration| owner.is_none_or(|owner| declaration.path == owner))
         .flat_map(|declaration| declaration.members)
-        .filter(|member| member.name == name && member.runtime.is_some());
+        .filter(|member| member.name == name && member.builtin_id.is_some());
     let member = candidates.next().or_else(|| {
         (name == "clone")
             .then(|| rils_builtins::builtin_member("Clone", "clone"))
             .flatten()
     })?;
-    let runtime = member.runtime?;
-    let import = runtime.bytecode_import()?;
+    let runtime = member.builtin_id?;
+    if !runtime.has_direct_runtime_call() {
+        return None;
+    }
     let receiver_mode = member.receiver?;
     if owner.is_none()
         && candidates.any(|candidate| {
             candidate.receiver != Some(receiver_mode)
-                || candidate
-                    .runtime
-                    .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
-                    != Some(import)
+                || candidate.builtin_id.is_none_or(|candidate| {
+                    !runtime.shares_direct_runtime_implementation(candidate)
+                })
         })
     {
         return None;
@@ -124,9 +78,5 @@ pub(super) fn builtin_method_import(
         rils_builtins::ReceiverMode::Shared => ReceiverMode::Reference { mutable: false },
         rils_builtins::ReceiverMode::Mutable => ReceiverMode::Reference { mutable: true },
     };
-    Some((
-        import,
-        rils_frontend::standard_library::erased_builtin_import_signature(import)?,
-        receiver,
-    ))
+    Some((runtime, receiver))
 }

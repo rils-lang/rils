@@ -1,0 +1,50 @@
+/// An owned hash set.
+pub struct HashSet<T>;
+
+impl<T> HashSet<T> {
+    /// Creates an empty HashSet.
+    #[import(core::hash_set::new)]
+    fn new() -> Self {}
+
+    /// Returns the element count.
+    fn len(&self) -> usize {}
+
+    /// Returns true when the set has no elements.
+    fn is_empty(&self) -> bool {}
+
+    /// Removes all elements.
+    fn clear(&mut self) {}
+
+    /// Returns true when the value is present.
+    fn contains(&self, value: &T) -> bool {}
+
+    /// Inserts a value and reports whether it was new.
+    fn insert(&mut self, value: T) -> bool {}
+
+    /// Removes a value and reports whether it was present.
+    fn remove(&mut self, value: &T) -> bool {}
+
+    /// Returns true when every element is in the other set.
+    fn is_subset(&self, other: &HashSet<T>) -> bool {}
+
+    /// Returns true when the set contains every element of the other set.
+    fn is_superset(&self, other: &HashSet<T>) -> bool {}
+
+    /// Returns true when the sets share no elements.
+    fn is_disjoint(&self, other: &HashSet<T>) -> bool {}
+
+    /// Clones the union of two sets.
+    fn union(&self, other: &HashSet<T>) -> HashSet<T> {}
+
+    /// Clones the intersection of two sets.
+    fn intersection(&self, other: &HashSet<T>) -> HashSet<T> {}
+
+    /// Clones values that are not in the other set.
+    fn difference(&self, other: &HashSet<T>) -> HashSet<T> {}
+
+    /// Clones values present in exactly one set.
+    fn symmetric_difference(&self, other: &HashSet<T>) -> HashSet<T> {}
+
+    /// Consumes the set and iterates over its values.
+    fn into_iter(self) -> Iterator<T> {}
+}

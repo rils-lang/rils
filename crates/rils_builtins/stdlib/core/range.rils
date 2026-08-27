@@ -1,0 +1,9 @@
+/// A half-open integer range.
+pub struct Range<T>;
+
+impl<T> Range<T> {
+    /// Advances the range.
+    fn next(&mut self) -> Option<T> {}
+    /// Consumes the range and creates its iterator.
+    fn into_iter(self) -> Self {}
+}

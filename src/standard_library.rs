@@ -22,13 +22,17 @@ pub(super) fn install(
     std_module: &Rc<ModuleValue>,
     io_module: &Rc<ModuleValue>,
 ) {
+    let error_kind_declaration = rils_builtins::builtin("ErrorKind")
+        .expect("std::io::ErrorKind is declared in rils_builtins");
     let error_kind = Rc::new(EnumType {
         name: "std::io::ErrorKind".into(),
         generic_parameters: Vec::new(),
-        variants: error_kind_names()
+        variants: error_kind_declaration
+            .members
             .iter()
-            .map(|name| EnumVariant::Unit {
-                name: (*name).into(),
+            .filter(|member| member.kind == rils_builtins::BuiltinMemberKind::Variant)
+            .map(|member| EnumVariant::Unit {
+                name: member.name.into(),
                 span: Span::default(),
             })
             .collect(),
@@ -37,14 +41,23 @@ pub(super) fn install(
         implemented_traits: RefCell::new(HashSet::new()),
         associated_types: RefCell::new(HashMap::new()),
     });
+    let error_declaration =
+        rils_builtins::builtin("Error").expect("std::io::Error is declared in rils_builtins");
     let error = Rc::new(StructType {
         name: "std::io::Error".into(),
         generic_parameters: Vec::new(),
-        fields: vec![
-            field("kind", Type::named("std::io::ErrorKind")),
-            field("message", Type::String),
-            field("path", Type::Option(Box::new(Type::String))),
-        ],
+        fields: error_declaration
+            .members
+            .iter()
+            .filter(|member| member.kind == rils_builtins::BuiltinMemberKind::Field)
+            .map(|member| NamedField {
+                name: member.name.into(),
+                type_annotation: rils_frontend::standard_library::resolve_type_pattern(
+                    member.value_type.expect("built-in fields have a type"),
+                ),
+                span: Span::default(),
+            })
+            .collect(),
         methods: RefCell::new(HashMap::new()),
         trait_methods: RefCell::new(HashMap::new()),
         implemented_traits: RefCell::new(HashSet::new()),
@@ -311,26 +324,23 @@ pub(crate) fn bytecode_host_functions() -> Vec<(String, Rc<HostFunction>)> {
     install(&Environment::global(), &std, &io);
 
     let mut functions = Vec::new();
-    for name in ["read_line", "write", "write_line", "flush"] {
-        if let Some(Value::HostFunction(function)) = io.members.borrow().get(name) {
-            functions.push((format!("std::io::{name}"), function));
-        }
-    }
     let Some(Value::Module(fs)) = std.members.borrow().get("fs") else {
         return functions;
     };
-    for name in [
-        "read_to_string",
-        "write",
-        "append",
-        "try_exists",
-        "create_dir_all",
-        "remove_file",
-        "remove_dir",
-        "read_dir",
-    ] {
-        if let Some(Value::HostFunction(function)) = fs.members.borrow().get(name) {
-            functions.push((format!("std::fs::{name}"), function));
+    for declaration in rils_builtins::BUILTINS {
+        let rils_builtins::BuiltinBackend::Host(_) = declaration.backend else {
+            continue;
+        };
+        let Some((module, name)) = declaration.path.rsplit_once("::") else {
+            continue;
+        };
+        let source = match module {
+            "std::io" => &io,
+            "std::fs" => &fs,
+            _ => continue,
+        };
+        if let Some(Value::HostFunction(function)) = source.members.borrow().get(name) {
+            functions.push((declaration.path.to_owned(), function));
         }
     }
     functions
@@ -339,14 +349,6 @@ pub(crate) fn bytecode_host_functions() -> Vec<(String, Rc<HostFunction>)> {
 fn publish(module: &Rc<ModuleValue>, name: &str, value: Value) {
     module.members.borrow_mut().define(name, value, false, None);
     module.public.borrow_mut().insert(name.into());
-}
-
-fn field(name: &str, type_annotation: Type) -> NamedField {
-    NamedField {
-        name: name.into(),
-        type_annotation,
-        span: Span::default(),
-    }
 }
 
 fn string_argument<'a>(
@@ -449,21 +451,6 @@ fn string_vec(values: Vec<String>) -> Value {
         ),
         element_type: RefCell::new(Some(Type::String)),
     }))
-}
-
-fn error_kind_names() -> &'static [&'static str] {
-    &[
-        "NotFound",
-        "PermissionDenied",
-        "AlreadyExists",
-        "InvalidInput",
-        "InvalidData",
-        "TimedOut",
-        "Interrupted",
-        "UnexpectedEof",
-        "WriteZero",
-        "Other",
-    ]
 }
 
 fn error_kind_name(kind: std::io::ErrorKind) -> &'static str {

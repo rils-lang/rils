@@ -272,9 +272,9 @@ pub struct BoundMethod {
 
 #[derive(Clone, Copy)]
 pub enum BuiltinMethod {
-    Runtime(rils_builtins::RuntimeMemberId),
-    IntegerIntrinsic(rils_builtins::IntrinsicId),
-    FloatIntrinsic(rils_builtins::IntrinsicId),
+    Runtime(rils_builtins::BuiltinId),
+    IntegerIntrinsic(rils_builtins::BuiltinId),
+    FloatIntrinsic(rils_builtins::BuiltinId),
 }
 
 #[derive(Clone, Copy)]
@@ -293,7 +293,7 @@ pub enum BuiltinFunction {
     HashMapNew,
     HashSetNew,
     IntegerIntrinsic {
-        id: rils_builtins::IntrinsicId,
+        id: rils_builtins::BuiltinId,
         target: crate::IntegerType,
     },
 }

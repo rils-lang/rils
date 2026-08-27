@@ -121,6 +121,15 @@ fn derive_statements(
     debug_types: &HashSet<String>,
     nominal_types: &HashSet<String>,
 ) -> Result<Vec<Stmt>, ParseError> {
+    if let Stmt::Function { attributes, .. } = statement {
+        if let Some(attribute) = attributes.first() {
+            return Err(ParseError {
+                message: "attributes are not supported on ordinary functions".into(),
+                span: attribute.span,
+            });
+        }
+        return Ok(Vec::new());
+    }
     let attributes = match statement {
         Stmt::Struct { attributes, .. } | Stmt::Enum { attributes, .. } => attributes,
         _ => return Ok(Vec::new()),
@@ -205,6 +214,7 @@ fn derive_default_statement(
         span: *span,
     };
     let method = ImplMethod {
+        attributes: Vec::new(),
         name: "default".into(),
         name_span: *name_span,
         generic_parameters: Vec::new(),
@@ -352,6 +362,7 @@ fn derive_debug_statement(
     };
     let result_type = Type::Result(Box::new(Type::Unit), Box::new(Type::named("FormatError")));
     let method = ImplMethod {
+        attributes: Vec::new(),
         name: "fmt".into(),
         name_span: *name_span,
         generic_parameters: Vec::new(),

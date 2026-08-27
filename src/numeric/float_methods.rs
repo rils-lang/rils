@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 use crate::Value;
 
 pub(super) fn constant(
@@ -24,13 +26,13 @@ pub(super) fn constant(
     }
 }
 
-pub(super) fn handles(id: rils_builtins::IntrinsicId) -> bool {
+pub(super) fn handles(id: rils_builtins::BuiltinId) -> bool {
     rils_builtins::FLOAT_INTRINSICS
         .iter()
         .any(|item| item.id == id)
 }
 
-pub(super) fn execute(id: rils_builtins::IntrinsicId, values: &[Value]) -> Result<Value, String> {
+pub(super) fn execute(id: rils_builtins::BuiltinId, values: &[Value]) -> Result<Value, String> {
     match values.first() {
         Some(Value::F32(value)) => float!(id, *value, f32, Value::F32, values),
         Some(Value::F64(value)) => float!(id, *value, f64, Value::F64, values),
@@ -44,7 +46,7 @@ pub(super) fn execute(id: rils_builtins::IntrinsicId, values: &[Value]) -> Resul
 
 macro_rules! float {
     ($id:expr, $value:expr, $ty:ty, $ctor:path, $values:expr) => {{
-        use rils_builtins::IntrinsicId::*;
+        use rils_builtins::builtin_ids::*;
         match $id {
             FloatIsNan => Ok(Value::Bool($value.is_nan())),
             FloatIsInfinite => Ok(Value::Bool($value.is_infinite())),
@@ -61,13 +63,13 @@ macro_rules! float {
             FloatFract => Ok($ctor($value.fract())),
             FloatSqrt => Ok($ctor($value.sqrt())),
             FloatRecip => Ok($ctor($value.recip())),
-            FloatCopySign | FloatMin | FloatMax => {
+            FloatCopysign | FloatMin | FloatMax => {
                 let right = operand::<$ty>($values, |value| match value {
                     $ctor(inner) => Some(*inner),
                     _ => None,
                 })?;
                 Ok($ctor(match $id {
-                    FloatCopySign => $value.copysign(right),
+                    FloatCopysign => $value.copysign(right),
                     FloatMin => $value.min(right),
                     FloatMax => $value.max(right),
                     _ => unreachable!(),

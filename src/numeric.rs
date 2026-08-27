@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
 mod float_methods;
@@ -92,11 +94,11 @@ pub(crate) fn cast_integer(value: Value, target: IntegerType) -> Result<Value, S
 }
 
 pub(crate) fn execute_integer_intrinsic(
-    id: rils_builtins::IntrinsicId,
+    id: rils_builtins::BuiltinId,
     target: Option<IntegerType>,
     values: &[Value],
 ) -> Result<Value, String> {
-    use rils_builtins::IntrinsicId::*;
+    use rils_builtins::builtin_ids::*;
     if integer_methods::handles(id) {
         return integer_methods::execute(id, values);
     }
@@ -134,7 +136,7 @@ pub(crate) fn execute_integer_intrinsic(
 }
 
 pub(crate) fn execute_intrinsic(
-    id: rils_builtins::IntrinsicId,
+    id: rils_builtins::BuiltinId,
     target: Option<IntegerType>,
     values: &[Value],
 ) -> Result<Value, String> {
@@ -232,11 +234,11 @@ fn try_cast_integer(value: Value, target: IntegerType) -> Result<Result<Value, S
 }
 
 fn integer_intrinsic_binary(
-    id: rils_builtins::IntrinsicId,
+    id: rils_builtins::BuiltinId,
     left: &Value,
     right: &Value,
 ) -> Result<Value, String> {
-    use rils_builtins::IntrinsicId::*;
+    use rils_builtins::builtin_ids::*;
     macro_rules! apply {
         ($a:expr, $b:expr, $ctor:path) => {{
             let checked = match id {

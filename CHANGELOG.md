@@ -7,6 +7,9 @@
 
 ### Breaking Changes
 
+- `.rilbc` 格式由 v6 提升为 v7：runtime member ID 与 intrinsic ID 合并为统一的 32 位稳定
+  `BuiltinId`；runtime member 通过 `CallRuntime` 直接按 ID 分派，不再进入字符串 host import 表，
+  数值 intrinsic 迁移到 `core::integer` 和 `core::float` 的保留号段。
 - Host Manifest 二进制与 JSON 格式提升为 v5，新增完整 portable scalar 编码、enum 底层整数、枚举项和
   flags 元数据；Runtime、CLI 与 Analyzer 仍可读取 v1-v4，重新导出或链接时统一写为 v5。
 - C ABI 提升为 version 7，新增 `RilsHostTypeV3`、宿主 enum 注册和拥有型 `RILS_VALUE_STRING` 句柄协议；
@@ -31,6 +34,10 @@
 
 ### Migration
 
+- 从源码重新生成全部 `.rilbc`、Unity `.bytes` 和嵌入 `.rilslib` 字节码模块；v7 loader 会明确拒绝
+  v6 及更早产物。使用内建 ID 的 Rust 宿主代码应从 `RuntimeMemberId` / `IntrinsicId` 迁移到
+  `BuiltinId`，将 `runtime_id!` 改为 `builtin_id!`，并将 `BuiltinMember::runtime_id` 改为
+  `BuiltinMember::builtin_id`。
 - 重新生成 Host Manifest v5，并将 native DLL、P/Invoke 和 `Rils.CSharp` facade 成套更新到 C ABI v7。
   字符串接收方必须通过 `rils_string_size/write` 复制内容并用 `rils_string_destroy` 消费句柄；宿主 enum
   应通过 v3 类型表声明枚举项，不再把逻辑 enum 暴露成普通整数类型。

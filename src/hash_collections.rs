@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+use rils_builtins::BuiltinId;
+
 use crate::{
     types::{Type, merge_types},
     value::{
@@ -7,35 +9,55 @@ use crate::{
     },
 };
 
-pub(crate) fn call(name: &str, arguments: &[Value]) -> Result<Value, String> {
-    if name.starts_with("core::hash_map::") {
-        call_map(name, arguments)
-    } else if name.starts_with("core::hash_set::") {
-        call_set(name, arguments)
-    } else {
-        Err(format!("unknown hash collection import `{name}`"))
+pub(crate) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+    match id {
+        BuiltinId::HashMapLen
+        | BuiltinId::HashMapIsEmpty
+        | BuiltinId::HashMapClear
+        | BuiltinId::HashMapContainsKey
+        | BuiltinId::HashMapInsert
+        | BuiltinId::HashMapGetCloned
+        | BuiltinId::HashMapRemove
+        | BuiltinId::HashMapKeysCloned
+        | BuiltinId::HashMapValuesCloned
+        | BuiltinId::HashMapIntoIter => call_map(id, arguments),
+        BuiltinId::HashSetLen
+        | BuiltinId::HashSetIsEmpty
+        | BuiltinId::HashSetClear
+        | BuiltinId::HashSetContains
+        | BuiltinId::HashSetInsert
+        | BuiltinId::HashSetRemove
+        | BuiltinId::HashSetIsSubset
+        | BuiltinId::HashSetIsSuperset
+        | BuiltinId::HashSetIsDisjoint
+        | BuiltinId::HashSetUnion
+        | BuiltinId::HashSetIntersection
+        | BuiltinId::HashSetDifference
+        | BuiltinId::HashSetSymmetricDifference
+        | BuiltinId::HashSetIntoIter => call_set(id, arguments),
+        _ => Err(format!("unknown hash collection built-in `{id:?}`")),
     }
 }
 
-fn call_map(name: &str, arguments: &[Value]) -> Result<Value, String> {
+fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     let map = hash_map(
         arguments
             .first()
             .ok_or_else(|| "missing HashMap receiver".to_string())?,
     )?;
-    match name {
-        "core::hash_map::len" => Ok(Value::Usize(map.entries.borrow().len())),
-        "core::hash_map::is_empty" => Ok(Value::Bool(map.entries.borrow().is_empty())),
-        "core::hash_map::clear" => {
+    match id {
+        BuiltinId::HashMapLen => Ok(Value::Usize(map.entries.borrow().len())),
+        BuiltinId::HashMapIsEmpty => Ok(Value::Bool(map.entries.borrow().is_empty())),
+        BuiltinId::HashMapClear => {
             reject_referenced_map(&map)?;
             map.entries.borrow_mut().clear();
             Ok(Value::Unit)
         }
-        "core::hash_map::contains_key" => {
+        BuiltinId::HashMapContainsKey => {
             let key = hash_argument(arguments, 1)?;
             Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
         }
-        "core::hash_map::insert" => {
+        BuiltinId::HashMapInsert => {
             reject_referenced_map(&map)?;
             let key_value = arguments
                 .get(1)
@@ -66,7 +88,7 @@ fn call_map(name: &str, arguments: &[Value]) -> Result<Value, String> {
             *map.value_type.borrow_mut() = value_type.clone();
             option(previous.and_then(|slot| slot.value), value_type)
         }
-        "core::hash_map::get_cloned" => {
+        BuiltinId::HashMapGetCloned => {
             let key = hash_argument(arguments, 1)?;
             let value = map
                 .entries
@@ -77,7 +99,7 @@ fn call_map(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 .transpose()?;
             option(value, map.value_type.borrow().clone())
         }
-        "core::hash_map::remove" => {
+        BuiltinId::HashMapRemove => {
             reject_referenced_map(&map)?;
             let key = hash_argument(arguments, 1)?;
             let value = map
@@ -87,11 +109,11 @@ fn call_map(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 .and_then(|slot| slot.value);
             option(value, map.value_type.borrow().clone())
         }
-        "core::hash_map::keys_cloned" => Ok(iterator(
+        BuiltinId::HashMapKeysCloned => Ok(iterator(
             map.entries.borrow().keys().map(HashKey::to_value).collect(),
             map.key_type.borrow().clone(),
         )),
-        "core::hash_map::values_cloned" => Ok(iterator(
+        BuiltinId::HashMapValuesCloned => Ok(iterator(
             map.entries
                 .borrow()
                 .values()
@@ -104,7 +126,7 @@ fn call_map(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 .collect::<Result<_, _>>()?,
             map.value_type.borrow().clone(),
         )),
-        "core::hash_map::into_iter" => {
+        BuiltinId::HashMapIntoIter => {
             reject_referenced_map(&map)?;
             let key_type = map.key_type.borrow().clone();
             let value_type = map.value_type.borrow().clone();
@@ -121,28 +143,28 @@ fn call_map(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 .collect();
             Ok(iterator(values, Type::Tuple(vec![key_type, value_type])))
         }
-        _ => Err(format!("unknown HashMap method `{name}`")),
+        _ => Err(format!("unknown HashMap built-in `{id:?}`")),
     }
 }
 
-fn call_set(name: &str, arguments: &[Value]) -> Result<Value, String> {
+fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     let set = hash_set(
         arguments
             .first()
             .ok_or_else(|| "missing HashSet receiver".to_string())?,
     )?;
-    match name {
-        "core::hash_set::len" => Ok(Value::Usize(set.entries.borrow().len())),
-        "core::hash_set::is_empty" => Ok(Value::Bool(set.entries.borrow().is_empty())),
-        "core::hash_set::clear" => {
+    match id {
+        BuiltinId::HashSetLen => Ok(Value::Usize(set.entries.borrow().len())),
+        BuiltinId::HashSetIsEmpty => Ok(Value::Bool(set.entries.borrow().is_empty())),
+        BuiltinId::HashSetClear => {
             set.entries.borrow_mut().clear();
             Ok(Value::Unit)
         }
-        "core::hash_set::contains" => {
+        BuiltinId::HashSetContains => {
             let key = hash_argument(arguments, 1)?;
             Ok(Value::Bool(set.entries.borrow().contains(&key)))
         }
-        "core::hash_set::insert" => {
+        BuiltinId::HashSetInsert => {
             let key = hash_argument(arguments, 1)?;
             let element_type =
                 merge_collection_type(&set.element_type, key.ty(), "HashSet element")?;
@@ -150,13 +172,13 @@ fn call_set(name: &str, arguments: &[Value]) -> Result<Value, String> {
             *set.element_type.borrow_mut() = element_type;
             Ok(Value::Bool(inserted))
         }
-        "core::hash_set::remove" => {
+        BuiltinId::HashSetRemove => {
             let key = hash_argument(arguments, 1)?;
             Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
         }
-        "core::hash_set::is_subset"
-        | "core::hash_set::is_superset"
-        | "core::hash_set::is_disjoint" => {
+        BuiltinId::HashSetIsSubset
+        | BuiltinId::HashSetIsSuperset
+        | BuiltinId::HashSetIsDisjoint => {
             let other = hash_set(
                 arguments
                     .get(1)
@@ -164,17 +186,17 @@ fn call_set(name: &str, arguments: &[Value]) -> Result<Value, String> {
             )?;
             let left = set.entries.borrow();
             let right = other.entries.borrow();
-            Ok(Value::Bool(match name {
-                "core::hash_set::is_subset" => left.is_subset(&right),
-                "core::hash_set::is_superset" => left.is_superset(&right),
-                "core::hash_set::is_disjoint" => left.is_disjoint(&right),
+            Ok(Value::Bool(match id {
+                BuiltinId::HashSetIsSubset => left.is_subset(&right),
+                BuiltinId::HashSetIsSuperset => left.is_superset(&right),
+                BuiltinId::HashSetIsDisjoint => left.is_disjoint(&right),
                 _ => unreachable!(),
             }))
         }
-        "core::hash_set::union"
-        | "core::hash_set::intersection"
-        | "core::hash_set::difference"
-        | "core::hash_set::symmetric_difference" => {
+        BuiltinId::HashSetUnion
+        | BuiltinId::HashSetIntersection
+        | BuiltinId::HashSetDifference
+        | BuiltinId::HashSetSymmetricDifference => {
             let other = hash_set(
                 arguments
                     .get(1)
@@ -182,11 +204,11 @@ fn call_set(name: &str, arguments: &[Value]) -> Result<Value, String> {
             )?;
             let left = set.entries.borrow();
             let right = other.entries.borrow();
-            let entries = match name {
-                "core::hash_set::union" => left.union(&right).cloned().collect(),
-                "core::hash_set::intersection" => left.intersection(&right).cloned().collect(),
-                "core::hash_set::difference" => left.difference(&right).cloned().collect(),
-                "core::hash_set::symmetric_difference" => {
+            let entries = match id {
+                BuiltinId::HashSetUnion => left.union(&right).cloned().collect(),
+                BuiltinId::HashSetIntersection => left.intersection(&right).cloned().collect(),
+                BuiltinId::HashSetDifference => left.difference(&right).cloned().collect(),
+                BuiltinId::HashSetSymmetricDifference => {
                     left.symmetric_difference(&right).cloned().collect()
                 }
                 _ => unreachable!(),
@@ -199,7 +221,7 @@ fn call_set(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 element_type: RefCell::new(element_type),
             })))
         }
-        "core::hash_set::into_iter" => {
+        BuiltinId::HashSetIntoIter => {
             let element_type = set.element_type.borrow().clone();
             let values = set
                 .entries
@@ -209,7 +231,7 @@ fn call_set(name: &str, arguments: &[Value]) -> Result<Value, String> {
                 .collect();
             Ok(iterator(values, element_type))
         }
-        _ => Err(format!("unknown HashSet method `{name}`")),
+        _ => Err(format!("unknown HashSet built-in `{id:?}`")),
     }
 }
 

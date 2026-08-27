@@ -530,6 +530,20 @@ fn type_of_value(value: &Value) -> Option<Type> {
                             mutable,
                             inner: Box::new(resolve(*inner, receiver)),
                         },
+                        TypePattern::Associated {
+                            base,
+                            trait_name,
+                            name,
+                            arguments,
+                        } => Type::Associated {
+                            base: Box::new(resolve(*base, receiver)),
+                            trait_name: trait_name.map(str::to_owned),
+                            name: name.into(),
+                            arguments: arguments
+                                .iter()
+                                .map(|value| resolve(*value, receiver))
+                                .collect(),
+                        },
                     }
                 }
                 Type::function(

@@ -1,0 +1,6 @@
+/// Explicit owned duplication.
+pub trait Clone {
+    /// Explicitly duplicates an owned value.
+    #[runtime(core::clone)]
+    fn clone(&self) -> Self;
+}

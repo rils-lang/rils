@@ -599,6 +599,21 @@ dependencies = [
 [[package]]
 name = "rils_builtins"
 version = "0.3.0"
+dependencies = [
+ "rils_builtins_macros",
+ "rils_syntax",
+]
+
+[[package]]
+name = "rils_builtins_macros"
+version = "0.3.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rils_syntax",
+ "syn 2.0.117",
+ "toml",
+]
 
 [[package]]
 name = "rils_capi"
@@ -629,6 +644,7 @@ name = "rils_frontend"
 version = "0.3.0"
 dependencies = [
  "rils_builtins",
+ "rils_syntax",
 ]
 
 [[package]]
@@ -638,6 +654,10 @@ dependencies = [
  "serde",
  "toml",
 ]
+
+[[package]]
+name = "rils_syntax"
+version = "0.3.0"
 
 [[package]]
 name = "rils_up"

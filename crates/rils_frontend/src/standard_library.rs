@@ -25,6 +25,54 @@ pub fn standard_function_signature(name: &str) -> Option<FunctionSignature> {
     None
 }
 
+/// Returns the runtime ABI view of a standard function signature, replacing
+/// declaration generics with type-erased slots while preserving its shape.
+pub fn erased_standard_function_signature(name: &str) -> Option<FunctionSignature> {
+    let signature = standard_function_signature(name)?;
+    Some(FunctionSignature {
+        parameters: signature
+            .parameters
+            .map(|parameters| parameters.into_iter().map(erase_type_variables).collect()),
+        return_type: erase_type_variables(signature.return_type),
+    })
+}
+
+fn erase_type_variables(ty: Type) -> Type {
+    match ty {
+        Type::Variable(_) => Type::Unknown,
+        Type::Tuple(elements) => {
+            Type::Tuple(elements.into_iter().map(erase_type_variables).collect())
+        }
+        Type::Array { element, length } => Type::Array {
+            element: Box::new(erase_type_variables(*element)),
+            length,
+        },
+        Type::Reference { mutable, inner } => Type::Reference {
+            mutable,
+            inner: Box::new(erase_type_variables(*inner)),
+        },
+        Type::Function {
+            parameters,
+            return_type,
+        } => Type::Function {
+            parameters: parameters
+                .map(|parameters| parameters.into_iter().map(erase_type_variables).collect()),
+            return_type: Box::new(erase_type_variables(*return_type)),
+        },
+        Type::Option(inner) => Type::Option(Box::new(erase_type_variables(*inner))),
+        Type::Result(ok, error) => Type::Result(
+            Box::new(erase_type_variables(*ok)),
+            Box::new(erase_type_variables(*error)),
+        ),
+        Type::Named { name, arguments } => Type::Named {
+            name,
+            arguments: arguments.into_iter().map(erase_type_variables).collect(),
+        },
+        Type::Associated { .. } => Type::Unknown,
+        concrete => concrete,
+    }
+}
+
 pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
     let (owner, self_type, mut generics) = builtin_owner(object)?;
     let member = rils_builtins::builtin_member(owner, name)?;
@@ -33,6 +81,37 @@ pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
         generics.insert(parameter, Type::Variable((*parameter).into()));
     }
     Some(Type::function(
+        signature
+            .parameters
+            .iter()
+            .copied()
+            .map(|pattern| resolve_member_pattern(pattern, &self_type, &generics))
+            .collect(),
+        resolve_member_pattern(signature.result, &self_type, &generics),
+    ))
+}
+
+pub fn builtin_associated_function_signature(owner: &str, name: &str) -> Option<FunctionSignature> {
+    let declaration = rils_builtins::builtin(owner)?;
+    let member = declaration.member(name)?;
+    if member.kind != rils_builtins::BuiltinMemberKind::AssociatedFunction {
+        return None;
+    }
+    let signature = member.signature?;
+    let self_type = Type::Named {
+        name: owner.into(),
+        arguments: declaration
+            .type_parameters
+            .iter()
+            .map(|_| Type::Unknown)
+            .collect(),
+    };
+    let generics = declaration
+        .type_parameters
+        .iter()
+        .map(|parameter| (*parameter, Type::Unknown))
+        .collect::<HashMap<_, _>>();
+    Some(FunctionSignature::fixed(
         signature
             .parameters
             .iter()
@@ -104,53 +183,9 @@ pub fn erased_builtin_member_signature(
     ))
 }
 
-pub fn erased_builtin_import_signature(import: &str) -> Option<FunctionSignature> {
-    let mut signatures = rils_builtins::BUILTINS
-        .iter()
-        .flat_map(|declaration| declaration.members)
-        .filter(|member| {
-            member
-                .runtime
-                .and_then(rils_builtins::RuntimeMemberId::bytecode_import)
-                == Some(import)
-        })
-        .filter_map(erased_builtin_member_signature);
-    let mut merged = signatures.next()?;
-    for signature in signatures {
-        merged.return_type = erase_type_conflict(&merged.return_type, &signature.return_type);
-        let (Some(left), Some(right)) = (&mut merged.parameters, signature.parameters) else {
-            merged.parameters = None;
-            continue;
-        };
-        if left.len() != right.len() {
-            merged.parameters = None;
-            continue;
-        }
-        for (left, right) in left.iter_mut().zip(right) {
-            *left = erase_type_conflict(left, &right);
-        }
-    }
-    Some(merged)
-}
-
-fn erase_type_conflict(left: &Type, right: &Type) -> Type {
-    match (left, right) {
-        (
-            Type::Reference {
-                mutable: left_mutable,
-                inner: left_inner,
-            },
-            Type::Reference {
-                mutable: right_mutable,
-                inner: right_inner,
-            },
-        ) if left_mutable == right_mutable => Type::Reference {
-            mutable: *left_mutable,
-            inner: Box::new(erase_type_conflict(left_inner, right_inner)),
-        },
-        (left, right) if left == right => left.clone(),
-        _ => Type::Unknown,
-    }
+pub fn erased_runtime_signature(id: rils_builtins::BuiltinId) -> Option<FunctionSignature> {
+    let (_, member) = rils_builtins::runtime_member(id)?;
+    erased_builtin_member_signature(member)
 }
 
 pub fn integer_intrinsic_type(
@@ -276,6 +311,21 @@ fn resolve_member_pattern(
             mutable,
             inner: Box::new(resolve_member_pattern(*inner, self_type, generics)),
         },
+        TypePattern::Associated {
+            base,
+            trait_name,
+            name,
+            arguments,
+        } => Type::Associated {
+            base: Box::new(resolve_member_pattern(*base, self_type, generics)),
+            trait_name: trait_name.map(str::to_owned),
+            name: name.into(),
+            arguments: arguments
+                .iter()
+                .copied()
+                .map(|argument| resolve_member_pattern(argument, self_type, generics))
+                .collect(),
+        },
         TypePattern::Named { path, arguments } => Type::Named {
             name: path.into(),
             arguments: arguments
@@ -288,7 +338,7 @@ fn resolve_member_pattern(
     }
 }
 
-pub(crate) fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type {
+pub fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type {
     use rils_builtins::TypePattern;
     match pattern {
         TypePattern::SelfType | TypePattern::AnyInteger | TypePattern::Unknown => Type::Unknown,
@@ -330,6 +380,21 @@ pub(crate) fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type 
             mutable,
             inner: Box::new(resolve_type_pattern(*inner)),
         },
+        TypePattern::Associated {
+            base,
+            trait_name,
+            name,
+            arguments,
+        } => Type::Associated {
+            base: Box::new(resolve_type_pattern(*base)),
+            trait_name: trait_name.map(str::to_owned),
+            name: name.into(),
+            arguments: arguments
+                .iter()
+                .copied()
+                .map(resolve_type_pattern)
+                .collect(),
+        },
     }
 }
 
@@ -357,10 +422,33 @@ mod tests {
     }
 
     #[test]
-    fn overloaded_imports_erase_parameter_and_return_conflicts() {
-        let signature = erased_builtin_import_signature("core::value::replace").unwrap();
-        assert!(signature.parameters.is_none());
-        assert_eq!(signature.return_type, Type::Unknown);
+    fn runtime_signatures_are_resolved_by_stable_id() {
+        let option = erased_runtime_signature(rils_builtins::BuiltinId::OptionReplace).unwrap();
+        let string = erased_runtime_signature(rils_builtins::BuiltinId::StringReplace).unwrap();
+
+        assert_ne!(option, string);
+        assert_eq!(option.return_type, Type::Unknown);
+        assert_eq!(string.return_type, Type::String);
+    }
+
+    #[test]
+    fn derived_debug_runtime_call_has_one_reference_layer_per_argument() {
+        assert_eq!(
+            erased_runtime_signature(rils_builtins::BuiltinId::FormatterWriteDerivedDebug),
+            Some(FunctionSignature::fixed(
+                vec![
+                    Type::Reference {
+                        mutable: true,
+                        inner: Box::new(Type::Unknown),
+                    },
+                    Type::Reference {
+                        mutable: false,
+                        inner: Box::new(Type::Unknown),
+                    },
+                ],
+                Type::Result(Box::new(Type::Unit), Box::new(Type::named("FormatError")),),
+            ))
+        );
     }
 
     #[test]

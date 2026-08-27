@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 use crate::{Type, Value};
 
 pub(super) fn constant(
@@ -38,8 +40,8 @@ pub(super) fn constant(
     }
 }
 
-pub(super) fn handles(id: rils_builtins::IntrinsicId) -> bool {
-    use rils_builtins::IntrinsicId::*;
+pub(super) fn handles(id: rils_builtins::BuiltinId) -> bool {
+    use rils_builtins::builtin_ids::*;
     matches!(
         id,
         IntegerCheckedNeg
@@ -74,7 +76,7 @@ pub(super) fn handles(id: rils_builtins::IntrinsicId) -> bool {
     )
 }
 
-pub(super) fn execute(id: rils_builtins::IntrinsicId, values: &[Value]) -> Result<Value, String> {
+pub(super) fn execute(id: rils_builtins::BuiltinId, values: &[Value]) -> Result<Value, String> {
     match values.first() {
         Some(Value::I8(value)) => signed!(id, *value, i8, Value::I8, values),
         Some(Value::I16(value)) => signed!(id, *value, i16, Value::I16, values),
@@ -98,7 +100,7 @@ pub(super) fn execute(id: rils_builtins::IntrinsicId, values: &[Value]) -> Resul
 
 macro_rules! common {
     ($id:expr, $value:expr, $ty:ty, $ctor:path, $values:expr, $neg:expr, $sat_neg:expr, $abs:expr) => {{
-        use rils_builtins::IntrinsicId::*;
+        use rils_builtins::builtin_ids::*;
         match $id {
             IntegerCountOnes => Ok(Value::U32($value.count_ones())),
             IntegerCountZeros => Ok(Value::U32($value.count_zeros())),
@@ -223,7 +225,7 @@ macro_rules! signed {
 
 macro_rules! unsigned {
     ($id:expr, $value:expr, $ty:ty, $ctor:path, $values:expr) => {{
-        use rils_builtins::IntrinsicId::*;
+        use rils_builtins::builtin_ids::*;
         match $id {
             IntegerCheckedNeg => Ok(option(
                 ($value == 0).then_some($ctor(0)),

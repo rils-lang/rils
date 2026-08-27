@@ -25,6 +25,7 @@ mod encoder;
 mod format;
 mod formatting;
 mod host;
+mod runtime_builtins;
 mod verifier;
 mod vm;
 
@@ -784,9 +785,14 @@ enum Instruction {
         import: usize,
         arguments: Vec<usize>,
     },
+    CallRuntime {
+        destination: usize,
+        builtin: rils_builtins::BuiltinId,
+        arguments: Vec<usize>,
+    },
     CallIntrinsic {
         destination: usize,
-        intrinsic: rils_builtins::IntrinsicId,
+        intrinsic: rils_builtins::BuiltinId,
         target: Option<IntegerType>,
         arguments: Vec<usize>,
     },

@@ -699,6 +699,68 @@ fn links_and_executes_core_imports() {
 }
 
 #[test]
+fn runtime_members_use_stable_ids_without_host_imports() {
+    let module = compile(
+        r#"
+            let mut values = Vec::from([1, 2]);
+            values.push(3);
+            values.len()
+        "#,
+    )
+    .unwrap();
+
+    assert_eq!(module.execute().unwrap(), Value::Usize(3));
+    assert_eq!(
+        module
+            .imports()
+            .iter()
+            .map(|import| import.name.as_str())
+            .collect::<Vec<_>>(),
+        ["core::vec::from"]
+    );
+    let runtime_ids = module
+        .functions
+        .iter()
+        .flat_map(|function| &function.instructions)
+        .filter_map(|instruction| match &instruction.instruction {
+            Instruction::CallRuntime { builtin, .. } => Some(*builtin),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        runtime_ids,
+        HashSet::from([
+            rils_builtins::BuiltinId::VecPush,
+            rils_builtins::BuiltinId::SequenceLen,
+        ])
+    );
+}
+
+#[test]
+fn generated_runtime_imports_are_registered_without_a_second_catalog() {
+    let registered = super::core_imports::core_imports()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<std::collections::BTreeSet<_>>();
+    for declaration in rils_builtins::BUILTINS {
+        if declaration.kind == rils_builtins::BuiltinKind::Function
+            && declaration.backend == rils_builtins::BuiltinBackend::Runtime
+        {
+            assert!(
+                registered.contains(declaration.path),
+                "{}",
+                declaration.path
+            );
+        }
+        for member in declaration.members {
+            if let Some(import) = member.runtime_import {
+                assert!(registered.contains(import), "{import}");
+            }
+        }
+    }
+}
+
+#[test]
 fn compiles_and_executes_standard_native_macros() {
     let module = compile(
         r#"

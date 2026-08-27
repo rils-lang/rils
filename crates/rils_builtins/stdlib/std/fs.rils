@@ -1,0 +1,23 @@
+/// Reads a UTF-8 file.
+pub fn read_to_string(path: string) -> Result<string, std::io::Error> {}
+
+/// Writes a UTF-8 file.
+pub fn write(path: string, contents: string) -> Result<(), std::io::Error> {}
+
+/// Appends to a UTF-8 file.
+pub fn append(path: string, contents: string) -> Result<(), std::io::Error> {}
+
+/// Checks whether a path exists.
+pub fn try_exists(path: string) -> Result<bool, std::io::Error> {}
+
+/// Creates a directory tree.
+pub fn create_dir_all(path: string) -> Result<(), std::io::Error> {}
+
+/// Removes a file.
+pub fn remove_file(path: string) -> Result<(), std::io::Error> {}
+
+/// Removes an empty directory.
+pub fn remove_dir(path: string) -> Result<(), std::io::Error> {}
+
+/// Lists directory entries.
+pub fn read_dir(path: string) -> Result<Vec<string>, std::io::Error> {}

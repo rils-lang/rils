@@ -1,0 +1,2 @@
+/// Values duplicated by ordinary reads.
+pub trait Copy {}

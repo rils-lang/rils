@@ -1,0 +1,49 @@
+/// A successful value or a structured error.
+pub enum Result<T, E> {
+    /// A successful result.
+    Ok(T),
+
+    /// A failed result.
+    Err(E),
+}
+
+impl<T, E> Result<T, E> {
+    /// Returns true for Ok.
+    fn is_ok(&self) -> bool {}
+
+    /// Returns true for Err.
+    fn is_err(&self) -> bool {}
+
+    /// Returns the Ok value or fails.
+    fn unwrap(self) -> T {}
+
+    /// Returns the Ok value or the supplied default.
+    fn unwrap_or(self, default: T) -> T {}
+
+    /// Returns the Ok value or fails with the supplied message.
+    fn expect(self, message: string) -> T {}
+
+    /// Converts Result<T, E> to Option<T>.
+    fn ok(self) -> Option<T> {}
+
+    /// Converts Result<T, E> to Option<E>.
+    fn err(self) -> Option<E> {}
+
+    /// Returns the Err value or fails when the Result is Ok.
+    fn unwrap_err(self) -> E {}
+
+    /// Returns the Err value or fails with the supplied message when the Result is Ok.
+    fn expect_err(self, message: string) -> E {}
+
+    /// Maps an Ok value while preserving Err.
+    fn map<U>(self, transform: fn(T) -> U) -> Result<U, E> {}
+
+    /// Maps an Err value while preserving Ok.
+    fn map_err<F>(self, transform: fn(E) -> F) -> Result<T, F> {}
+
+    /// Calls the supplied function for Ok and flattens its Result.
+    fn and_then<U>(self, transform: fn(T) -> Result<U, E>) -> Result<U, E> {}
+
+    /// Calls the supplied fallback for Err and flattens its Result.
+    fn or_else<F>(self, fallback: fn(E) -> Result<T, F>) -> Result<T, F> {}
+}

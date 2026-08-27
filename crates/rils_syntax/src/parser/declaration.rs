@@ -155,6 +155,7 @@ impl Parser {
     pub(super) fn function_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         let method = self.function_declaration(start, false)?;
         Ok(Stmt::Function {
+            attributes: Vec::new(),
             name: method.name,
             name_span: method.name_span,
             generic_parameters: method.generic_parameters,
@@ -223,6 +224,7 @@ impl Parser {
         self.generic_scopes.pop();
         let span = start.merge(body.span);
         Ok(ImplMethod {
+            attributes: Vec::new(),
             name,
             name_span,
             generic_parameters,
@@ -350,9 +352,17 @@ impl Parser {
         } else {
             (None, first_type)
         };
-        if !matches!(target, Type::Named { .. }) {
+        if !matches!(
+            target,
+            Type::Named { .. }
+                | Type::Option(_)
+                | Type::Result(_, _)
+                | Type::String
+                | Type::Integer(_)
+                | Type::Float(_)
+        ) {
             return Err(ParseError {
-                message: "impl target must be a named type".into(),
+                message: "impl target must be a nominal or built-in generic type".into(),
                 span: start,
             });
         }
@@ -360,7 +370,14 @@ impl Parser {
         let mut methods = Vec::new();
         let mut associated_types = Vec::new();
         while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+            let attributes = self.attributes()?;
             if let Some(keyword) = self.take(&TokenKind::Type) {
+                if !attributes.is_empty() {
+                    return Err(ParseError {
+                        message: "attributes on associated types are not supported yet".into(),
+                        span: attributes[0].span,
+                    });
+                }
                 if trait_name.is_none() {
                     return Err(ParseError {
                         message: "associated types are only allowed in trait impls".into(),
@@ -384,7 +401,8 @@ impl Parser {
                 &TokenKind::Fn,
                 "only `fn` and `type` declarations are allowed in impl",
             )?;
-            let method = self.function_declaration(function.span, true)?;
+            let mut method = self.function_declaration(function.span, true)?;
+            method.attributes = attributes;
             if methods
                 .iter()
                 .any(|existing: &ImplMethod| existing.name == method.name)
@@ -448,7 +466,14 @@ impl Parser {
         let mut methods = Vec::new();
         let mut associated_types = Vec::new();
         while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+            let attributes = self.attributes()?;
             if let Some(keyword) = self.take(&TokenKind::Type) {
+                if !attributes.is_empty() {
+                    return Err(ParseError {
+                        message: "attributes on associated types are not supported yet".into(),
+                        span: attributes[0].span,
+                    });
+                }
                 let associated = self.associated_type_declaration(keyword.span, false)?;
                 if associated_types
                     .iter()
@@ -466,7 +491,8 @@ impl Parser {
                 &TokenKind::Fn,
                 "only method signatures and associated types are allowed in trait",
             )?;
-            let method = self.trait_method_declaration(function.span)?;
+            let mut method = self.trait_method_declaration(function.span)?;
+            method.attributes = attributes;
             if methods
                 .iter()
                 .any(|existing: &TraitMethod| existing.name == method.name)
@@ -585,6 +611,7 @@ impl Parser {
         )?;
         self.generic_scopes.pop();
         Ok(TraitMethod {
+            attributes: Vec::new(),
             name,
             name_span,
             generic_parameters,
@@ -656,7 +683,9 @@ impl Parser {
         let (name, span) = self.expect_identifier(message)?;
         let type_annotation = if self.take(&TokenKind::Colon).is_some() {
             let ty = self.type_annotation()?;
-            reject_nested_reference(&ty, span)?;
+            if !self.allow_nested_parameter_references {
+                reject_nested_reference(&ty, span)?;
+            }
             Some(ty)
         } else {
             None

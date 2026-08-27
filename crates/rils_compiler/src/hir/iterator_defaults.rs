@@ -541,15 +541,11 @@ fn increment(local: LocalId, span: Span) -> HirStatement {
 }
 
 fn vec_new(span: Span) -> HirExpression {
+    let (name, signature) = collection_import_signature("Vec::new")
+        .expect("Vec::new has a generated runtime import binding");
     HirExpression::CallImport {
-        name: "core::vec::new".into(),
-        signature: crate::types::FunctionSignature::fixed(
-            Vec::new(),
-            Type::Named {
-                name: "Vec".into(),
-                arguments: vec![Type::Unknown],
-            },
-        ),
+        name: name.into(),
+        signature,
         capability: "core".into(),
         arguments: Vec::new(),
         span,
@@ -557,19 +553,8 @@ fn vec_new(span: Span) -> HirExpression {
 }
 
 fn vec_push(output: LocalId, value: HirExpression, span: Span) -> HirExpression {
-    HirExpression::CallImport {
-        name: "core::vec::push".into(),
-        signature: crate::types::FunctionSignature::fixed(
-            vec![
-                Type::Reference {
-                    mutable: true,
-                    inner: Box::new(Type::Unknown),
-                },
-                Type::Unknown,
-            ],
-            Type::Unit,
-        ),
-        capability: "core".into(),
+    HirExpression::CallRuntime {
+        builtin: rils_builtins::BuiltinId::VecPush,
         arguments: vec![
             HirExpression::BorrowLocal {
                 local: output,
@@ -583,16 +568,8 @@ fn vec_push(output: LocalId, value: HirExpression, span: Span) -> HirExpression 
 }
 
 fn iterator_next(iterator: LocalId, span: Span) -> HirExpression {
-    HirExpression::CallImport {
-        name: "core::iterator::next".into(),
-        signature: crate::types::FunctionSignature::fixed(
-            vec![Type::Reference {
-                mutable: true,
-                inner: Box::new(Type::Unknown),
-            }],
-            Type::Option(Box::new(Type::Unknown)),
-        ),
-        capability: "core".into(),
+    HirExpression::CallRuntime {
+        builtin: rils_builtins::BuiltinId::IteratorNext,
         arguments: vec![HirExpression::BorrowLocal {
             local: iterator,
             mutable: true,
@@ -603,10 +580,8 @@ fn iterator_next(iterator: LocalId, span: Span) -> HirExpression {
 }
 
 fn iterator_rev(iterator: HirExpression, span: Span) -> HirExpression {
-    HirExpression::CallImport {
-        name: "core::iterator::rev".into(),
-        signature: crate::types::FunctionSignature::fixed(vec![Type::Unknown], Type::Unknown),
-        capability: "core".into(),
+    HirExpression::CallRuntime {
+        builtin: rils_builtins::BuiltinId::IteratorRev,
         arguments: vec![iterator],
         span,
     }

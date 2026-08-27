@@ -1,14 +1,15 @@
 use super::*;
 
+#[allow(non_upper_case_globals)]
 impl Interpreter {
     pub(super) fn call_option_result_method(
         &mut self,
-        id: rils_builtins::RuntimeMemberId,
+        id: rils_builtins::BuiltinId,
         receiver: &Value,
         arguments: &[Value],
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        use rils_builtins::RuntimeMemberId::*;
+        use rils_builtins::builtin_ids::*;
         match id {
             ResultIsOk | ResultIsErr => result_state(id, receiver, span),
             ResultUnwrap | ResultUnwrapOr | ResultExpect => {
@@ -35,7 +36,7 @@ impl Interpreter {
 
     fn option_transform(
         &mut self,
-        id: rils_builtins::RuntimeMemberId,
+        id: rils_builtins::BuiltinId,
         receiver: &Value,
         arguments: &[Value],
         span: Span,
@@ -51,7 +52,7 @@ impl Interpreter {
             ));
         };
         let function = arguments[0].clone();
-        use rils_builtins::RuntimeMemberId::*;
+        use rils_builtins::builtin_ids::*;
         match (id, value) {
             (OptionMap, Some(value)) => {
                 let mapped = self.call(function, &[value.as_ref().clone()], span)?;
@@ -116,7 +117,7 @@ impl Interpreter {
 
     fn result_transform(
         &mut self,
-        id: rils_builtins::RuntimeMemberId,
+        id: rils_builtins::BuiltinId,
         receiver: &Value,
         arguments: &[Value],
         span: Span,
@@ -133,7 +134,7 @@ impl Interpreter {
             ));
         };
         let function = arguments[0].clone();
-        use rils_builtins::RuntimeMemberId::*;
+        use rils_builtins::builtin_ids::*;
         match (id, value) {
             (ResultMap, Ok(value)) => {
                 let mapped = self.call(function, &[value.as_ref().clone()], span)?;
@@ -239,7 +240,7 @@ fn validate_result_callback(
 }
 
 fn result_state(
-    id: rils_builtins::RuntimeMemberId,
+    id: rils_builtins::BuiltinId,
     receiver: &Value,
     span: Span,
 ) -> Result<Value, RuntimeError> {
@@ -251,14 +252,14 @@ fn result_state(
         ));
     };
     Ok(Value::Bool(match id {
-        rils_builtins::RuntimeMemberId::ResultIsOk => value.is_ok(),
-        rils_builtins::RuntimeMemberId::ResultIsErr => value.is_err(),
+        rils_builtins::BuiltinId::ResultIsOk => value.is_ok(),
+        rils_builtins::BuiltinId::ResultIsErr => value.is_err(),
         _ => unreachable!(),
     }))
 }
 
 fn result_unwrap(
-    id: rils_builtins::RuntimeMemberId,
+    id: rils_builtins::BuiltinId,
     receiver: &Value,
     arguments: &[Value],
     span: Span,
@@ -269,7 +270,7 @@ fn result_unwrap(
             span,
         ));
     };
-    if id == rils_builtins::RuntimeMemberId::ResultUnwrapOr {
+    if id == rils_builtins::BuiltinId::ResultUnwrapOr {
         let default = &arguments[0];
         if let Some(expected) = ok_type
             && !expected.accepts(default)
@@ -290,7 +291,7 @@ fn result_unwrap(
     match value {
         Ok(value) => Ok((**value).clone()),
         Err(value) => {
-            let message = if id == rils_builtins::RuntimeMemberId::ResultExpect {
+            let message = if id == rils_builtins::BuiltinId::ResultExpect {
                 let Value::String(message) = &arguments[0] else {
                     return Err(RuntimeError::new(
                         "Result::expect message must be string",
@@ -307,7 +308,7 @@ fn result_unwrap(
 }
 
 fn result_to_option(
-    id: rils_builtins::RuntimeMemberId,
+    id: rils_builtins::BuiltinId,
     receiver: &Value,
     span: Span,
 ) -> Result<Value, RuntimeError> {
@@ -323,14 +324,12 @@ fn result_to_option(
         ));
     };
     let (value, element_type) = match (id, value) {
-        (rils_builtins::RuntimeMemberId::ResultOk, Ok(value)) => {
-            (Some(value.clone()), ok_type.clone())
-        }
-        (rils_builtins::RuntimeMemberId::ResultErr, Err(value)) => {
+        (rils_builtins::BuiltinId::ResultOk, Ok(value)) => (Some(value.clone()), ok_type.clone()),
+        (rils_builtins::BuiltinId::ResultErr, Err(value)) => {
             (Some(value.clone()), error_type.clone())
         }
-        (rils_builtins::RuntimeMemberId::ResultOk, Err(_)) => (None, ok_type.clone()),
-        (rils_builtins::RuntimeMemberId::ResultErr, Ok(_)) => (None, error_type.clone()),
+        (rils_builtins::BuiltinId::ResultOk, Err(_)) => (None, ok_type.clone()),
+        (rils_builtins::BuiltinId::ResultErr, Ok(_)) => (None, error_type.clone()),
         _ => unreachable!(),
     };
     Ok(Value::Option {
@@ -340,7 +339,7 @@ fn result_to_option(
 }
 
 fn result_unwrap_error(
-    id: rils_builtins::RuntimeMemberId,
+    id: rils_builtins::BuiltinId,
     receiver: &Value,
     arguments: &[Value],
     span: Span,
@@ -357,7 +356,7 @@ fn result_unwrap_error(
             .clone_owned()
             .map_err(|message| RuntimeError::new(message, span)),
         Ok(value) => {
-            let message = if id == rils_builtins::RuntimeMemberId::ResultExpectErr {
+            let message = if id == rils_builtins::BuiltinId::ResultExpectErr {
                 let Value::String(message) = &arguments[0] else {
                     return Err(RuntimeError::new("expect_err message must be string", span));
                 };
@@ -371,7 +370,7 @@ fn result_unwrap_error(
 }
 
 fn option_state(
-    id: rils_builtins::RuntimeMemberId,
+    id: rils_builtins::BuiltinId,
     receiver: &Value,
     span: Span,
 ) -> Result<Value, RuntimeError> {
@@ -383,14 +382,14 @@ fn option_state(
         ));
     };
     Ok(Value::Bool(match id {
-        rils_builtins::RuntimeMemberId::OptionIsSome => value.is_some(),
-        rils_builtins::RuntimeMemberId::OptionIsNone => value.is_none(),
+        rils_builtins::BuiltinId::OptionIsSome => value.is_some(),
+        rils_builtins::BuiltinId::OptionIsNone => value.is_none(),
         _ => unreachable!(),
     }))
 }
 
 fn option_unwrap(
-    id: rils_builtins::RuntimeMemberId,
+    id: rils_builtins::BuiltinId,
     receiver: &Value,
     arguments: &[Value],
     span: Span,
@@ -405,7 +404,7 @@ fn option_unwrap(
             span,
         ));
     };
-    if id == rils_builtins::RuntimeMemberId::OptionUnwrapOr {
+    if id == rils_builtins::BuiltinId::OptionUnwrapOr {
         let default = &arguments[0];
         if let Some(expected) = element_type
             && !expected.accepts(default)
@@ -426,7 +425,7 @@ fn option_unwrap(
         .as_ref()
         .map(|value| (**value).clone())
         .ok_or_else(|| {
-            if id == rils_builtins::RuntimeMemberId::OptionExpect {
+            if id == rils_builtins::BuiltinId::OptionExpect {
                 match &arguments[0] {
                     Value::String(message) => RuntimeError::new(message.to_string(), span),
                     _ => RuntimeError::new("Option::expect message must be string", span),
@@ -472,7 +471,7 @@ fn option_take(receiver: &Value, span: Span) -> Result<Value, RuntimeError> {
 }
 
 fn option_combine(
-    id: rils_builtins::RuntimeMemberId,
+    id: rils_builtins::BuiltinId,
     receiver: &Value,
     arguments: &[Value],
     span: Span,
@@ -500,8 +499,8 @@ fn option_combine(
     )
     .ok_or_else(|| RuntimeError::new("Option operand types do not match", span))?;
     let value = match id {
-        rils_builtins::RuntimeMemberId::OptionOr => left.as_ref().or(right.as_ref()).cloned(),
-        rils_builtins::RuntimeMemberId::OptionXor => match (left, right) {
+        rils_builtins::BuiltinId::OptionOr => left.as_ref().or(right.as_ref()).cloned(),
+        rils_builtins::BuiltinId::OptionXor => match (left, right) {
             (Some(value), None) | (None, Some(value)) => Some(value.clone()),
             _ => None,
         },

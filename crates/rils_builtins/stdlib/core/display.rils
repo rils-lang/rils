@@ -1,0 +1,6 @@
+/// User-facing textual formatting.
+pub trait Display {
+    /// Writes the user-facing representation into a formatter.
+    #[metadata]
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), FormatError>;
+}

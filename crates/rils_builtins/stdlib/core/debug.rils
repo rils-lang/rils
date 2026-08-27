@@ -1,0 +1,6 @@
+/// Diagnostic textual formatting.
+pub trait Debug {
+    /// Writes the diagnostic representation into a formatter.
+    #[metadata]
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), FormatError>;
+}

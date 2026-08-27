@@ -1017,9 +1017,7 @@ impl<'a> FunctionLowerer<'a> {
                         {
                             return Ok(expression);
                         }
-                        if let Some((import_name, signature, receiver)) =
-                            builtin_method_import(owner, name)
-                        {
+                        if let Some((builtin, receiver)) = builtin_method_runtime(owner, name) {
                             let receiver = self.method_receiver(object, receiver)?;
                             let mut lowered = Vec::with_capacity(arguments.len() + 1);
                             lowered.push(receiver);
@@ -1029,10 +1027,8 @@ impl<'a> FunctionLowerer<'a> {
                                     .map(|argument| self.expression(argument))
                                     .collect::<Result<Vec<_>, _>>()?,
                             );
-                            return Ok(HirExpression::CallImport {
-                                name: import_name.into(),
-                                signature,
-                                capability: "core".into(),
+                            return Ok(HirExpression::CallRuntime {
+                                builtin,
                                 arguments: lowered,
                                 span: *span,
                             });

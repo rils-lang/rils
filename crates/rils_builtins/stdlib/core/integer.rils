@@ -1,0 +1,127 @@
+/// Declares the shared intrinsic API for one concrete integer primitive.
+macro integer_impl($integer_type) {
+impl $integer_type {
+    /// Converts an integer when its value is representable by the target type.
+    fn try_from(value: integer) -> Result<Self, string> {}
+
+    /// Converts to f32, allowing IEEE-754 precision rounding.
+    fn to_f32(self) -> f32 {}
+
+    /// Converts to f64, allowing IEEE-754 precision rounding.
+    fn to_f64(self) -> f64 {}
+
+    /// Returns None on overflow.
+    fn checked_add(self, other: Self) -> Option<Self> {}
+    /// Returns None on overflow.
+    fn checked_sub(self, other: Self) -> Option<Self> {}
+    /// Returns None on overflow.
+    fn checked_mul(self, other: Self) -> Option<Self> {}
+    /// Returns None on division failure or overflow.
+    fn checked_div(self, other: Self) -> Option<Self> {}
+    /// Returns None on remainder failure or overflow.
+    fn checked_rem(self, other: Self) -> Option<Self> {}
+    /// Returns the negated value, or None when it cannot be represented.
+    fn checked_neg(self) -> Option<Self> {}
+    /// Returns the absolute value, or None on signed minimum overflow.
+    fn checked_abs(self) -> Option<Self> {}
+    /// Raises to a power, returning None on overflow.
+    fn checked_pow(self, exponent: u32) -> Option<Self> {}
+    /// Shifts left, returning None when the shift is at least the bit width.
+    fn checked_shl(self, shift: u32) -> Option<Self> {}
+    /// Shifts right, returning None when the shift is at least the bit width.
+    fn checked_shr(self, shift: u32) -> Option<Self> {}
+
+    /// Adds with two's-complement wrapping.
+    fn wrapping_add(self, other: Self) -> Self {}
+    /// Subtracts with two's-complement wrapping.
+    fn wrapping_sub(self, other: Self) -> Self {}
+    /// Multiplies with two's-complement wrapping.
+    fn wrapping_mul(self, other: Self) -> Self {}
+    /// Negates with two's-complement wrapping.
+    fn wrapping_neg(self) -> Self {}
+    /// Raises to a power with wrapping arithmetic.
+    fn wrapping_pow(self, exponent: u32) -> Self {}
+    /// Shifts left after reducing the shift modulo the bit width.
+    fn wrapping_shl(self, shift: u32) -> Self {}
+    /// Shifts right after reducing the shift modulo the bit width.
+    fn wrapping_shr(self, shift: u32) -> Self {}
+
+    /// Adds while saturating at the numeric bounds.
+    fn saturating_add(self, other: Self) -> Self {}
+    /// Subtracts while saturating at the numeric bounds.
+    fn saturating_sub(self, other: Self) -> Self {}
+    /// Multiplies while saturating at the numeric bounds.
+    fn saturating_mul(self, other: Self) -> Self {}
+    /// Negates while saturating at the numeric bounds.
+    fn saturating_neg(self) -> Self {}
+    /// Returns the absolute value, saturating signed minimum at MAX.
+    fn saturating_abs(self) -> Self {}
+    /// Raises to a power while saturating at the numeric bounds.
+    fn saturating_pow(self, exponent: u32) -> Self {}
+
+    /// Returns the wrapped sum and whether overflow occurred.
+    fn overflowing_add(self, other: Self) -> (Self, bool) {}
+    /// Returns the wrapped difference and whether overflow occurred.
+    fn overflowing_sub(self, other: Self) -> (Self, bool) {}
+    /// Returns the wrapped product and whether overflow occurred.
+    fn overflowing_mul(self, other: Self) -> (Self, bool) {}
+    /// Returns the wrapped negation and whether overflow occurred.
+    fn overflowing_neg(self) -> (Self, bool) {}
+    /// Returns the wrapped absolute value and whether overflow occurred.
+    fn overflowing_abs(self) -> (Self, bool) {}
+    /// Returns the wrapped power and whether overflow occurred.
+    fn overflowing_pow(self, exponent: u32) -> (Self, bool) {}
+    /// Returns the wrapped left shift and whether the shift exceeded the bit width.
+    fn overflowing_shl(self, shift: u32) -> (Self, bool) {}
+    /// Returns the wrapped right shift and whether the shift exceeded the bit width.
+    fn overflowing_shr(self, shift: u32) -> (Self, bool) {}
+
+    /// Returns the number of one bits.
+    fn count_ones(self) -> u32 {}
+    /// Returns the number of zero bits.
+    fn count_zeros(self) -> u32 {}
+    /// Returns the number of leading zero bits.
+    fn leading_zeros(self) -> u32 {}
+    /// Returns the number of trailing zero bits.
+    fn trailing_zeros(self) -> u32 {}
+    /// Rotates bits to the left.
+    fn rotate_left(self, shift: u32) -> Self {}
+    /// Rotates bits to the right.
+    fn rotate_right(self, shift: u32) -> Self {}
+    /// Raises to a non-negative integer power, failing on overflow.
+    fn pow(self, exponent: u32) -> Self {}
+    /// Computes Euclidean division, failing on zero or overflow.
+    fn div_euclid(self, other: Self) -> Self {}
+    /// Computes the least non-negative remainder, failing on zero or overflow.
+    fn rem_euclid(self, other: Self) -> Self {}
+    /// Returns the absolute value, failing on signed minimum overflow.
+    fn abs(self) -> Self {}
+    /// Reverses the byte order.
+    fn swap_bytes(self) -> Self {}
+    /// Reverses the order of bits.
+    fn reverse_bits(self) -> Self {}
+
+    /// The smallest value representable by this integer type.
+    #[constant]
+    fn MIN() -> Self {}
+    /// The largest value representable by this integer type.
+    #[constant]
+    fn MAX() -> Self {}
+    /// The width of this integer type in bits.
+    #[constant]
+    fn BITS() -> u32 {}
+}
+}
+
+integer_impl!(i8)
+integer_impl!(i16)
+integer_impl!(i32)
+integer_impl!(i64)
+integer_impl!(i128)
+integer_impl!(isize)
+integer_impl!(u8)
+integer_impl!(u16)
+integer_impl!(u32)
+integer_impl!(u64)
+integer_impl!(u128)
+integer_impl!(usize)

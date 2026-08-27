@@ -1,0 +1,23 @@
+/// Portable categories for standard IO and filesystem failures.
+pub enum ErrorKind {
+    /// The requested path or resource does not exist.
+    NotFound,
+    /// Access was denied by the host platform.
+    PermissionDenied,
+    /// A resource already exists at the requested location.
+    AlreadyExists,
+    /// An argument is not valid for the requested operation.
+    InvalidInput,
+    /// Input data is malformed or otherwise invalid.
+    InvalidData,
+    /// The operation did not finish before its deadline.
+    TimedOut,
+    /// The operation was interrupted and may be retried.
+    Interrupted,
+    /// Input ended before the requested data was available.
+    UnexpectedEof,
+    /// A write operation could not make progress.
+    WriteZero,
+    /// An error without a more specific portable category.
+    Other,
+}

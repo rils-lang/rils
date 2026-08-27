@@ -1,0 +1,2 @@
+/// Values with reflexive equality suitable for hashed collections.
+pub trait Eq {}

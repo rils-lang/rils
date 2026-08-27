@@ -1,0 +1,38 @@
+/// An owned hash map.
+pub struct HashMap<K, V>;
+
+impl<K, V> HashMap<K, V> {
+    /// Creates an empty HashMap.
+    #[import(core::hash_map::new)]
+    fn new() -> Self {}
+
+    /// Returns the entry count.
+    fn len(&self) -> usize {}
+
+    /// Returns true when the map has no entries.
+    fn is_empty(&self) -> bool {}
+
+    /// Removes all entries.
+    fn clear(&mut self) {}
+
+    /// Returns true when the key is present.
+    fn contains_key(&self, key: &K) -> bool {}
+
+    /// Inserts a key-value pair and returns the previous value.
+    fn insert(&mut self, key: K, value: V) -> Option<V> {}
+
+    /// Clones the value stored for a key.
+    fn get_cloned(&self, key: &K) -> Option<V> {}
+
+    /// Removes a key and returns its value.
+    fn remove(&mut self, key: &K) -> Option<V> {}
+
+    /// Clones all keys into an owned iterator.
+    fn keys_cloned(&self) -> Iterator<K> {}
+
+    /// Clones all values into an owned iterator.
+    fn values_cloned(&self) -> Iterator<V> {}
+
+    /// Consumes the map and iterates over owned key-value pairs.
+    fn into_iter(self) -> Iterator<(K, V)> {}
+}

@@ -1,0 +1,9 @@
+/// Conversion into an iterator.
+pub trait IntoIterator {
+    /// The concrete iterator produced by this conversion.
+    type IntoIter;
+
+    /// Consumes a value and creates an iterator.
+    #[runtime(core::sequence::into_iter)]
+    fn into_iter(self) -> <Self as IntoIterator>::IntoIter;
+}

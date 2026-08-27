@@ -1,0 +1,2 @@
+/// An error produced while formatting a value.
+pub struct FormatError;
