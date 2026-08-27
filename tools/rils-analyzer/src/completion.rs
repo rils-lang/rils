@@ -30,10 +30,8 @@ impl Server {
             };
             if let Some(receiver_type) = current_analysis.and_then(|analysis| {
                 analysis
-                    .expression_types
-                    .iter()
-                    .filter(|(span, _)| span.end == dot_offset)
-                    .max_by_key(|(span, _)| span.start)
+                    .typeck_results
+                    .expression_type_ending_at(document.source_id, dot_offset)
                     .map(|(_, ty)| ty)
                     .or_else(|| {
                         let receiver = identifier_before(&document.text, dot_offset)?;
@@ -395,20 +393,15 @@ impl Server {
         let Some(file) = project.module(&module_path) else {
             return;
         };
-        let owned_source;
-        let source = if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
-            document.text.as_str()
+        let program = if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
+            self.parsed_document(document)
         } else {
             let Ok(text) = fs::read_to_string(&file.path) else {
                 return;
             };
-            owned_source = text;
-            &owned_source
+            lex(&text).ok().and_then(|tokens| parse(tokens).ok())
         };
-        let Ok(tokens) = lex(source) else {
-            return;
-        };
-        let Ok(program) = parse(tokens) else {
+        let Some(program) = program else {
             return;
         };
         for statement in &program.statements {

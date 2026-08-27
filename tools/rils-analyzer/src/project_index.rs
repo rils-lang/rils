@@ -31,11 +31,19 @@ pub(super) fn collect_external_exports(
             else {
                 continue;
             };
-            let Ok(tokens) = lex_with_source_id(&text, source_id) else {
-                continue;
-            };
-            let Ok(program) = parse(tokens) else {
-                continue;
+            let program = if source_id != SourceId::UNKNOWN {
+                let Ok(program) = server.sources.parse(source_id) else {
+                    continue;
+                };
+                program
+            } else {
+                let Ok(tokens) = lex_with_source_id(&text, source_id) else {
+                    continue;
+                };
+                let Ok(program) = parse(tokens) else {
+                    continue;
+                };
+                program
             };
             let analysis = server
                 .documents

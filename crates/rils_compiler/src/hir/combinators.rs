@@ -3,24 +3,33 @@ use super::*;
 impl FunctionLowerer<'_> {
     pub(super) fn builtin_combinator(
         &mut self,
-        owner: Option<&str>,
+        builtin: Option<rils_builtins::BuiltinId>,
         name: &str,
         object: &Expr,
         arguments: &[Expr],
         span: Span,
     ) -> Result<Option<HirExpression>, CompileError> {
-        if rils_builtins::is_iterator_default_method(name)
-            && matches!(owner, Some("Iterator" | "Range") | None)
-        {
+        let Some(builtin) = builtin else {
+            return Ok(None);
+        };
+        if rils_builtins::is_iterator_default_builtin(builtin) {
             return self
                 .iterator_default(name, object, arguments, span)
                 .map(Some);
         }
-        let family = match (owner, name) {
-            (Some("Option"), "map" | "and_then" | "or_else") => "option",
-            (Some("Result"), "map" | "map_err" | "and_then" | "or_else") => "result",
-            _ => return Ok(None),
-        };
+        use rils_builtins::BuiltinId;
+        if !matches!(
+            builtin,
+            BuiltinId::OptionMap
+                | BuiltinId::OptionAndThen
+                | BuiltinId::OptionOrElse
+                | BuiltinId::ResultMap
+                | BuiltinId::ResultMapErr
+                | BuiltinId::ResultAndThen
+                | BuiltinId::ResultOrElse
+        ) {
+            return Ok(None);
+        }
         let [callback] = arguments else {
             return Err(CompileError::unsupported(
                 format!("`{name}` expects exactly one callback"),
@@ -37,44 +46,43 @@ impl FunctionLowerer<'_> {
             span,
         };
         let binding = || local(binding_local);
-        let (first_pattern, first_expression, second_pattern, second_expression) =
-            match (family, name) {
-                ("option", "map") => (
-                    HirPattern::Some(Box::new(HirPattern::Binding(binding_local))),
-                    HirExpression::OptionSome {
-                        value: Box::new(call(vec![binding()])),
-                        span,
-                    },
-                    HirPattern::None,
-                    HirExpression::OptionNone { span },
-                ),
-                ("option", "and_then") => (
-                    HirPattern::Some(Box::new(HirPattern::Binding(binding_local))),
-                    call(vec![binding()]),
-                    HirPattern::None,
-                    HirExpression::OptionNone { span },
-                ),
-                ("option", "or_else") => (
-                    HirPattern::Some(Box::new(HirPattern::Binding(binding_local))),
-                    HirExpression::OptionSome {
-                        value: Box::new(binding()),
-                        span,
-                    },
-                    HirPattern::None,
-                    call(Vec::new()),
-                ),
-                ("result", "map") => result_arms(binding_local, call(vec![binding()]), false, span),
-                ("result", "map_err") => {
-                    result_arms(binding_local, call(vec![binding()]), true, span)
-                }
-                ("result", "and_then") => {
-                    result_flatten_arms(binding_local, call(vec![binding()]), false, span)
-                }
-                ("result", "or_else") => {
-                    result_flatten_arms(binding_local, call(vec![binding()]), true, span)
-                }
-                _ => unreachable!(),
-            };
+        let (first_pattern, first_expression, second_pattern, second_expression) = match builtin {
+            BuiltinId::OptionMap => (
+                HirPattern::Some(Box::new(HirPattern::Binding(binding_local))),
+                HirExpression::OptionSome {
+                    value: Box::new(call(vec![binding()])),
+                    span,
+                },
+                HirPattern::None,
+                HirExpression::OptionNone { span },
+            ),
+            BuiltinId::OptionAndThen => (
+                HirPattern::Some(Box::new(HirPattern::Binding(binding_local))),
+                call(vec![binding()]),
+                HirPattern::None,
+                HirExpression::OptionNone { span },
+            ),
+            BuiltinId::OptionOrElse => (
+                HirPattern::Some(Box::new(HirPattern::Binding(binding_local))),
+                HirExpression::OptionSome {
+                    value: Box::new(binding()),
+                    span,
+                },
+                HirPattern::None,
+                call(Vec::new()),
+            ),
+            BuiltinId::ResultMap => result_arms(binding_local, call(vec![binding()]), false, span),
+            BuiltinId::ResultMapErr => {
+                result_arms(binding_local, call(vec![binding()]), true, span)
+            }
+            BuiltinId::ResultAndThen => {
+                result_flatten_arms(binding_local, call(vec![binding()]), false, span)
+            }
+            BuiltinId::ResultOrElse => {
+                result_flatten_arms(binding_local, call(vec![binding()]), true, span)
+            }
+            _ => unreachable!(),
+        };
         Ok(Some(HirExpression::Block {
             statements: vec![
                 HirStatement::Let {

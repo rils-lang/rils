@@ -7,10 +7,12 @@ use std::{
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use rils_compiler::{
-    HOST_CONTRACT_ABI_VERSION, HostContract, analyze_with_host_and_source_id_and_external_exports,
+    HOST_CONTRACT_ABI_VERSION, HostContract,
+    analyze_program_with_host_and_source_id_and_external_exports,
+    analyze_with_host_and_source_id_and_external_exports,
 };
 use rils_frontend::{
-    FrontendError, FunctionSignature, SourceId, Span, Type,
+    FrontendError, FunctionSignature, SourceDatabase, SourceId, Span, Type,
     analysis::{
         DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind, SymbolOccurrence,
     },
@@ -69,6 +71,7 @@ fn main() -> Result<(), AnyError> {
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
     server.load_projects(&initialization)?;
     server.load_host_manifests(&initialization)?;
@@ -87,6 +90,7 @@ struct Server {
     host_types: HashSet<String>,
     projects: Vec<Project>,
     next_source_id: u32,
+    sources: SourceDatabase,
 }
 
 impl Server {
@@ -185,12 +189,16 @@ impl Server {
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri);
-        let analysis = analyze_with_host_and_source_id_and_external_exports(
-            &text,
-            source_id,
-            &self.host_contract,
-            &HashMap::new(),
-        );
+        self.sources
+            .set_source_with_id(source_id, uri.clone(), text.clone());
+        let analysis = self.sources.parse(source_id).map(|program| {
+            analyze_program_with_host_and_source_id_and_external_exports(
+                &program,
+                source_id,
+                &self.host_contract,
+                &HashMap::new(),
+            )
+        });
         self.documents.insert(
             uri.clone(),
             Document {
@@ -214,6 +222,19 @@ impl Server {
             .checked_add(1)
             .expect("source id overflow");
         source_id
+    }
+
+    fn parsed_document(&self, document: &Document) -> Option<rils_frontend::ast::Program> {
+        self.sources
+            .source_text(document.source_id)
+            .filter(|source| *source == document.text)
+            .and_then(|_| self.sources.try_parse(document.source_id))
+            .unwrap_or_else(|| {
+                let tokens = lex_with_source_id(&document.text, document.source_id)
+                    .map_err(FrontendError::Lex)?;
+                parse(tokens).map_err(FrontendError::Parse)
+            })
+            .ok()
     }
 
     fn load_host_manifests(&mut self, initialization: &Value) -> Result<(), AnyError> {
@@ -287,17 +308,21 @@ impl Server {
             };
             let uri = path_to_file_uri(path);
             let source_id = self.source_id_for_uri(&uri);
+            self.sources
+                .set_source_with_id(source_id, uri.clone(), text.clone());
             self.workspace_documents.insert(uri.clone());
             self.documents.insert(
                 uri,
                 Document {
                     source_id,
-                    analysis: analyze_with_host_and_source_id_and_external_exports(
-                        &text,
-                        source_id,
-                        &self.host_contract,
-                        &HashMap::new(),
-                    ),
+                    analysis: self.sources.parse(source_id).map(|program| {
+                        analyze_program_with_host_and_source_id_and_external_exports(
+                            &program,
+                            source_id,
+                            &self.host_contract,
+                            &HashMap::new(),
+                        )
+                    }),
                     text,
                 },
             );
@@ -308,14 +333,20 @@ impl Server {
     }
 
     fn reanalyze_documents(&mut self) {
+        for (uri, document) in &self.documents {
+            self.sources
+                .set_source_with_id(document.source_id, uri.clone(), document.text.clone());
+        }
         let exports = project_index::collect_external_exports(self);
         for document in self.documents.values_mut() {
-            document.analysis = analyze_with_host_and_source_id_and_external_exports(
-                &document.text,
-                document.source_id,
-                &self.host_contract,
-                &exports,
-            );
+            document.analysis = self.sources.parse(document.source_id).map(|program| {
+                analyze_program_with_host_and_source_id_and_external_exports(
+                    &program,
+                    document.source_id,
+                    &self.host_contract,
+                    &exports,
+                )
+            });
         }
     }
 

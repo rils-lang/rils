@@ -12,6 +12,7 @@ use crate::{
 use super::{FunctionId, HirIteratorMethods, HirTraitImplementation, HirTypeDefinition, TypeId};
 pub(super) struct FunctionDeclaration<'a> {
     pub(super) name: &'a str,
+    pub(super) name_span: Span,
     pub(super) qualified_name: String,
     pub(super) parameters: &'a [Parameter],
     pub(super) body: &'a Block,
@@ -41,6 +42,7 @@ pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclarati
     };
     let Stmt::Function {
         name,
+        name_span,
         parameters,
         body,
         span,
@@ -51,6 +53,7 @@ pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclarati
     };
     Some(FunctionDeclaration {
         name,
+        name_span: *name_span,
         qualified_name: name.clone(),
         parameters,
         body,
@@ -487,6 +490,7 @@ pub(super) fn collect_method_declarations<'a>(
                         info.function,
                         FunctionDeclaration {
                             name: &method.name,
+                            name_span: method.name_span,
                             qualified_name: qualified_name(prefix, &method.name),
                             parameters: &method.parameters,
                             body: &method.body,

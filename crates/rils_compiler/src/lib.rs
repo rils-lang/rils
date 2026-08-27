@@ -142,22 +142,40 @@ pub fn analyze_with_host_and_source_id_and_external_exports(
 ) -> Result<rils_frontend::analysis::DocumentAnalysis, rils_frontend::FrontendError> {
     let tokens = rils_frontend::lexer::lex_with_source_id(source, source_id)
         .map_err(rils_frontend::FrontendError::Lex)?;
-    let mut program =
+    let program =
         rils_frontend::parser::parse(tokens).map_err(rils_frontend::FrontendError::Parse)?;
+    Ok(
+        analyze_program_with_host_and_source_id_and_external_exports(
+            &program,
+            source_id,
+            host,
+            external_exports,
+        ),
+    )
+}
+
+pub fn analyze_program_with_host_and_source_id_and_external_exports(
+    program: &Program,
+    source_id: rils_frontend::SourceId,
+    host: &HostContract,
+    external_exports: &std::collections::HashMap<
+        String,
+        Vec<rils_frontend::analysis::ExternalModuleExport>,
+    >,
+) -> rils_frontend::analysis::DocumentAnalysis {
+    let mut program = program.clone();
     inject_host_enum_declarations(&mut program, host);
     let signatures = host.signatures();
     let host_types = host
         .types()
         .map(|declaration| declaration.name.clone())
         .collect();
-    Ok(
-        rils_frontend::analysis::analyze_program_with_source_id_and_external_exports_and_host_types(
-            &program,
-            source_id,
-            &signatures,
-            &host_types,
-            external_exports,
-        ),
+    rils_frontend::analysis::analyze_program_with_source_id_and_external_exports_and_host_types(
+        &program,
+        source_id,
+        &signatures,
+        &host_types,
+        external_exports,
     )
 }
 
@@ -199,17 +217,15 @@ pub fn compile_program_with_host_and_sources(
     );
     if let Some(diagnostic) = analysis
         .diagnostics
-        .into_iter()
+        .iter()
         .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
     {
-        return Err(CompileError::new(diagnostic.message, diagnostic.span));
+        return Err(CompileError::new(
+            diagnostic.message.clone(),
+            diagnostic.span,
+        ));
     }
-    mir::lower(hir::lower_with_host(
-        &program,
-        host,
-        &analysis.expression_types,
-        sources,
-    )?)
+    mir::lower(hir::lower_with_host(&program, host, &analysis, sources)?)
 }
 
 #[derive(Default)]

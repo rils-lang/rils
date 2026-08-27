@@ -138,10 +138,10 @@ fn collect_host_use_aliases(
 pub(crate) fn lower_with_host(
     program: &Program,
     host: &HostContract,
-    expression_types: &HashMap<Span, Type>,
+    analysis: &rils_frontend::analysis::DocumentAnalysis,
     sources: Vec<SourceFile>,
 ) -> Result<HirProgram, CompileError> {
-    ProgramLowerer::new(program, host, expression_types)?.lower(program, sources)
+    ProgramLowerer::new(program, host, analysis)?.lower(program, sources)
 }
 
 struct ProgramLowerer {
@@ -154,13 +154,15 @@ struct ProgramLowerer {
     host_methods: HashMap<String, Vec<HostFunctionDeclaration>>,
     host_contract: HostContract,
     expression_types: HashMap<Span, Type>,
+    typeck_results: rils_frontend::semantic::TypeckResults,
+    resolved_definitions: HashMap<rils_frontend::DefId, MethodInfo>,
 }
 
 impl ProgramLowerer {
     fn new(
         program: &Program,
         host: &HostContract,
-        expression_types: &HashMap<Span, Type>,
+        analysis: &rils_frontend::analysis::DocumentAnalysis,
     ) -> Result<Self, CompileError> {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
@@ -229,6 +231,43 @@ impl ProgramLowerer {
             &mut methods,
             &mut method_names,
         );
+        let mut declarations = program
+            .statements
+            .iter()
+            .filter_map(function_declaration)
+            .map(|declaration| (functions[&declaration.qualified_name], declaration))
+            .collect::<Vec<_>>();
+        collect_nested_function_declarations(
+            &program.statements,
+            &mut Vec::new(),
+            &functions,
+            &mut declarations,
+        );
+        collect_method_declarations(
+            &program.statements,
+            &mut Vec::new(),
+            &methods,
+            &mut declarations,
+        );
+        let method_by_function = methods
+            .values()
+            .map(|method| (method.function, *method))
+            .collect::<HashMap<_, _>>();
+        let resolved_definitions = declarations
+            .iter()
+            .filter_map(|(function, declaration)| {
+                let definition = analysis.def_map.resolution(declaration.name_span)?;
+                let callable = method_by_function
+                    .get(function)
+                    .copied()
+                    .unwrap_or(MethodInfo {
+                        function: *function,
+                        receiver: None,
+                        source: declaration.name_span.source,
+                    });
+                Some((definition, callable))
+            })
+            .collect();
         let mut public_symbols = HashSet::new();
         collect_public_symbols(&program.statements, &mut Vec::new(), &mut public_symbols);
         collect_use_aliases(
@@ -250,7 +289,9 @@ impl ProgramLowerer {
             host_functions,
             host_methods,
             host_contract: host.clone(),
-            expression_types: expression_types.clone(),
+            expression_types: analysis.expression_types.clone(),
+            typeck_results: analysis.typeck_results.clone(),
+            resolved_definitions,
         })
     }
 
@@ -287,6 +328,8 @@ impl ProgramLowerer {
                 &self.host_methods,
                 &self.host_contract,
                 &self.expression_types,
+                &self.typeck_results,
+                &self.resolved_definitions,
                 generated.clone(),
             )
             .lower_entry(&entry_statements)?,
@@ -322,6 +365,8 @@ impl ProgramLowerer {
                     &self.host_methods,
                     &self.host_contract,
                     &self.expression_types,
+                    &self.typeck_results,
+                    &self.resolved_definitions,
                     generated.clone(),
                 )
                 .lower_function(declaration)?,
@@ -356,6 +401,8 @@ struct FunctionLowerer<'a> {
     host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
     host_contract: &'a HostContract,
     expression_types: &'a HashMap<Span, Type>,
+    typeck_results: &'a rils_frontend::semantic::TypeckResults,
+    resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
     namespace: String,
     self_type: Option<String>,
     scopes: Vec<HashMap<String, LocalId>>,
@@ -380,6 +427,8 @@ impl<'a> FunctionLowerer<'a> {
         host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
         host_contract: &'a HostContract,
         expression_types: &'a HashMap<Span, Type>,
+        typeck_results: &'a rils_frontend::semantic::TypeckResults,
+        resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
         generated: GeneratedFunctions,
     ) -> Self {
         Self {
@@ -391,6 +440,8 @@ impl<'a> FunctionLowerer<'a> {
             host_methods,
             host_contract,
             expression_types,
+            typeck_results,
+            resolved_definitions,
             namespace: String::new(),
             self_type: None,
             scopes: vec![HashMap::new()],
@@ -565,6 +616,8 @@ impl<'a> FunctionLowerer<'a> {
                     self.host_methods,
                     self.host_contract,
                     self.expression_types,
+                    self.typeck_results,
+                    self.resolved_definitions,
                     self.generated.clone(),
                 );
                 child.in_function = true;
@@ -578,6 +631,7 @@ impl<'a> FunctionLowerer<'a> {
                 let qualified_name = format!("{}${}@{}", self.namespace, name, span.start);
                 let lowered = child.lower_function(FunctionDeclaration {
                     name,
+                    name_span: *span,
                     qualified_name,
                     parameters,
                     body,
@@ -858,6 +912,16 @@ impl<'a> FunctionLowerer<'a> {
                             return Ok(value);
                         }
                     }
+                    if let Some(callable) = self.resolved_definition(*span) {
+                        return Ok(HirExpression::Call {
+                            function: callable.function,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
                     let target_name = nominal_type_name(target).ok_or_else(|| {
                         CompileError::unsupported("UFCS target must be a nominal type", *span)
                     })?;
@@ -879,6 +943,16 @@ impl<'a> FunctionLowerer<'a> {
                 if let Expr::Path { segments, .. } = callee.as_ref() {
                     let segments = self.resolve_self_path(segments);
                     let raw_key = segments.join("::");
+                    if let Some(callable) = self.resolved_definition(*span) {
+                        return Ok(HirExpression::Call {
+                            function: callable.function,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
                     if let [type_name, member] = segments.as_slice()
                         && let Some(target) = crate::types::IntegerType::from_name(type_name)
                         && let Some(intrinsic) = rils_builtins::integer_associated_function(member)
@@ -925,7 +999,8 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    if let Some(function) = self.host_function(&key, arguments, *span)? {
+                    let host_name = self.resolved_host(*span).unwrap_or(&key);
+                    if let Some(function) = self.host_function(host_name, arguments, *span)? {
                         return Ok(HirExpression::CallImport {
                             name: function.name,
                             signature: function.signature,
@@ -969,20 +1044,42 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if let Expr::Member { object, name, .. } = callee.as_ref() {
-                    let intrinsic = self.expression_types.get(&object.span()).and_then(
-                        |receiver| match receiver {
-                            Type::Integer(_) | Type::IntegerVariable(_) => {
-                                rils_builtins::integer_method(name)
-                            }
-                            Type::Float(_) | Type::FloatVariable(_) => {
-                                rils_builtins::float_method(name)
-                            }
-                            _ => None,
-                        },
-                    );
-                    if self.method_names.get(name).is_none()
-                        && let Some(intrinsic) = intrinsic
-                    {
+                    if let Some(method) = self.resolved_definition(*span) {
+                        let mut lowered = Vec::with_capacity(
+                            arguments.len() + usize::from(method.receiver.is_some()),
+                        );
+                        if let Some(receiver) = method.receiver {
+                            lowered.push(self.method_receiver(object, receiver)?);
+                        }
+                        lowered.extend(
+                            arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        );
+                        return Ok(HirExpression::Call {
+                            function: method.function,
+                            arguments: lowered,
+                            span: *span,
+                        });
+                    }
+                    let semantic_builtin =
+                        self.typeck_results
+                            .resolved_call_at(*span)
+                            .and_then(|call| match call {
+                                rils_frontend::semantic::ResolvedCall::Builtin {
+                                    id,
+                                    kind,
+                                    receiver,
+                                } => Some((*id, *kind, *receiver)),
+                                _ => None,
+                            });
+                    let intrinsic = semantic_builtin
+                        .filter(|(_, kind, _)| {
+                            *kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
+                        })
+                        .map(|(id, _, _)| id);
+                    if let Some(intrinsic) = intrinsic {
                         let mut lowered = Vec::with_capacity(arguments.len() + 1);
                         lowered.push(self.expression(object)?);
                         lowered.extend(
@@ -992,20 +1089,23 @@ impl<'a> FunctionLowerer<'a> {
                                 .collect::<Result<Vec<_>, _>>()?,
                         );
                         return Ok(HirExpression::CallIntrinsic {
-                            intrinsic: intrinsic.id,
+                            intrinsic,
                             target: None,
                             arguments: lowered,
                             span: *span,
                         });
                     }
-                    if self.method_names.get(name).is_none() {
-                        let owner = self
-                            .expression_types
-                            .get(&object.span())
-                            .and_then(rils_frontend::standard_library::builtin_owner_name);
+                    if let Some((builtin, _, receiver)) = semantic_builtin.filter(|(_, kind, _)| {
+                        *kind == rils_frontend::semantic::BuiltinCallKind::Runtime
+                    }) {
                         if name == "into_iter"
                             && arguments.is_empty()
-                            && matches!(owner, Some("Array" | "Vec" | "Range" | "Iterator"))
+                            && matches!(
+                                builtin,
+                                rils_builtins::BuiltinId::SequenceIntoIter
+                                    | rils_builtins::BuiltinId::RangeIntoIter
+                                    | rils_builtins::BuiltinId::IteratorIntoIter
+                            )
                         {
                             return Ok(HirExpression::IntoIterator {
                                 value: Box::new(self.expression(object)?),
@@ -1013,11 +1113,21 @@ impl<'a> FunctionLowerer<'a> {
                             });
                         }
                         if let Some(expression) =
-                            self.builtin_combinator(owner, name, object, arguments, *span)?
+                            self.builtin_combinator(Some(builtin), name, object, arguments, *span)?
                         {
                             return Ok(expression);
                         }
-                        if let Some((builtin, receiver)) = builtin_method_runtime(owner, name) {
+                        if builtin.has_direct_runtime_call()
+                            && let Some(receiver) = receiver.map(|receiver| match receiver {
+                                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
+                                rils_builtins::ReceiverMode::Shared => {
+                                    ReceiverMode::Reference { mutable: false }
+                                }
+                                rils_builtins::ReceiverMode::Mutable => {
+                                    ReceiverMode::Reference { mutable: true }
+                                }
+                            })
+                        {
                             let receiver = self.method_receiver(object, receiver)?;
                             let mut lowered = Vec::with_capacity(arguments.len() + 1);
                             lowered.push(receiver);
@@ -1119,9 +1229,25 @@ impl<'a> FunctionLowerer<'a> {
                         _ => unreachable!(),
                     });
                 }
+                if matches!(callee.as_ref(), Expr::Variable { .. })
+                    && let Some(callable) = self.resolved_definition(*span)
+                {
+                    return Ok(HirExpression::Call {
+                        function: callable.function,
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
                 if let Expr::Variable { name, .. } = callee.as_ref()
                     && self.lookup(name).is_none()
-                    && let Some(function) = self.host_function(name, arguments, *span)?
+                    && let Some(function) = self.host_function(
+                        self.resolved_host(*span).unwrap_or(name),
+                        arguments,
+                        *span,
+                    )?
                 {
                     return Ok(HirExpression::CallImport {
                         name: function.name,
@@ -1427,6 +1553,24 @@ impl<'a> FunctionLowerer<'a> {
 
     fn function_id(&self, name: &str) -> Option<FunctionId> {
         self.symbol_id(self.functions, name)
+    }
+
+    fn resolved_definition(&self, span: Span) -> Option<MethodInfo> {
+        let rils_frontend::semantic::ResolvedCall::Definition(definition) =
+            self.typeck_results.resolved_call_at(span)?
+        else {
+            return None;
+        };
+        self.resolved_definitions.get(definition).copied()
+    }
+
+    fn resolved_host(&self, span: Span) -> Option<&str> {
+        let rils_frontend::semantic::ResolvedCall::Host { path } =
+            self.typeck_results.resolved_call_at(span)?
+        else {
+            return None;
+        };
+        Some(path)
     }
 
     fn host_function(

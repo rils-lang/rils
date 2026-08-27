@@ -18,6 +18,28 @@ fn compiles_source_through_static_analysis_hir_and_mir() {
 }
 
 #[test]
+fn resolved_definition_selects_between_same_named_inherent_methods() {
+    compile(
+        r#"
+            struct Left { value: i32 }
+            struct Right { value: i32 }
+
+            impl Left {
+                fn read(&self) -> i32 { self.value }
+            }
+
+            impl Right {
+                fn read(&self) -> i32 { self.value }
+            }
+
+            let left = Left { value: 1 };
+            left.read()
+        "#,
+    )
+    .expect("the resolved method definition should avoid name-only ambiguity");
+}
+
+#[test]
 fn host_enum_variants_are_real_extensible_rils_enums() {
     let mut host = HostContract::new();
     host.register_enum_type(

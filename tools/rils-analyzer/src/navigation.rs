@@ -26,11 +26,7 @@ impl Server {
                 let Some(candidate_analysis) = analysis(candidate_document) else {
                     continue;
                 };
-                if let Some(definition) = candidate_analysis
-                    .symbols
-                    .iter()
-                    .find(|candidate| candidate.symbol_id == Some(target_id))
-                {
+                if let Some(definition) = candidate_analysis.def_map.definition(target_id) {
                     return Ok(json!({
                         "uri": candidate_uri,
                         "range": range(&candidate_document.text, definition.span)
@@ -157,13 +153,15 @@ impl Server {
                     .find(|candidate| candidate.source_id == definition_span.source)
                 {
                     if let Some(target_analysis) = analysis(target_document) {
-                        if let Some(definition) = target_analysis.symbols.iter().find(|candidate| {
-                            candidate.is_definition
-                                && candidate.span == definition_span
-                                && candidate.name == symbol.name
-                                && compatible_symbol_kinds(candidate.kind, expected_kind)
-                        }) {
-                            return definition.symbol_id;
+                        if let Some(definition) = target_analysis
+                            .def_map
+                            .definition_at(definition_span)
+                            .filter(|definition| {
+                                definition.name == symbol.name
+                                    && compatible_symbol_kinds(definition.kind, expected_kind)
+                            })
+                        {
+                            return Some(definition.id);
                         }
                     }
                 }
@@ -171,25 +169,20 @@ impl Server {
         }
         let (target_uri, member) = self.project_member_target(uri, document, offset)?;
         let target_document = self.documents.get(&target_uri)?;
-        let program =
-            parse(lex_with_source_id(&target_document.text, target_document.source_id).ok()?)
-                .ok()?;
+        let program = self.parsed_document(target_document)?;
         let public_span = program.statements.iter().find_map(|statement| {
             let Stmt::Public { statement, .. } = statement else {
                 return None;
             };
             declaration_name_span(statement, &member)
         })?;
-        analysis(target_document)?
-            .symbols
-            .iter()
-            .find(|candidate| {
-                candidate.is_definition
-                    && candidate.span == public_span
-                    && candidate.name == member
-                    && compatible_symbol_kinds(candidate.kind, expected_kind)
-            })?
-            .symbol_id
+        let definition = analysis(target_document)?
+            .def_map
+            .definition_at(public_span)
+            .filter(|definition| {
+                definition.name == member && compatible_symbol_kinds(definition.kind, expected_kind)
+            })?;
+        Some(definition.id)
     }
 
     fn project_member_target(
@@ -206,7 +199,7 @@ impl Server {
         let current = &project.module_for_file(&path)?.module_path;
         let qualified = qualified_path_at(&document.text, offset)
             .map(|qualified| resolve_path_alias(&document.text, &qualified))
-            .or_else(|| imported_path_at(document, offset))?;
+            .or_else(|| imported_path_at(self, document, offset))?;
         let (qualifier, member) = qualified.rsplit_once("::")?;
         let module_path = resolve_project_path(current, qualifier)?;
         let file = project.module(&module_path)?;
@@ -239,7 +232,7 @@ impl Server {
         let Some(symbol) = symbol else {
             return Ok(Value::Null);
         };
-        let manifest_path = host_path_at(document, offset);
+        let manifest_path = host_path_at(self, document, offset);
         let is_explicit_manifest_symbol = manifest_path.as_deref().is_some_and(|path| {
             self.host_contract.host_type(path).is_some()
                 || path.rsplit_once("::").is_some_and(|(owner, variant)| {
@@ -309,7 +302,7 @@ impl Server {
     /// symbols. Resolve an unannotated type occurrence against the manifest
     /// and keep overload information for functions.
     fn host_symbol_detail(&self, document: &Document, offset: usize, name: &str) -> Option<String> {
-        let resolved = host_path_at(document, offset);
+        let resolved = host_path_at(self, document, offset);
         if let Some(resolved) = resolved.as_deref()
             && let Some((owner, variant)) = resolved.rsplit_once("::")
             && let Some(declaration) = self.host_contract.host_type(owner)
@@ -413,7 +406,7 @@ impl Server {
     }
 
     fn host_type_hover_path(&self, document: &Document, offset: usize) -> Option<String> {
-        let resolved = host_path_at(document, offset)?;
+        let resolved = host_path_at(self, document, offset)?;
         if self.host_contract.host_type(&resolved).is_some() {
             return resolved
                 .rsplit_once("::")
@@ -475,9 +468,9 @@ impl Server {
     }
 }
 
-fn imported_path_at(document: &Document, offset: usize) -> Option<String> {
+fn imported_path_at(server: &Server, document: &Document, offset: usize) -> Option<String> {
     let identifier = identifier_at(&document.text, offset)?;
-    let program = parse(lex_with_source_id(&document.text, document.source_id).ok()?).ok()?;
+    let program = server.parsed_document(document)?;
     for statement in &program.statements {
         let statement = match statement {
             Stmt::Public { statement, .. } => statement.as_ref(),
@@ -505,10 +498,10 @@ fn imported_path_at(document: &Document, offset: usize) -> Option<String> {
     None
 }
 
-fn host_path_at(document: &Document, offset: usize) -> Option<String> {
+fn host_path_at(server: &Server, document: &Document, offset: usize) -> Option<String> {
     qualified_path_through_identifier_at(&document.text, offset)
         .map(|path| resolve_path_alias(&document.text, &path))
-        .or_else(|| imported_path_at(document, offset))
+        .or_else(|| imported_path_at(server, document, offset))
 }
 
 /// Return only the qualified path through the identifier under the cursor.

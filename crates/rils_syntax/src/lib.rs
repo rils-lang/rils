@@ -11,5 +11,5 @@ pub mod types;
 
 pub use lexer::{LexError, lex, lex_with_source_id};
 pub use parser::{ParseError, parse};
-pub use source::{SourceFile, SourceId, Span, SymbolId};
+pub use source::{BodyId, DefId, ExprId, ImplId, ModuleId, SourceFile, SourceId, Span, SymbolId};
 pub use types::{FloatType, FunctionSignature, IntegerType, RuntimeValue, Type};

@@ -10,6 +10,7 @@ mod native_type;
 mod numeric;
 mod output;
 mod runtime_type;
+mod source_registry;
 mod standard_library;
 mod value;
 
@@ -24,6 +25,9 @@ pub mod analysis {
     pub use rils_frontend::analysis::{
         AnalysisDiagnostic, DiagnosticSeverity, DocumentAnalysis, InlayTypeHint, SymbolKind,
         SymbolOccurrence,
+    };
+    pub use rils_frontend::semantic::{
+        BuiltinCallKind, DefMap, DefinitionData, ResolvedCall, TypeckResults,
     };
 
     pub fn analyze(source: &str) -> Result<DocumentAnalysis, crate::RilsError> {
@@ -62,11 +66,13 @@ mod types {
 }
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fmt, fs,
     path::{Path, PathBuf},
     rc::Rc,
 };
+
+use source_registry::SourceRegistry;
 
 pub use bytecode::{
     BYTECODE_FORMAT_VERSION, BYTECODE_HOST_ABI_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeError,
@@ -286,9 +292,7 @@ impl Engine {
             let source =
                 fs::read_to_string(path).map_err(|error| module_load_error(path, error))?;
             let source_id = sources.register_source(path, &source);
-            let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-            let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
-                .map_err(RilsError::Parse)?;
+            let mut program = sources.parse(source_id, &self.native_macros)?;
             load_file_modules(
                 &mut program.statements,
                 path,
@@ -305,69 +309,6 @@ impl Engine {
         })();
         result.map_err(|error| locate_rils_error(error, &sources))
     }
-}
-
-#[derive(Default)]
-struct SourceRegistry {
-    next_id: u32,
-    by_path: HashMap<PathBuf, SourceId>,
-    records: BTreeMap<SourceId, SourceRecord>,
-}
-
-struct SourceRecord {
-    file: SourceFile,
-    source: Option<String>,
-}
-
-impl SourceRegistry {
-    fn register_project(&mut self, project: &Project) {
-        for file in project.modules() {
-            self.register_path(&file.path);
-        }
-    }
-
-    fn register_path(&mut self, path: &Path) -> SourceId {
-        let key = source_path_key(path);
-        if let Some(id) = self.by_path.get(&key) {
-            return *id;
-        }
-        self.next_id += 1;
-        let id = SourceId::new(self.next_id);
-        self.by_path.insert(key, id);
-        self.records.insert(
-            id,
-            SourceRecord {
-                file: SourceFile {
-                    id,
-                    name: path.to_string_lossy().into_owned(),
-                },
-                source: None,
-            },
-        );
-        id
-    }
-
-    fn register_source(&mut self, path: &Path, source: &str) -> SourceId {
-        let id = self.register_path(path);
-        self.records.get_mut(&id).expect("registered source").source = Some(source.into());
-        id
-    }
-
-    fn source_files(&self) -> Vec<SourceFile> {
-        self.records
-            .values()
-            .map(|record| record.file.clone())
-            .collect()
-    }
-
-    fn location(&self, id: SourceId) -> Option<(&str, &str)> {
-        let record = self.records.get(&id)?;
-        Some((&record.file.name, record.source.as_deref()?))
-    }
-}
-
-fn source_path_key(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn locate_rils_error(error: RilsError, sources: &SourceRegistry) -> RilsError {
@@ -452,9 +393,7 @@ fn load_external_modules(
         }
         let source = fs::read_to_string(&path).map_err(|error| module_load_error(&path, error))?;
         let source_id = sources.register_source(&path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-        let mut module =
-            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        let mut module = sources.parse(source_id, native_macros)?;
         load_external_modules(
             &mut module.statements,
             path.parent().unwrap_or(base),
@@ -519,9 +458,7 @@ fn load_file_modules(
         let source = fs::read_to_string(prelude_path)
             .map_err(|error| module_load_error(prelude_path, error))?;
         let source_id = sources.register_source(prelude_path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-        let prelude =
-            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        let prelude = sources.parse(source_id, native_macros)?;
         reject_external_module_declarations(&prelude.statements)?;
         root.statements.extend(prelude.statements);
     }
@@ -532,9 +469,7 @@ fn load_file_modules(
         let source = fs::read_to_string(prelude_path)
             .map_err(|error| module_load_error(prelude_path, error))?;
         let source_id = sources.register_source(prelude_path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-        let prelude =
-            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        let prelude = sources.parse(source_id, native_macros)?;
         reject_external_module_declarations(&prelude.statements)?;
         root.statements.extend(prelude.statements);
     }
@@ -546,9 +481,7 @@ fn load_file_modules(
             let source = fs::read_to_string(&file.path)
                 .map_err(|error| module_load_error(&file.path, error))?;
             let source_id = sources.register_source(&file.path, &source);
-            let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-            let program = parser::parse_with_native_macros(tokens, native_macros)
-                .map_err(RilsError::Parse)?;
+            let program = sources.parse(source_id, native_macros)?;
             reject_external_module_declarations(&program.statements)?;
             program.statements
         };
@@ -883,10 +816,9 @@ fn compile_project_file_with_host(
             )
         })?;
         let source_id = sources.register_source(path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id)
-            .map_err(|error| CompileError::new(error.message, error.span))?;
-        let mut program =
-            parser::parse(tokens).map_err(|error| CompileError::new(error.message, error.span))?;
+        let mut program = sources
+            .parse(source_id, macros::STANDARD_NATIVE_MACROS)
+            .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
         load_file_modules(
             &mut program.statements,
             path,

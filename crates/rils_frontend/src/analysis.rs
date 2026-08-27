@@ -14,21 +14,8 @@ use crate::{
 #[path = "analysis/imports.rs"]
 mod imports;
 
+pub use crate::semantic::{SymbolContainer, SymbolKind};
 use imports::{ModuleExport, collect_module_exports};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SymbolKind {
-    Variable,
-    Parameter,
-    Function,
-    Macro,
-    Type,
-    Trait,
-    Method,
-    Field,
-    Variant,
-    Module,
-}
 
 /// A public declaration exported by a module outside the document currently
 /// being analyzed.
@@ -62,12 +49,6 @@ pub struct SymbolOccurrence {
     pub inferred_type: Option<Type>,
     pub detail: Option<String>,
     pub container: Option<SymbolContainer>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SymbolContainer {
-    Module(String),
-    Type(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,6 +88,8 @@ pub struct DocumentAnalysis {
     pub symbols: Vec<SymbolOccurrence>,
     pub inlay_hints: Vec<InlayTypeHint>,
     pub expression_types: HashMap<Span, Type>,
+    pub def_map: crate::semantic::DefMap,
+    pub typeck_results: crate::semantic::TypeckResults,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -644,6 +627,18 @@ impl Analyzer {
                 label: format!("{}{ty}", hint.prefix, ty = hint.ty),
             })
             .collect();
+        let def_map =
+            crate::semantic::DefMap::from_program_and_symbols(program, &self.result.symbols);
+        let mut typeck_results =
+            crate::semantic::TypeckResults::from_expression_types(&inference.expression_types);
+        crate::semantic::resolve_program_calls(
+            program,
+            &def_map,
+            &self.host_functions,
+            &mut typeck_results,
+        );
+        self.result.def_map = def_map;
+        self.result.typeck_results = typeck_results;
         self.result.expression_types = inference.expression_types;
         self.result
     }
@@ -708,6 +703,39 @@ impl Analyzer {
                 Type::Reference { inner, .. } => inner.as_ref(),
                 receiver_type => receiver_type,
             };
+            if let Type::Named { name, .. } = receiver_type
+                && let Some(method) = self.inherent_methods.get(&symbol.name).and_then(|methods| {
+                    let candidates = methods
+                        .iter()
+                        .filter(|method| method.owner == *name)
+                        .collect::<Vec<_>>();
+                    let [method] = candidates.as_slice() else {
+                        return None;
+                    };
+                    Some((*method).clone())
+                })
+            {
+                let definition_id = self
+                    .result
+                    .symbols
+                    .iter()
+                    .find(|candidate| {
+                        candidate.is_definition
+                            && candidate.kind == SymbolKind::Method
+                            && candidate.span == method.span
+                    })
+                    .and_then(|candidate| candidate.symbol_id);
+                updates.push((
+                    index,
+                    Some(method.span),
+                    definition_id,
+                    None,
+                    Some(method.detail),
+                    Some(SymbolContainer::Type(method.owner)),
+                    Some(SymbolKind::Method),
+                ));
+                continue;
+            }
             if symbol.kind == SymbolKind::Method
                 && let Some(method_type) =
                     crate::standard_library::builtin_member_type(receiver_type, &symbol.name)
@@ -718,6 +746,7 @@ impl Analyzer {
                     None,
                     Some(method_type.clone()),
                     Some(callable_detail(&symbol.name, &method_type)),
+                    None,
                     None,
                 ));
                 continue;
@@ -755,9 +784,12 @@ impl Analyzer {
                 Some(field.ty.clone()),
                 Some(field.detail.clone()),
                 Some(SymbolContainer::Type(field.owner.clone())),
+                None,
             ));
         }
-        for (index, definition_span, definition_id, inferred_type, detail, container) in updates {
+        for (index, definition_span, definition_id, inferred_type, detail, container, kind) in
+            updates
+        {
             let symbol = &mut self.result.symbols[index];
             symbol.definition_span = definition_span;
             symbol.definition_id = definition_id;
@@ -765,6 +797,9 @@ impl Analyzer {
             symbol.detail = detail;
             if container.is_some() {
                 symbol.container = container;
+            }
+            if let Some(kind) = kind {
+                symbol.kind = kind;
             }
         }
     }

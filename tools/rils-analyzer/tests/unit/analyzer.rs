@@ -1,6 +1,6 @@
 use super::{
-    Document, Project, Server, SourceId, Type, analysis, diagnostics, file_uri_to_path,
-    function_declaration, offset, path_to_file_uri, position, workspace_projects,
+    Document, Project, Server, SourceDatabase, SourceId, Type, analysis, diagnostics,
+    file_uri_to_path, function_declaration, offset, path_to_file_uri, position, workspace_projects,
 };
 use lsp_server::Connection;
 use rils_compiler::{
@@ -273,6 +273,7 @@ fn test_server(
         host_types,
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     }
 }
 
@@ -432,6 +433,7 @@ fn hover_shows_expanded_type_aliases() {
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
 
     let hover = server
@@ -518,6 +520,7 @@ fn hover_describes_manifest_host_types() {
         host_types,
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
     let [line, character] = position(text, text.find("GameObject").unwrap());
     let hover = server
@@ -871,6 +874,7 @@ fn completes_host_modules_functions_and_aliases() {
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
 
     let functions = server
@@ -971,6 +975,7 @@ fn completes_inherited_methods_for_named_host_types() {
         host_types,
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
 
     let methods = server
@@ -1013,6 +1018,7 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
 
     let methods = server
@@ -1081,6 +1087,7 @@ fn completes_float_intrinsic_methods() {
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
+        sources: SourceDatabase::default(),
     };
 
     let completion = server
@@ -1138,6 +1145,7 @@ text."#;
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
+        sources: SourceDatabase::default(),
     };
     let complete = |line, character| {
         server
@@ -1187,6 +1195,7 @@ text."#;
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 3,
+        sources: SourceDatabase::default(),
     };
     let option_items = expression_server
         .completion(&json!({
@@ -1323,6 +1332,7 @@ iterator."#;
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
+        sources: SourceDatabase::default(),
     };
     let items = server
         .completion(&json!({
@@ -1382,6 +1392,7 @@ iterator."#;
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 2,
+        sources: SourceDatabase::default(),
     };
     let items = server
         .completion(&json!({
@@ -1443,6 +1454,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         host_types: HashSet::new(),
         projects: vec![project],
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
     server.load_workspace().unwrap();
     let uri = path_to_file_uri(&entry);
@@ -1757,6 +1769,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
         host_types: HashSet::new(),
         projects: workspace_projects(&examples).unwrap(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
     server.load_workspace().unwrap();
     let document_count = server.documents.len();
@@ -1886,6 +1899,7 @@ fn loads_binary_host_manifest_from_initialization_options() {
         host_types: HashSet::new(),
         projects: Vec::new(),
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
     let result = server.load_host_manifests(&json!({
         "initializationOptions": {
@@ -1952,6 +1966,7 @@ fn discovers_and_merges_default_manifest_directory() {
         host_types: HashSet::new(),
         projects: vec![Project::from_root(&root).unwrap()],
         next_source_id: 1,
+        sources: SourceDatabase::default(),
     };
     server.load_host_manifests(&json!({})).unwrap();
     assert!(
