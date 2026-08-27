@@ -9,7 +9,7 @@
 ```toml
 [project]
 name = "game"
-script_paths = ["Assets/Res/rils-script"]
+src = "Assets/Res/rils-script"
 
 [dependencies.rils_for_unity]
 path = "Packages/com.rils-lang.rils-for-unity/Runtime/Rils"
@@ -21,7 +21,7 @@ prelude = true
 ```toml
 [project]
 name = "rils_for_unity"
-script_paths = ["src"]
+src = "src"
 
 [lib]
 prelude = "src/prelude.rils"

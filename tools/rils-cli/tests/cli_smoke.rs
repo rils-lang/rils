@@ -84,7 +84,7 @@ fn runs_a_project_directory() {
     fs::create_dir_all(&source_directory).expect("create project source directory");
     fs::write(
         directory.join("rils.toml"),
-        "[project]\nname = \"cli_project\"\nscript_paths = [\"src\"]\n",
+        "[project]\nname = \"cli_project\"\nsrc = \"src\"\n",
     )
     .expect("write project manifest");
     fs::write(

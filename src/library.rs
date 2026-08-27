@@ -314,7 +314,7 @@ mod tests {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(
             root.join("rils.toml"),
-            "[project]\nname = \"sample\"\nscript_paths = [\"src\"]\n\n[lib]\nprelude = \"src/prelude.rils\"\n",
+            "[project]\nname = \"sample\"\nsrc = \"src\"\n\n[lib]\nprelude = \"src/prelude.rils\"\n",
         )
         .unwrap();
         fs::write(
@@ -342,7 +342,7 @@ mod tests {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(
             root.join("rils.toml"),
-            "[project]\nname = \"sample\"\nscript_paths = [\"src\"]\n\n[lib]\nprelude = \"src/prelude.rils\"\n",
+            "[project]\nname = \"sample\"\nsrc = \"src\"\n\n[lib]\nprelude = \"src/prelude.rils\"\n",
         )
         .unwrap();
         fs::write(

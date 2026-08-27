@@ -7,6 +7,7 @@
 
 ### Breaking Changes
 
+- `rils.toml` 的项目源码根配置由 `script_paths` 更名为 `src`；`src` 接受单个字符串或字符串列表，默认值为 `"src"`。
 - `.rilbc` 格式由 v6 提升为 v7：runtime member ID 与 intrinsic ID 合并为统一的 32 位稳定
   `BuiltinId`；runtime member 通过 `CallRuntime` 直接按 ID 分派，不再进入字符串 host import 表，
   数值 intrinsic 迁移到 `core::integer` 和 `core::float` 的保留号段。
@@ -34,6 +35,7 @@
 
 ### Migration
 
+- 将 `[project]` 下的 `script_paths = ["src"]` 改为 `src = "src"`；多个源码根改为 `src = ["path-a", "path-b"]`。
 - 从源码重新生成全部 `.rilbc`、Unity `.bytes` 和嵌入 `.rilslib` 字节码模块；v7 loader 会明确拒绝
   v6 及更早产物。使用内建 ID 的 Rust 宿主代码应从 `RuntimeMemberId` / `IntrinsicId` 迁移到
   `BuiltinId`，将 `runtime_id!` 改为 `builtin_id!`，并将 `BuiltinMember::runtime_id` 改为
@@ -79,7 +81,7 @@
   字节码标准输出使用同一实现。
 - 增加内建 `core::fmt::{Display, Debug, Formatter, FormatError}` 声明和
   `#[derive(Debug)]`；Struct 与 enum 派生会补充泛型 `Debug` 约束并支持漂亮输出。
-- `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `script_paths` 中的
+- `rils run <directory>` 现在接受包含 `rils.toml` 的可执行项目目录，自动定位 `src` 中的
   `main.rils` 并按项目配置加载模块和宿主 Manifest。
 - Host Contract、C ABI 与 `Rils.CSharp` 支持固定布局 inline host value；C# 提供
   `RilsInlineValue`、字段化 `RilsHostValueLayout`、无分配 reader/writer、`NamedValue` 及显式规范打包接口。
@@ -269,7 +271,7 @@
   的转换；`i32 as usize` 对负值运行时报错，`usize as i32` 等潜在有损转换直接拒绝。解释器、
   HIR/MIR、字节码 VM 和 Analyzer 使用同一规则。
 
-- 增加共享 `rils_project` 项目模型和 `rils.toml`：支持项目名、多个 `script_paths` 以及可选
+- 增加共享 `rils_project` 项目模型和 `rils.toml`：支持项目名、多个 `src` 源码根以及可选
   `[host].manifest`，并按脚本相对路径自动建立模块目录。项目入口必须提供零参数 `fn main()`；
   项目模式不再使用外部 `mod name;`，无项目文件时保留旧加载行为。
 - 增加 `crate::`、`self::`、`super::` 路径锚点，并同步解释器、静态分析、字节码符号解析和 VS Code

@@ -24,7 +24,7 @@ The executable is written to `target/debug/rils-analyzer` (or
 - generic type aliases, trait associated types and fully qualified projections
 - UFCS method symbols with go-to-definition for `Trait::method` and `<Type as Trait>::method`
 - tuple fields, fixed arrays, `Vec<T>`, nested place borrowing and concrete index-expression analysis
-- `rils.toml` project discovery and `script_paths` workspace indexing with cross-file locations
+- `rils.toml` project discovery and `src` workspace indexing with cross-file locations
 - module declarations, imports, visibility symbols, and namespace semantic tokens
 - verified `.rilhm` Host Manifest loading through the LSP `initializationOptions.hostManifestPaths`
 - recursive `.rils/manifest` discovery and deterministic multi-fragment contract merging

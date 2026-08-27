@@ -18,7 +18,7 @@ The grammar also recognizes tuple fields, fixed-array/`Vec<T>` types, collection
 field/index place syntax such as `value.0`, `value.field`, and `value[index]`.
 The language server resolves explicit UFCS calls to their trait method declarations and traverses
 both the owner and index expressions for diagnostics, references, hover, and semantic tokens.
-It discovers `rils.toml`, indexes only its configured `script_paths`, and maps files to stable module paths for
+It discovers `rils.toml`, indexes only its configured `src` roots, and maps files to stable module paths for
 cross-file navigation and completion. Without a project file it falls back to workspace-wide `.rils` indexing.
 Project-aware completion and navigation understand wildcard imports and recursively grouped imports, including
 incomplete `use crate::module::{...` trees while they are being typed.

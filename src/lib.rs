@@ -501,7 +501,7 @@ fn load_file_modules(
     });
     if entry.is_none() && !entry_is_prelude {
         return Err(module_message(format!(
-            "entry script `{}` is outside the script_paths configured by `{}`",
+            "entry script `{}` is outside the src roots configured by `{}`",
             entry_path.display(),
             project.manifest_path().unwrap().display()
         )));
