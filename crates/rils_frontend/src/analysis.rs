@@ -2253,5 +2253,5 @@ fn hash_key_type_supported(ty: &Type) -> bool {
 }
 
 #[cfg(test)]
-#[path = "analysis/tests.rs"]
+#[path = "../tests/unit/analysis.rs"]
 mod tests;

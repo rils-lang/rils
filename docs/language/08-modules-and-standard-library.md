@@ -41,7 +41,7 @@ let answer = sum(20, 22);
 ```toml
 [project]
 name = "unity_game"
-script_paths = ["Assets/Res/rils-script"]
+src = "Assets/Res/rils-script"
 
 [host]
 manifest_dirs = [".rils/manifest"] # 可选；未配置时也是默认目录

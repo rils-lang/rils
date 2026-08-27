@@ -3155,7 +3155,7 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
         r#"
             [project]
             name = "unity_game"
-            script_paths = ["Assets/Res/rils-script"]
+            src = "Assets/Res/rils-script"
         "#,
     )
     .unwrap();
@@ -3192,7 +3192,7 @@ fn project_modules_can_use_standard_native_macros() {
     std::fs::create_dir_all(&scripts).unwrap();
     std::fs::write(
         root.join("rils.toml"),
-        "[project]\nname = \"native_macros\"\nscript_paths = [\"scripts\"]\n",
+        "[project]\nname = \"native_macros\"\nsrc = \"scripts\"\n",
     )
     .unwrap();
     std::fs::write(
@@ -3228,7 +3228,7 @@ fn project_entries_support_grouped_and_glob_imports() {
     std::fs::create_dir_all(&scripts).unwrap();
     std::fs::write(
         root.join("rils.toml"),
-        "[project]\nname = \"use_tree\"\nscript_paths = [\"scripts\"]\n",
+        "[project]\nname = \"use_tree\"\nsrc = \"scripts\"\n",
     )
     .unwrap();
     std::fs::write(
@@ -3275,7 +3275,7 @@ fn project_source_ids_survive_bytecode_round_trip_and_locate_runtime_errors() {
     std::fs::create_dir_all(&scripts).unwrap();
     std::fs::write(
         root.join("rils.toml"),
-        "[project]\nname = \"source_ids\"\nscript_paths = [\"scripts\"]\n",
+        "[project]\nname = \"source_ids\"\nsrc = \"scripts\"\n",
     )
     .unwrap();
     let entry = scripts.join("entry.rils");
@@ -3318,7 +3318,7 @@ fn project_compile_and_interpreter_errors_retain_dependency_source() {
     std::fs::create_dir_all(&scripts).unwrap();
     std::fs::write(
         root.join("rils.toml"),
-        "[project]\nname = \"source_diagnostics\"\nscript_paths = [\"scripts\"]\n",
+        "[project]\nname = \"source_diagnostics\"\nsrc = \"scripts\"\n",
     )
     .unwrap();
     let entry = scripts.join("entry.rils");
@@ -3361,7 +3361,7 @@ fn projects_without_main_are_library_projects() {
     std::fs::create_dir_all(root.join("scripts")).unwrap();
     std::fs::write(
         root.join("rils.toml"),
-        "[project]\nname = \"game\"\nscript_paths = [\"scripts\"]\n",
+        "[project]\nname = \"game\"\nsrc = \"scripts\"\n",
     )
     .unwrap();
     let entry = root.join("scripts/no_main.rils");

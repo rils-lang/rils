@@ -1389,4 +1389,5 @@ pub use script_value_api::*;
 pub use string_api::*;
 
 #[cfg(test)]
+#[path = "../tests/unit/capi.rs"]
 mod tests;

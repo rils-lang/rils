@@ -22,7 +22,7 @@ pub(super) fn install(
     std_module: &Rc<ModuleValue>,
     io_module: &Rc<ModuleValue>,
 ) {
-    let error_kind_declaration = rils_builtins::builtin("ErrorKind")
+    let error_kind_declaration = rils_builtins::builtin("std::io::ErrorKind")
         .expect("std::io::ErrorKind is declared in rils_builtins");
     let error_kind = Rc::new(EnumType {
         name: "std::io::ErrorKind".into(),
@@ -41,8 +41,8 @@ pub(super) fn install(
         implemented_traits: RefCell::new(HashSet::new()),
         associated_types: RefCell::new(HashMap::new()),
     });
-    let error_declaration =
-        rils_builtins::builtin("Error").expect("std::io::Error is declared in rils_builtins");
+    let error_declaration = rils_builtins::builtin("std::io::Error")
+        .expect("std::io::Error is declared in rils_builtins");
     let error = Rc::new(StructType {
         name: "std::io::Error".into(),
         generic_parameters: Vec::new(),

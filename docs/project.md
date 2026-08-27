@@ -9,7 +9,7 @@ Rils 项目通过项目根目录的 `rils.toml` 描述脚本根目录、项目�
 ```toml
 [project]
 name = "game_scripts"
-script_paths = ["Assets/Res/rils-script"]
+src = "Assets/Res/rils-script"
 
 [dependencies.rils_for_unity]
 path = "Packages/com.rils-lang.rils-for-unity/Runtime/Rils"
@@ -19,7 +19,7 @@ prelude = true
 manifest_dirs = [".rils/manifest"]
 ```
 
-`name` 是项目对外的逻辑名称；`script_paths` 可以指定一个或多个脚本根目录。脚本根目录下
+`name` 是项目对外的逻辑名称；`src` 可以使用字符串指定一个脚本根目录，也可以使用字符串列表指定多个脚本根目录。脚本根目录下
 的文件按相对路径映射为模块：`gameplay/player.rils` 对应 `gameplay::player`，目录模块使用
 `mod.rils`。项目中的脚本不需要通过外部 `mod name;` 互相挂接。
 

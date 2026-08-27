@@ -53,7 +53,7 @@ impl 方法会登记为带 receiver 元数据的模块函数。关联函数、st
 模块限定的 struct/enum 构造和 `use path [as alias]` 已进入字节码后端。模块函数解析未限定名称时
 优先查找自身命名空间，因此不同模块的同名私有辅助函数不会错误互链。模块声明和导入本身不生成
 运行时指令。模块内 impl、关联函数、成员调用和模块内 UFCS 使用同一限定符号表。项目模式下
-`compile_file` 按 `rils.toml` 的 `script_paths` 建立完整模块目录，归一化 `crate/self/super` 路径，
+`compile_file` 按 `rils.toml` 的 `src` 建立完整模块目录，归一化 `crate/self/super` 路径，
 并调用所选文件的零参数 `fn main()`；无项目文件时保留 `name.rils` / `name/mod.rils` 规则。
 
 函数值由函数表索引和捕获槽位组成。HIR 提升嵌套函数并形成显式捕获列表，MIR/字节码分别使用

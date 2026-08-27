@@ -117,7 +117,7 @@ fn project_trait_metadata_preserves_each_implementation_source() {
     std::fs::create_dir_all(&scripts).unwrap();
     std::fs::write(
         directory.join("rils.toml"),
-        "[project]\nname = \"trait_sources\"\nscript_paths = [\"scripts\"]\n",
+        "[project]\nname = \"trait_sources\"\nsrc = \"scripts\"\n",
     )
     .unwrap();
     let behaviour_source = |name: &str| {
