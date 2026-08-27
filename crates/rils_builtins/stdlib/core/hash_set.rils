@@ -3,7 +3,7 @@ pub struct HashSet<T>;
 
 impl<T> HashSet<T> {
     /// Creates an empty HashSet.
-    #[metadata]
+    #[import(core::hash_set::new)]
     fn new() -> Self {}
 
     /// Returns the element count.

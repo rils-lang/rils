@@ -45,6 +45,8 @@ struct BuiltinMember {
     value_type: Option<TypePattern>,
     receiver: Option<ReceiverMode>,
     builtin_id: Option<BuiltinId>,
+    runtime_import: Option<&'static str>,
+    required: bool,
     type_parameters: &'static [&'static str],
     documentation: &'static str,
 }
@@ -80,6 +82,12 @@ fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
     let [empty, value, owned, shared, mutable] = FIXTURE_BUILTIN.members else {
         panic!("expected all fixture members");
     };
+    assert!(
+        FIXTURE_BUILTIN
+            .members
+            .iter()
+            .all(|member| member.runtime_import.is_none())
+    );
 
     assert_eq!(empty.kind, BuiltinMemberKind::Variant);
     assert_eq!(empty.value_type, Some(TypePattern::Unit));
@@ -87,6 +95,7 @@ fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
     assert_eq!(value.value_type, Some(TypePattern::Generic("T")));
 
     assert_eq!(owned.receiver, Some(ReceiverMode::Owned));
+    assert!(owned.required);
     assert_eq!(owned.builtin_id, Some(BuiltinId::FixtureOwned));
     assert_eq!(
         owned.signature.expect("owned signature").result,

@@ -1,0 +1,9 @@
+/// An error returned by a standard IO or filesystem operation.
+pub struct Error {
+    /// The portable category of the error.
+    kind: std::io::ErrorKind,
+    /// A human-readable description.
+    message: string,
+    /// The related filesystem path, when one is available.
+    path: Option<string>,
+}

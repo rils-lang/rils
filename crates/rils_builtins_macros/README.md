@@ -9,6 +9,11 @@ and lookup macro. It does not define built-in members or own their stable IDs.
 every configured ID has exactly one method declaration. Standard-library files
 may mark metadata-only associated functions with `#[metadata]` and reuse a
 cross-module ID with an attribute such as `#[runtime(core::sequence::len)]`.
+Associated functions implemented through an internal runtime import declare that
+binding beside the signature with `#[import(core::vec::new)]`. Trait methods
+supplied by compiler lowering use `#[provided]`; every other trait method is a
+required implementation. Struct fields, enum variants, and associated types are
+also emitted into the shared catalog rather than reconstructed by consumers.
 
 `builtin_numeric_file!` verifies that `.rils` declarations cover every concrete
 integer primitive (`i8` through `usize`) or both floating-point primitives, and

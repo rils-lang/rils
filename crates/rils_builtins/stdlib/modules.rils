@@ -4,12 +4,20 @@ pub mod core {
         pub use Option;
         pub use Some;
         pub use None;
+        pub use is_some;
+        pub use is_none;
+        pub use unwrap;
+        pub use unwrap_or;
     }
 
     pub mod result {
         pub use Result;
         pub use Ok;
         pub use Err;
+        pub use is_ok;
+        pub use is_err;
+        pub use unwrap;
+        pub use unwrap_or;
     }
 
     pub mod iter {
@@ -52,9 +60,25 @@ pub mod std {
         pub use HashSet;
     }
 
-    pub mod io;
+    pub mod io {
+        pub use Error;
+        pub use ErrorKind;
+    }
     pub mod fs;
 }
 
 /// Names imported into every script.
-pub mod prelude;
+pub mod prelude {
+    pub use Option;
+    pub use Result;
+    pub use Vec;
+    pub use HashMap;
+    pub use HashSet;
+    pub use Copy;
+    pub use Clone;
+    pub use Default;
+    pub use Eq;
+    pub use Hash;
+    pub use Iterator;
+    pub use IntoIterator;
+}

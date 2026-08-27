@@ -1,11 +1,17 @@
 /// Constructs a present Option value.
+#[metadata]
 pub fn Some<T>(value: T) -> Option<T> {}
 
 /// Constructs a successful Result value.
+#[metadata]
 pub fn Ok<T, E>(value: T) -> Result<T, E> {}
 
 /// Constructs an error Result value.
+#[metadata]
 pub fn Err<T, E>(error: E) -> Result<T, E> {}
+
+/// Returns the runtime type name of a value.
+pub fn type_of(value: _) -> string {}
 
 /// Tests whether an Option contains a value.
 pub fn is_some<T>(value: Option<T>) -> bool {}

@@ -3,7 +3,7 @@ pub struct HashMap<K, V>;
 
 impl<K, V> HashMap<K, V> {
     /// Creates an empty HashMap.
-    #[metadata]
+    #[import(core::hash_map::new)]
     fn new() -> Self {}
 
     /// Returns the entry count.

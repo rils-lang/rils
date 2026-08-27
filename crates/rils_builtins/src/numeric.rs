@@ -41,6 +41,12 @@ pub enum TypePattern {
         mutable: bool,
         inner: &'static TypePattern,
     },
+    Associated {
+        base: &'static TypePattern,
+        trait_name: Option<&'static str>,
+        name: &'static str,
+        arguments: &'static [TypePattern],
+    },
 }
 
 #[derive(Clone, Copy, Debug)]

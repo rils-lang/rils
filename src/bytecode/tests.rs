@@ -737,6 +737,30 @@ fn runtime_members_use_stable_ids_without_host_imports() {
 }
 
 #[test]
+fn generated_runtime_imports_are_registered_without_a_second_catalog() {
+    let registered = super::core_imports::core_imports()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<std::collections::BTreeSet<_>>();
+    for declaration in rils_builtins::BUILTINS {
+        if declaration.kind == rils_builtins::BuiltinKind::Function
+            && declaration.backend == rils_builtins::BuiltinBackend::Runtime
+        {
+            assert!(
+                registered.contains(declaration.path),
+                "{}",
+                declaration.path
+            );
+        }
+        for member in declaration.members {
+            if let Some(import) = member.runtime_import {
+                assert!(registered.contains(import), "{import}");
+            }
+        }
+    }
+}
+
+#[test]
 fn compiles_and_executes_standard_native_macros() {
     let module = compile(
         r#"

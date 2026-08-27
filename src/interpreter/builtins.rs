@@ -303,7 +303,28 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         None,
     );
 
-    for function in builtins {
+    for mut function in builtins {
+        let declaration_path = match function.binding_name {
+            "#rils_native_print" => Some("std::io::print"),
+            "#rils_native_println" => Some("std::io::println"),
+            "#rils_native_assert" => None,
+            _ => Some(function.name),
+        };
+        if let Some(signature) = declaration_path
+            .and_then(rils_frontend::standard_library::erased_standard_function_signature)
+        {
+            match &signature.parameters {
+                Some(parameters) => {
+                    function.min_arity = parameters.len();
+                    function.max_arity = parameters.len();
+                }
+                None => {
+                    function.min_arity = 0;
+                    function.max_arity = usize::MAX;
+                }
+            }
+            function.signature = Some(signature);
+        }
         environment.borrow_mut().define(
             function.binding_name,
             Value::NativeFunction(function),
@@ -397,139 +418,53 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
 }
 
 fn install_builtin_modules(environment: &EnvironmentRef) {
-    let module = |name: &str, values: Vec<(&str, Value)>| {
-        let members = Environment::module_child(environment.clone());
-        let mut public = std::collections::HashSet::new();
-        for (member, value) in values {
-            public.insert(member.to_string());
-            members.borrow_mut().define(member, value, false, None);
-        }
-        Value::Module(Rc::new(ModuleValue {
-            name: name.into(),
-            members,
-            public: RefCell::new(public),
-        }))
-    };
-
-    let get = |name: &str| {
-        environment
-            .borrow()
-            .get(name)
-            .expect("builtin module member exists")
-    };
-    let option = module(
-        "option",
-        vec![
-            ("Some", get("Some")),
-            ("None", get("None")),
-            ("is_some", get("is_some")),
-            ("is_none", get("is_none")),
-            ("unwrap", get("unwrap")),
-            ("unwrap_or", get("unwrap_or")),
-        ],
-    );
-    let result = module(
-        "result",
-        vec![
-            ("Ok", get("Ok")),
-            ("Err", get("Err")),
-            ("is_ok", get("is_ok")),
-            ("is_err", get("is_err")),
-            ("unwrap", get("unwrap")),
-            ("unwrap_or", get("unwrap_or")),
-        ],
-    );
-    let iter = module(
-        "iter",
-        vec![
-            ("Iterator", get("Iterator")),
-            ("IntoIterator", get("IntoIterator")),
-            ("Range", get("Range")),
-        ],
-    );
-    let clone = module(
-        "clone",
-        vec![
-            ("Clone", get("Clone")),
-            ("Copy", get("Copy")),
-            ("clone", get("clone")),
-        ],
-    );
-    let default = module("default", vec![("Default", get("Default"))]);
-    let fmt = module(
-        "fmt",
-        vec![
-            ("Display", get("Display")),
-            ("Debug", get("Debug")),
-            ("Formatter", get("Formatter")),
-            ("FormatError", get("FormatError")),
-        ],
-    );
-    let hash = module("hash", vec![("Hash", get("Hash"))]);
-    let cmp = module("cmp", vec![("Eq", get("Eq"))]);
-    let core = module(
-        "core",
-        vec![
-            ("option", option),
-            ("result", result),
-            ("iter", iter),
-            ("clone", clone),
-            ("default", default),
-            ("fmt", fmt),
-            ("hash", hash),
-            ("cmp", cmp),
-        ],
-    );
-
-    let collections = module(
-        "collections",
-        vec![
-            ("Vec", get("Vec")),
-            ("HashMap", get("HashMap")),
-            ("HashSet", get("HashSet")),
-        ],
-    );
-    let io = module(
-        "io",
-        vec![
-            ("print", get("#rils_native_print")),
-            ("println", get("#rils_native_println")),
-        ],
-    );
-    let io_definition = match &io {
-        Value::Module(module) => module.clone(),
-        _ => unreachable!("io is a module"),
-    };
-    let std = module("std", vec![("collections", collections), ("io", io)]);
-    let std_definition = match &std {
-        Value::Module(module) => module.clone(),
-        _ => unreachable!("std is a module"),
+    let core = builtin_module(environment, "core");
+    let std_definition = builtin_module(environment, "std");
+    let io_definition = match std_definition.members.borrow().get("io") {
+        Some(Value::Module(module)) => module,
+        _ => unreachable!("generated std module contains io"),
     };
     crate::standard_library::install(environment, &std_definition, &io_definition);
-    let prelude = module(
-        "prelude",
-        vec![
-            ("Some", get("Some")),
-            ("None", get("None")),
-            ("Ok", get("Ok")),
-            ("Err", get("Err")),
-            ("Vec", get("Vec")),
-            ("HashMap", get("HashMap")),
-            ("HashSet", get("HashSet")),
-            ("Copy", get("Copy")),
-            ("Clone", get("Clone")),
-            ("Default", get("Default")),
-            ("Eq", get("Eq")),
-            ("Hash", get("Hash")),
-            ("Iterator", get("Iterator")),
-            ("IntoIterator", get("IntoIterator")),
-        ],
-    );
-    environment.borrow_mut().define("core", core, false, None);
-    environment.borrow_mut().define("std", std, false, None);
+    let prelude = builtin_module(environment, "prelude");
     environment
         .borrow_mut()
-        .define("prelude", prelude, false, None);
+        .define("core", Value::Module(core), false, None);
+    environment
+        .borrow_mut()
+        .define("std", Value::Module(std_definition), false, None);
+    environment
+        .borrow_mut()
+        .define("prelude", Value::Module(prelude), false, None);
+}
+
+fn builtin_module(environment: &EnvironmentRef, path: &str) -> Rc<ModuleValue> {
+    let members = Environment::module_child(environment.clone());
+    let mut public = HashSet::new();
+    for &member in rils_builtins::builtin_module_members(path) {
+        let child_path = format!("{path}::{member}");
+        let value = if rils_builtins::BUILTIN_MODULES
+            .iter()
+            .any(|module| module.path == child_path)
+        {
+            Some(Value::Module(builtin_module(environment, &child_path)))
+        } else {
+            let binding = match (path, member) {
+                ("std::io", "print") => "#rils_native_print",
+                ("std::io", "println") => "#rils_native_println",
+                _ => member,
+            };
+            environment.borrow().get(binding)
+        };
+        if let Some(value) = value {
+            public.insert(member.to_owned());
+            members.borrow_mut().define(member, value, false, None);
+        }
+    }
+    Rc::new(ModuleValue {
+        name: path.rsplit("::").next().unwrap_or(path).into(),
+        members,
+        public: RefCell::new(public),
+    })
 }
 
 fn install_format_types(environment: &EnvironmentRef) {
@@ -563,66 +498,47 @@ fn install_format_types(environment: &EnvironmentRef) {
 fn install_builtin_traits(environment: &EnvironmentRef) {
     let span = Span::default();
     let self_type = Type::named("Self");
-    let shared_self = Type::Reference {
-        mutable: false,
-        inner: Box::new(self_type.clone()),
-    };
-    let mutable_self = Type::Reference {
-        mutable: true,
-        inner: Box::new(self_type.clone()),
-    };
-    let formatter = Type::named("Formatter");
-    let mutable_formatter = Type::Reference {
-        mutable: true,
-        inner: Box::new(formatter),
-    };
-    let format_result = Type::Result(Box::new(Type::Unit), Box::new(Type::named("FormatError")));
-    let Type::Function {
-        parameters: Some(default_parameters),
-        return_type: default_return,
-    } = rils_frontend::standard_library::builtin_trait_member_type(
-        "Default", &self_type, "default",
-    )
-    .expect("Default::default is declared in rils_builtins")
-    else {
-        unreachable!("Default::default must have a fixed function signature");
-    };
-    let traits = [
-        TraitType {
-            name: "Copy".into(),
-            bounds: Vec::new(),
-            associated_types: Vec::new(),
-            methods: Vec::new(),
-        },
-        TraitType {
-            name: "Clone".into(),
-            bounds: Vec::new(),
-            associated_types: Vec::new(),
-            methods: vec![TraitMethod {
-                attributes: Vec::new(),
-                name: "clone".into(),
+    for declaration in rils_builtins::BUILTINS
+        .iter()
+        .filter(|declaration| declaration.kind == rils_builtins::BuiltinKind::Trait)
+    {
+        let associated_types = declaration
+            .members
+            .iter()
+            .filter(|member| member.kind == rils_builtins::BuiltinMemberKind::AssociatedType)
+            .map(|member| AssociatedType {
+                name: member.name.into(),
                 name_span: span,
                 generic_parameters: Vec::new(),
-                parameters: vec![Parameter {
-                    name: "self".into(),
-                    mutable: false,
-                    type_annotation: Some(shared_self),
-                    span,
-                }],
-                return_type: Some(self_type.clone()),
+                value: None,
                 span,
-            }],
-        },
-        TraitType {
-            name: "Default".into(),
-            bounds: Vec::new(),
-            associated_types: Vec::new(),
-            methods: vec![TraitMethod {
-                attributes: Vec::new(),
-                name: "default".into(),
-                name_span: span,
-                generic_parameters: Vec::new(),
-                parameters: default_parameters
+            })
+            .collect();
+        let methods = declaration
+            .members
+            .iter()
+            .filter(|member| {
+                member.required
+                    && matches!(
+                        member.kind,
+                        rils_builtins::BuiltinMemberKind::Method
+                            | rils_builtins::BuiltinMemberKind::AssociatedFunction
+                    )
+            })
+            .map(|member| {
+                let Type::Function {
+                    parameters: Some(parameters),
+                    return_type,
+                } = rils_frontend::standard_library::builtin_trait_member_type(
+                    declaration.path,
+                    &self_type,
+                    member.name,
+                )
+                .expect("built-in trait methods have fixed signatures")
+                else {
+                    unreachable!("built-in trait methods have fixed signatures");
+                };
+                let mut parameters = parameters
                     .into_iter()
                     .enumerate()
                     .map(|(index, type_annotation)| Parameter {
@@ -631,146 +547,54 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                         type_annotation: Some(type_annotation),
                         span,
                     })
-                    .collect(),
-                return_type: Some(*default_return),
-                span,
-            }],
-        },
-        TraitType {
-            name: "Display".into(),
-            bounds: Vec::new(),
-            associated_types: Vec::new(),
-            methods: vec![TraitMethod {
-                attributes: Vec::new(),
-                name: "fmt".into(),
-                name_span: span,
-                generic_parameters: Vec::new(),
-                parameters: vec![
-                    Parameter {
-                        name: "self".into(),
-                        mutable: false,
-                        type_annotation: Some(Type::Reference {
+                    .collect::<Vec<_>>();
+                if let Some(receiver) = member.receiver {
+                    let type_annotation = match receiver {
+                        rils_builtins::ReceiverMode::Owned => self_type.clone(),
+                        rils_builtins::ReceiverMode::Shared => Type::Reference {
                             mutable: false,
                             inner: Box::new(self_type.clone()),
-                        }),
-                        span,
-                    },
-                    Parameter {
-                        name: "formatter".into(),
-                        mutable: false,
-                        type_annotation: Some(mutable_formatter.clone()),
-                        span,
-                    },
-                ],
-                return_type: Some(format_result.clone()),
-                span,
-            }],
-        },
-        TraitType {
-            name: "Debug".into(),
-            bounds: Vec::new(),
-            associated_types: Vec::new(),
-            methods: vec![TraitMethod {
-                attributes: Vec::new(),
-                name: "fmt".into(),
-                name_span: span,
-                generic_parameters: Vec::new(),
-                parameters: vec![
-                    Parameter {
-                        name: "self".into(),
-                        mutable: false,
-                        type_annotation: Some(Type::Reference {
-                            mutable: false,
+                        },
+                        rils_builtins::ReceiverMode::Mutable => Type::Reference {
+                            mutable: true,
                             inner: Box::new(self_type.clone()),
-                        }),
-                        span,
-                    },
-                    Parameter {
-                        name: "formatter".into(),
-                        mutable: false,
-                        type_annotation: Some(mutable_formatter),
-                        span,
-                    },
-                ],
-                return_type: Some(format_result),
-                span,
-            }],
-        },
-        TraitType {
-            name: "Eq".into(),
-            bounds: Vec::new(),
-            associated_types: Vec::new(),
-            methods: Vec::new(),
-        },
-        TraitType {
-            name: "Hash".into(),
-            bounds: Vec::new(),
-            associated_types: Vec::new(),
-            methods: Vec::new(),
-        },
-        TraitType {
-            name: "Iterator".into(),
-            bounds: Vec::new(),
-            associated_types: vec![AssociatedType {
-                name: "Item".into(),
-                name_span: span,
-                generic_parameters: Vec::new(),
-                value: None,
-                span,
-            }],
-            methods: vec![TraitMethod {
-                attributes: Vec::new(),
-                name: "next".into(),
-                name_span: span,
-                generic_parameters: Vec::new(),
-                parameters: vec![Parameter {
-                    name: "self".into(),
-                    mutable: false,
-                    type_annotation: Some(mutable_self),
+                        },
+                    };
+                    parameters.insert(
+                        0,
+                        Parameter {
+                            name: "self".into(),
+                            mutable: false,
+                            type_annotation: Some(type_annotation),
+                            span,
+                        },
+                    );
+                }
+                TraitMethod {
+                    attributes: Vec::new(),
+                    name: member.name.into(),
+                    name_span: span,
+                    generic_parameters: member
+                        .type_parameters
+                        .iter()
+                        .map(|name| GenericParameter {
+                            name: (*name).into(),
+                            bounds: Vec::new(),
+                            span,
+                        })
+                        .collect(),
+                    parameters,
+                    return_type: Some(*return_type),
                     span,
-                }],
-                return_type: Some(Type::Option(Box::new(Type::Associated {
-                    base: Box::new(self_type.clone()),
-                    trait_name: Some("Iterator".into()),
-                    name: "Item".into(),
-                    arguments: Vec::new(),
-                }))),
-                span,
-            }],
-        },
-        TraitType {
-            name: "IntoIterator".into(),
+                }
+            })
+            .collect();
+        let definition = TraitType {
+            name: declaration.path.into(),
             bounds: Vec::new(),
-            associated_types: vec![AssociatedType {
-                name: "IntoIter".into(),
-                name_span: span,
-                generic_parameters: Vec::new(),
-                value: None,
-                span,
-            }],
-            methods: vec![TraitMethod {
-                attributes: Vec::new(),
-                name: "into_iter".into(),
-                name_span: span,
-                generic_parameters: Vec::new(),
-                parameters: vec![Parameter {
-                    name: "self".into(),
-                    mutable: false,
-                    type_annotation: Some(self_type.clone()),
-                    span,
-                }],
-                return_type: Some(Type::Associated {
-                    base: Box::new(self_type),
-                    trait_name: Some("IntoIterator".into()),
-                    name: "IntoIter".into(),
-                    arguments: Vec::new(),
-                }),
-                span,
-            }],
-        },
-    ];
-
-    for definition in traits {
+            associated_types,
+            methods,
+        };
         let name = definition.name.clone();
         environment
             .borrow_mut()

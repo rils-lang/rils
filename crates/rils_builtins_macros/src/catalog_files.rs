@@ -150,21 +150,22 @@ fn declaration_tokens(
             span,
             ..
         } => {
-            let variadic = match attributes.as_slice() {
-                [] => false,
-                [attribute]
-                    if attribute.path.as_slice() == ["variadic"]
-                        && attribute.arguments.is_empty() =>
+            let mut variadic = false;
+            let mut metadata = false;
+            for attribute in attributes {
+                if attribute.path.as_slice() == ["variadic"] && attribute.arguments.is_empty() {
+                    variadic = true;
+                } else if attribute.path.as_slice() == ["metadata"]
+                    && attribute.arguments.is_empty()
                 {
-                    true
-                }
-                _ => {
+                    metadata = true;
+                } else {
                     return Err(Error::new(
                         proc_macro2::Span::call_site(),
                         format!("unsupported built-in function attributes on `{name}`"),
                     ));
                 }
-            };
+            }
             if variadic && !parameters.is_empty() {
                 return Err(Error::new(
                     proc_macro2::Span::call_site(),
@@ -207,6 +208,11 @@ fn declaration_tokens(
                 |attribute| attribute.span.merge(*span),
             );
             let documentation = documentation_literal(source, documentation_start);
+            let backend = if metadata {
+                quote!(BuiltinBackend::Metadata)
+            } else {
+                backend.clone()
+            };
             Ok(quote! {
                 BuiltinDeclaration {
                     path: #path,

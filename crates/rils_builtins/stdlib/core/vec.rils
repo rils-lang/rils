@@ -3,11 +3,11 @@ pub struct Vec<T>;
 
 impl<T> Vec<T> {
     /// Creates an empty Vec.
-    #[metadata]
+    #[import(core::vec::new)]
     fn new() -> Self {}
 
     /// Creates a Vec from an owned array.
-    #[metadata]
+    #[import(core::vec::from)]
     fn from(values: _) -> Self {}
 
     /// Returns the element count.

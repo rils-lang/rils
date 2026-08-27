@@ -176,6 +176,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             Stmt::Struct {
                 name,
                 generic_parameters,
+                fields,
                 ..
             } => {
                 if declaration.is_some() {
@@ -193,6 +194,12 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
                     documentation(source.as_str(), statement_span(statement)),
                     quote!(BuiltinKind::Struct),
                 ));
+                members.extend(
+                    fields
+                        .iter()
+                        .map(|field| field_tokens(field, &source))
+                        .collect::<syn::Result<Vec<_>>>()?,
+                );
             }
             Stmt::Trait {
                 name,
@@ -374,7 +381,11 @@ fn member_builtin_path(
     default_path: &str,
 ) -> syn::Result<Option<String>> {
     if let Some(attribute) = attributes.iter().find(|attribute| {
-        attribute.path.len() != 1 || !matches!(attribute.path[0].as_str(), "metadata" | "runtime")
+        attribute.path.len() != 1
+            || !matches!(
+                attribute.path[0].as_str(),
+                "metadata" | "runtime" | "import" | "provided"
+            )
     }) {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
@@ -387,11 +398,16 @@ fn member_builtin_path(
     }
     let metadata = find_attribute(attributes, "metadata");
     let runtime = find_attribute(attributes, "runtime");
-    if metadata.is_some() && runtime.is_some() {
+    let import = find_attribute(attributes, "import");
+    if usize::from(metadata.is_some())
+        + usize::from(runtime.is_some())
+        + usize::from(import.is_some())
+        > 1
+    {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
             format!(
-                "built-in member `{}` cannot be both metadata and runtime-backed",
+                "built-in member `{}` cannot combine metadata, runtime, and import backends",
                 name
             ),
         ));
@@ -414,7 +430,27 @@ fn member_builtin_path(
         };
         return Ok(Some(path.join("::")));
     }
+    if import.is_some() {
+        return Ok(None);
+    }
     Ok(Some(default_path.to_owned()))
+}
+
+fn member_runtime_import(
+    name: &str,
+    attributes: &[Attribute],
+) -> syn::Result<proc_macro2::TokenStream> {
+    let Some(attribute) = find_attribute(attributes, "import") else {
+        return Ok(quote!(None));
+    };
+    let [path] = attribute.arguments.as_slice() else {
+        return Err(Error::new(
+            proc_macro2::Span::call_site(),
+            format!("`import` on `{name}` requires exactly one path"),
+        ));
+    };
+    let path = LitStr::new(&path.join("::"), proc_macro2::Span::call_site());
+    Ok(quote!(Some(#path)))
 }
 
 fn validate_member_path(
@@ -486,6 +522,34 @@ fn variant_tokens(variant: &EnumVariant, source: &str) -> syn::Result<proc_macro
             value_type: Some(#value_type),
             receiver: None,
             builtin_id: None,
+            runtime_import: None,
+            required: false,
+            type_parameters: &[],
+            documentation: #documentation,
+        }
+    })
+}
+
+fn field_tokens(
+    field: &rils_syntax::ast::NamedField,
+    source: &str,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let name = LitStr::new(&field.name, proc_macro2::Span::call_site());
+    let value_type = type_tokens(&field.type_annotation)?;
+    let documentation = LitStr::new(
+        &documentation(source, field.span),
+        proc_macro2::Span::call_site(),
+    );
+    Ok(quote! {
+        BuiltinMember {
+            name: #name,
+            kind: BuiltinMemberKind::Field,
+            signature: None,
+            value_type: Some(#value_type),
+            receiver: None,
+            builtin_id: None,
+            runtime_import: None,
+            required: false,
             type_parameters: &[],
             documentation: #documentation,
         }
@@ -558,6 +622,10 @@ fn function_member_tokens(
             quote!(Some(builtin_id!(#path)))
         })
         .unwrap_or_else(|| quote!(None));
+    let runtime_import = member_runtime_import(method_name, attributes)?;
+    let required = !attributes
+        .iter()
+        .any(|attribute| attribute.path.as_slice() == ["provided"]);
     let (kind, receiver) = match receiver {
         Some(receiver) => (quote!(BuiltinMemberKind::Method), quote!(Some(#receiver))),
         None => (quote!(BuiltinMemberKind::AssociatedFunction), quote!(None)),
@@ -581,6 +649,8 @@ fn function_member_tokens(
             value_type: None,
             receiver: #receiver,
             builtin_id: #builtin_id,
+            runtime_import: #runtime_import,
+            required: #required,
             type_parameters: &[#(#type_parameters),*],
             documentation: #documentation,
         }
@@ -613,6 +683,8 @@ fn associated_type_tokens(
             value_type: Some(TypePattern::Unknown),
             receiver: None,
             builtin_id: None,
+            runtime_import: None,
+            required: false,
             type_parameters: &[],
             documentation: #documentation,
         }
@@ -716,6 +788,32 @@ pub(crate) fn type_tokens(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
         Type::Reference { mutable, inner } => {
             let inner = type_tokens(inner)?;
             quote!(TypePattern::Reference { mutable: #mutable, inner: &#inner })
+        }
+        Type::Associated {
+            base,
+            trait_name,
+            name,
+            arguments,
+        } => {
+            let base = type_tokens(base)?;
+            let trait_name = trait_name
+                .as_ref()
+                .map(|name| {
+                    let name = LitStr::new(name, proc_macro2::Span::call_site());
+                    quote!(Some(#name))
+                })
+                .unwrap_or_else(|| quote!(None));
+            let name = LitStr::new(name, proc_macro2::Span::call_site());
+            let arguments = arguments
+                .iter()
+                .map(type_tokens)
+                .collect::<syn::Result<Vec<_>>>()?;
+            quote!(TypePattern::Associated {
+                base: &#base,
+                trait_name: #trait_name,
+                name: #name,
+                arguments: &[#(#arguments),*],
+            })
         }
         Type::Unknown => quote!(TypePattern::Unknown),
         unsupported => {

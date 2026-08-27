@@ -191,7 +191,12 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             });
             let count = catalog_declaration_count(&file.program.statements);
             declaration_items.extend((0..count).map(|item| quote!(#name[#item])));
-            collect_catalog_exports(&file.program.statements, &prefix, &mut module_members);
+            let export_module = if stem == "prelude" {
+                &source_module
+            } else {
+                &prefix
+            };
+            collect_catalog_exports(&file.program.statements, export_module, &mut module_members);
         } else {
             source_entries.push(source_entry(
                 &file.relative,
@@ -256,11 +261,16 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
 
 fn source_module(path: &Path) -> String {
     let value = path.to_string_lossy().replace('\\', "/");
-    value
+    let relative = value
         .strip_prefix("stdlib/")
         .unwrap_or(&value)
-        .trim_end_matches(".rils")
-        .replace('/', "::")
+        .trim_end_matches(".rils");
+    let segments = relative.split('/').collect::<Vec<_>>();
+    if segments.len() > 2 {
+        segments[..segments.len() - 1].join("::")
+    } else {
+        relative.replace('/', "::")
+    }
 }
 
 fn source_entry(
@@ -518,12 +528,17 @@ fn collect_catalog_exports(
 }
 
 fn collect_type_exports(file: &SourceFile, modules: &mut BTreeMap<String, BTreeSet<String>>) {
-    let module = file
+    let relative = file
         .relative
         .strip_prefix("stdlib/")
         .unwrap_or(&file.relative)
-        .trim_end_matches(".rils")
-        .replace('/', "::");
+        .trim_end_matches(".rils");
+    let segments = relative.split('/').collect::<Vec<_>>();
+    let module = if segments.len() > 2 {
+        segments[..segments.len() - 1].join("::")
+    } else {
+        relative.replace('/', "::")
+    };
     for statement in &file.program.statements {
         match public_inner(statement) {
             Stmt::Enum { name, variants, .. } => {

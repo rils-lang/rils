@@ -102,6 +102,9 @@ pub struct BuiltinMember {
     pub value_type: Option<TypePattern>,
     pub receiver: Option<ReceiverMode>,
     pub builtin_id: Option<BuiltinId>,
+    pub runtime_import: Option<&'static str>,
+    /// Whether a trait member must be supplied by user implementations.
+    pub required: bool,
     pub type_parameters: &'static [&'static str],
     pub documentation: &'static str,
 }

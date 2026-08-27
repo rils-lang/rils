@@ -541,15 +541,11 @@ fn increment(local: LocalId, span: Span) -> HirStatement {
 }
 
 fn vec_new(span: Span) -> HirExpression {
+    let (name, signature) = collection_import_signature("Vec::new")
+        .expect("Vec::new has a generated runtime import binding");
     HirExpression::CallImport {
-        name: "core::vec::new".into(),
-        signature: crate::types::FunctionSignature::fixed(
-            Vec::new(),
-            Type::Named {
-                name: "Vec".into(),
-                arguments: vec![Type::Unknown],
-            },
-        ),
+        name: name.into(),
+        signature,
         capability: "core".into(),
         arguments: Vec::new(),
         span,

@@ -4,41 +4,59 @@ pub trait Iterator {
     type Item;
 
     /// Advances the iterator.
-    fn next(&mut self) -> Option<T>;
+    fn next(&mut self) -> Option<<Self as Iterator>::Item>;
     /// Consumes the iterator and returns the remaining item count.
+    #[provided]
     fn count(self) -> usize;
     /// Consumes the iterator and returns its final item.
+    #[provided]
     fn last(self) -> Option<T>;
     /// Advances to and returns the nth remaining item.
+    #[provided]
     fn nth(&mut self, index: usize) -> Option<T>;
     /// Consumes the iterator and collects its items into a Vec.
+    #[provided]
     fn collect_vec(self) -> Vec<T>;
     /// Returns an iterator over at most the first n remaining items.
+    #[provided]
     fn take(self, count: usize) -> Self;
     /// Returns an iterator after discarding the first n remaining items.
+    #[provided]
     fn skip(self, count: usize) -> Self;
     /// Reverses the remaining items of this double-ended built-in iterator.
+    #[provided]
     fn rev(self) -> Self;
     /// Transforms every remaining item with the supplied function.
+    #[provided]
     fn map<U>(self, transform: fn(T) -> U) -> Iterator<U>;
     /// Keeps items for which the predicate returns true.
+    #[provided]
     fn filter(self, predicate: fn(&T) -> bool) -> Iterator<T>;
     /// Transforms and keeps items for which the function returns Some.
+    #[provided]
     fn filter_map<U>(self, transform: fn(T) -> Option<U>) -> Iterator<U>;
     /// Accumulates all remaining items from an initial value.
+    #[provided]
     fn fold<U>(self, initial: U, accumulate: fn(U, T) -> U) -> U;
     /// Calls a function for every remaining item.
+    #[provided]
     fn for_each(self, operation: fn(T) -> ());
     /// Returns true when any item satisfies the predicate.
+    #[provided]
     fn any(self, predicate: fn(T) -> bool) -> bool;
     /// Returns true when every item satisfies the predicate.
+    #[provided]
     fn all(self, predicate: fn(T) -> bool) -> bool;
     /// Returns the first item satisfying the predicate.
+    #[provided]
     fn find(self, predicate: fn(&T) -> bool) -> Option<T>;
     /// Returns the index of the first item satisfying the predicate.
+    #[provided]
     fn position(self, predicate: fn(T) -> bool) -> Option<usize>;
     /// Yields each remaining item together with its zero-based index.
+    #[provided]
     fn enumerate(self) -> Iterator<(usize, T)>;
     /// Returns this iterator unchanged.
+    #[provided]
     fn into_iter(self) -> Self;
 }

@@ -1,7 +1,8 @@
 use rils_builtins::{
     BUILTIN_MODULES, BUILTIN_SOURCES, BUILTINS, BuiltinId, BuiltinKind, BuiltinMemberKind,
     BuiltinSourceKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS, INTEGER_CONSTANTS, INTEGER_INTRINSICS,
-    IntrinsicKind, TypePattern, builtin, builtin_member, intrinsic, runtime_member,
+    IntrinsicKind, TypePattern, builtin, builtin_member, builtin_module_members, intrinsic,
+    runtime_member,
 };
 
 #[test]
@@ -35,6 +36,29 @@ fn stdlib_directory_generates_source_and_module_metadata() {
     assert!(BUILTIN_MODULES.iter().any(|module| {
         module.path == "std::collections" && module.members == ["HashMap", "HashSet", "Vec"]
     }));
+}
+
+#[test]
+fn runtime_import_bindings_come_from_stdlib_members() {
+    let expected = [
+        ("Vec", "new", "core::vec::new"),
+        ("Vec", "from", "core::vec::from"),
+        ("HashMap", "new", "core::hash_map::new"),
+        ("HashSet", "new", "core::hash_set::new"),
+    ];
+    for (owner, member, import) in expected {
+        let declaration = builtin_member(owner, member).expect("associated built-in declaration");
+        assert_eq!(declaration.runtime_import, Some(import));
+        assert_eq!(declaration.builtin_id, None);
+    }
+    for declaration in BUILTINS {
+        for member in declaration.members {
+            if member.runtime_import.is_some() {
+                assert_eq!(member.kind, BuiltinMemberKind::AssociatedFunction);
+                assert!(member.signature.is_some());
+            }
+        }
+    }
 }
 
 fn collect_rils_files(directory: &std::path::Path, files: &mut Vec<String>) {
@@ -429,4 +453,39 @@ fn declarations_report_member_and_runtime_coverage() {
     assert!(!iterator.contains_member("missing"));
     assert!(iterator.contains_builtin(BuiltinId::IteratorNext));
     assert!(!iterator.contains_builtin(BuiltinId::VecPush));
+}
+
+#[test]
+fn trait_requirements_and_provided_methods_come_from_stdlib() {
+    let iterator = builtin("Iterator").expect("Iterator declaration");
+    assert!(iterator.member("next").expect("Iterator::next").required);
+    assert!(!iterator.member("count").expect("Iterator::count").required);
+
+    let into_iterator = builtin("IntoIterator").expect("IntoIterator declaration");
+    assert!(
+        into_iterator
+            .member("into_iter")
+            .expect("IntoIterator::into_iter")
+            .required
+    );
+}
+
+#[test]
+fn io_error_shapes_and_module_exports_come_from_stdlib() {
+    let error = builtin("Error").expect("std::io::Error declaration");
+    assert_eq!(
+        error
+            .members
+            .iter()
+            .filter(|member| member.kind == rils_builtins::BuiltinMemberKind::Field)
+            .map(|member| member.name)
+            .collect::<Vec<_>>(),
+        ["kind", "message", "path"]
+    );
+
+    let error_kind = builtin("ErrorKind").expect("std::io::ErrorKind declaration");
+    assert!(error_kind.contains_member("NotFound"));
+    assert!(error_kind.contains_member("Other"));
+    assert!(builtin_module_members("std::io").contains(&"Error"));
+    assert!(builtin_module_members("std::io").contains(&"ErrorKind"));
 }

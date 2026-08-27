@@ -2,87 +2,33 @@ use super::runtime_builtins::call as call_runtime_builtin;
 use super::*;
 
 pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
-    vec![
-        (
-            "type_of",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::String),
-        ),
-        (
-            "is_ok",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Bool),
-        ),
-        (
-            "is_err",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Bool),
-        ),
-        (
-            "is_some",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Bool),
-        ),
-        (
-            "is_none",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Bool),
-        ),
-        (
-            "clone",
-            FunctionSignature::fixed(
-                vec![Type::Reference {
-                    mutable: false,
-                    inner: Box::new(Type::Unknown),
-                }],
-                Type::Unknown,
-            ),
-        ),
-        (
-            "unwrap",
-            FunctionSignature::fixed(vec![Type::Unknown], Type::Unknown),
-        ),
-        (
-            "unwrap_or",
-            FunctionSignature::fixed(vec![Type::Unknown, Type::Unknown], Type::Unknown),
-        ),
-        ("core::assert", FunctionSignature::variadic(Type::Unit)),
-        (
-            "core::vec::new",
-            FunctionSignature::fixed(
-                Vec::new(),
-                Type::Named {
-                    name: "Vec".into(),
-                    arguments: vec![Type::Unknown],
-                },
-            ),
-        ),
-        (
-            "core::vec::from",
-            FunctionSignature::fixed(
-                vec![Type::Unknown],
-                Type::Named {
-                    name: "Vec".into(),
-                    arguments: vec![Type::Unknown],
-                },
-            ),
-        ),
-        (
-            "core::hash_map::new",
-            FunctionSignature::fixed(
-                Vec::new(),
-                Type::Named {
-                    name: "HashMap".into(),
-                    arguments: vec![Type::Unknown, Type::Unknown],
-                },
-            ),
-        ),
-        (
-            "core::hash_set::new",
-            FunctionSignature::fixed(
-                Vec::new(),
-                Type::Named {
-                    name: "HashSet".into(),
-                    arguments: vec![Type::Unknown],
-                },
-            ),
-        ),
-    ]
+    let mut imports = rils_builtins::BUILTINS
+        .iter()
+        .filter(|declaration| {
+            declaration.kind == rils_builtins::BuiltinKind::Function
+                && declaration.backend == rils_builtins::BuiltinBackend::Runtime
+        })
+        .map(|declaration| {
+            (
+                declaration.path,
+                rils_frontend::standard_library::standard_function_signature(declaration.path)
+                    .expect("runtime built-in function has a signature"),
+            )
+        })
+        .collect::<Vec<_>>();
+    imports.extend(rils_builtins::BUILTINS.iter().flat_map(|declaration| {
+        declaration.members.iter().filter_map(|member| {
+            Some((
+                member.runtime_import?,
+                rils_frontend::standard_library::builtin_associated_function_signature(
+                    declaration.path,
+                    member.name,
+                )?,
+            ))
+        })
+    }));
+    imports.push(("core::assert", FunctionSignature::variadic(Type::Unit)));
+    imports
 }
 
 pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
