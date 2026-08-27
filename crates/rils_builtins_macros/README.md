@@ -15,6 +15,13 @@ integer primitive (`i8` through `usize`) or both floating-point primitives, and
 generates their shared intrinsic and constant tables while preserving the
 separate intrinsic execution backend.
 
+`builtin_stdlib!` is the crate-level entry point. It recursively discovers every
+`.rils` file under the standard-library directory, parses each file, infers its
+declaration group from the source and stable-ID table, and generates `BUILTINS`,
+the module relationship index, the numeric tables, and the source inventory.
+Nested `mod` and `use` declarations in `modules.rils` define public module
+relationships; Rust code does not maintain a second module-member table.
+
 `type_pattern!` converts the same Rust-style type syntax into a static
 `TypePattern`, including generics, references, tuples, callbacks, `Option`,
 `Result`, iterators, and fully qualified named types.

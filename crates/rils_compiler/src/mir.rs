@@ -499,6 +499,26 @@ impl Builder {
                 );
                 Ok(destination)
             }
+            HirExpression::CallRuntime {
+                builtin,
+                arguments,
+                span,
+            } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.expression(argument))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let destination = self.register();
+                self.emit(
+                    MirInstruction::CallRuntime {
+                        destination,
+                        builtin: *builtin,
+                        arguments,
+                    },
+                    *span,
+                );
+                Ok(destination)
+            }
             HirExpression::CallIntrinsic {
                 intrinsic,
                 target,

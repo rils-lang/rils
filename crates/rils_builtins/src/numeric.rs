@@ -98,49 +98,37 @@ pub struct FloatConstantDeclaration {
     pub documentation: &'static str,
 }
 
-rils_builtins_macros::builtin_numeric_file! {
-    "builtin_ids.toml";
-    "stdlib/core/integer.rils";
-    complete "core::integer";
-    family Integer;
-    pub const INTEGER_INTRINSICS, INTEGER_CONSTANTS;
-}
-
-rils_builtins_macros::builtin_numeric_file! {
-    "builtin_ids.toml";
-    "stdlib/core/float.rils";
-    complete "core::float";
-    family Float;
-    pub const FLOAT_INTRINSICS, FLOAT_CONSTANTS;
-}
-
 pub fn integer_constant(name: &str) -> Option<&'static IntegerConstantDeclaration> {
-    INTEGER_CONSTANTS.iter().find(|item| item.name == name)
+    crate::INTEGER_CONSTANTS
+        .iter()
+        .find(|item| item.name == name)
 }
 
 pub fn integer_method(name: &str) -> Option<&'static IntrinsicDeclaration> {
-    INTEGER_INTRINSICS
+    crate::INTEGER_INTRINSICS
         .iter()
         .find(|item| item.kind == IntrinsicKind::Method && item.name == name)
 }
 
 pub fn integer_associated_function(name: &str) -> Option<&'static IntrinsicDeclaration> {
-    INTEGER_INTRINSICS
+    crate::INTEGER_INTRINSICS
         .iter()
         .find(|item| item.kind == IntrinsicKind::AssociatedFunction && item.name == name)
 }
 
 pub fn float_method(name: &str) -> Option<&'static IntrinsicDeclaration> {
-    FLOAT_INTRINSICS.iter().find(|item| item.name == name)
+    crate::FLOAT_INTRINSICS
+        .iter()
+        .find(|item| item.name == name)
 }
 
 pub fn float_constant(name: &str) -> Option<&'static FloatConstantDeclaration> {
-    FLOAT_CONSTANTS.iter().find(|item| item.name == name)
+    crate::FLOAT_CONSTANTS.iter().find(|item| item.name == name)
 }
 
 pub fn intrinsic(id: BuiltinId) -> Option<&'static IntrinsicDeclaration> {
-    INTEGER_INTRINSICS
+    crate::INTEGER_INTRINSICS
         .iter()
-        .chain(FLOAT_INTRINSICS)
+        .chain(crate::FLOAT_INTRINSICS)
         .find(|item| item.id == id)
 }

@@ -1,8 +1,60 @@
 use rils_builtins::{
-    BUILTINS, BuiltinId, BuiltinKind, BuiltinMemberKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS,
-    INTEGER_CONSTANTS, INTEGER_INTRINSICS, IntrinsicKind, TypePattern, builtin, builtin_member,
-    intrinsic, runtime_member,
+    BUILTIN_MODULES, BUILTIN_SOURCES, BUILTINS, BuiltinId, BuiltinKind, BuiltinMemberKind,
+    BuiltinSourceKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS, INTEGER_CONSTANTS, INTEGER_INTRINSICS,
+    IntrinsicKind, TypePattern, builtin, builtin_member, intrinsic, runtime_member,
 };
+
+#[test]
+fn stdlib_directory_generates_source_and_module_metadata() {
+    let mut discovered = Vec::new();
+    collect_rils_files(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("stdlib"),
+        &mut discovered,
+    );
+    discovered.sort();
+    let mut generated = BUILTIN_SOURCES
+        .iter()
+        .map(|source| {
+            source
+                .path
+                .strip_prefix("stdlib/")
+                .unwrap_or(source.path)
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    generated.sort();
+    assert_eq!(generated, discovered);
+    assert!(BUILTIN_SOURCES.iter().any(|source| {
+        source.path == "stdlib/modules.rils" && source.kind == BuiltinSourceKind::ModuleTree
+    }));
+    assert!(BUILTIN_SOURCES.iter().any(|source| {
+        source.path == "stdlib/core/integer.rils"
+            && source.module == "core::integer"
+            && source.kind == BuiltinSourceKind::Numeric
+    }));
+    assert!(BUILTIN_MODULES.iter().any(|module| {
+        module.path == "std::collections" && module.members == ["HashMap", "HashSet", "Vec"]
+    }));
+}
+
+fn collect_rils_files(directory: &std::path::Path, files: &mut Vec<String>) {
+    for entry in std::fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_rils_files(&path, files);
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension == "rils")
+        {
+            files.push(
+                path.strip_prefix(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("stdlib"))
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            );
+        }
+    }
+}
 use rils_syntax::{FloatType, IntegerType, Type, ast::Stmt, lex, parse};
 
 #[test]
@@ -83,23 +135,14 @@ fn declarations_have_unique_stable_identity_and_complete_metadata() {
 }
 
 #[test]
-fn overloaded_runtime_methods_use_owner_qualified_imports() {
+fn direct_runtime_members_resolve_without_import_names() {
     for declaration in BUILTINS {
         for member in declaration.members {
-            let Some(import) = member.builtin_id.and_then(BuiltinId::bytecode_import) else {
+            let Some(id) = member.builtin_id.filter(|id| id.has_direct_runtime_call()) else {
                 continue;
             };
-            for other in BUILTINS
-                .iter()
-                .flat_map(|declaration| declaration.members)
-                .filter(|other| other.name == member.name)
-            {
-                if let Some(other_import) = other.builtin_id.and_then(BuiltinId::bytecode_import)
-                    && import != other_import
-                {
-                    assert!(import.starts_with("core::") && other_import.starts_with("core::"));
-                }
-            }
+            assert!(id.canonical_path().is_some());
+            assert!(runtime_member(id).is_some());
         }
     }
 }

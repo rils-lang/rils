@@ -307,6 +307,15 @@ fn encode_function(
                             arguments,
                         }
                     }
+                    MirInstruction::CallRuntime {
+                        destination,
+                        builtin,
+                        arguments,
+                    } => Instruction::CallRuntime {
+                        destination,
+                        builtin,
+                        arguments,
+                    },
                     MirInstruction::CallIntrinsic {
                         destination,
                         intrinsic,

@@ -8,7 +8,8 @@
 ### Breaking Changes
 
 - `.rilbc` 格式由 v6 提升为 v7：runtime member ID 与 intrinsic ID 合并为统一的 32 位稳定
-  `BuiltinId`，数值 intrinsic 迁移到 `core::integer` 和 `core::float` 的保留号段。
+  `BuiltinId`；runtime member 通过 `CallRuntime` 直接按 ID 分派，不再进入字符串 host import 表，
+  数值 intrinsic 迁移到 `core::integer` 和 `core::float` 的保留号段。
 - Host Manifest 二进制与 JSON 格式提升为 v5，新增完整 portable scalar 编码、enum 底层整数、枚举项和
   flags 元数据；Runtime、CLI 与 Analyzer 仍可读取 v1-v4，重新导出或链接时统一写为 v5。
 - C ABI 提升为 version 7，新增 `RilsHostTypeV3`、宿主 enum 注册和拥有型 `RILS_VALUE_STRING` 句柄协议；

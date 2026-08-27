@@ -156,8 +156,10 @@ section 拒绝加载，未知可选 section 在完成边界验证后跳过。
 发生静默截断。`format version`、`language version` 和 `host ABI` 分别检查。当前格式仍处于 0.4.0
 实验期，后续不兼容调整会提升格式版本；尚未承诺长期跨版本兼容。
 
-格式 v7 使用统一的 32 位稳定 `BuiltinId` 编码 intrinsic 调用。普通 runtime 成员和编译器/VM
-intrinsic 共用同一 ID 空间，执行后端不再决定身份；loader 会拒绝未在内建声明表中登记的 intrinsic ID。
+格式 v7 使用统一的 32 位稳定 `BuiltinId` 编码 `CallRuntime` 和 `CallIntrinsic`。普通 runtime 成员
+不再伪装成字符串 host import；只有 `std`、宿主 Manifest 和其他真正需要动态链接的函数进入 import 表。
+runtime member 与编译器/VM intrinsic 共用同一 ID 空间，loader 会拒绝未在内建声明表中登记或不支持
+对应调用方式的 ID。
 
 格式 v6 在 v5 的 trait implementation 表之外增加带显式 `IntegerType` 的 `IntegerBinary` 指令。
 静态分析无法证明类型的运算、浮点运算和字符串拼接仍使用通用 `Binary` 指令。旧 loader 不会误读

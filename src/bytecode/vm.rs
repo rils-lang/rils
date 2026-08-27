@@ -384,12 +384,12 @@ impl<'a> VirtualMachine<'a> {
                             }))
                         }
                         Value::HashMap(map) => crate::hash_collections::call(
-                            "core::hash_map::into_iter",
+                            rils_builtins::BuiltinId::HashMapIntoIter,
                             &[Value::HashMap(map)],
                         )
                         .map_err(|message| BytecodeError::new(message, instruction.span))?,
                         Value::HashSet(set) => crate::hash_collections::call(
-                            "core::hash_set::into_iter",
+                            rils_builtins::BuiltinId::HashSetIntoIter,
                             &[Value::HashSet(set)],
                         )
                         .map_err(|message| BytecodeError::new(message, instruction.span))?,
@@ -582,23 +582,6 @@ impl<'a> VirtualMachine<'a> {
                         }
                     }
                     let value = match declaration.name.as_str() {
-                        "core::fmt::write_str" => {
-                            let buffer = crate::formatting::buffer_from_value(&arguments[0])
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                            let Value::String(value) = &arguments[1] else {
-                                return Err(BytecodeError::new(
-                                    "Formatter::write_str expects string",
-                                    instruction.span,
-                                ));
-                            };
-                            buffer.write_str(value);
-                            super::formatting::format_ok()
-                        }
-                        "core::fmt::write_derived_debug" => self.write_derived_debug_import(
-                            &arguments[0],
-                            &arguments[1],
-                            instruction.span,
-                        )?,
                         "std::io::print" | "std::io::println" => {
                             if arguments.is_empty() && declaration.name == "std::io::println" {
                                 (self.imports[import])(&arguments).map_err(|message| {
@@ -637,6 +620,39 @@ impl<'a> VirtualMachine<'a> {
                             instruction.span,
                         ));
                     }
+                    self.frame_mut().registers[destination] = Some(value);
+                }
+                Instruction::CallRuntime {
+                    destination,
+                    builtin,
+                    arguments,
+                } => {
+                    let arguments = arguments
+                        .into_iter()
+                        .map(|register| self.take_register(register, instruction.span))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let value = match builtin {
+                        rils_builtins::BuiltinId::FormatterWriteStr => {
+                            let buffer = crate::formatting::buffer_from_value(&arguments[0])
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                            let Value::String(value) = &arguments[1] else {
+                                return Err(BytecodeError::new(
+                                    "Formatter::write_str expects string",
+                                    instruction.span,
+                                ));
+                            };
+                            buffer.write_str(value);
+                            super::formatting::format_ok()
+                        }
+                        rils_builtins::BuiltinId::FormatterWriteDerivedDebug => self
+                            .write_derived_debug_builtin(
+                                &arguments[0],
+                                &arguments[1],
+                                instruction.span,
+                            )?,
+                        _ => super::runtime_builtins::call(builtin, &arguments)
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                    };
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::CallIntrinsic {

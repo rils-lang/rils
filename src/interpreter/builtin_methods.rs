@@ -92,12 +92,8 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::hash_collections::call(
-                    id.bytecode_import()
-                        .expect("hash methods have core imports"),
-                    &values,
-                )
-                .map_err(|message| RuntimeError::new(message, span))
+                crate::hash_collections::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {

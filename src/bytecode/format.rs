@@ -1689,6 +1689,16 @@ fn write_instruction(writer: &mut Writer, value: &SpannedInstruction) -> Result<
             writer.index(*import, "import")?;
             writer.indices(arguments)?;
         }
+        Instruction::CallRuntime {
+            destination,
+            builtin,
+            arguments,
+        } => {
+            writer.u8(45);
+            writer.index(*destination, "destination")?;
+            writer.u32(builtin.as_raw());
+            writer.indices(arguments)?;
+        }
         Instruction::CallIntrinsic {
             destination,
             intrinsic,
@@ -2091,6 +2101,21 @@ fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruction> {
             right: reader.index()?,
             integer: read_integer_type(reader.u8()?)?,
         },
+        45 => {
+            let destination = reader.index()?;
+            let raw_builtin = reader.u32()?;
+            let builtin = rils_builtins::BuiltinId::from_raw(raw_builtin);
+            if !builtin.has_direct_runtime_call() {
+                return Err(BytecodeFormatError::new(format!(
+                    "invalid runtime built-in ID {raw_builtin:#x}"
+                )));
+            }
+            Instruction::CallRuntime {
+                destination,
+                builtin,
+                arguments: reader.indices()?,
+            }
+        }
         value => {
             return Err(BytecodeFormatError::new(format!(
                 "invalid instruction opcode {value}"
@@ -2360,6 +2385,42 @@ mod tests {
             .err()
             .expect("unknown built-in ID should be rejected");
         assert!(error.message.contains("invalid intrinsic built-in ID"));
+    }
+
+    #[test]
+    fn runtime_instructions_store_and_validate_u32_builtin_ids() {
+        let instruction = SpannedInstruction {
+            instruction: Instruction::CallRuntime {
+                destination: 1,
+                builtin: rils_builtins::BuiltinId::VecPush,
+                arguments: vec![2, 3],
+            },
+            span: Span::default(),
+        };
+        let mut writer = Writer::default();
+        write_instruction(&mut writer, &instruction).unwrap();
+        let mut bytes = writer.finish();
+
+        // Span (20), opcode (1), and destination (4) precede the stable ID.
+        let id_offset = 25;
+        assert_eq!(
+            u32::from_le_bytes(bytes[id_offset..id_offset + 4].try_into().unwrap()),
+            0x0200
+        );
+        let decoded = read_instruction(&mut Reader::new(&bytes)).unwrap();
+        assert!(matches!(
+            decoded.instruction,
+            Instruction::CallRuntime {
+                builtin: rils_builtins::BuiltinId::VecPush,
+                ..
+            }
+        ));
+
+        bytes[id_offset..id_offset + 4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
+        let error = read_instruction(&mut Reader::new(&bytes))
+            .err()
+            .expect("unknown runtime built-in ID should be rejected");
+        assert!(error.message.contains("invalid runtime built-in ID"));
     }
 
     #[test]

@@ -91,10 +91,10 @@ pub(super) fn collection_import_signature(name: &str) -> Option<(&'static str, F
     })
 }
 
-pub(super) fn builtin_method_import(
+pub(super) fn builtin_method_runtime(
     owner: Option<&str>,
     name: &str,
-) -> Option<(&'static str, FunctionSignature, ReceiverMode)> {
+) -> Option<(rils_builtins::BuiltinId, ReceiverMode)> {
     let mut candidates = rils_builtins::BUILTINS
         .iter()
         .filter(|declaration| owner.is_none_or(|owner| declaration.path == owner))
@@ -106,15 +106,16 @@ pub(super) fn builtin_method_import(
             .flatten()
     })?;
     let runtime = member.builtin_id?;
-    let import = runtime.bytecode_import()?;
+    if !runtime.has_direct_runtime_call() {
+        return None;
+    }
     let receiver_mode = member.receiver?;
     if owner.is_none()
         && candidates.any(|candidate| {
             candidate.receiver != Some(receiver_mode)
-                || candidate
-                    .builtin_id
-                    .and_then(rils_builtins::BuiltinId::bytecode_import)
-                    != Some(import)
+                || candidate.builtin_id.is_none_or(|candidate| {
+                    !runtime.shares_direct_runtime_implementation(candidate)
+                })
         })
     {
         return None;
@@ -124,9 +125,5 @@ pub(super) fn builtin_method_import(
         rils_builtins::ReceiverMode::Shared => ReceiverMode::Reference { mutable: false },
         rils_builtins::ReceiverMode::Mutable => ReceiverMode::Reference { mutable: true },
     };
-    Some((
-        import,
-        rils_frontend::standard_library::erased_builtin_import_signature(import)?,
-        receiver,
-    ))
+    Some((runtime, receiver))
 }

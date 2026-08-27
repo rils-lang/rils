@@ -142,7 +142,7 @@ impl VirtualMachine<'_> {
             .copied()
     }
 
-    pub(super) fn write_derived_debug_import(
+    pub(super) fn write_derived_debug_builtin(
         &self,
         formatter: &Value,
         value: &Value,

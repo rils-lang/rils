@@ -402,6 +402,26 @@ impl BytecodeModule {
                         ));
                     }
                 }
+                Instruction::CallRuntime {
+                    destination,
+                    builtin,
+                    arguments,
+                } => {
+                    let signature =
+                        rils_frontend::standard_library::erased_runtime_signature(*builtin);
+                    if invalid_register(*destination)
+                        || arguments.iter().any(|register| invalid_register(*register))
+                        || !builtin.has_direct_runtime_call()
+                        || signature
+                            .and_then(|signature| signature.parameters)
+                            .is_none_or(|parameters| parameters.len() != arguments.len())
+                    {
+                        return Err(BytecodeError::new(
+                            "invalid runtime built-in call operands",
+                            instruction.span,
+                        ));
+                    }
+                }
                 Instruction::CallIntrinsic {
                     destination,
                     intrinsic,

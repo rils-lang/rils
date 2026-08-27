@@ -2,6 +2,7 @@ mod builtin_files;
 mod builtin_ids;
 mod catalog_files;
 mod numeric_files;
+mod stdlib;
 mod type_patterns;
 
 use proc_macro::TokenStream;
@@ -24,6 +25,11 @@ pub fn builtin_catalog_file(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn builtin_numeric_file(input: TokenStream) -> TokenStream {
     numeric_files::expand(input)
+}
+
+#[proc_macro]
+pub fn builtin_stdlib(input: TokenStream) -> TokenStream {
+    stdlib::expand(input)
 }
 
 #[proc_macro]

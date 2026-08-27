@@ -104,53 +104,9 @@ pub fn erased_builtin_member_signature(
     ))
 }
 
-pub fn erased_builtin_import_signature(import: &str) -> Option<FunctionSignature> {
-    let mut signatures = rils_builtins::BUILTINS
-        .iter()
-        .flat_map(|declaration| declaration.members)
-        .filter(|member| {
-            member
-                .builtin_id
-                .and_then(rils_builtins::BuiltinId::bytecode_import)
-                == Some(import)
-        })
-        .filter_map(erased_builtin_member_signature);
-    let mut merged = signatures.next()?;
-    for signature in signatures {
-        merged.return_type = erase_type_conflict(&merged.return_type, &signature.return_type);
-        let (Some(left), Some(right)) = (&mut merged.parameters, signature.parameters) else {
-            merged.parameters = None;
-            continue;
-        };
-        if left.len() != right.len() {
-            merged.parameters = None;
-            continue;
-        }
-        for (left, right) in left.iter_mut().zip(right) {
-            *left = erase_type_conflict(left, &right);
-        }
-    }
-    Some(merged)
-}
-
-fn erase_type_conflict(left: &Type, right: &Type) -> Type {
-    match (left, right) {
-        (
-            Type::Reference {
-                mutable: left_mutable,
-                inner: left_inner,
-            },
-            Type::Reference {
-                mutable: right_mutable,
-                inner: right_inner,
-            },
-        ) if left_mutable == right_mutable => Type::Reference {
-            mutable: *left_mutable,
-            inner: Box::new(erase_type_conflict(left_inner, right_inner)),
-        },
-        (left, right) if left == right => left.clone(),
-        _ => Type::Unknown,
-    }
+pub fn erased_runtime_signature(id: rils_builtins::BuiltinId) -> Option<FunctionSignature> {
+    let (_, member) = rils_builtins::runtime_member(id)?;
+    erased_builtin_member_signature(member)
 }
 
 pub fn integer_intrinsic_type(
@@ -357,16 +313,19 @@ mod tests {
     }
 
     #[test]
-    fn overloaded_imports_erase_parameter_and_return_conflicts() {
-        let signature = erased_builtin_import_signature("core::value::replace").unwrap();
-        assert!(signature.parameters.is_none());
-        assert_eq!(signature.return_type, Type::Unknown);
+    fn runtime_signatures_are_resolved_by_stable_id() {
+        let option = erased_runtime_signature(rils_builtins::BuiltinId::OptionReplace).unwrap();
+        let string = erased_runtime_signature(rils_builtins::BuiltinId::StringReplace).unwrap();
+
+        assert_ne!(option, string);
+        assert_eq!(option.return_type, Type::Unknown);
+        assert_eq!(string.return_type, Type::String);
     }
 
     #[test]
-    fn derived_debug_import_has_one_reference_layer_per_argument() {
+    fn derived_debug_runtime_call_has_one_reference_layer_per_argument() {
         assert_eq!(
-            erased_builtin_import_signature("core::fmt::write_derived_debug"),
+            erased_runtime_signature(rils_builtins::BuiltinId::FormatterWriteDerivedDebug),
             Some(FunctionSignature::fixed(
                 vec![
                     Type::Reference {
