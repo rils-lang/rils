@@ -1413,7 +1413,7 @@ fn completes_project_modules_public_items_and_crate_aliases() {
     fs::create_dir_all(&scripts).unwrap();
     fs::write(
         root.join("rils.toml"),
-        "[project]\nname = \"unity_game\"\nscript_paths = [\"Assets/Res/rils-script\"]\n",
+        "[project]\nname = \"unity_game\"\nsrc = \"Assets/Res/rils-script\"\n",
     )
     .unwrap();
     fs::write(
@@ -1744,6 +1744,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
         .parent()
         .and_then(std::path::Path::parent)
         .unwrap();
+    let examples = repository.join("examples");
     let kanban = repository.join("examples/task_board/src/kanban.rils");
     let uri = path_to_file_uri(&kanban);
     let (connection, _client) = Connection::memory();
@@ -1754,7 +1755,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
         host_contract: HostContract::new(),
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
-        projects: workspace_projects(repository).unwrap(),
+        projects: workspace_projects(&examples).unwrap(),
         next_source_id: 1,
     };
     server.load_workspace().unwrap();
@@ -2060,7 +2061,7 @@ fn workspace_projects_index_nested_projects_without_treating_package_paths_as_mo
     fs::create_dir_all(nested.join("src")).unwrap();
     fs::write(
         nested.join("rils.toml"),
-        "[project]\nname = \"rils_for_unity\"\nscript_paths = [\"src\"]\n",
+        "[project]\nname = \"rils_for_unity\"\nsrc = \"src\"\n",
     )
     .unwrap();
     fs::write(nested.join("src/behaviour.rils"), "pub fn awake() {}").unwrap();

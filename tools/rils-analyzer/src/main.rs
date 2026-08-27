@@ -492,4 +492,5 @@ mod symbols;
 use support::*;
 
 #[cfg(test)]
+#[path = "../tests/unit/analyzer.rs"]
 mod tests;
