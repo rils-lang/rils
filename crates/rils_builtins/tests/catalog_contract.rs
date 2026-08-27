@@ -472,7 +472,7 @@ fn trait_requirements_and_provided_methods_come_from_stdlib() {
 
 #[test]
 fn io_error_shapes_and_module_exports_come_from_stdlib() {
-    let error = builtin("Error").expect("std::io::Error declaration");
+    let error = builtin("std::io::Error").expect("std::io::Error declaration");
     assert_eq!(
         error
             .members
@@ -483,7 +483,7 @@ fn io_error_shapes_and_module_exports_come_from_stdlib() {
         ["kind", "message", "path"]
     );
 
-    let error_kind = builtin("ErrorKind").expect("std::io::ErrorKind declaration");
+    let error_kind = builtin("std::io::ErrorKind").expect("std::io::ErrorKind declaration");
     assert!(error_kind.contains_member("NotFound"));
     assert!(error_kind.contains_member("Other"));
     assert!(builtin_module_members("std::io").contains(&"Error"));

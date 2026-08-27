@@ -14,6 +14,7 @@ mod keyword {
     syn::custom_keyword!(backend);
     syn::custom_keyword!(complete);
     syn::custom_keyword!(kind);
+    syn::custom_keyword!(path);
     syn::custom_keyword!(partial);
 }
 
@@ -23,6 +24,7 @@ struct Input {
     prefix: LitStr,
     require_complete: bool,
     kind: Option<Ident>,
+    declaration_path: Option<LitStr>,
     backend: Ident,
     visibility: syn::Visibility,
     name: Ident,
@@ -53,6 +55,14 @@ impl Parse for Input {
         } else {
             None
         };
+        let declaration_path = if input.peek(keyword::path) {
+            input.parse::<keyword::path>()?;
+            let path = input.parse()?;
+            input.parse::<Token![;]>()?;
+            Some(path)
+        } else {
+            None
+        };
         input.parse::<keyword::backend>()?;
         let backend = input.parse()?;
         input.parse::<Token![;]>()?;
@@ -69,6 +79,7 @@ impl Parse for Input {
             prefix,
             require_complete,
             kind,
+            declaration_path,
             backend,
             visibility,
             name,
@@ -322,7 +333,9 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     let visibility = input.visibility;
     let name = input.name;
     let members_name = format_ident!("{name}_MEMBERS");
-    let path = LitStr::new(&path, input.source_path.span());
+    let path = input
+        .declaration_path
+        .unwrap_or_else(|| LitStr::new(&path, input.source_path.span()));
     let type_parameters = type_parameters
         .iter()
         .map(|parameter| LitStr::new(parameter, input.source_path.span()))

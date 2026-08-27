@@ -223,6 +223,20 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             let kind = primary_declaration_name(&file.program.statements)
                 .filter(|name| *name == "Array")
                 .map(|_| quote!(kind Primitive;));
+            let declaration_path = primary_declaration_name(&file.program.statements)
+                .filter(|_| {
+                    file.relative
+                        .strip_prefix("stdlib/")
+                        .unwrap_or(&file.relative)
+                        .split('/')
+                        .count()
+                        > 2
+                })
+                .map(|name| {
+                    let path =
+                        LitStr::new(&format!("{source_module}::{name}"), input.directory.span());
+                    quote!(path #path;)
+                });
             let prefix_literal = LitStr::new(&prefix, input.directory.span());
             declarations.push(quote! {
                 rils_builtins_macros::builtin_file! {
@@ -230,6 +244,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
                     #relative_literal;
                     #completeness #prefix_literal;
                     #kind
+                    #declaration_path
                     backend #backend;
                     const #name;
                 }
