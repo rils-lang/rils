@@ -66,7 +66,7 @@ mod types {
 }
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     fmt, fs,
     path::{Path, PathBuf},
     rc::Rc,
@@ -294,7 +294,7 @@ impl Engine {
             let source_id = sources.register_source(path, &source);
             let mut program = sources.parse(source_id, &self.native_macros)?;
             load_file_modules(
-                &mut program.statements,
+                &mut program,
                 path,
                 &project,
                 &self.native_macros,
@@ -408,14 +408,8 @@ fn load_external_modules(
     Ok(())
 }
 
-#[derive(Default)]
-struct ProjectModuleNode {
-    statements: Vec<ast::Stmt>,
-    children: BTreeMap<String, ProjectModuleNode>,
-}
-
 fn load_file_modules(
-    statements: &mut Vec<ast::Stmt>,
+    program: &mut ast::Program,
     entry_path: &Path,
     project: &Project,
     native_macros: &[macros::NativeMacroDefinition],
@@ -429,7 +423,15 @@ fn load_file_modules(
         if let Ok(canonical) = entry_path.canonicalize() {
             loading.insert(canonical);
         }
-        return load_external_modules(statements, base, native_macros, &mut loading, sources);
+        load_external_modules(
+            &mut program.statements,
+            base,
+            native_macros,
+            &mut loading,
+            sources,
+        )?;
+        sources.push_root_program(program.clone());
+        return Ok(());
     }
     let entry = project.module_for_file(entry_path);
     let entry_source = sources.source_id(entry_path);
@@ -452,21 +454,22 @@ fn load_file_modules(
         )));
     }
     let entry_statements = if require_entry {
-        prepare_project_entry(std::mem::take(statements))?
+        prepare_project_entry(std::mem::take(&mut program.statements))?
     } else {
-        reject_external_module_declarations(statements)?;
-        std::mem::take(statements)
+        reject_external_module_declarations(&program.statements)?;
+        std::mem::take(&mut program.statements)
     };
-    let mut root = ProjectModuleNode::default();
+    let mut entry_program = program.clone();
+    entry_program.statements = entry_statements;
     if entry_is_prelude {
-        root.statements.extend(entry_statements.clone());
+        sources.push_root_program(entry_program.clone());
     } else if let Some(prelude_path) = project.prelude() {
         let source = fs::read_to_string(prelude_path)
             .map_err(|error| module_load_error(prelude_path, error))?;
         let source_id = sources.register_source(prelude_path, &source);
         let prelude = sources.parse(source_id, native_macros)?;
         reject_external_module_declarations(&prelude.statements)?;
-        root.statements.extend(prelude.statements);
+        sources.push_root_program(prelude);
     }
     for dependency in project.dependencies() {
         let Some(prelude_path) = dependency.prelude.as_deref() else {
@@ -477,29 +480,25 @@ fn load_file_modules(
         let source_id = sources.register_source(prelude_path, &source);
         let prelude = sources.parse(source_id, native_macros)?;
         reject_external_module_declarations(&prelude.statements)?;
-        root.statements.extend(prelude.statements);
+        sources.push_root_program(prelude);
     }
     for file in project.modules() {
         let file_source = sources
             .source_id(&file.path)
             .expect("project modules were registered before loading");
-        let module_path = sources
-            .module_path(file_source)
-            .expect("registered project source has a module identity")
-            .to_owned();
-        let module_statements = if entry_source == Some(file_source) {
-            entry_statements.clone()
+        let module_program = if entry_source == Some(file_source) {
+            entry_program.clone()
         } else {
             let source = fs::read_to_string(&file.path)
                 .map_err(|error| module_load_error(&file.path, error))?;
             let source_id = sources.register_source(&file.path, &source);
             let program = sources.parse(source_id, native_macros)?;
             reject_external_module_declarations(&program.statements)?;
-            program.statements
+            program
         };
-        insert_project_module(&mut root, &module_path, module_statements);
+        sources.set_module_program(file_source, module_program);
     }
-    *statements = project_module_statements(root);
+    *program = sources.flattened_program();
     if require_entry && invoke_entry {
         let mut entry_path = entry_module_path
             .expect("executable project entries must have a module identity")
@@ -507,7 +506,7 @@ fn load_file_modules(
             .map(str::to_owned)
             .collect::<Vec<_>>();
         entry_path.push("main".into());
-        statements.push(ast::Stmt::Expr {
+        program.statements.push(ast::Stmt::Expr {
             expression: ast::Expr::Call {
                 callee: Box::new(ast::Expr::Path {
                     segments: entry_path,
@@ -622,35 +621,6 @@ fn reject_external_module_declarations(statements: &[ast::Stmt]) -> Result<(), R
         }
     }
     Ok(())
-}
-
-fn insert_project_module(
-    root: &mut ProjectModuleNode,
-    module_path: &str,
-    statements: Vec<ast::Stmt>,
-) {
-    let mut node = root;
-    for segment in module_path.split("::") {
-        node = node.children.entry(segment.to_owned()).or_default();
-    }
-    node.statements = statements;
-}
-
-fn project_module_statements(node: ProjectModuleNode) -> Vec<ast::Stmt> {
-    let mut statements = node.statements;
-    for (name, child) in node.children {
-        let module = ast::Stmt::Module {
-            name: name.clone(),
-            name_span: Span::default(),
-            statements: Some(project_module_statements(child)),
-            span: Span::default(),
-        };
-        statements.push(ast::Stmt::Public {
-            statement: Box::new(module),
-            span: Span::default(),
-        });
-    }
-    statements
 }
 
 fn module_load_error(path: &Path, error: impl fmt::Display) -> RilsError {
@@ -834,7 +804,7 @@ fn compile_project_file_with_host(
             .parse(source_id, macros::STANDARD_NATIVE_MACROS)
             .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
         load_file_modules(
-            &mut program.statements,
+            &mut program,
             path,
             project,
             macros::STANDARD_NATIVE_MACROS,
@@ -844,7 +814,6 @@ fn compile_project_file_with_host(
         )
         .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
         bytecode::compile_program_with_host_and_session(
-            &program,
             host,
             sources.session(),
             sources.project_id(),

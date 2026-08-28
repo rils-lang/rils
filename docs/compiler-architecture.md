@@ -131,9 +131,9 @@ rils runtime  → rils_host
 
 后续仍需移除 Host enum synthetic AST 注入；该事项属于语义声明迁移，不再是 crate 所属层级问题。新增 crate 时必须遵守仓库命名和版本规范，不因内部重构自动修改版本号。
 
-### 多文件项目 synthetic AST 拼装（会话基础已完成）
+### 多文件项目 synthetic AST 拼装（结构化语法已进入会话）
 
-根 `src/lib.rs` 当前仍通过 `ProjectModuleNode`、`project_module_statements` 和 `prepare_project_entry` 把多个文件包装成 inline module，并插入 synthetic 入口调用。
+根项目加载器不再通过 `ProjectModuleNode` 和 `project_module_statements` 自行维护模块树。每个文件解析出的 `Program` 现在按 `ModuleId` 保存在 `ProjectSyntax` 中，prelude 则作为明确的根语法单元保存；compiler 的 session 入口也不再接收调用方拼装好的单个 `Program`。
 
 统一的 `CompilationSession`、稳定 `ProjectId` 以及根项目加载器的 `ProjectCompilation` 已经建立，Analyzer 也不再分别持有源码数据库和项目语义索引。当前会话结构为：
 
@@ -141,14 +141,15 @@ rils runtime  → rils_host
 CompilationSession
 ├── SourceDatabase
 ├── ModuleGraph
-├── 每模块 AST/HIR
+├── ProjectSyntax（根语法单元 + ModuleId -> Program）
+├── 每模块 HIR（待迁移）
 ├── 跨模块 DefMap
 ├── TypeckResults
 ├── Host declarations
 └── entry DefId
 ```
 
-compiler 的项目入口已经接收该 session，并通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。lowering 仍接收扁平化后的单个 `Program`；下一阶段需要让每个模块成为独立分析和 lowering 单位，并删除 `ProjectModuleNode` 和 `project_module_statements`。AST 解释器目前仍使用临时入口调用，待它能够消费共享入口 `DefId` 后再移除。无 manifest 的 legacy entry loader 可以作为兼容入口保留，但不应继续作为主项目编译模型。
+compiler 的项目入口已经接收该 session，并通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。旧 analysis/lowering 尚未直接消费模块集合，因此 `ProjectSyntax::flattened_program` 暂时作为集中、可删除的迁移桥生成 inline module；下一阶段需要让 definition collection、类型检查和 lowering 直接遍历 `ModuleGraph` 与独立 `Program`。AST 解释器目前仍使用该桥和临时入口调用，待它能够消费共享入口 `DefId` 后再移除。无 manifest 的 legacy entry loader 可以作为兼容入口保留，但不应继续作为主项目编译模型。
 
 ### 语义 ID 仍由 Span 反推
 
@@ -309,7 +310,7 @@ rils
 迁移应按依赖方向分批进行，每批保持解释器和 VM 对照测试通过：
 
 1. 已完成：抽离 Host Contract/Manifest 共享层，解除 Analyzer 对 compiler 的依赖。
-2. 进行中：已建立 `CompilationSession` 并迁移项目加载器、compiler 输入和 Analyzer，compiler 入口也不再依赖 synthetic AST 调用；仍需取消模块扁平 AST，使 `ModuleGraph` 成为 lowering 主模型。
+2. 进行中：已建立 `CompilationSession`，并以 `ProjectSyntax` 保存独立模块 AST；项目加载器、compiler 输入和 Analyzer 已迁移到会话模型，compiler 入口也不再依赖 synthetic AST 调用。仍需删除 `flattened_program` 迁移桥，使 `ModuleGraph` 成为 analysis/lowering 主模型。
 3. 在 syntax/HIR 构造阶段分配真实 `DefId`、`ExprId`，停止从 Span 反推。
 4. 将 numeric literal 和 Host type AST rewrite 改为 semantic side table，并删除旧模块。
 5. 让 AST 解释器消费共享 `DefMap`、`TypeckResults`，收缩旧静态检查逻辑。

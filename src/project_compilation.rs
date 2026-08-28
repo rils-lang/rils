@@ -81,6 +81,40 @@ impl ProjectCompilation {
             .set_entry_source(source);
     }
 
+    pub(crate) fn push_root_program(&mut self, program: ast::Program) {
+        let project = self.project_id();
+        self.session
+            .project_syntax_mut(project)
+            .expect("registered project has syntax state")
+            .push_root(program);
+    }
+
+    pub(crate) fn set_module_program(&mut self, source: SourceId, program: ast::Program) {
+        let project = self.project_id();
+        let module = self
+            .session
+            .project(project)
+            .and_then(|semantics| semantics.module(source))
+            .expect("registered project source has a module identity")
+            .id;
+        self.session
+            .project_syntax_mut(project)
+            .expect("registered project has syntax state")
+            .insert_module(module, program);
+    }
+
+    pub(crate) fn flattened_program(&self) -> ast::Program {
+        let project = self.project_id();
+        let semantics = self
+            .session
+            .project(project)
+            .expect("registered project has semantic state");
+        self.session
+            .project_syntax(project)
+            .expect("registered project has syntax state")
+            .flattened_program(semantics.module_graph())
+    }
+
     pub(crate) fn parse(
         &self,
         id: SourceId,

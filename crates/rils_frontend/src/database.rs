@@ -19,6 +19,7 @@ pub struct CompilationSession {
     next_project_id: u32,
     projects_by_name: HashMap<String, ProjectId>,
     projects: BTreeMap<ProjectId, ProjectSemanticIndex>,
+    project_syntax: BTreeMap<ProjectId, ProjectSyntax>,
 }
 
 impl CompilationSession {
@@ -42,6 +43,7 @@ impl CompilationSession {
         let id = ProjectId::new(self.next_project_id);
         self.projects_by_name.insert(name, id);
         self.projects.insert(id, ProjectSemanticIndex::default());
+        self.project_syntax.insert(id, ProjectSyntax::default());
         id
     }
 
@@ -65,13 +67,121 @@ impl CompilationSession {
         *slot = semantics;
     }
 
+    pub fn project_syntax(&self, id: ProjectId) -> Option<&ProjectSyntax> {
+        self.project_syntax.get(&id)
+    }
+
+    pub fn project_syntax_mut(&mut self, id: ProjectId) -> Option<&mut ProjectSyntax> {
+        self.project_syntax.get_mut(&id)
+    }
+
     pub fn clear_projects(&mut self) {
         self.projects_by_name.clear();
         self.projects.clear();
+        self.project_syntax.clear();
     }
 
     pub fn projects(&self) -> impl Iterator<Item = &ProjectSemanticIndex> {
         self.projects.values()
+    }
+}
+
+/// Parsed syntax units belonging to one project.
+///
+/// Module programs retain their file and module identities. `flattened_program`
+/// is a migration bridge for consumers that do not yet lower a `ModuleGraph`
+/// directly.
+#[derive(Clone, Debug, Default)]
+pub struct ProjectSyntax {
+    roots: Vec<Program>,
+    modules: BTreeMap<ModuleId, Program>,
+}
+
+impl ProjectSyntax {
+    pub fn push_root(&mut self, program: Program) {
+        self.roots.push(program);
+    }
+
+    pub fn insert_module(&mut self, module: ModuleId, program: Program) {
+        self.modules.insert(module, program);
+    }
+
+    pub fn roots(&self) -> impl ExactSizeIterator<Item = &Program> {
+        self.roots.iter()
+    }
+
+    pub fn module(&self, module: ModuleId) -> Option<&Program> {
+        self.modules.get(&module)
+    }
+
+    pub fn modules(&self) -> impl ExactSizeIterator<Item = (ModuleId, &Program)> {
+        self.modules.iter().map(|(id, program)| (*id, program))
+    }
+
+    #[doc(hidden)]
+    pub fn flattened_program(&self, graph: &ModuleGraph) -> Program {
+        let mut root = SyntaxModuleNode::default();
+        for program in &self.roots {
+            root.extend_metadata(program);
+            root.statements.extend(program.statements.clone());
+        }
+        for (module, program) in &self.modules {
+            let Some(module) = graph.module(*module) else {
+                continue;
+            };
+            root.insert(&module.path, program.clone());
+        }
+        root.into_program()
+    }
+}
+
+#[derive(Default)]
+struct SyntaxModuleNode {
+    statements: Vec<crate::ast::Stmt>,
+    type_references: Vec<crate::ast::TypeReference>,
+    macros: Vec<crate::ast::MacroSymbol>,
+    children: BTreeMap<String, SyntaxModuleNode>,
+}
+
+impl SyntaxModuleNode {
+    fn insert(&mut self, path: &str, program: Program) {
+        let mut node = self;
+        for segment in path.split("::").filter(|segment| !segment.is_empty()) {
+            node = node.children.entry(segment.to_owned()).or_default();
+        }
+        node.extend_metadata(&program);
+        node.statements = program.statements;
+    }
+
+    fn extend_metadata(&mut self, program: &Program) {
+        self.type_references.extend(program.type_references.clone());
+        self.macros.extend(program.macros.clone());
+    }
+
+    fn into_program(self) -> Program {
+        let mut statements = self.statements;
+        let mut type_references = self.type_references;
+        let mut macros = self.macros;
+        for (name, child) in self.children {
+            let child = child.into_program();
+            type_references.extend(child.type_references);
+            macros.extend(child.macros);
+            let statement = crate::ast::Stmt::Module {
+                name: name.clone(),
+                name_span: crate::Span::default(),
+                statements: Some(child.statements),
+                span: crate::Span::default(),
+            };
+            statements.push(crate::ast::Stmt::Public {
+                statement: Box::new(statement),
+                span: crate::Span::default(),
+            });
+        }
+        Program {
+            statements,
+            type_references,
+            macros,
+        }
     }
 }
 
@@ -266,6 +376,10 @@ impl ProjectSemanticIndex {
 
     pub fn modules(&self) -> impl ExactSizeIterator<Item = &ModuleData> {
         self.modules.modules()
+    }
+
+    pub fn module_graph(&self) -> &ModuleGraph {
+        &self.modules
     }
 
     pub fn index_def_map(&mut self, def_map: &DefMap) {

@@ -16,7 +16,8 @@ mod type_inference;
 pub use rils_syntax::{ast, default, format, lexer, macros, parser, source, token, types};
 
 pub use database::{
-    CompilationSession, ModuleData, ModuleGraph, ProjectId, ProjectSemanticIndex, SourceDatabase,
+    CompilationSession, ModuleData, ModuleGraph, ProjectId, ProjectSemanticIndex, ProjectSyntax,
+    SourceDatabase,
 };
 pub use error::FrontendError;
 pub use host_analysis::{

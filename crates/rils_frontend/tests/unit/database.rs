@@ -152,3 +152,50 @@ fn compilation_session_keeps_project_and_source_identities_together() {
     );
     assert_ne!(first_source, second_source);
 }
+
+#[test]
+fn compilation_session_keeps_module_programs_structured() {
+    let mut session = CompilationSession::default();
+    let project = session.register_project("workspace/app");
+    let main_source = session
+        .sources_mut()
+        .set_source("app/src/main.rils", "pub fn main() {}");
+    let util_source = session
+        .sources_mut()
+        .set_source("app/src/util.rils", "pub fn value() { 1 }");
+    let main_module = session
+        .project_mut(project)
+        .unwrap()
+        .register("main", main_source);
+    let util_module = session
+        .project_mut(project)
+        .unwrap()
+        .register("support::util", util_source);
+    let main_program = session.sources().parse(main_source).unwrap();
+    let util_program = session.sources().parse(util_source).unwrap();
+
+    let syntax = session.project_syntax_mut(project).unwrap();
+    syntax.insert_module(main_module, main_program);
+    syntax.insert_module(util_module, util_program);
+
+    let syntax = session.project_syntax(project).unwrap();
+    assert_eq!(syntax.modules().len(), 2);
+    assert!(syntax.module(main_module).is_some());
+    assert!(syntax.module(util_module).is_some());
+
+    let flattened = syntax.flattened_program(session.project(project).unwrap().module_graph());
+    assert!(flattened.statements.iter().any(|statement| {
+        matches!(
+            statement,
+            crate::ast::Stmt::Public { statement, .. }
+                if matches!(statement.as_ref(), crate::ast::Stmt::Module { name, .. } if name == "main")
+        )
+    }));
+    assert!(flattened.statements.iter().any(|statement| {
+        matches!(
+            statement,
+            crate::ast::Stmt::Public { statement, .. }
+                if matches!(statement.as_ref(), crate::ast::Stmt::Module { name, .. } if name == "support")
+        )
+    }));
+}

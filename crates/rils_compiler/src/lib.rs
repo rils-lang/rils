@@ -194,24 +194,30 @@ fn compile_program_with_host_and_sources_and_entry(
 }
 
 pub fn compile_program_with_host_and_session(
-    program: &Program,
     host: &HostContract,
     session: &rils_frontend::CompilationSession,
     project: rils_frontend::ProjectId,
 ) -> Result<mir::MirProgram, CompileError> {
-    if session.project(project).is_none() {
+    let Some(semantics) = session.project(project) else {
         return Err(CompileError::new(
             "compilation project is not registered in this session",
             Span::default(),
         ));
-    }
-    let entry = session.project(project).and_then(|semantics| {
+    };
+    let syntax = session.project_syntax(project).ok_or_else(|| {
+        CompileError::new(
+            "compilation project has no registered syntax state",
+            Span::default(),
+        )
+    })?;
+    let program = syntax.flattened_program(semantics.module_graph());
+    let entry = (|| {
         let source = semantics.entry_source()?;
         let module = semantics.module(source)?;
         Some((source, module.path.clone()))
-    });
+    })();
     compile_program_with_host_and_sources_and_entry(
-        program,
+        &program,
         host,
         session.sources().source_files(),
         entry,
