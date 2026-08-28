@@ -23,9 +23,11 @@ fn expression_ids_are_deterministic_and_source_scoped() {
     let second = second.span();
     let analysis = crate::analysis::analyze_program(&program);
     let results = &analysis.typeck_results;
-    assert_eq!(results.expression_id(first).unwrap().local, 0);
-    assert_eq!(results.expression_id(second).unwrap().local, 1);
-    assert_eq!(results.expression_type_at(second), Some(&Type::Bool));
+    let first = results.expression_ids_at(first)[0];
+    let second = results.expression_ids_at(second)[0];
+    assert_eq!(first.local, 0);
+    assert_eq!(second.local, 1);
+    assert_eq!(results.expression_type(second), Some(&Type::Bool));
 }
 
 #[test]

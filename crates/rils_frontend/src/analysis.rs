@@ -88,7 +88,6 @@ pub struct DocumentAnalysis {
     pub diagnostics: Vec<AnalysisDiagnostic>,
     pub symbols: Vec<SymbolOccurrence>,
     pub inlay_hints: Vec<InlayTypeHint>,
-    pub expression_types: HashMap<Span, Type>,
     pub def_map: crate::semantic::DefMap,
     pub typeck_results: crate::semantic::TypeckResults,
 }
@@ -98,7 +97,6 @@ impl DocumentAnalysis {
         self.diagnostics.extend(other.diagnostics);
         self.symbols.extend(other.symbols);
         self.inlay_hints.extend(other.inlay_hints);
-        self.expression_types.extend(other.expression_types);
         self.def_map.extend(other.def_map);
         self.typeck_results.extend(other.typeck_results);
     }
@@ -338,7 +336,8 @@ struct Analyzer {
     inherent_methods: HashMap<String, Vec<InherentMethod>>,
     enum_variants: HashMap<(String, String), EnumVariantSymbol>,
     struct_fields: HashMap<String, Vec<HashMap<String, StructFieldSymbol>>>,
-    member_receivers: HashMap<Span, Span>,
+    member_receivers: HashMap<Span, crate::ExprId>,
+    expression_ids: crate::semantic::ExpressionIdentityMap,
     self_types: Vec<Option<String>>,
     self_type_references: HashMap<Span, String>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
@@ -542,6 +541,7 @@ impl Analyzer {
             enum_variants: HashMap::new(),
             struct_fields,
             member_receivers: HashMap::new(),
+            expression_ids: crate::semantic::ExpressionIdentityMap::allocate(program, source_id),
             self_types: vec![None],
             self_type_references: collect_self_type_references(program),
             type_aliases: HashMap::new(),
@@ -600,7 +600,7 @@ impl Analyzer {
             &inference.expression_ids,
             &inference.expression_types_by_id,
         );
-        self.enrich_member_symbols(&inference.expression_types);
+        self.enrich_member_symbols(&inference.expression_types_by_id);
         self.result
             .diagnostics
             .extend(crate::control_flow::analyze(program, expression_types));
@@ -702,7 +702,6 @@ impl Analyzer {
         );
         self.result.def_map = def_map;
         self.result.typeck_results = typeck_results;
-        self.result.expression_types = inference.expression_types;
         self.result
     }
 
@@ -750,16 +749,16 @@ impl Analyzer {
         visit(statements, &mut self.struct_fields);
     }
 
-    fn enrich_member_symbols(&mut self, expression_types: &HashMap<Span, Type>) {
+    fn enrich_member_symbols(&mut self, expression_types: &HashMap<crate::ExprId, Type>) {
         let mut updates = Vec::new();
         for (index, symbol) in self.result.symbols.iter().enumerate() {
             if symbol.is_definition {
                 continue;
             }
-            let Some(receiver_span) = self.member_receivers.get(&symbol.span) else {
+            let Some(receiver) = self.member_receivers.get(&symbol.span) else {
                 continue;
             };
-            let Some(receiver_type) = expression_types.get(receiver_span) else {
+            let Some(receiver_type) = expression_types.get(receiver) else {
                 continue;
             };
             let receiver_type = match receiver_type {
@@ -1520,8 +1519,10 @@ impl Analyzer {
             }),
             Expr::Member { object, name, span } => {
                 self.expression(object);
-                self.member_receivers
-                    .insert(member_name_span(*span, name), object.span());
+                if let Some(receiver) = self.expression_ids.get(object) {
+                    self.member_receivers
+                        .insert(member_name_span(*span, name), receiver);
+                }
                 self.member_symbol(name, *span, SymbolKind::Field);
             }
             Expr::Index { object, index, .. } => {
@@ -1580,8 +1581,10 @@ impl Analyzer {
             } => {
                 if let Expr::Member { object, name, span } = callee.as_ref() {
                     self.expression(object);
-                    self.member_receivers
-                        .insert(member_name_span(*span, name), object.span());
+                    if let Some(receiver) = self.expression_ids.get(object) {
+                        self.member_receivers
+                            .insert(member_name_span(*span, name), receiver);
+                    }
                     self.member_symbol(name, *span, SymbolKind::Method);
                 } else {
                     self.expression(callee);

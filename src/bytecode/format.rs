@@ -832,6 +832,11 @@ fn write_type(writer: &mut Writer, value: &Type, depth: usize) -> Result<()> {
             writer.u8(5);
             writer.span(*span)?;
         }
+        Type::IntegerInference(_) | Type::FloatInference(_) => {
+            return Err(BytecodeFormatError::new(
+                "unresolved inference type cannot be serialized",
+            ));
+        }
         Type::Char => writer.u8(6),
         Type::String => writer.u8(7),
         Type::Tuple(elements) => {
@@ -2205,6 +2210,19 @@ fn read_source_file(reader: &mut Reader<'_>) -> Result<SourceFile> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_unresolved_identity_scoped_inference_types() {
+        let id = rils_frontend::ExprId {
+            source: rils_frontend::SourceId::new(1),
+            local: 2,
+        };
+        for ty in [Type::IntegerInference(id), Type::FloatInference(id)] {
+            let error = write_type(&mut Writer(Vec::new()), &ty, 0)
+                .expect_err("inference-only types must not enter bytecode");
+            assert!(error.message.contains("unresolved inference type"));
+        }
+    }
 
     #[test]
     fn round_trip_executes_the_same_module() {

@@ -20,7 +20,6 @@ pub(crate) struct RawTypeHint {
 #[derive(Default)]
 pub(crate) struct InferenceResult {
     pub binding_types: HashMap<Span, Type>,
-    pub expression_types: HashMap<Span, Type>,
     pub expression_types_by_id: HashMap<ExprId, Type>,
     pub hints: Vec<RawTypeHint>,
     pub expression_ids: crate::semantic::ExpressionIdentityMap,
@@ -70,8 +69,8 @@ struct Inferencer {
     variant_owners: HashMap<String, String>,
     result: InferenceResult,
     expression_ids: crate::semantic::ExpressionIdentityMap,
-    numeric_parents: HashMap<Span, Span>,
-    numeric_fixed: HashMap<Span, Type>,
+    numeric_parents: HashMap<ExprId, ExprId>,
+    numeric_fixed: HashMap<ExprId, Type>,
     host_functions: HashMap<String, FunctionSignature>,
 }
 
@@ -149,7 +148,6 @@ impl Inferencer {
             variant_owners: HashMap::new(),
             result: InferenceResult {
                 binding_types: HashMap::new(),
-                expression_types: HashMap::new(),
                 expression_types_by_id: HashMap::new(),
                 hints: Vec::new(),
                 expression_ids: crate::semantic::ExpressionIdentityMap::default(),
@@ -178,18 +176,6 @@ impl Inferencer {
                 self.result.binding_types.insert(span, resolved);
             }
         }
-        let expression_spans = self
-            .result
-            .expression_types
-            .keys()
-            .copied()
-            .collect::<Vec<_>>();
-        for span in expression_spans {
-            if let Some(ty) = self.result.expression_types.get(&span).cloned() {
-                let resolved = self.resolve_type(&ty);
-                self.result.expression_types.insert(span, resolved);
-            }
-        }
         let expression_ids = self
             .result
             .expression_types_by_id
@@ -210,21 +196,21 @@ impl Inferencer {
         self.result
     }
 
-    fn numeric_root(&mut self, span: Span) -> Span {
-        let parent = *self.numeric_parents.entry(span).or_insert(span);
-        if parent == span {
-            span
+    fn numeric_root(&mut self, variable: ExprId) -> ExprId {
+        let parent = *self.numeric_parents.entry(variable).or_insert(variable);
+        if parent == variable {
+            variable
         } else {
             let root = self.numeric_root(parent);
-            self.numeric_parents.insert(span, root);
+            self.numeric_parents.insert(variable, root);
             root
         }
     }
 
     fn unify(&mut self, left: &Type, right: &Type) {
         match (left, right) {
-            (Type::IntegerVariable(left), Type::IntegerVariable(right))
-            | (Type::FloatVariable(left), Type::FloatVariable(right)) => {
+            (Type::IntegerInference(left), Type::IntegerInference(right))
+            | (Type::FloatInference(left), Type::FloatInference(right)) => {
                 let left = self.numeric_root(*left);
                 let right = self.numeric_root(*right);
                 if left != right {
@@ -238,10 +224,10 @@ impl Inferencer {
                     }
                 }
             }
-            (Type::IntegerVariable(variable), fixed @ Type::Integer(_))
-            | (fixed @ Type::Integer(_), Type::IntegerVariable(variable))
-            | (Type::FloatVariable(variable), fixed @ Type::Float(_))
-            | (fixed @ Type::Float(_), Type::FloatVariable(variable)) => {
+            (Type::IntegerInference(variable), fixed @ Type::Integer(_))
+            | (fixed @ Type::Integer(_), Type::IntegerInference(variable))
+            | (Type::FloatInference(variable), fixed @ Type::Float(_))
+            | (fixed @ Type::Float(_), Type::FloatInference(variable)) => {
                 let root = self.numeric_root(*variable);
                 self.numeric_fixed
                     .entry(root)
@@ -266,12 +252,12 @@ impl Inferencer {
 
     fn resolve_type(&mut self, ty: &Type) -> Type {
         match ty {
-            Type::IntegerVariable(span) => {
-                let root = self.numeric_root(*span);
+            Type::IntegerInference(variable) => {
+                let root = self.numeric_root(*variable);
                 self.numeric_fixed.get(&root).cloned().unwrap_or(Type::I32)
             }
-            Type::FloatVariable(span) => {
-                let root = self.numeric_root(*span);
+            Type::FloatInference(variable) => {
+                let root = self.numeric_root(*variable);
                 self.numeric_fixed.get(&root).cloned().unwrap_or(Type::F64)
             }
             Type::Option(inner) => Type::Option(Box::new(self.resolve_type(inner))),
@@ -760,17 +746,14 @@ impl Inferencer {
 
     fn expression(&mut self, expression: &Expr, returns: &mut Vec<Type>) -> Type {
         let id = self.expression_ids.id(expression);
-        let ty = self.expression_inner(expression, returns);
-        self.result
-            .expression_types
-            .insert(expression.span(), ty.clone());
+        let ty = self.expression_inner(expression, id, returns);
         self.result.expression_types_by_id.insert(id, ty.clone());
         ty
     }
 
-    fn expression_inner(&mut self, expression: &Expr, returns: &mut Vec<Type>) -> Type {
+    fn expression_inner(&mut self, expression: &Expr, id: ExprId, returns: &mut Vec<Type>) -> Type {
         match expression {
-            Expr::Literal { value, span } => literal_type(value, *span),
+            Expr::Literal { value, .. } => literal_type(value, id),
             Expr::Variable { name, .. } => self
                 .lookup(name)
                 .map_or(Type::Unknown, |binding| binding.ty.clone()),
@@ -1505,7 +1488,7 @@ fn resolve_impl_self(ty: &Type, target: &Type) -> Type {
     }
 }
 
-fn literal_type(literal: &Literal, span: Span) -> Type {
+fn literal_type(literal: &Literal, id: ExprId) -> Type {
     match literal {
         Literal::Unit => Type::Unit,
         Literal::Bool(_) => Type::Bool,
@@ -1524,8 +1507,8 @@ fn literal_type(literal: &Literal, span: Span) -> Type {
         Literal::F32(_) => Type::Float(crate::types::FloatType::F32),
         Literal::F64(_) => Type::F64,
         Literal::Char(_) => Type::Char,
-        Literal::Integer(_) => Type::IntegerVariable(span),
-        Literal::Float(_) => Type::FloatVariable(span),
+        Literal::Integer(_) => Type::IntegerInference(id),
+        Literal::Float(_) => Type::FloatInference(id),
         Literal::String(_) => Type::String,
     }
 }

@@ -59,6 +59,8 @@ pub fn default_plan(ty: &Type) -> Option<DefaultPlan> {
         | Type::Associated { .. }
         | Type::IntegerVariable(_)
         | Type::FloatVariable(_)
+        | Type::IntegerInference(_)
+        | Type::FloatInference(_)
         | Type::Unknown => return None,
     })
 }

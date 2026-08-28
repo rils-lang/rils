@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{Block, Expr, Literal, Program, Stmt},
+    semantic::ExpressionTypes,
     source::Span,
     type_inference,
     types::{FloatType, FunctionSignature, IntegerType, Type},
@@ -22,18 +23,18 @@ pub fn resolve_numeric_literals_with_host_functions(
     program: &mut Program,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> Result<(), NumericResolutionError> {
-    let types = type_inference::infer_with_host_functions(
+    let inference = type_inference::infer_with_host_functions(
         program,
         crate::SourceId::UNKNOWN,
         host_functions,
-    )
-    .expression_types;
-    resolve_statements(&mut program.statements, &types)
+    );
+    let types = ExpressionTypes::new(&inference.expression_ids, &inference.expression_types_by_id);
+    resolve_statements(&mut program.statements, types)
 }
 
 fn resolve_statements(
     statements: &mut [Stmt],
-    types: &HashMap<Span, Type>,
+    types: ExpressionTypes<'_>,
 ) -> Result<(), NumericResolutionError> {
     for statement in statements {
         match statement {
@@ -87,18 +88,19 @@ fn resolve_statements(
 
 fn resolve_block(
     block: &mut Block,
-    types: &HashMap<Span, Type>,
+    types: ExpressionTypes<'_>,
 ) -> Result<(), NumericResolutionError> {
     resolve_statements(&mut block.statements, types)
 }
 
 fn resolve_expression(
     expression: &mut Expr,
-    types: &HashMap<Span, Type>,
+    types: ExpressionTypes<'_>,
 ) -> Result<(), NumericResolutionError> {
     let span = expression.span();
+    let inferred = types.get(expression).cloned();
     match expression {
-        Expr::Literal { value, .. } => resolve_literal(value, types.get(&span), span)?,
+        Expr::Literal { value, .. } => resolve_literal(value, inferred.as_ref(), span)?,
         Expr::Member { object, .. }
         | Expr::Try {
             operand: object, ..
@@ -240,3 +242,7 @@ fn integer_literal(value: i128, ty: IntegerType) -> Option<Literal> {
         IntegerType::Usize => unsigned!(Usize, usize),
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/resolution.rs"]
+mod tests;

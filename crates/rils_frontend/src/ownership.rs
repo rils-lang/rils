@@ -1023,7 +1023,9 @@ impl<'a> Checker<'a> {
             | Type::Integer(_)
             | Type::Float(_)
             | Type::IntegerVariable(_)
+            | Type::IntegerInference(_)
             | Type::FloatVariable(_)
+            | Type::FloatInference(_)
             | Type::Char
             | Type::Reference { .. }
             | Type::Function { .. } => true,

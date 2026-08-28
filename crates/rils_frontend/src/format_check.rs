@@ -280,8 +280,10 @@ impl Checker<'_> {
             | Type::Bool
             | Type::Integer(_)
             | Type::IntegerVariable(_)
+            | Type::IntegerInference(_)
             | Type::Float(_)
             | Type::FloatVariable(_)
+            | Type::FloatInference(_)
             | Type::Char
             | Type::String => true,
             Type::Tuple(elements) => {

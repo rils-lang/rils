@@ -216,10 +216,6 @@ impl TypeckResults {
         }
     }
 
-    pub fn expression_id(&self, span: Span) -> Option<ExprId> {
-        self.expression_ids.at(span).first().copied()
-    }
-
     /// Returns every expression whose syntax range is `span`, in AST visit order.
     ///
     /// A source range is a diagnostic location rather than a semantic identity,
@@ -234,11 +230,6 @@ impl TypeckResults {
 
     pub fn expression_type(&self, id: ExprId) -> Option<&Type> {
         self.expression_types.get(&id)
-    }
-
-    pub fn expression_type_at(&self, span: Span) -> Option<&Type> {
-        self.expression_id(span)
-            .and_then(|id| self.expression_type(id))
     }
 
     pub fn expression_type_ending_at(
@@ -260,16 +251,6 @@ impl TypeckResults {
 
     pub fn resolved_value(&self, id: ExprId) -> Option<DefId> {
         self.resolved_values.get(&id).copied()
-    }
-
-    pub fn resolved_call_at(&self, span: Span) -> Option<&ResolvedCall> {
-        self.expression_id(span)
-            .and_then(|id| self.resolved_call(id))
-    }
-
-    pub fn resolved_value_at(&self, span: Span) -> Option<DefId> {
-        self.expression_id(span)
-            .and_then(|id| self.resolved_value(id))
     }
 
     pub fn resolved_call_containing(

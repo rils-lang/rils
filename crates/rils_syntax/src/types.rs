@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt};
 
-use crate::source::Span;
+use crate::source::{ExprId, Span};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 #[repr(u8)]
@@ -158,6 +158,8 @@ pub enum Type {
     Float(FloatType),
     IntegerVariable(Span),
     FloatVariable(Span),
+    IntegerInference(ExprId),
+    FloatInference(ExprId),
     Char,
     String,
     Tuple(Vec<Type>),
@@ -201,17 +203,28 @@ impl Type {
     pub const USIZE: Self = Self::Integer(IntegerType::Usize);
 
     pub const fn is_integer(&self) -> bool {
-        matches!(self, Self::Integer(_) | Self::IntegerVariable(_))
+        matches!(
+            self,
+            Self::Integer(_) | Self::IntegerVariable(_) | Self::IntegerInference(_)
+        )
     }
 
     pub const fn is_float(&self) -> bool {
-        matches!(self, Self::Float(_) | Self::FloatVariable(_))
+        matches!(
+            self,
+            Self::Float(_) | Self::FloatVariable(_) | Self::FloatInference(_)
+        )
     }
 
     pub const fn is_numeric(&self) -> bool {
         matches!(
             self,
-            Self::Integer(_) | Self::Float(_) | Self::IntegerVariable(_) | Self::FloatVariable(_)
+            Self::Integer(_)
+                | Self::Float(_)
+                | Self::IntegerVariable(_)
+                | Self::FloatVariable(_)
+                | Self::IntegerInference(_)
+                | Self::FloatInference(_)
         )
     }
 
@@ -446,6 +459,8 @@ impl fmt::Display for Type {
             Self::Float(ty) => write!(f, "{ty}"),
             Self::IntegerVariable(_) => write!(f, "{{integer}}"),
             Self::FloatVariable(_) => write!(f, "{{f64}}"),
+            Self::IntegerInference(_) => write!(f, "{{integer}}"),
+            Self::FloatInference(_) => write!(f, "{{f64}}"),
             Self::Char => write!(f, "char"),
             Self::String => write!(f, "string"),
             Self::Tuple(elements) => {
