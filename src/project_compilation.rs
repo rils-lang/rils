@@ -3,22 +3,27 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rils_frontend::{ProjectSemanticIndex, SourceDatabase};
+use rils_frontend::{CompilationSession, ProjectId};
 
-use crate::{Project, RilsError, SourceFile, SourceId, ast, lexer, macros, parser};
+use crate::{Project, RilsError, SourceId, ast, lexer, macros, parser};
 
 #[derive(Default)]
-pub(crate) struct SourceRegistry {
+pub(crate) struct ProjectCompilation {
     by_path: HashMap<PathBuf, SourceId>,
-    database: SourceDatabase,
-    modules: ProjectSemanticIndex,
+    session: CompilationSession,
+    project: Option<ProjectId>,
 }
 
-impl SourceRegistry {
+impl ProjectCompilation {
     pub(crate) fn register_project(&mut self, project: &Project) {
+        let project_id = self.session.register_project(project.name());
+        self.project = Some(project_id);
         for file in project.modules() {
             let source = self.register_path(&file.path);
-            self.modules.register(&file.module_path, source);
+            self.session
+                .project_mut(project_id)
+                .expect("registered project has semantic state")
+                .register(&file.module_path, source);
         }
     }
 
@@ -28,7 +33,7 @@ impl SourceRegistry {
             return *id;
         }
         let name = path.to_string_lossy().into_owned();
-        let id = self.database.reserve(name);
+        let id = self.session.sources_mut().reserve(name);
         self.by_path.insert(key, id);
         id
     }
@@ -36,12 +41,15 @@ impl SourceRegistry {
     pub(crate) fn register_source(&mut self, path: &Path, source: &str) -> SourceId {
         let id = self.register_path(path);
         let name = self
-            .database
+            .session
+            .sources()
             .source_file(id)
             .expect("registered source has metadata")
             .name
             .clone();
-        self.database.set_source_with_id(id, name, source);
+        self.session
+            .sources_mut()
+            .set_source_with_id(id, name, source);
         id
     }
 
@@ -50,13 +58,19 @@ impl SourceRegistry {
     }
 
     pub(crate) fn module_path(&self, source: SourceId) -> Option<&str> {
-        self.modules
+        self.session
+            .project(self.project?)?
             .module(source)
             .map(|module| module.path.as_str())
     }
 
-    pub(crate) fn source_files(&self) -> Vec<SourceFile> {
-        self.database.source_files()
+    pub(crate) fn session(&self) -> &CompilationSession {
+        &self.session
+    }
+
+    pub(crate) fn project_id(&self) -> ProjectId {
+        self.project
+            .expect("project compilation must register a project before compiling")
     }
 
     pub(crate) fn parse(
@@ -65,10 +79,11 @@ impl SourceRegistry {
         native_macros: &[macros::NativeMacroDefinition],
     ) -> Result<ast::Program, RilsError> {
         if native_macros == macros::STANDARD_NATIVE_MACROS {
-            return self.database.parse(id).map_err(Into::into);
+            return self.session.sources().parse(id).map_err(Into::into);
         }
         let source = self
-            .database
+            .session
+            .sources()
             .source_text(id)
             .expect("source must be registered before parsing");
         let tokens = lexer::lex_with_source_id(source, id).map_err(RilsError::Lex)?;
@@ -76,8 +91,8 @@ impl SourceRegistry {
     }
 
     pub(crate) fn location(&self, id: SourceId) -> Option<(&str, &str)> {
-        let file = self.database.source_file(id)?;
-        let source = self.database.source_text(id)?;
+        let file = self.session.sources().source_file(id)?;
+        let source = self.session.sources().source_text(id)?;
         Some((&file.name, source))
     }
 }

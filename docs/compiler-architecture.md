@@ -27,7 +27,7 @@ rils
 - `rils_compiler`：HIR lowering 和 MIR lowering，并为现有调用方兼容转发 Host API。
 - 根 `rils` crate：公共 `Engine`、项目加载、AST 解释器、运行时 `Value`、字节码编码与格式、verifier、VM、宿主执行和标准库实际行为。
 
-目前已经建立了 `SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR，整体方向正确。但部分新结构仍作为旁路信息存在，旧流程仍会改写 AST、拼装 synthetic AST，或在解释器、VM 和 Analyzer 中重复解析语义。
+目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 已开始共享这一会话模型，整体方向正确。但 compiler 仍会把项目模块拼成 synthetic AST，部分旧流程也仍会改写 AST，或在解释器、VM 和 Analyzer 中重复解析语义。
 
 ## 与 Rust 编译器的对照
 
@@ -131,11 +131,11 @@ rils runtime  → rils_host
 
 后续仍需移除 Host enum synthetic AST 注入；该事项属于语义声明迁移，不再是 crate 所属层级问题。新增 crate 时必须遵守仓库命名和版本规范，不因内部重构自动修改版本号。
 
-### 多文件项目 synthetic AST 拼装
+### 多文件项目 synthetic AST 拼装（会话基础已完成）
 
 根 `src/lib.rs` 当前仍通过 `ProjectModuleNode`、`project_module_statements` 和 `prepare_project_entry` 把多个文件包装成 inline module，并插入 synthetic 入口调用。
 
-这意味着 `ModuleId` 尚未成为真正的编译单位。应建立统一的 `CompilationSession` 或 `ProjectCompilation`：
+统一的 `CompilationSession`、稳定 `ProjectId` 以及根项目加载器的 `ProjectCompilation` 已经建立，Analyzer 也不再分别持有源码数据库和项目语义索引。当前会话结构为：
 
 ```text
 CompilationSession
@@ -148,7 +148,7 @@ CompilationSession
 └── entry DefId
 ```
 
-compiler 应接收该 session，而不是扁平化后的单个 `Program`。无 manifest 的 legacy entry loader 可以作为兼容入口保留，但不应继续作为主项目编译模型。
+compiler 的项目入口已经接收该 session，但 lowering 仍接收扁平化后的单个 `Program`。下一阶段需要让每个模块成为独立分析和 lowering 单位，并删除 `ProjectModuleNode`、`project_module_statements` 和 synthetic `main()` 调用。无 manifest 的 legacy entry loader 可以作为兼容入口保留，但不应继续作为主项目编译模型。
 
 ### 语义 ID 仍由 Span 反推
 
@@ -309,7 +309,7 @@ rils
 迁移应按依赖方向分批进行，每批保持解释器和 VM 对照测试通过：
 
 1. 已完成：抽离 Host Contract/Manifest 共享层，解除 Analyzer 对 compiler 的依赖。
-2. 建立 `CompilationSession`，让 `ModuleGraph` 成为项目编译主模型。
+2. 进行中：已建立 `CompilationSession` 并迁移项目加载器、compiler 输入和 Analyzer；仍需取消扁平 AST，使 `ModuleGraph` 成为 lowering 主模型。
 3. 在 syntax/HIR 构造阶段分配真实 `DefId`、`ExprId`，停止从 Span 反推。
 4. 将 numeric literal 和 Host type AST rewrite 改为 semantic side table，并删除旧模块。
 5. 让 AST 解释器消费共享 `DefMap`、`TypeckResults`，收缩旧静态检查逻辑。

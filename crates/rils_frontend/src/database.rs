@@ -4,6 +4,77 @@ use crate::{
     DefId, DefMap, DefinitionData, FrontendError, ModuleId, SourceFile, SourceId, ast::Program,
 };
 
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ProjectId(u32);
+
+impl ProjectId {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CompilationSession {
+    sources: SourceDatabase,
+    next_project_id: u32,
+    projects_by_name: HashMap<String, ProjectId>,
+    projects: BTreeMap<ProjectId, ProjectSemanticIndex>,
+}
+
+impl CompilationSession {
+    pub fn sources(&self) -> &SourceDatabase {
+        &self.sources
+    }
+
+    pub fn sources_mut(&mut self) -> &mut SourceDatabase {
+        &mut self.sources
+    }
+
+    pub fn register_project(&mut self, name: impl Into<String>) -> ProjectId {
+        let name = name.into();
+        if let Some(id) = self.projects_by_name.get(&name) {
+            return *id;
+        }
+        self.next_project_id = self
+            .next_project_id
+            .checked_add(1)
+            .expect("project ID overflow");
+        let id = ProjectId::new(self.next_project_id);
+        self.projects_by_name.insert(name, id);
+        self.projects.insert(id, ProjectSemanticIndex::default());
+        id
+    }
+
+    pub fn project_id(&self, name: &str) -> Option<ProjectId> {
+        self.projects_by_name.get(name).copied()
+    }
+
+    pub fn project(&self, id: ProjectId) -> Option<&ProjectSemanticIndex> {
+        self.projects.get(&id)
+    }
+
+    pub fn project_mut(&mut self, id: ProjectId) -> Option<&mut ProjectSemanticIndex> {
+        self.projects.get_mut(&id)
+    }
+
+    pub fn replace_project(&mut self, id: ProjectId, semantics: ProjectSemanticIndex) {
+        let slot = self
+            .projects
+            .get_mut(&id)
+            .expect("project must be registered before replacing its semantics");
+        *slot = semantics;
+    }
+
+    pub fn clear_projects(&mut self) {
+        self.projects_by_name.clear();
+        self.projects.clear();
+    }
+
+    pub fn projects(&self) -> impl Iterator<Item = &ProjectSemanticIndex> {
+        self.projects.values()
+    }
+}
+
 #[derive(Clone, Debug)]
 struct SourceEntry {
     file: SourceFile,

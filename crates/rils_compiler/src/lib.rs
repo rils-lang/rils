@@ -161,6 +161,21 @@ pub fn compile_program_with_host_and_sources(
     mir::lower(hir::lower_with_host(&program, host, &analysis, sources)?)
 }
 
+pub fn compile_program_with_host_and_session(
+    program: &Program,
+    host: &HostContract,
+    session: &rils_frontend::CompilationSession,
+    project: rils_frontend::ProjectId,
+) -> Result<mir::MirProgram, CompileError> {
+    if session.project(project).is_none() {
+        return Err(CompileError::new(
+            "compilation project is not registered in this session",
+            Span::default(),
+        ));
+    }
+    compile_program_with_host_and_sources(program, host, session.sources().source_files())
+}
+
 #[cfg(test)]
 #[path = "../tests/unit/compiler.rs"]
 mod tests;

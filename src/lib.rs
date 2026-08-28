@@ -9,8 +9,8 @@ mod limits;
 mod native_type;
 mod numeric;
 mod output;
+mod project_compilation;
 mod runtime_type;
-mod source_registry;
 mod standard_library;
 mod value;
 
@@ -72,7 +72,7 @@ use std::{
     rc::Rc,
 };
 
-use source_registry::SourceRegistry;
+use project_compilation::ProjectCompilation;
 
 pub use bytecode::{
     BYTECODE_FORMAT_VERSION, BYTECODE_HOST_ABI_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeError,
@@ -284,7 +284,7 @@ impl Engine {
 
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value, RilsError> {
         let path = path.as_ref();
-        let mut sources = SourceRegistry::default();
+        let mut sources = ProjectCompilation::default();
         let result = (|| {
             let project =
                 discover_entry_project(path).map_err(|error| module_message(error.to_string()))?;
@@ -311,7 +311,7 @@ impl Engine {
     }
 }
 
-fn locate_rils_error(error: RilsError, sources: &SourceRegistry) -> RilsError {
+fn locate_rils_error(error: RilsError, sources: &ProjectCompilation) -> RilsError {
     if matches!(error, RilsError::Located { .. }) {
         return error;
     }
@@ -351,7 +351,7 @@ fn load_external_modules(
     base: &Path,
     native_macros: &[macros::NativeMacroDefinition],
     loading: &mut HashSet<PathBuf>,
-    sources: &mut SourceRegistry,
+    sources: &mut ProjectCompilation,
 ) -> Result<(), RilsError> {
     for statement in statements {
         let statement = match statement {
@@ -418,7 +418,7 @@ fn load_file_modules(
     entry_path: &Path,
     project: &Project,
     native_macros: &[macros::NativeMacroDefinition],
-    sources: &mut SourceRegistry,
+    sources: &mut ProjectCompilation,
     require_entry: bool,
 ) -> Result<(), RilsError> {
     if project.manifest_path().is_none() {
@@ -815,7 +815,7 @@ fn compile_project_file_with_host(
     host: &HostContract,
     require_entry: bool,
 ) -> Result<BytecodeModule, CompileError> {
-    let mut sources = SourceRegistry::default();
+    let mut sources = ProjectCompilation::default();
     sources.register_project(project);
     let result = (|| {
         let source = fs::read_to_string(path).map_err(|error| {
@@ -837,12 +837,17 @@ fn compile_project_file_with_host(
             require_entry,
         )
         .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
-        bytecode::compile_program_with_host_and_sources(&program, host, sources.source_files())
+        bytecode::compile_program_with_host_and_session(
+            &program,
+            host,
+            sources.session(),
+            sources.project_id(),
+        )
     })();
     result.map_err(|error| locate_compile_error(error, &sources))
 }
 
-fn locate_compile_error(error: CompileError, sources: &SourceRegistry) -> CompileError {
+fn locate_compile_error(error: CompileError, sources: &ProjectCompilation) -> CompileError {
     if error.source_name().is_some() {
         return error;
     }

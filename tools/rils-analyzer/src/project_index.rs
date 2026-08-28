@@ -32,7 +32,7 @@ pub(super) fn collect_external_exports(
                 continue;
             };
             let program = if source_id != SourceId::UNKNOWN {
-                let Ok(program) = server.sources.parse(source_id) else {
+                let Ok(program) = server.compilation.sources().parse(source_id) else {
                     continue;
                 };
                 program

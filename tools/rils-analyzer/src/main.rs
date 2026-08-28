@@ -7,7 +7,7 @@ use std::{
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use rils_frontend::{
-    DefinitionData, FrontendError, FunctionSignature, ProjectSemanticIndex, SourceDatabase,
+    CompilationSession, DefinitionData, FrontendError, FunctionSignature, ProjectSemanticIndex,
     SourceId, Span, Type,
     analysis::{
         DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind, SymbolOccurrence,
@@ -71,9 +71,8 @@ fn main() -> Result<(), AnyError> {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
-        project_semantics: HashMap::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
-        sources: SourceDatabase::default(),
     };
     server.load_projects(&initialization)?;
     server.load_host_manifests(&initialization)?;
@@ -91,9 +90,12 @@ struct Server {
     host_functions: HashMap<String, FunctionSignature>,
     host_types: HashSet<String>,
     projects: Vec<Project>,
-    project_semantics: HashMap<PathBuf, ProjectSemanticIndex>,
+    compilation: CompilationSession,
     next_source_id: u32,
-    sources: SourceDatabase,
+}
+
+fn project_session_name(project: &Project) -> String {
+    project.root().to_string_lossy().into_owned()
 }
 
 impl Server {
@@ -107,7 +109,7 @@ impl Server {
             .flatten()
             .filter(|project| seen.insert(project.root().to_path_buf()))
             .collect();
-        self.project_semantics.clear();
+        self.compilation.clear_projects();
         Ok(())
     }
 
@@ -193,9 +195,10 @@ impl Server {
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri);
-        self.sources
+        self.compilation
+            .sources_mut()
             .set_source_with_id(source_id, uri.clone(), text.clone());
-        let analysis = self.sources.parse(source_id).map(|program| {
+        let analysis = self.compilation.sources().parse(source_id).map(|program| {
             analyze_program_with_host_and_source_id_and_external_exports(
                 &program,
                 source_id,
@@ -229,10 +232,11 @@ impl Server {
     }
 
     fn parsed_document(&self, document: &Document) -> Option<rils_frontend::ast::Program> {
-        self.sources
+        self.compilation
+            .sources()
             .source_text(document.source_id)
             .filter(|source| *source == document.text)
-            .and_then(|_| self.sources.try_parse(document.source_id))
+            .and_then(|_| self.compilation.sources().try_parse(document.source_id))
             .unwrap_or_else(|| {
                 let tokens = lex_with_source_id(&document.text, document.source_id)
                     .map_err(FrontendError::Lex)?;
@@ -312,14 +316,15 @@ impl Server {
             };
             let uri = path_to_file_uri(path);
             let source_id = self.source_id_for_uri(&uri);
-            self.sources
+            self.compilation
+                .sources_mut()
                 .set_source_with_id(source_id, uri.clone(), text.clone());
             self.workspace_documents.insert(uri.clone());
             self.documents.insert(
                 uri,
                 Document {
                     source_id,
-                    analysis: self.sources.parse(source_id).map(|program| {
+                    analysis: self.compilation.sources().parse(source_id).map(|program| {
                         analyze_program_with_host_and_source_id_and_external_exports(
                             &program,
                             source_id,
@@ -338,45 +343,54 @@ impl Server {
 
     fn reanalyze_documents(&mut self) {
         for (uri, document) in &self.documents {
-            self.sources
-                .set_source_with_id(document.source_id, uri.clone(), document.text.clone());
+            self.compilation.sources_mut().set_source_with_id(
+                document.source_id,
+                uri.clone(),
+                document.text.clone(),
+            );
         }
         self.rebuild_project_semantics();
         let exports = project_index::collect_external_exports(self);
         for document in self.documents.values_mut() {
-            document.analysis = self.sources.parse(document.source_id).map(|program| {
-                analyze_program_with_host_and_source_id_and_external_exports(
-                    &program,
-                    document.source_id,
-                    &self.host_contract,
-                    &exports,
-                )
-            });
+            document.analysis =
+                self.compilation
+                    .sources()
+                    .parse(document.source_id)
+                    .map(|program| {
+                        analyze_program_with_host_and_source_id_and_external_exports(
+                            &program,
+                            document.source_id,
+                            &self.host_contract,
+                            &exports,
+                        )
+                    });
         }
         self.rebuild_project_semantics();
     }
 
     fn rebuild_project_semantics(&mut self) {
-        self.project_semantics = self
-            .projects
-            .iter()
-            .map(|project| {
-                let mut index = ProjectSemanticIndex::default();
-                for file in project.modules() {
-                    if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
-                        index.register(&file.module_path, document.source_id);
-                        if let Ok(analysis) = &document.analysis {
-                            index.index_def_map(&analysis.def_map);
-                        }
+        self.compilation.clear_projects();
+        for project in &self.projects {
+            let project_id = self
+                .compilation
+                .register_project(project_session_name(project));
+            let mut index = ProjectSemanticIndex::default();
+            for file in project.modules() {
+                if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
+                    index.register(&file.module_path, document.source_id);
+                    if let Ok(analysis) = &document.analysis {
+                        index.index_def_map(&analysis.def_map);
                     }
                 }
-                (project.root().to_path_buf(), index)
-            })
-            .collect();
+            }
+            self.compilation.replace_project(project_id, index);
+        }
     }
 
     fn project_semantics(&self, project: &Project) -> Option<&ProjectSemanticIndex> {
-        self.project_semantics.get(project.root())
+        self.compilation
+            .project_id(&project_session_name(project))
+            .and_then(|id| self.compilation.project(id))
     }
 
     fn document_uri_for_source(&self, source: SourceId) -> Option<&str> {
@@ -387,8 +401,8 @@ impl Server {
     }
 
     fn project_definition_by_id(&self, id: rils_frontend::DefId) -> Option<&DefinitionData> {
-        self.project_semantics
-            .values()
+        self.compilation
+            .projects()
             .find_map(|index| index.definition(id))
     }
 

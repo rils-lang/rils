@@ -107,3 +107,48 @@ fn project_semantic_index_collects_document_definitions() {
 
     assert_eq!(index.definition(definition.id), Some(&definition));
 }
+
+#[test]
+fn compilation_session_keeps_project_and_source_identities_together() {
+    let mut session = CompilationSession::default();
+    let first = session.register_project("workspace/first");
+    let second = session.register_project("workspace/second");
+    let first_source = session
+        .sources_mut()
+        .set_source("first/src/main.rils", "fn main() {}");
+    let second_source = session
+        .sources_mut()
+        .set_source("second/src/main.rils", "fn main() {}");
+
+    let first_module = session
+        .project_mut(first)
+        .unwrap()
+        .register("main", first_source);
+    let second_module = session
+        .project_mut(second)
+        .unwrap()
+        .register("main", second_source);
+
+    assert_ne!(first, second);
+    assert_eq!(session.register_project("workspace/first"), first);
+    assert_eq!(session.project_id("workspace/second"), Some(second));
+    assert_eq!(
+        session
+            .project(first)
+            .unwrap()
+            .module(first_source)
+            .unwrap()
+            .id,
+        first_module
+    );
+    assert_eq!(
+        session
+            .project(second)
+            .unwrap()
+            .module(second_source)
+            .unwrap()
+            .id,
+        second_module
+    );
+    assert_ne!(first_source, second_source);
+}

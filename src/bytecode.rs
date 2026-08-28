@@ -578,6 +578,7 @@ pub fn compile_with_host(
     encode(rils_compiler::compile_with_host(source, host)?)
 }
 
+#[cfg(test)]
 pub(crate) fn compile_program_with_host_and_sources(
     program: &crate::ast::Program,
     host: &HostContract,
@@ -586,6 +587,18 @@ pub(crate) fn compile_program_with_host_and_sources(
     validate_contract_abi(host)?;
     encode(rils_compiler::compile_program_with_host_and_sources(
         program, host, sources,
+    )?)
+}
+
+pub(crate) fn compile_program_with_host_and_session(
+    program: &crate::ast::Program,
+    host: &HostContract,
+    session: &rils_frontend::CompilationSession,
+    project: rils_frontend::ProjectId,
+) -> Result<BytecodeModule, CompileError> {
+    validate_contract_abi(host)?;
+    encode(rils_compiler::compile_program_with_host_and_session(
+        program, host, session, project,
     )?)
 }
 
