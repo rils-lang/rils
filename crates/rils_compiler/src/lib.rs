@@ -210,18 +210,88 @@ pub fn compile_program_with_host_and_session(
             Span::default(),
         )
     })?;
+    let mut syntax = syntax.clone();
+    let mut host_program = Program {
+        statements: Vec::new(),
+        type_references: Vec::new(),
+        macros: Vec::new(),
+    };
+    rils_frontend::inject_host_enum_declarations(&mut host_program, host);
+    if !host_program.statements.is_empty() {
+        syntax.push_root(host_program);
+    }
+    let signatures = host.signatures();
+    let host_types = host
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
+    let prepare = |program: &mut Program| -> Result<(), CompileError> {
+        if let Some(error) = rils_frontend::resolve_host_type_names(program, &host_types)
+            .into_iter()
+            .next()
+        {
+            return Err(CompileError::new(error.message, error.span));
+        }
+        rils_frontend::resolve_numeric_literals_with_host_functions(program, &signatures)
+            .map_err(|error| CompileError::new(error.message, error.span))?;
+        Ok(())
+    };
+    for program in syntax.roots_mut() {
+        prepare(program)?;
+    }
+    for (_, program) in syntax.modules_mut() {
+        prepare(program)?;
+    }
+    let analysis = rils_frontend::analyze_project_with_host_declarations(
+        &syntax,
+        semantics.module_graph(),
+        &signatures,
+        &host_types,
+    );
+    if let Some(diagnostic) = analysis
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+    {
+        return Err(CompileError::new(
+            diagnostic.message.clone(),
+            diagnostic.span,
+        ));
+    }
     let program = syntax.flattened_program(semantics.module_graph());
     let entry = (|| {
         let source = semantics.entry_source()?;
         let module = semantics.module(source)?;
         Some((source, module.path.clone()))
     })();
-    compile_program_with_host_and_sources_and_entry(
+    let entry = entry
+        .map(|(source, module_path)| {
+            analysis
+                .def_map
+                .definitions()
+                .find(|definition| {
+                    definition.name == "main"
+                        && definition.span.source == source
+                        && definition.kind == rils_frontend::semantic::SymbolKind::Function
+                        && definition.container
+                            == Some(rils_frontend::SymbolContainer::Module(module_path.clone()))
+                })
+                .map(|definition| definition.id)
+                .ok_or_else(|| {
+                    CompileError::new(
+                        "project entry definition was not preserved during analysis",
+                        Span::default(),
+                    )
+                })
+        })
+        .transpose()?;
+    mir::lower(hir::lower_with_host(
         &program,
         host,
+        &analysis,
         session.sources().source_files(),
         entry,
-    )
+    )?)
 }
 
 #[cfg(test)]

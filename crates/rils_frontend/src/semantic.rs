@@ -139,6 +139,14 @@ impl DefMap {
     pub fn impl_at(&self, span: Span) -> Option<ImplId> {
         self.impls.get(&span).copied()
     }
+
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.definitions.extend(other.definitions);
+        self.resolutions.extend(other.resolutions);
+        self.bodies.extend(other.bodies);
+        self.definition_bodies.extend(other.definition_bodies);
+        self.impls.extend(other.impls);
+    }
 }
 
 fn collect_owner_spans(statements: &[Stmt], bodies: &mut Vec<(Span, Span)>, impls: &mut Vec<Span>) {
@@ -304,6 +312,13 @@ impl TypeckResults {
             .and_then(|(_, id)| self.resolved_call(*id).map(|call| (*id, call)))
     }
 
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.expression_ids.extend(other.expression_ids);
+        self.expression_types.extend(other.expression_types);
+        self.resolved_calls.extend(other.resolved_calls);
+        self.resolved_values.extend(other.resolved_values);
+    }
+
     pub(crate) fn resolve_call(&mut self, span: Span, call: ResolvedCall) {
         if let Some(id) = self.expression_id(span) {
             self.resolved_calls.insert(id, call);
@@ -322,53 +337,80 @@ pub(crate) fn resolve_program_calls(
     definitions: &DefMap,
     host_functions: &HashMap<String, FunctionSignature>,
     results: &mut TypeckResults,
+    module_path: &[String],
+) {
+    resolve_project_calls(
+        &[(module_path, program)],
+        definitions,
+        host_functions,
+        results,
+    );
+}
+
+pub(crate) fn resolve_project_calls(
+    units: &[(&[String], &Program)],
+    definitions: &DefMap,
+    host_functions: &HashMap<String, FunctionSignature>,
+    results: &mut TypeckResults,
 ) {
     let mut iterator_types = HashSet::new();
     let mut callables = CallableDefinitions::default();
-    collect_trait_implementations(
-        &program.statements,
-        &mut Vec::new(),
-        "Iterator",
-        &mut iterator_types,
-    );
-    collect_callable_definitions(
-        &program.statements,
-        &mut Vec::new(),
-        definitions,
-        &mut callables,
-    );
-    collect_callable_aliases(&program.statements, &mut Vec::new(), &mut callables);
-    collect_host_aliases(
-        &program.statements,
-        &mut Vec::new(),
-        host_functions,
-        &mut callables.host_aliases,
-    );
-    visit_statements(
-        &program.statements,
-        &mut Vec::new(),
-        None,
-        &mut |expression, namespace, self_type| {
-            if let Some(definition) = callables.resolve(expression, results, namespace, self_type) {
-                results.resolve_value(expression.span(), definition);
-            }
-            let Expr::Call { callee, span, .. } = expression else {
-                return;
-            };
-            let context = CallResolutionContext {
-                definitions,
-                callables: &callables,
-                host_functions,
-                iterator_types: &iterator_types,
-                results,
-                namespace,
-                self_type,
-            };
-            if let Some(call) = resolve_callee(callee, &context) {
-                results.resolve_call(*span, call);
-            }
-        },
-    );
+    for (module_path, program) in units {
+        collect_trait_implementations(
+            &program.statements,
+            &mut module_path.to_vec(),
+            "Iterator",
+            &mut iterator_types,
+        );
+        collect_callable_definitions(
+            &program.statements,
+            &mut module_path.to_vec(),
+            definitions,
+            &mut callables,
+        );
+    }
+    for (module_path, program) in units {
+        collect_callable_aliases(
+            &program.statements,
+            &mut module_path.to_vec(),
+            &mut callables,
+        );
+        collect_host_aliases(
+            &program.statements,
+            &mut module_path.to_vec(),
+            host_functions,
+            &mut callables.host_aliases,
+        );
+    }
+    for (module_path, program) in units {
+        visit_statements(
+            &program.statements,
+            &mut module_path.to_vec(),
+            None,
+            &mut |expression, namespace, self_type| {
+                if let Some(definition) =
+                    callables.resolve(expression, results, namespace, self_type)
+                {
+                    results.resolve_value(expression.span(), definition);
+                }
+                let Expr::Call { callee, span, .. } = expression else {
+                    return;
+                };
+                let context = CallResolutionContext {
+                    definitions,
+                    callables: &callables,
+                    host_functions,
+                    iterator_types: &iterator_types,
+                    results,
+                    namespace,
+                    self_type,
+                };
+                if let Some(call) = resolve_callee(callee, &context) {
+                    results.resolve_call(*span, call);
+                }
+            },
+        );
+    }
 }
 
 struct CallResolutionContext<'a> {

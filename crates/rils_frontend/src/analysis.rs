@@ -93,6 +93,17 @@ pub struct DocumentAnalysis {
     pub typeck_results: crate::semantic::TypeckResults,
 }
 
+impl DocumentAnalysis {
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.diagnostics.extend(other.diagnostics);
+        self.symbols.extend(other.symbols);
+        self.inlay_hints.extend(other.inlay_hints);
+        self.expression_types.extend(other.expression_types);
+        self.def_map.extend(other.def_map);
+        self.typeck_results.extend(other.typeck_results);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InlayTypeHint {
     pub position: usize,
@@ -179,6 +190,7 @@ pub fn analyze_program_with_host_declarations(
         host_types,
         &program,
         &HashMap::new(),
+        &[],
     )
     .analyze(&program);
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
@@ -264,6 +276,24 @@ pub fn analyze_program_with_source_id_and_external_exports_and_host_types(
     host_types: &HashSet<String>,
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
 ) -> DocumentAnalysis {
+    analyze_program_in_module_with_external_exports_and_host_types(
+        program,
+        source_id,
+        host_functions,
+        host_types,
+        external_exports,
+        &[],
+    )
+}
+
+pub(crate) fn analyze_program_in_module_with_external_exports_and_host_types(
+    program: &Program,
+    source_id: SourceId,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+    external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+    module_path: &[String],
+) -> DocumentAnalysis {
     let mut program = program.clone();
     let resolution_errors = crate::resolve_host_type_names(&mut program, host_types);
     let mut analysis = Analyzer::new(
@@ -272,6 +302,7 @@ pub fn analyze_program_with_source_id_and_external_exports_and_host_types(
         host_types,
         &program,
         external_exports,
+        module_path,
     )
     .analyze(&program);
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
@@ -324,6 +355,7 @@ impl Analyzer {
         host_types: &HashSet<String>,
         program: &Program,
         external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+        module_path: &[String],
     ) -> Self {
         let definition_modules = external_exports
             .values()
@@ -331,7 +363,7 @@ impl Analyzer {
             .filter(|export| export.span.source == source_id)
             .map(|export| (export.span, export.module_path.clone()))
             .collect();
-        let mut module_exports = collect_module_exports(&program.statements);
+        let mut module_exports = collect_module_exports(&program.statements, module_path);
         for (module, exports) in external_exports {
             module_exports.entry(module.clone()).or_insert_with(|| {
                 exports
@@ -393,6 +425,18 @@ impl Analyzer {
                     container: None,
                 },
             );
+        }
+        if !module_path.is_empty()
+            && let Some(exports) = external_exports.get("")
+        {
+            for export in exports {
+                globals.entry(export.name.clone()).or_insert(Definition {
+                    span: Some(export.span),
+                    id: export.definition_id,
+                    kind: export.kind,
+                    container: Some(SymbolContainer::Module("crate".into())),
+                });
+            }
         }
         for builtin in rils_builtins::BUILTINS {
             if builtin.path.contains("::") {
@@ -489,7 +533,7 @@ impl Analyzer {
             next_symbol: HashMap::new(),
             scopes: vec![globals],
             glob_imports: vec![false],
-            module_path: Vec::new(),
+            module_path: module_path.to_vec(),
             definition_modules,
             module_exports,
             trait_members: HashMap::new(),
@@ -530,10 +574,15 @@ impl Analyzer {
                     parameters: parameters.clone(),
                     return_type: (**return_type).clone(),
                 };
-                for path in [
-                    format!("{module}::{}", export.name),
-                    format!("crate::{module}::{}", export.name),
-                ] {
+                let paths = if module.is_empty() {
+                    vec![export.name.clone(), format!("crate::{}", export.name)]
+                } else {
+                    vec![
+                        format!("{module}::{}", export.name),
+                        format!("crate::{module}::{}", export.name),
+                    ]
+                };
+                for path in paths {
                     inference_functions
                         .entry(path)
                         .or_insert_with(|| signature.clone());
@@ -638,6 +687,7 @@ impl Analyzer {
             &def_map,
             &self.host_functions,
             &mut typeck_results,
+            &self.module_path,
         );
         self.result.def_map = def_map;
         self.result.typeck_results = typeck_results;
@@ -1325,9 +1375,27 @@ impl Analyzer {
                 if let Some(name) = segments.first() {
                     self.reference(
                         name,
-                        Span::new(span.start, span.start + name.len()),
+                        Span::in_source(span.source, span.start, span.start + name.len()),
                         SymbolKind::Type,
                     );
+                }
+                if segments.len() > 1
+                    && let Some(export) =
+                        imports::path_export(&self.module_exports, &self.module_path, segments)
+                {
+                    let member = segments.last().expect("non-empty path");
+                    self.result.symbols.push(SymbolOccurrence {
+                        name: member.clone(),
+                        span: member_name_span(*span, member),
+                        definition_span: Some(export.span),
+                        symbol_id: None,
+                        definition_id: export.definition_id,
+                        kind: export.kind,
+                        is_definition: false,
+                        inferred_type: export.inferred_type,
+                        detail: export.detail,
+                        container: Some(SymbolContainer::Module(export.module_path)),
+                    });
                 }
                 let qualified_name = segments.join("::");
                 if let (Some(member), Some(signature)) =

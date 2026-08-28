@@ -6,6 +6,7 @@ mod format_check;
 mod host_analysis;
 mod host_type_resolution;
 mod ownership;
+mod project_analysis;
 mod resolution;
 pub mod semantic;
 pub mod standard_library;
@@ -25,6 +26,7 @@ pub use host_analysis::{
     analyze_with_host_and_source_id_and_external_exports, inject_host_enum_declarations,
 };
 pub use host_type_resolution::{HostTypeResolutionError, resolve_host_type_names};
+pub use project_analysis::analyze_project_with_host_declarations;
 pub use resolution::{
     NumericResolutionError, resolve_numeric_literals, resolve_numeric_literals_with_host_functions,
 };

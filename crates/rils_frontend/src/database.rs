@@ -110,12 +110,34 @@ impl ProjectSyntax {
         self.roots.iter()
     }
 
+    pub fn roots_mut(&mut self) -> impl ExactSizeIterator<Item = &mut Program> {
+        self.roots.iter_mut()
+    }
+
     pub fn module(&self, module: ModuleId) -> Option<&Program> {
         self.modules.get(&module)
     }
 
     pub fn modules(&self) -> impl ExactSizeIterator<Item = (ModuleId, &Program)> {
         self.modules.iter().map(|(id, program)| (*id, program))
+    }
+
+    pub fn modules_mut(&mut self) -> impl ExactSizeIterator<Item = (ModuleId, &mut Program)> {
+        self.modules.iter_mut().map(|(id, program)| (*id, program))
+    }
+
+    pub fn root_program(&self) -> Program {
+        let mut program = Program {
+            statements: Vec::new(),
+            type_references: Vec::new(),
+            macros: Vec::new(),
+        };
+        for root in &self.roots {
+            program.statements.extend(root.statements.clone());
+            program.type_references.extend(root.type_references.clone());
+            program.macros.extend(root.macros.clone());
+        }
+        program
     }
 
     #[doc(hidden)]
