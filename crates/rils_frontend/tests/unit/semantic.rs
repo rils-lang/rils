@@ -2,20 +2,93 @@ use super::*;
 
 #[test]
 fn expression_ids_are_deterministic_and_source_scoped() {
-    let first = Span::in_source(SourceId::new(1), 4, 5);
-    let second = Span::in_source(SourceId::new(1), 8, 12);
-    let external = Span::in_source(SourceId::new(2), 1, 3);
-    let types = HashMap::from([
-        (second, Type::Bool),
-        (external, Type::String),
-        (first, Type::I32),
-    ]);
+    let source = SourceId::new(1);
+    let tokens = crate::lexer::lex_with_source_id("let first = 1; let second = true;", source)
+        .expect("lex expressions");
+    let program = crate::parser::parse(tokens).expect("parse expressions");
+    let crate::ast::Stmt::Let {
+        initializer: first, ..
+    } = &program.statements[0]
+    else {
+        panic!("expected first binding");
+    };
+    let crate::ast::Stmt::Let {
+        initializer: second,
+        ..
+    } = &program.statements[1]
+    else {
+        panic!("expected second binding");
+    };
+    let first = first.span();
+    let second = second.span();
+    let types = HashMap::from([(first, Type::I32), (second, Type::Bool)]);
 
-    let results = TypeckResults::from_expression_types(&types);
+    let results = TypeckResults::from_program_and_expression_types(&program, source, &types);
     assert_eq!(results.expression_id(first).unwrap().local, 0);
     assert_eq!(results.expression_id(second).unwrap().local, 1);
-    assert_eq!(results.expression_id(external).unwrap().local, 0);
     assert_eq!(results.expression_type_at(second), Some(&Type::Bool));
+}
+
+#[test]
+fn expressions_with_the_same_span_keep_distinct_identities() {
+    let source = SourceId::new(7);
+    let span = Span::in_source(source, 4, 5);
+    let expression = crate::ast::Expr::Literal {
+        value: crate::ast::Literal::Integer(1),
+        span,
+    };
+    let program = crate::ast::Program {
+        statements: vec![
+            crate::ast::Stmt::Expr {
+                expression: expression.clone(),
+                terminated: true,
+            },
+            crate::ast::Stmt::Expr {
+                expression,
+                terminated: true,
+            },
+        ],
+        type_references: Vec::new(),
+        macros: Vec::new(),
+    };
+    let types = HashMap::from([(span, Type::I32)]);
+
+    let results = TypeckResults::from_program_and_expression_types(&program, source, &types);
+    let ids = results.expression_ids_at(span);
+
+    assert_eq!(ids.len(), 2);
+    assert_ne!(ids[0], ids[1]);
+    assert_eq!(ids[0].local, 0);
+    assert_eq!(ids[1].local, 1);
+    assert_eq!(results.expression_span(ids[0]), Some(span));
+    assert_eq!(results.expression_type(ids[0]), Some(&Type::I32));
+    assert_eq!(results.expression_type(ids[1]), Some(&Type::I32));
+}
+
+#[test]
+fn calls_with_the_same_span_resolve_by_expression_identity() {
+    let tokens =
+        crate::lexer::lex("let value: Option<i32> = Some(1); value.is_some();").expect("lex call");
+    let mut program = crate::parser::parse(tokens).expect("parse call");
+    program.statements.push(program.statements[1].clone());
+    let crate::ast::Stmt::Expr { expression, .. } = &program.statements[1] else {
+        panic!("expected method call");
+    };
+    let span = expression.span();
+
+    let analysis = crate::analysis::analyze_program(&program);
+    let ids = analysis.typeck_results.expression_ids_at(span);
+
+    assert_eq!(ids.len(), 2);
+    for id in ids {
+        assert!(matches!(
+            analysis.typeck_results.resolved_call(*id),
+            Some(ResolvedCall::Builtin {
+                id: rils_builtins::BuiltinId::OptionIsSome,
+                ..
+            })
+        ));
+    }
 }
 
 #[test]

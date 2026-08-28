@@ -7,8 +7,10 @@ use crate::{
     types::FunctionSignature,
 };
 
+mod expression_ids;
 mod visit;
 
+use expression_ids::ExpressionIds;
 use visit::visit_statements;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -194,29 +196,24 @@ pub enum ResolvedCall {
 /// inferred types and resolved callees instead of repeating name lookup.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TypeckResults {
-    expression_ids: HashMap<Span, ExprId>,
+    expression_ids: ExpressionIds,
     expression_types: HashMap<ExprId, Type>,
     resolved_calls: HashMap<ExprId, ResolvedCall>,
     resolved_values: HashMap<ExprId, DefId>,
 }
 
 impl TypeckResults {
-    pub(crate) fn from_expression_types(expression_types: &HashMap<Span, Type>) -> Self {
-        let mut spans = expression_types.keys().copied().collect::<Vec<_>>();
-        spans.sort_by_key(|span| (span.source, span.start, span.end));
-
-        let mut next_by_source = HashMap::<SourceId, u32>::new();
-        let mut expression_ids = HashMap::with_capacity(spans.len());
-        let mut types_by_id = HashMap::with_capacity(spans.len());
-        for span in spans {
-            let next = next_by_source.entry(span.source).or_insert(0);
-            let id = ExprId {
-                source: span.source,
-                local: *next,
-            };
-            *next = next.checked_add(1).expect("expression id overflow");
-            expression_ids.insert(span, id);
-            types_by_id.insert(id, expression_types[&span].clone());
+    pub(crate) fn from_program_and_expression_types(
+        program: &Program,
+        fallback_source: SourceId,
+        expression_types: &HashMap<Span, Type>,
+    ) -> Self {
+        let expression_ids = ExpressionIds::allocate(program, fallback_source);
+        let mut types_by_id = HashMap::new();
+        for (span, ty) in expression_types {
+            for id in expression_ids.at(*span) {
+                types_by_id.insert(*id, ty.clone());
+            }
         }
         Self {
             expression_ids,
@@ -227,7 +224,19 @@ impl TypeckResults {
     }
 
     pub fn expression_id(&self, span: Span) -> Option<ExprId> {
-        self.expression_ids.get(&span).copied()
+        self.expression_ids.at(span).first().copied()
+    }
+
+    /// Returns every expression whose syntax range is `span`, in AST visit order.
+    ///
+    /// A source range is a diagnostic location rather than a semantic identity,
+    /// so generated or recovered syntax can legitimately produce multiple IDs.
+    pub fn expression_ids_at(&self, span: Span) -> &[ExprId] {
+        self.expression_ids.at(span)
+    }
+
+    pub fn expression_span(&self, id: ExprId) -> Option<Span> {
+        self.expression_ids.span(id)
     }
 
     pub fn expression_type(&self, id: ExprId) -> Option<&Type> {
@@ -244,11 +253,12 @@ impl TypeckResults {
         source: SourceId,
         end: usize,
     ) -> Option<(ExprId, &Type)> {
-        self.expression_ids
+        self.expression_types
             .iter()
-            .filter(|(span, _)| span.source == source && span.end == end)
-            .max_by_key(|(span, _)| span.start)
-            .and_then(|(_, id)| self.expression_type(*id).map(|ty| (*id, ty)))
+            .filter_map(|(id, ty)| Some((*id, self.expression_span(*id)?, ty)))
+            .filter(|(_, span, _)| span.source == source && span.end == end)
+            .max_by_key(|(_, span, _)| span.start)
+            .map(|(id, _, ty)| (id, ty))
     }
 
     pub fn resolved_call(&self, id: ExprId) -> Option<&ResolvedCall> {
@@ -270,16 +280,14 @@ impl TypeckResults {
         source: SourceId,
         offset: usize,
     ) -> Option<(ExprId, &ResolvedCall)> {
-        self.expression_ids
+        self.resolved_calls
             .iter()
-            .filter(|(span, id)| {
-                span.source == source
-                    && span.start <= offset
-                    && offset <= span.end
-                    && self.resolved_calls.contains_key(id)
+            .filter_map(|(id, call)| Some((*id, self.expression_span(*id)?, call)))
+            .filter(|(_, span, _)| {
+                span.source == source && span.start <= offset && offset <= span.end
             })
-            .min_by_key(|(span, _)| span.end.saturating_sub(span.start))
-            .and_then(|(_, id)| self.resolved_call(*id).map(|call| (*id, call)))
+            .min_by_key(|(_, span, _)| span.end.saturating_sub(span.start))
+            .map(|(id, _, call)| (id, call))
     }
 
     pub(crate) fn extend(&mut self, other: Self) {
@@ -289,28 +297,25 @@ impl TypeckResults {
         self.resolved_values.extend(other.resolved_values);
     }
 
-    pub(crate) fn resolve_call(&mut self, span: Span, call: ResolvedCall) {
-        if let Some(id) = self.expression_id(span) {
-            self.resolved_calls.insert(id, call);
-        }
+    pub(crate) fn resolve_call(&mut self, id: ExprId, call: ResolvedCall) {
+        self.resolved_calls.insert(id, call);
     }
 
-    fn resolve_value(&mut self, span: Span, definition: DefId) {
-        if let Some(id) = self.expression_id(span) {
-            self.resolved_values.insert(id, definition);
-        }
+    fn resolve_value(&mut self, id: ExprId, definition: DefId) {
+        self.resolved_values.insert(id, definition);
     }
 }
 
 pub(crate) fn resolve_program_calls(
     program: &Program,
+    source: SourceId,
     definitions: &DefMap,
     host_functions: &HashMap<String, FunctionSignature>,
     results: &mut TypeckResults,
     module_path: &[String],
 ) {
     resolve_project_calls(
-        &[(module_path, program)],
+        &[(source, module_path, program)],
         definitions,
         host_functions,
         results,
@@ -318,14 +323,14 @@ pub(crate) fn resolve_program_calls(
 }
 
 pub(crate) fn resolve_project_calls(
-    units: &[(&[String], &Program)],
+    units: &[(SourceId, &[String], &Program)],
     definitions: &DefMap,
     host_functions: &HashMap<String, FunctionSignature>,
     results: &mut TypeckResults,
 ) {
     let mut iterator_types = HashSet::new();
     let mut callables = CallableDefinitions::default();
-    for (module_path, program) in units {
+    for (_, module_path, program) in units {
         collect_trait_implementations(
             &program.statements,
             &mut module_path.to_vec(),
@@ -339,7 +344,7 @@ pub(crate) fn resolve_project_calls(
             &mut callables,
         );
     }
-    for (module_path, program) in units {
+    for (_, module_path, program) in units {
         collect_callable_aliases(
             &program.statements,
             &mut module_path.to_vec(),
@@ -352,18 +357,23 @@ pub(crate) fn resolve_project_calls(
             &mut callables.host_aliases,
         );
     }
-    for (module_path, program) in units {
+    for (source, module_path, program) in units {
+        let ids = ExpressionIds::allocate(program, *source);
+        let mut ids = ids.visit_order().iter().copied();
         visit_statements(
             &program.statements,
             &mut module_path.to_vec(),
             None,
             &mut |expression, namespace, self_type| {
+                let id = ids
+                    .next()
+                    .expect("expression ID traversal must match syntax");
                 if let Some(definition) =
                     callables.resolve(expression, results, namespace, self_type)
                 {
-                    results.resolve_value(expression.span(), definition);
+                    results.resolve_value(id, definition);
                 }
-                let Expr::Call { callee, span, .. } = expression else {
+                let Expr::Call { callee, .. } = expression else {
                     return;
                 };
                 let context = CallResolutionContext {
@@ -376,10 +386,11 @@ pub(crate) fn resolve_project_calls(
                     self_type,
                 };
                 if let Some(call) = resolve_callee(callee, &context) {
-                    results.resolve_call(*span, call);
+                    results.resolve_call(id, call);
                 }
             },
         );
+        debug_assert!(ids.next().is_none());
     }
 }
 

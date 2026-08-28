@@ -69,7 +69,7 @@ pub fn analyze_project_with_host_declarations(
     }
     let resolution_units = units
         .iter()
-        .map(|(_, path, program)| (path.as_slice(), program))
+        .map(|(source, path, program)| (*source, path.as_slice(), program))
         .collect::<Vec<_>>();
     let definitions = result.def_map.clone();
     crate::semantic::resolve_project_calls(

@@ -684,10 +684,14 @@ impl Analyzer {
             &self.result.symbols,
             std::mem::take(&mut self.owner_ids),
         );
-        let mut typeck_results =
-            crate::semantic::TypeckResults::from_expression_types(&inference.expression_types);
+        let mut typeck_results = crate::semantic::TypeckResults::from_program_and_expression_types(
+            program,
+            self.source_id,
+            &inference.expression_types,
+        );
         crate::semantic::resolve_program_calls(
             program,
+            self.source_id,
             &def_map,
             &self.host_functions,
             &mut typeck_results,
