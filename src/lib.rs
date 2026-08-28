@@ -498,7 +498,7 @@ fn load_file_modules(
         };
         sources.set_module_program(file_source, module_program);
     }
-    *program = sources.flattened_program();
+    *program = sources.interpreter_program();
     if require_entry && invoke_entry {
         let mut entry_path = entry_module_path
             .expect("executable project entries must have a module identity")

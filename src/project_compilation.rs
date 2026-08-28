@@ -103,7 +103,7 @@ impl ProjectCompilation {
             .insert_module(module, program);
     }
 
-    pub(crate) fn flattened_program(&self) -> ast::Program {
+    pub(crate) fn interpreter_program(&self) -> ast::Program {
         let project = self.project_id();
         let semantics = self
             .session
@@ -112,7 +112,7 @@ impl ProjectCompilation {
         self.session
             .project_syntax(project)
             .expect("registered project has syntax state")
-            .flattened_program(semantics.module_graph())
+            .inline_module_compatibility_program(semantics.module_graph())
     }
 
     pub(crate) fn parse(

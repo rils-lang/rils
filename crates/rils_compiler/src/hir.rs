@@ -142,7 +142,49 @@ pub(crate) fn lower_with_host(
     sources: Vec<SourceFile>,
     entry: Option<rils_frontend::DefId>,
 ) -> Result<HirProgram, CompileError> {
-    ProgramLowerer::new(program, host, analysis)?.lower(program, sources, entry)
+    let units = [ProgramUnit {
+        module_path: Vec::new(),
+        program,
+    }];
+    ProgramLowerer::new(&units, host, analysis)?.lower(&units, sources, entry)
+}
+
+pub(crate) fn lower_project_with_host(
+    syntax: &rils_frontend::ProjectSyntax,
+    modules: &rils_frontend::ModuleGraph,
+    host: &HostContract,
+    analysis: &rils_frontend::analysis::DocumentAnalysis,
+    sources: Vec<SourceFile>,
+    entry: Option<rils_frontend::DefId>,
+) -> Result<HirProgram, CompileError> {
+    let root = syntax.root_program();
+    let mut units = Vec::with_capacity(syntax.modules().len() + 1);
+    if !root.statements.is_empty() {
+        units.push(ProgramUnit {
+            module_path: Vec::new(),
+            program: &root,
+        });
+    }
+    units.extend(syntax.modules().filter_map(|(id, program)| {
+        let module = modules.module(id)?;
+        Some(ProgramUnit {
+            module_path: module_path_segments(&module.path),
+            program,
+        })
+    }));
+    ProgramLowerer::new(&units, host, analysis)?.lower(&units, sources, entry)
+}
+
+struct ProgramUnit<'a> {
+    module_path: Vec<String>,
+    program: &'a Program,
+}
+
+fn module_path_segments(path: &str) -> Vec<String> {
+    path.split("::")
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 struct ProgramLowerer {
@@ -160,93 +202,105 @@ struct ProgramLowerer {
 
 impl ProgramLowerer {
     fn new(
-        program: &Program,
+        units: &[ProgramUnit<'_>],
         host: &HostContract,
         analysis: &rils_frontend::analysis::DocumentAnalysis,
     ) -> Result<Self, CompileError> {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
         let mut type_definitions = Vec::new();
-        for statement in &program.statements {
-            if let Some(declaration) = function_declaration(statement) {
-                let id = functions.len() + 1;
-                if functions.insert(declaration.name.to_string(), id).is_some() {
-                    return Err(CompileError::unsupported(
-                        format!("duplicate function `{}`", declaration.name),
-                        declaration.span,
-                    ));
+        for unit in units {
+            for statement in &unit.program.statements {
+                if let Some(declaration) = function_declaration(statement) {
+                    let qualified = qualified_name(&unit.module_path, declaration.name);
+                    let id = functions.values().copied().max().unwrap_or(0) + 1;
+                    if functions.insert(qualified.clone(), id).is_some() {
+                        return Err(CompileError::unsupported(
+                            format!("duplicate function `{qualified}`"),
+                            declaration.span,
+                        ));
+                    }
+                    functions.entry(declaration.name.to_string()).or_insert(id);
+                }
+                let statement = match statement {
+                    Stmt::Public { statement, .. } => statement.as_ref(),
+                    statement => statement,
+                };
+                let definition = match statement {
+                    Stmt::Struct {
+                        name,
+                        generic_parameters,
+                        fields,
+                        ..
+                    } => Some(HirTypeDefinition::Struct {
+                        name: qualified_name(&unit.module_path, name),
+                        generic_parameters: generic_parameters.clone(),
+                        fields: fields.clone(),
+                    }),
+                    Stmt::Enum {
+                        name,
+                        generic_parameters,
+                        variants,
+                        ..
+                    } => Some(HirTypeDefinition::Enum {
+                        name: qualified_name(&unit.module_path, name),
+                        generic_parameters: generic_parameters.clone(),
+                        variants: variants.clone(),
+                    }),
+                    _ => None,
+                };
+                if let Some(definition) = definition {
+                    let name = match &definition {
+                        HirTypeDefinition::Struct { name, .. }
+                        | HirTypeDefinition::Enum { name, .. } => name.clone(),
+                    };
+                    let id = type_definitions.len();
+                    types.insert(name, id);
+                    if let Stmt::Struct { name, .. } | Stmt::Enum { name, .. } = statement {
+                        types.entry(name.clone()).or_insert(id);
+                    }
+                    type_definitions.push(definition);
                 }
             }
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
-            let definition = match statement {
-                Stmt::Struct {
-                    name,
-                    generic_parameters,
-                    fields,
-                    ..
-                } => Some(HirTypeDefinition::Struct {
-                    name: name.clone(),
-                    generic_parameters: generic_parameters.clone(),
-                    fields: fields.clone(),
-                }),
-                Stmt::Enum {
-                    name,
-                    generic_parameters,
-                    variants,
-                    ..
-                } => Some(HirTypeDefinition::Enum {
-                    name: name.clone(),
-                    generic_parameters: generic_parameters.clone(),
-                    variants: variants.clone(),
-                }),
-                _ => None,
-            };
-            if let Some(definition) = definition {
-                let name = match &definition {
-                    HirTypeDefinition::Struct { name, .. }
-                    | HirTypeDefinition::Enum { name, .. } => name.clone(),
-                };
-                types.insert(name, type_definitions.len());
-                type_definitions.push(definition);
-            }
+            collect_nested_symbols(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut functions,
+                &mut types,
+                &mut type_definitions,
+            )?;
         }
-        collect_nested_symbols(
-            &program.statements,
-            &mut Vec::new(),
-            &mut functions,
-            &mut types,
-            &mut type_definitions,
-        )?;
 
         let mut methods = HashMap::new();
         let mut next_method_id = functions.values().copied().max().unwrap_or(0) + 1;
-        collect_method_symbols(
-            &program.statements,
-            &mut Vec::new(),
-            &mut next_method_id,
-            &mut methods,
-        );
-        let mut declarations = program
-            .statements
-            .iter()
-            .filter_map(function_declaration)
-            .map(|declaration| (functions[&declaration.qualified_name], declaration))
-            .collect::<Vec<_>>();
-        collect_nested_function_declarations(
-            &program.statements,
-            &mut Vec::new(),
-            &functions,
-            &mut declarations,
-        );
-        collect_method_declarations(
-            &program.statements,
-            &mut Vec::new(),
-            &methods,
-            &mut declarations,
-        );
+        for unit in units {
+            collect_method_symbols(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut next_method_id,
+                &mut methods,
+            );
+        }
+        let mut declarations = Vec::new();
+        for unit in units {
+            declarations.extend(unit.program.statements.iter().filter_map(|statement| {
+                let mut declaration = function_declaration(statement)?;
+                declaration.qualified_name = qualified_name(&unit.module_path, declaration.name);
+                Some((functions[&declaration.qualified_name], declaration))
+            }));
+            collect_nested_function_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &functions,
+                &mut declarations,
+            );
+            collect_method_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &methods,
+                &mut declarations,
+            );
+        }
         let method_by_function = methods
             .values()
             .map(|method| (method.function, *method))
@@ -267,16 +321,30 @@ impl ProgramLowerer {
             })
             .collect();
         let mut public_symbols = HashSet::new();
-        collect_public_symbols(&program.statements, &mut Vec::new(), &mut public_symbols);
-        collect_use_aliases(
-            &program.statements,
-            &mut Vec::new(),
-            &mut functions,
-            &mut types,
-            &public_symbols,
-        );
+        for unit in units {
+            collect_public_symbols(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut public_symbols,
+            );
+        }
+        for unit in units {
+            collect_use_aliases(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut functions,
+                &mut types,
+                &public_symbols,
+            );
+        }
         let mut host_functions = host.function_overloads();
-        collect_host_use_aliases(&program.statements, &mut Vec::new(), &mut host_functions);
+        for unit in units {
+            collect_host_use_aliases(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut host_functions,
+            );
+        }
         let host_methods = host.method_function_overloads();
         Ok(Self {
             functions,
@@ -294,7 +362,7 @@ impl ProgramLowerer {
 
     fn lower(
         self,
-        program: &Program,
+        units: &[ProgramUnit<'_>],
         sources: Vec<SourceFile>,
         entry: Option<rils_frontend::DefId>,
     ) -> Result<HirProgram, CompileError> {
@@ -311,9 +379,10 @@ impl ProgramLowerer {
             functions: Rc::new(RefCell::new(Vec::new())),
         };
         let mut lowered = Vec::with_capacity(self.functions.len() + 1);
-        let entry_statements = program
-            .statements
+        let entry_statements = units
             .iter()
+            .filter(|unit| unit.module_path.is_empty())
+            .flat_map(|unit| &unit.program.statements)
             .filter(|statement| !is_compile_time_declaration(statement))
             .collect::<Vec<_>>();
         let mut entry_function = FunctionLowerer::new(
@@ -350,24 +419,26 @@ impl ProgramLowerer {
         }
         lowered.push(entry_function);
 
-        let mut declarations = program
-            .statements
-            .iter()
-            .filter_map(function_declaration)
-            .map(|declaration| (self.functions[&declaration.qualified_name], declaration))
-            .collect::<Vec<_>>();
-        collect_nested_function_declarations(
-            &program.statements,
-            &mut Vec::new(),
-            &self.functions,
-            &mut declarations,
-        );
-        collect_method_declarations(
-            &program.statements,
-            &mut Vec::new(),
-            &self.methods,
-            &mut declarations,
-        );
+        let mut declarations = Vec::new();
+        for unit in units {
+            declarations.extend(unit.program.statements.iter().filter_map(|statement| {
+                let mut declaration = function_declaration(statement)?;
+                declaration.qualified_name = qualified_name(&unit.module_path, declaration.name);
+                Some((self.functions[&declaration.qualified_name], declaration))
+            }));
+            collect_nested_function_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &self.functions,
+                &mut declarations,
+            );
+            collect_method_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &self.methods,
+                &mut declarations,
+            );
+        }
         declarations.sort_by_key(|(id, _)| *id);
         for (_, declaration) in declarations {
             lowered.push(

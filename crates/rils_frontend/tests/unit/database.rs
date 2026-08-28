@@ -183,7 +183,8 @@ fn compilation_session_keeps_module_programs_structured() {
     assert!(syntax.module(main_module).is_some());
     assert!(syntax.module(util_module).is_some());
 
-    let flattened = syntax.flattened_program(session.project(project).unwrap().module_graph());
+    let flattened = syntax
+        .inline_module_compatibility_program(session.project(project).unwrap().module_graph());
     assert!(flattened.statements.iter().any(|statement| {
         matches!(
             statement,

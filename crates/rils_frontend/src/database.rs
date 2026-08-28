@@ -88,9 +88,9 @@ impl CompilationSession {
 
 /// Parsed syntax units belonging to one project.
 ///
-/// Module programs retain their file and module identities. `flattened_program`
-/// is a migration bridge for consumers that do not yet lower a `ModuleGraph`
-/// directly.
+/// Module programs retain their file and module identities. The inline-module
+/// compatibility view exists only for the reference AST interpreter while it
+/// migrates to project semantic identities.
 #[derive(Clone, Debug, Default)]
 pub struct ProjectSyntax {
     roots: Vec<Program>,
@@ -141,7 +141,7 @@ impl ProjectSyntax {
     }
 
     #[doc(hidden)]
-    pub fn flattened_program(&self, graph: &ModuleGraph) -> Program {
+    pub fn inline_module_compatibility_program(&self, graph: &ModuleGraph) -> Program {
         let mut root = SyntaxModuleNode::default();
         for program in &self.roots {
             root.extend_metadata(program);

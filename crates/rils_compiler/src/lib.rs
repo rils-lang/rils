@@ -258,7 +258,6 @@ pub fn compile_program_with_host_and_session(
             diagnostic.span,
         ));
     }
-    let program = syntax.flattened_program(semantics.module_graph());
     let entry = (|| {
         let source = semantics.entry_source()?;
         let module = semantics.module(source)?;
@@ -285,8 +284,9 @@ pub fn compile_program_with_host_and_session(
                 })
         })
         .transpose()?;
-    mir::lower(hir::lower_with_host(
-        &program,
+    mir::lower(hir::lower_project_with_host(
+        &syntax,
+        semantics.module_graph(),
         host,
         &analysis,
         session.sources().source_files(),
