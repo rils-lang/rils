@@ -94,6 +94,32 @@ fn calls_with_the_same_span_resolve_by_expression_identity() {
 }
 
 #[test]
+fn static_checkers_read_types_by_expression_identity() {
+    let tokens = crate::lexer::lex("let number: i32 = 1; let flag: bool = true;")
+        .expect("lex typed bindings");
+    let mut program = crate::parser::parse(tokens).expect("parse typed bindings");
+    let first_span = match &program.statements[0] {
+        crate::ast::Stmt::Let { initializer, .. } => initializer.span(),
+        _ => panic!("expected first binding"),
+    };
+    match &mut program.statements[1] {
+        crate::ast::Stmt::Let {
+            initializer: crate::ast::Expr::Literal { span, .. },
+            ..
+        } => *span = first_span,
+        _ => panic!("expected second literal binding"),
+    }
+
+    let analysis = crate::analysis::analyze_program(&program);
+
+    assert!(
+        analysis.diagnostics.is_empty(),
+        "identity-aware checks should preserve distinct types: {:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
 fn builtin_method_calls_resolve_to_semantic_ids() {
     let source = "fn increment(item: i32) -> i32 { item + 1 } \
          let value: Option<i32> = Some(1); value.is_some(); value.map(increment);";

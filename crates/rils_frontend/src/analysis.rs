@@ -596,29 +596,29 @@ impl Analyzer {
             self.source_id,
             &inference_functions,
         );
+        let expression_types = crate::semantic::ExpressionTypes::new(
+            &inference.expression_ids,
+            &inference.expression_types_by_id,
+        );
         self.enrich_member_symbols(&inference.expression_types);
-        self.result.diagnostics.extend(crate::control_flow::analyze(
-            program,
-            &inference.expression_types,
-        ));
+        self.result
+            .diagnostics
+            .extend(crate::control_flow::analyze(program, expression_types));
         self.result.diagnostics.extend(crate::ownership::analyze(
             program,
             &inference.binding_types,
-            &inference.expression_types,
+            expression_types,
             &self.host_types,
         ));
         self.result
             .diagnostics
-            .extend(crate::static_type_check::analyze(
-                program,
-                &inference.expression_types,
-            ));
+            .extend(crate::static_type_check::analyze(program, expression_types));
         self.result
             .diagnostics
             .extend(crate::trait_check::analyze(program));
         self.result.diagnostics.extend(crate::format_check::analyze(
             program,
-            &inference.expression_types,
+            expression_types,
             &self.host_types,
         ));
         self.result
@@ -689,7 +689,7 @@ impl Analyzer {
             std::mem::take(&mut self.owner_ids),
         );
         let mut typeck_results = crate::semantic::TypeckResults::from_expression_types(
-            inference.expression_ids,
+            inference.expression_ids.into_ids(),
             inference.expression_types_by_id,
         );
         crate::semantic::resolve_program_calls(

@@ -23,7 +23,7 @@ pub(crate) struct InferenceResult {
     pub expression_types: HashMap<Span, Type>,
     pub expression_types_by_id: HashMap<ExprId, Type>,
     pub hints: Vec<RawTypeHint>,
-    pub expression_ids: crate::semantic::ExpressionIds,
+    pub expression_ids: crate::semantic::ExpressionIdentityMap,
 }
 
 #[derive(Clone)]
@@ -152,7 +152,7 @@ impl Inferencer {
                 expression_types: HashMap::new(),
                 expression_types_by_id: HashMap::new(),
                 hints: Vec::new(),
-                expression_ids: crate::semantic::ExpressionIds::default(),
+                expression_ids: crate::semantic::ExpressionIdentityMap::default(),
             },
             expression_ids,
             numeric_parents: HashMap::new(),
@@ -206,7 +206,7 @@ impl Inferencer {
             let ty = self.result.hints[index].ty.clone();
             self.result.hints[index].ty = self.resolve_type(&ty);
         }
-        self.result.expression_ids = self.expression_ids.into_ids();
+        self.result.expression_ids = self.expression_ids;
         self.result
     }
 

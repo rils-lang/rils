@@ -3,13 +3,14 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     analysis::AnalysisDiagnostic,
     ast::{BinaryOp, Block, Expr, Program, Stmt, UnaryOp},
+    semantic::ExpressionTypes,
     source::Span,
     types::{Type, merge_types},
 };
 
 pub(crate) fn analyze(
     program: &Program,
-    expression_types: &HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'_>,
 ) -> Vec<AnalysisDiagnostic> {
     Checker::new(program, expression_types).run(program)
 }
@@ -21,7 +22,7 @@ struct Alias {
 }
 
 struct Checker<'a> {
-    expression_types: &'a HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'a>,
     aliases: HashMap<String, Alias>,
     return_types: Vec<Option<Type>>,
     self_types: Vec<Option<Type>>,
@@ -29,7 +30,7 @@ struct Checker<'a> {
 }
 
 impl<'a> Checker<'a> {
-    fn new(program: &Program, expression_types: &'a HashMap<Span, Type>) -> Self {
+    fn new(program: &Program, expression_types: ExpressionTypes<'a>) -> Self {
         let mut checker = Self {
             expression_types,
             aliases: HashMap::new(),
@@ -574,7 +575,7 @@ impl<'a> Checker<'a> {
 
     fn ty(&self, expression: &Expr) -> Type {
         self.expression_types
-            .get(&expression.span())
+            .get(expression)
             .cloned()
             .unwrap_or(Type::Unknown)
     }

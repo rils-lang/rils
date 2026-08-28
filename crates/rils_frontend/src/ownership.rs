@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     analysis::AnalysisDiagnostic,
     ast::{Block, EnumVariant, Expr, Pattern, Program, Stmt, UnaryOp},
+    semantic::ExpressionTypes,
     source::Span,
     types::Type,
 };
@@ -10,7 +11,7 @@ use crate::{
 pub(crate) fn analyze(
     program: &Program,
     binding_types: &HashMap<Span, Type>,
-    expression_types: &HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'_>,
     host_types: &HashSet<String>,
 ) -> Vec<AnalysisDiagnostic> {
     Checker::new(program, binding_types, expression_types, host_types).run(program)
@@ -58,7 +59,7 @@ enum ReceiverMode {
 
 struct Checker<'a> {
     binding_types: &'a HashMap<Span, Type>,
-    expression_types: &'a HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'a>,
     host_types: &'a HashSet<String>,
     nominals: HashMap<String, NominalDefinition>,
     receivers: HashMap<(String, String), ReceiverMode>,
@@ -72,7 +73,7 @@ impl<'a> Checker<'a> {
     fn new(
         program: &Program,
         binding_types: &'a HashMap<Span, Type>,
-        expression_types: &'a HashMap<Span, Type>,
+        expression_types: ExpressionTypes<'a>,
         host_types: &'a HashSet<String>,
     ) -> Self {
         let mut checker = Self {
@@ -471,15 +472,18 @@ impl<'a> Checker<'a> {
             Expr::Literal { .. } | Expr::Path { .. } | Expr::QualifiedPath { .. } => {
                 self.typed_value(expression)
             }
-            Expr::Variable { name, span } => self.take_variable(name, *span),
+            Expr::Variable { name, .. } => self.take_variable(name, expression),
             Expr::Member { object, name, span }
-                if matches!(self.expression_types.get(span), Some(Type::Function { .. })) =>
+                if matches!(
+                    self.expression_types.get(expression),
+                    Some(Type::Function { .. })
+                ) =>
             {
-                match self.receiver_mode(self.expression_types.get(&object.span()), name) {
+                match self.receiver_mode(self.expression_types.get(object), name) {
                     Some(ReceiverMode::Owned) => {
                         if self
                             .expression_types
-                            .get(&object.span())
+                            .get(object)
                             .is_some_and(|ty| !self.is_copy(ty))
                         {
                             self.diagnostic(
@@ -501,7 +505,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Member { .. } => {
                 self.read_place(expression);
-                if let Some(ty) = self.expression_types.get(&expression.span())
+                if let Some(ty) = self.expression_types.get(expression)
                     && !self.is_copy(ty)
                 {
                     self.move_place(expression);
@@ -512,7 +516,7 @@ impl<'a> Checker<'a> {
                 self.read_place(object);
                 let index = self.expression(index);
                 self.discard(index);
-                if let Some(ty) = self.expression_types.get(&expression.span())
+                if let Some(ty) = self.expression_types.get(expression)
                     && !self.is_copy(ty)
                 {
                     self.diagnostic(
@@ -592,8 +596,7 @@ impl<'a> Checker<'a> {
             } => {
                 let value = self.expression(operand);
                 if *operator == UnaryOp::Dereference
-                    && let Some(Type::Reference { inner, .. }) =
-                        self.expression_types.get(&operand.span())
+                    && let Some(Type::Reference { inner, .. }) = self.expression_types.get(operand)
                     && !self.is_copy(inner)
                 {
                     self.diagnostic("cannot move a non-Copy value out of a reference", *span);
@@ -739,9 +742,10 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn take_variable(&mut self, name: &str, span: Span) -> ExpressionValue {
+    fn take_variable(&mut self, name: &str, expression: &Expr) -> ExpressionValue {
+        let span = expression.span();
         let Some(binding) = self.lookup(name).cloned() else {
-            return self.typed_value_from_span(span);
+            return self.typed_value(expression);
         };
         if binding.moved {
             self.diagnostic(format!("use of moved value `{name}`"), span);
@@ -761,10 +765,10 @@ impl<'a> Checker<'a> {
     }
 
     fn receiver_effect(&mut self, object: &Expr, method: &str) -> Option<ExpressionValue> {
-        let mode = self.receiver_mode(self.expression_types.get(&object.span()), method);
+        let mode = self.receiver_mode(self.expression_types.get(object), method);
         match mode {
             Some(ReceiverMode::Owned) => Some(match object {
-                Expr::Variable { name, span } => self.take_variable(name, *span),
+                Expr::Variable { name, .. } => self.take_variable(name, object),
                 _ => self.expression(object),
             }),
             Some(ReceiverMode::Borrowed { mutable }) => Some(if place_root(object).is_some() {
@@ -808,7 +812,7 @@ impl<'a> Checker<'a> {
 
     fn borrow_place(&mut self, target: &Expr, mutable: bool, span: Span) -> ExpressionValue {
         let Some((root, interior)) = place_root(target) else {
-            return self.typed_value_from_span(span);
+            return self.typed_value(target);
         };
         if let Some(binding) = self.lookup(&root).cloned() {
             if binding.moved {
@@ -922,7 +926,7 @@ impl<'a> Checker<'a> {
                 ..
             } => {
                 if let Some(Type::Reference { mutable: false, .. }) =
-                    self.expression_types.get(&operand.span())
+                    self.expression_types.get(operand)
                 {
                     self.diagnostic("cannot assign through immutable reference", span);
                 }
@@ -978,14 +982,10 @@ impl<'a> Checker<'a> {
     }
 
     fn typed_value(&self, expression: &Expr) -> ExpressionValue {
-        self.typed_value_from_span(expression.span())
-    }
-
-    fn typed_value_from_span(&self, span: Span) -> ExpressionValue {
         ExpressionValue {
             contains_reference: self
                 .expression_types
-                .get(&span)
+                .get(expression)
                 .is_some_and(Type::contains_reference),
             borrows: Vec::new(),
         }

@@ -11,7 +11,7 @@ mod expression_ids;
 mod visit;
 
 pub use expression_ids::ExpressionIdentityMap;
-pub(crate) use expression_ids::ExpressionIds;
+pub(crate) use expression_ids::{ExpressionIds, ExpressionTypes};
 use visit::visit_statements;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -355,18 +355,17 @@ pub(crate) fn resolve_project_calls(
         );
     }
     for (source, module_path, program) in units {
-        let ids = ExpressionIds::allocate(program, *source);
-        let mut ids = ids.visit_order().iter().copied();
+        let expression_ids = ExpressionIdentityMap::allocate(program, *source);
         visit_statements(
             &program.statements,
             &mut module_path.to_vec(),
             None,
             &mut |expression, namespace, self_type| {
-                let id = ids
-                    .next()
-                    .expect("expression ID traversal must match syntax");
+                let id = expression_ids
+                    .get(expression)
+                    .expect("visited expression must have a semantic identity");
                 if let Some(definition) =
-                    callables.resolve(expression, results, namespace, self_type)
+                    callables.resolve(expression, &expression_ids, results, namespace, self_type)
                 {
                     results.resolve_value(id, definition);
                 }
@@ -378,6 +377,7 @@ pub(crate) fn resolve_project_calls(
                     callables: &callables,
                     host_functions,
                     iterator_types: &iterator_types,
+                    expression_ids: &expression_ids,
                     results,
                     namespace,
                     self_type,
@@ -387,7 +387,6 @@ pub(crate) fn resolve_project_calls(
                 }
             },
         );
-        debug_assert!(ids.next().is_none());
     }
 }
 
@@ -396,6 +395,7 @@ struct CallResolutionContext<'a> {
     callables: &'a CallableDefinitions,
     host_functions: &'a HashMap<String, FunctionSignature>,
     iterator_types: &'a HashSet<String>,
+    expression_ids: &'a ExpressionIdentityMap,
     results: &'a TypeckResults,
     namespace: &'a [String],
     self_type: Option<&'a str>,
@@ -407,11 +407,14 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
         callables,
         host_functions,
         iterator_types,
+        expression_ids,
         results,
         namespace,
         self_type,
     } = context;
-    if let Some(definition) = callables.resolve(callee, results, namespace, *self_type) {
+    if let Some(definition) =
+        callables.resolve(callee, expression_ids, results, namespace, *self_type)
+    {
         return Some(ResolvedCall::Definition(definition));
     }
     if let Some(definition) = callables.resolve_untyped_member(callee) {
@@ -425,7 +428,7 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
     }
     match callee {
         Expr::Member { object, name, .. } => {
-            let receiver = results.expression_type_at(object.span())?;
+            let receiver = results.expression_type(expression_ids.get(object)?)?;
             let receiver = match receiver {
                 Type::Reference { inner, .. } => inner.as_ref(),
                 receiver => receiver,
@@ -575,6 +578,7 @@ impl CallableDefinitions {
     fn resolve(
         &self,
         callee: &Expr,
+        expression_ids: &ExpressionIdentityMap,
         results: &TypeckResults,
         namespace: &[String],
         self_type: Option<&str>,
@@ -614,7 +618,7 @@ impl CallableDefinitions {
                 }))
             }
             Expr::Member { object, name, .. } => {
-                let receiver = results.expression_type_at(object.span())?;
+                let receiver = results.expression_type(expression_ids.get(object)?)?;
                 let receiver = match receiver {
                     Type::Reference { inner, .. } => inner.as_ref(),
                     receiver => receiver,

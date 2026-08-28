@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ExprId, SourceId, Span,
+    ExprId, SourceId, Span, Type,
     ast::{Expr, Program},
 };
 
@@ -11,14 +11,9 @@ use super::visit::visit_statements;
 pub(crate) struct ExpressionIds {
     by_span: HashMap<Span, Vec<ExprId>>,
     spans: HashMap<ExprId, Span>,
-    visit_order: Vec<ExprId>,
 }
 
 impl ExpressionIds {
-    pub(crate) fn allocate(program: &Program, fallback_source: SourceId) -> Self {
-        ExpressionIdentityMap::allocate(program, fallback_source).into_ids()
-    }
-
     pub(super) fn at(&self, span: Span) -> &[ExprId] {
         self.by_span.get(&span).map_or(&[], Vec::as_slice)
     }
@@ -27,16 +22,11 @@ impl ExpressionIds {
         self.spans.get(&id).copied()
     }
 
-    pub(super) fn visit_order(&self) -> &[ExprId] {
-        &self.visit_order
-    }
-
     pub(super) fn extend(&mut self, other: Self) {
         for (span, ids) in other.by_span {
             self.by_span.entry(span).or_default().extend(ids);
         }
         self.spans.extend(other.spans);
-        self.visit_order.extend(other.visit_order);
     }
 }
 
@@ -74,7 +64,6 @@ impl ExpressionIdentityMap {
                 *next = next.checked_add(1).expect("expression id overflow");
                 ids.ids.by_span.entry(span).or_default().push(id);
                 ids.ids.spans.insert(id, span);
-                ids.ids.visit_order.push(id);
                 ids.by_node.insert(expression as *const Expr, id);
             },
         );
@@ -97,5 +86,26 @@ impl ExpressionIdentityMap {
 
     pub(crate) fn into_ids(self) -> ExpressionIds {
         self.ids
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ExpressionTypes<'a> {
+    identities: &'a ExpressionIdentityMap,
+    types: &'a HashMap<ExprId, Type>,
+}
+
+impl<'a> ExpressionTypes<'a> {
+    pub(crate) fn new(
+        identities: &'a ExpressionIdentityMap,
+        types: &'a HashMap<ExprId, Type>,
+    ) -> Self {
+        Self { identities, types }
+    }
+
+    pub(crate) fn get(self, expression: &Expr) -> Option<&'a Type> {
+        self.identities
+            .get(expression)
+            .and_then(|id| self.types.get(&id))
     }
 }
