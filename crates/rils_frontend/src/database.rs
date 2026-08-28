@@ -243,6 +243,7 @@ pub struct ModuleGraph {
 pub struct ProjectSemanticIndex {
     modules: ModuleGraph,
     definitions: HashMap<DefId, DefinitionData>,
+    entry_source: Option<SourceId>,
 }
 
 impl ProjectSemanticIndex {
@@ -277,6 +278,14 @@ impl ProjectSemanticIndex {
 
     pub fn definition(&self, id: DefId) -> Option<&DefinitionData> {
         self.definitions.get(&id)
+    }
+
+    pub fn set_entry_source(&mut self, source: SourceId) {
+        self.entry_source = Some(source);
+    }
+
+    pub fn entry_source(&self) -> Option<SourceId> {
+        self.entry_source
     }
 }
 

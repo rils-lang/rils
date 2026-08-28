@@ -140,8 +140,9 @@ pub(crate) fn lower_with_host(
     host: &HostContract,
     analysis: &rils_frontend::analysis::DocumentAnalysis,
     sources: Vec<SourceFile>,
+    entry: Option<rils_frontend::DefId>,
 ) -> Result<HirProgram, CompileError> {
-    ProgramLowerer::new(program, host, analysis)?.lower(program, sources)
+    ProgramLowerer::new(program, host, analysis)?.lower(program, sources, entry)
 }
 
 struct ProgramLowerer {
@@ -295,6 +296,7 @@ impl ProgramLowerer {
         self,
         program: &Program,
         sources: Vec<SourceFile>,
+        entry: Option<rils_frontend::DefId>,
     ) -> Result<HirProgram, CompileError> {
         let generated = GeneratedFunctions {
             next_id: Rc::new(Cell::new(
@@ -314,19 +316,39 @@ impl ProgramLowerer {
             .iter()
             .filter(|statement| !is_compile_time_declaration(statement))
             .collect::<Vec<_>>();
-        lowered.push(
-            FunctionLowerer::new(
-                &self.types,
-                &self.host_functions,
-                &self.host_methods,
-                &self.host_contract,
-                &self.expression_types,
-                &self.typeck_results,
-                &self.resolved_definitions,
-                generated.clone(),
-            )
-            .lower_entry(&entry_statements)?,
-        );
+        let mut entry_function = FunctionLowerer::new(
+            &self.types,
+            &self.host_functions,
+            &self.host_methods,
+            &self.host_contract,
+            &self.expression_types,
+            &self.typeck_results,
+            &self.resolved_definitions,
+            generated.clone(),
+        )
+        .lower_entry(&entry_statements)?;
+        if let Some(entry) = entry {
+            let function = self
+                .resolved_definitions
+                .get(&entry)
+                .ok_or_else(|| {
+                    CompileError::new(
+                        "project entry has no lowered function identity",
+                        Span::default(),
+                    )
+                })?
+                .function;
+            entry_function.statements.push(HirStatement::Expression {
+                expression: HirExpression::Call {
+                    function,
+                    arguments: Vec::new(),
+                    span: Span::default(),
+                },
+                terminated: false,
+                span: Span::default(),
+            });
+        }
+        lowered.push(entry_function);
 
         let mut declarations = program
             .statements

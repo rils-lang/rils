@@ -148,7 +148,7 @@ CompilationSession
 └── entry DefId
 ```
 
-compiler 的项目入口已经接收该 session，但 lowering 仍接收扁平化后的单个 `Program`。下一阶段需要让每个模块成为独立分析和 lowering 单位，并删除 `ProjectModuleNode`、`project_module_statements` 和 synthetic `main()` 调用。无 manifest 的 legacy entry loader 可以作为兼容入口保留，但不应继续作为主项目编译模型。
+compiler 的项目入口已经接收该 session，并通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。lowering 仍接收扁平化后的单个 `Program`；下一阶段需要让每个模块成为独立分析和 lowering 单位，并删除 `ProjectModuleNode` 和 `project_module_statements`。AST 解释器目前仍使用临时入口调用，待它能够消费共享入口 `DefId` 后再移除。无 manifest 的 legacy entry loader 可以作为兼容入口保留，但不应继续作为主项目编译模型。
 
 ### 语义 ID 仍由 Span 反推
 
@@ -309,7 +309,7 @@ rils
 迁移应按依赖方向分批进行，每批保持解释器和 VM 对照测试通过：
 
 1. 已完成：抽离 Host Contract/Manifest 共享层，解除 Analyzer 对 compiler 的依赖。
-2. 进行中：已建立 `CompilationSession` 并迁移项目加载器、compiler 输入和 Analyzer；仍需取消扁平 AST，使 `ModuleGraph` 成为 lowering 主模型。
+2. 进行中：已建立 `CompilationSession` 并迁移项目加载器、compiler 输入和 Analyzer，compiler 入口也不再依赖 synthetic AST 调用；仍需取消模块扁平 AST，使 `ModuleGraph` 成为 lowering 主模型。
 3. 在 syntax/HIR 构造阶段分配真实 `DefId`、`ExprId`，停止从 Span 反推。
 4. 将 numeric literal 和 Host type AST rewrite 改为 semantic side table，并删除旧模块。
 5. 让 AST 解释器消费共享 `DefMap`、`TypeckResults`，收缩旧静态检查逻辑。

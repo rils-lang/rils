@@ -128,6 +128,15 @@ pub fn compile_program_with_host_and_sources(
     host: &HostContract,
     sources: Vec<SourceFile>,
 ) -> Result<mir::MirProgram, CompileError> {
+    compile_program_with_host_and_sources_and_entry(program, host, sources, None)
+}
+
+fn compile_program_with_host_and_sources_and_entry(
+    program: &Program,
+    host: &HostContract,
+    sources: Vec<SourceFile>,
+    entry: Option<(rils_frontend::SourceId, String)>,
+) -> Result<mir::MirProgram, CompileError> {
     let mut program = program.clone();
     rils_frontend::inject_host_enum_declarations(&mut program, host);
     let signatures = host.signatures();
@@ -158,7 +167,30 @@ pub fn compile_program_with_host_and_sources(
             diagnostic.span,
         ));
     }
-    mir::lower(hir::lower_with_host(&program, host, &analysis, sources)?)
+    let entry = entry
+        .map(|(source, module_path)| {
+            analysis
+                .def_map
+                .definitions()
+                .find(|definition| {
+                    definition.name == "main"
+                        && definition.span.source == source
+                        && definition.kind == rils_frontend::semantic::SymbolKind::Function
+                        && definition.container
+                            == Some(rils_frontend::SymbolContainer::Module(module_path.clone()))
+                })
+                .map(|definition| definition.id)
+                .ok_or_else(|| {
+                    CompileError::new(
+                        "project entry definition was not preserved during analysis",
+                        Span::default(),
+                    )
+                })
+        })
+        .transpose()?;
+    mir::lower(hir::lower_with_host(
+        &program, host, &analysis, sources, entry,
+    )?)
 }
 
 pub fn compile_program_with_host_and_session(
@@ -173,7 +205,17 @@ pub fn compile_program_with_host_and_session(
             Span::default(),
         ));
     }
-    compile_program_with_host_and_sources(program, host, session.sources().source_files())
+    let entry = session.project(project).and_then(|semantics| {
+        let source = semantics.entry_source()?;
+        let module = semantics.module(source)?;
+        Some((source, module.path.clone()))
+    });
+    compile_program_with_host_and_sources_and_entry(
+        program,
+        host,
+        session.sources().source_files(),
+        entry,
+    )
 }
 
 #[cfg(test)]

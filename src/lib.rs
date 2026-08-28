@@ -300,6 +300,7 @@ impl Engine {
                 &self.native_macros,
                 &mut sources,
                 true,
+                true,
             )?;
             rils_frontend::resolve_numeric_literals(&mut program)
                 .map_err(numeric_resolution_error)?;
@@ -420,6 +421,7 @@ fn load_file_modules(
     native_macros: &[macros::NativeMacroDefinition],
     sources: &mut ProjectCompilation,
     require_entry: bool,
+    invoke_entry: bool,
 ) -> Result<(), RilsError> {
     if project.manifest_path().is_none() {
         let base = entry_path.parent().unwrap_or_else(|| Path::new("."));
@@ -498,7 +500,7 @@ fn load_file_modules(
         insert_project_module(&mut root, &module_path, module_statements);
     }
     *statements = project_module_statements(root);
-    if require_entry {
+    if require_entry && invoke_entry {
         let mut entry_path = entry_module_path
             .expect("executable project entries must have a module identity")
             .split("::")
@@ -825,6 +827,9 @@ fn compile_project_file_with_host(
             )
         })?;
         let source_id = sources.register_source(path, &source);
+        if require_entry && project.manifest_path().is_some() {
+            sources.set_entry_source(source_id);
+        }
         let mut program = sources
             .parse(source_id, macros::STANDARD_NATIVE_MACROS)
             .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
@@ -835,6 +840,7 @@ fn compile_project_file_with_host(
             macros::STANDARD_NATIVE_MACROS,
             &mut sources,
             require_entry,
+            false,
         )
         .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
         bytecode::compile_program_with_host_and_session(

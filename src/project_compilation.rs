@@ -73,6 +73,14 @@ impl ProjectCompilation {
             .expect("project compilation must register a project before compiling")
     }
 
+    pub(crate) fn set_entry_source(&mut self, source: SourceId) {
+        let project = self.project_id();
+        self.session
+            .project_mut(project)
+            .expect("registered project has semantic state")
+            .set_entry_source(source);
+    }
+
     pub(crate) fn parse(
         &self,
         id: SourceId,
