@@ -346,6 +346,7 @@ struct Analyzer {
     host_types: HashSet<String>,
     host_type_segments: HashSet<String>,
     result: DocumentAnalysis,
+    owner_ids: crate::semantic::SemanticOwnerIds,
 }
 
 impl Analyzer {
@@ -548,6 +549,7 @@ impl Analyzer {
             host_types: host_types.clone(),
             host_type_segments,
             result: DocumentAnalysis::default(),
+            owner_ids: crate::semantic::SemanticOwnerIds::default(),
         }
     }
 
@@ -678,8 +680,10 @@ impl Analyzer {
                 label: format!("{}{ty}", hint.prefix, ty = hint.ty),
             })
             .collect();
-        let def_map =
-            crate::semantic::DefMap::from_program_and_symbols(program, &self.result.symbols);
+        let def_map = crate::semantic::DefMap::from_symbols_and_owners(
+            &self.result.symbols,
+            std::mem::take(&mut self.owner_ids),
+        );
         let mut typeck_results =
             crate::semantic::TypeckResults::from_expression_types(&inference.expression_types);
         crate::semantic::resolve_program_calls(
@@ -1119,7 +1123,8 @@ impl Analyzer {
                 body,
                 ..
             } => {
-                self.define(name, *name_span, SymbolKind::Function);
+                let definition = self.define(name, *name_span, SymbolKind::Function);
+                self.owner_ids.record_body(definition, body.span);
                 self.set_last_container(SymbolContainer::Module(
                     self.module_path_for_definition(*name_span),
                 ));
@@ -1257,8 +1262,10 @@ impl Analyzer {
                 target,
                 associated_types,
                 methods,
+                span,
                 ..
             } => {
+                self.owner_ids.allocate_impl(*span, self.source_id);
                 let self_type = match target {
                     Type::Named { name, .. } => Some(name.clone()),
                     _ => None,
@@ -1274,7 +1281,9 @@ impl Analyzer {
                     }
                 }
                 for method in methods {
-                    self.definition_only(&method.name, method.name_span, SymbolKind::Method);
+                    let definition =
+                        self.definition_only(&method.name, method.name_span, SymbolKind::Method);
+                    self.owner_ids.record_body(definition, method.body.span);
                     self.set_last_detail(impl_method_detail(method));
                     if let Some(owner) = &self_type {
                         self.set_last_container(SymbolContainer::Type(owner.clone()));
@@ -1656,7 +1665,7 @@ impl Analyzer {
         self.statements(&block.statements);
     }
 
-    fn define(&mut self, name: &str, span: Span, kind: SymbolKind) {
+    fn define(&mut self, name: &str, span: Span, kind: SymbolKind) -> SymbolId {
         let merges_host_module = kind == SymbolKind::Module
             && self
                 .scopes
@@ -1687,6 +1696,7 @@ impl Analyzer {
                 container: None,
             },
         );
+        id
     }
 
     fn definition_only(&mut self, name: &str, span: Span, kind: SymbolKind) -> SymbolId {

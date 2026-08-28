@@ -56,9 +56,9 @@ pub struct DefMap {
 }
 
 impl DefMap {
-    pub(crate) fn from_program_and_symbols(
-        program: &Program,
+    pub(crate) fn from_symbols_and_owners(
         symbols: &[SymbolOccurrence],
+        owners: SemanticOwnerIds,
     ) -> Self {
         let mut result = Self::default();
         for symbol in symbols {
@@ -87,26 +87,12 @@ impl DefMap {
             };
             result.resolutions.insert(symbol.span, id);
         }
-        let mut body_owners = Vec::new();
-        let mut impl_spans = Vec::new();
-        collect_owner_spans(&program.statements, &mut body_owners, &mut impl_spans);
-        for (definition_span, body_span) in body_owners {
-            let Some(definition) = result.resolution(definition_span) else {
-                continue;
-            };
+        for (definition, body_span) in owners.bodies {
             let body = BodyId(definition);
             result.bodies.insert(body_span, body);
             result.definition_bodies.insert(definition, body);
         }
-        impl_spans.sort_by_key(|span| (span.source, span.start, span.end));
-        let mut next_by_source = HashMap::<SourceId, u32>::new();
-        for span in impl_spans {
-            let next = next_by_source.entry(span.source).or_insert(0);
-            let id = ImplId {
-                source: span.source,
-                local: *next,
-            };
-            *next = next.checked_add(1).expect("impl id overflow");
+        for (span, id) in owners.impls {
             result.impls.insert(span, id);
         }
         result
@@ -149,48 +135,32 @@ impl DefMap {
     }
 }
 
-fn collect_owner_spans(statements: &[Stmt], bodies: &mut Vec<(Span, Span)>, impls: &mut Vec<Span>) {
-    for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
+#[derive(Default)]
+pub(crate) struct SemanticOwnerIds {
+    bodies: Vec<(DefId, Span)>,
+    impls: Vec<(Span, ImplId)>,
+    next_impl_by_source: HashMap<SourceId, u32>,
+}
+
+impl SemanticOwnerIds {
+    pub(crate) fn record_body(&mut self, definition: DefId, span: Span) {
+        self.bodies.push((definition, span));
+    }
+
+    pub(crate) fn allocate_impl(&mut self, span: Span, fallback_source: SourceId) -> ImplId {
+        let source = if span.source == SourceId::UNKNOWN {
+            fallback_source
+        } else {
+            span.source
         };
-        match statement {
-            Stmt::Module {
-                statements: Some(statements),
-                ..
-            } => collect_owner_spans(statements, bodies, impls),
-            Stmt::Function {
-                name_span, body, ..
-            } => {
-                bodies.push((*name_span, body.span));
-                collect_owner_spans(&body.statements, bodies, impls);
-            }
-            Stmt::Impl { methods, span, .. } => {
-                impls.push(*span);
-                for method in methods {
-                    bodies.push((method.name_span, method.body.span));
-                    collect_owner_spans(&method.body.statements, bodies, impls);
-                }
-            }
-            Stmt::While { body, .. } | Stmt::Loop { body, .. } | Stmt::For { body, .. } => {
-                collect_owner_spans(&body.statements, bodies, impls);
-            }
-            Stmt::Let { .. }
-            | Stmt::Use { .. }
-            | Stmt::Struct { .. }
-            | Stmt::Enum { .. }
-            | Stmt::TypeAlias { .. }
-            | Stmt::Trait { .. }
-            | Stmt::Return { .. }
-            | Stmt::Break { .. }
-            | Stmt::Continue { .. }
-            | Stmt::Expr { .. }
-            | Stmt::Module {
-                statements: None, ..
-            } => {}
-            Stmt::Public { .. } => unreachable!("public statements were unwrapped"),
-        }
+        let next = self.next_impl_by_source.entry(source).or_insert(0);
+        let id = ImplId {
+            source,
+            local: *next,
+        };
+        *next = next.checked_add(1).expect("impl id overflow");
+        self.impls.push((span, id));
+        id
     }
 }
 

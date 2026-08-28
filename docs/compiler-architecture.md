@@ -151,14 +151,14 @@ CompilationSession
 
 compiler 的项目入口已经接收该 session，并通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。frontend 的项目分析现在按模块路径对独立 `Program` 做导出收集、跨文件复析，并合并项目级 `DefMap` 和 `TypeckResults`；HIR 的声明收集和 lowering 也已直接遍历 `ModuleGraph` 与独立 `Program`。compiler 路径不再生成 inline module AST。AST 解释器目前仍通过命名明确的 `inline_module_compatibility_program` 兼容视图和临时入口调用运行，待它能够消费共享入口 `DefId` 后再移除。无 manifest 的 legacy entry loader 可以作为兼容入口保留，但不应继续作为主项目编译模型。
 
-### 语义 ID 仍由 Span 反推
+### 表达式 ID 仍由 Span 反推
 
-目前部分 `DefId`、`ExprId` 和 `ImplId` 是在分析结束后，对以 `Span` 为键的结果排序并分配得到的。因此 ID 虽已存在，但仍依赖 Span 唯一性；宏展开、synthetic AST 或共享 Span 节点可能发生身份碰撞。
+definition collection 已在访问声明时直接分配 `DefId`；函数和方法同时登记 `BodyId`，impl 也在访问节点时直接分配 `ImplId`，不再于分析结束后通过定义 Span 反查 owner。当前剩余问题集中在 `ExprId`：`TypeckResults` 仍会对以 `Span` 为键的表达式类型排序后分配 ID，因此宏展开、synthetic AST 或共享 Span 节点仍可能发生身份碰撞。定义引用查询目前也仍保留 Span 索引作为源码位置入口，但 owner 身份已不依赖该索引。
 
 目标是：
 
 - parser 或 HIR lowering 阶段为表达式分配稳定身份。
-- definition collection 阶段直接分配 `DefId`。
+- 已完成：definition collection 阶段直接分配 `DefId`、`BodyId` 和 `ImplId`。
 - `TypeckResults`、调用解析和 ownership 结果全部以 ID 为键。
 - `Span` 只作为 ID 对应的诊断位置，不再充当语义主键。
 
@@ -311,7 +311,7 @@ rils
 
 1. 已完成：抽离 Host Contract/Manifest 共享层，解除 Analyzer 对 compiler 的依赖。
 2. compiler 侧已完成：`CompilationSession` 以 `ProjectSyntax` 保存独立模块 AST，项目 analysis、跨文件调用解析和 HIR lowering 均直接消费模块集合；compiler 入口不再依赖 synthetic AST 调用。仅 AST 解释器仍保留命名明确的 inline-module 兼容视图，后续随第 5 项迁移移除。
-3. 在 syntax/HIR 构造阶段分配真实 `DefId`、`ExprId`，停止从 Span 反推。
+3. 进行中：`DefId`、`BodyId` 和 `ImplId` 已在 definition collection 时直接分配；仍需在 syntax/HIR 构造阶段分配真实 `ExprId`，停止从 Span 反推表达式身份。
 4. 将 numeric literal 和 Host type AST rewrite 改为 semantic side table，并删除旧模块。
 5. 让 AST 解释器消费共享 `DefMap`、`TypeckResults`，收缩旧静态检查逻辑。
 6. 合并解释器和 VM 的 runtime builtin dispatcher。

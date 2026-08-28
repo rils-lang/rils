@@ -145,3 +145,40 @@ fn body_and_impl_ids_are_assigned_from_semantic_owners() {
         })
     );
 }
+
+#[test]
+fn body_owners_do_not_depend_on_definition_span_lookup() {
+    let shared_span = Span::in_source(SourceId::new(7), 10, 14);
+    let first = DefId {
+        source: shared_span.source,
+        local: 1,
+    };
+    let second = DefId {
+        source: shared_span.source,
+        local: 2,
+    };
+    let symbols = [first, second].map(|id| crate::analysis::SymbolOccurrence {
+        name: format!("function_{}", id.local),
+        span: shared_span,
+        definition_span: Some(shared_span),
+        symbol_id: Some(id),
+        definition_id: Some(id),
+        kind: SymbolKind::Function,
+        is_definition: true,
+        inferred_type: None,
+        detail: None,
+        container: None,
+    });
+    let first_body = Span::in_source(shared_span.source, 20, 30);
+    let second_body = Span::in_source(shared_span.source, 40, 50);
+    let mut owners = SemanticOwnerIds::default();
+    owners.record_body(first, first_body);
+    owners.record_body(second, second_body);
+
+    let map = DefMap::from_symbols_and_owners(&symbols, owners);
+
+    assert_eq!(map.body(first), Some(BodyId(first)));
+    assert_eq!(map.body(second), Some(BodyId(second)));
+    assert_eq!(map.body_at(first_body), Some(BodyId(first)));
+    assert_eq!(map.body_at(second_body), Some(BodyId(second)));
+}
