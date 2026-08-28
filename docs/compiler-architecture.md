@@ -78,7 +78,7 @@ AST 解释器在字节码迁移期间继续作为完整语义参考后端，但�
 
 ### 数值字面量 AST 改写
 
-`crates/rils_frontend/src/resolution.rs` 当前先推断数值类型，再将未定型整数和浮点字面量原地改写成具体 AST literal。编译和分析入口随后还会再次执行类型推断。
+compiler 已不再调用 `crates/rils_frontend/src/resolution.rs` 原地改写数值 AST。HIR lowering 直接通过表达式的 `ExprId` 查询 `TypeckResults`，据此生成具体宽度的整数或浮点常量，并在 literal Span 上报告越界。AST 解释器仍暂时调用这套兼容 rewrite；待解释器消费共享 `TypeckResults` 后再删除该模块和 API。
 
 目标设计为：
 
@@ -155,7 +155,7 @@ compiler 的项目入口已经接收该 session，并通过入口源码身份解
 
 definition collection 已在访问声明时直接分配 `DefId`；函数和方法同时登记 `BodyId`，impl 也在访问节点时直接分配 `ImplId`，不再于分析结束后通过定义 Span 反查 owner。`ExprId` 现在也按每个 `Program` 的 AST preorder 直接分配，调用和值解析按该 ID 写入 side table；共享同一 Span 的表达式会获得不同身份，Span 索引保留完整的一对多关系。
 
-类型推断使用同一个 AST 身份分配器直接产生 `ExprId -> Type`，并由该表构造 `TypeckResults`；即使两个表达式共享 Span，也可以保留不同的推断类型。HIR lowering、调用解析、控制流、所有权、静态类型、格式检查、Analyzer 成员补全和 numeric literal rewrite 均通过节点身份索引查询 `ExprId`。旧的表达式 Span 类型主表和有歧义的单值 `*_at(Span)` 查询已经移除；Span 只保留为 `ExprId -> Span` 的诊断位置，以及明确的一对多或 offset 源码查询索引。
+类型推断使用同一个 AST 身份分配器直接产生 `ExprId -> Type`，并由该表构造 `TypeckResults`；即使两个表达式共享 Span，也可以保留不同的推断类型。HIR lowering（包括数值 literal lowering）、调用解析、控制流、所有权、静态类型、格式检查和 Analyzer 成员补全均通过节点身份索引查询 `ExprId`。旧的表达式 Span 类型主表和有歧义的单值 `*_at(Span)` 查询已经移除；Span 只保留为 `ExprId -> Span` 的诊断位置，以及明确的一对多或 offset 源码查询索引。解释器兼容入口中的 numeric literal rewrite 也按 `ExprId` 查询，但它仍会修改 AST，尚待第 5 项迁移后删除。
 
 数值约束中的临时 integer/float inference variable 也以 `ExprId` 标识，不再复用 literal Span。它们属于 frontend 内存态，字节码编码器会明确拒绝未求解的 inference type；原有磁盘格式中的 legacy Span numeric variable tag 仍只为旧字节码解码兼容保留，本次迁移不改变格式版本。
 
@@ -315,8 +315,8 @@ rils
 
 1. 已完成：抽离 Host Contract/Manifest 共享层，解除 Analyzer 对 compiler 的依赖。
 2. compiler 侧已完成：`CompilationSession` 以 `ProjectSyntax` 保存独立模块 AST，项目 analysis、跨文件调用解析和 HIR lowering 均直接消费模块集合；compiler 入口不再依赖 synthetic AST 调用。仅 AST 解释器仍保留命名明确的 inline-module 兼容视图，后续随第 5 项迁移移除。
-3. 已完成：`DefId`、`BodyId`、`ImplId` 和 `ExprId` 均在 AST/definition 访问时直接分配；类型推断、调用解析、静态检查器、Analyzer、numeric literal rewrite 与 HIR lowering 均按 `ExprId` 查询，表达式 Span 兼容主表已移除。
-4. 将 numeric literal 和 Host type AST rewrite 改为 semantic side table，并删除旧模块。
+3. 已完成：`DefId`、`BodyId`、`ImplId` 和 `ExprId` 均在 AST/definition 访问时直接分配；类型推断、调用解析、静态检查器、Analyzer 与 HIR lowering 均按 `ExprId` 查询，表达式 Span 兼容主表已移除。
+4. 进行中：compiler 已直接按 semantic type lower numeric literal；待 AST 解释器消费 `TypeckResults` 后删除 numeric rewrite。Host type AST rewrite 仍需改为 semantic side table。
 5. 让 AST 解释器消费共享 `DefMap`、`TypeckResults`，收缩旧静态检查逻辑。
 6. 合并解释器和 VM 的 runtime builtin dispatcher。
 7. 将 bytecode core import 从字符串分发改为 ID 分发。

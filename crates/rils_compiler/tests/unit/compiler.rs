@@ -18,6 +18,81 @@ fn compiles_source_through_static_analysis_hir_and_mir() {
 }
 
 #[test]
+fn lowers_unsuffixed_numeric_literals_from_semantic_types() {
+    let program = compile("let small: u8 = 255; let wide: u16 = 65535; let precise: f32 = 1.5;")
+        .expect("semantic types should drive numeric literal lowering");
+    let constants = &program.functions[program.entry].constants;
+
+    assert!(
+        constants
+            .iter()
+            .any(|literal| matches!(literal, crate::hir::HirLiteral::U8(255)))
+    );
+    assert!(
+        constants
+            .iter()
+            .any(|literal| matches!(literal, crate::hir::HirLiteral::U16(65_535)))
+    );
+    assert!(
+        constants
+            .iter()
+            .any(|literal| matches!(literal, crate::hir::HirLiteral::F32(value) if *value == 1.5))
+    );
+}
+
+#[test]
+fn reports_unsuffixed_integer_overflow_at_the_literal() {
+    let source = "let value: u8 = 256;";
+    let error = match compile(source) {
+        Ok(_) => panic!("an out-of-range inferred integer should fail"),
+        Err(error) => error,
+    };
+
+    assert!(error.message.contains("outside the `u8` range"));
+    assert_eq!(&source[error.span.start..error.span.end], "256");
+}
+
+#[test]
+fn lowers_same_span_numeric_literals_by_expression_identity() {
+    let tokens = rils_frontend::lexer::lex("let small: u8 = 1; let wide: u16 = 1;")
+        .expect("lex numeric literals");
+    let mut program = rils_frontend::parser::parse(tokens).expect("parse numeric literals");
+    let first_span = match &program.statements[0] {
+        rils_frontend::ast::Stmt::Let {
+            initializer: rils_frontend::ast::Expr::Literal { span, .. },
+            ..
+        } => *span,
+        _ => panic!("expected first literal initializer"),
+    };
+    match &mut program.statements[1] {
+        rils_frontend::ast::Stmt::Let {
+            initializer: rils_frontend::ast::Expr::Literal { span, .. },
+            ..
+        } => *span = first_span,
+        _ => panic!("expected second literal initializer"),
+    }
+    let analysis = rils_frontend::analysis::analyze_program(&program);
+
+    let hir =
+        crate::hir::lower_with_host(&program, &HostContract::new(), &analysis, Vec::new(), None)
+            .expect("lower same-span literals by expression identity");
+    let literals = hir.functions[0]
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            crate::hir::HirStatement::Let {
+                initializer: crate::hir::HirExpression::Literal { value, .. },
+                ..
+            } => Some(value),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(matches!(literals[0], crate::hir::HirLiteral::U8(1)));
+    assert!(matches!(literals[1], crate::hir::HirLiteral::U16(1)));
+}
+
+#[test]
 fn hir_lowering_distinguishes_calls_with_the_same_span() {
     let tokens = rils_frontend::lexer::lex(
         "let value: Option<i32> = Some(1); value.is_some(); value.unwrap();",

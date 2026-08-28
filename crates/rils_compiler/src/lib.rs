@@ -150,8 +150,6 @@ fn compile_program_with_host_and_sources_and_entry(
     {
         return Err(CompileError::new(error.message, error.span));
     }
-    rils_frontend::resolve_numeric_literals_with_host_functions(&mut program, &signatures)
-        .map_err(|error| CompileError::new(error.message, error.span))?;
     let analysis = rils_frontend::analysis::analyze_program_with_host_declarations(
         &program,
         &signatures,
@@ -232,8 +230,6 @@ pub fn compile_program_with_host_and_session(
         {
             return Err(CompileError::new(error.message, error.span));
         }
-        rils_frontend::resolve_numeric_literals_with_host_functions(program, &signatures)
-            .map_err(|error| CompileError::new(error.message, error.span))?;
         Ok(())
     };
     for program in syntax.roots_mut() {

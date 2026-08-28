@@ -743,7 +743,13 @@ impl<'a> FunctionLowerer<'a> {
         let expression_id = self.expression_id(expression)?;
         match expression {
             Expr::Literal { value, span } => Ok(HirExpression::Literal {
-                value: lower_literal(value),
+                value: lower_expression_literal(
+                    value,
+                    self.typeck_results
+                        .expression_type(expression_id)
+                        .unwrap_or(&Type::Unknown),
+                    *span,
+                )?,
                 span: *span,
             }),
             Expr::Variable { name, span } if name == "None" => {
@@ -1801,6 +1807,60 @@ fn lower_literal(value: &Literal) -> HirLiteral {
         ),
         Literal::Float(value) => HirLiteral::F64(*value),
         Literal::String(value) => HirLiteral::String(value.clone()),
+    }
+}
+
+fn lower_expression_literal(
+    value: &Literal,
+    inferred: &Type,
+    span: Span,
+) -> Result<HirLiteral, CompileError> {
+    let overflow = |value: i128, ty: crate::types::IntegerType| {
+        CompileError::new(
+            format!("integer literal `{value}` is outside the `{ty}` range"),
+            span,
+        )
+    };
+    let Literal::Integer(value) = value else {
+        if let Literal::Float(value) = value {
+            return Ok(match inferred {
+                Type::Float(crate::types::FloatType::F32) => HirLiteral::F32(*value as f32),
+                _ => HirLiteral::F64(*value),
+            });
+        }
+        return Ok(lower_literal(value));
+    };
+    let ty = match inferred {
+        Type::Integer(ty) => *ty,
+        _ => crate::types::IntegerType::I32,
+    };
+    macro_rules! signed {
+        ($variant:ident, $type:ty) => {
+            <$type>::try_from(*value)
+                .map(HirLiteral::$variant)
+                .map_err(|_| overflow(*value, ty))
+        };
+    }
+    macro_rules! unsigned {
+        ($variant:ident, $type:ty) => {
+            <$type>::try_from(*value)
+                .map(HirLiteral::$variant)
+                .map_err(|_| overflow(*value, ty))
+        };
+    }
+    match ty {
+        crate::types::IntegerType::I8 => signed!(I8, i8),
+        crate::types::IntegerType::I16 => signed!(I16, i16),
+        crate::types::IntegerType::I32 => signed!(I32, i32),
+        crate::types::IntegerType::I64 => signed!(I64, i64),
+        crate::types::IntegerType::I128 => Ok(HirLiteral::I128(*value)),
+        crate::types::IntegerType::Isize => signed!(Isize, isize),
+        crate::types::IntegerType::U8 => unsigned!(U8, u8),
+        crate::types::IntegerType::U16 => unsigned!(U16, u16),
+        crate::types::IntegerType::U32 => unsigned!(U32, u32),
+        crate::types::IntegerType::U64 => unsigned!(U64, u64),
+        crate::types::IntegerType::U128 => unsigned!(U128, u128),
+        crate::types::IntegerType::Usize => unsigned!(Usize, usize),
     }
 }
 
