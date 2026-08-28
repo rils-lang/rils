@@ -90,6 +90,7 @@ pub struct DocumentAnalysis {
     pub inlay_hints: Vec<InlayTypeHint>,
     pub def_map: crate::semantic::DefMap,
     pub typeck_results: crate::semantic::TypeckResults,
+    pub host_type_resolutions: crate::HostTypeResolutionResults,
 }
 
 impl DocumentAnalysis {
@@ -99,6 +100,8 @@ impl DocumentAnalysis {
         self.inlay_hints.extend(other.inlay_hints);
         self.def_map.extend(other.def_map);
         self.typeck_results.extend(other.typeck_results);
+        self.host_type_resolutions
+            .extend(other.host_type_resolutions);
     }
 }
 
@@ -180,8 +183,11 @@ pub fn analyze_program_with_host_declarations(
     host_functions: &HashMap<String, FunctionSignature>,
     host_types: &HashSet<String>,
 ) -> DocumentAnalysis {
-    let mut program = program.clone();
-    let resolution_errors = crate::resolve_host_type_names(&mut program, host_types);
+    let host_type_resolutions = crate::resolve_host_types(program, SourceId::UNKNOWN, host_types);
+    let resolution_errors = host_type_resolutions.errors().to_vec();
+    let source_program = program;
+    let mut program = source_program.clone();
+    crate::resolve_host_type_names(&mut program, host_types);
     let mut analysis = Analyzer::new(
         SourceId::UNKNOWN,
         host_functions,
@@ -190,7 +196,8 @@ pub fn analyze_program_with_host_declarations(
         &HashMap::new(),
         &[],
     )
-    .analyze(&program);
+    .analyze(&program, source_program, &host_type_resolutions);
+    analysis.host_type_resolutions = host_type_resolutions;
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
     analysis
 }
@@ -292,8 +299,11 @@ pub(crate) fn analyze_program_in_module_with_external_exports_and_host_types(
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
     module_path: &[String],
 ) -> DocumentAnalysis {
-    let mut program = program.clone();
-    let resolution_errors = crate::resolve_host_type_names(&mut program, host_types);
+    let host_type_resolutions = crate::resolve_host_types(program, source_id, host_types);
+    let resolution_errors = host_type_resolutions.errors().to_vec();
+    let source_program = program;
+    let mut program = source_program.clone();
+    crate::resolve_host_type_names(&mut program, host_types);
     let mut analysis = Analyzer::new(
         source_id,
         host_functions,
@@ -302,7 +312,8 @@ pub(crate) fn analyze_program_in_module_with_external_exports_and_host_types(
         external_exports,
         module_path,
     )
-    .analyze(&program);
+    .analyze(&program, source_program, &host_type_resolutions);
+    analysis.host_type_resolutions = host_type_resolutions;
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
     analysis
 }
@@ -553,7 +564,12 @@ impl Analyzer {
         }
     }
 
-    fn analyze(mut self, program: &Program) -> DocumentAnalysis {
+    fn analyze(
+        mut self,
+        program: &Program,
+        inference_program: &Program,
+        host_type_resolutions: &crate::HostTypeResolutionResults,
+    ) -> DocumentAnalysis {
         self.collect_trait_members(&program.statements);
         self.collect_inherent_methods(&program.statements);
         self.collect_enum_variants(&program.statements);
@@ -591,13 +607,20 @@ impl Analyzer {
                 }
             }
         }
-        let inference = type_inference::infer_with_host_functions(
-            program,
+        let inference = type_inference::infer_with_host_functions_and_host_types(
+            inference_program,
             self.source_id,
             &inference_functions,
+            host_type_resolutions,
         );
+        // The compatibility analysis path still visits a canonicalized AST
+        // clone. Expression IDs are deterministic, but the node index is tied
+        // to one concrete immutable Program, so give those checkers an index
+        // for the clone while type inference reads the original syntax.
+        let checker_expression_ids =
+            crate::semantic::ExpressionIdentityMap::allocate(program, self.source_id);
         let expression_types = crate::semantic::ExpressionTypes::new(
-            &inference.expression_ids,
+            &checker_expression_ids,
             &inference.expression_types_by_id,
         );
         self.enrich_member_symbols(&inference.expression_types_by_id);

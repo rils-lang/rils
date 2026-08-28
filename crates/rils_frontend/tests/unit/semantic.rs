@@ -1,6 +1,132 @@
 use super::*;
 
 #[test]
+fn type_and_pattern_ids_cover_nested_expression_syntax() {
+    let source = SourceId::new(11);
+    let tokens = crate::lexer::lex_with_source_id(
+        "enum Kind { Ready } \
+         fn convert(value: Source) -> Option<Vec<Target>> { \
+             let casted = value as i64; \
+             <Target as Factory>::make; \
+             match Kind::Ready { Kind::Ready => casted } \
+         }",
+        source,
+    )
+    .expect("lex type and pattern identities");
+    let program = crate::parser::parse(tokens).expect("parse type and pattern identities");
+    let type_ids = TypeIdentityMap::allocate(&program, SourceId::UNKNOWN);
+    let pattern_ids = PatternIdentityMap::allocate(&program, SourceId::UNKNOWN);
+
+    let crate::ast::Stmt::Function {
+        parameters,
+        return_type: Some(return_type),
+        body,
+        ..
+    } = &program.statements[1]
+    else {
+        panic!("expected function declaration");
+    };
+    let parameter_type = parameters[0]
+        .type_annotation
+        .as_ref()
+        .expect("parameter type");
+    let crate::ast::Stmt::Let {
+        initializer:
+            crate::ast::Expr::Cast {
+                target: cast,
+                span: cast_span,
+                ..
+            },
+        ..
+    } = &body.statements[0]
+    else {
+        panic!("expected cast initializer");
+    };
+    let crate::ast::Stmt::Expr {
+        expression: crate::ast::Expr::QualifiedPath { target, .. },
+        ..
+    } = &body.statements[1]
+    else {
+        panic!("expected qualified path");
+    };
+    let crate::ast::Stmt::Expr {
+        expression: crate::ast::Expr::Match { arms, .. },
+        ..
+    } = &body.statements[2]
+    else {
+        panic!("expected match expression");
+    };
+
+    let parameter = type_ids.get(parameter_type).expect("parameter type id");
+    let returned = type_ids.get(return_type).expect("return type id");
+    let cast = type_ids.get(cast).expect("cast type id");
+    let qualified = type_ids.get(target).expect("qualified path type id");
+    let pattern = pattern_ids.get(&arms[0].pattern).expect("pattern id");
+
+    assert_eq!(parameter.source, source);
+    assert_eq!(parameter.local, 0);
+    assert_eq!(returned.local, 1);
+    assert_eq!(cast.local, 4);
+    assert_eq!(qualified.local, 5);
+    assert_eq!(pattern.source, source);
+    assert_eq!(pattern.local, 0);
+    assert_eq!(type_ids.span(cast), Some(*cast_span));
+    assert_eq!(pattern_ids.span(pattern), Some(arms[0].pattern.span()));
+}
+
+#[test]
+fn type_and_pattern_ids_preserve_same_span_nodes() {
+    let source = SourceId::new(12);
+    let tokens = crate::lexer::lex_with_source_id(
+        "let first: Left = value; let second: Right = value; \
+         match value { Left => 1, Right => 2 }",
+        source,
+    )
+    .expect("lex shared spans");
+    let mut program = crate::parser::parse(tokens).expect("parse shared spans");
+    let first_type_span = match &program.statements[0] {
+        crate::ast::Stmt::Let { span, .. } => *span,
+        _ => panic!("expected first typed binding"),
+    };
+    let first_pattern_span = match &program.statements[2] {
+        crate::ast::Stmt::Expr {
+            expression: crate::ast::Expr::Match { arms, .. },
+            ..
+        } => arms[0].pattern.span(),
+        _ => panic!("expected match expression"),
+    };
+    if let crate::ast::Stmt::Let { span, .. } = &mut program.statements[1] {
+        *span = first_type_span;
+    }
+    if let crate::ast::Stmt::Expr {
+        expression: crate::ast::Expr::Match { arms, .. },
+        ..
+    } = &mut program.statements[2]
+    {
+        match &mut arms[1].pattern {
+            crate::ast::Pattern::Binding { span, .. } | crate::ast::Pattern::Path { span, .. } => {
+                *span = first_pattern_span;
+            }
+            _ => panic!("expected path-like pattern"),
+        }
+    }
+
+    let type_ids = TypeIdentityMap::allocate(&program, SourceId::UNKNOWN);
+    let pattern_ids = PatternIdentityMap::allocate(&program, SourceId::UNKNOWN);
+
+    assert_eq!(type_ids.ids_at(first_type_span).len(), 2);
+    assert_ne!(
+        type_ids.ids_at(first_type_span)[0],
+        type_ids.ids_at(first_type_span)[1]
+    );
+    assert_eq!(pattern_ids.ids_at(first_pattern_span).len(), 2);
+    assert_ne!(
+        pattern_ids.ids_at(first_pattern_span)[0],
+        pattern_ids.ids_at(first_pattern_span)[1]
+    );
+}
+
+#[test]
 fn expression_ids_are_deterministic_and_source_scoped() {
     let source = SourceId::new(1);
     let tokens = crate::lexer::lex_with_source_id("let first = 1; let second = true;", source)

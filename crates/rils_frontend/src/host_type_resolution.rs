@@ -1,5 +1,9 @@
 //! Canonical resolution for named host types imported into Rils source.
 
+mod side_table;
+
+pub use side_table::{HostTypeResolutionResults, HostTypeResolutionView, resolve_host_types};
+
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::{
@@ -601,3 +605,7 @@ fn path_candidates(prefix: &[String], path: &[String]) -> Vec<String> {
         vec![format!("{}::{absolute}", prefix.join("::")), absolute]
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/host_type_resolution.rs"]
+mod tests;

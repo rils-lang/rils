@@ -102,6 +102,8 @@ HIR 或解释器根据类型结果构造实际值
 
 AST 应保留用户写下的路径；解析后的 canonical Host identity 应进入统一 definition/type namespace，并由 `DefMap`、类型检查结果或 HIR 保存。完成后删除 `host_type_resolution.rs`。
 
+迁移前置身份已经建立：类型节点使用 source-scoped `TypeRefId`，pattern 节点使用 `PatternId`，两者均按 AST preorder 分配并保留同一 Span 对应多个节点的关系。不可变的 `HostTypeResolutionResults` 已按 `TypeRefId`、`ExprId` 和 `PatternId` 记录 canonical type/path，并作为 `DocumentAnalysis` 的阶段产物参与项目分析合并。`HostTypeResolutionView` 统一提供节点到 canonical type/path 的只读查询，类型推断已经直接读取原始 AST 与该 view，不再依赖 Host 类型名称改写；Analyzer 的其余检查和 HIR 暂时仍消费兼容改写后的 AST clone。后续迁移必须继续读取该 side table，不能重新引入 `Span -> canonical type/path` 主表。
+
 ### Host enum synthetic AST 注入
 
 `rils_compiler` 当前会把 Host Contract 中的 enum、flags 和相关能力转换成 synthetic `Stmt::Enum`、`Stmt::Impl`，这些节点没有真实源码 Span。

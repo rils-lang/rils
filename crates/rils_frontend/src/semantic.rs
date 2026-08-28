@@ -8,10 +8,12 @@ use crate::{
 };
 
 mod expression_ids;
+mod syntax_ids;
 mod visit;
 
 pub use expression_ids::ExpressionIdentityMap;
 pub(crate) use expression_ids::{ExpressionIds, ExpressionTypes};
+pub use syntax_ids::{PatternIdentityMap, TypeIdentityMap};
 use visit::visit_statements;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

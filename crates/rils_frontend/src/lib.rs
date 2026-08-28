@@ -25,7 +25,10 @@ pub use host_analysis::{
     analyze_program_with_host_and_source_id_and_external_exports, analyze_with_host,
     analyze_with_host_and_source_id_and_external_exports, inject_host_enum_declarations,
 };
-pub use host_type_resolution::{HostTypeResolutionError, resolve_host_type_names};
+pub use host_type_resolution::{
+    HostTypeResolutionError, HostTypeResolutionResults, HostTypeResolutionView,
+    resolve_host_type_names, resolve_host_types,
+};
 pub use project_analysis::analyze_project_with_host_declarations;
 pub use resolution::{
     NumericResolutionError, resolve_numeric_literals, resolve_numeric_literals_with_host_functions,
@@ -36,8 +39,8 @@ pub use rils_builtins::{
     integer_method,
 };
 pub use rils_syntax::{
-    BodyId, DefId, ExprId, FloatType, FunctionSignature, ImplId, IntegerType, ModuleId,
-    RuntimeValue, SourceFile, SourceId, Span, SymbolId, Type,
+    BodyId, DefId, ExprId, FloatType, FunctionSignature, ImplId, IntegerType, ModuleId, PatternId,
+    RuntimeValue, SourceFile, SourceId, Span, SymbolId, Type, TypeRefId,
 };
 pub use rils_syntax::{LexError, ParseError, lex, lex_with_source_id, parse};
 pub use semantic::{
