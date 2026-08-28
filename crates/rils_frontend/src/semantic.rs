@@ -10,7 +10,7 @@ use crate::{
 mod expression_ids;
 mod visit;
 
-use expression_ids::ExpressionIds;
+pub(crate) use expression_ids::{ExpressionIdentityMap, ExpressionIds};
 use visit::visit_statements;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -203,21 +203,13 @@ pub struct TypeckResults {
 }
 
 impl TypeckResults {
-    pub(crate) fn from_program_and_expression_types(
-        program: &Program,
-        fallback_source: SourceId,
-        expression_types: &HashMap<Span, Type>,
+    pub(crate) fn from_expression_types(
+        expression_ids: ExpressionIds,
+        expression_types: HashMap<ExprId, Type>,
     ) -> Self {
-        let expression_ids = ExpressionIds::allocate(program, fallback_source);
-        let mut types_by_id = HashMap::new();
-        for (span, ty) in expression_types {
-            for id in expression_ids.at(*span) {
-                types_by_id.insert(*id, ty.clone());
-            }
-        }
         Self {
             expression_ids,
-            expression_types: types_by_id,
+            expression_types,
             resolved_calls: HashMap::new(),
             resolved_values: HashMap::new(),
         }

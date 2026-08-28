@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
+    ExprId, SourceId,
     ast::{
         BinaryOp, Block, EnumVariant, Expr, Literal, Parameter, Pattern, Program, Stmt, UnaryOp,
     },
@@ -20,7 +21,9 @@ pub(crate) struct RawTypeHint {
 pub(crate) struct InferenceResult {
     pub binding_types: HashMap<Span, Type>,
     pub expression_types: HashMap<Span, Type>,
+    pub expression_types_by_id: HashMap<ExprId, Type>,
     pub hints: Vec<RawTypeHint>,
+    pub expression_ids: crate::semantic::ExpressionIds,
 }
 
 #[derive(Clone)]
@@ -55,9 +58,10 @@ fn qualified_type_name(prefix: &[String], name: &str) -> String {
 
 pub(crate) fn infer_with_host_functions(
     program: &Program,
+    source: SourceId,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> InferenceResult {
-    Inferencer::new(program, host_functions).run(program)
+    Inferencer::new(program, source, host_functions).run(program)
 }
 
 struct Inferencer {
@@ -65,13 +69,18 @@ struct Inferencer {
     types: HashMap<String, TypeDefinition>,
     variant_owners: HashMap<String, String>,
     result: InferenceResult,
+    expression_ids: crate::semantic::ExpressionIdentityMap,
     numeric_parents: HashMap<Span, Span>,
     numeric_fixed: HashMap<Span, Type>,
     host_functions: HashMap<String, FunctionSignature>,
 }
 
 impl Inferencer {
-    fn new(program: &Program, host_functions: &HashMap<String, FunctionSignature>) -> Self {
+    fn new(
+        program: &Program,
+        source: SourceId,
+        host_functions: &HashMap<String, FunctionSignature>,
+    ) -> Self {
         let mut globals = HashMap::new();
         for (name, return_type) in [
             ("#rils_native_print", Type::Unit),
@@ -133,11 +142,19 @@ impl Inferencer {
             );
         }
 
+        let expression_ids = crate::semantic::ExpressionIdentityMap::allocate(program, source);
         let mut inferencer = Self {
             scopes: vec![globals],
             types: HashMap::new(),
             variant_owners: HashMap::new(),
-            result: InferenceResult::default(),
+            result: InferenceResult {
+                binding_types: HashMap::new(),
+                expression_types: HashMap::new(),
+                expression_types_by_id: HashMap::new(),
+                hints: Vec::new(),
+                expression_ids: crate::semantic::ExpressionIds::default(),
+            },
+            expression_ids,
             numeric_parents: HashMap::new(),
             numeric_fixed: HashMap::new(),
             host_functions: host_functions.clone(),
@@ -173,10 +190,23 @@ impl Inferencer {
                 self.result.expression_types.insert(span, resolved);
             }
         }
+        let expression_ids = self
+            .result
+            .expression_types_by_id
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        for id in expression_ids {
+            if let Some(ty) = self.result.expression_types_by_id.get(&id).cloned() {
+                let resolved = self.resolve_type(&ty);
+                self.result.expression_types_by_id.insert(id, resolved);
+            }
+        }
         for index in 0..self.result.hints.len() {
             let ty = self.result.hints[index].ty.clone();
             self.result.hints[index].ty = self.resolve_type(&ty);
         }
+        self.result.expression_ids = self.expression_ids.into_ids();
         self.result
     }
 
@@ -729,10 +759,12 @@ impl Inferencer {
     }
 
     fn expression(&mut self, expression: &Expr, returns: &mut Vec<Type>) -> Type {
+        let id = self.expression_ids.id(expression);
         let ty = self.expression_inner(expression, returns);
         self.result
             .expression_types
             .insert(expression.span(), ty.clone());
+        self.result.expression_types_by_id.insert(id, ty.clone());
         ty
     }
 

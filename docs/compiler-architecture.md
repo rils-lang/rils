@@ -155,7 +155,7 @@ compiler 的项目入口已经接收该 session，并通过入口源码身份解
 
 definition collection 已在访问声明时直接分配 `DefId`；函数和方法同时登记 `BodyId`，impl 也在访问节点时直接分配 `ImplId`，不再于分析结束后通过定义 Span 反查 owner。`ExprId` 现在也按每个 `Program` 的 AST preorder 直接分配，调用和值解析按该 ID 写入 side table；共享同一 Span 的表达式会获得不同身份，Span 索引保留完整的一对多关系。
 
-当前类型推断的内部结果仍以 Span 为键，并在构造 `TypeckResults` 时映射到已分配的 `ExprId`；HIR 也仍有兼容的 Span 查询。下一步应让类型推断和 HIR lowering 直接携带相同的表达式访问身份，彻底移除这些兼容查询。
+类型推断现在使用同一个 AST 身份分配器直接产生 `ExprId -> Type`，并由该表构造 `TypeckResults`；即使两个表达式共享 Span，也可以保留不同的推断类型。旧的静态检查器和 HIR 仍有兼容的 Span 类型查询，下一步应让这些访问者直接携带相同的表达式身份，彻底移除兼容主表。
 
 目标是：
 
@@ -313,7 +313,7 @@ rils
 
 1. 已完成：抽离 Host Contract/Manifest 共享层，解除 Analyzer 对 compiler 的依赖。
 2. compiler 侧已完成：`CompilationSession` 以 `ProjectSyntax` 保存独立模块 AST，项目 analysis、跨文件调用解析和 HIR lowering 均直接消费模块集合；compiler 入口不再依赖 synthetic AST 调用。仅 AST 解释器仍保留命名明确的 inline-module 兼容视图，后续随第 5 项迁移移除。
-3. 进行中：`DefId`、`BodyId`、`ImplId` 和 `ExprId` 均已在 AST/definition 访问时直接分配；仍需让类型推断与 HIR lowering 全程按 `ExprId` 查询，移除 Span 兼容路径。
+3. 进行中：`DefId`、`BodyId`、`ImplId` 和 `ExprId` 均已在 AST/definition 访问时直接分配，类型推断也已直接写入 `ExprId`；仍需让静态检查器与 HIR lowering 全程按 ID 查询，移除 Span 兼容路径。
 4. 将 numeric literal 和 Host type AST rewrite 改为 semantic side table，并删除旧模块。
 5. 让 AST 解释器消费共享 `DefMap`、`TypeckResults`，收缩旧静态检查逻辑。
 6. 合并解释器和 VM 的 runtime builtin dispatcher。

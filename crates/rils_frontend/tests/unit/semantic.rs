@@ -21,9 +21,8 @@ fn expression_ids_are_deterministic_and_source_scoped() {
     };
     let first = first.span();
     let second = second.span();
-    let types = HashMap::from([(first, Type::I32), (second, Type::Bool)]);
-
-    let results = TypeckResults::from_program_and_expression_types(&program, source, &types);
+    let analysis = crate::analysis::analyze_program(&program);
+    let results = &analysis.typeck_results;
     assert_eq!(results.expression_id(first).unwrap().local, 0);
     assert_eq!(results.expression_id(second).unwrap().local, 1);
     assert_eq!(results.expression_type_at(second), Some(&Type::Bool));
@@ -33,27 +32,30 @@ fn expression_ids_are_deterministic_and_source_scoped() {
 fn expressions_with_the_same_span_keep_distinct_identities() {
     let source = SourceId::new(7);
     let span = Span::in_source(source, 4, 5);
-    let expression = crate::ast::Expr::Literal {
+    let first = crate::ast::Expr::Literal {
         value: crate::ast::Literal::Integer(1),
+        span,
+    };
+    let second = crate::ast::Expr::Literal {
+        value: crate::ast::Literal::Bool(true),
         span,
     };
     let program = crate::ast::Program {
         statements: vec![
             crate::ast::Stmt::Expr {
-                expression: expression.clone(),
+                expression: first,
                 terminated: true,
             },
             crate::ast::Stmt::Expr {
-                expression,
+                expression: second,
                 terminated: true,
             },
         ],
         type_references: Vec::new(),
         macros: Vec::new(),
     };
-    let types = HashMap::from([(span, Type::I32)]);
-
-    let results = TypeckResults::from_program_and_expression_types(&program, source, &types);
+    let analysis = crate::analysis::analyze_program(&program);
+    let results = &analysis.typeck_results;
     let ids = results.expression_ids_at(span);
 
     assert_eq!(ids.len(), 2);
@@ -62,7 +64,7 @@ fn expressions_with_the_same_span_keep_distinct_identities() {
     assert_eq!(ids[1].local, 1);
     assert_eq!(results.expression_span(ids[0]), Some(span));
     assert_eq!(results.expression_type(ids[0]), Some(&Type::I32));
-    assert_eq!(results.expression_type(ids[1]), Some(&Type::I32));
+    assert_eq!(results.expression_type(ids[1]), Some(&Type::Bool));
 }
 
 #[test]

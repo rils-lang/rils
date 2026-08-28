@@ -591,7 +591,11 @@ impl Analyzer {
                 }
             }
         }
-        let inference = type_inference::infer_with_host_functions(program, &inference_functions);
+        let inference = type_inference::infer_with_host_functions(
+            program,
+            self.source_id,
+            &inference_functions,
+        );
         self.enrich_member_symbols(&inference.expression_types);
         self.result.diagnostics.extend(crate::control_flow::analyze(
             program,
@@ -684,10 +688,9 @@ impl Analyzer {
             &self.result.symbols,
             std::mem::take(&mut self.owner_ids),
         );
-        let mut typeck_results = crate::semantic::TypeckResults::from_program_and_expression_types(
-            program,
-            self.source_id,
-            &inference.expression_types,
+        let mut typeck_results = crate::semantic::TypeckResults::from_expression_types(
+            inference.expression_ids,
+            inference.expression_types_by_id,
         );
         crate::semantic::resolve_program_calls(
             program,

@@ -22,7 +22,12 @@ pub fn resolve_numeric_literals_with_host_functions(
     program: &mut Program,
     host_functions: &HashMap<String, FunctionSignature>,
 ) -> Result<(), NumericResolutionError> {
-    let types = type_inference::infer_with_host_functions(program, host_functions).expression_types;
+    let types = type_inference::infer_with_host_functions(
+        program,
+        crate::SourceId::UNKNOWN,
+        host_functions,
+    )
+    .expression_types;
     resolve_statements(&mut program.statements, &types)
 }
 
