@@ -10,7 +10,8 @@ use crate::{
 mod expression_ids;
 mod visit;
 
-pub(crate) use expression_ids::{ExpressionIdentityMap, ExpressionIds};
+pub use expression_ids::ExpressionIdentityMap;
+pub(crate) use expression_ids::ExpressionIds;
 use visit::visit_statements;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -257,6 +258,10 @@ impl TypeckResults {
         self.resolved_calls.get(&id)
     }
 
+    pub fn resolved_value(&self, id: ExprId) -> Option<DefId> {
+        self.resolved_values.get(&id).copied()
+    }
+
     pub fn resolved_call_at(&self, span: Span) -> Option<&ResolvedCall> {
         self.expression_id(span)
             .and_then(|id| self.resolved_call(id))
@@ -264,7 +269,7 @@ impl TypeckResults {
 
     pub fn resolved_value_at(&self, span: Span) -> Option<DefId> {
         self.expression_id(span)
-            .and_then(|id| self.resolved_values.get(&id).copied())
+            .and_then(|id| self.resolved_value(id))
     }
 
     pub fn resolved_call_containing(

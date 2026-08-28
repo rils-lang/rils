@@ -8,7 +8,7 @@ use crate::{
     HostContract, HostFunctionDeclaration, HostReceiver,
     ast::{Block, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
     bytecode::CompileError,
-    source::{SourceFile, Span},
+    source::{SourceFile, SourceId, Span},
     types::{FunctionSignature, Type},
 };
 
@@ -145,6 +145,7 @@ pub(crate) fn lower_with_host(
     let units = [ProgramUnit {
         module_path: Vec::new(),
         program,
+        source: SourceId::UNKNOWN,
     }];
     ProgramLowerer::new(&units, host, analysis)?.lower(&units, sources, entry)
 }
@@ -163,6 +164,7 @@ pub(crate) fn lower_project_with_host(
         units.push(ProgramUnit {
             module_path: Vec::new(),
             program: &root,
+            source: SourceId::UNKNOWN,
         });
     }
     units.extend(syntax.modules().filter_map(|(id, program)| {
@@ -170,6 +172,7 @@ pub(crate) fn lower_project_with_host(
         Some(ProgramUnit {
             module_path: module_path_segments(&module.path),
             program,
+            source: module.source.unwrap_or(SourceId::UNKNOWN),
         })
     }));
     ProgramLowerer::new(&units, host, analysis)?.lower(&units, sources, entry)
@@ -178,6 +181,7 @@ pub(crate) fn lower_project_with_host(
 struct ProgramUnit<'a> {
     module_path: Vec<String>,
     program: &'a Program,
+    source: SourceId,
 }
 
 fn module_path_segments(path: &str) -> Vec<String> {
@@ -195,7 +199,7 @@ struct ProgramLowerer {
     host_functions: HashMap<String, Vec<HostFunctionDeclaration>>,
     host_methods: HashMap<String, Vec<HostFunctionDeclaration>>,
     host_contract: HostContract,
-    expression_types: HashMap<Span, Type>,
+    expression_ids: rils_frontend::semantic::ExpressionIdentityMap,
     typeck_results: rils_frontend::semantic::TypeckResults,
     resolved_definitions: HashMap<rils_frontend::DefId, MethodInfo>,
 }
@@ -346,6 +350,13 @@ impl ProgramLowerer {
             );
         }
         let host_methods = host.method_function_overloads();
+        let mut expression_ids = rils_frontend::semantic::ExpressionIdentityMap::default();
+        for unit in units {
+            expression_ids.extend(rils_frontend::semantic::ExpressionIdentityMap::allocate(
+                unit.program,
+                unit.source,
+            ));
+        }
         Ok(Self {
             functions,
             methods,
@@ -354,7 +365,7 @@ impl ProgramLowerer {
             host_functions,
             host_methods,
             host_contract: host.clone(),
-            expression_types: analysis.expression_types.clone(),
+            expression_ids,
             typeck_results: analysis.typeck_results.clone(),
             resolved_definitions,
         })
@@ -390,7 +401,7 @@ impl ProgramLowerer {
             &self.host_functions,
             &self.host_methods,
             &self.host_contract,
-            &self.expression_types,
+            &self.expression_ids,
             &self.typeck_results,
             &self.resolved_definitions,
             generated.clone(),
@@ -447,7 +458,7 @@ impl ProgramLowerer {
                     &self.host_functions,
                     &self.host_methods,
                     &self.host_contract,
-                    &self.expression_types,
+                    &self.expression_ids,
                     &self.typeck_results,
                     &self.resolved_definitions,
                     generated.clone(),
@@ -480,7 +491,7 @@ struct FunctionLowerer<'a> {
     host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
     host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
     host_contract: &'a HostContract,
-    expression_types: &'a HashMap<Span, Type>,
+    expression_ids: &'a rils_frontend::semantic::ExpressionIdentityMap,
     typeck_results: &'a rils_frontend::semantic::TypeckResults,
     resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
     namespace: String,
@@ -503,7 +514,7 @@ impl<'a> FunctionLowerer<'a> {
         host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
         host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
         host_contract: &'a HostContract,
-        expression_types: &'a HashMap<Span, Type>,
+        expression_ids: &'a rils_frontend::semantic::ExpressionIdentityMap,
         typeck_results: &'a rils_frontend::semantic::TypeckResults,
         resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
         generated: GeneratedFunctions,
@@ -513,7 +524,7 @@ impl<'a> FunctionLowerer<'a> {
             host_functions,
             host_methods,
             host_contract,
-            expression_types,
+            expression_ids,
             typeck_results,
             resolved_definitions,
             namespace: String::new(),
@@ -686,7 +697,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.host_functions,
                     self.host_methods,
                     self.host_contract,
-                    self.expression_types,
+                    self.expression_ids,
                     self.typeck_results,
                     self.resolved_definitions,
                     self.generated.clone(),
@@ -729,6 +740,7 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn expression(&mut self, expression: &Expr) -> Result<HirExpression, CompileError> {
+        let expression_id = self.expression_id(expression)?;
         match expression {
             Expr::Literal { value, span } => Ok(HirExpression::Literal {
                 value: lower_literal(value),
@@ -740,7 +752,7 @@ impl<'a> FunctionLowerer<'a> {
             Expr::Variable { name, span } => {
                 if let Some(local) = self.lookup(name) {
                     Ok(HirExpression::Local { local, span: *span })
-                } else if let Some(callable) = self.resolved_value(*span) {
+                } else if let Some(callable) = self.resolved_value(expression_id) {
                     Ok(HirExpression::Function {
                         function: callable.function,
                         span: *span,
@@ -772,7 +784,7 @@ impl<'a> FunctionLowerer<'a> {
                         span: *span,
                     });
                 }
-                if let Some(callable) = self.resolved_value(*span) {
+                if let Some(callable) = self.resolved_value(expression_id) {
                     return Ok(HirExpression::Function {
                         function: callable.function,
                         span: *span,
@@ -786,7 +798,7 @@ impl<'a> FunctionLowerer<'a> {
                 })
             }
             Expr::QualifiedPath { span, .. } => {
-                let method = self.resolved_value(*span).ok_or_else(|| {
+                let method = self.resolved_value(expression_id).ok_or_else(|| {
                     CompileError::unsupported(
                         "semantic analysis did not resolve UFCS function value",
                         *span,
@@ -797,8 +809,10 @@ impl<'a> FunctionLowerer<'a> {
                     span: *span,
                 })
             }
-            Expr::Member { object, name, span } if self.resolved_value(*span).is_some() => {
-                let method = self.resolved_value(*span).expect("guarded method value");
+            Expr::Member { object, name, span } if self.resolved_value(expression_id).is_some() => {
+                let method = self
+                    .resolved_value(expression_id)
+                    .expect("guarded method value");
                 let receiver = method.receiver.ok_or_else(|| {
                     CompileError::unsupported(
                         format!("associated function `{name}` cannot be bound to a receiver"),
@@ -924,13 +938,10 @@ impl<'a> FunctionLowerer<'a> {
                 left: Box::new(self.expression(left)?),
                 operator: *operator,
                 right: Box::new(self.expression(right)?),
-                integer: self
-                    .expression_types
-                    .get(&left.span())
-                    .and_then(|value| match value {
-                        Type::Integer(integer) => Some(*integer),
-                        _ => None,
-                    }),
+                integer: self.expression_type(left).and_then(|value| match value {
+                    Type::Integer(integer) => Some(integer),
+                    _ => None,
+                }),
                 span: *span,
             }),
             Expr::Logical {
@@ -949,7 +960,7 @@ impl<'a> FunctionLowerer<'a> {
                 arguments,
                 span,
             } => {
-                if let Some((name, signature, capability)) = self.resolved_import(*span) {
+                if let Some((name, signature, capability)) = self.resolved_import(expression_id) {
                     return Ok(HirExpression::CallImport {
                         name: name.to_owned(),
                         signature: signature.clone(),
@@ -979,7 +990,7 @@ impl<'a> FunctionLowerer<'a> {
                             return Ok(value);
                         }
                     }
-                    if let Some(callable) = self.resolved_definition(*span) {
+                    if let Some(callable) = self.resolved_definition(expression_id) {
                         return Ok(HirExpression::Call {
                             function: callable.function,
                             arguments: arguments
@@ -998,7 +1009,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
                     let segments = self.resolve_self_path(segments);
-                    if let Some(callable) = self.resolved_definition(*span) {
+                    if let Some(callable) = self.resolved_definition(expression_id) {
                         return Ok(HirExpression::Call {
                             function: callable.function,
                             arguments: arguments
@@ -1011,7 +1022,7 @@ impl<'a> FunctionLowerer<'a> {
                     if let [type_name, _] = segments.as_slice()
                         && let Some(target) = crate::types::IntegerType::from_name(type_name)
                         && let Some(intrinsic) =
-                            self.resolved_builtin(*span)
+                            self.resolved_builtin(expression_id)
                                 .and_then(|(id, kind, receiver)| {
                                     (kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
                                         && receiver.is_none())
@@ -1028,7 +1039,7 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    if let Some(host_name) = self.resolved_host(*span)
+                    if let Some(host_name) = self.resolved_host(expression_id)
                         && let Some(function) = self.host_function(host_name, arguments, *span)?
                     {
                         return Ok(HirExpression::CallImport {
@@ -1054,7 +1065,7 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if let Expr::Member { object, name, .. } = callee.as_ref() {
-                    if let Some(method) = self.resolved_definition(*span) {
+                    if let Some(method) = self.resolved_definition(expression_id) {
                         let mut lowered = Vec::with_capacity(
                             arguments.len() + usize::from(method.receiver.is_some()),
                         );
@@ -1073,17 +1084,17 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    let semantic_builtin =
-                        self.typeck_results
-                            .resolved_call_at(*span)
-                            .and_then(|call| match call {
-                                rils_frontend::semantic::ResolvedCall::Builtin {
-                                    id,
-                                    kind,
-                                    receiver,
-                                } => Some((*id, *kind, *receiver)),
-                                _ => None,
-                            });
+                    let semantic_builtin = self
+                        .typeck_results
+                        .resolved_call(expression_id)
+                        .and_then(|call| match call {
+                            rils_frontend::semantic::ResolvedCall::Builtin {
+                                id,
+                                kind,
+                                receiver,
+                            } => Some((*id, *kind, *receiver)),
+                            _ => None,
+                        });
                     let intrinsic = semantic_builtin
                         .filter(|(_, kind, _)| {
                             *kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
@@ -1154,7 +1165,7 @@ impl<'a> FunctionLowerer<'a> {
                             });
                         }
                     }
-                    if self.resolved_host(*span).is_some()
+                    if self.resolved_host(expression_id).is_some()
                         && let Some(host) = self.host_method(object, name, arguments, *span)?
                     {
                         let receiver = match host.receiver {
@@ -1195,10 +1206,7 @@ impl<'a> FunctionLowerer<'a> {
                     return Err(CompileError::unsupported(
                         format!(
                             "semantic analysis did not resolve method call `{name}` on `{}`",
-                            self.expression_types
-                                .get(&object.span())
-                                .cloned()
-                                .unwrap_or(Type::Unknown)
+                            self.expression_type(object).unwrap_or(Type::Unknown)
                         ),
                         *span,
                     ));
@@ -1221,7 +1229,7 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if matches!(callee.as_ref(), Expr::Variable { .. })
-                    && let Some(callable) = self.resolved_definition(*span)
+                    && let Some(callable) = self.resolved_definition(expression_id)
                 {
                     return Ok(HirExpression::Call {
                         function: callable.function,
@@ -1234,7 +1242,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
                 if let Expr::Variable { name, .. } = callee.as_ref()
                     && self.lookup(name).is_none()
-                    && let Some(host_name) = self.resolved_host(*span)
+                    && let Some(host_name) = self.resolved_host(expression_id)
                     && let Some(function) = self.host_function(host_name, arguments, *span)?
                 {
                     return Ok(HirExpression::CallImport {
@@ -1451,7 +1459,7 @@ impl<'a> FunctionLowerer<'a> {
             ReceiverMode::Owned => self.expression(expression),
             ReceiverMode::Reference { mutable }
                 if matches!(
-                    self.expression_types.get(&expression.span()),
+                    self.expression_type(expression),
                     Some(Type::Reference { .. })
                 ) =>
             {
@@ -1496,51 +1504,65 @@ impl<'a> FunctionLowerer<'a> {
         })
     }
 
-    fn resolved_definition(&self, span: Span) -> Option<MethodInfo> {
+    fn expression_id(&self, expression: &Expr) -> Result<rils_frontend::ExprId, CompileError> {
+        self.expression_ids.get(expression).ok_or_else(|| {
+            CompileError::new("expression has no semantic identity", expression.span())
+        })
+    }
+
+    fn expression_type(&self, expression: &Expr) -> Option<Type> {
+        let id = self.expression_id(expression).ok()?;
+        self.typeck_results.expression_type(id).cloned()
+    }
+
+    fn resolved_definition(&self, id: rils_frontend::ExprId) -> Option<MethodInfo> {
         let rils_frontend::semantic::ResolvedCall::Definition(definition) =
-            self.typeck_results.resolved_call_at(span)?
+            self.typeck_results.resolved_call(id)?
         else {
             return None;
         };
         self.resolved_definitions.get(definition).copied()
     }
 
-    fn resolved_value(&self, span: Span) -> Option<MethodInfo> {
-        let definition = self.typeck_results.resolved_value_at(span)?;
+    fn resolved_value(&self, id: rils_frontend::ExprId) -> Option<MethodInfo> {
+        let definition = self.typeck_results.resolved_value(id)?;
         self.resolved_definitions.get(&definition).copied()
     }
 
     fn resolved_builtin(
         &self,
-        span: Span,
+        expression: rils_frontend::ExprId,
     ) -> Option<(
         rils_builtins::BuiltinId,
         rils_frontend::semantic::BuiltinCallKind,
         Option<rils_builtins::ReceiverMode>,
     )> {
         let rils_frontend::semantic::ResolvedCall::Builtin { id, kind, receiver } =
-            self.typeck_results.resolved_call_at(span)?
+            self.typeck_results.resolved_call(expression)?
         else {
             return None;
         };
         Some((*id, *kind, *receiver))
     }
 
-    fn resolved_import(&self, span: Span) -> Option<(&str, &FunctionSignature, &str)> {
+    fn resolved_import(
+        &self,
+        id: rils_frontend::ExprId,
+    ) -> Option<(&str, &FunctionSignature, &str)> {
         let rils_frontend::semantic::ResolvedCall::Import {
             name,
             signature,
             capability,
-        } = self.typeck_results.resolved_call_at(span)?
+        } = self.typeck_results.resolved_call(id)?
         else {
             return None;
         };
         Some((name, signature, capability))
     }
 
-    fn resolved_host(&self, span: Span) -> Option<&str> {
+    fn resolved_host(&self, id: rils_frontend::ExprId) -> Option<&str> {
         let rils_frontend::semantic::ResolvedCall::Host { path } =
-            self.typeck_results.resolved_call_at(span)?
+            self.typeck_results.resolved_call(id)?
         else {
             return None;
         };
@@ -1696,11 +1718,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
             }
         }
-        Ok(self
-            .expression_types
-            .get(&expression.span())
-            .cloned()
-            .unwrap_or(Type::Unknown))
+        Ok(self.expression_type(expression).unwrap_or(Type::Unknown))
     }
 
     fn symbol_id<T: Copy>(&self, symbols: &HashMap<String, T>, name: &str) -> Option<T> {

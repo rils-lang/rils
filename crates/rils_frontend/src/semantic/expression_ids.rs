@@ -41,13 +41,18 @@ impl ExpressionIds {
 }
 
 #[derive(Default)]
-pub(crate) struct ExpressionIdentityMap {
+/// Maps expression nodes in one immutable `Program` to their semantic IDs.
+///
+/// This index is valid while the program used to construct it remains alive
+/// and is intended for compiler passes that visit the immutable AST.
+#[doc(hidden)]
+pub struct ExpressionIdentityMap {
     ids: ExpressionIds,
     by_node: HashMap<*const Expr, ExprId>,
 }
 
 impl ExpressionIdentityMap {
-    pub(crate) fn allocate(program: &Program, fallback_source: SourceId) -> Self {
+    pub fn allocate(program: &Program, fallback_source: SourceId) -> Self {
         let mut ids = Self::default();
         let mut next_by_source = HashMap::<SourceId, u32>::new();
         visit_statements(
@@ -76,8 +81,18 @@ impl ExpressionIdentityMap {
         ids
     }
 
+    pub fn get(&self, expression: &Expr) -> Option<ExprId> {
+        self.by_node.get(&(expression as *const Expr)).copied()
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.ids.extend(other.ids);
+        self.by_node.extend(other.by_node);
+    }
+
     pub(crate) fn id(&self, expression: &Expr) -> ExprId {
-        self.by_node[&(expression as *const Expr)]
+        self.get(expression)
+            .expect("expression must belong to the indexed program")
     }
 
     pub(crate) fn into_ids(self) -> ExpressionIds {

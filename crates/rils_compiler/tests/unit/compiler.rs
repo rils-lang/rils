@@ -18,6 +18,53 @@ fn compiles_source_through_static_analysis_hir_and_mir() {
 }
 
 #[test]
+fn hir_lowering_distinguishes_calls_with_the_same_span() {
+    let tokens = rils_frontend::lexer::lex(
+        "let value: Option<i32> = Some(1); value.is_some(); value.unwrap();",
+    )
+    .expect("lex calls");
+    let mut program = rils_frontend::parser::parse(tokens).expect("parse calls");
+    let first_span = match &program.statements[1] {
+        rils_frontend::ast::Stmt::Expr {
+            expression: rils_frontend::ast::Expr::Call { span, .. },
+            ..
+        } => *span,
+        _ => panic!("expected first call"),
+    };
+    match &mut program.statements[2] {
+        rils_frontend::ast::Stmt::Expr {
+            expression: rils_frontend::ast::Expr::Call { span, .. },
+            ..
+        } => *span = first_span,
+        _ => panic!("expected second call"),
+    }
+    let analysis = rils_frontend::analysis::analyze_program(&program);
+
+    let hir =
+        crate::hir::lower_with_host(&program, &HostContract::new(), &analysis, Vec::new(), None)
+            .expect("lower calls by expression identity");
+    let builtins = hir.functions[0]
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            crate::hir::HirStatement::Expression {
+                expression: crate::hir::HirExpression::CallRuntime { builtin, .. },
+                ..
+            } => Some(*builtin),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        builtins,
+        [
+            rils_builtins::BuiltinId::OptionIsSome,
+            rils_builtins::BuiltinId::OptionUnwrap,
+        ]
+    );
+}
+
+#[test]
 fn resolved_definition_selects_between_same_named_inherent_methods() {
     compile(
         r#"
