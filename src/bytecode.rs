@@ -35,14 +35,14 @@ pub use format::{BYTECODE_FORMAT_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeFor
 pub use host::{BYTECODE_HOST_ABI_VERSION, BytecodeHost, BytecodeHostHandler, BytecodeImport};
 use vm::VirtualMachine;
 
-pub use rils_compiler::{
-    CompileError, HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM,
-    HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION,
-    HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES,
-    HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS,
-    HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract, HostEnumDefinition,
-    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
-    HostTypeDeclaration, HostTypeTransport, HostValueLayout,
+pub use rils_compiler::CompileError;
+pub use rils_host::{
+    HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_MANIFEST_FORMAT_VERSION,
+    HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
+    HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
+    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
+    HostContract, HostEnumDefinition, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver,
+    HostThreadAffinity, HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

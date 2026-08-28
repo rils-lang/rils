@@ -10,7 +10,7 @@ use crate::{
 
 use super::{call_core_import, core_imports};
 
-pub const BYTECODE_HOST_ABI_VERSION: u32 = rils_compiler::HOST_CONTRACT_ABI_VERSION;
+pub const BYTECODE_HOST_ABI_VERSION: u32 = rils_host::HOST_CONTRACT_ABI_VERSION;
 
 pub type BytecodeHostHandler = dyn Fn(&[Value]) -> Result<Value, String>;
 

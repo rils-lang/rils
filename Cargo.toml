@@ -18,6 +18,7 @@ include = [
 
 [dependencies]
 rils_compiler.workspace = true
+rils_host.workspace = true
 rils_frontend.workspace = true
 rils_builtins.workspace = true
 rils_project.workspace = true
@@ -27,6 +28,7 @@ stacker = "0.1"
 members = [
     ".",
     "crates/rils_compiler",
+    "crates/rils_host",
     "crates/rils_frontend",
     "crates/rils_syntax",
     "crates/rils_builtins",
@@ -49,6 +51,7 @@ repository = "https://github.com/rils-lang/rils"
 
 [workspace.dependencies]
 rils_compiler = { version = "0.3.0", path = "crates/rils_compiler" }
+rils_host = { version = "0.3.0", path = "crates/rils_host" }
 rils_frontend = { version = "0.3.0", path = "crates/rils_frontend" }
 rils_syntax = { version = "0.3.0", path = "crates/rils_syntax" }
 rils_builtins = { version = "0.3.0", path = "crates/rils_builtins" }

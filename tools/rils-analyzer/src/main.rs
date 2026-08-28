@@ -6,11 +6,6 @@ use std::{
 };
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
-use rils_compiler::{
-    HOST_CONTRACT_ABI_VERSION, HostContract,
-    analyze_program_with_host_and_source_id_and_external_exports,
-    analyze_with_host_and_source_id_and_external_exports,
-};
 use rils_frontend::{
     DefinitionData, FrontendError, FunctionSignature, ProjectSemanticIndex, SourceDatabase,
     SourceId, Span, Type,
@@ -21,6 +16,11 @@ use rils_frontend::{
     lexer::{lex, lex_with_source_id},
     parser::parse,
 };
+use rils_frontend::{
+    analyze_program_with_host_and_source_id_and_external_exports,
+    analyze_with_host_and_source_id_and_external_exports,
+};
+use rils_host::{HOST_CONTRACT_ABI_VERSION, HostContract};
 use rils_project::Project;
 use serde_json::{Value, json};
 

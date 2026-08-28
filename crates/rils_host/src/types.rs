@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
-use rils_frontend::{IntegerType, Type};
+use rils_syntax::{IntegerType, Type};
 
 use super::{HOST_MANIFEST_MAX_NAME_BYTES, is_identifier};
 

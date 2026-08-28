@@ -572,6 +572,7 @@ dependencies = [
  "rils_builtins",
  "rils_compiler",
  "rils_frontend",
+ "rils_host",
  "rils_project",
  "stacker",
 ]
@@ -582,8 +583,8 @@ version = "0.3.0"
 dependencies = [
  "lsp-server",
  "rils_builtins",
- "rils_compiler",
  "rils_frontend",
+ "rils_host",
  "rils_project",
  "serde_json",
 ]
@@ -636,7 +637,7 @@ version = "0.3.0"
 dependencies = [
  "rils_builtins",
  "rils_frontend",
- "serde_json",
+ "rils_host",
 ]
 
 [[package]]
@@ -644,7 +645,16 @@ name = "rils_frontend"
 version = "0.3.0"
 dependencies = [
  "rils_builtins",
+ "rils_host",
  "rils_syntax",
+]
+
+[[package]]
+name = "rils_host"
+version = "0.3.0"
+dependencies = [
+ "rils_syntax",
+ "serde_json",
 ]
 
 [[package]]

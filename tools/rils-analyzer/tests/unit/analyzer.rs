@@ -3,11 +3,9 @@ use super::{
     file_uri_to_path, function_declaration, offset, path_to_file_uri, position, workspace_projects,
 };
 use lsp_server::Connection;
-use rils_compiler::{
-    HostCallKind, HostContract, HostReceiver, HostThreadAffinity, HostTypeTransport,
-};
 use rils_frontend::FunctionSignature;
 use rils_frontend::analysis::analyze_with_source_id_and_external_exports_and_host_types;
+use rils_host::{HostCallKind, HostContract, HostReceiver, HostThreadAffinity, HostTypeTransport};
 use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
@@ -88,10 +86,7 @@ fn provides_signature_help_for_host_functions() {
 fn provides_all_host_overloads_in_signature_help() {
     let mut contract = HostContract::new();
     contract
-        .register_value_type(
-            "unity_engine::Vector3",
-            rils_compiler::HostValueLayout::F32x3,
-        )
+        .register_value_type("unity_engine::Vector3", rils_host::HostValueLayout::F32x3)
         .unwrap();
     contract
         .register_function(
@@ -252,7 +247,7 @@ fn test_server(
         Document {
             source_id: SourceId::UNKNOWN,
             text: text.into(),
-            analysis: rils_compiler::analyze_with_host_and_source_id_and_external_exports(
+            analysis: rils_frontend::analyze_with_host_and_source_id_and_external_exports(
                 text,
                 SourceId::UNKNOWN,
                 &host_contract,
@@ -648,7 +643,7 @@ fn host_binding_fixtures_analyze_against_generated_unity_manifest() {
                 .join(fixture),
         )
         .unwrap();
-        let analysis = rils_compiler::analyze_with_host_and_source_id_and_external_exports(
+        let analysis = rils_frontend::analyze_with_host_and_source_id_and_external_exports(
             &source,
             SourceId::UNKNOWN,
             &contract,

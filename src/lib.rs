@@ -38,7 +38,7 @@ pub mod analysis {
         source: &str,
         host: &crate::HostContract,
     ) -> Result<DocumentAnalysis, crate::RilsError> {
-        rils_compiler::analyze_with_host(source, host).map_err(Into::into)
+        rils_frontend::analyze_with_host(source, host).map_err(Into::into)
     }
 }
 

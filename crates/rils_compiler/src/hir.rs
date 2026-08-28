@@ -5,9 +5,9 @@ use std::{
 };
 
 use crate::{
+    HostContract, HostFunctionDeclaration, HostReceiver,
     ast::{Block, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
     bytecode::CompileError,
-    host::{HostContract, HostFunctionDeclaration},
     source::{SourceFile, Span},
     types::{FunctionSignature, Type},
 };
@@ -1065,13 +1065,9 @@ impl<'a> FunctionLowerer<'a> {
                         && let Some(host) = self.host_method(object, name, arguments, *span)?
                     {
                         let receiver = match host.receiver {
-                            Some(crate::host::HostReceiver::Value) => ReceiverMode::Owned,
-                            Some(crate::host::HostReceiver::Ref) => {
-                                ReceiverMode::Reference { mutable: false }
-                            }
-                            Some(crate::host::HostReceiver::RefMut) => {
-                                ReceiverMode::Reference { mutable: true }
-                            }
+                            Some(HostReceiver::Value) => ReceiverMode::Owned,
+                            Some(HostReceiver::Ref) => ReceiverMode::Reference { mutable: false },
+                            Some(HostReceiver::RefMut) => ReceiverMode::Reference { mutable: true },
                             None => unreachable!("host_method only returns receiver methods"),
                         };
                         let mut lowered = Vec::with_capacity(arguments.len() + 1);
