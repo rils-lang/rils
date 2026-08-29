@@ -97,6 +97,18 @@ pub(crate) fn analyze_project_with_host_declarations_and_contract(
         &mut result.typeck_results,
         &result.host_type_resolutions,
     );
+    let trait_units = units
+        .iter()
+        .map(|(_, path, program)| (path.as_slice(), program))
+        .collect::<Vec<_>>();
+    let trait_check = crate::trait_check::analyze_project(&trait_units);
+    result.diagnostics.extend(trait_check.diagnostics);
+    result.verified_trait_impls.extend(
+        trait_check
+            .verified_impls
+            .into_iter()
+            .filter_map(|span| result.def_map.impl_at(span)),
+    );
     result.diagnostics.sort_by_key(|diagnostic| {
         (
             diagnostic.span.source,

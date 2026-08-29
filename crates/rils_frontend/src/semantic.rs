@@ -131,6 +131,10 @@ impl DefMap {
         self.impls.get(&span).copied()
     }
 
+    pub fn impls(&self) -> impl Iterator<Item = (Span, ImplId)> + '_ {
+        self.impls.iter().map(|(span, id)| (*span, *id))
+    }
+
     pub(crate) fn extend(&mut self, other: Self) {
         self.definitions.extend(other.definitions);
         self.resolutions.extend(other.resolutions);

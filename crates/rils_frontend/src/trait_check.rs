@@ -36,6 +36,208 @@ pub(crate) fn analyze(program: &Program) -> TraitCheckResult {
     result
 }
 
+pub(crate) fn analyze_project(programs: &[(&[String], &Program)]) -> TraitCheckResult {
+    let mut traits = HashMap::new();
+    for (module_path, program) in programs {
+        collect_project_traits(&program.statements, &mut module_path.to_vec(), &mut traits);
+    }
+
+    let mut result = TraitCheckResult {
+        diagnostics: Vec::new(),
+        verified_impls: Vec::new(),
+    };
+    for (module_path, program) in programs {
+        check_project_impls(
+            &program.statements,
+            module_path,
+            &traits,
+            &mut HashMap::new(),
+            &mut result,
+        );
+    }
+    result
+}
+
+fn collect_project_traits(
+    statements: &[Stmt],
+    module_path: &mut Vec<String>,
+    traits: &mut HashMap<String, TraitRequirement>,
+) {
+    for statement in statements {
+        match unwrap_public(statement) {
+            Stmt::Module {
+                name,
+                statements: Some(children),
+                ..
+            } => {
+                module_path.push(name.clone());
+                collect_project_traits(children, module_path, traits);
+                module_path.pop();
+            }
+            Stmt::Trait {
+                name,
+                bounds,
+                methods,
+                ..
+            } => {
+                traits.insert(
+                    qualified(module_path, name),
+                    TraitRequirement {
+                        name: name.clone(),
+                        bounds: bounds.clone(),
+                        methods: methods.clone(),
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn check_project_impls(
+    statements: &[Stmt],
+    module_path: &[String],
+    traits: &HashMap<String, TraitRequirement>,
+    aliases: &mut HashMap<String, String>,
+    result: &mut TraitCheckResult,
+) {
+    for statement in statements {
+        match unwrap_public(statement) {
+            Stmt::Use { imports, .. } => {
+                collect_trait_imports(imports, module_path, traits, aliases)
+            }
+            Stmt::Module {
+                name,
+                statements: Some(children),
+                ..
+            } => {
+                let mut child_path = module_path.to_vec();
+                child_path.push(name.clone());
+                check_project_impls(children, &child_path, traits, &mut HashMap::new(), result);
+            }
+            Stmt::Impl {
+                trait_name: Some(trait_name),
+                target: Type::Named { .. },
+                methods,
+                span,
+                ..
+            } => {
+                let Some(trait_name) = resolve_trait_name(trait_name, module_path, aliases, traits)
+                else {
+                    continue;
+                };
+                let Some(requirement) = traits.get(&trait_name) else {
+                    continue;
+                };
+                if check_methods(requirement, methods, &mut result.diagnostics) {
+                    result.verified_impls.push(*span);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_trait_imports(
+    imports: &[crate::ast::UseImport],
+    module_path: &[String],
+    traits: &HashMap<String, TraitRequirement>,
+    aliases: &mut HashMap<String, String>,
+) {
+    for import in imports {
+        match import.kind {
+            crate::ast::UseImportKind::Single => {
+                let path = import.path.join("::");
+                if let Some(trait_name) = resolve_trait_name(&path, module_path, aliases, traits)
+                    && let Some(binding) = import.binding_name()
+                {
+                    aliases.insert(binding.to_owned(), trait_name);
+                }
+            }
+            crate::ast::UseImportKind::Glob => {
+                let Some(module) = resolve_module_path(&import.path, module_path) else {
+                    continue;
+                };
+                let prefix = if module.is_empty() {
+                    String::new()
+                } else {
+                    format!("{module}::")
+                };
+                for trait_name in traits.keys().filter(|name| {
+                    name.strip_prefix(&prefix)
+                        .is_some_and(|suffix| !suffix.contains("::"))
+                }) {
+                    let binding = trait_name
+                        .rsplit("::")
+                        .next()
+                        .expect("trait name is non-empty");
+                    aliases.insert(binding.to_owned(), trait_name.clone());
+                }
+            }
+        }
+    }
+}
+
+fn resolve_trait_name(
+    name: &str,
+    module_path: &[String],
+    aliases: &HashMap<String, String>,
+    traits: &HashMap<String, TraitRequirement>,
+) -> Option<String> {
+    if let Some(alias) = aliases.get(name) {
+        return Some(alias.clone());
+    }
+    let path = name.split("::").map(str::to_owned).collect::<Vec<_>>();
+    if path.len() == 1 {
+        let local = qualified(module_path, name);
+        if traits.contains_key(&local) {
+            return Some(local);
+        }
+    }
+    resolve_module_path(&path, module_path)
+        .and_then(|module| {
+            let name = path.last()?;
+            if module.is_empty() {
+                Some(name.clone())
+            } else {
+                Some(format!("{module}::{name}"))
+            }
+        })
+        .filter(|candidate| traits.contains_key(candidate))
+}
+
+fn resolve_module_path(path: &[String], module_path: &[String]) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let mut resolved = if matches!(path[0].as_str(), "crate" | "self" | "super") {
+        match path[0].as_str() {
+            "crate" => Vec::new(),
+            "self" => module_path.to_vec(),
+            "super" => module_path[..module_path.len().saturating_sub(1)].to_vec(),
+            _ => unreachable!(),
+        }
+    } else {
+        module_path.to_vec()
+    };
+    let start = usize::from(matches!(path[0].as_str(), "crate" | "self" | "super"));
+    for segment in path
+        .iter()
+        .skip(start)
+        .take(path.len().saturating_sub(start + 1))
+    {
+        match segment.as_str() {
+            "super" => {
+                resolved.pop();
+            }
+            "self" => {}
+            "crate" => resolved.clear(),
+            _ => resolved.push(segment.clone()),
+        }
+    }
+    Some(resolved.join("::"))
+}
+
 fn collect(
     statements: &[Stmt],
     path: &mut Vec<String>,

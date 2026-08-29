@@ -582,7 +582,11 @@ impl Interpreter {
                             }
                         }
                     }
-                    if !self.frontend_verified_trait_impls.contains(span) {
+                    if !self
+                        .frontend_impl_ids
+                        .get(span)
+                        .is_some_and(|id| self.frontend_verified_trait_impls.contains(id))
+                    {
                         validate_trait_implementation(
                             definition,
                             &associated_type_values,

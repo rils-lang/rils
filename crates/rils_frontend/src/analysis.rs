@@ -91,7 +91,8 @@ pub struct DocumentAnalysis {
     pub def_map: crate::semantic::DefMap,
     pub typeck_results: crate::semantic::TypeckResults,
     pub host_type_resolutions: crate::HostTypeResolutionResults,
-    pub verified_trait_impls: Vec<Span>,
+    pub verified_trait_impls: Vec<crate::ImplId>,
+    verified_trait_impl_spans: Vec<Span>,
 }
 
 impl DocumentAnalysis {
@@ -111,6 +112,8 @@ impl DocumentAnalysis {
         self.host_type_resolutions
             .extend(other.host_type_resolutions);
         self.verified_trait_impls.extend(other.verified_trait_impls);
+        self.verified_trait_impl_spans
+            .extend(other.verified_trait_impl_spans);
     }
 }
 
@@ -691,7 +694,7 @@ impl Analyzer {
         let trait_check = crate::trait_check::analyze(program);
         self.result.diagnostics.extend(trait_check.diagnostics);
         self.result
-            .verified_trait_impls
+            .verified_trait_impl_spans
             .extend(trait_check.verified_impls);
         self.result.diagnostics.extend(crate::format_check::analyze(
             program,
@@ -765,6 +768,11 @@ impl Analyzer {
             &self.result.symbols,
             std::mem::take(&mut self.owner_ids),
         );
+        self.result.verified_trait_impls =
+            std::mem::take(&mut self.result.verified_trait_impl_spans)
+                .into_iter()
+                .filter_map(|span| def_map.impl_at(span))
+                .collect();
         let mut typeck_results = crate::semantic::TypeckResults::from_expression_types(
             inference.expression_ids.into_ids(),
             inference.expression_types_by_id,
