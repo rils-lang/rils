@@ -199,44 +199,11 @@ impl Interpreter {
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::VecClear | rils_builtins::BuiltinId::VecTruncate),
             ) => {
-                let Value::Reference(reference) = method.receiver.as_ref() else {
-                    return Err(RuntimeError::new(
-                        "Vec mutation requires a mutable binding",
-                        span,
-                    ));
-                };
-                if !reference.mutable {
-                    return Err(RuntimeError::new("Vec mutation requires `&mut self`", span));
-                }
-                let Value::Vec(sequence) = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                else {
-                    return Err(RuntimeError::new("receiver is not Vec", span));
-                };
-                let length = if id == rils_builtins::BuiltinId::VecClear {
-                    0
-                } else {
-                    let Value::Usize(length) = arguments[0] else {
-                        return Err(RuntimeError::new(
-                            "Vec::truncate length must be usize",
-                            span,
-                        ));
-                    };
-                    length
-                };
-                let mut elements = sequence.elements.borrow_mut();
-                if elements
-                    .get(length..)
-                    .is_some_and(|tail| tail.iter().any(|slot| slot.references > 0))
-                {
-                    return Err(RuntimeError::new(
-                        "cannot remove a referenced Vec element",
-                        span,
-                    ));
-                }
-                elements.truncate(length);
-                Ok(Value::Unit)
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::VecInsert
