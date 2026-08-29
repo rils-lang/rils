@@ -1980,6 +1980,51 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
 }
 
 #[test]
+fn bundled_examples_have_no_analyzer_errors() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .unwrap();
+    let examples = repository.join("examples");
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        host_types: HashSet::new(),
+        projects: workspace_projects(&examples).unwrap(),
+        compilation: CompilationSession::default(),
+        next_source_id: 1,
+    };
+    let expected = server
+        .projects
+        .iter()
+        .flat_map(|project| project.modules())
+        .map(|module| path_to_file_uri(&module.path))
+        .collect::<HashSet<_>>();
+
+    server.load_workspace().unwrap();
+
+    assert_eq!(server.workspace_documents, expected);
+    let errors = server
+        .documents
+        .iter()
+        .flat_map(|(uri, document)| {
+            diagnostics(&document.text, &document.analysis)
+                .into_iter()
+                .filter(|diagnostic| diagnostic["severity"] == 1)
+                .map(move |diagnostic| format!("{uri}: {}", diagnostic["message"]))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        errors.is_empty(),
+        "Analyzer errors in bundled examples:\n{errors:#?}"
+    );
+}
+
+#[test]
 fn loads_binary_host_manifest_from_initialization_options() {
     let mut contract = HostContract::new();
     contract
