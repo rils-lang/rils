@@ -524,31 +524,10 @@ impl Interpreter {
         if let Some(member) = member::resolve_host_or_builtin_member(&object, name, span)? {
             return Ok(member);
         }
+        if let Some(member) = member::take_tuple_field(&object, name, span)? {
+            return Ok(member);
+        }
         match &object {
-            Value::Tuple(sequence) => {
-                let index = name
-                    .parse::<usize>()
-                    .map_err(|_| RuntimeError::new(format!("tuple has no field `{name}`"), span))?;
-                let mut elements = sequence.elements.borrow_mut();
-                let slot = elements.get_mut(index).ok_or_else(|| {
-                    RuntimeError::new(format!("tuple index {index} is out of bounds"), span)
-                })?;
-                let value = slot.value.as_ref().ok_or_else(|| {
-                    RuntimeError::new(format!("use of moved tuple field `{index}`"), span)
-                })?;
-                if value.is_copy() {
-                    return value
-                        .clone_owned()
-                        .map_err(|message| RuntimeError::new(message, span));
-                }
-                if slot.references > 0 {
-                    return Err(RuntimeError::new(
-                        format!("cannot move tuple field `{index}` while it is referenced"),
-                        span,
-                    ));
-                }
-                Ok(slot.value.take().expect("tuple field value was checked"))
-            }
             Value::Struct(instance) => {
                 if instance.fields.borrow().contains_key(name) {
                     let mut fields = instance.fields.borrow_mut();

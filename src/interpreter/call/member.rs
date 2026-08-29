@@ -74,3 +74,39 @@ pub(super) fn resolve_host_or_builtin_member(
         function,
     }))))
 }
+
+pub(super) fn take_tuple_field(
+    value: &Value,
+    name: &str,
+    span: Span,
+) -> Result<Option<Value>, RuntimeError> {
+    let Value::Tuple(sequence) = value else {
+        return Ok(None);
+    };
+    let index = name
+        .parse::<usize>()
+        .map_err(|_| RuntimeError::new(format!("tuple has no field `{name}`"), span))?;
+    let mut elements = sequence.elements.borrow_mut();
+    let slot = elements
+        .get_mut(index)
+        .ok_or_else(|| RuntimeError::new(format!("tuple index {index} is out of bounds"), span))?;
+    let field = slot
+        .value
+        .as_ref()
+        .ok_or_else(|| RuntimeError::new(format!("use of moved tuple field `{index}`"), span))?;
+    if field.is_copy() {
+        return field
+            .clone_owned()
+            .map(Some)
+            .map_err(|message| RuntimeError::new(message, span));
+    }
+    if slot.references > 0 {
+        return Err(RuntimeError::new(
+            format!("cannot move tuple field `{index}` while it is referenced"),
+            span,
+        ));
+    }
+    Ok(Some(
+        slot.value.take().expect("tuple field value was checked"),
+    ))
+}
