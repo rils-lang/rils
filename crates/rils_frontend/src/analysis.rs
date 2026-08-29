@@ -94,6 +94,13 @@ pub struct DocumentAnalysis {
 }
 
 impl DocumentAnalysis {
+    /// Returns the first blocking diagnostic in source order.
+    pub fn first_error(&self) -> Option<&AnalysisDiagnostic> {
+        self.diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+    }
+
     pub(crate) fn extend(&mut self, other: Self) {
         self.diagnostics.extend(other.diagnostics);
         self.symbols.extend(other.symbols);

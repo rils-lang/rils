@@ -3179,6 +3179,33 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
 }
 
 #[test]
+fn configured_projects_reject_frontend_errors_before_execution() {
+    let unique = format!(
+        "rils-project-static-error-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let root = std::env::temp_dir().join(unique);
+    let scripts = root.join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(
+        root.join("rils.toml"),
+        "[project]\nname = \"static_error\"\nsrc = \"scripts\"\n",
+    )
+    .unwrap();
+    let entry = scripts.join("main.rils");
+    std::fs::write(&entry, "pub fn main() -> i32 { missing() }").unwrap();
+
+    let error = Engine::new().eval_file(&entry).unwrap_err();
+    std::fs::remove_dir_all(&root).unwrap();
+
+    assert!(error.to_string().contains("undefined name `missing`"));
+}
+
+#[test]
 fn project_modules_can_use_standard_native_macros() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

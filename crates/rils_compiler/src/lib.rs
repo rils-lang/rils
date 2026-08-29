@@ -32,7 +32,6 @@ mod types {
 use std::{error::Error, fmt};
 
 use rils_frontend::{
-    analysis::DiagnosticSeverity,
     ast::Program,
     source::{SourceFile, SourceId, Span},
 };
@@ -146,11 +145,7 @@ fn compile_program_with_host_and_sources_and_entry(
     if let Some(error) = analysis.host_type_resolutions.errors().first() {
         return Err(CompileError::new(error.message.clone(), error.span));
     }
-    if let Some(diagnostic) = analysis
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
-    {
+    if let Some(diagnostic) = analysis.first_error() {
         return Err(CompileError::new(
             diagnostic.message.clone(),
             diagnostic.span,
@@ -208,11 +203,7 @@ pub fn compile_program_with_host_and_session(
     if let Some(error) = analysis.host_type_resolutions.errors().first() {
         return Err(CompileError::new(error.message.clone(), error.span));
     }
-    if let Some(diagnostic) = analysis
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
-    {
+    if let Some(diagnostic) = analysis.first_error() {
         return Err(CompileError::new(
             diagnostic.message.clone(),
             diagnostic.span,

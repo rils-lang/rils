@@ -131,6 +131,13 @@ impl ProjectCompilation {
             .session
             .project_analysis(project, host)
             .expect("project analysis was stored");
+        if let Some(diagnostic) = analysis.first_error() {
+            return Err(crate::interpreter::RuntimeError {
+                message: diagnostic.message.clone(),
+                span: diagnostic.span,
+                stack: Vec::new(),
+            });
+        }
         let source = semantics
             .entry_source()
             .expect("executable project has an entry source");

@@ -138,7 +138,7 @@ CompilationSession
 
 compiler 和根项目解释器已消费 session 中的同一次项目分析。Analyzer 仍需把项目级复析结果写回并复用该缓存；entry `DefId` 和每模块 HIR 也尚未成为显式缓存项。当前失效策略是保守的整项目失效，后续可引入源码 revision 做细粒度查询。
 
-compiler 的项目入口通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。frontend 的项目分析按模块路径对独立 `Program` 做导出收集、跨文件复析，并合并项目级 `DefMap` 和 `TypeckResults`；HIR 的声明收集和 lowering 也直接遍历 `ModuleGraph` 与独立 `Program`。配置项目的 AST 解释器同样按 `ModuleGraph` 建立运行时模块环境，并以入口 `DefId` 调用 `main`，原 inline-module compatibility program 已删除。无 manifest 的 legacy entry loader 作为明确兼容入口保留。
+compiler 的项目入口通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。frontend 的项目分析按模块路径对独立 `Program` 做导出收集、跨文件复析，并合并项目级 `DefMap` 和 `TypeckResults`；HIR 的声明收集和 lowering 也直接遍历 `ModuleGraph` 与独立 `Program`。配置项目的 AST 解释器同样按 `ModuleGraph` 建立运行时模块环境，以入口 `DefId` 调用 `main`，并在执行前拒绝 frontend 的首个 error diagnostic；原 inline-module compatibility program 已删除。无 manifest 的 legacy entry loader 作为明确兼容入口保留。
 
 ### 表达式 ID 已按 AST 访问顺序分配
 
@@ -306,7 +306,7 @@ rils
 2. 已完成：`CompilationSession` 以 `ProjectSyntax` 保存独立模块 AST，项目 analysis、跨文件调用解析、HIR lowering 和配置项目解释执行均直接消费模块集合；compiler 与解释器入口不再依赖 synthetic project AST。
 3. 已完成：`DefId`、`BodyId`、`ImplId` 和 `ExprId` 均在 AST/definition 访问时直接分配；类型推断、调用解析、静态检查器、Analyzer 与 HIR lowering 均按 `ExprId` 查询，表达式 Span 兼容主表已移除。
 4. 已完成：compiler 与 AST 解释器直接按 semantic type 具体化 numeric literal；Host type side table 已由 compiler、Analyzer、静态检查和 HIR 消费；numeric、Host type rewrite 和 Host enum synthetic injection 均已删除。
-5. 进行中：AST 解释器已消费共享 `TypeckResults`，配置项目入口也使用项目 `DefMap`；继续收缩其旧静态检查和名称查找逻辑。
+5. 进行中：AST 解释器已消费共享 `TypeckResults`，配置项目入口使用项目 `DefMap` 并以 frontend error diagnostic 作为执行前 gate；继续收缩其旧静态检查和名称查找逻辑，同时保留动态宿主嵌入所需的运行时防御。
 6. 进行中：数值、HashMap/HashSet 和 String 已共享运行时实现；继续合并 Vec、Option/Result 和无 callback 的 Iterator 操作。
 7. 已完成：标准 bytecode core import 在 host 初始化时解析为稳定 ID 或专用操作，执行热路径不再按字符串分发。
 8. 按职责拆分大文件和根 facade。
