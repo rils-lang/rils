@@ -189,29 +189,11 @@ impl Interpreter {
                 .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorNext) => {
-                let Value::Reference(reference) = method.receiver.as_ref() else {
-                    return Err(RuntimeError::new(
-                        "Iterator::next requires a mutable binding",
-                        span,
-                    ));
-                };
-                if !reference.mutable {
-                    return Err(RuntimeError::new(
-                        "Iterator::next requires `&mut self`",
-                        span,
-                    ));
-                }
-                let Value::SequenceIterator(iterator) = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                else {
-                    return Err(RuntimeError::new("next receiver is not an iterator", span));
-                };
-                let value = iterator.items.borrow_mut().pop_front().map(Rc::new);
-                Ok(Value::Option {
-                    value,
-                    element_type: Some(iterator.element_type.clone()),
-                })
+                crate::bytecode::runtime_builtins::call(
+                    rils_builtins::BuiltinId::IteratorNext,
+                    &[(*method.receiver).clone()],
+                )
+                .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::IteratorCount

@@ -371,8 +371,22 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
         | BuiltinId::HashSetDifference
         | BuiltinId::HashSetSymmetricDifference
         | BuiltinId::HashSetIntoIter => crate::hash_collections::call(id, arguments),
-        BuiltinId::IteratorNext
-        | BuiltinId::IteratorCount
+        BuiltinId::IteratorNext => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Iterator::next requires a mutable binding".into());
+            };
+            if !reference.mutable {
+                return Err("Iterator::next requires `&mut self`".into());
+            }
+            let Value::SequenceIterator(iterator) = reference.read()? else {
+                return Err("next receiver is not an iterator".into());
+            };
+            Ok(Value::Option {
+                value: iterator.items.borrow_mut().pop_front().map(Rc::new),
+                element_type: Some(iterator.element_type.clone()),
+            })
+        }
+        BuiltinId::IteratorCount
         | BuiltinId::IteratorLast
         | BuiltinId::IteratorNth
         | BuiltinId::IteratorCollectVec
@@ -393,10 +407,6 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 None => Err("missing iterator count".into()),
             };
             match id {
-                BuiltinId::IteratorNext => Ok(Value::Option {
-                    value: items.pop_front().map(Rc::new),
-                    element_type: Some(element_type),
-                }),
                 BuiltinId::IteratorCount => {
                     let count = items.len();
                     items.clear();
