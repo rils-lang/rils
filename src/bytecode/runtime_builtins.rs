@@ -745,6 +745,12 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
 mod tests {
     use super::*;
 
+    fn mutable_receiver(value: Value) -> Value {
+        let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+        storage.borrow_mut().initialize(value);
+        Value::Reference(Rc::new(ReferenceValue::new_storage(storage, true)))
+    }
+
     #[test]
     fn option_and_result_state_members_use_their_stable_ids() {
         use rils_builtins::BuiltinId;
@@ -791,6 +797,86 @@ mod tests {
             call(BuiltinId::OptionUnwrap, &[missing])
                 .unwrap_err()
                 .contains("None")
+        );
+    }
+
+    #[test]
+    fn mutable_members_update_their_receivers() {
+        use rils_builtins::BuiltinId;
+
+        let vector = mutable_receiver(Value::Vec(Rc::new(SequenceValue {
+            elements: RefCell::new(Vec::new()),
+            element_type: RefCell::new(Some(Type::I32)),
+        })));
+        assert_eq!(
+            call(BuiltinId::VecPush, &[vector.clone(), Value::I32(7)]).unwrap(),
+            Value::Unit
+        );
+        let Value::Reference(vector) = &vector else {
+            unreachable!();
+        };
+        let Value::Vec(vector) = vector.read().unwrap() else {
+            unreachable!();
+        };
+        assert_eq!(vector.elements.borrow()[0].value, Some(Value::I32(7)));
+
+        let option = mutable_receiver(Value::Option {
+            value: Some(Rc::new(Value::I32(3))),
+            element_type: Some(Type::I32),
+        });
+        assert_eq!(
+            call(BuiltinId::OptionTake, std::slice::from_ref(&option)).unwrap(),
+            Value::Option {
+                value: Some(Rc::new(Value::I32(3))),
+                element_type: Some(Type::I32),
+            }
+        );
+        let Value::Reference(option) = &option else {
+            unreachable!();
+        };
+        assert!(matches!(
+            option.read().unwrap(),
+            Value::Option { value: None, .. }
+        ));
+
+        let iterator = mutable_receiver(sequence_iterator_value(
+            VecDeque::from([Value::I32(11)]),
+            Type::I32,
+        ));
+        assert_eq!(
+            call(BuiltinId::IteratorNext, std::slice::from_ref(&iterator)).unwrap(),
+            Value::Option {
+                value: Some(Rc::new(Value::I32(11))),
+                element_type: Some(Type::I32),
+            }
+        );
+        assert!(matches!(
+            call(BuiltinId::IteratorNext, &[iterator]).unwrap(),
+            Value::Option { value: None, .. }
+        ));
+    }
+
+    #[test]
+    fn mutable_members_reject_non_reference_receivers() {
+        use rils_builtins::BuiltinId;
+
+        assert!(
+            call(BuiltinId::VecPush, &[Value::Unit, Value::I32(1)])
+                .unwrap_err()
+                .contains("mutable binding")
+        );
+        assert!(
+            call(BuiltinId::OptionTake, &[Value::Unit])
+                .unwrap_err()
+                .contains("mutable binding")
+        );
+        assert!(
+            call(
+                BuiltinId::IteratorNext,
+                &[sequence_iterator_value(VecDeque::new(), Type::I32)]
+            )
+            .unwrap_err()
+            .contains("mutable binding")
         );
     }
 }
