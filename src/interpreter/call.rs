@@ -521,43 +521,10 @@ impl Interpreter {
         if let Some(member) = member::resolve_numeric_member(&object, name, span)? {
             return Ok(member);
         }
+        if let Some(member) = member::resolve_host_or_builtin_member(&object, name, span)? {
+            return Ok(member);
+        }
         match &object {
-            Value::HostObject(instance) => {
-                if let Some((id, _)) = builtin_runtime_member(&object, name) {
-                    return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                        receiver: Rc::new(object.clone()),
-                        method: BuiltinMethod::Runtime(id),
-                    })));
-                }
-                instance
-                    .type_definition
-                    .methods
-                    .borrow()
-                    .get(name)
-                    .cloned()
-                    .map(|function| {
-                        Value::HostBoundMethod(Rc::new(HostBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            function,
-                        }))
-                    })
-                    .ok_or_else(|| {
-                        RuntimeError::new(
-                            format!(
-                                "type `{}` has no method `{name}`",
-                                instance.type_definition.name
-                            ),
-                            span,
-                        )
-                    })
-            }
-            value if builtin_runtime_member(value, name).is_some() => {
-                let (id, _) = builtin_runtime_member(value, name).expect("member was checked");
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::Runtime(id),
-                })))
-            }
             Value::Tuple(sequence) => {
                 let index = name
                     .parse::<usize>()
