@@ -182,41 +182,11 @@ impl Interpreter {
                 .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIntoIter) => {
-                let sequence = match method.receiver.as_ref() {
-                    Value::Array(sequence) | Value::Vec(sequence) => sequence,
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "into_iter receiver is not a collection",
-                            span,
-                        ));
-                    }
-                };
-                if sequence
-                    .elements
-                    .borrow()
-                    .iter()
-                    .any(|slot| slot.references > 0)
-                {
-                    return Err(RuntimeError::new(
-                        "cannot iterate a collection while an element is referenced",
-                        span,
-                    ));
-                }
-                let element_type = sequence
-                    .element_type
-                    .borrow()
-                    .clone()
-                    .unwrap_or(Type::Unknown);
-                let items = sequence
-                    .elements
-                    .borrow_mut()
-                    .drain(..)
-                    .filter_map(|slot| slot.value)
-                    .collect();
-                Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-                    items: RefCell::new(items),
-                    element_type,
-                })))
+                crate::bytecode::runtime_builtins::call(
+                    rils_builtins::BuiltinId::SequenceIntoIter,
+                    &[(*method.receiver).clone()],
+                )
+                .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorNext) => {
                 let Value::Reference(reference) = method.receiver.as_ref() else {

@@ -319,6 +319,34 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 .extend(source_elements.drain(..));
             Ok(Value::Unit)
         }
+        BuiltinId::SequenceIntoIter => {
+            let (Value::Array(sequence) | Value::Vec(sequence)) = &arguments[0] else {
+                return Err("into_iter receiver is not a collection".into());
+            };
+            if sequence
+                .elements
+                .borrow()
+                .iter()
+                .any(|slot| slot.references > 0)
+            {
+                return Err("cannot iterate a collection while an element is referenced".into());
+            }
+            let element_type = sequence
+                .element_type
+                .borrow()
+                .clone()
+                .unwrap_or(Type::Unknown);
+            let items = sequence
+                .elements
+                .borrow_mut()
+                .drain(..)
+                .filter_map(|slot| slot.value)
+                .collect();
+            Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
+                items: RefCell::new(items),
+                element_type,
+            })))
+        }
         BuiltinId::HashMapLen
         | BuiltinId::HashMapIsEmpty
         | BuiltinId::HashMapClear
