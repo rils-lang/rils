@@ -96,35 +96,11 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext) => {
-                let Value::Reference(reference) = method.receiver.as_ref() else {
-                    return Err(RuntimeError::new(
-                        "Range::next requires a mutable range binding",
-                        span,
-                    ));
-                };
-                if !reference.mutable {
-                    return Err(RuntimeError::new("Range::next requires `&mut self`", span));
-                }
-                let Value::Range(mut range) = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                else {
-                    return Err(RuntimeError::new(
-                        "Range::next receiver is not a Range",
-                        span,
-                    ));
-                };
-                let element_type = range.element_type();
-                let current = range
-                    .next()
-                    .map_err(|message| RuntimeError::new(message, span))?;
-                reference
-                    .write(Value::Range(range))
-                    .map_err(|error| super::evaluation::assignment_error(error, "Range", span))?;
-                Ok(Value::Option {
-                    value: current.map(Rc::new),
-                    element_type: Some(element_type),
-                })
+                crate::runtime_builtins::call(
+                    rils_builtins::BuiltinId::RangeNext,
+                    &[(*method.receiver).clone()],
+                )
+                .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::SequenceLen

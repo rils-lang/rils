@@ -392,6 +392,26 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 element_type: Some(iterator.element_type.clone()),
             })
         }
+        BuiltinId::RangeNext => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Range::next requires a mutable range binding".into());
+            };
+            if !reference.mutable {
+                return Err("Range::next requires `&mut self`".into());
+            }
+            let Value::Range(mut range) = reference.read()? else {
+                return Err("Range::next receiver is not a Range".into());
+            };
+            let element_type = range.element_type();
+            let current = range.next()?;
+            reference
+                .write(Value::Range(range))
+                .map_err(assignment_error_message)?;
+            Ok(Value::Option {
+                value: current.map(Rc::new),
+                element_type: Some(element_type),
+            })
+        }
         BuiltinId::IteratorCount
         | BuiltinId::IteratorLast
         | BuiltinId::IteratorNth
@@ -907,6 +927,17 @@ mod tests {
             call(BuiltinId::IteratorNext, &[iterator]).unwrap(),
             Value::Option { value: None, .. }
         ));
+
+        let range = mutable_receiver(Value::Range(
+            crate::value::RangeValue::new(Value::I32(2), Value::I32(3)).unwrap(),
+        ));
+        assert_eq!(
+            call(BuiltinId::RangeNext, std::slice::from_ref(&range)).unwrap(),
+            Value::Option {
+                value: Some(Rc::new(Value::I32(2))),
+                element_type: Some(Type::I32),
+            }
+        );
     }
 
     #[test]
