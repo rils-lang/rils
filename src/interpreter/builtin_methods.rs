@@ -220,8 +220,26 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::IteratorCollectVec
                 | rils_builtins::BuiltinId::IteratorTake
                 | rils_builtins::BuiltinId::IteratorSkip
-                | rils_builtins::BuiltinId::IteratorRev
-                | rils_builtins::BuiltinId::IteratorMap
+                | rils_builtins::BuiltinId::IteratorRev),
+            ) => {
+                let receiver = match method.receiver.as_ref() {
+                    Value::Reference(reference) => reference
+                        .read()
+                        .map_err(|message| RuntimeError::new(message, span))?,
+                    value => value.clone(),
+                };
+                if matches!(receiver, Value::SequenceIterator(_)) {
+                    let mut values = Vec::with_capacity(arguments.len() + 1);
+                    values.push((*method.receiver).clone());
+                    values.extend_from_slice(arguments);
+                    crate::bytecode::runtime_builtins::call(id, &values)
+                        .map_err(|message| RuntimeError::new(message, span))
+                } else {
+                    self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span)
+                }
+            }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::IteratorMap
                 | rils_builtins::BuiltinId::IteratorFilter
                 | rils_builtins::BuiltinId::IteratorFilterMap
                 | rils_builtins::BuiltinId::IteratorFold
