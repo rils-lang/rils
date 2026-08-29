@@ -518,7 +518,8 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
         | BuiltinId::StringChars
         | BuiltinId::StringBytes
         | BuiltinId::StringLines
-        | BuiltinId::StringSplit => string::call(id, arguments),
+        | BuiltinId::StringSplit
+        | BuiltinId::StringReplace => string::call(id, arguments),
         BuiltinId::OptionExpect | BuiltinId::ResultExpect => {
             let Value::String(message) = &arguments[1] else {
                 return Err("expect message must be string".into());
@@ -636,19 +637,6 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 value,
                 element_type: Some(element_type),
             })
-        }
-        BuiltinId::StringReplace => {
-            let Value::String(value) = import_receiver(&arguments[0])? else {
-                return Err("string replace receiver is not string".into());
-            };
-            let (Value::String(pattern), Value::String(replacement)) =
-                (&arguments[1], &arguments[2])
-            else {
-                return Err("string replace arguments must be string".into());
-            };
-            Ok(Value::String(Rc::from(
-                value.replace(pattern.as_ref(), replacement.as_ref()),
-            )))
         }
         BuiltinId::OptionReplace => {
             let Value::Reference(reference) = &arguments[0] else {

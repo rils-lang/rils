@@ -74,6 +74,16 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 .collect(),
             Type::String,
         )),
+        BuiltinId::StringReplace => {
+            let (Value::String(pattern), Value::String(replacement)) =
+                (&arguments[1], &arguments[2])
+            else {
+                return Err("string replace arguments must be string".into());
+            };
+            Ok(Value::String(Rc::from(
+                value.replace(pattern.as_ref(), replacement.as_ref()),
+            )))
+        }
         _ => unreachable!("string built-in was matched above"),
     }
 }
