@@ -82,6 +82,7 @@ pub struct Interpreter {
     host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
     semantic_expression_ids: Option<rils_frontend::semantic::ExpressionIdentityMap>,
     typeck_results: Option<rils_frontend::TypeckResults>,
+    frontend_semantics_verified: bool,
 }
 
 impl Default for Interpreter {
@@ -105,6 +106,7 @@ impl Interpreter {
             host_value_formatter: None,
             semantic_expression_ids: None,
             typeck_results: None,
+            frontend_semantics_verified: false,
         }
     }
 
@@ -318,6 +320,8 @@ impl Interpreter {
         }
         self.semantic_expression_ids = Some(expression_ids);
         self.typeck_results = Some(analysis.typeck_results.clone());
+        let previous_semantics_verified =
+            std::mem::replace(&mut self.frontend_semantics_verified, true);
 
         let result = (|| {
             self.steps = 0;
@@ -406,6 +410,7 @@ impl Interpreter {
 
         self.semantic_expression_ids = None;
         self.typeck_results = None;
+        self.frontend_semantics_verified = previous_semantics_verified;
         result
     }
 

@@ -569,15 +569,17 @@ impl Interpreter {
                             *span,
                         ));
                     }
-                    for bound in &definition.bounds {
-                        if !type_implements_trait(target, bound, &environment) {
-                            return Err(RuntimeError::new(
-                                format!(
-                                    "type `{target}` must implement supertrait `{bound}` before implementing `{}`",
-                                    definition.name
-                                ),
-                                *span,
-                            ));
+                    if !self.frontend_semantics_verified {
+                        for bound in &definition.bounds {
+                            if !type_implements_trait(target, bound, &environment) {
+                                return Err(RuntimeError::new(
+                                    format!(
+                                        "type `{target}` must implement supertrait `{bound}` before implementing `{}`",
+                                        definition.name
+                                    ),
+                                    *span,
+                                ));
+                            }
                         }
                     }
                     validate_trait_implementation(
