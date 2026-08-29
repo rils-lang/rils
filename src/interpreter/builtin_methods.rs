@@ -210,79 +210,11 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::VecRemove
                 | rils_builtins::BuiltinId::VecSwapRemove),
             ) => {
-                let Value::Reference(reference) = method.receiver.as_ref() else {
-                    return Err(RuntimeError::new(
-                        "Vec mutation requires a mutable binding",
-                        span,
-                    ));
-                };
-                if !reference.mutable {
-                    return Err(RuntimeError::new("Vec mutation requires `&mut self`", span));
-                }
-                let Value::Vec(sequence) = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                else {
-                    return Err(RuntimeError::new("receiver is not Vec", span));
-                };
-                let Value::Usize(index) = arguments[0] else {
-                    return Err(RuntimeError::new("Vec index must be usize", span));
-                };
-                let mut elements = sequence.elements.borrow_mut();
-                if elements.iter().any(|slot| slot.references > 0) {
-                    return Err(RuntimeError::new(
-                        "cannot reorder a Vec while an element is referenced",
-                        span,
-                    ));
-                }
-                if id == rils_builtins::BuiltinId::VecInsert {
-                    if index > elements.len() {
-                        return Err(RuntimeError::new(
-                            format!("index {index} is out of bounds for insertion"),
-                            span,
-                        ));
-                    }
-                    let value = &arguments[1];
-                    if value.contains_reference() {
-                        return Err(RuntimeError::new("Vec cannot own local references", span));
-                    }
-                    let expected = sequence
-                        .element_type
-                        .borrow()
-                        .clone()
-                        .unwrap_or(Type::Unknown);
-                    let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-                    let element_type = merge_types(&expected, &actual).ok_or_else(|| {
-                        RuntimeError::new(
-                            format!("Vec element type is `{expected}`, found `{actual}`"),
-                            span,
-                        )
-                    })?;
-                    *sequence.element_type.borrow_mut() = Some(element_type.clone());
-                    elements.insert(
-                        index,
-                        FieldSlot {
-                            value: Some(value.clone()),
-                            type_annotation: element_type,
-                            references: 0,
-                        },
-                    );
-                    return Ok(Value::Unit);
-                }
-                if index >= elements.len() {
-                    return Err(RuntimeError::new(
-                        format!("index {index} is out of bounds"),
-                        span,
-                    ));
-                }
-                let slot = if id == rils_builtins::BuiltinId::VecRemove {
-                    elements.remove(index)
-                } else {
-                    elements.swap_remove(index)
-                };
-                slot.value.ok_or_else(|| {
-                    RuntimeError::new(format!("element at index {index} has been moved"), span)
-                })
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecExtend) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
