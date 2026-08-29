@@ -17,9 +17,9 @@
 
 - 评估以源码 revision 缓存 entry `DefId` 与每模块 HIR；继续收缩 AST 解释器内重复的静态检查和名称
   查找逻辑。
-- 合并解释器与 VM 的 runtime builtin dispatcher；标准 bytecode core import 已在链接时解析为稳定 ID，
-  后续新增内建或外部 import 也应沿用该模式。完成这些边界后再评估 `rils_bytecode`、`rils_runtime`
-  crate 拆分。
+- 标准 bytecode core import 已在链接时解析为稳定 ID；后续新增内建或外部 import 也应沿用该模式。
+  `rils_bytecode`、`rils_runtime` crate 拆分已评估为暂不启动：须先让运行时表示、bytecode 和宿主 ABI
+  形成无循环依赖的独立边界。
 - 在已有统一指令步数与调用深度预算的基础上，继续增加堆、字符串、容器和宿主调用次数预算。
 - 消除项目模块的初始化顺序依赖，并修复字节码 VM 跨模块直接构造或匹配 enum variant 时丢失名义
   类型身份的问题；项目顶层导入不应要求被依赖模块按路径字典序提前初始化。

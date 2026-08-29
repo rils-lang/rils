@@ -296,7 +296,14 @@ rils
     public facade + Engine
 ```
 
-这不是当前第一优先级。`Value`、bytecode type table、Host ABI 和宿主调用仍有较深耦合，过早拆 crate 只会把内部耦合变成跨 crate 耦合。
+已于当前架构阶段评估：暂不创建 `rils_bytecode` 或 `rils_runtime` crate。`Value`、bytecode type table、Host ABI、解释器与 VM 的宿主调用仍在根 crate 内共享具体表示；此时拆分只会形成跨 crate 的高扇入依赖，不能降低耦合。
+
+只有在以下条件同时满足时才重新开启拆分：
+
+- `Value` 与 Host ABI 的运行时表示可由一个不依赖解释器或 bytecode 的稳定 crate 提供；
+- bytecode 编码、格式、verifier 与 VM 仅依赖该运行时 crate 和 frontend/host 的公共模型；
+- AST 解释器和 VM 的宿主调用边界不再需要访问彼此的私有实现；
+- 新 crate 能以独立测试证明解释器/VM 对照、磁盘格式 verifier 与 C API 路径均不退化。
 
 ## 推荐迁移顺序
 
@@ -310,8 +317,8 @@ rils
 6. 已完成：数值、Range、HashMap/HashSet、String、Vec、Option/Result，以及内建 `SequenceIterator` 的无 callback 操作（含 `enumerate`）已共享根 runtime dispatcher；解释器、bytecode core import 和 VM 均直接调用该后端中立层。需要调用 Rils 函数值的 Option/Result 和自定义 Iterator callback adapter 刻意保留在解释器中，属于执行用户回调而非纯 runtime builtin 分发。
 7. 已完成：标准 bytecode core import 在 host 初始化时解析为稳定 ID 或专用操作，执行热路径不再按字符串分发。
 8. 按职责拆分大文件和根 facade。
-9. 再评估 `rils_bytecode`、`rils_runtime` 的 crate 拆分。
-10. 最后单独决定 legacy project、macro 和 manifest 兼容层的废弃周期。
+9. 已完成评估：当前不拆分 `rils_bytecode`、`rils_runtime`；待运行时表示、bytecode 与宿主 ABI 达到上述独立边界后再重新立项。
+10. 已完成决定：legacy project、macro 与 manifest 兼容层维持“读取旧格式、只写当前格式”的策略；删除必须作为单独破坏性版本的提案，包含实际使用者审计、迁移指南、`CHANGELOG.md` 说明与明确授权，当前不设删除日期。
 
 ## 每阶段验证要求
 
