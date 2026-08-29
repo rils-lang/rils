@@ -147,3 +147,50 @@ pub(super) fn take_struct_field(
     }
     Ok(Some(field.value.take().expect("field value was checked")))
 }
+
+pub(super) fn read_borrowed_field(
+    value: &Value,
+    name: &str,
+    span: Span,
+) -> Result<Option<Value>, RuntimeError> {
+    let field = match value {
+        Value::Tuple(sequence) => {
+            let index = name
+                .parse::<usize>()
+                .map_err(|_| RuntimeError::new(format!("tuple has no field `{name}`"), span))?;
+            let value = sequence
+                .elements
+                .borrow()
+                .get(index)
+                .and_then(|slot| slot.value.as_ref())
+                .cloned()
+                .ok_or_else(|| {
+                    RuntimeError::new(format!("use of moved tuple field `{index}`"), span)
+                })?;
+            (value, format!("tuple field `{index}`"))
+        }
+        Value::Struct(instance) => {
+            let fields = instance.fields.borrow();
+            let Some(field) = fields.get(name) else {
+                return Ok(None);
+            };
+            let value =
+                field.value.as_ref().cloned().ok_or_else(|| {
+                    RuntimeError::new(format!("use of moved field `{name}`"), span)
+                })?;
+            (value, format!("field `{name}`"))
+        }
+        _ => return Ok(None),
+    };
+    if !field.0.is_copy() {
+        return Err(RuntimeError::new(
+            format!("cannot move non-Copy {} through a reference", field.1),
+            span,
+        ));
+    }
+    field
+        .0
+        .clone_owned()
+        .map(Some)
+        .map_err(|message| RuntimeError::new(message, span))
+}

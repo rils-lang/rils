@@ -551,6 +551,9 @@ impl Interpreter {
                 let borrowed = reference
                     .read()
                     .map_err(|message| RuntimeError::new(message, span))?;
+                if let Some(member) = member::read_borrowed_field(&borrowed, name, span)? {
+                    return Ok(member);
+                }
                 if let Some((id, receiver)) = builtin_runtime_member(&borrowed, name) {
                     if receiver == rils_builtins::ReceiverMode::Mutable && !reference.mutable {
                         return Err(RuntimeError::new(
@@ -585,56 +588,14 @@ impl Interpreter {
                                 span,
                             )
                         }),
-                    Value::Tuple(sequence) => {
-                        let index = name.parse::<usize>().map_err(|_| {
-                            RuntimeError::new(format!("tuple has no field `{name}`"), span)
-                        })?;
-                        let elements = sequence.elements.borrow();
-                        let value = elements
-                            .get(index)
-                            .and_then(|slot| slot.value.as_ref())
-                            .ok_or_else(|| {
-                                RuntimeError::new(
-                                    format!("use of moved tuple field `{index}`"),
-                                    span,
-                                )
-                            })?;
-                        if !value.is_copy() {
-                            return Err(RuntimeError::new(
-                                format!(
-                                    "cannot move non-Copy tuple field `{index}` through a reference"
-                                ),
-                                span,
-                            ));
-                        }
-                        value
-                            .clone_owned()
-                            .map_err(|message| RuntimeError::new(message, span))
-                    }
-                    Value::Struct(instance) => {
-                        if let Some(field) = instance.fields.borrow().get(name) {
-                            let value = field.value.as_ref().ok_or_else(|| {
-                                RuntimeError::new(format!("use of moved field `{name}`"), span)
-                            })?;
-                            if value.is_copy() {
-                                return value
-                                    .clone_owned()
-                                    .map_err(|message| RuntimeError::new(message, span));
-                            }
-                            return Err(RuntimeError::new(
-                                format!("cannot move non-Copy field `{name}` through a reference"),
-                                span,
-                            ));
-                        }
-                        self.bind_method(
-                            object.clone(),
-                            &instance.type_definition.methods,
-                            &instance.type_definition.trait_methods,
-                            &instance.type_definition.name,
-                            name,
-                            span,
-                        )
-                    }
+                    Value::Struct(instance) => self.bind_method(
+                        object.clone(),
+                        &instance.type_definition.methods,
+                        &instance.type_definition.trait_methods,
+                        &instance.type_definition.name,
+                        name,
+                        span,
+                    ),
                     Value::Enum(instance) => self.bind_method(
                         object.clone(),
                         &instance.type_definition.methods,
