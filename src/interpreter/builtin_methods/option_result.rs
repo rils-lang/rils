@@ -11,7 +11,6 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         use rils_builtins::builtin_ids::*;
         match id {
-            ResultIsOk | ResultIsErr => result_state(id, receiver, span),
             ResultUnwrap | ResultUnwrapOr | ResultExpect => {
                 result_unwrap(id, receiver, arguments, span)
             }
@@ -20,7 +19,6 @@ impl Interpreter {
             ResultMap | ResultMapErr | ResultAndThen | ResultOrElse => {
                 self.result_transform(id, receiver, arguments, span)
             }
-            OptionIsSome | OptionIsNone => option_state(id, receiver, span),
             OptionUnwrap | OptionUnwrapOr | OptionExpect => {
                 option_unwrap(id, receiver, arguments, span)
             }
@@ -239,25 +237,6 @@ fn validate_result_callback(
     Ok(value)
 }
 
-fn result_state(
-    id: rils_builtins::BuiltinId,
-    receiver: &Value,
-    span: Span,
-) -> Result<Value, RuntimeError> {
-    let receiver = read_receiver(receiver, span)?;
-    let Value::Result { value, .. } = receiver else {
-        return Err(RuntimeError::new(
-            "Result method receiver is not Result",
-            span,
-        ));
-    };
-    Ok(Value::Bool(match id {
-        rils_builtins::BuiltinId::ResultIsOk => value.is_ok(),
-        rils_builtins::BuiltinId::ResultIsErr => value.is_err(),
-        _ => unreachable!(),
-    }))
-}
-
 fn result_unwrap(
     id: rils_builtins::BuiltinId,
     receiver: &Value,
@@ -367,25 +346,6 @@ fn result_unwrap_error(
             Err(RuntimeError::new(message, span))
         }
     }
-}
-
-fn option_state(
-    id: rils_builtins::BuiltinId,
-    receiver: &Value,
-    span: Span,
-) -> Result<Value, RuntimeError> {
-    let receiver = read_receiver(receiver, span)?;
-    let Value::Option { value, .. } = receiver else {
-        return Err(RuntimeError::new(
-            "Option method receiver is not Option",
-            span,
-        ));
-    };
-    Ok(Value::Bool(match id {
-        rils_builtins::BuiltinId::OptionIsSome => value.is_some(),
-        rils_builtins::BuiltinId::OptionIsNone => value.is_none(),
-        _ => unreachable!(),
-    }))
 }
 
 fn option_unwrap(
@@ -563,13 +523,4 @@ fn option_replace(
         value: previous,
         element_type: Some(resolved),
     })
-}
-
-fn read_receiver(value: &Value, span: Span) -> Result<Value, RuntimeError> {
-    match value {
-        Value::Reference(reference) => reference
-            .read()
-            .map_err(|message| RuntimeError::new(message, span)),
-        value => Ok(value.clone()),
-    }
 }

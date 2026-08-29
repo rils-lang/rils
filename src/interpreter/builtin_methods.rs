@@ -253,7 +253,12 @@ impl Interpreter {
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::ResultIsOk
                 | rils_builtins::BuiltinId::ResultIsErr
-                | rils_builtins::BuiltinId::ResultUnwrap
+                | rils_builtins::BuiltinId::OptionIsSome
+                | rils_builtins::BuiltinId::OptionIsNone),
+            ) => crate::bytecode::runtime_builtins::call(id, &[(*method.receiver).clone()])
+                .map_err(|message| RuntimeError::new(message, span)),
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::ResultUnwrap
                 | rils_builtins::BuiltinId::ResultUnwrapOr
                 | rils_builtins::BuiltinId::ResultExpect
                 | rils_builtins::BuiltinId::ResultOk
@@ -268,9 +273,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::ResultExpectErr),
             )
             | BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::OptionIsSome
-                | rils_builtins::BuiltinId::OptionIsNone
-                | rils_builtins::BuiltinId::OptionUnwrap
+                id @ (rils_builtins::BuiltinId::OptionUnwrap
                 | rils_builtins::BuiltinId::OptionUnwrapOr
                 | rils_builtins::BuiltinId::OptionExpect
                 | rils_builtins::BuiltinId::OptionTake
