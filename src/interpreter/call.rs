@@ -3,6 +3,7 @@ use super::*;
 use crate::environment::StorageSlot;
 
 mod helpers;
+mod member;
 mod path;
 mod user_function;
 
@@ -517,42 +518,10 @@ impl Interpreter {
         name: &str,
         span: Span,
     ) -> Result<Value, RuntimeError> {
+        if let Some(member) = member::resolve_numeric_member(&object, name, span)? {
+            return Ok(member);
+        }
         match &object {
-            Value::I8(_)
-            | Value::I16(_)
-            | Value::I32(_)
-            | Value::I64(_)
-            | Value::I128(_)
-            | Value::Isize(_)
-            | Value::U8(_)
-            | Value::U16(_)
-            | Value::U32(_)
-            | Value::U64(_)
-            | Value::U128(_)
-            | Value::Usize(_) => {
-                let intrinsic = rils_builtins::integer_method(name).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!("{} has no method `{name}`", object.type_name()),
-                        span,
-                    )
-                })?;
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::IntegerIntrinsic(intrinsic.id),
-                })))
-            }
-            Value::F32(_) | Value::F64(_) => {
-                let intrinsic = rils_builtins::float_method(name).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!("{} has no method `{name}`", object.type_name()),
-                        span,
-                    )
-                })?;
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::FloatIntrinsic(intrinsic.id),
-                })))
-            }
             Value::HostObject(instance) => {
                 if let Some((id, _)) = builtin_runtime_member(&object, name) {
                     return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
