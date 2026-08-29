@@ -261,7 +261,18 @@ impl Interpreter {
                 id @ (rils_builtins::BuiltinId::ResultUnwrap
                 | rils_builtins::BuiltinId::ResultUnwrapOr
                 | rils_builtins::BuiltinId::ResultExpect
-                | rils_builtins::BuiltinId::ResultOk
+                | rils_builtins::BuiltinId::OptionUnwrap
+                | rils_builtins::BuiltinId::OptionUnwrapOr
+                | rils_builtins::BuiltinId::OptionExpect),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::ResultOk
                 | rils_builtins::BuiltinId::ResultErr
                 | rils_builtins::BuiltinId::ResultMap
                 | rils_builtins::BuiltinId::ResultMapErr
@@ -273,10 +284,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::ResultExpectErr),
             )
             | BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::OptionUnwrap
-                | rils_builtins::BuiltinId::OptionUnwrapOr
-                | rils_builtins::BuiltinId::OptionExpect
-                | rils_builtins::BuiltinId::OptionTake
+                id @ (rils_builtins::BuiltinId::OptionTake
                 | rils_builtins::BuiltinId::OptionOr
                 | rils_builtins::BuiltinId::OptionXor
                 | rils_builtins::BuiltinId::OptionMap
