@@ -274,14 +274,20 @@ impl Interpreter {
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::ResultOk
                 | rils_builtins::BuiltinId::ResultErr
-                | rils_builtins::BuiltinId::ResultMap
+                | rils_builtins::BuiltinId::ResultUnwrapErr
+                | rils_builtins::BuiltinId::ResultExpectErr),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::ResultMap
                 | rils_builtins::BuiltinId::ResultMapErr
                 | rils_builtins::BuiltinId::ResultAndThen
                 | rils_builtins::BuiltinId::ResultOrElse),
-            )
-            | BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::ResultUnwrapErr
-                | rils_builtins::BuiltinId::ResultExpectErr),
             )
             | BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::OptionTake
