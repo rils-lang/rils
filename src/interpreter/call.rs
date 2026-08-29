@@ -554,40 +554,16 @@ impl Interpreter {
                 if let Some(member) = member::read_borrowed_field(&borrowed, name, span)? {
                     return Ok(member);
                 }
-                if let Some((id, receiver)) = builtin_runtime_member(&borrowed, name) {
-                    if receiver == rils_builtins::ReceiverMode::Mutable && !reference.mutable {
-                        return Err(RuntimeError::new(
-                            format!("{}::{name} requires `&mut self`", borrowed.type_name()),
-                            span,
-                        ));
-                    }
-                    return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                        receiver: Rc::new(object.clone()),
-                        method: BuiltinMethod::Runtime(id),
-                    })));
+                if let Some(member) = member::resolve_borrowed_host_or_builtin_member(
+                    &borrowed,
+                    object.clone(),
+                    reference.mutable,
+                    name,
+                    span,
+                )? {
+                    return Ok(member);
                 }
                 match borrowed {
-                    Value::HostObject(instance) => instance
-                        .type_definition
-                        .methods
-                        .borrow()
-                        .get(name)
-                        .cloned()
-                        .map(|function| {
-                            Value::HostBoundMethod(Rc::new(HostBoundMethod {
-                                receiver: Rc::new(object.clone()),
-                                function,
-                            }))
-                        })
-                        .ok_or_else(|| {
-                            RuntimeError::new(
-                                format!(
-                                    "type `{}` has no method `{name}`",
-                                    instance.type_definition.name
-                                ),
-                                span,
-                            )
-                        }),
                     Value::Struct(instance) => self.bind_method(
                         object.clone(),
                         &instance.type_definition.methods,

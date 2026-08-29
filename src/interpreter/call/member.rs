@@ -194,3 +194,48 @@ pub(super) fn read_borrowed_field(
         .map(Some)
         .map_err(|message| RuntimeError::new(message, span))
 }
+
+pub(super) fn resolve_borrowed_host_or_builtin_member(
+    borrowed: &Value,
+    receiver: Value,
+    receiver_mutable: bool,
+    name: &str,
+    span: Span,
+) -> Result<Option<Value>, RuntimeError> {
+    if let Some((id, mode)) = builtin_runtime_member(borrowed, name) {
+        if mode == rils_builtins::ReceiverMode::Mutable && !receiver_mutable {
+            return Err(RuntimeError::new(
+                format!("{}::{name} requires `&mut self`", borrowed.type_name()),
+                span,
+            ));
+        }
+        return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
+            BuiltinBoundMethod {
+                receiver: Rc::new(receiver),
+                method: BuiltinMethod::Runtime(id),
+            },
+        ))));
+    }
+    let Value::HostObject(instance) = borrowed else {
+        return Ok(None);
+    };
+    let function = instance
+        .type_definition
+        .methods
+        .borrow()
+        .get(name)
+        .cloned()
+        .ok_or_else(|| {
+            RuntimeError::new(
+                format!(
+                    "type `{}` has no method `{name}`",
+                    instance.type_definition.name
+                ),
+                span,
+            )
+        })?;
+    Ok(Some(Value::HostBoundMethod(Rc::new(HostBoundMethod {
+        receiver: Rc::new(receiver),
+        function,
+    }))))
+}
