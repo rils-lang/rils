@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
 
     match id {
@@ -92,10 +92,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             )),
         },
         BuiltinId::SequenceLen | BuiltinId::StringLen => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("len receiver must be a reference".into());
-            };
-            let value = reference.read()?;
+            let value = import_receiver(&arguments[0])?;
             let length = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => sequence.elements.borrow().len(),
                 Value::String(value) => value.len(),
@@ -109,10 +106,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             Ok(Value::Usize(length))
         }
         BuiltinId::SequenceIsEmpty | BuiltinId::StringIsEmpty => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("is_empty receiver must be a reference".into());
-            };
-            let value = reference.read()?;
+            let value = import_receiver(&arguments[0])?;
             let empty = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => {
                     sequence.elements.borrow().is_empty()
@@ -123,10 +117,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             Ok(Value::Bool(empty))
         }
         BuiltinId::SequenceContains | BuiltinId::StringContains => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("contains receiver must be a reference".into());
-            };
-            match reference.read()? {
+            match import_receiver(&arguments[0])? {
                 Value::Array(sequence) | Value::Vec(sequence) => {
                     let needle = import_receiver(&arguments[1])?;
                     let contains = sequence
@@ -453,10 +444,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
         | BuiltinId::StringBytes
         | BuiltinId::StringLines
         | BuiltinId::StringSplit => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("string method receiver must be a reference".into());
-            };
-            let Value::String(value) = reference.read()? else {
+            let Value::String(value) = import_receiver(&arguments[0])? else {
                 return Err("string method receiver is not string".into());
             };
             let argument = |index: usize| match arguments.get(index) {
@@ -648,21 +636,24 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 element_type: Some(element_type),
             })
         }
-        BuiltinId::OptionReplace | BuiltinId::StringReplace => {
+        BuiltinId::StringReplace => {
+            let Value::String(value) = import_receiver(&arguments[0])? else {
+                return Err("string replace receiver is not string".into());
+            };
+            let (Value::String(pattern), Value::String(replacement)) =
+                (&arguments[1], &arguments[2])
+            else {
+                return Err("string replace arguments must be string".into());
+            };
+            Ok(Value::String(Rc::from(
+                value.replace(pattern.as_ref(), replacement.as_ref()),
+            )))
+        }
+        BuiltinId::OptionReplace => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("replace receiver must be a reference".into());
             };
             let receiver = reference.read()?;
-            if let Value::String(value) = receiver {
-                let (Value::String(pattern), Value::String(replacement)) =
-                    (&arguments[1], &arguments[2])
-                else {
-                    return Err("string replace arguments must be string".into());
-                };
-                return Ok(Value::String(Rc::from(
-                    value.replace(pattern.as_ref(), replacement.as_ref()),
-                )));
-            }
             if !reference.mutable {
                 return Err("Option::replace requires `&mut self`".into());
             }

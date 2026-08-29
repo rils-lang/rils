@@ -8,7 +8,7 @@ use crate::{
     value::Value,
 };
 
-use super::{call_core_import, core_imports};
+use super::{call_core_import, core_imports, resolve_core_import};
 
 pub const BYTECODE_HOST_ABI_VERSION: u32 = rils_host::HOST_CONTRACT_ABI_VERSION;
 
@@ -44,9 +44,10 @@ impl BytecodeHost {
         host.allow_capability("core");
         for (name, signature) in core_imports() {
             let import_name = name.to_string();
-            let handler_name = import_name.clone();
+            let operation = resolve_core_import(name)
+                .unwrap_or_else(|| panic!("standard core import `{name}` has no operation ID"));
             host.register_function(import_name, signature, "core", move |arguments| {
-                call_core_import(&handler_name, arguments)
+                call_core_import(operation, arguments)
             })
             .expect("standard core imports are unique");
         }

@@ -572,117 +572,11 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::StringLines
                 | rils_builtins::BuiltinId::StringSplit),
             ) => {
-                let receiver = match method.receiver.as_ref() {
-                    Value::Reference(reference) => reference
-                        .read()
-                        .map_err(|message| RuntimeError::new(message, span))?,
-                    value => value.clone(),
-                };
-                let Value::String(value) = receiver else {
-                    return Err(RuntimeError::new(
-                        "string method receiver is not string",
-                        span,
-                    ));
-                };
-                let string_argument = |index: usize| match arguments.get(index) {
-                    Some(Value::String(value)) => Ok(value.as_ref()),
-                    Some(value) => Err(RuntimeError::new(
-                        format!(
-                            "string argument must be string, found {}",
-                            value.type_name()
-                        ),
-                        span,
-                    )),
-                    None => Err(RuntimeError::new("missing string argument", span)),
-                };
-                match id {
-                    rils_builtins::BuiltinId::StringLen => Ok(Value::Usize(value.len())),
-                    rils_builtins::BuiltinId::StringIsEmpty => Ok(Value::Bool(value.is_empty())),
-                    rils_builtins::BuiltinId::StringContains => {
-                        Ok(Value::Bool(value.contains(string_argument(0)?)))
-                    }
-                    rils_builtins::BuiltinId::StringStartsWith => {
-                        Ok(Value::Bool(value.starts_with(string_argument(0)?)))
-                    }
-                    rils_builtins::BuiltinId::StringEndsWith => {
-                        Ok(Value::Bool(value.ends_with(string_argument(0)?)))
-                    }
-                    rils_builtins::BuiltinId::StringFind => Ok(Value::Option {
-                        value: value
-                            .find(string_argument(0)?)
-                            .map(|offset| Rc::new(Value::Usize(offset))),
-                        element_type: Some(Type::USIZE),
-                    }),
-                    rils_builtins::BuiltinId::StringTrim => {
-                        Ok(Value::String(Rc::from(value.trim())))
-                    }
-                    rils_builtins::BuiltinId::StringTrimStart => {
-                        Ok(Value::String(Rc::from(value.trim_start())))
-                    }
-                    rils_builtins::BuiltinId::StringTrimEnd => {
-                        Ok(Value::String(Rc::from(value.trim_end())))
-                    }
-                    rils_builtins::BuiltinId::StringToLowercase => {
-                        Ok(Value::String(Rc::from(value.to_lowercase())))
-                    }
-                    rils_builtins::BuiltinId::StringToUppercase => {
-                        Ok(Value::String(Rc::from(value.to_uppercase())))
-                    }
-                    rils_builtins::BuiltinId::StringRepeat => {
-                        let Some(Value::Usize(count)) = arguments.first() else {
-                            return Err(RuntimeError::new(
-                                "string repeat count must be usize",
-                                span,
-                            ));
-                        };
-                        Ok(Value::String(Rc::from(value.repeat(*count))))
-                    }
-                    rils_builtins::BuiltinId::StringRfind => Ok(Value::Option {
-                        value: value
-                            .rfind(string_argument(0)?)
-                            .map(|offset| Rc::new(Value::Usize(offset))),
-                        element_type: Some(Type::USIZE),
-                    }),
-                    rils_builtins::BuiltinId::StringStripPrefix
-                    | rils_builtins::BuiltinId::StringStripSuffix => {
-                        let pattern = string_argument(0)?;
-                        let stripped = if id == rils_builtins::BuiltinId::StringStripPrefix {
-                            value.strip_prefix(pattern)
-                        } else {
-                            value.strip_suffix(pattern)
-                        };
-                        Ok(Value::Option {
-                            value: stripped.map(|text| Rc::new(Value::String(Rc::from(text)))),
-                            element_type: Some(Type::String),
-                        })
-                    }
-                    rils_builtins::BuiltinId::StringChars => Ok(string_iterator(
-                        value.chars().map(Value::Char).collect(),
-                        Type::Char,
-                    )),
-                    rils_builtins::BuiltinId::StringBytes => Ok(string_iterator(
-                        value.bytes().map(Value::U8).collect(),
-                        Type::Integer(crate::IntegerType::U8),
-                    )),
-                    rils_builtins::BuiltinId::StringLines => Ok(string_iterator(
-                        value
-                            .lines()
-                            .map(|line| Value::String(Rc::from(line)))
-                            .collect(),
-                        Type::String,
-                    )),
-                    rils_builtins::BuiltinId::StringSplit => Ok(string_iterator(
-                        value
-                            .split(string_argument(0)?)
-                            .map(|part| Value::String(Rc::from(part)))
-                            .collect(),
-                        Type::String,
-                    )),
-                    rils_builtins::BuiltinId::StringReplace => Ok(Value::String(Rc::from(
-                        value.replace(string_argument(0)?, string_argument(1)?),
-                    ))),
-                    _ => unreachable!(),
-                }
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(id) => Err(RuntimeError::new(
                 format!("unknown runtime member ID {:#x}", id.as_raw()),
@@ -707,11 +601,4 @@ fn format_ok() -> Value {
         ok_type: Some(Type::Unit),
         error_type: Some(Type::named("FormatError")),
     }
-}
-
-fn string_iterator(items: std::collections::VecDeque<Value>, element_type: Type) -> Value {
-    Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-        items: RefCell::new(items),
-        element_type,
-    }))
 }

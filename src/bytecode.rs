@@ -25,7 +25,7 @@ mod encoder;
 mod format;
 mod formatting;
 mod host;
-mod runtime_builtins;
+pub(crate) mod runtime_builtins;
 mod verifier;
 mod vm;
 
