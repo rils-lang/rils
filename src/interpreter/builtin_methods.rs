@@ -126,61 +126,16 @@ impl Interpreter {
                     element_type: Some(element_type),
                 })
             }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceLen) => {
-                let value = match method.receiver.as_ref() {
-                    Value::Reference(reference) => reference
-                        .read()
-                        .map_err(|message| RuntimeError::new(message, span))?,
-                    value => value.clone(),
-                };
-                let length = match value {
-                    Value::Array(sequence) | Value::Vec(sequence) => {
-                        sequence.elements.borrow().len()
-                    }
-                    _ => {
-                        return Err(RuntimeError::new("len receiver is not a collection", span));
-                    }
-                };
-                Ok(Value::Usize(length))
-            }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIsEmpty) => {
-                let value = match method.receiver.as_ref() {
-                    Value::Reference(reference) => reference
-                        .read()
-                        .map_err(|message| RuntimeError::new(message, span))?,
-                    value => value.clone(),
-                };
-                let empty = match value {
-                    Value::Array(sequence) | Value::Vec(sequence) => {
-                        sequence.elements.borrow().is_empty()
-                    }
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "is_empty receiver is not a collection",
-                            span,
-                        ));
-                    }
-                };
-                Ok(Value::Bool(empty))
-            }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceContains) => {
-                let value = read_builtin_receiver(method.receiver.as_ref(), span)?;
-                let sequence = match value {
-                    Value::Array(sequence) | Value::Vec(sequence) => sequence,
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "contains receiver is not a collection",
-                            span,
-                        ));
-                    }
-                };
-                let needle = read_builtin_receiver(&arguments[0], span)?;
-                let contains = sequence
-                    .elements
-                    .borrow()
-                    .iter()
-                    .any(|slot| slot.value.as_ref() == Some(&needle));
-                Ok(Value::Bool(contains))
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::SequenceLen
+                | rils_builtins::BuiltinId::SequenceIsEmpty
+                | rils_builtins::BuiltinId::SequenceContains),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPush) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
@@ -373,15 +328,6 @@ impl Interpreter {
                 span,
             )),
         }
-    }
-}
-
-fn read_builtin_receiver(value: &Value, span: Span) -> Result<Value, RuntimeError> {
-    match value {
-        Value::Reference(reference) => reference
-            .read()
-            .map_err(|message| RuntimeError::new(message, span)),
-        value => Ok(value.clone()),
     }
 }
 
