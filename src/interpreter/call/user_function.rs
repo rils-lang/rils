@@ -74,7 +74,12 @@ impl Interpreter {
             );
         }
         self.function_depth += 1;
+        let previous_expression_ids = std::mem::replace(
+            &mut self.semantic_expression_ids,
+            function.semantic_expression_ids.clone(),
+        );
         let result = self.execute_statements(&function.body.statements, environment);
+        self.semantic_expression_ids = previous_expression_ids;
         self.function_depth -= 1;
         let result = match result {
             Err(error) if error.message == TRY_RETURN_SIGNAL => {

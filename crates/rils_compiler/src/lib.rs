@@ -34,7 +34,7 @@ use std::{error::Error, fmt};
 use rils_frontend::{
     analysis::DiagnosticSeverity,
     ast::Program,
-    source::{SourceFile, Span},
+    source::{SourceFile, SourceId, Span},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,24 +137,15 @@ fn compile_program_with_host_and_sources_and_entry(
     sources: Vec<SourceFile>,
     entry: Option<(rils_frontend::SourceId, String)>,
 ) -> Result<mir::MirProgram, CompileError> {
-    let mut program = program.clone();
-    rils_frontend::inject_host_enum_declarations(&mut program, host);
-    let signatures = host.signatures();
-    let host_types = host
-        .types()
-        .map(|declaration| declaration.name.clone())
-        .collect();
-    if let Some(error) = rils_frontend::resolve_host_type_names(&mut program, &host_types)
-        .into_iter()
-        .next()
-    {
-        return Err(CompileError::new(error.message, error.span));
-    }
-    let analysis = rils_frontend::analysis::analyze_program_with_host_declarations(
-        &program,
-        &signatures,
-        &host_types,
+    let analysis = rils_frontend::analyze_program_with_host_and_source_id_and_external_exports(
+        program,
+        SourceId::UNKNOWN,
+        host,
+        &std::collections::HashMap::new(),
     );
+    if let Some(error) = analysis.host_type_resolutions.errors().first() {
+        return Err(CompileError::new(error.message.clone(), error.span));
+    }
     if let Some(diagnostic) = analysis
         .diagnostics
         .iter()
@@ -187,7 +178,7 @@ fn compile_program_with_host_and_sources_and_entry(
         })
         .transpose()?;
     mir::lower(hir::lower_with_host(
-        &program, host, &analysis, sources, entry,
+        program, host, &analysis, sources, entry,
     )?)
 }
 
@@ -208,42 +199,15 @@ pub fn compile_program_with_host_and_session(
             Span::default(),
         )
     })?;
-    let mut syntax = syntax.clone();
-    let mut host_program = Program {
-        statements: Vec::new(),
-        type_references: Vec::new(),
-        macros: Vec::new(),
-    };
-    rils_frontend::inject_host_enum_declarations(&mut host_program, host);
-    if !host_program.statements.is_empty() {
-        syntax.push_root(host_program);
+    let analysis = session.project_analysis(project, host).ok_or_else(|| {
+        CompileError::new(
+            "compilation session has no current project analysis for this host contract",
+            Span::default(),
+        )
+    })?;
+    if let Some(error) = analysis.host_type_resolutions.errors().first() {
+        return Err(CompileError::new(error.message.clone(), error.span));
     }
-    let signatures = host.signatures();
-    let host_types = host
-        .types()
-        .map(|declaration| declaration.name.clone())
-        .collect();
-    let prepare = |program: &mut Program| -> Result<(), CompileError> {
-        if let Some(error) = rils_frontend::resolve_host_type_names(program, &host_types)
-            .into_iter()
-            .next()
-        {
-            return Err(CompileError::new(error.message, error.span));
-        }
-        Ok(())
-    };
-    for program in syntax.roots_mut() {
-        prepare(program)?;
-    }
-    for (_, program) in syntax.modules_mut() {
-        prepare(program)?;
-    }
-    let analysis = rils_frontend::analyze_project_with_host_declarations(
-        &syntax,
-        semantics.module_graph(),
-        &signatures,
-        &host_types,
-    );
     if let Some(diagnostic) = analysis
         .diagnostics
         .iter()
@@ -281,10 +245,10 @@ pub fn compile_program_with_host_and_session(
         })
         .transpose()?;
     mir::lower(hir::lower_project_with_host(
-        &syntax,
+        syntax,
         semantics.module_graph(),
         host,
-        &analysis,
+        analysis,
         session.sources().source_files(),
         entry,
     )?)

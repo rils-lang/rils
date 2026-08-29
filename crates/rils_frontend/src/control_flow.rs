@@ -11,8 +11,9 @@ use crate::{
 pub(crate) fn analyze(
     program: &Program,
     expression_types: ExpressionTypes<'_>,
+    host_contract: Option<&rils_host::HostContract>,
 ) -> Vec<AnalysisDiagnostic> {
-    Checker::new(program, expression_types).run(program)
+    Checker::new(program, expression_types, host_contract).run(program)
 }
 
 struct Checker<'a> {
@@ -22,12 +23,26 @@ struct Checker<'a> {
 }
 
 impl<'a> Checker<'a> {
-    fn new(program: &Program, expression_types: ExpressionTypes<'a>) -> Self {
+    fn new(
+        program: &Program,
+        expression_types: ExpressionTypes<'a>,
+        host_contract: Option<&rils_host::HostContract>,
+    ) -> Self {
         let mut checker = Self {
             expression_types,
             enums: HashMap::new(),
             diagnostics: Vec::new(),
         };
+        if let Some(host) = host_contract {
+            for declaration in host.types() {
+                if let Some(host_enum) = declaration.enum_definition.as_ref() {
+                    checker.enums.insert(
+                        declaration.name.clone(),
+                        host_enum.variants.keys().cloned().collect(),
+                    );
+                }
+            }
+        }
         checker.collect_enums(&program.statements);
         checker
     }

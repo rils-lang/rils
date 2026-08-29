@@ -1,8 +1,15 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    DefId, DefMap, DefinitionData, FrontendError, ModuleId, SourceFile, SourceId, ast::Program,
+    DefId, DefMap, DefinitionData, FrontendError, ModuleId, SourceFile, SourceId,
+    analysis::DocumentAnalysis, ast::Program,
 };
+
+#[derive(Clone, Debug)]
+struct ProjectAnalysisState {
+    host_contract_hash: String,
+    analysis: DocumentAnalysis,
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProjectId(u32);
@@ -20,6 +27,7 @@ pub struct CompilationSession {
     projects_by_name: HashMap<String, ProjectId>,
     projects: BTreeMap<ProjectId, ProjectSemanticIndex>,
     project_syntax: BTreeMap<ProjectId, ProjectSyntax>,
+    project_analyses: BTreeMap<ProjectId, ProjectAnalysisState>,
 }
 
 impl CompilationSession {
@@ -28,6 +36,7 @@ impl CompilationSession {
     }
 
     pub fn sources_mut(&mut self) -> &mut SourceDatabase {
+        self.project_analyses.clear();
         &mut self.sources
     }
 
@@ -56,6 +65,7 @@ impl CompilationSession {
     }
 
     pub fn project_mut(&mut self, id: ProjectId) -> Option<&mut ProjectSemanticIndex> {
+        self.project_analyses.remove(&id);
         self.projects.get_mut(&id)
     }
 
@@ -65,6 +75,7 @@ impl CompilationSession {
             .get_mut(&id)
             .expect("project must be registered before replacing its semantics");
         *slot = semantics;
+        self.project_analyses.remove(&id);
     }
 
     pub fn project_syntax(&self, id: ProjectId) -> Option<&ProjectSyntax> {
@@ -72,13 +83,43 @@ impl CompilationSession {
     }
 
     pub fn project_syntax_mut(&mut self, id: ProjectId) -> Option<&mut ProjectSyntax> {
+        self.project_analyses.remove(&id);
         self.project_syntax.get_mut(&id)
+    }
+
+    pub fn set_project_analysis(
+        &mut self,
+        id: ProjectId,
+        host: &rils_host::HostContract,
+        analysis: DocumentAnalysis,
+    ) {
+        assert!(
+            self.projects.contains_key(&id),
+            "project must be registered before storing analysis"
+        );
+        self.project_analyses.insert(
+            id,
+            ProjectAnalysisState {
+                host_contract_hash: host.contract_hash(),
+                analysis,
+            },
+        );
+    }
+
+    pub fn project_analysis(
+        &self,
+        id: ProjectId,
+        host: &rils_host::HostContract,
+    ) -> Option<&DocumentAnalysis> {
+        let state = self.project_analyses.get(&id)?;
+        (state.host_contract_hash == host.contract_hash()).then_some(&state.analysis)
     }
 
     pub fn clear_projects(&mut self) {
         self.projects_by_name.clear();
         self.projects.clear();
         self.project_syntax.clear();
+        self.project_analyses.clear();
     }
 
     pub fn projects(&self) -> impl Iterator<Item = &ProjectSemanticIndex> {
@@ -138,72 +179,6 @@ impl ProjectSyntax {
             program.macros.extend(root.macros.clone());
         }
         program
-    }
-
-    #[doc(hidden)]
-    pub fn inline_module_compatibility_program(&self, graph: &ModuleGraph) -> Program {
-        let mut root = SyntaxModuleNode::default();
-        for program in &self.roots {
-            root.extend_metadata(program);
-            root.statements.extend(program.statements.clone());
-        }
-        for (module, program) in &self.modules {
-            let Some(module) = graph.module(*module) else {
-                continue;
-            };
-            root.insert(&module.path, program.clone());
-        }
-        root.into_program()
-    }
-}
-
-#[derive(Default)]
-struct SyntaxModuleNode {
-    statements: Vec<crate::ast::Stmt>,
-    type_references: Vec<crate::ast::TypeReference>,
-    macros: Vec<crate::ast::MacroSymbol>,
-    children: BTreeMap<String, SyntaxModuleNode>,
-}
-
-impl SyntaxModuleNode {
-    fn insert(&mut self, path: &str, program: Program) {
-        let mut node = self;
-        for segment in path.split("::").filter(|segment| !segment.is_empty()) {
-            node = node.children.entry(segment.to_owned()).or_default();
-        }
-        node.extend_metadata(&program);
-        node.statements = program.statements;
-    }
-
-    fn extend_metadata(&mut self, program: &Program) {
-        self.type_references.extend(program.type_references.clone());
-        self.macros.extend(program.macros.clone());
-    }
-
-    fn into_program(self) -> Program {
-        let mut statements = self.statements;
-        let mut type_references = self.type_references;
-        let mut macros = self.macros;
-        for (name, child) in self.children {
-            let child = child.into_program();
-            type_references.extend(child.type_references);
-            macros.extend(child.macros);
-            let statement = crate::ast::Stmt::Module {
-                name: name.clone(),
-                name_span: crate::Span::default(),
-                statements: Some(child.statements),
-                span: crate::Span::default(),
-            };
-            statements.push(crate::ast::Stmt::Public {
-                statement: Box::new(statement),
-                span: crate::Span::default(),
-            });
-        }
-        Program {
-            statements,
-            type_references,
-            macros,
-        }
     }
 }
 

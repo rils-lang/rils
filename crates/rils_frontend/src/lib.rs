@@ -5,9 +5,9 @@ mod error;
 mod format_check;
 mod host_analysis;
 mod host_type_resolution;
+mod numeric_literals;
 mod ownership;
 mod project_analysis;
-mod resolution;
 pub mod semantic;
 pub mod standard_library;
 mod static_type_check;
@@ -23,16 +23,13 @@ pub use database::{
 pub use error::FrontendError;
 pub use host_analysis::{
     analyze_program_with_host_and_source_id_and_external_exports, analyze_with_host,
-    analyze_with_host_and_source_id_and_external_exports, inject_host_enum_declarations,
+    analyze_with_host_and_source_id_and_external_exports,
 };
 pub use host_type_resolution::{
-    HostTypeResolutionError, HostTypeResolutionResults, HostTypeResolutionView,
-    resolve_host_type_names, resolve_host_types,
+    HostTypeResolutionError, HostTypeResolutionResults, HostTypeResolutionView, resolve_host_types,
 };
-pub use project_analysis::analyze_project_with_host_declarations;
-pub use resolution::{
-    NumericResolutionError, resolve_numeric_literals, resolve_numeric_literals_with_host_functions,
-};
+pub use numeric_literals::{NumericLiteralError, concretize_numeric_literal};
+pub use project_analysis::{analyze_project_with_host, analyze_project_with_host_declarations};
 pub use rils_builtins::{
     BuiltinId, FLOAT_INTRINSICS, INTEGER_INTRINSICS, IntrinsicDeclaration, IntrinsicKind,
     TypePattern, float_constant, float_method, integer_associated_function, integer_constant,

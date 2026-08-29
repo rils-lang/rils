@@ -266,13 +266,19 @@ impl Interpreter {
                     .as_ref()
                     .map(|ty| expand_type_aliases(ty, &environment, body.span))
                     .transpose()?;
+                let function_body = body.clone();
+                let semantic_expression_ids = self
+                    .semantic_expression_ids
+                    .as_ref()
+                    .map(|ids| ids.for_cloned_block(body, &function_body));
                 let function = Value::Function(Rc::new(UserFunction {
                     name: name.clone(),
                     generic_parameters: generic_parameters.clone(),
                     parameters,
                     return_type,
-                    body: body.clone(),
+                    body: function_body,
                     closure: environment.clone(),
+                    semantic_expression_ids,
                 }));
                 environment
                     .borrow_mut()
@@ -664,6 +670,11 @@ impl Interpreter {
                         }
                         function_generics.push(generic.clone());
                     }
+                    let function_body = method.body.clone();
+                    let semantic_expression_ids = self
+                        .semantic_expression_ids
+                        .as_ref()
+                        .map(|ids| ids.for_cloned_block(&method.body, &function_body));
                     let function = Rc::new(UserFunction {
                         name: trait_definition.as_ref().map_or_else(
                             || format!("{target_name}::{}", method.name),
@@ -674,8 +685,9 @@ impl Interpreter {
                         generic_parameters: function_generics,
                         parameters,
                         return_type,
-                        body: method.body.clone(),
+                        body: function_body,
                         closure: method_environment,
+                        semantic_expression_ids,
                     });
                     let (inherent_methods, trait_methods) = match &target_value {
                         Value::StructType(definition) => {
@@ -928,7 +940,7 @@ fn unwrap_public(statement: &Stmt) -> &Stmt {
     }
 }
 
-fn public_names(
+pub(super) fn public_names(
     statement: &Stmt,
     environment: &EnvironmentRef,
 ) -> Result<Vec<String>, RuntimeError> {

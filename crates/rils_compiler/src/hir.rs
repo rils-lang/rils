@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     HostContract, HostFunctionDeclaration, HostReceiver,
-    ast::{Block, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
+    ast::{Block, EnumVariant, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
     bytecode::CompileError,
     source::{SourceFile, SourceId, Span},
     types::{FunctionSignature, Type},
@@ -213,6 +213,29 @@ impl ProgramLowerer {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
         let mut type_definitions = Vec::new();
+        for declaration in host.types() {
+            let Some(host_enum) = declaration.enum_definition.as_ref() else {
+                continue;
+            };
+            let id = type_definitions.len();
+            types.insert(declaration.name.clone(), id);
+            if let Some(short_name) = declaration.name.rsplit("::").next() {
+                types.entry(short_name.to_owned()).or_insert(id);
+            }
+            type_definitions.push(HirTypeDefinition::Enum {
+                name: declaration.name.clone(),
+                generic_parameters: Vec::new(),
+                variants: host_enum
+                    .variants
+                    .keys()
+                    .cloned()
+                    .map(|name| EnumVariant::Unit {
+                        name,
+                        span: Span::default(),
+                    })
+                    .collect(),
+            });
+        }
         for unit in units {
             for statement in &unit.program.statements {
                 if let Some(declaration) = function_declaration(statement) {

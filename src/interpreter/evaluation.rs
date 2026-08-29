@@ -46,33 +46,43 @@ impl Interpreter {
         environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
         match expression {
-            Expr::Literal { value, .. } => Ok(match value {
-                Literal::Unit => Value::Unit,
-                Literal::Bool(value) => Value::Bool(*value),
-                Literal::I8(value) => Value::I8(*value),
-                Literal::I16(value) => Value::I16(*value),
-                Literal::I32(value) => Value::I32(*value),
-                Literal::I64(value) => Value::I64(*value),
-                Literal::I128(value) => Value::I128(*value),
-                Literal::Isize(value) => Value::Isize(*value),
-                Literal::U8(value) => Value::U8(*value),
-                Literal::U16(value) => Value::U16(*value),
-                Literal::U32(value) => Value::U32(*value),
-                Literal::U64(value) => Value::U64(*value),
-                Literal::U128(value) => Value::U128(*value),
-                Literal::Usize(value) => Value::Usize(*value),
-                Literal::F32(value) => Value::F32(*value),
-                Literal::F64(value) => Value::F64(*value),
-                Literal::Char(value) => Value::Char(*value),
-                Literal::Integer(value) => Value::I32(i32::try_from(*value).map_err(|_| {
-                    RuntimeError::new(
-                        "integer literal is outside the inferred i32 range",
-                        expression.span(),
-                    )
-                })?),
-                Literal::Float(value) => Value::F64(*value),
-                Literal::String(value) => Value::String(Rc::from(value.as_str())),
-            }),
+            Expr::Literal { value, .. } => {
+                let inferred = self
+                    .semantic_expression_ids
+                    .as_ref()
+                    .and_then(|ids| ids.get(expression))
+                    .and_then(|id| self.typeck_results.as_ref()?.expression_type(id));
+                let value =
+                    rils_frontend::concretize_numeric_literal(value, inferred, expression.span())
+                        .map_err(|error| RuntimeError::new(error.message, error.span))?;
+                Ok(match &value {
+                    Literal::Unit => Value::Unit,
+                    Literal::Bool(value) => Value::Bool(*value),
+                    Literal::I8(value) => Value::I8(*value),
+                    Literal::I16(value) => Value::I16(*value),
+                    Literal::I32(value) => Value::I32(*value),
+                    Literal::I64(value) => Value::I64(*value),
+                    Literal::I128(value) => Value::I128(*value),
+                    Literal::Isize(value) => Value::Isize(*value),
+                    Literal::U8(value) => Value::U8(*value),
+                    Literal::U16(value) => Value::U16(*value),
+                    Literal::U32(value) => Value::U32(*value),
+                    Literal::U64(value) => Value::U64(*value),
+                    Literal::U128(value) => Value::U128(*value),
+                    Literal::Usize(value) => Value::Usize(*value),
+                    Literal::F32(value) => Value::F32(*value),
+                    Literal::F64(value) => Value::F64(*value),
+                    Literal::Char(value) => Value::Char(*value),
+                    Literal::Integer(value) => Value::I32(i32::try_from(*value).map_err(|_| {
+                        RuntimeError::new(
+                            "integer literal is outside the inferred i32 range",
+                            expression.span(),
+                        )
+                    })?),
+                    Literal::Float(value) => Value::F64(*value),
+                    Literal::String(value) => Value::String(Rc::from(value.as_str())),
+                })
+            }
             Expr::Tuple { .. } | Expr::Array { .. } => {
                 self.evaluate_sequence(expression, environment)
             }

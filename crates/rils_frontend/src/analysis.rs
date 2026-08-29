@@ -135,7 +135,7 @@ struct InherentMethod {
 
 #[derive(Clone)]
 struct EnumVariantSymbol {
-    span: Span,
+    span: Option<Span>,
     detail: String,
     owner: String,
 }
@@ -185,18 +185,17 @@ pub fn analyze_program_with_host_declarations(
 ) -> DocumentAnalysis {
     let host_type_resolutions = crate::resolve_host_types(program, SourceId::UNKNOWN, host_types);
     let resolution_errors = host_type_resolutions.errors().to_vec();
-    let source_program = program;
-    let mut program = source_program.clone();
-    crate::resolve_host_type_names(&mut program, host_types);
-    let mut analysis = Analyzer::new(
-        SourceId::UNKNOWN,
+    let mut analysis = Analyzer::new(AnalyzerInput {
+        source_id: SourceId::UNKNOWN,
         host_functions,
         host_types,
-        &program,
-        &HashMap::new(),
-        &[],
-    )
-    .analyze(&program, source_program, &host_type_resolutions);
+        program,
+        external_exports: &HashMap::new(),
+        module_path: &[],
+        host_type_resolutions: &host_type_resolutions,
+        host_contract: None,
+    })
+    .analyze(program, program, &host_type_resolutions);
     analysis.host_type_resolutions = host_type_resolutions;
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
     analysis
@@ -288,6 +287,7 @@ pub fn analyze_program_with_source_id_and_external_exports_and_host_types(
         host_types,
         external_exports,
         &[],
+        None,
     )
 }
 
@@ -298,21 +298,21 @@ pub(crate) fn analyze_program_in_module_with_external_exports_and_host_types(
     host_types: &HashSet<String>,
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
     module_path: &[String],
+    host_contract: Option<&rils_host::HostContract>,
 ) -> DocumentAnalysis {
     let host_type_resolutions = crate::resolve_host_types(program, source_id, host_types);
     let resolution_errors = host_type_resolutions.errors().to_vec();
-    let source_program = program;
-    let mut program = source_program.clone();
-    crate::resolve_host_type_names(&mut program, host_types);
-    let mut analysis = Analyzer::new(
+    let mut analysis = Analyzer::new(AnalyzerInput {
         source_id,
         host_functions,
         host_types,
-        &program,
+        program,
         external_exports,
         module_path,
-    )
-    .analyze(&program, source_program, &host_type_resolutions);
+        host_type_resolutions: &host_type_resolutions,
+        host_contract,
+    })
+    .analyze(program, program, &host_type_resolutions);
     analysis.host_type_resolutions = host_type_resolutions;
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
     analysis
@@ -349,6 +349,9 @@ struct Analyzer {
     struct_fields: HashMap<String, Vec<HashMap<String, StructFieldSymbol>>>,
     member_receivers: HashMap<Span, crate::ExprId>,
     expression_ids: crate::semantic::ExpressionIdentityMap,
+    pattern_ids: crate::semantic::PatternIdentityMap,
+    host_type_resolutions: crate::HostTypeResolutionResults,
+    host_contract: Option<rils_host::HostContract>,
     self_types: Vec<Option<String>>,
     self_type_references: HashMap<Span, String>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
@@ -359,15 +362,29 @@ struct Analyzer {
     owner_ids: crate::semantic::SemanticOwnerIds,
 }
 
+struct AnalyzerInput<'a> {
+    source_id: SourceId,
+    host_functions: &'a HashMap<String, FunctionSignature>,
+    host_types: &'a HashSet<String>,
+    program: &'a Program,
+    external_exports: &'a HashMap<String, Vec<ExternalModuleExport>>,
+    module_path: &'a [String],
+    host_type_resolutions: &'a crate::HostTypeResolutionResults,
+    host_contract: Option<&'a rils_host::HostContract>,
+}
+
 impl Analyzer {
-    fn new(
-        source_id: SourceId,
-        host_functions: &HashMap<String, FunctionSignature>,
-        host_types: &HashSet<String>,
-        program: &Program,
-        external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
-        module_path: &[String],
-    ) -> Self {
+    fn new(input: AnalyzerInput<'_>) -> Self {
+        let AnalyzerInput {
+            source_id,
+            host_functions,
+            host_types,
+            program,
+            external_exports,
+            module_path,
+            host_type_resolutions,
+            host_contract,
+        } = input;
         let definition_modules = external_exports
             .values()
             .flatten()
@@ -519,6 +536,21 @@ impl Analyzer {
                 container: None,
             });
         }
+        for name in host_types {
+            let Some(root) = name.split("::").next() else {
+                continue;
+            };
+            globals.entry(root.into()).or_insert(Definition {
+                span: None,
+                id: None,
+                kind: if name.contains("::") {
+                    SymbolKind::Module
+                } else {
+                    SymbolKind::Type
+                },
+                container: None,
+            });
+        }
         let host_type_segments = host_functions
             .values()
             .flat_map(|signature| {
@@ -539,7 +571,7 @@ impl Analyzer {
                     .flat_map(|name| name.split("::").map(str::to_owned)),
             )
             .collect();
-        Self {
+        let mut analyzer = Self {
             source_id,
             next_symbol: HashMap::new(),
             scopes: vec![globals],
@@ -553,6 +585,9 @@ impl Analyzer {
             struct_fields,
             member_receivers: HashMap::new(),
             expression_ids: crate::semantic::ExpressionIdentityMap::allocate(program, source_id),
+            pattern_ids: crate::semantic::PatternIdentityMap::allocate(program, source_id),
+            host_type_resolutions: host_type_resolutions.clone(),
+            host_contract: host_contract.cloned(),
             self_types: vec![None],
             self_type_references: collect_self_type_references(program),
             type_aliases: HashMap::new(),
@@ -561,7 +596,9 @@ impl Analyzer {
             host_type_segments,
             result: DocumentAnalysis::default(),
             owner_ids: crate::semantic::SemanticOwnerIds::default(),
-        }
+        };
+        analyzer.collect_host_enum_variants();
+        analyzer
     }
 
     fn analyze(
@@ -612,11 +649,10 @@ impl Analyzer {
             self.source_id,
             &inference_functions,
             host_type_resolutions,
+            self.host_contract.as_ref(),
         );
-        // The compatibility analysis path still visits a canonicalized AST
-        // clone. Expression IDs are deterministic, but the node index is tied
-        // to one concrete immutable Program, so give those checkers an index
-        // for the clone while type inference reads the original syntax.
+        // Every checker consumes the same immutable source AST. Canonical Host
+        // identities live in side tables and must not be written back into syntax.
         let checker_expression_ids =
             crate::semantic::ExpressionIdentityMap::allocate(program, self.source_id);
         let expression_types = crate::semantic::ExpressionTypes::new(
@@ -624,9 +660,11 @@ impl Analyzer {
             &inference.expression_types_by_id,
         );
         self.enrich_member_symbols(&inference.expression_types_by_id);
-        self.result
-            .diagnostics
-            .extend(crate::control_flow::analyze(program, expression_types));
+        self.result.diagnostics.extend(crate::control_flow::analyze(
+            program,
+            expression_types,
+            self.host_contract.as_ref(),
+        ));
         self.result.diagnostics.extend(crate::ownership::analyze(
             program,
             &inference.binding_types,
@@ -635,7 +673,12 @@ impl Analyzer {
         ));
         self.result
             .diagnostics
-            .extend(crate::static_type_check::analyze(program, expression_types));
+            .extend(crate::static_type_check::analyze(
+                program,
+                expression_types,
+                self.source_id,
+                host_type_resolutions,
+            ));
         self.result
             .diagnostics
             .extend(crate::trait_check::analyze(program));
@@ -722,6 +765,7 @@ impl Analyzer {
             &self.host_functions,
             &mut typeck_results,
             &self.module_path,
+            host_type_resolutions,
         );
         self.result.def_map = def_map;
         self.result.typeck_results = typeck_results;
@@ -1066,7 +1110,7 @@ impl Analyzer {
                     output.insert(
                         (owner.clone(), variant_name.into()),
                         EnumVariantSymbol {
-                            span,
+                            span: Some(span),
                             detail: enum_variant_declaration(name, variant),
                             owner: owner.clone(),
                         },
@@ -1076,6 +1120,32 @@ impl Analyzer {
         }
 
         visit(statements, &mut Vec::new(), &mut self.enum_variants);
+    }
+
+    fn collect_host_enum_variants(&mut self) {
+        let Some(host) = self.host_contract.as_ref() else {
+            return;
+        };
+        for declaration in host.types() {
+            let Some(definition) = declaration.enum_definition.as_ref() else {
+                continue;
+            };
+            let short_name = declaration
+                .name
+                .rsplit("::")
+                .next()
+                .unwrap_or(&declaration.name);
+            for variant in definition.variants.keys() {
+                self.enum_variants.insert(
+                    (declaration.name.clone(), variant.clone()),
+                    EnumVariantSymbol {
+                        span: None,
+                        detail: format!("{short_name}::{variant}"),
+                        owner: declaration.name.clone(),
+                    },
+                );
+            }
+        }
     }
 
     fn macros(&mut self, program: &Program) {
@@ -1383,6 +1453,12 @@ impl Analyzer {
                 }
             }
             Expr::Path { segments, span } => {
+                let semantic_segments = self
+                    .expression_ids
+                    .get(expression)
+                    .and_then(|id| self.host_type_resolutions.expression_path(id))
+                    .map(<[String]>::to_vec);
+                let semantic_segments = semantic_segments.as_deref().unwrap_or(segments);
                 // Host type resolution canonicalizes imported paths (for
                 // example `Color::new` becomes
                 // `unity_engine::Color::new`). Record the type segment at its
@@ -1435,7 +1511,7 @@ impl Analyzer {
                         container: Some(SymbolContainer::Module(export.module_path)),
                     });
                 }
-                let qualified_name = segments.join("::");
+                let qualified_name = semantic_segments.join("::");
                 if let (Some(member), Some(signature)) =
                     (segments.last(), self.host_functions.get(&qualified_name))
                 {
@@ -1490,7 +1566,7 @@ impl Analyzer {
                         });
                     }
                 }
-                if let [type_name, member] = segments.as_slice() {
+                if let [type_name, member] = semantic_segments {
                     let owner = if type_name == "Self" {
                         self.self_types.last().and_then(Clone::clone)
                     } else {
@@ -1517,7 +1593,7 @@ impl Analyzer {
                     }
                 }
                 if !segments.is_empty() {
-                    self.variant_symbol_for_path(segments, *span, true);
+                    self.variant_symbol_for_path(semantic_segments, *span, true);
                 }
             }
             Expr::QualifiedPath {
@@ -1569,6 +1645,12 @@ impl Analyzer {
             }
             Expr::Try { operand, .. } => self.expression(operand),
             Expr::RecordLiteral { path, fields, span } => {
+                let semantic_path = self
+                    .expression_ids
+                    .get(expression)
+                    .and_then(|id| self.host_type_resolutions.expression_path(id))
+                    .map(<[String]>::to_vec);
+                let semantic_path = semantic_path.as_deref().unwrap_or(path);
                 if let Some(name) = path.first() {
                     self.reference(
                         name,
@@ -1576,7 +1658,7 @@ impl Analyzer {
                         SymbolKind::Type,
                     );
                 }
-                self.variant_symbol_for_path(path, *span, false);
+                self.variant_symbol_for_path(semantic_path, *span, false);
                 for field in fields {
                     self.record_field_symbol(path.last().map(String::as_str), field);
                     self.expression(&field.value);
@@ -1667,22 +1749,37 @@ impl Analyzer {
     }
 
     fn pattern(&mut self, pattern: &Pattern) {
+        let semantic_path = self
+            .pattern_ids
+            .get(pattern)
+            .and_then(|id| self.host_type_resolutions.pattern_path(id))
+            .map(<[String]>::to_vec);
         match pattern {
             Pattern::Wildcard { .. } | Pattern::Literal { .. } | Pattern::None { .. } => {}
-            Pattern::Path { path, span } => self.pattern_variant_symbols(path, *span, true),
+            Pattern::Path { path, span } => {
+                self.pattern_variant_symbols(semantic_path.as_deref().unwrap_or(path), *span, true)
+            }
             Pattern::Binding { name, span } => {
                 self.define(name, *span, SymbolKind::Variable);
             }
             Pattern::Some { inner, .. } => self.pattern(inner),
             Pattern::Ok { inner, .. } | Pattern::Err { inner, .. } => self.pattern(inner),
             Pattern::TupleVariant { path, fields, span } => {
-                self.pattern_variant_symbols(path, *span, false);
+                self.pattern_variant_symbols(
+                    semantic_path.as_deref().unwrap_or(path),
+                    *span,
+                    false,
+                );
                 for field in fields {
                     self.pattern(field);
                 }
             }
             Pattern::Record { path, fields, span } => {
-                self.pattern_variant_symbols(path, *span, false);
+                self.pattern_variant_symbols(
+                    semantic_path.as_deref().unwrap_or(path),
+                    *span,
+                    false,
+                );
                 for (_, pattern) in fields {
                     self.pattern(pattern);
                 }
@@ -1851,7 +1948,7 @@ impl Analyzer {
         self.result.symbols.push(SymbolOccurrence {
             name: variant_name.clone(),
             span: variant_span,
-            definition_span: Some(variant.span),
+            definition_span: variant.span,
             symbol_id: None,
             definition_id: None,
             kind: SymbolKind::Variant,

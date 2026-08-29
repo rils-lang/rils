@@ -293,12 +293,14 @@ pub(crate) fn resolve_program_calls(
     host_functions: &HashMap<String, FunctionSignature>,
     results: &mut TypeckResults,
     module_path: &[String],
+    host_type_resolutions: &crate::HostTypeResolutionResults,
 ) {
     resolve_project_calls(
         &[(source, module_path, program)],
         definitions,
         host_functions,
         results,
+        host_type_resolutions,
     );
 }
 
@@ -307,6 +309,7 @@ pub(crate) fn resolve_project_calls(
     definitions: &DefMap,
     host_functions: &HashMap<String, FunctionSignature>,
     results: &mut TypeckResults,
+    host_type_resolutions: &crate::HostTypeResolutionResults,
 ) {
     let mut iterator_types = HashSet::new();
     let mut callables = CallableDefinitions::default();
@@ -339,6 +342,8 @@ pub(crate) fn resolve_project_calls(
     }
     for (source, module_path, program) in units {
         let expression_ids = ExpressionIdentityMap::allocate(program, *source);
+        let host_types =
+            crate::HostTypeResolutionView::new(program, *source, host_type_resolutions);
         visit_statements(
             &program.statements,
             &mut module_path.to_vec(),
@@ -364,6 +369,7 @@ pub(crate) fn resolve_project_calls(
                     results,
                     namespace,
                     self_type,
+                    host_types: &host_types,
                 };
                 if let Some(call) = resolve_callee(callee, &context) {
                     results.resolve_call(id, call);
@@ -382,6 +388,7 @@ struct CallResolutionContext<'a> {
     results: &'a TypeckResults,
     namespace: &'a [String],
     self_type: Option<&'a str>,
+    host_types: &'a crate::HostTypeResolutionView<'a>,
 }
 
 fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<ResolvedCall> {
@@ -394,6 +401,7 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
         results,
         namespace,
         self_type,
+        host_types,
     } = context;
     if let Some(definition) =
         callables.resolve(callee, expression_ids, results, namespace, *self_type)
@@ -454,8 +462,11 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
                 .then_some(ResolvedCall::Host { path })
         }
         Expr::Path { segments, .. } => {
+            let segments = host_types
+                .resolved_expression_path(callee)
+                .unwrap_or(segments);
             let path = segments.join("::");
-            if let [type_name, member] = segments.as_slice()
+            if let [type_name, member] = segments
                 && crate::IntegerType::from_name(type_name).is_some()
                 && let Some(intrinsic) = rils_builtins::integer_associated_function(member)
             {

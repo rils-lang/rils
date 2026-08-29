@@ -274,11 +274,11 @@ impl Engine {
 
     pub fn eval(&mut self, source: &str) -> Result<Value, RilsError> {
         let tokens = lexer::lex(source).map_err(RilsError::Lex)?;
-        let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
+        let program = parser::parse_with_native_macros(tokens, &self.native_macros)
             .map_err(RilsError::Parse)?;
-        rils_frontend::resolve_numeric_literals(&mut program).map_err(numeric_resolution_error)?;
+        let analysis = rils_frontend::analysis::analyze_program(&program);
         self.interpreter
-            .execute(&program)
+            .execute_with_analysis(&program, &analysis)
             .map_err(RilsError::Runtime)
     }
 
@@ -292,6 +292,9 @@ impl Engine {
             let source =
                 fs::read_to_string(path).map_err(|error| module_load_error(path, error))?;
             let source_id = sources.register_source(path, &source);
+            if project.manifest_path().is_some() {
+                sources.set_entry_source(source_id);
+            }
             let mut program = sources.parse(source_id, &self.native_macros)?;
             load_file_modules(
                 &mut program,
@@ -300,13 +303,17 @@ impl Engine {
                 &self.native_macros,
                 &mut sources,
                 true,
-                true,
             )?;
-            rils_frontend::resolve_numeric_literals(&mut program)
-                .map_err(numeric_resolution_error)?;
-            self.interpreter
-                .execute(&program)
-                .map_err(RilsError::Runtime)
+            if project.manifest_path().is_some() {
+                sources
+                    .execute_project(&mut self.interpreter, &HostContract::new())
+                    .map_err(RilsError::Runtime)
+            } else {
+                let analysis = rils_frontend::analysis::analyze_program(&program);
+                self.interpreter
+                    .execute_with_analysis(&program, &analysis)
+                    .map_err(RilsError::Runtime)
+            }
         })();
         result.map_err(|error| locate_rils_error(error, &sources))
     }
@@ -415,7 +422,6 @@ fn load_file_modules(
     native_macros: &[macros::NativeMacroDefinition],
     sources: &mut ProjectCompilation,
     require_entry: bool,
-    invoke_entry: bool,
 ) -> Result<(), RilsError> {
     if project.manifest_path().is_none() {
         let base = entry_path.parent().unwrap_or_else(|| Path::new("."));
@@ -435,9 +441,6 @@ fn load_file_modules(
     }
     let entry = project.module_for_file(entry_path);
     let entry_source = sources.source_id(entry_path);
-    let entry_module_path = entry_source
-        .and_then(|source| sources.module_path(source))
-        .map(str::to_owned);
     let entry_is_prelude = project.prelude().is_some_and(|prelude_path| {
         prelude_path == entry_path
             || entry_path.canonicalize().is_ok_and(|entry_path| {
@@ -497,26 +500,6 @@ fn load_file_modules(
             program
         };
         sources.set_module_program(file_source, module_program);
-    }
-    *program = sources.interpreter_program();
-    if require_entry && invoke_entry {
-        let mut entry_path = entry_module_path
-            .expect("executable project entries must have a module identity")
-            .split("::")
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        entry_path.push("main".into());
-        program.statements.push(ast::Stmt::Expr {
-            expression: ast::Expr::Call {
-                callee: Box::new(ast::Expr::Path {
-                    segments: entry_path,
-                    span: Span::default(),
-                }),
-                arguments: Vec::new(),
-                span: Span::default(),
-            },
-            terminated: false,
-        });
     }
     Ok(())
 }
@@ -634,14 +617,6 @@ fn module_message(message: String) -> RilsError {
     RilsError::Runtime(RuntimeError {
         message,
         span: Span::default(),
-        stack: Vec::new(),
-    })
-}
-
-fn numeric_resolution_error(error: rils_frontend::NumericResolutionError) -> RilsError {
-    RilsError::Runtime(RuntimeError {
-        message: error.message,
-        span: error.span,
         stack: Vec::new(),
     })
 }
@@ -810,9 +785,9 @@ fn compile_project_file_with_host(
             macros::STANDARD_NATIVE_MACROS,
             &mut sources,
             require_entry,
-            false,
         )
         .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
+        sources.analyze_project(host);
         bytecode::compile_program_with_host_and_session(
             host,
             sources.session(),

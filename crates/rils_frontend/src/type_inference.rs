@@ -55,27 +55,21 @@ fn qualified_type_name(prefix: &[String], name: &str) -> String {
     }
 }
 
-pub(crate) fn infer_with_host_functions(
-    program: &Program,
-    source: SourceId,
-    host_functions: &HashMap<String, FunctionSignature>,
-) -> InferenceResult {
-    let host_type_resolutions = crate::HostTypeResolutionResults::default();
-    infer_with_host_functions_and_host_types(
-        program,
-        source,
-        host_functions,
-        &host_type_resolutions,
-    )
-}
-
 pub(crate) fn infer_with_host_functions_and_host_types(
     program: &Program,
     source: SourceId,
     host_functions: &HashMap<String, FunctionSignature>,
     host_type_resolutions: &crate::HostTypeResolutionResults,
+    host_contract: Option<&rils_host::HostContract>,
 ) -> InferenceResult {
-    Inferencer::new(program, source, host_functions, host_type_resolutions).run(program)
+    Inferencer::new(
+        program,
+        source,
+        host_functions,
+        host_type_resolutions,
+        host_contract,
+    )
+    .run(program)
 }
 
 struct Inferencer<'a> {
@@ -96,6 +90,7 @@ impl<'a> Inferencer<'a> {
         source: SourceId,
         host_functions: &HashMap<String, FunctionSignature>,
         host_type_resolutions: &'a crate::HostTypeResolutionResults,
+        host_contract: Option<&rils_host::HostContract>,
     ) -> Self {
         let mut globals = HashMap::new();
         for (name, return_type) in [
@@ -175,8 +170,36 @@ impl<'a> Inferencer<'a> {
             host_functions: host_functions.clone(),
             host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
         };
+        inferencer.collect_host_type_definitions(host_contract);
         inferencer.collect_type_definitions(&program.statements, &mut Vec::new());
         inferencer
+    }
+
+    fn collect_host_type_definitions(&mut self, host: Option<&rils_host::HostContract>) {
+        let Some(host) = host else {
+            return;
+        };
+        for declaration in host.types() {
+            let Some(host_enum) = declaration.enum_definition.as_ref() else {
+                continue;
+            };
+            let mut definition = TypeDefinition::default();
+            definition.variants.extend(
+                host_enum
+                    .variants
+                    .keys()
+                    .cloned()
+                    .map(|variant| (variant, VariantDefinition::Unit)),
+            );
+            if host_enum.flags {
+                definition.implemented_traits.insert("BitFlags".into());
+            }
+            for variant in host_enum.variants.keys() {
+                self.variant_owners
+                    .insert(variant.clone(), declaration.name.clone());
+            }
+            self.types.insert(declaration.name.clone(), definition);
+        }
     }
 
     fn syntax_type(&self, ty: &Type) -> Type {

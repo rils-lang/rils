@@ -30,7 +30,7 @@ impl ExpressionIds {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 /// Maps expression nodes in one immutable `Program` to their semantic IDs.
 ///
 /// This index is valid while the program used to construct it remains alive
@@ -77,6 +77,44 @@ impl ExpressionIdentityMap {
     pub fn extend(&mut self, other: Self) {
         self.ids.extend(other.ids);
         self.by_node.extend(other.by_node);
+    }
+
+    /// Rebinds IDs from a cloned function body to the corresponding source
+    /// expressions. Function values own cloned AST bodies, while semantic IDs
+    /// remain attached to the immutable source AST that was analyzed.
+    pub fn for_cloned_block(
+        &self,
+        original: &crate::ast::Block,
+        cloned: &crate::ast::Block,
+    ) -> Self {
+        let mut original_ids = Vec::new();
+        visit_statements(
+            &original.statements,
+            &mut Vec::new(),
+            None,
+            &mut |expression, _, _| original_ids.push(self.id(expression)),
+        );
+        let mut remapped = Self {
+            ids: self.ids.clone(),
+            by_node: HashMap::new(),
+        };
+        let mut next = original_ids.into_iter();
+        visit_statements(
+            &cloned.statements,
+            &mut Vec::new(),
+            None,
+            &mut |expression, _, _| {
+                let id = next
+                    .next()
+                    .expect("cloned function body must preserve expression structure");
+                remapped.by_node.insert(expression as *const Expr, id);
+            },
+        );
+        assert!(
+            next.next().is_none(),
+            "cloned function body must preserve expression structure"
+        );
+        remapped
     }
 
     pub(crate) fn id(&self, expression: &Expr) -> ExprId {

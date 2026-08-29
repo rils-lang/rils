@@ -16,6 +16,22 @@ pub fn analyze_project_with_host_declarations(
     host_functions: &HashMap<String, FunctionSignature>,
     host_types: &HashSet<String>,
 ) -> DocumentAnalysis {
+    analyze_project_with_host_declarations_and_contract(
+        syntax,
+        modules,
+        host_functions,
+        host_types,
+        None,
+    )
+}
+
+pub(crate) fn analyze_project_with_host_declarations_and_contract(
+    syntax: &ProjectSyntax,
+    modules: &ModuleGraph,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+    host_contract: Option<&rils_host::HostContract>,
+) -> DocumentAnalysis {
     let root = syntax.root_program();
     let mut units =
         Vec::with_capacity(syntax.modules().len() + usize::from(!root.statements.is_empty()));
@@ -46,6 +62,7 @@ pub fn analyze_project_with_host_declarations(
                 host_types,
                 &exports,
                 path,
+                host_contract,
             )
         })
         .collect::<Vec<_>>();
@@ -64,6 +81,7 @@ pub fn analyze_project_with_host_declarations(
                 host_types,
                 &exports,
                 path,
+                host_contract,
             ),
         );
     }
@@ -77,6 +95,7 @@ pub fn analyze_project_with_host_declarations(
         &definitions,
         host_functions,
         &mut result.typeck_results,
+        &result.host_type_resolutions,
     );
     result.diagnostics.sort_by_key(|diagnostic| {
         (
@@ -89,6 +108,25 @@ pub fn analyze_project_with_host_declarations(
         .diagnostics
         .dedup_by(|left, right| left.span == right.span && left.message == right.message);
     result
+}
+
+pub fn analyze_project_with_host(
+    syntax: &ProjectSyntax,
+    modules: &ModuleGraph,
+    host: &rils_host::HostContract,
+) -> DocumentAnalysis {
+    let host_functions = host.signatures();
+    let host_types = host
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
+    analyze_project_with_host_declarations_and_contract(
+        syntax,
+        modules,
+        &host_functions,
+        &host_types,
+        Some(host),
+    )
 }
 
 fn collect_exports(

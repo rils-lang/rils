@@ -57,13 +57,6 @@ impl ProjectCompilation {
         self.by_path.get(&source_path_key(path)).copied()
     }
 
-    pub(crate) fn module_path(&self, source: SourceId) -> Option<&str> {
-        self.session
-            .project(self.project?)?
-            .module(source)
-            .map(|module| module.path.as_str())
-    }
-
     pub(crate) fn session(&self) -> &CompilationSession {
         &self.session
     }
@@ -103,16 +96,60 @@ impl ProjectCompilation {
             .insert_module(module, program);
     }
 
-    pub(crate) fn interpreter_program(&self) -> ast::Program {
+    pub(crate) fn analyze_project(&mut self, host: &crate::HostContract) {
+        let project = self.project_id();
+        let analysis = {
+            let semantics = self
+                .session
+                .project(project)
+                .expect("registered project has semantic state");
+            let syntax = self
+                .session
+                .project_syntax(project)
+                .expect("registered project has syntax state");
+            rils_frontend::analyze_project_with_host(syntax, semantics.module_graph(), host)
+        };
+        self.session.set_project_analysis(project, host, analysis);
+    }
+
+    pub(crate) fn execute_project(
+        &mut self,
+        interpreter: &mut crate::interpreter::Interpreter,
+        host: &crate::HostContract,
+    ) -> Result<crate::Value, crate::interpreter::RuntimeError> {
+        self.analyze_project(host);
         let project = self.project_id();
         let semantics = self
             .session
             .project(project)
             .expect("registered project has semantic state");
-        self.session
+        let syntax = self
+            .session
             .project_syntax(project)
-            .expect("registered project has syntax state")
-            .inline_module_compatibility_program(semantics.module_graph())
+            .expect("registered project has syntax state");
+        let analysis = self
+            .session
+            .project_analysis(project, host)
+            .expect("project analysis was stored");
+        let source = semantics
+            .entry_source()
+            .expect("executable project has an entry source");
+        let module = semantics
+            .module(source)
+            .expect("entry source has a module identity");
+        let entry = analysis
+            .def_map
+            .definitions()
+            .find(|definition| {
+                definition.name == "main"
+                    && definition.span.source == source
+                    && definition.kind == rils_frontend::semantic::SymbolKind::Function
+                    && definition.container
+                        == Some(rils_frontend::SymbolContainer::Module(module.path.clone()))
+            })
+            .map(|definition| definition.id)
+            .expect("validated executable project preserves main definition");
+        interpreter.execute_project_with_analysis(syntax, semantics.module_graph(), analysis, entry)
     }
 
     pub(crate) fn parse(

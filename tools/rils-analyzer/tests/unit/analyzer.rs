@@ -571,16 +571,8 @@ fn host_function_hover_groups_overloads_by_qualified_path() {
 
 #[test]
 fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = fs::read_to_string(
-        root.join("integrations/RilsForUnity/Assets/RilsTests/Lifecycle/Lifecycle.rils"),
-    )
-    .unwrap();
-    let bytes = fs::read(
-        root.join("integrations/RilsForUnity/.rils/manifest/unity/UnityEngine_CoreModule.rilhm"),
-    )
-    .unwrap();
-    let contract = HostContract::from_manifest_bytes(&bytes).unwrap();
+    let source = host_binding_fixture("Lifecycle.rils");
+    let contract = generated_host_fixture_contract();
     let host_functions = contract.signatures();
     let host_types = contract
         .types()
@@ -627,19 +619,10 @@ fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
 
 #[test]
 fn host_binding_fixtures_analyze_against_generated_unity_manifest() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let bytes = fs::read(
-        root.join("integrations/RilsForUnity/.rils/manifest/unity/UnityEngine_CoreModule.rilhm"),
-    )
-    .unwrap();
-    let contract = HostContract::from_manifest_bytes(&bytes).unwrap();
+    let contract = generated_host_fixture_contract();
 
     for fixture in ["UnityStrings.rils", "UnityEnums.rils", "UnityFlags.rils"] {
-        let source = fs::read_to_string(
-            root.join("integrations/RilsForUnity/Assets/RilsTests/HostBindings")
-                .join(fixture),
-        )
-        .unwrap();
+        let source = host_binding_fixture(fixture);
         let analysis = rils_frontend::analyze_with_host_and_source_id_and_external_exports(
             &source,
             SourceId::UNKNOWN,
@@ -686,6 +669,134 @@ fn host_binding_fixtures_analyze_against_generated_unity_manifest() {
             );
         }
     }
+}
+
+fn host_binding_fixture(name: &str) -> String {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/host_bindings")
+            .join(name),
+    )
+    .unwrap_or_else(|error| panic!("failed to read host binding fixture `{name}`: {error}"))
+}
+
+fn generated_host_fixture_contract() -> HostContract {
+    use rils_frontend::{FloatType, IntegerType};
+    use rils_host::HostValueLayout;
+
+    let mut contract = HostContract::new();
+    for name in ["unity_engine::GameObject", "unity_engine::Transform"] {
+        contract
+            .register_type(name, None::<&str>, HostTypeTransport::HostHandle)
+            .unwrap();
+    }
+    contract
+        .register_value_type("unity_engine::Vector2", HostValueLayout::F32x2)
+        .unwrap();
+    contract
+        .register_value_type("unity_engine::Vector3", HostValueLayout::F32x3)
+        .unwrap();
+    contract
+        .register_enum_type(
+            "unity_engine::CameraType",
+            IntegerType::I32,
+            false,
+            [("Game".to_owned(), 1), ("SceneView".to_owned(), 2)],
+        )
+        .unwrap();
+    contract
+        .register_enum_type(
+            "unity_engine::HideFlags",
+            IntegerType::I32,
+            true,
+            [("None".to_owned(), 0), ("HideInHierarchy".to_owned(), 1)],
+        )
+        .unwrap();
+
+    let f32_type = Type::Float(FloatType::F32);
+    for (id, name, receiver, receiver_kind, return_type) in [
+        (
+            1,
+            "unity_engine::GameObject::transform",
+            "unity_engine::GameObject",
+            HostReceiver::Ref,
+            Type::named("unity_engine::Transform"),
+        ),
+        (
+            2,
+            "unity_engine::Transform::local_position",
+            "unity_engine::Transform",
+            HostReceiver::Ref,
+            Type::named("unity_engine::Vector3"),
+        ),
+        (
+            3,
+            "unity_engine::Vector2::magnitude",
+            "unity_engine::Vector2",
+            HostReceiver::Ref,
+            f32_type.clone(),
+        ),
+        (
+            4,
+            "unity_engine::Vector3::x",
+            "unity_engine::Vector3",
+            HostReceiver::Ref,
+            f32_type.clone(),
+        ),
+    ] {
+        contract
+            .register_function_with_options_and_receiver(
+                id,
+                name,
+                FunctionSignature::fixed(vec![Type::named(receiver)], return_type),
+                "unity.fixture",
+                HostCallKind::Direct,
+                HostThreadAffinity::MainThread,
+                Some(receiver_kind),
+            )
+            .unwrap();
+    }
+    contract
+        .register_function_with_options_and_receiver(
+            5,
+            "unity_engine::Transform::set_local_position",
+            FunctionSignature::fixed(
+                vec![
+                    Type::named("unity_engine::Transform"),
+                    Type::named("unity_engine::Vector3"),
+                ],
+                Type::Unit,
+            ),
+            "unity.fixture",
+            HostCallKind::Direct,
+            HostThreadAffinity::MainThread,
+            Some(HostReceiver::RefMut),
+        )
+        .unwrap();
+    for (id, name, width, result) in [
+        (6, "unity_engine::Vector2::new", 2, "unity_engine::Vector2"),
+        (7, "unity_engine::Vector3::new", 3, "unity_engine::Vector3"),
+    ] {
+        contract
+            .register_function(
+                id,
+                name,
+                FunctionSignature::fixed(vec![f32_type.clone(); width], Type::named(result)),
+                "unity.fixture",
+            )
+            .unwrap();
+    }
+    contract
+        .register_function(
+            8,
+            "unity_engine::strings::echo",
+            FunctionSignature::fixed(vec![Type::String], Type::String),
+            "unity.fixture",
+        )
+        .unwrap();
+
+    let bytes = contract.to_manifest_bytes().unwrap();
+    HostContract::from_manifest_bytes(&bytes).unwrap()
 }
 
 #[test]

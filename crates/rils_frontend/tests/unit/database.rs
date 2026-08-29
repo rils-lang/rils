@@ -183,20 +183,46 @@ fn compilation_session_keeps_module_programs_structured() {
     assert!(syntax.module(main_module).is_some());
     assert!(syntax.module(util_module).is_some());
 
-    let flattened = syntax
-        .inline_module_compatibility_program(session.project(project).unwrap().module_graph());
-    assert!(flattened.statements.iter().any(|statement| {
-        matches!(
-            statement,
-            crate::ast::Stmt::Public { statement, .. }
-                if matches!(statement.as_ref(), crate::ast::Stmt::Module { name, .. } if name == "main")
+    assert_eq!(
+        session
+            .project(project)
+            .unwrap()
+            .module(main_source)
+            .unwrap()
+            .path,
+        "main"
+    );
+    assert_eq!(
+        session
+            .project(project)
+            .unwrap()
+            .module(util_source)
+            .unwrap()
+            .path,
+        "support::util"
+    );
+}
+
+#[test]
+fn compilation_session_invalidates_cached_analysis_on_input_or_host_changes() {
+    let mut session = CompilationSession::default();
+    let project = session.register_project("workspace/app");
+    let host = rils_host::HostContract::new();
+    session.set_project_analysis(project, &host, crate::analysis::DocumentAnalysis::default());
+    assert!(session.project_analysis(project, &host).is_some());
+
+    let mut changed_host = host.clone();
+    changed_host
+        .register_type(
+            "game::Object",
+            None::<&str>,
+            rils_host::HostTypeTransport::HostHandle,
         )
-    }));
-    assert!(flattened.statements.iter().any(|statement| {
-        matches!(
-            statement,
-            crate::ast::Stmt::Public { statement, .. }
-                if matches!(statement.as_ref(), crate::ast::Stmt::Module { name, .. } if name == "support")
-        )
-    }));
+        .unwrap();
+    assert!(session.project_analysis(project, &changed_host).is_none());
+
+    session
+        .sources_mut()
+        .set_source("app/main.rils", "fn main() {}");
+    assert!(session.project_analysis(project, &host).is_none());
 }
