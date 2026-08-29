@@ -1,5 +1,5 @@
-use super::runtime_builtins::call as call_runtime_builtin;
 use super::*;
+use crate::runtime_builtins::call as call_runtime_builtin;
 
 #[derive(Clone, Copy)]
 pub(super) enum CoreImport {

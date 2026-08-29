@@ -134,21 +134,21 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPush) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(rils_builtins::BuiltinId::VecPush, &values)
+                crate::runtime_builtins::call(rils_builtins::BuiltinId::VecPush, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPop) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(rils_builtins::BuiltinId::VecPop, &values)
+                crate::runtime_builtins::call(rils_builtins::BuiltinId::VecPop, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
@@ -157,7 +157,7 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
@@ -168,28 +168,25 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecExtend) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(
-                    rils_builtins::BuiltinId::VecExtend,
-                    &values,
-                )
-                .map_err(|message| RuntimeError::new(message, span))
+                crate::runtime_builtins::call(rils_builtins::BuiltinId::VecExtend, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIntoIter) => {
-                crate::bytecode::runtime_builtins::call(
+                crate::runtime_builtins::call(
                     rils_builtins::BuiltinId::SequenceIntoIter,
                     &[(*method.receiver).clone()],
                 )
                 .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorNext) => {
-                crate::bytecode::runtime_builtins::call(
+                crate::runtime_builtins::call(
                     rils_builtins::BuiltinId::IteratorNext,
                     &[(*method.receiver).clone()],
                 )
@@ -214,7 +211,7 @@ impl Interpreter {
                     let mut values = Vec::with_capacity(arguments.len() + 1);
                     values.push((*method.receiver).clone());
                     values.extend_from_slice(arguments);
-                    crate::bytecode::runtime_builtins::call(id, &values)
+                    crate::runtime_builtins::call(id, &values)
                         .map_err(|message| RuntimeError::new(message, span))
                 } else {
                     self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span)
@@ -237,7 +234,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::ResultIsErr
                 | rils_builtins::BuiltinId::OptionIsSome
                 | rils_builtins::BuiltinId::OptionIsNone),
-            ) => crate::bytecode::runtime_builtins::call(id, &[(*method.receiver).clone()])
+            ) => crate::runtime_builtins::call(id, &[(*method.receiver).clone()])
                 .map_err(|message| RuntimeError::new(message, span)),
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::ResultUnwrap
@@ -250,7 +247,7 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
@@ -262,7 +259,7 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
@@ -285,7 +282,7 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
@@ -313,7 +310,7 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::bytecode::runtime_builtins::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(id) => Err(RuntimeError::new(

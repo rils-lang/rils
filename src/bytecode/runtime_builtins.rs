@@ -1,4 +1,10 @@
-use super::*;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+
+use crate::{
+    environment::AssignError,
+    types::{IntegerType, Type},
+    value::{FieldSlot, SequenceIteratorValue, SequenceValue, Value},
+};
 
 pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
@@ -635,7 +641,7 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                     value: None,
                     element_type: element_type.clone(),
                 })
-                .map_err(|error| assign_error(error, Span::default()).message)?;
+                .map_err(assignment_error_message)?;
             Ok(Value::Option {
                 value,
                 element_type,
@@ -715,7 +721,7 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                     value: Some(Rc::new(value.clone())),
                     element_type: Some(resolved.clone()),
                 })
-                .map_err(|error| assign_error(error, Span::default()).message)?;
+                .map_err(assignment_error_message)?;
             Ok(Value::Option {
                 value: previous,
                 element_type: Some(resolved),
@@ -741,9 +747,27 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
     }
 }
 
+fn assignment_error_message(error: AssignError) -> String {
+    match error {
+        AssignError::Undefined => "assignment target is undefined".into(),
+        AssignError::Immutable => "cannot assign to immutable local".into(),
+        AssignError::TypeMismatch(expected) => {
+            format!("assignment value must have type {expected}")
+        }
+        AssignError::OptionRequiresAnnotation => {
+            "Option assignment requires a type annotation".into()
+        }
+        AssignError::ReferenceEscape => "reference cannot escape its scope".into(),
+        AssignError::BorrowedTarget => {
+            "cannot replace a value while part of it is referenced".into()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{environment::StorageSlot, value::ReferenceValue};
 
     fn mutable_receiver(value: Value) -> Value {
         let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
