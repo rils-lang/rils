@@ -45,10 +45,12 @@ pub(super) fn collect_external_exports(
                 };
                 program
             };
-            let analysis = server
-                .documents
-                .get(&uri)
-                .and_then(|document| document.analysis.as_ref().ok());
+            let analysis = server.project_analysis(project).or_else(|| {
+                server
+                    .documents
+                    .get(&uri)
+                    .and_then(|document| document.analysis.as_ref().ok())
+            });
             let module_path = server
                 .project_semantics(project)
                 .and_then(|index| index.module(source_id))

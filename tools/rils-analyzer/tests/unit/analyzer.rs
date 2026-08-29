@@ -1,6 +1,7 @@
 use super::{
     CompilationSession, Document, Project, Server, SourceId, Type, analysis, diagnostics,
-    file_uri_to_path, function_declaration, offset, path_to_file_uri, position, workspace_projects,
+    file_uri_to_path, function_declaration, offset, path_to_file_uri, position,
+    project_session_name, workspace_projects,
 };
 use lsp_server::Connection;
 use rils_frontend::FunctionSignature;
@@ -1563,6 +1564,20 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         next_source_id: 1,
     };
     server.load_workspace().unwrap();
+    let project_id = server
+        .compilation
+        .project_id(&project_session_name(&server.projects[0]))
+        .unwrap();
+    let project_analysis = server
+        .compilation
+        .project_analysis(project_id, &server.host_contract)
+        .expect("workspace reanalysis must cache the complete project analysis");
+    assert!(
+        project_analysis
+            .def_map
+            .definitions()
+            .any(|definition| definition.name == "add")
+    );
     let uri = path_to_file_uri(&entry);
     let completion = server
         .completion(&json!({

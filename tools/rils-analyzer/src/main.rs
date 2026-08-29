@@ -375,15 +375,45 @@ impl Server {
                 .compilation
                 .register_project(project_session_name(project));
             let mut index = ProjectSemanticIndex::default();
+            let mut programs = Vec::new();
             for file in project.modules() {
                 if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
-                    index.register(&file.module_path, document.source_id);
-                    if let Ok(analysis) = &document.analysis {
-                        index.index_def_map(&analysis.def_map);
+                    let module = index.register(&file.module_path, document.source_id);
+                    if let Ok(program) = self.compilation.sources().parse(document.source_id) {
+                        programs.push((module, program));
                     }
                 }
             }
             self.compilation.replace_project(project_id, index);
+            let syntax = self
+                .compilation
+                .project_syntax_mut(project_id)
+                .expect("registered project must have syntax storage");
+            for (module, program) in programs {
+                syntax.insert_module(module, program);
+            }
+
+            let analysis = {
+                let semantics = self
+                    .compilation
+                    .project(project_id)
+                    .expect("registered project must have semantic storage");
+                let syntax = self
+                    .compilation
+                    .project_syntax(project_id)
+                    .expect("registered project must have syntax storage");
+                rils_frontend::analyze_project_with_host(
+                    syntax,
+                    semantics.module_graph(),
+                    &self.host_contract,
+                )
+            };
+            self.compilation
+                .project_mut(project_id)
+                .expect("registered project must have semantic storage")
+                .index_def_map(&analysis.def_map);
+            self.compilation
+                .set_project_analysis(project_id, &self.host_contract, analysis);
         }
     }
 
@@ -391,6 +421,12 @@ impl Server {
         self.compilation
             .project_id(&project_session_name(project))
             .and_then(|id| self.compilation.project(id))
+    }
+
+    fn project_analysis(&self, project: &Project) -> Option<&DocumentAnalysis> {
+        self.compilation
+            .project_id(&project_session_name(project))
+            .and_then(|id| self.compilation.project_analysis(id, &self.host_contract))
     }
 
     fn document_uri_for_source(&self, source: SourceId) -> Option<&str> {
@@ -401,6 +437,12 @@ impl Server {
     }
 
     fn project_definition_by_id(&self, id: rils_frontend::DefId) -> Option<&DefinitionData> {
+        if let Some(definition) = self.projects.iter().find_map(|project| {
+            self.project_analysis(project)
+                .and_then(|analysis| analysis.def_map.definition(id))
+        }) {
+            return Some(definition);
+        }
         self.compilation
             .projects()
             .find_map(|index| index.definition(id))

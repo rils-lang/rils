@@ -15,9 +15,8 @@
 
 ### 运行时与编译器
 
-- 在 `CompilationSession` 已缓存项目级 `DefMap`、`TypeckResults` 的基础上，让 Analyzer 复用同一次
-  项目分析，并评估以源码 revision 缓存 entry `DefId` 与每模块 HIR；继续收缩 AST 解释器内重复的
-  静态检查和名称查找逻辑。
+- 评估以源码 revision 缓存 entry `DefId` 与每模块 HIR；继续收缩 AST 解释器内重复的静态检查和名称
+  查找逻辑。
 - 合并解释器与 VM 的 runtime builtin dispatcher；标准 bytecode core import 已在链接时解析为稳定 ID，
   后续新增内建或外部 import 也应沿用该模式。完成这些边界后再评估 `rils_bytecode`、`rils_runtime`
   crate 拆分。

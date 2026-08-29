@@ -27,7 +27,7 @@ rils
 - `rils_compiler`：HIR lowering 和 MIR lowering，并为现有调用方兼容转发 Host API。
 - 根 `rils` crate：公共 `Engine`、项目加载、AST 解释器、运行时 `Value`、字节码编码与格式、verifier、VM、宿主执行和标准库实际行为。
 
-目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 已开始共享这一会话模型；compiler 和配置项目解释器都直接消费独立模块 AST，不再拼装 synthetic project AST。AST 保持解析后的原貌，数值具体化与 Host 名称解析通过语义 side table 完成。当前剩余重复主要位于解释器静态检查、runtime builtin、Analyzer 查询适配和 bytecode import 链接。
+目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 都共享这一会话模型及其项目分析缓存；compiler 和配置项目解释器都直接消费独立模块 AST，不再拼装 synthetic project AST。AST 保持解析后的原貌，数值具体化与 Host 名称解析通过语义 side table 完成。当前剩余重复主要位于解释器静态检查、runtime builtin、Analyzer 查询适配和 bytecode import 链接。
 
 ## 与 Rust 编译器的对照
 
@@ -136,7 +136,7 @@ CompilationSession
 └── ProjectAnalysis（Host hash + DefMap + TypeckResults + 诊断等）
 ```
 
-compiler 和根项目解释器已消费 session 中的同一次项目分析。Analyzer 仍需把项目级复析结果写回并复用该缓存；entry `DefId` 和每模块 HIR 也尚未成为显式缓存项。当前失效策略是保守的整项目失效，后续可引入源码 revision 做细粒度查询。
+compiler、根项目解释器和 Analyzer 都消费 session 中缓存的项目分析。Analyzer 在工作区重分析时按 `ProjectSyntax` 与 `ModuleGraph` 生成完整项目结果，写回 `CompilationSession`，并以该缓存建立跨文件定义索引和导出信息；单文档分析仍只用于该文档的 LSP 诊断与容错展示。entry `DefId` 和每模块 HIR 尚未成为显式缓存项。当前失效策略是保守的整项目失效，后续可引入源码 revision 做细粒度查询。
 
 compiler 的项目入口通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。frontend 的项目分析按模块路径对独立 `Program` 做导出收集、跨文件复析，并合并项目级 `DefMap` 和 `TypeckResults`；HIR 的声明收集和 lowering 也直接遍历 `ModuleGraph` 与独立 `Program`。配置项目的 AST 解释器同样按 `ModuleGraph` 建立运行时模块环境，以入口 `DefId` 调用 `main`，并在执行前拒绝 frontend 的首个 error diagnostic；原 inline-module compatibility program 已删除。无 manifest 的 legacy entry loader 作为明确兼容入口保留。
 
