@@ -184,7 +184,7 @@ DefMap + TypeckResults
 当前主要分发表位于：
 
 - `src/interpreter/builtin_methods.rs`
-- `src/bytecode/runtime_builtins.rs`
+- `src/runtime_builtins.rs`
 
 Vec、Option、Result 和 Iterator 的大量行为、类型约束及错误信息仍分别实现。数值 intrinsic 已经复用 `numeric.rs`，HashMap/HashSet 已经复用 `hash_collections.rs`，String runtime member 也已统一调用 bytecode runtime dispatcher。下一步应把该 dispatcher 移到后端中立模块，并继续收敛其余纯运行时操作。
 

@@ -10,7 +10,6 @@ mod native_type;
 mod numeric;
 mod output;
 mod project_compilation;
-#[path = "bytecode/runtime_builtins.rs"]
 mod runtime_builtins;
 mod runtime_type;
 mod standard_library;
