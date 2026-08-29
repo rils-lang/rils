@@ -740,3 +740,57 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
         value => Ok(value.clone()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn option_and_result_state_members_use_their_stable_ids() {
+        use rils_builtins::BuiltinId;
+
+        let option = Value::Option {
+            value: Some(Rc::new(Value::I32(7))),
+            element_type: Some(Type::I32),
+        };
+        let result = Value::Result {
+            value: Err(Rc::new(Value::String(Rc::from("failed")))),
+            ok_type: Some(Type::I32),
+            error_type: Some(Type::String),
+        };
+        let cases = [
+            (BuiltinId::OptionIsSome, option.clone(), Value::Bool(true)),
+            (BuiltinId::OptionIsNone, option, Value::Bool(false)),
+            (BuiltinId::ResultIsOk, result.clone(), Value::Bool(false)),
+            (BuiltinId::ResultIsErr, result, Value::Bool(true)),
+        ];
+
+        for (id, receiver, expected) in cases {
+            assert_eq!(call(id, &[receiver]).unwrap(), expected, "{id:?}");
+        }
+    }
+
+    #[test]
+    fn unwrap_members_preserve_success_and_failure_paths() {
+        use rils_builtins::BuiltinId;
+
+        let option = Value::Option {
+            value: Some(Rc::new(Value::I32(7))),
+            element_type: Some(Type::I32),
+        };
+        assert_eq!(
+            call(BuiltinId::OptionUnwrap, &[option]).unwrap(),
+            Value::I32(7)
+        );
+
+        let missing = Value::Option {
+            value: None,
+            element_type: Some(Type::I32),
+        };
+        assert!(
+            call(BuiltinId::OptionUnwrap, &[missing])
+                .unwrap_err()
+                .contains("None")
+        );
+    }
+}
