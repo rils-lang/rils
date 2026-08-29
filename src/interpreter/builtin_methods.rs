@@ -199,7 +199,8 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::IteratorCollectVec
                 | rils_builtins::BuiltinId::IteratorTake
                 | rils_builtins::BuiltinId::IteratorSkip
-                | rils_builtins::BuiltinId::IteratorRev),
+                | rils_builtins::BuiltinId::IteratorRev
+                | rils_builtins::BuiltinId::IteratorEnumerate),
             ) => {
                 let receiver = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference
@@ -226,8 +227,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::IteratorAny
                 | rils_builtins::BuiltinId::IteratorAll
                 | rils_builtins::BuiltinId::IteratorFind
-                | rils_builtins::BuiltinId::IteratorPosition
-                | rils_builtins::BuiltinId::IteratorEnumerate),
+                | rils_builtins::BuiltinId::IteratorPosition),
             ) => self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span),
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::ResultIsOk

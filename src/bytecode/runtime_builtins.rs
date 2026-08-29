@@ -398,7 +398,8 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
         | BuiltinId::IteratorCollectVec
         | BuiltinId::IteratorTake
         | BuiltinId::IteratorSkip
-        | BuiltinId::IteratorRev => {
+        | BuiltinId::IteratorRev
+        | BuiltinId::IteratorEnumerate => {
             let Value::SequenceIterator(iterator) = import_receiver(&arguments[0])? else {
                 return Err("iterator method receiver is not a built-in iterator".into());
             };
@@ -468,6 +469,14 @@ pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 BuiltinId::IteratorRev => Ok(sequence_iterator_value(
                     items.drain(..).rev().collect(),
                     element_type,
+                )),
+                BuiltinId::IteratorEnumerate => Ok(sequence_iterator_value(
+                    items
+                        .drain(..)
+                        .enumerate()
+                        .map(|(index, value)| tuple_value(vec![Value::Usize(index), value]))
+                        .collect(),
+                    Type::Tuple(vec![Type::USIZE, element_type]),
                 )),
                 _ => unreachable!("iterator built-in was matched above"),
             }
@@ -740,6 +749,26 @@ fn sequence_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value 
     }))
 }
 
+fn tuple_value(values: Vec<Value>) -> Value {
+    let element_types = values
+        .iter()
+        .map(|value| Type::of_value(value).unwrap_or(Type::Unknown))
+        .collect();
+    Value::Tuple(Rc::new(SequenceValue {
+        elements: RefCell::new(
+            values
+                .into_iter()
+                .map(|value| FieldSlot {
+                    type_annotation: Type::of_value(&value).unwrap_or(Type::Unknown),
+                    value: Some(value),
+                    references: 0,
+                })
+                .collect(),
+        ),
+        element_type: RefCell::new(Some(Type::Tuple(element_types))),
+    }))
+}
+
 fn import_receiver(value: &Value) -> Result<Value, String> {
     match value {
         Value::Reference(reference) => reference.read(),
@@ -902,5 +931,28 @@ mod tests {
             .unwrap_err()
             .contains("mutable binding")
         );
+    }
+
+    #[test]
+    fn enumerate_uses_the_shared_builtin_iterator_path() {
+        use rils_builtins::BuiltinId;
+
+        let enumerated = call(
+            BuiltinId::IteratorEnumerate,
+            &[sequence_iterator_value(
+                VecDeque::from([Value::I32(9)]),
+                Type::I32,
+            )],
+        )
+        .unwrap();
+        let Value::SequenceIterator(iterator) = enumerated else {
+            panic!("enumerate must return a built-in iterator");
+        };
+        let Value::Tuple(tuple) = iterator.items.borrow_mut().pop_front().unwrap() else {
+            panic!("enumerate item must be a tuple");
+        };
+        let fields = tuple.elements.borrow();
+        assert_eq!(fields[0].value, Some(Value::Usize(0)));
+        assert_eq!(fields[1].value, Some(Value::I32(9)));
     }
 }
