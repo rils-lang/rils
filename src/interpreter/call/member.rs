@@ -1,4 +1,5 @@
 use super::*;
+use crate::environment::StorageSlot;
 
 pub(super) fn resolve_numeric_member(
     value: &Value,
@@ -238,4 +239,72 @@ pub(super) fn resolve_borrowed_host_or_builtin_member(
         receiver: Rc::new(receiver),
         function,
     }))))
+}
+
+pub(super) fn bind_rils_method(
+    receiver: Value,
+    methods: &std::cell::RefCell<HashMap<String, Rc<UserFunction>>>,
+    trait_methods: &std::cell::RefCell<HashMap<String, HashMap<String, Rc<UserFunction>>>>,
+    type_name: &str,
+    name: &str,
+    span: Span,
+) -> Result<Value, RuntimeError> {
+    let function = select_method(methods, trait_methods, name).map_err(|traits| {
+        RuntimeError::new(
+            format!(
+                "method `{name}` is ambiguous for `{type_name}`; candidates come from traits {}",
+                traits.join(", ")
+            ),
+            span,
+        )
+    })?;
+    let Some(function) = function else {
+        if trait_methods.borrow().contains_key("Iterator")
+            && rils_builtins::is_iterator_default_method(name)
+            && let Some(member) = rils_builtins::builtin_member("Iterator", name)
+            && let (Some(method), Some(_)) = (member.builtin_id, member.receiver)
+        {
+            return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                receiver: Rc::new(receiver),
+                method: BuiltinMethod::Runtime(method),
+            })));
+        }
+        if name == "clone" {
+            return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                receiver: Rc::new(receiver),
+                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
+            })));
+        }
+        return Err(RuntimeError::new(
+            format!("type `{type_name}` has no member `{name}`"),
+            span,
+        ));
+    };
+    if function
+        .parameters
+        .first()
+        .map(|parameter| parameter.name.as_str())
+        != Some("self")
+    {
+        return Err(RuntimeError::new(
+            format!("`{type_name}::{name}` is an associated function, not a method"),
+            span,
+        ));
+    }
+    let receiver = match function
+        .parameters
+        .first()
+        .and_then(|parameter| parameter.type_annotation.as_ref())
+    {
+        Some(Type::Reference { mutable, .. }) if !matches!(receiver, Value::Reference(_)) => {
+            let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(*mutable)));
+            storage.borrow_mut().initialize(receiver);
+            Value::Reference(Rc::new(ReferenceValue::new_storage(storage, *mutable)))
+        }
+        _ => receiver,
+    };
+    Ok(Value::BoundMethod(Rc::new(BoundMethod {
+        receiver: Rc::new(receiver),
+        function,
+    })))
 }
