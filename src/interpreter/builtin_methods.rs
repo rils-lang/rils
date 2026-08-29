@@ -183,82 +183,18 @@ impl Interpreter {
                 Ok(Value::Bool(contains))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPush) => {
-                let Value::Reference(reference) = method.receiver.as_ref() else {
-                    return Err(RuntimeError::new(
-                        "Vec::push requires a mutable binding",
-                        span,
-                    ));
-                };
-                if !reference.mutable {
-                    return Err(RuntimeError::new("Vec::push requires `&mut self`", span));
-                }
-                let Value::Vec(sequence) = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                else {
-                    return Err(RuntimeError::new("push receiver is not Vec", span));
-                };
-                let value = &arguments[0];
-                if value.contains_reference() {
-                    return Err(RuntimeError::new("Vec cannot own local references", span));
-                }
-                let current = sequence
-                    .elements
-                    .borrow()
-                    .first()
-                    .map(|slot| slot.type_annotation.clone())
-                    .or_else(|| sequence.element_type.borrow().clone())
-                    .unwrap_or(Type::Unknown);
-                let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-                let element_type = merge_types(&current, &actual).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!("Vec element type is `{current}`, found `{actual}`"),
-                        span,
-                    )
-                })?;
-                *sequence.element_type.borrow_mut() = Some(element_type.clone());
-                sequence.elements.borrow_mut().push(FieldSlot {
-                    value: Some(value.clone()),
-                    type_annotation: element_type,
-                    references: 0,
-                });
-                Ok(Value::Unit)
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(rils_builtins::BuiltinId::VecPush, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPop) => {
-                let Value::Reference(reference) = method.receiver.as_ref() else {
-                    return Err(RuntimeError::new(
-                        "Vec::pop requires a mutable binding",
-                        span,
-                    ));
-                };
-                if !reference.mutable {
-                    return Err(RuntimeError::new("Vec::pop requires `&mut self`", span));
-                }
-                let Value::Vec(sequence) = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                else {
-                    return Err(RuntimeError::new("pop receiver is not Vec", span));
-                };
-                let element_type = sequence
-                    .element_type
-                    .borrow()
-                    .clone()
-                    .unwrap_or(Type::Unknown);
-                let value = {
-                    let mut elements = sequence.elements.borrow_mut();
-                    if elements.last().is_some_and(|slot| slot.references > 0) {
-                        return Err(RuntimeError::new(
-                            "cannot pop a referenced Vec element",
-                            span,
-                        ));
-                    }
-                    elements.pop().and_then(|slot| slot.value).map(Rc::new)
-                };
-                Ok(Value::Option {
-                    value,
-                    element_type: Some(element_type),
-                })
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(rils_builtins::BuiltinId::VecPop, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::VecClear | rils_builtins::BuiltinId::VecTruncate),
@@ -382,59 +318,14 @@ impl Interpreter {
                 })
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecExtend) => {
-                let Value::Reference(reference) = method.receiver.as_ref() else {
-                    return Err(RuntimeError::new(
-                        "Vec::extend requires a mutable binding",
-                        span,
-                    ));
-                };
-                if !reference.mutable {
-                    return Err(RuntimeError::new("Vec::extend requires `&mut self`", span));
-                }
-                let Value::Vec(destination) = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                else {
-                    return Err(RuntimeError::new("extend receiver is not Vec", span));
-                };
-                let Value::Vec(source) = &arguments[0] else {
-                    return Err(RuntimeError::new("Vec::extend source must be Vec", span));
-                };
-                if Rc::ptr_eq(&destination, source) {
-                    return Err(RuntimeError::new("Vec cannot extend itself", span));
-                }
-                let mut source_elements = source.elements.borrow_mut();
-                if source_elements.iter().any(|slot| slot.references > 0) {
-                    return Err(RuntimeError::new(
-                        "cannot move from a Vec while an element is referenced",
-                        span,
-                    ));
-                }
-                let destination_type = destination
-                    .element_type
-                    .borrow()
-                    .clone()
-                    .unwrap_or(Type::Unknown);
-                let source_type = source
-                    .element_type
-                    .borrow()
-                    .clone()
-                    .unwrap_or(Type::Unknown);
-                let element_type =
-                    merge_types(&destination_type, &source_type).ok_or_else(|| {
-                        RuntimeError::new(
-                            format!(
-                                "Vec element type is `{destination_type}`, found `{source_type}`"
-                            ),
-                            span,
-                        )
-                    })?;
-                *destination.element_type.borrow_mut() = Some(element_type);
-                destination
-                    .elements
-                    .borrow_mut()
-                    .extend(source_elements.drain(..));
-                Ok(Value::Unit)
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(
+                    rils_builtins::BuiltinId::VecExtend,
+                    &values,
+                )
+                .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIntoIter) => {
                 let sequence = match method.receiver.as_ref() {
