@@ -307,7 +307,7 @@ rils
 3. 已完成：`DefId`、`BodyId`、`ImplId` 和 `ExprId` 均在 AST/definition 访问时直接分配；类型推断、调用解析、静态检查器、Analyzer 与 HIR lowering 均按 `ExprId` 查询，表达式 Span 兼容主表已移除。
 4. 已完成：compiler 与 AST 解释器直接按 semantic type 具体化 numeric literal；Host type side table 已由 compiler、Analyzer、静态检查和 HIR 消费；numeric、Host type rewrite 和 Host enum synthetic injection 均已删除。
 5. 进行中：AST 解释器已消费共享 `TypeckResults`，配置项目入口使用项目 `DefMap` 并以 frontend error diagnostic 作为执行前 gate；已跳过项目执行中重复的 trait supertrait 验证。继续收缩其旧静态检查和名称查找逻辑，同时保留动态宿主嵌入所需的运行时防御。
-6. 进行中：数值、Range、HashMap/HashSet、String、Vec、Option/Result，以及内建 `SequenceIterator` 的无 callback 操作（含 `enumerate`）已共享根 runtime dispatcher；解释器、bytecode core import 和 VM 均直接调用该后端中立层。仅保留需要调用 Rils 函数值的 Option/Result 和自定义 Iterator callback adapter，继续评估自定义 iterator 的默认方法边界。
+6. 已完成：数值、Range、HashMap/HashSet、String、Vec、Option/Result，以及内建 `SequenceIterator` 的无 callback 操作（含 `enumerate`）已共享根 runtime dispatcher；解释器、bytecode core import 和 VM 均直接调用该后端中立层。需要调用 Rils 函数值的 Option/Result 和自定义 Iterator callback adapter 刻意保留在解释器中，属于执行用户回调而非纯 runtime builtin 分发。
 7. 已完成：标准 bytecode core import 在 host 初始化时解析为稳定 ID 或专用操作，执行热路径不再按字符串分发。
 8. 按职责拆分大文件和根 facade。
 9. 再评估 `rils_bytecode`、`rils_runtime` 的 crate 拆分。
