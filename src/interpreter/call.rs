@@ -490,123 +490,14 @@ impl Interpreter {
                 span,
             ));
         }
-        let member = &segments[index];
-        match base {
-            Value::BuiltinType(BuiltinType::Vec) => match member.as_str() {
-                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::VecNew)),
-                "from" => Ok(Value::BuiltinFunction(BuiltinFunction::VecFrom)),
-                _ => Err(RuntimeError::new(
-                    format!("Vec has no associated function `{member}`"),
-                    span,
-                )),
-            },
-            Value::BuiltinType(BuiltinType::HashMap) => match member.as_str() {
-                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashMapNew)),
-                _ => Err(RuntimeError::new(
-                    format!("HashMap has no associated function `{member}`"),
-                    span,
-                )),
-            },
-            Value::BuiltinType(BuiltinType::HashSet) => match member.as_str() {
-                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashSetNew)),
-                _ => Err(RuntimeError::new(
-                    format!("HashSet has no associated function `{member}`"),
-                    span,
-                )),
-            },
-            Value::BuiltinType(BuiltinType::Integer(target)) => {
-                if let Some(constant) = rils_builtins::integer_constant(member) {
-                    return Ok(crate::numeric::integer_constant(target, constant.id));
-                }
-                let intrinsic =
-                    rils_builtins::integer_associated_function(member).ok_or_else(|| {
-                        RuntimeError::new(
-                            format!("{target} has no associated function `{member}`"),
-                            span,
-                        )
-                    })?;
-                Ok(Value::BuiltinFunction(BuiltinFunction::IntegerIntrinsic {
-                    id: intrinsic.id,
-                    target,
-                }))
-            }
-            Value::BuiltinType(BuiltinType::Float(target)) => {
-                let constant = rils_builtins::float_constant(member).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!("{target} has no associated constant `{member}`"),
-                        span,
-                    )
-                })?;
-                Ok(crate::numeric::float_constant(target, constant.id))
-            }
-            Value::StructType(definition) => definition
-                .methods
-                .borrow()
-                .get(member)
-                .cloned()
-                .map(Value::Function)
-                .ok_or_else(|| {
-                    RuntimeError::new(
-                        format!(
-                            "struct `{}` has no associated function `{member}`",
-                            segments[0]
-                        ),
-                        span,
-                    )
-                }),
-            Value::EnumType(definition) => {
-                if let Some(method) = definition.methods.borrow().get(member).cloned() {
-                    return Ok(Value::Function(method));
-                }
-                let variant = definition
-                    .variants
-                    .iter()
-                    .find(|variant| enum_variant_name(variant) == member)
-                    .ok_or_else(|| {
-                        RuntimeError::new(
-                            format!("enum `{}` has no variant `{member}`", segments[0]),
-                            span,
-                        )
-                    })?;
-                match variant {
-                    EnumVariant::Unit { .. } => Ok(Value::Enum(Rc::new(EnumInstance {
-                        type_arguments: vec![Type::Unknown; definition.generic_parameters.len()],
-                        type_definition: definition,
-                        variant: member.clone(),
-                        payload: EnumPayload::Unit,
-                    }))),
-                    EnumVariant::Tuple { .. } | EnumVariant::Record { .. } => {
-                        Ok(Value::VariantConstructor(Rc::new(VariantConstructor {
-                            type_definition: definition,
-                            variant: member.clone(),
-                            environment: owner_environment,
-                        })))
-                    }
-                }
-            }
-            Value::TraitType(definition) => {
-                if !definition
-                    .methods
-                    .iter()
-                    .any(|method| method.name == *member)
-                {
-                    return Err(RuntimeError::new(
-                        format!("trait `{}` has no method `{member}`", definition.name),
-                        span,
-                    ));
-                }
-                Ok(Value::TraitMethodSelector(Rc::new(TraitMethodSelector {
-                    target: None,
-                    trait_name: definition.name.clone(),
-                    method_name: member.clone(),
-                    environment: environment.clone(),
-                })))
-            }
-            _ => Err(RuntimeError::new(
-                format!("`{}` is not a struct or enum type", segments[0]),
-                span,
-            )),
-        }
+        path::resolve_associated_path(
+            base,
+            &segments[0],
+            &segments[index],
+            environment,
+            owner_environment,
+            span,
+        )
     }
 
     pub(super) fn resolve_qualified_path(
