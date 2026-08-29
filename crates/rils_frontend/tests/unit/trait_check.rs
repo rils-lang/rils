@@ -20,3 +20,41 @@ fn requires_supertraits_for_trait_implementations() {
     .unwrap();
     assert!(analyze_program(&valid).diagnostics.is_empty());
 }
+
+#[test]
+fn validates_trait_method_members_and_signatures() {
+    let program = parse(
+        lex(
+            "trait Convert { fn convert(self, value: i32) -> i32; } struct State; impl Convert for State { fn convert(self, value: string) -> string { value } fn extra(self) {} }",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let diagnostics = analyze_program(&program).diagnostics;
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("method `convert` does not match its trait signature")
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("method `extra` is not a member of trait `Convert`")
+    }));
+
+    let missing = parse(
+        lex("trait Convert { fn convert(self, value: i32) -> i32; } struct State; impl Convert for State {}")
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        analyze_program(&missing)
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic
+                    .message
+                    .contains("impl of trait `Convert` is missing method `convert`")
+            })
+    );
+}

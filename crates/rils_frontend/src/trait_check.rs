@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     analysis::AnalysisDiagnostic,
-    ast::{Program, Stmt},
+    ast::{ImplMethod, Program, Stmt, TraitMethod},
     types::Type,
 };
 
@@ -10,6 +10,7 @@ use crate::{
 struct TraitRequirement {
     name: String,
     bounds: Vec<String>,
+    methods: Vec<TraitMethod>,
 }
 
 pub(crate) fn analyze(program: &Program) -> Vec<AnalysisDiagnostic> {
@@ -50,10 +51,16 @@ fn collect(
                 collect(module_statements, path, traits, implementations);
                 path.pop();
             }
-            Stmt::Trait { name, bounds, .. } => {
+            Stmt::Trait {
+                name,
+                bounds,
+                methods,
+                ..
+            } => {
                 let requirement = TraitRequirement {
                     name: name.clone(),
                     bounds: bounds.clone(),
+                    methods: methods.clone(),
                 };
                 traits.insert(name.clone(), requirement.clone());
                 traits.insert(qualified(path, name), requirement);
@@ -89,6 +96,7 @@ fn check_impls(
             Stmt::Impl {
                 trait_name: Some(trait_name),
                 target: Type::Named { name, .. },
+                methods,
                 span,
                 ..
             } => {
@@ -109,10 +117,76 @@ fn check_impls(
                         ));
                     }
                 }
+                check_methods(requirement, methods, diagnostics);
             }
             _ => {}
         }
     }
+}
+
+fn check_methods(
+    requirement: &TraitRequirement,
+    methods: &[ImplMethod],
+    diagnostics: &mut Vec<AnalysisDiagnostic>,
+) {
+    for required in &requirement.methods {
+        let Some(implementation) = methods.iter().find(|method| method.name == required.name)
+        else {
+            diagnostics.push(AnalysisDiagnostic::error(
+                format!(
+                    "impl of trait `{}` is missing method `{}`",
+                    requirement.name, required.name
+                ),
+                required.span,
+            ));
+            continue;
+        };
+        if !method_signature_matches(required, implementation) {
+            diagnostics.push(AnalysisDiagnostic::error(
+                format!(
+                    "method `{}` does not match its trait signature",
+                    required.name
+                ),
+                implementation.span,
+            ));
+        }
+    }
+    if let Some(extra) = methods.iter().find(|method| {
+        !requirement
+            .methods
+            .iter()
+            .any(|required| required.name == method.name)
+    }) {
+        diagnostics.push(AnalysisDiagnostic::error(
+            format!(
+                "method `{}` is not a member of trait `{}`",
+                extra.name, requirement.name
+            ),
+            extra.span,
+        ));
+    }
+}
+
+fn method_signature_matches(required: &TraitMethod, implementation: &ImplMethod) -> bool {
+    required.generic_parameters.len() == implementation.generic_parameters.len()
+        && required.parameters.len() == implementation.parameters.len()
+        && required
+            .generic_parameters
+            .iter()
+            .zip(&implementation.generic_parameters)
+            .all(|(required, actual)| {
+                required.name == actual.name && required.bounds == actual.bounds
+            })
+        && required
+            .parameters
+            .iter()
+            .zip(&implementation.parameters)
+            .all(|(required, actual)| {
+                required.name == actual.name
+                    && required.type_annotation == actual.type_annotation
+                    && required.mutable == actual.mutable
+            })
+        && required.return_type == implementation.return_type
 }
 
 fn qualified(path: &[String], name: &str) -> String {
