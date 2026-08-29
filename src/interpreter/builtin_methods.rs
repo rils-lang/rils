@@ -290,15 +290,21 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::ResultOrElse),
             )
             | BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::OptionMap
+                | rils_builtins::BuiltinId::OptionAndThen
+                | rils_builtins::BuiltinId::OptionOrElse),
+            ) => self.call_option_result_method(id, method.receiver.as_ref(), arguments, span),
+            BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::OptionTake
                 | rils_builtins::BuiltinId::OptionOr
                 | rils_builtins::BuiltinId::OptionXor
-                | rils_builtins::BuiltinId::OptionMap
-                | rils_builtins::BuiltinId::OptionAndThen
-                | rils_builtins::BuiltinId::OptionOrElse),
-            )
-            | BuiltinMethod::Runtime(id @ rils_builtins::BuiltinId::OptionReplace) => {
-                self.call_option_result_method(id, method.receiver.as_ref(), arguments, span)
+                | rils_builtins::BuiltinId::OptionReplace),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::bytecode::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::StringLen
