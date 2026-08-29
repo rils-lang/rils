@@ -83,6 +83,7 @@ pub struct Interpreter {
     semantic_expression_ids: Option<rils_frontend::semantic::ExpressionIdentityMap>,
     typeck_results: Option<rils_frontend::TypeckResults>,
     frontend_semantics_verified: bool,
+    frontend_verified_trait_impls: Vec<Span>,
 }
 
 impl Default for Interpreter {
@@ -107,6 +108,7 @@ impl Interpreter {
             semantic_expression_ids: None,
             typeck_results: None,
             frontend_semantics_verified: false,
+            frontend_verified_trait_impls: Vec::new(),
         }
     }
 
@@ -322,6 +324,10 @@ impl Interpreter {
         self.typeck_results = Some(analysis.typeck_results.clone());
         let previous_semantics_verified =
             std::mem::replace(&mut self.frontend_semantics_verified, true);
+        let previous_verified_trait_impls = std::mem::replace(
+            &mut self.frontend_verified_trait_impls,
+            analysis.verified_trait_impls.clone(),
+        );
 
         let result = (|| {
             self.steps = 0;
@@ -411,6 +417,7 @@ impl Interpreter {
         self.semantic_expression_ids = None;
         self.typeck_results = None;
         self.frontend_semantics_verified = previous_semantics_verified;
+        self.frontend_verified_trait_impls = previous_verified_trait_impls;
         result
     }
 

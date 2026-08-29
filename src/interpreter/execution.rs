@@ -582,13 +582,15 @@ impl Interpreter {
                             }
                         }
                     }
-                    validate_trait_implementation(
-                        definition,
-                        &associated_type_values,
-                        methods,
-                        target,
-                        *span,
-                    )?;
+                    if !self.frontend_verified_trait_impls.contains(span) {
+                        validate_trait_implementation(
+                            definition,
+                            &associated_type_values,
+                            methods,
+                            target,
+                            *span,
+                        )?;
+                    }
                     if definition.name == "Copy"
                         && !type_implements_trait(target, "Copy", &environment)
                     {

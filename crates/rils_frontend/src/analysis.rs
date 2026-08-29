@@ -91,6 +91,7 @@ pub struct DocumentAnalysis {
     pub def_map: crate::semantic::DefMap,
     pub typeck_results: crate::semantic::TypeckResults,
     pub host_type_resolutions: crate::HostTypeResolutionResults,
+    pub verified_trait_impls: Vec<Span>,
 }
 
 impl DocumentAnalysis {
@@ -109,6 +110,7 @@ impl DocumentAnalysis {
         self.typeck_results.extend(other.typeck_results);
         self.host_type_resolutions
             .extend(other.host_type_resolutions);
+        self.verified_trait_impls.extend(other.verified_trait_impls);
     }
 }
 
@@ -686,9 +688,11 @@ impl Analyzer {
                 self.source_id,
                 host_type_resolutions,
             ));
+        let trait_check = crate::trait_check::analyze(program);
+        self.result.diagnostics.extend(trait_check.diagnostics);
         self.result
-            .diagnostics
-            .extend(crate::trait_check::analyze(program));
+            .verified_trait_impls
+            .extend(trait_check.verified_impls);
         self.result.diagnostics.extend(crate::format_check::analyze(
             program,
             expression_types,

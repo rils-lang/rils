@@ -13,7 +13,12 @@ struct TraitRequirement {
     methods: Vec<TraitMethod>,
 }
 
-pub(crate) fn analyze(program: &Program) -> Vec<AnalysisDiagnostic> {
+pub(crate) struct TraitCheckResult {
+    pub(crate) diagnostics: Vec<AnalysisDiagnostic>,
+    pub(crate) verified_impls: Vec<crate::Span>,
+}
+
+pub(crate) fn analyze(program: &Program) -> TraitCheckResult {
     let mut traits = HashMap::new();
     let mut implementations: HashMap<String, HashSet<String>> = HashMap::new();
     collect(
@@ -23,14 +28,12 @@ pub(crate) fn analyze(program: &Program) -> Vec<AnalysisDiagnostic> {
         &mut implementations,
     );
 
-    let mut diagnostics = Vec::new();
-    check_impls(
-        &program.statements,
-        &traits,
-        &implementations,
-        &mut diagnostics,
-    );
-    diagnostics
+    let mut result = TraitCheckResult {
+        diagnostics: Vec::new(),
+        verified_impls: Vec::new(),
+    };
+    check_impls(&program.statements, &traits, &implementations, &mut result);
+    result
 }
 
 fn collect(
@@ -84,7 +87,7 @@ fn check_impls(
     statements: &[Stmt],
     traits: &HashMap<String, TraitRequirement>,
     implementations: &HashMap<String, HashSet<String>>,
-    diagnostics: &mut Vec<AnalysisDiagnostic>,
+    result: &mut TraitCheckResult,
 ) {
     for statement in statements {
         let statement = unwrap_public(statement);
@@ -92,7 +95,7 @@ fn check_impls(
             Stmt::Module {
                 statements: Some(module_statements),
                 ..
-            } => check_impls(module_statements, traits, implementations, diagnostics),
+            } => check_impls(module_statements, traits, implementations, result),
             Stmt::Impl {
                 trait_name: Some(trait_name),
                 target: Type::Named { name, .. },
@@ -108,7 +111,7 @@ fn check_impls(
                         .get(name)
                         .is_some_and(|implemented| implemented.contains(bound))
                     {
-                        diagnostics.push(AnalysisDiagnostic::error(
+                        result.diagnostics.push(AnalysisDiagnostic::error(
                             format!(
                                 "type `{name}` must implement supertrait `{bound}` before implementing `{}`",
                                 requirement.name
@@ -117,7 +120,9 @@ fn check_impls(
                         ));
                     }
                 }
-                check_methods(requirement, methods, diagnostics);
+                if check_methods(requirement, methods, &mut result.diagnostics) {
+                    result.verified_impls.push(*span);
+                }
             }
             _ => {}
         }
@@ -128,7 +133,8 @@ fn check_methods(
     requirement: &TraitRequirement,
     methods: &[ImplMethod],
     diagnostics: &mut Vec<AnalysisDiagnostic>,
-) {
+) -> bool {
+    let diagnostics_start = diagnostics.len();
     for required in &requirement.methods {
         let Some(implementation) = methods.iter().find(|method| method.name == required.name)
         else {
@@ -165,6 +171,7 @@ fn check_methods(
             extra.span,
         ));
     }
+    diagnostics.len() == diagnostics_start
 }
 
 fn method_signature_matches(required: &TraitMethod, implementation: &ImplMethod) -> bool {

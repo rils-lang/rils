@@ -22,6 +22,21 @@ fn requires_supertraits_for_trait_implementations() {
 }
 
 #[test]
+fn records_impls_whose_method_contracts_were_checked() {
+    let program = parse(
+        lex(
+            "trait Describe { fn describe(self) -> string; } struct State; impl Describe for State { fn describe(self) -> string { \"state\" } }",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let analysis = analyze_program(&program);
+    assert!(analysis.diagnostics.is_empty());
+    assert_eq!(analysis.verified_trait_impls.len(), 1);
+}
+
+#[test]
 fn validates_trait_method_members_and_signatures() {
     let program = parse(
         lex(
