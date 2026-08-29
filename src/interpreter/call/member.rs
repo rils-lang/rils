@@ -110,3 +110,40 @@ pub(super) fn take_tuple_field(
         slot.value.take().expect("tuple field value was checked"),
     ))
 }
+
+pub(super) fn take_struct_field(
+    value: &Value,
+    name: &str,
+    span: Span,
+) -> Result<Option<Value>, RuntimeError> {
+    let Value::Struct(instance) = value else {
+        return Ok(None);
+    };
+    if !instance.fields.borrow().contains_key(name) {
+        return Ok(None);
+    }
+    let mut fields = instance.fields.borrow_mut();
+    let field = fields.get_mut(name).expect("field presence was checked");
+    let value = field.value.as_ref().ok_or_else(|| {
+        RuntimeError::new(
+            format!(
+                "use of moved field `{}.{name}`",
+                instance.type_definition.name
+            ),
+            span,
+        )
+    })?;
+    if value.is_copy() {
+        return value
+            .clone_owned()
+            .map(Some)
+            .map_err(|message| RuntimeError::new(message, span));
+    }
+    if field.references > 0 {
+        return Err(RuntimeError::new(
+            format!("cannot move field `{name}` while it is referenced"),
+            span,
+        ));
+    }
+    Ok(Some(field.value.take().expect("field value was checked")))
+}

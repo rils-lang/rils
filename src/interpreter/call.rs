@@ -527,47 +527,18 @@ impl Interpreter {
         if let Some(member) = member::take_tuple_field(&object, name, span)? {
             return Ok(member);
         }
+        if let Some(member) = member::take_struct_field(&object, name, span)? {
+            return Ok(member);
+        }
         match &object {
-            Value::Struct(instance) => {
-                if instance.fields.borrow().contains_key(name) {
-                    let mut fields = instance.fields.borrow_mut();
-                    let value = fields
-                        .get_mut(name)
-                        .expect("field presence was checked")
-                        .value
-                        .as_mut()
-                        .ok_or_else(|| {
-                            RuntimeError::new(
-                                format!(
-                                    "use of moved field `{}.{name}`",
-                                    instance.type_definition.name
-                                ),
-                                span,
-                            )
-                        })?;
-                    if value.is_copy() {
-                        return value
-                            .clone_owned()
-                            .map_err(|message| RuntimeError::new(message, span));
-                    }
-                    let field = fields.get_mut(name).expect("field presence was checked");
-                    if field.references > 0 {
-                        return Err(RuntimeError::new(
-                            format!("cannot move field `{name}` while it is referenced"),
-                            span,
-                        ));
-                    }
-                    return Ok(field.value.take().expect("field value was checked"));
-                }
-                self.bind_method(
-                    object.clone(),
-                    &instance.type_definition.methods,
-                    &instance.type_definition.trait_methods,
-                    &instance.type_definition.name,
-                    name,
-                    span,
-                )
-            }
+            Value::Struct(instance) => self.bind_method(
+                object.clone(),
+                &instance.type_definition.methods,
+                &instance.type_definition.trait_methods,
+                &instance.type_definition.name,
+                name,
+                span,
+            ),
             Value::Enum(instance) => self.bind_method(
                 object.clone(),
                 &instance.type_definition.methods,
