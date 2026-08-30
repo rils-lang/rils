@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
+    ExprId, SourceId,
     ast::{
         BinaryOp, Block, EnumVariant, Expr, Literal, Parameter, Pattern, Program, Stmt, UnaryOp,
     },
@@ -19,8 +20,9 @@ pub(crate) struct RawTypeHint {
 #[derive(Default)]
 pub(crate) struct InferenceResult {
     pub binding_types: HashMap<Span, Type>,
-    pub expression_types: HashMap<Span, Type>,
+    pub expression_types_by_id: HashMap<ExprId, Type>,
     pub hints: Vec<RawTypeHint>,
+    pub expression_ids: crate::semantic::ExpressionIdentityMap,
 }
 
 #[derive(Clone)]
@@ -53,25 +55,43 @@ fn qualified_type_name(prefix: &[String], name: &str) -> String {
     }
 }
 
-pub(crate) fn infer_with_host_functions(
+pub(crate) fn infer_with_host_functions_and_host_types(
     program: &Program,
+    source: SourceId,
     host_functions: &HashMap<String, FunctionSignature>,
+    host_type_resolutions: &crate::HostTypeResolutionResults,
+    host_contract: Option<&rils_host::HostContract>,
 ) -> InferenceResult {
-    Inferencer::new(program, host_functions).run(program)
+    Inferencer::new(
+        program,
+        source,
+        host_functions,
+        host_type_resolutions,
+        host_contract,
+    )
+    .run(program)
 }
 
-struct Inferencer {
+struct Inferencer<'a> {
     scopes: Vec<HashMap<String, Binding>>,
     types: HashMap<String, TypeDefinition>,
     variant_owners: HashMap<String, String>,
     result: InferenceResult,
-    numeric_parents: HashMap<Span, Span>,
-    numeric_fixed: HashMap<Span, Type>,
+    expression_ids: crate::semantic::ExpressionIdentityMap,
+    numeric_parents: HashMap<ExprId, ExprId>,
+    numeric_fixed: HashMap<ExprId, Type>,
     host_functions: HashMap<String, FunctionSignature>,
+    host_types: crate::HostTypeResolutionView<'a>,
 }
 
-impl Inferencer {
-    fn new(program: &Program, host_functions: &HashMap<String, FunctionSignature>) -> Self {
+impl<'a> Inferencer<'a> {
+    fn new(
+        program: &Program,
+        source: SourceId,
+        host_functions: &HashMap<String, FunctionSignature>,
+        host_type_resolutions: &'a crate::HostTypeResolutionResults,
+        host_contract: Option<&rils_host::HostContract>,
+    ) -> Self {
         let mut globals = HashMap::new();
         for (name, return_type) in [
             ("#rils_native_print", Type::Unit),
@@ -133,17 +153,71 @@ impl Inferencer {
             );
         }
 
+        let expression_ids = crate::semantic::ExpressionIdentityMap::allocate(program, source);
         let mut inferencer = Self {
             scopes: vec![globals],
             types: HashMap::new(),
             variant_owners: HashMap::new(),
-            result: InferenceResult::default(),
+            result: InferenceResult {
+                binding_types: HashMap::new(),
+                expression_types_by_id: HashMap::new(),
+                hints: Vec::new(),
+                expression_ids: crate::semantic::ExpressionIdentityMap::default(),
+            },
+            expression_ids,
             numeric_parents: HashMap::new(),
             numeric_fixed: HashMap::new(),
             host_functions: host_functions.clone(),
+            host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
         };
+        inferencer.collect_host_type_definitions(host_contract);
         inferencer.collect_type_definitions(&program.statements, &mut Vec::new());
         inferencer
+    }
+
+    fn collect_host_type_definitions(&mut self, host: Option<&rils_host::HostContract>) {
+        let Some(host) = host else {
+            return;
+        };
+        for declaration in host.types() {
+            let Some(host_enum) = declaration.enum_definition.as_ref() else {
+                continue;
+            };
+            let mut definition = TypeDefinition::default();
+            definition.variants.extend(
+                host_enum
+                    .variants
+                    .keys()
+                    .cloned()
+                    .map(|variant| (variant, VariantDefinition::Unit)),
+            );
+            if host_enum.flags {
+                definition.implemented_traits.insert("BitFlags".into());
+            }
+            for variant in host_enum.variants.keys() {
+                self.variant_owners
+                    .insert(variant.clone(), declaration.name.clone());
+            }
+            self.types.insert(declaration.name.clone(), definition);
+        }
+    }
+
+    fn syntax_type(&self, ty: &Type) -> Type {
+        self.host_types.resolved_type(ty)
+    }
+
+    fn optional_syntax_type(&self, ty: Option<&Type>) -> Type {
+        ty.map_or(Type::Unknown, |ty| self.syntax_type(ty))
+    }
+
+    fn impl_parameter_type(&self, parameter: &Parameter, target: &Type) -> Type {
+        if parameter.name != "self" {
+            return self.optional_syntax_type(parameter.type_annotation.as_ref());
+        }
+        let Some(ty) = parameter.type_annotation.as_ref() else {
+            return target.clone();
+        };
+        resolve_impl_self(&self.syntax_type(ty), target)
     }
 
     fn run(mut self, program: &Program) -> InferenceResult {
@@ -161,40 +235,41 @@ impl Inferencer {
                 self.result.binding_types.insert(span, resolved);
             }
         }
-        let expression_spans = self
+        let expression_ids = self
             .result
-            .expression_types
+            .expression_types_by_id
             .keys()
             .copied()
             .collect::<Vec<_>>();
-        for span in expression_spans {
-            if let Some(ty) = self.result.expression_types.get(&span).cloned() {
+        for id in expression_ids {
+            if let Some(ty) = self.result.expression_types_by_id.get(&id).cloned() {
                 let resolved = self.resolve_type(&ty);
-                self.result.expression_types.insert(span, resolved);
+                self.result.expression_types_by_id.insert(id, resolved);
             }
         }
         for index in 0..self.result.hints.len() {
             let ty = self.result.hints[index].ty.clone();
             self.result.hints[index].ty = self.resolve_type(&ty);
         }
+        self.result.expression_ids = self.expression_ids;
         self.result
     }
 
-    fn numeric_root(&mut self, span: Span) -> Span {
-        let parent = *self.numeric_parents.entry(span).or_insert(span);
-        if parent == span {
-            span
+    fn numeric_root(&mut self, variable: ExprId) -> ExprId {
+        let parent = *self.numeric_parents.entry(variable).or_insert(variable);
+        if parent == variable {
+            variable
         } else {
             let root = self.numeric_root(parent);
-            self.numeric_parents.insert(span, root);
+            self.numeric_parents.insert(variable, root);
             root
         }
     }
 
     fn unify(&mut self, left: &Type, right: &Type) {
         match (left, right) {
-            (Type::IntegerVariable(left), Type::IntegerVariable(right))
-            | (Type::FloatVariable(left), Type::FloatVariable(right)) => {
+            (Type::IntegerInference(left), Type::IntegerInference(right))
+            | (Type::FloatInference(left), Type::FloatInference(right)) => {
                 let left = self.numeric_root(*left);
                 let right = self.numeric_root(*right);
                 if left != right {
@@ -208,10 +283,10 @@ impl Inferencer {
                     }
                 }
             }
-            (Type::IntegerVariable(variable), fixed @ Type::Integer(_))
-            | (fixed @ Type::Integer(_), Type::IntegerVariable(variable))
-            | (Type::FloatVariable(variable), fixed @ Type::Float(_))
-            | (fixed @ Type::Float(_), Type::FloatVariable(variable)) => {
+            (Type::IntegerInference(variable), fixed @ Type::Integer(_))
+            | (fixed @ Type::Integer(_), Type::IntegerInference(variable))
+            | (Type::FloatInference(variable), fixed @ Type::Float(_))
+            | (fixed @ Type::Float(_), Type::FloatInference(variable)) => {
                 let root = self.numeric_root(*variable);
                 self.numeric_fixed
                     .entry(root)
@@ -236,12 +311,12 @@ impl Inferencer {
 
     fn resolve_type(&mut self, ty: &Type) -> Type {
         match ty {
-            Type::IntegerVariable(span) => {
-                let root = self.numeric_root(*span);
+            Type::IntegerInference(variable) => {
+                let root = self.numeric_root(*variable);
                 self.numeric_fixed.get(&root).cloned().unwrap_or(Type::I32)
             }
-            Type::FloatVariable(span) => {
-                let root = self.numeric_root(*span);
+            Type::FloatInference(variable) => {
+                let root = self.numeric_root(*variable);
                 self.numeric_fixed.get(&root).cloned().unwrap_or(Type::F64)
             }
             Type::Option(inner) => Type::Option(Box::new(self.resolve_type(inner))),
@@ -329,7 +404,9 @@ impl Inferencer {
                             .collect(),
                         fields: fields
                             .iter()
-                            .map(|field| (field.name.clone(), field.type_annotation.clone()))
+                            .map(|field| {
+                                (field.name.clone(), self.syntax_type(&field.type_annotation))
+                            })
                             .collect(),
                         variants: HashMap::new(),
                         methods: HashMap::new(),
@@ -356,16 +433,22 @@ impl Inferencer {
                     for variant in variants {
                         let (variant_name, payload) = match variant {
                             EnumVariant::Unit { name, .. } => (name, VariantDefinition::Unit),
-                            EnumVariant::Tuple { name, fields, .. } => {
-                                (name, VariantDefinition::Tuple(fields.clone()))
-                            }
+                            EnumVariant::Tuple { name, fields, .. } => (
+                                name,
+                                VariantDefinition::Tuple(
+                                    fields.iter().map(|field| self.syntax_type(field)).collect(),
+                                ),
+                            ),
                             EnumVariant::Record { name, fields, .. } => (
                                 name,
                                 VariantDefinition::Record(
                                     fields
                                         .iter()
                                         .map(|field| {
-                                            (field.name.clone(), field.type_annotation.clone())
+                                            (
+                                                field.name.clone(),
+                                                self.syntax_type(&field.type_annotation),
+                                            )
                                         })
                                         .collect(),
                                 ),
@@ -386,7 +469,8 @@ impl Inferencer {
                     methods,
                     ..
                 } => {
-                    let Type::Named { name, .. } = target else {
+                    let target = self.syntax_type(target);
+                    let Type::Named { name, .. } = &target else {
                         continue;
                     };
                     let Some(definition) = self.types.get_mut(name) else {
@@ -398,7 +482,7 @@ impl Inferencer {
                             if let Some(value) = &associated.value {
                                 definition.associated_types.insert(
                                     (trait_name.clone(), associated.name.clone()),
-                                    value.clone(),
+                                    self.host_types.resolved_type(value),
                                 );
                             }
                         }
@@ -412,17 +496,21 @@ impl Inferencer {
                                 parameter
                                     .type_annotation
                                     .as_ref()
-                                    .map_or(Type::Unknown, |ty| resolve_impl_self(ty, target))
+                                    .map_or(Type::Unknown, |ty| {
+                                        resolve_impl_self(
+                                            &self.host_types.resolved_type(ty),
+                                            &target,
+                                        )
+                                    })
                             })
                             .collect();
                         definition.methods.insert(
                             method.name.clone(),
                             Type::function(
                                 parameters,
-                                method
-                                    .return_type
-                                    .as_ref()
-                                    .map_or(Type::Unknown, |ty| resolve_impl_self(ty, target)),
+                                method.return_type.as_ref().map_or(Type::Unknown, |ty| {
+                                    resolve_impl_self(&self.host_types.resolved_type(ty), &target)
+                                }),
                             ),
                         );
                     }
@@ -528,9 +616,13 @@ impl Inferencer {
             } => {
                 let inferred = self.expression(initializer, returns);
                 if let Some(expected) = type_annotation {
-                    self.unify(&inferred, expected);
+                    let expected = self.syntax_type(expected);
+                    self.unify(&inferred, &expected);
                 }
-                let ty = type_annotation.clone().unwrap_or(inferred);
+                let ty = type_annotation
+                    .as_ref()
+                    .map(|ty| self.syntax_type(ty))
+                    .unwrap_or(inferred);
                 self.define_binding(name, *name_span, Binding { ty: ty.clone() });
                 if type_annotation.is_none() {
                     self.type_hint(*name_span, ty, ": ");
@@ -547,25 +639,27 @@ impl Inferencer {
             } => {
                 let parameter_types = parameters
                     .iter()
-                    .map(|parameter| parameter.type_annotation.clone().unwrap_or(Type::Unknown))
+                    .map(|parameter| self.optional_syntax_type(parameter.type_annotation.as_ref()))
                     .collect::<Vec<_>>();
+                let declared_return = return_type.as_ref().map(|ty| self.syntax_type(ty));
                 self.scopes.last_mut().expect("scope exists").insert(
                     name.clone(),
                     Binding {
                         ty: Type::function(
                             parameter_types.clone(),
-                            return_type.clone().unwrap_or(Type::Unknown),
+                            declared_return.clone().unwrap_or(Type::Unknown),
                         ),
                     },
                 );
                 let resolved = self.with_scope_value(|inferencer| {
                     for parameter in parameters {
-                        let ty = parameter.type_annotation.clone().unwrap_or(Type::Unknown);
+                        let ty =
+                            inferencer.optional_syntax_type(parameter.type_annotation.as_ref());
                         inferencer.define_binding(&parameter.name, parameter.span, Binding { ty });
                     }
                     let mut explicit_returns = Vec::new();
                     let tail = inferencer.block_contents(body, &mut explicit_returns);
-                    return_type
+                    declared_return
                         .clone()
                         .unwrap_or_else(|| inferred_return(explicit_returns, tail))
                 });
@@ -615,6 +709,7 @@ impl Inferencer {
             Stmt::Impl {
                 target, methods, ..
             } => {
+                let target = self.syntax_type(target);
                 for method in methods {
                     self.with_scope_value(|inferencer| {
                         inferencer
@@ -625,10 +720,10 @@ impl Inferencer {
                         let parameter_types = method
                             .parameters
                             .iter()
-                            .map(|parameter| impl_parameter_type(parameter, target))
+                            .map(|parameter| inferencer.impl_parameter_type(parameter, &target))
                             .collect::<Vec<_>>();
                         for parameter in &method.parameters {
-                            let ty = impl_parameter_type(parameter, target);
+                            let ty = inferencer.impl_parameter_type(parameter, &target);
                             inferencer.define_binding(
                                 &parameter.name,
                                 parameter.span,
@@ -639,7 +734,8 @@ impl Inferencer {
                         let tail = inferencer.block_contents(&method.body, &mut method_returns);
                         let resolved = method
                             .return_type
-                            .clone()
+                            .as_ref()
+                            .map(|ty| inferencer.syntax_type(ty))
                             .unwrap_or_else(|| inferred_return(method_returns, tail));
                         inferencer.result.binding_types.insert(
                             method.name_span,
@@ -667,10 +763,12 @@ impl Inferencer {
                                     .parameters
                                     .iter()
                                     .map(|parameter| {
-                                        parameter.type_annotation.clone().unwrap_or(Type::Unknown)
+                                        self.optional_syntax_type(
+                                            parameter.type_annotation.as_ref(),
+                                        )
                                     })
                                     .collect(),
-                                return_type.clone(),
+                                self.syntax_type(return_type),
                             ),
                         );
                     }
@@ -729,107 +827,111 @@ impl Inferencer {
     }
 
     fn expression(&mut self, expression: &Expr, returns: &mut Vec<Type>) -> Type {
-        let ty = self.expression_inner(expression, returns);
-        self.result
-            .expression_types
-            .insert(expression.span(), ty.clone());
+        let id = self.expression_ids.id(expression);
+        let ty = self.expression_inner(expression, id, returns);
+        self.result.expression_types_by_id.insert(id, ty.clone());
         ty
     }
 
-    fn expression_inner(&mut self, expression: &Expr, returns: &mut Vec<Type>) -> Type {
+    fn expression_inner(&mut self, expression: &Expr, id: ExprId, returns: &mut Vec<Type>) -> Type {
         match expression {
-            Expr::Literal { value, span } => literal_type(value, *span),
+            Expr::Literal { value, .. } => literal_type(value, id),
             Expr::Variable { name, .. } => self
                 .lookup(name)
                 .map_or(Type::Unknown, |binding| binding.ty.clone()),
-            Expr::Path { segments, .. } => self
-                .host_functions
-                .get(&segments.join("::"))
-                .cloned()
-                .or_else(|| {
-                    // Host manifests expose associated functions under a
-                    // snake-case module (`unity_engine::color::new`) while
-                    // source paths use the host type (`Color::new`).
-                    let type_index = segments.len().checked_sub(2)?;
-                    let member = segments.last()?;
-                    let module = segments[..type_index].join("::");
-                    let type_module = snake_case(&segments[type_index]);
-                    let qualified = if module.is_empty() {
-                        format!("{type_module}::{member}")
-                    } else {
-                        format!("{module}::{type_module}::{member}")
-                    };
-                    self.host_functions.get(&qualified).cloned()
-                })
-                .or_else(|| {
-                    crate::standard_library::standard_function_signature(&segments.join("::"))
-                })
-                .map(|signature| signature.as_type())
-                .or_else(|| {
-                    let [type_name, member] = segments.as_slice() else {
-                        return None;
-                    };
-                    let owner = if type_name == "Self" {
-                        match self.lookup("Self").map(|binding| &binding.ty) {
-                            Some(Type::Named { name, .. }) => name.as_str(),
-                            _ => return None,
-                        }
-                    } else {
-                        type_name.as_str()
-                    };
-                    self.types.get(owner)?.methods.get(member).cloned()
-                })
-                .or_else(|| {
-                    segments
-                        .first()
-                        .and_then(|name| {
-                            if name == "Self" {
-                                self.lookup("Self").map(|binding| binding.ty.clone())
-                            } else {
-                                self.types.contains_key(name).then(|| Type::Named {
-                                    name: name.clone(),
-                                    arguments: Vec::new(),
-                                })
+            Expr::Path { segments, .. } => {
+                let segments = self
+                    .host_types
+                    .resolved_expression_path(expression)
+                    .unwrap_or(segments);
+                self.host_functions
+                    .get(&segments.join("::"))
+                    .cloned()
+                    .or_else(|| {
+                        // Host manifests expose associated functions under a
+                        // snake-case module (`unity_engine::color::new`) while
+                        // source paths use the host type (`Color::new`).
+                        let type_index = segments.len().checked_sub(2)?;
+                        let member = segments.last()?;
+                        let module = segments[..type_index].join("::");
+                        let type_module = snake_case(&segments[type_index]);
+                        let qualified = if module.is_empty() {
+                            format!("{type_module}::{member}")
+                        } else {
+                            format!("{module}::{type_module}::{member}")
+                        };
+                        self.host_functions.get(&qualified).cloned()
+                    })
+                    .or_else(|| {
+                        crate::standard_library::standard_function_signature(&segments.join("::"))
+                    })
+                    .map(|signature| signature.as_type())
+                    .or_else(|| {
+                        let [type_name, member] = segments else {
+                            return None;
+                        };
+                        let owner = if type_name == "Self" {
+                            match self.lookup("Self").map(|binding| &binding.ty) {
+                                Some(Type::Named { name, .. }) => name.as_str(),
+                                _ => return None,
                             }
-                        })
-                        .or_else(|| {
-                            segments.last().and_then(|variant| {
-                                self.variant_owners.get(variant).map(|owner| Type::Named {
-                                    name: owner.clone(),
-                                    arguments: Vec::new(),
+                        } else {
+                            type_name.as_str()
+                        };
+                        self.types.get(owner)?.methods.get(member).cloned()
+                    })
+                    .or_else(|| {
+                        segments
+                            .first()
+                            .and_then(|name| {
+                                if name == "Self" {
+                                    self.lookup("Self").map(|binding| binding.ty.clone())
+                                } else {
+                                    self.types.contains_key(name).then(|| Type::Named {
+                                        name: name.clone(),
+                                        arguments: Vec::new(),
+                                    })
+                                }
+                            })
+                            .or_else(|| {
+                                segments.last().and_then(|variant| {
+                                    self.variant_owners.get(variant).map(|owner| Type::Named {
+                                        name: owner.clone(),
+                                        arguments: Vec::new(),
+                                    })
                                 })
                             })
-                        })
-                })
-                .or_else(|| {
-                    let [type_name, member] = segments.as_slice() else {
-                        return None;
-                    };
-                    if let Some(integer) = crate::types::IntegerType::from_name(type_name) {
-                        if let Some(constant) = rils_builtins::integer_constant(member) {
-                            return Some(match constant.value_type {
-                                rils_builtins::TypePattern::SelfType => Type::Integer(integer),
-                                rils_builtins::TypePattern::U32 => {
-                                    Type::Integer(crate::types::IntegerType::U32)
-                                }
-                                _ => Type::Unknown,
-                            });
+                    })
+                    .or_else(|| {
+                        let [type_name, member] = segments else {
+                            return None;
+                        };
+                        if let Some(integer) = crate::types::IntegerType::from_name(type_name) {
+                            if let Some(constant) = rils_builtins::integer_constant(member) {
+                                return Some(match constant.value_type {
+                                    rils_builtins::TypePattern::SelfType => Type::Integer(integer),
+                                    rils_builtins::TypePattern::U32 => {
+                                        Type::Integer(crate::types::IntegerType::U32)
+                                    }
+                                    _ => Type::Unknown,
+                                });
+                            }
+                            let intrinsic = rils_builtins::integer_associated_function(member)?;
+                            return Some(crate::standard_library::integer_intrinsic_type(
+                                intrinsic, integer,
+                            ));
                         }
-                        let intrinsic = rils_builtins::integer_associated_function(member)?;
-                        return Some(crate::standard_library::integer_intrinsic_type(
-                            intrinsic, integer,
-                        ));
-                    }
-                    let float = crate::types::FloatType::from_name(type_name)?;
-                    rils_builtins::float_constant(member).map(|_| Type::Float(float))
-                })
-                .unwrap_or(Type::Unknown),
+                        let float = crate::types::FloatType::from_name(type_name)?;
+                        rils_builtins::float_constant(member).map(|_| Type::Float(float))
+                    })
+                    .unwrap_or(Type::Unknown)
+            }
             Expr::QualifiedPath { .. } => Type::opaque_function(),
             Expr::Cast {
                 operand, target, ..
             } => {
                 self.expression(operand, returns);
-                target.clone()
+                self.syntax_type(target)
             }
             Expr::Member { object, name, .. } => {
                 let object_type = self.expression(object, returns);
@@ -1397,23 +1499,6 @@ fn snake_case(name: &str) -> String {
     output
 }
 
-fn impl_parameter_type(parameter: &Parameter, target: &Type) -> Type {
-    if parameter.name != "self" {
-        return parameter.type_annotation.clone().unwrap_or(Type::Unknown);
-    }
-    match &parameter.type_annotation {
-        Some(Type::Reference { mutable, inner }) if matches!(inner.as_ref(), Type::Named { name, .. } if name == "Self") => {
-            Type::Reference {
-                mutable: *mutable,
-                inner: Box::new(target.clone()),
-            }
-        }
-        Some(Type::Named { name, .. }) if name == "Self" => target.clone(),
-        Some(ty) => ty.clone(),
-        None => target.clone(),
-    }
-}
-
 fn resolve_impl_self(ty: &Type, target: &Type) -> Type {
     match ty {
         Type::Named { name, arguments } if name == "Self" && arguments.is_empty() => target.clone(),
@@ -1473,7 +1558,7 @@ fn resolve_impl_self(ty: &Type, target: &Type) -> Type {
     }
 }
 
-fn literal_type(literal: &Literal, span: Span) -> Type {
+fn literal_type(literal: &Literal, id: ExprId) -> Type {
     match literal {
         Literal::Unit => Type::Unit,
         Literal::Bool(_) => Type::Bool,
@@ -1492,8 +1577,8 @@ fn literal_type(literal: &Literal, span: Span) -> Type {
         Literal::F32(_) => Type::Float(crate::types::FloatType::F32),
         Literal::F64(_) => Type::F64,
         Literal::Char(_) => Type::Char,
-        Literal::Integer(_) => Type::IntegerVariable(span),
-        Literal::Float(_) => Type::FloatVariable(span),
+        Literal::Integer(_) => Type::IntegerInference(id),
+        Literal::Float(_) => Type::FloatInference(id),
         Literal::String(_) => Type::String,
     }
 }

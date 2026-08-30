@@ -17,10 +17,52 @@ pub struct SourceFile {
     pub name: String,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SymbolId {
     pub source: SourceId,
     pub local: u32,
+}
+
+/// Identifies a semantic definition within one compilation session.
+///
+/// `SymbolId` remains as a compatibility name for the editor API while the
+/// compiler and semantic layers migrate to definition-oriented terminology.
+pub type DefId = SymbolId;
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExprId {
+    pub source: SourceId,
+    pub local: u32,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TypeRefId {
+    pub source: SourceId,
+    pub local: u32,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PatternId {
+    pub source: SourceId,
+    pub local: u32,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BodyId(pub DefId);
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ImplId {
+    pub source: SourceId,
+    pub local: u32,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ModuleId(pub u32);
+
+impl ModuleId {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]

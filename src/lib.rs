@@ -9,6 +9,8 @@ mod limits;
 mod native_type;
 mod numeric;
 mod output;
+mod project_compilation;
+mod runtime_builtins;
 mod runtime_type;
 mod standard_library;
 mod value;
@@ -25,6 +27,9 @@ pub mod analysis {
         AnalysisDiagnostic, DiagnosticSeverity, DocumentAnalysis, InlayTypeHint, SymbolKind,
         SymbolOccurrence,
     };
+    pub use rils_frontend::semantic::{
+        BuiltinCallKind, DefMap, DefinitionData, ResolvedCall, TypeckResults,
+    };
 
     pub fn analyze(source: &str) -> Result<DocumentAnalysis, crate::RilsError> {
         rils_frontend::analysis::analyze(source).map_err(Into::into)
@@ -34,7 +39,7 @@ pub mod analysis {
         source: &str,
         host: &crate::HostContract,
     ) -> Result<DocumentAnalysis, crate::RilsError> {
-        rils_compiler::analyze_with_host(source, host).map_err(Into::into)
+        rils_frontend::analyze_with_host(source, host).map_err(Into::into)
     }
 }
 
@@ -62,11 +67,13 @@ mod types {
 }
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::HashSet,
     fmt, fs,
     path::{Path, PathBuf},
     rc::Rc,
 };
+
+use project_compilation::ProjectCompilation;
 
 pub use bytecode::{
     BYTECODE_FORMAT_VERSION, BYTECODE_HOST_ABI_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeError,
@@ -268,17 +275,17 @@ impl Engine {
 
     pub fn eval(&mut self, source: &str) -> Result<Value, RilsError> {
         let tokens = lexer::lex(source).map_err(RilsError::Lex)?;
-        let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
+        let program = parser::parse_with_native_macros(tokens, &self.native_macros)
             .map_err(RilsError::Parse)?;
-        rils_frontend::resolve_numeric_literals(&mut program).map_err(numeric_resolution_error)?;
+        let analysis = rils_frontend::analysis::analyze_program(&program);
         self.interpreter
-            .execute(&program)
+            .execute_with_analysis(&program, &analysis)
             .map_err(RilsError::Runtime)
     }
 
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value, RilsError> {
         let path = path.as_ref();
-        let mut sources = SourceRegistry::default();
+        let mut sources = ProjectCompilation::default();
         let result = (|| {
             let project =
                 discover_entry_project(path).map_err(|error| module_message(error.to_string()))?;
@@ -286,91 +293,34 @@ impl Engine {
             let source =
                 fs::read_to_string(path).map_err(|error| module_load_error(path, error))?;
             let source_id = sources.register_source(path, &source);
-            let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-            let mut program = parser::parse_with_native_macros(tokens, &self.native_macros)
-                .map_err(RilsError::Parse)?;
+            if project.manifest_path().is_some() {
+                sources.set_entry_source(source_id);
+            }
+            let mut program = sources.parse(source_id, &self.native_macros)?;
             load_file_modules(
-                &mut program.statements,
+                &mut program,
                 path,
                 &project,
                 &self.native_macros,
                 &mut sources,
                 true,
             )?;
-            rils_frontend::resolve_numeric_literals(&mut program)
-                .map_err(numeric_resolution_error)?;
-            self.interpreter
-                .execute(&program)
-                .map_err(RilsError::Runtime)
+            if project.manifest_path().is_some() {
+                sources
+                    .execute_project(&mut self.interpreter, &HostContract::new())
+                    .map_err(RilsError::Runtime)
+            } else {
+                let analysis = rils_frontend::analysis::analyze_program(&program);
+                self.interpreter
+                    .execute_with_analysis(&program, &analysis)
+                    .map_err(RilsError::Runtime)
+            }
         })();
         result.map_err(|error| locate_rils_error(error, &sources))
     }
 }
 
-#[derive(Default)]
-struct SourceRegistry {
-    next_id: u32,
-    by_path: HashMap<PathBuf, SourceId>,
-    records: BTreeMap<SourceId, SourceRecord>,
-}
-
-struct SourceRecord {
-    file: SourceFile,
-    source: Option<String>,
-}
-
-impl SourceRegistry {
-    fn register_project(&mut self, project: &Project) {
-        for file in project.modules() {
-            self.register_path(&file.path);
-        }
-    }
-
-    fn register_path(&mut self, path: &Path) -> SourceId {
-        let key = source_path_key(path);
-        if let Some(id) = self.by_path.get(&key) {
-            return *id;
-        }
-        self.next_id += 1;
-        let id = SourceId::new(self.next_id);
-        self.by_path.insert(key, id);
-        self.records.insert(
-            id,
-            SourceRecord {
-                file: SourceFile {
-                    id,
-                    name: path.to_string_lossy().into_owned(),
-                },
-                source: None,
-            },
-        );
-        id
-    }
-
-    fn register_source(&mut self, path: &Path, source: &str) -> SourceId {
-        let id = self.register_path(path);
-        self.records.get_mut(&id).expect("registered source").source = Some(source.into());
-        id
-    }
-
-    fn source_files(&self) -> Vec<SourceFile> {
-        self.records
-            .values()
-            .map(|record| record.file.clone())
-            .collect()
-    }
-
-    fn location(&self, id: SourceId) -> Option<(&str, &str)> {
-        let record = self.records.get(&id)?;
-        Some((&record.file.name, record.source.as_deref()?))
-    }
-}
-
-fn source_path_key(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-fn locate_rils_error(error: RilsError, sources: &SourceRegistry) -> RilsError {
+fn locate_rils_error(error: RilsError, sources: &ProjectCompilation) -> RilsError {
     if matches!(error, RilsError::Located { .. }) {
         return error;
     }
@@ -410,7 +360,7 @@ fn load_external_modules(
     base: &Path,
     native_macros: &[macros::NativeMacroDefinition],
     loading: &mut HashSet<PathBuf>,
-    sources: &mut SourceRegistry,
+    sources: &mut ProjectCompilation,
 ) -> Result<(), RilsError> {
     for statement in statements {
         let statement = match statement {
@@ -452,9 +402,7 @@ fn load_external_modules(
         }
         let source = fs::read_to_string(&path).map_err(|error| module_load_error(&path, error))?;
         let source_id = sources.register_source(&path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-        let mut module =
-            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        let mut module = sources.parse(source_id, native_macros)?;
         load_external_modules(
             &mut module.statements,
             path.parent().unwrap_or(base),
@@ -468,18 +416,12 @@ fn load_external_modules(
     Ok(())
 }
 
-#[derive(Default)]
-struct ProjectModuleNode {
-    statements: Vec<ast::Stmt>,
-    children: BTreeMap<String, ProjectModuleNode>,
-}
-
 fn load_file_modules(
-    statements: &mut Vec<ast::Stmt>,
+    program: &mut ast::Program,
     entry_path: &Path,
     project: &Project,
     native_macros: &[macros::NativeMacroDefinition],
-    sources: &mut SourceRegistry,
+    sources: &mut ProjectCompilation,
     require_entry: bool,
 ) -> Result<(), RilsError> {
     if project.manifest_path().is_none() {
@@ -488,9 +430,18 @@ fn load_file_modules(
         if let Ok(canonical) = entry_path.canonicalize() {
             loading.insert(canonical);
         }
-        return load_external_modules(statements, base, native_macros, &mut loading, sources);
+        load_external_modules(
+            &mut program.statements,
+            base,
+            native_macros,
+            &mut loading,
+            sources,
+        )?;
+        sources.push_root_program(program.clone());
+        return Ok(());
     }
     let entry = project.module_for_file(entry_path);
+    let entry_source = sources.source_id(entry_path);
     let entry_is_prelude = project.prelude().is_some_and(|prelude_path| {
         prelude_path == entry_path
             || entry_path.canonicalize().is_ok_and(|entry_path| {
@@ -507,23 +458,22 @@ fn load_file_modules(
         )));
     }
     let entry_statements = if require_entry {
-        prepare_project_entry(std::mem::take(statements))?
+        prepare_project_entry(std::mem::take(&mut program.statements))?
     } else {
-        reject_external_module_declarations(statements)?;
-        std::mem::take(statements)
+        reject_external_module_declarations(&program.statements)?;
+        std::mem::take(&mut program.statements)
     };
-    let mut root = ProjectModuleNode::default();
+    let mut entry_program = program.clone();
+    entry_program.statements = entry_statements;
     if entry_is_prelude {
-        root.statements.extend(entry_statements.clone());
+        sources.push_root_program(entry_program.clone());
     } else if let Some(prelude_path) = project.prelude() {
         let source = fs::read_to_string(prelude_path)
             .map_err(|error| module_load_error(prelude_path, error))?;
         let source_id = sources.register_source(prelude_path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-        let prelude =
-            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        let prelude = sources.parse(source_id, native_macros)?;
         reject_external_module_declarations(&prelude.statements)?;
-        root.statements.extend(prelude.statements);
+        sources.push_root_program(prelude);
     }
     for dependency in project.dependencies() {
         let Some(prelude_path) = dependency.prelude.as_deref() else {
@@ -532,48 +482,25 @@ fn load_file_modules(
         let source = fs::read_to_string(prelude_path)
             .map_err(|error| module_load_error(prelude_path, error))?;
         let source_id = sources.register_source(prelude_path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-        let prelude =
-            parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)?;
+        let prelude = sources.parse(source_id, native_macros)?;
         reject_external_module_declarations(&prelude.statements)?;
-        root.statements.extend(prelude.statements);
+        sources.push_root_program(prelude);
     }
     for file in project.modules() {
-        let module_statements = if entry.is_some_and(|entry| file.module_path == entry.module_path)
-        {
-            entry_statements.clone()
+        let file_source = sources
+            .source_id(&file.path)
+            .expect("project modules were registered before loading");
+        let module_program = if entry_source == Some(file_source) {
+            entry_program.clone()
         } else {
             let source = fs::read_to_string(&file.path)
                 .map_err(|error| module_load_error(&file.path, error))?;
             let source_id = sources.register_source(&file.path, &source);
-            let tokens = lexer::lex_with_source_id(&source, source_id).map_err(RilsError::Lex)?;
-            let program = parser::parse_with_native_macros(tokens, native_macros)
-                .map_err(RilsError::Parse)?;
+            let program = sources.parse(source_id, native_macros)?;
             reject_external_module_declarations(&program.statements)?;
-            program.statements
+            program
         };
-        insert_project_module(&mut root, &file.module_path, module_statements);
-    }
-    *statements = project_module_statements(root);
-    if require_entry {
-        let mut entry_path = entry
-            .expect("executable project entries cannot be library preludes")
-            .module_path
-            .split("::")
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        entry_path.push("main".into());
-        statements.push(ast::Stmt::Expr {
-            expression: ast::Expr::Call {
-                callee: Box::new(ast::Expr::Path {
-                    segments: entry_path,
-                    span: Span::default(),
-                }),
-                arguments: Vec::new(),
-                span: Span::default(),
-            },
-            terminated: false,
-        });
+        sources.set_module_program(file_source, module_program);
     }
     Ok(())
 }
@@ -680,35 +607,6 @@ fn reject_external_module_declarations(statements: &[ast::Stmt]) -> Result<(), R
     Ok(())
 }
 
-fn insert_project_module(
-    root: &mut ProjectModuleNode,
-    module_path: &str,
-    statements: Vec<ast::Stmt>,
-) {
-    let mut node = root;
-    for segment in module_path.split("::") {
-        node = node.children.entry(segment.to_owned()).or_default();
-    }
-    node.statements = statements;
-}
-
-fn project_module_statements(node: ProjectModuleNode) -> Vec<ast::Stmt> {
-    let mut statements = node.statements;
-    for (name, child) in node.children {
-        let module = ast::Stmt::Module {
-            name: name.clone(),
-            name_span: Span::default(),
-            statements: Some(project_module_statements(child)),
-            span: Span::default(),
-        };
-        statements.push(ast::Stmt::Public {
-            statement: Box::new(module),
-            span: Span::default(),
-        });
-    }
-    statements
-}
-
 fn module_load_error(path: &Path, error: impl fmt::Display) -> RilsError {
     module_message(format!(
         "failed to load module `{}`: {error}",
@@ -720,14 +618,6 @@ fn module_message(message: String) -> RilsError {
     RilsError::Runtime(RuntimeError {
         message,
         span: Span::default(),
-        stack: Vec::new(),
-    })
-}
-
-fn numeric_resolution_error(error: rils_frontend::NumericResolutionError) -> RilsError {
-    RilsError::Runtime(RuntimeError {
-        message: error.message,
-        span: error.span,
         stack: Vec::new(),
     })
 }
@@ -873,7 +763,7 @@ fn compile_project_file_with_host(
     host: &HostContract,
     require_entry: bool,
 ) -> Result<BytecodeModule, CompileError> {
-    let mut sources = SourceRegistry::default();
+    let mut sources = ProjectCompilation::default();
     sources.register_project(project);
     let result = (|| {
         let source = fs::read_to_string(path).map_err(|error| {
@@ -883,12 +773,14 @@ fn compile_project_file_with_host(
             )
         })?;
         let source_id = sources.register_source(path, &source);
-        let tokens = lexer::lex_with_source_id(&source, source_id)
-            .map_err(|error| CompileError::new(error.message, error.span))?;
-        let mut program =
-            parser::parse(tokens).map_err(|error| CompileError::new(error.message, error.span))?;
+        if require_entry && project.manifest_path().is_some() {
+            sources.set_entry_source(source_id);
+        }
+        let mut program = sources
+            .parse(source_id, macros::STANDARD_NATIVE_MACROS)
+            .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
         load_file_modules(
-            &mut program.statements,
+            &mut program,
             path,
             project,
             macros::STANDARD_NATIVE_MACROS,
@@ -896,12 +788,17 @@ fn compile_project_file_with_host(
             require_entry,
         )
         .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
-        bytecode::compile_program_with_host_and_sources(&program, host, sources.source_files())
+        sources.analyze_project(host);
+        bytecode::compile_program_with_host_and_session(
+            host,
+            sources.session(),
+            sources.project_id(),
+        )
     })();
     result.map_err(|error| locate_compile_error(error, &sources))
 }
 
-fn locate_compile_error(error: CompileError, sources: &SourceRegistry) -> CompileError {
+fn locate_compile_error(error: CompileError, sources: &ProjectCompilation) -> CompileError {
     if error.source_name().is_some() {
         return error;
     }

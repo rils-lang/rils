@@ -1,5 +1,16 @@
-use super::runtime_builtins::call as call_runtime_builtin;
 use super::*;
+use crate::runtime_builtins::call as call_runtime_builtin;
+
+#[derive(Clone, Copy)]
+pub(super) enum CoreImport {
+    Builtin(rils_builtins::BuiltinId),
+    TypeOf,
+    Assert,
+    VecNew,
+    VecFrom,
+    HashMapNew,
+    HashSetNew,
+}
 
 pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
     let mut imports = rils_builtins::BUILTINS
@@ -31,19 +42,32 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
     imports
 }
 
-pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value, String> {
+pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
     use rils_builtins::BuiltinId;
 
-    match name {
-        "type_of" => Ok(Value::String(Rc::from(arguments[0].type_name()))),
-        "clone" => call_runtime_builtin(BuiltinId::Clone, arguments),
-        "is_ok" => call_runtime_builtin(BuiltinId::ResultIsOk, arguments),
-        "is_err" => call_runtime_builtin(BuiltinId::ResultIsErr, arguments),
-        "is_some" => call_runtime_builtin(BuiltinId::OptionIsSome, arguments),
-        "is_none" => call_runtime_builtin(BuiltinId::OptionIsNone, arguments),
-        "unwrap" => call_runtime_builtin(BuiltinId::OptionUnwrap, arguments),
-        "unwrap_or" => call_runtime_builtin(BuiltinId::OptionUnwrapOr, arguments),
-        "core::assert" => match arguments.first() {
+    Some(match name {
+        "type_of" => CoreImport::TypeOf,
+        "clone" => CoreImport::Builtin(BuiltinId::Clone),
+        "is_ok" => CoreImport::Builtin(BuiltinId::ResultIsOk),
+        "is_err" => CoreImport::Builtin(BuiltinId::ResultIsErr),
+        "is_some" => CoreImport::Builtin(BuiltinId::OptionIsSome),
+        "is_none" => CoreImport::Builtin(BuiltinId::OptionIsNone),
+        "unwrap" => CoreImport::Builtin(BuiltinId::OptionUnwrap),
+        "unwrap_or" => CoreImport::Builtin(BuiltinId::OptionUnwrapOr),
+        "core::assert" => CoreImport::Assert,
+        "core::vec::new" => CoreImport::VecNew,
+        "core::vec::from" => CoreImport::VecFrom,
+        "core::hash_map::new" => CoreImport::HashMapNew,
+        "core::hash_set::new" => CoreImport::HashSetNew,
+        _ => return None,
+    })
+}
+
+pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Result<Value, String> {
+    match import {
+        CoreImport::Builtin(id) => call_runtime_builtin(id, arguments),
+        CoreImport::TypeOf => Ok(Value::String(Rc::from(arguments[0].type_name()))),
+        CoreImport::Assert => match arguments.first() {
             Some(Value::Bool(true)) => Ok(Value::Unit),
             Some(Value::Bool(false)) => Err(arguments
                 .get(1)
@@ -55,20 +79,20 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
             )),
             None => Err("`assert` expects at least one argument".into()),
         },
-        "core::vec::new" => Ok(Value::Vec(Rc::new(SequenceValue {
+        CoreImport::VecNew => Ok(Value::Vec(Rc::new(SequenceValue {
             elements: RefCell::new(Vec::new()),
             element_type: RefCell::new(Some(Type::Unknown)),
         }))),
-        "core::hash_map::new" => Ok(Value::HashMap(Rc::new(HashMapValue {
+        CoreImport::HashMapNew => Ok(Value::HashMap(Rc::new(HashMapValue {
             entries: RefCell::new(HashMap::new()),
             key_type: RefCell::new(Type::Unknown),
             value_type: RefCell::new(Type::Unknown),
         }))),
-        "core::hash_set::new" => Ok(Value::HashSet(Rc::new(HashSetValue {
+        CoreImport::HashSetNew => Ok(Value::HashSet(Rc::new(HashSetValue {
             entries: RefCell::new(HashSet::new()),
             element_type: RefCell::new(Type::Unknown),
         }))),
-        "core::vec::from" => {
+        CoreImport::VecFrom => {
             let Value::Array(array) = &arguments[0] else {
                 return Err("Vec::from expects an array".into());
             };
@@ -86,6 +110,5 @@ pub(super) fn call_core_import(name: &str, arguments: &[Value]) -> Result<Value,
                 element_type: RefCell::new(array.element_type.borrow().clone()),
             })))
         }
-        _ => Err(format!("unknown core import `{name}`")),
     }
 }

@@ -1,13 +1,12 @@
 use super::{
-    Document, Project, Server, SourceId, Type, analysis, diagnostics, file_uri_to_path,
-    function_declaration, offset, path_to_file_uri, position, workspace_projects,
+    CompilationSession, Document, Project, Server, SourceId, Type, analysis, diagnostics,
+    file_uri_to_path, function_declaration, offset, path_to_file_uri, position,
+    project_session_name, workspace_projects,
 };
 use lsp_server::Connection;
-use rils_compiler::{
-    HostCallKind, HostContract, HostReceiver, HostThreadAffinity, HostTypeTransport,
-};
 use rils_frontend::FunctionSignature;
 use rils_frontend::analysis::analyze_with_source_id_and_external_exports_and_host_types;
+use rils_host::{HostCallKind, HostContract, HostReceiver, HostThreadAffinity, HostTypeTransport};
 use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
@@ -88,10 +87,7 @@ fn provides_signature_help_for_host_functions() {
 fn provides_all_host_overloads_in_signature_help() {
     let mut contract = HostContract::new();
     contract
-        .register_value_type(
-            "unity_engine::Vector3",
-            rils_compiler::HostValueLayout::F32x3,
-        )
+        .register_value_type("unity_engine::Vector3", rils_host::HostValueLayout::F32x3)
         .unwrap();
     contract
         .register_function(
@@ -252,7 +248,7 @@ fn test_server(
         Document {
             source_id: SourceId::UNKNOWN,
             text: text.into(),
-            analysis: rils_compiler::analyze_with_host_and_source_id_and_external_exports(
+            analysis: rils_frontend::analyze_with_host_and_source_id_and_external_exports(
                 text,
                 SourceId::UNKNOWN,
                 &host_contract,
@@ -272,6 +268,7 @@ fn test_server(
         host_functions,
         host_types,
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     }
 }
@@ -431,6 +428,7 @@ fn hover_shows_expanded_type_aliases() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
 
@@ -517,6 +515,7 @@ fn hover_describes_manifest_host_types() {
         host_functions: HashMap::new(),
         host_types,
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
     let [line, character] = position(text, text.find("GameObject").unwrap());
@@ -573,16 +572,8 @@ fn host_function_hover_groups_overloads_by_qualified_path() {
 
 #[test]
 fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = fs::read_to_string(
-        root.join("integrations/RilsForUnity/Assets/RilsTests/Lifecycle/Lifecycle.rils"),
-    )
-    .unwrap();
-    let bytes = fs::read(
-        root.join("integrations/RilsForUnity/.rils/manifest/unity/UnityEngine_CoreModule.rilhm"),
-    )
-    .unwrap();
-    let contract = HostContract::from_manifest_bytes(&bytes).unwrap();
+    let source = host_binding_fixture("Lifecycle.rils");
+    let contract = generated_host_fixture_contract();
     let host_functions = contract.signatures();
     let host_types = contract
         .types()
@@ -629,20 +620,11 @@ fn lifecycle_fixture_infers_generated_unity_members_and_imported_types() {
 
 #[test]
 fn host_binding_fixtures_analyze_against_generated_unity_manifest() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let bytes = fs::read(
-        root.join("integrations/RilsForUnity/.rils/manifest/unity/UnityEngine_CoreModule.rilhm"),
-    )
-    .unwrap();
-    let contract = HostContract::from_manifest_bytes(&bytes).unwrap();
+    let contract = generated_host_fixture_contract();
 
     for fixture in ["UnityStrings.rils", "UnityEnums.rils", "UnityFlags.rils"] {
-        let source = fs::read_to_string(
-            root.join("integrations/RilsForUnity/Assets/RilsTests/HostBindings")
-                .join(fixture),
-        )
-        .unwrap();
-        let analysis = rils_compiler::analyze_with_host_and_source_id_and_external_exports(
+        let source = host_binding_fixture(fixture);
+        let analysis = rils_frontend::analyze_with_host_and_source_id_and_external_exports(
             &source,
             SourceId::UNKNOWN,
             &contract,
@@ -688,6 +670,134 @@ fn host_binding_fixtures_analyze_against_generated_unity_manifest() {
             );
         }
     }
+}
+
+fn host_binding_fixture(name: &str) -> String {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/host_bindings")
+            .join(name),
+    )
+    .unwrap_or_else(|error| panic!("failed to read host binding fixture `{name}`: {error}"))
+}
+
+fn generated_host_fixture_contract() -> HostContract {
+    use rils_frontend::{FloatType, IntegerType};
+    use rils_host::HostValueLayout;
+
+    let mut contract = HostContract::new();
+    for name in ["unity_engine::GameObject", "unity_engine::Transform"] {
+        contract
+            .register_type(name, None::<&str>, HostTypeTransport::HostHandle)
+            .unwrap();
+    }
+    contract
+        .register_value_type("unity_engine::Vector2", HostValueLayout::F32x2)
+        .unwrap();
+    contract
+        .register_value_type("unity_engine::Vector3", HostValueLayout::F32x3)
+        .unwrap();
+    contract
+        .register_enum_type(
+            "unity_engine::CameraType",
+            IntegerType::I32,
+            false,
+            [("Game".to_owned(), 1), ("SceneView".to_owned(), 2)],
+        )
+        .unwrap();
+    contract
+        .register_enum_type(
+            "unity_engine::HideFlags",
+            IntegerType::I32,
+            true,
+            [("None".to_owned(), 0), ("HideInHierarchy".to_owned(), 1)],
+        )
+        .unwrap();
+
+    let f32_type = Type::Float(FloatType::F32);
+    for (id, name, receiver, receiver_kind, return_type) in [
+        (
+            1,
+            "unity_engine::GameObject::transform",
+            "unity_engine::GameObject",
+            HostReceiver::Ref,
+            Type::named("unity_engine::Transform"),
+        ),
+        (
+            2,
+            "unity_engine::Transform::local_position",
+            "unity_engine::Transform",
+            HostReceiver::Ref,
+            Type::named("unity_engine::Vector3"),
+        ),
+        (
+            3,
+            "unity_engine::Vector2::magnitude",
+            "unity_engine::Vector2",
+            HostReceiver::Ref,
+            f32_type.clone(),
+        ),
+        (
+            4,
+            "unity_engine::Vector3::x",
+            "unity_engine::Vector3",
+            HostReceiver::Ref,
+            f32_type.clone(),
+        ),
+    ] {
+        contract
+            .register_function_with_options_and_receiver(
+                id,
+                name,
+                FunctionSignature::fixed(vec![Type::named(receiver)], return_type),
+                "unity.fixture",
+                HostCallKind::Direct,
+                HostThreadAffinity::MainThread,
+                Some(receiver_kind),
+            )
+            .unwrap();
+    }
+    contract
+        .register_function_with_options_and_receiver(
+            5,
+            "unity_engine::Transform::set_local_position",
+            FunctionSignature::fixed(
+                vec![
+                    Type::named("unity_engine::Transform"),
+                    Type::named("unity_engine::Vector3"),
+                ],
+                Type::Unit,
+            ),
+            "unity.fixture",
+            HostCallKind::Direct,
+            HostThreadAffinity::MainThread,
+            Some(HostReceiver::RefMut),
+        )
+        .unwrap();
+    for (id, name, width, result) in [
+        (6, "unity_engine::Vector2::new", 2, "unity_engine::Vector2"),
+        (7, "unity_engine::Vector3::new", 3, "unity_engine::Vector3"),
+    ] {
+        contract
+            .register_function(
+                id,
+                name,
+                FunctionSignature::fixed(vec![f32_type.clone(); width], Type::named(result)),
+                "unity.fixture",
+            )
+            .unwrap();
+    }
+    contract
+        .register_function(
+            8,
+            "unity_engine::strings::echo",
+            FunctionSignature::fixed(vec![Type::String], Type::String),
+            "unity.fixture",
+        )
+        .unwrap();
+
+    let bytes = contract.to_manifest_bytes().unwrap();
+    HostContract::from_manifest_bytes(&bytes).unwrap()
 }
 
 #[test]
@@ -870,6 +980,7 @@ fn completes_host_modules_functions_and_aliases() {
         host_functions,
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
 
@@ -970,6 +1081,7 @@ fn completes_inherited_methods_for_named_host_types() {
         host_functions,
         host_types,
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
 
@@ -1012,6 +1124,7 @@ fn completes_integer_intrinsic_methods_and_associated_functions() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
 
@@ -1080,6 +1193,7 @@ fn completes_float_intrinsic_methods() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 2,
     };
 
@@ -1137,6 +1251,7 @@ text."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 2,
     };
     let complete = |line, character| {
@@ -1186,6 +1301,7 @@ text."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 3,
     };
     let option_items = expression_server
@@ -1322,6 +1438,7 @@ iterator."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 2,
     };
     let items = server
@@ -1381,6 +1498,7 @@ iterator."#;
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 2,
     };
     let items = server
@@ -1442,9 +1560,24 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: vec![project],
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
     server.load_workspace().unwrap();
+    let project_id = server
+        .compilation
+        .project_id(&project_session_name(&server.projects[0]))
+        .unwrap();
+    let project_analysis = server
+        .compilation
+        .project_analysis(project_id, &server.host_contract)
+        .expect("workspace reanalysis must cache the complete project analysis");
+    assert!(
+        project_analysis
+            .def_map
+            .definitions()
+            .any(|definition| definition.name == "add")
+    );
     let uri = path_to_file_uri(&entry);
     let completion = server
         .completion(&json!({
@@ -1756,6 +1889,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: workspace_projects(&examples).unwrap(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
     server.load_workspace().unwrap();
@@ -1861,6 +1995,51 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
 }
 
 #[test]
+fn bundled_examples_have_no_analyzer_errors() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .unwrap();
+    let examples = repository.join("examples");
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        host_types: HashSet::new(),
+        projects: workspace_projects(&examples).unwrap(),
+        compilation: CompilationSession::default(),
+        next_source_id: 1,
+    };
+    let expected = server
+        .projects
+        .iter()
+        .flat_map(|project| project.modules())
+        .map(|module| path_to_file_uri(&module.path))
+        .collect::<HashSet<_>>();
+
+    server.load_workspace().unwrap();
+
+    assert_eq!(server.workspace_documents, expected);
+    let errors = server
+        .documents
+        .iter()
+        .flat_map(|(uri, document)| {
+            diagnostics(&document.text, &document.analysis)
+                .into_iter()
+                .filter(|diagnostic| diagnostic["severity"] == 1)
+                .map(move |diagnostic| format!("{uri}: {}", diagnostic["message"]))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        errors.is_empty(),
+        "Analyzer errors in bundled examples:\n{errors:#?}"
+    );
+}
+
+#[test]
 fn loads_binary_host_manifest_from_initialization_options() {
     let mut contract = HostContract::new();
     contract
@@ -1885,6 +2064,7 @@ fn loads_binary_host_manifest_from_initialization_options() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
     let result = server.load_host_manifests(&json!({
@@ -1951,6 +2131,7 @@ fn discovers_and_merges_default_manifest_directory() {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: vec![Project::from_root(&root).unwrap()],
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
     server.load_host_manifests(&json!({})).unwrap();

@@ -6,11 +6,9 @@ use std::{
 };
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
-use rils_compiler::{
-    HOST_CONTRACT_ABI_VERSION, HostContract, analyze_with_host_and_source_id_and_external_exports,
-};
 use rils_frontend::{
-    FrontendError, FunctionSignature, SourceId, Span, Type,
+    CompilationSession, DefinitionData, FrontendError, FunctionSignature, ProjectSemanticIndex,
+    SourceId, Span, Type,
     analysis::{
         DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind, SymbolOccurrence,
     },
@@ -18,6 +16,11 @@ use rils_frontend::{
     lexer::{lex, lex_with_source_id},
     parser::parse,
 };
+use rils_frontend::{
+    analyze_program_with_host_and_source_id_and_external_exports,
+    analyze_with_host_and_source_id_and_external_exports,
+};
+use rils_host::{HOST_CONTRACT_ABI_VERSION, HostContract};
 use rils_project::Project;
 use serde_json::{Value, json};
 
@@ -68,6 +71,7 @@ fn main() -> Result<(), AnyError> {
         host_functions: HashMap::new(),
         host_types: HashSet::new(),
         projects: Vec::new(),
+        compilation: CompilationSession::default(),
         next_source_id: 1,
     };
     server.load_projects(&initialization)?;
@@ -86,7 +90,12 @@ struct Server {
     host_functions: HashMap<String, FunctionSignature>,
     host_types: HashSet<String>,
     projects: Vec<Project>,
+    compilation: CompilationSession,
     next_source_id: u32,
+}
+
+fn project_session_name(project: &Project) -> String {
+    project.root().to_string_lossy().into_owned()
 }
 
 impl Server {
@@ -100,6 +109,7 @@ impl Server {
             .flatten()
             .filter(|project| seen.insert(project.root().to_path_buf()))
             .collect();
+        self.compilation.clear_projects();
         Ok(())
     }
 
@@ -185,12 +195,17 @@ impl Server {
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri);
-        let analysis = analyze_with_host_and_source_id_and_external_exports(
-            &text,
-            source_id,
-            &self.host_contract,
-            &HashMap::new(),
-        );
+        self.compilation
+            .sources_mut()
+            .set_source_with_id(source_id, uri.clone(), text.clone());
+        let analysis = self.compilation.sources().parse(source_id).map(|program| {
+            analyze_program_with_host_and_source_id_and_external_exports(
+                &program,
+                source_id,
+                &self.host_contract,
+                &HashMap::new(),
+            )
+        });
         self.documents.insert(
             uri.clone(),
             Document {
@@ -214,6 +229,20 @@ impl Server {
             .checked_add(1)
             .expect("source id overflow");
         source_id
+    }
+
+    fn parsed_document(&self, document: &Document) -> Option<rils_frontend::ast::Program> {
+        self.compilation
+            .sources()
+            .source_text(document.source_id)
+            .filter(|source| *source == document.text)
+            .and_then(|_| self.compilation.sources().try_parse(document.source_id))
+            .unwrap_or_else(|| {
+                let tokens = lex_with_source_id(&document.text, document.source_id)
+                    .map_err(FrontendError::Lex)?;
+                parse(tokens).map_err(FrontendError::Parse)
+            })
+            .ok()
     }
 
     fn load_host_manifests(&mut self, initialization: &Value) -> Result<(), AnyError> {
@@ -287,17 +316,22 @@ impl Server {
             };
             let uri = path_to_file_uri(path);
             let source_id = self.source_id_for_uri(&uri);
+            self.compilation
+                .sources_mut()
+                .set_source_with_id(source_id, uri.clone(), text.clone());
             self.workspace_documents.insert(uri.clone());
             self.documents.insert(
                 uri,
                 Document {
                     source_id,
-                    analysis: analyze_with_host_and_source_id_and_external_exports(
-                        &text,
-                        source_id,
-                        &self.host_contract,
-                        &HashMap::new(),
-                    ),
+                    analysis: self.compilation.sources().parse(source_id).map(|program| {
+                        analyze_program_with_host_and_source_id_and_external_exports(
+                            &program,
+                            source_id,
+                            &self.host_contract,
+                            &HashMap::new(),
+                        )
+                    }),
                     text,
                 },
             );
@@ -308,15 +342,110 @@ impl Server {
     }
 
     fn reanalyze_documents(&mut self) {
-        let exports = project_index::collect_external_exports(self);
-        for document in self.documents.values_mut() {
-            document.analysis = analyze_with_host_and_source_id_and_external_exports(
-                &document.text,
+        for (uri, document) in &self.documents {
+            self.compilation.sources_mut().set_source_with_id(
                 document.source_id,
-                &self.host_contract,
-                &exports,
+                uri.clone(),
+                document.text.clone(),
             );
         }
+        self.rebuild_project_semantics();
+        let exports = project_index::collect_external_exports(self);
+        for document in self.documents.values_mut() {
+            document.analysis =
+                self.compilation
+                    .sources()
+                    .parse(document.source_id)
+                    .map(|program| {
+                        analyze_program_with_host_and_source_id_and_external_exports(
+                            &program,
+                            document.source_id,
+                            &self.host_contract,
+                            &exports,
+                        )
+                    });
+        }
+        self.rebuild_project_semantics();
+    }
+
+    fn rebuild_project_semantics(&mut self) {
+        self.compilation.clear_projects();
+        for project in &self.projects {
+            let project_id = self
+                .compilation
+                .register_project(project_session_name(project));
+            let mut index = ProjectSemanticIndex::default();
+            let mut programs = Vec::new();
+            for file in project.modules() {
+                if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
+                    let module = index.register(&file.module_path, document.source_id);
+                    if let Ok(program) = self.compilation.sources().parse(document.source_id) {
+                        programs.push((module, program));
+                    }
+                }
+            }
+            self.compilation.replace_project(project_id, index);
+            let syntax = self
+                .compilation
+                .project_syntax_mut(project_id)
+                .expect("registered project must have syntax storage");
+            for (module, program) in programs {
+                syntax.insert_module(module, program);
+            }
+
+            let analysis = {
+                let semantics = self
+                    .compilation
+                    .project(project_id)
+                    .expect("registered project must have semantic storage");
+                let syntax = self
+                    .compilation
+                    .project_syntax(project_id)
+                    .expect("registered project must have syntax storage");
+                rils_frontend::analyze_project_with_host(
+                    syntax,
+                    semantics.module_graph(),
+                    &self.host_contract,
+                )
+            };
+            self.compilation
+                .project_mut(project_id)
+                .expect("registered project must have semantic storage")
+                .index_def_map(&analysis.def_map);
+            self.compilation
+                .set_project_analysis(project_id, &self.host_contract, analysis);
+        }
+    }
+
+    fn project_semantics(&self, project: &Project) -> Option<&ProjectSemanticIndex> {
+        self.compilation
+            .project_id(&project_session_name(project))
+            .and_then(|id| self.compilation.project(id))
+    }
+
+    fn project_analysis(&self, project: &Project) -> Option<&DocumentAnalysis> {
+        self.compilation
+            .project_id(&project_session_name(project))
+            .and_then(|id| self.compilation.project_analysis(id, &self.host_contract))
+    }
+
+    fn document_uri_for_source(&self, source: SourceId) -> Option<&str> {
+        self.documents
+            .iter()
+            .find(|(_, document)| document.source_id == source)
+            .map(|(uri, _)| uri.as_str())
+    }
+
+    fn project_definition_by_id(&self, id: rils_frontend::DefId) -> Option<&DefinitionData> {
+        if let Some(definition) = self.projects.iter().find_map(|project| {
+            self.project_analysis(project)
+                .and_then(|analysis| analysis.def_map.definition(id))
+        }) {
+            return Some(definition);
+        }
+        self.compilation
+            .projects()
+            .find_map(|index| index.definition(id))
     }
 
     fn publish_all_diagnostics(&mut self) -> Result<(), AnyError> {

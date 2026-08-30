@@ -80,6 +80,11 @@ pub struct Interpreter {
     pending_loop_flow: Option<Flow>,
     output_handler: Rc<crate::OutputHandler>,
     host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
+    semantic_expression_ids: Option<rils_frontend::semantic::ExpressionIdentityMap>,
+    typeck_results: Option<rils_frontend::TypeckResults>,
+    frontend_semantics_verified: bool,
+    frontend_verified_trait_impls: HashSet<rils_frontend::ImplId>,
+    frontend_impl_ids: HashMap<Span, rils_frontend::ImplId>,
 }
 
 impl Default for Interpreter {
@@ -101,6 +106,11 @@ impl Interpreter {
             pending_loop_flow: None,
             output_handler: crate::output::default_output_handler(),
             host_value_formatter: None,
+            semantic_expression_ids: None,
+            typeck_results: None,
+            frontend_semantics_verified: false,
+            frontend_verified_trait_impls: HashSet::new(),
+            frontend_impl_ids: HashMap::new(),
         }
     }
 
@@ -272,7 +282,153 @@ impl Interpreter {
         Ok(current)
     }
 
-    pub fn execute(&mut self, program: &Program) -> Result<Value, RuntimeError> {
+    pub(crate) fn execute_with_analysis(
+        &mut self,
+        program: &Program,
+        analysis: &rils_frontend::analysis::DocumentAnalysis,
+    ) -> Result<Value, RuntimeError> {
+        self.semantic_expression_ids =
+            Some(rils_frontend::semantic::ExpressionIdentityMap::allocate(
+                program,
+                crate::SourceId::UNKNOWN,
+            ));
+        self.typeck_results = Some(analysis.typeck_results.clone());
+        let result = self.execute_inner(program);
+        self.semantic_expression_ids = None;
+        self.typeck_results = None;
+        result
+    }
+
+    pub(crate) fn execute_project_with_analysis(
+        &mut self,
+        syntax: &rils_frontend::ProjectSyntax,
+        graph: &rils_frontend::ModuleGraph,
+        analysis: &rils_frontend::analysis::DocumentAnalysis,
+        entry: rils_frontend::DefId,
+    ) -> Result<Value, RuntimeError> {
+        let mut expression_ids = rils_frontend::semantic::ExpressionIdentityMap::default();
+        for program in syntax.roots() {
+            expression_ids.extend(rils_frontend::semantic::ExpressionIdentityMap::allocate(
+                program,
+                crate::SourceId::UNKNOWN,
+            ));
+        }
+        for (module, program) in syntax.modules() {
+            let source = graph
+                .module(module)
+                .and_then(|module| module.source)
+                .unwrap_or(crate::SourceId::UNKNOWN);
+            expression_ids.extend(rils_frontend::semantic::ExpressionIdentityMap::allocate(
+                program, source,
+            ));
+        }
+        self.semantic_expression_ids = Some(expression_ids);
+        self.typeck_results = Some(analysis.typeck_results.clone());
+        let previous_semantics_verified =
+            std::mem::replace(&mut self.frontend_semantics_verified, true);
+        let previous_verified_trait_impls = std::mem::replace(
+            &mut self.frontend_verified_trait_impls,
+            analysis.verified_trait_impls.iter().copied().collect(),
+        );
+        let previous_impl_ids = std::mem::replace(
+            &mut self.frontend_impl_ids,
+            analysis.def_map.impls().collect(),
+        );
+
+        let result = (|| {
+            self.steps = 0;
+            self.pending_return = None;
+            self.pending_loop_flow = None;
+            let mut environments = HashMap::new();
+            for module in graph.modules() {
+                if module.path.is_empty() {
+                    environments.insert(module.id, self.globals.clone());
+                    continue;
+                }
+                let parent = module
+                    .parent
+                    .and_then(|parent| environments.get(&parent))
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimeError::new(
+                            format!("module `{}` has no initialized parent", module.path),
+                            Span::default(),
+                        )
+                    })?;
+                let name = module
+                    .path
+                    .rsplit("::")
+                    .next()
+                    .expect("non-root module has a name")
+                    .to_owned();
+                let members = Environment::module_child(parent.clone());
+                parent.borrow_mut().define(
+                    name.clone(),
+                    Value::Module(Rc::new(ModuleValue {
+                        name,
+                        members: members.clone(),
+                        public: RefCell::new(HashSet::new()),
+                    })),
+                    false,
+                    None,
+                );
+                environments.insert(module.id, members);
+            }
+
+            for program in syntax.roots() {
+                self.execute_statements(&program.statements, self.globals.clone())?;
+            }
+            for (module, program) in syntax.modules() {
+                let environment = environments.get(&module).cloned().ok_or_else(|| {
+                    RuntimeError::new("project module has no runtime environment", Span::default())
+                })?;
+                self.execute_statements(&program.statements, environment.clone())?;
+                let mut public = HashSet::new();
+                for statement in &program.statements {
+                    public.extend(execution::public_names(statement, &environment)?);
+                }
+                let module_data = graph.module(module).expect("syntax module is in graph");
+                let parent = module_data
+                    .parent
+                    .and_then(|parent| environments.get(&parent))
+                    .expect("module parent environment exists");
+                let name = module_data
+                    .path
+                    .rsplit("::")
+                    .next()
+                    .expect("module has a name");
+                if let Some(Value::Module(module)) = parent.borrow().get(name) {
+                    *module.public.borrow_mut() = public;
+                }
+            }
+
+            let definition = analysis.def_map.definition(entry).ok_or_else(|| {
+                RuntimeError::new("project entry definition is missing", Span::default())
+            })?;
+            let module_path = match definition.container.as_ref() {
+                Some(rils_frontend::SymbolContainer::Module(path)) => path.as_str(),
+                _ => "",
+            };
+            let environment = graph
+                .module_by_path(module_path)
+                .and_then(|module| environments.get(&module.id))
+                .cloned()
+                .unwrap_or_else(|| self.globals.clone());
+            let main = environment.borrow().get(&definition.name).ok_or_else(|| {
+                RuntimeError::new("project entry function is not initialized", definition.span)
+            })?;
+            self.call(main, &[], definition.span)
+        })();
+
+        self.semantic_expression_ids = None;
+        self.typeck_results = None;
+        self.frontend_semantics_verified = previous_semantics_verified;
+        self.frontend_verified_trait_impls = previous_verified_trait_impls;
+        self.frontend_impl_ids = previous_impl_ids;
+        result
+    }
+
+    fn execute_inner(&mut self, program: &Program) -> Result<Value, RuntimeError> {
         self.steps = 0;
         self.pending_return = None;
         self.pending_loop_flow = None;

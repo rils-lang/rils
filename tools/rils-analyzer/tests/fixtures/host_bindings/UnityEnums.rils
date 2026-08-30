@@ -1,0 +1,8 @@
+use unity_engine::CameraType;
+
+fn is_game(value: CameraType) -> bool {
+    match value {
+        CameraType::Game => true,
+        CameraType::SceneView => false,
+    }
+}

@@ -1,8 +1,13 @@
 use super::execution::anchored_environment;
 use super::*;
-use crate::environment::StorageSlot;
 
+mod helpers;
+mod member;
+mod path;
 mod user_function;
+
+use helpers::{builtin_default_value, validate_native_arguments, validate_native_return};
+pub(super) use helpers::{builtin_runtime_member, select_method};
 
 impl Interpreter {
     pub(super) fn call(
@@ -485,123 +490,14 @@ impl Interpreter {
                 span,
             ));
         }
-        let member = &segments[index];
-        match base {
-            Value::BuiltinType(BuiltinType::Vec) => match member.as_str() {
-                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::VecNew)),
-                "from" => Ok(Value::BuiltinFunction(BuiltinFunction::VecFrom)),
-                _ => Err(RuntimeError::new(
-                    format!("Vec has no associated function `{member}`"),
-                    span,
-                )),
-            },
-            Value::BuiltinType(BuiltinType::HashMap) => match member.as_str() {
-                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashMapNew)),
-                _ => Err(RuntimeError::new(
-                    format!("HashMap has no associated function `{member}`"),
-                    span,
-                )),
-            },
-            Value::BuiltinType(BuiltinType::HashSet) => match member.as_str() {
-                "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashSetNew)),
-                _ => Err(RuntimeError::new(
-                    format!("HashSet has no associated function `{member}`"),
-                    span,
-                )),
-            },
-            Value::BuiltinType(BuiltinType::Integer(target)) => {
-                if let Some(constant) = rils_builtins::integer_constant(member) {
-                    return Ok(crate::numeric::integer_constant(target, constant.id));
-                }
-                let intrinsic =
-                    rils_builtins::integer_associated_function(member).ok_or_else(|| {
-                        RuntimeError::new(
-                            format!("{target} has no associated function `{member}`"),
-                            span,
-                        )
-                    })?;
-                Ok(Value::BuiltinFunction(BuiltinFunction::IntegerIntrinsic {
-                    id: intrinsic.id,
-                    target,
-                }))
-            }
-            Value::BuiltinType(BuiltinType::Float(target)) => {
-                let constant = rils_builtins::float_constant(member).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!("{target} has no associated constant `{member}`"),
-                        span,
-                    )
-                })?;
-                Ok(crate::numeric::float_constant(target, constant.id))
-            }
-            Value::StructType(definition) => definition
-                .methods
-                .borrow()
-                .get(member)
-                .cloned()
-                .map(Value::Function)
-                .ok_or_else(|| {
-                    RuntimeError::new(
-                        format!(
-                            "struct `{}` has no associated function `{member}`",
-                            segments[0]
-                        ),
-                        span,
-                    )
-                }),
-            Value::EnumType(definition) => {
-                if let Some(method) = definition.methods.borrow().get(member).cloned() {
-                    return Ok(Value::Function(method));
-                }
-                let variant = definition
-                    .variants
-                    .iter()
-                    .find(|variant| enum_variant_name(variant) == member)
-                    .ok_or_else(|| {
-                        RuntimeError::new(
-                            format!("enum `{}` has no variant `{member}`", segments[0]),
-                            span,
-                        )
-                    })?;
-                match variant {
-                    EnumVariant::Unit { .. } => Ok(Value::Enum(Rc::new(EnumInstance {
-                        type_arguments: vec![Type::Unknown; definition.generic_parameters.len()],
-                        type_definition: definition,
-                        variant: member.clone(),
-                        payload: EnumPayload::Unit,
-                    }))),
-                    EnumVariant::Tuple { .. } | EnumVariant::Record { .. } => {
-                        Ok(Value::VariantConstructor(Rc::new(VariantConstructor {
-                            type_definition: definition,
-                            variant: member.clone(),
-                            environment: owner_environment,
-                        })))
-                    }
-                }
-            }
-            Value::TraitType(definition) => {
-                if !definition
-                    .methods
-                    .iter()
-                    .any(|method| method.name == *member)
-                {
-                    return Err(RuntimeError::new(
-                        format!("trait `{}` has no method `{member}`", definition.name),
-                        span,
-                    ));
-                }
-                Ok(Value::TraitMethodSelector(Rc::new(TraitMethodSelector {
-                    target: None,
-                    trait_name: definition.name.clone(),
-                    method_name: member.clone(),
-                    environment: environment.clone(),
-                })))
-            }
-            _ => Err(RuntimeError::new(
-                format!("`{}` is not a struct or enum type", segments[0]),
-                span,
-            )),
-        }
+        path::resolve_associated_path(
+            base,
+            &segments[0],
+            &segments[index],
+            environment,
+            owner_environment,
+            span,
+        )
     }
 
     pub(super) fn resolve_qualified_path(
@@ -612,32 +508,7 @@ impl Interpreter {
         environment: &EnvironmentRef,
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        let trait_value = environment
-            .borrow()
-            .get(trait_name)
-            .ok_or_else(|| RuntimeError::new(format!("unknown trait `{trait_name}`"), span))?;
-        let Value::TraitType(definition) = trait_value else {
-            return Err(RuntimeError::new(
-                format!("`{trait_name}` is not a trait"),
-                span,
-            ));
-        };
-        if !definition
-            .methods
-            .iter()
-            .any(|method| method.name == member)
-        {
-            return Err(RuntimeError::new(
-                format!("trait `{trait_name}` has no method `{member}`"),
-                span,
-            ));
-        }
-        Ok(Value::TraitMethodSelector(Rc::new(TraitMethodSelector {
-            target: Some(target.clone()),
-            trait_name: trait_name.into(),
-            method_name: member.into(),
-            environment: environment.clone(),
-        })))
+        path::resolve_qualified_path(target, trait_name, member, environment, span)
     }
 
     pub(super) fn resolve_member(
@@ -646,143 +517,28 @@ impl Interpreter {
         name: &str,
         span: Span,
     ) -> Result<Value, RuntimeError> {
+        if let Some(member) = member::resolve_numeric_member(&object, name, span)? {
+            return Ok(member);
+        }
+        if let Some(member) = member::resolve_host_or_builtin_member(&object, name, span)? {
+            return Ok(member);
+        }
+        if let Some(member) = member::take_tuple_field(&object, name, span)? {
+            return Ok(member);
+        }
+        if let Some(member) = member::take_struct_field(&object, name, span)? {
+            return Ok(member);
+        }
         match &object {
-            Value::I8(_)
-            | Value::I16(_)
-            | Value::I32(_)
-            | Value::I64(_)
-            | Value::I128(_)
-            | Value::Isize(_)
-            | Value::U8(_)
-            | Value::U16(_)
-            | Value::U32(_)
-            | Value::U64(_)
-            | Value::U128(_)
-            | Value::Usize(_) => {
-                let intrinsic = rils_builtins::integer_method(name).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!("{} has no method `{name}`", object.type_name()),
-                        span,
-                    )
-                })?;
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::IntegerIntrinsic(intrinsic.id),
-                })))
-            }
-            Value::F32(_) | Value::F64(_) => {
-                let intrinsic = rils_builtins::float_method(name).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!("{} has no method `{name}`", object.type_name()),
-                        span,
-                    )
-                })?;
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::FloatIntrinsic(intrinsic.id),
-                })))
-            }
-            Value::HostObject(instance) => {
-                if let Some((id, _)) = builtin_runtime_member(&object, name) {
-                    return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                        receiver: Rc::new(object.clone()),
-                        method: BuiltinMethod::Runtime(id),
-                    })));
-                }
-                instance
-                    .type_definition
-                    .methods
-                    .borrow()
-                    .get(name)
-                    .cloned()
-                    .map(|function| {
-                        Value::HostBoundMethod(Rc::new(HostBoundMethod {
-                            receiver: Rc::new(object.clone()),
-                            function,
-                        }))
-                    })
-                    .ok_or_else(|| {
-                        RuntimeError::new(
-                            format!(
-                                "type `{}` has no method `{name}`",
-                                instance.type_definition.name
-                            ),
-                            span,
-                        )
-                    })
-            }
-            value if builtin_runtime_member(value, name).is_some() => {
-                let (id, _) = builtin_runtime_member(value, name).expect("member was checked");
-                Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(object.clone()),
-                    method: BuiltinMethod::Runtime(id),
-                })))
-            }
-            Value::Tuple(sequence) => {
-                let index = name
-                    .parse::<usize>()
-                    .map_err(|_| RuntimeError::new(format!("tuple has no field `{name}`"), span))?;
-                let mut elements = sequence.elements.borrow_mut();
-                let slot = elements.get_mut(index).ok_or_else(|| {
-                    RuntimeError::new(format!("tuple index {index} is out of bounds"), span)
-                })?;
-                let value = slot.value.as_ref().ok_or_else(|| {
-                    RuntimeError::new(format!("use of moved tuple field `{index}`"), span)
-                })?;
-                if value.is_copy() {
-                    return value
-                        .clone_owned()
-                        .map_err(|message| RuntimeError::new(message, span));
-                }
-                if slot.references > 0 {
-                    return Err(RuntimeError::new(
-                        format!("cannot move tuple field `{index}` while it is referenced"),
-                        span,
-                    ));
-                }
-                Ok(slot.value.take().expect("tuple field value was checked"))
-            }
-            Value::Struct(instance) => {
-                if instance.fields.borrow().contains_key(name) {
-                    let mut fields = instance.fields.borrow_mut();
-                    let value = fields
-                        .get_mut(name)
-                        .expect("field presence was checked")
-                        .value
-                        .as_mut()
-                        .ok_or_else(|| {
-                            RuntimeError::new(
-                                format!(
-                                    "use of moved field `{}.{name}`",
-                                    instance.type_definition.name
-                                ),
-                                span,
-                            )
-                        })?;
-                    if value.is_copy() {
-                        return value
-                            .clone_owned()
-                            .map_err(|message| RuntimeError::new(message, span));
-                    }
-                    let field = fields.get_mut(name).expect("field presence was checked");
-                    if field.references > 0 {
-                        return Err(RuntimeError::new(
-                            format!("cannot move field `{name}` while it is referenced"),
-                            span,
-                        ));
-                    }
-                    return Ok(field.value.take().expect("field value was checked"));
-                }
-                self.bind_method(
-                    object.clone(),
-                    &instance.type_definition.methods,
-                    &instance.type_definition.trait_methods,
-                    &instance.type_definition.name,
-                    name,
-                    span,
-                )
-            }
-            Value::Enum(instance) => self.bind_method(
+            Value::Struct(instance) => member::bind_rils_method(
+                object.clone(),
+                &instance.type_definition.methods,
+                &instance.type_definition.trait_methods,
+                &instance.type_definition.name,
+                name,
+                span,
+            ),
+            Value::Enum(instance) => member::bind_rils_method(
                 object.clone(),
                 &instance.type_definition.methods,
                 &instance.type_definition.trait_methods,
@@ -794,91 +550,28 @@ impl Interpreter {
                 let borrowed = reference
                     .read()
                     .map_err(|message| RuntimeError::new(message, span))?;
-                if let Some((id, receiver)) = builtin_runtime_member(&borrowed, name) {
-                    if receiver == rils_builtins::ReceiverMode::Mutable && !reference.mutable {
-                        return Err(RuntimeError::new(
-                            format!("{}::{name} requires `&mut self`", borrowed.type_name()),
-                            span,
-                        ));
-                    }
-                    return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                        receiver: Rc::new(object.clone()),
-                        method: BuiltinMethod::Runtime(id),
-                    })));
+                if let Some(member) = member::read_borrowed_field(&borrowed, name, span)? {
+                    return Ok(member);
+                }
+                if let Some(member) = member::resolve_borrowed_host_or_builtin_member(
+                    &borrowed,
+                    object.clone(),
+                    reference.mutable,
+                    name,
+                    span,
+                )? {
+                    return Ok(member);
                 }
                 match borrowed {
-                    Value::HostObject(instance) => instance
-                        .type_definition
-                        .methods
-                        .borrow()
-                        .get(name)
-                        .cloned()
-                        .map(|function| {
-                            Value::HostBoundMethod(Rc::new(HostBoundMethod {
-                                receiver: Rc::new(object.clone()),
-                                function,
-                            }))
-                        })
-                        .ok_or_else(|| {
-                            RuntimeError::new(
-                                format!(
-                                    "type `{}` has no method `{name}`",
-                                    instance.type_definition.name
-                                ),
-                                span,
-                            )
-                        }),
-                    Value::Tuple(sequence) => {
-                        let index = name.parse::<usize>().map_err(|_| {
-                            RuntimeError::new(format!("tuple has no field `{name}`"), span)
-                        })?;
-                        let elements = sequence.elements.borrow();
-                        let value = elements
-                            .get(index)
-                            .and_then(|slot| slot.value.as_ref())
-                            .ok_or_else(|| {
-                                RuntimeError::new(
-                                    format!("use of moved tuple field `{index}`"),
-                                    span,
-                                )
-                            })?;
-                        if !value.is_copy() {
-                            return Err(RuntimeError::new(
-                                format!(
-                                    "cannot move non-Copy tuple field `{index}` through a reference"
-                                ),
-                                span,
-                            ));
-                        }
-                        value
-                            .clone_owned()
-                            .map_err(|message| RuntimeError::new(message, span))
-                    }
-                    Value::Struct(instance) => {
-                        if let Some(field) = instance.fields.borrow().get(name) {
-                            let value = field.value.as_ref().ok_or_else(|| {
-                                RuntimeError::new(format!("use of moved field `{name}`"), span)
-                            })?;
-                            if value.is_copy() {
-                                return value
-                                    .clone_owned()
-                                    .map_err(|message| RuntimeError::new(message, span));
-                            }
-                            return Err(RuntimeError::new(
-                                format!("cannot move non-Copy field `{name}` through a reference"),
-                                span,
-                            ));
-                        }
-                        self.bind_method(
-                            object.clone(),
-                            &instance.type_definition.methods,
-                            &instance.type_definition.trait_methods,
-                            &instance.type_definition.name,
-                            name,
-                            span,
-                        )
-                    }
-                    Value::Enum(instance) => self.bind_method(
+                    Value::Struct(instance) => member::bind_rils_method(
+                        object.clone(),
+                        &instance.type_definition.methods,
+                        &instance.type_definition.trait_methods,
+                        &instance.type_definition.name,
+                        name,
+                        span,
+                    ),
+                    Value::Enum(instance) => member::bind_rils_method(
                         object.clone(),
                         &instance.type_definition.methods,
                         &instance.type_definition.trait_methods,
@@ -906,254 +599,6 @@ impl Interpreter {
                 format!("{} has no member `{name}`", object.type_name()),
                 span,
             )),
-        }
-    }
-
-    pub(super) fn bind_method(
-        &self,
-        receiver: Value,
-        methods: &std::cell::RefCell<HashMap<String, Rc<UserFunction>>>,
-        trait_methods: &std::cell::RefCell<HashMap<String, HashMap<String, Rc<UserFunction>>>>,
-        type_name: &str,
-        name: &str,
-        span: Span,
-    ) -> Result<Value, RuntimeError> {
-        let function = select_method(methods, trait_methods, name).map_err(|traits| {
-            RuntimeError::new(
-                format!(
-                    "method `{name}` is ambiguous for `{type_name}`; candidates come from traits {}",
-                    traits.join(", ")
-                ),
-                span,
-            )
-        })?;
-        let Some(function) = function else {
-            if trait_methods.borrow().contains_key("Iterator")
-                && rils_builtins::is_iterator_default_method(name)
-                && let Some(member) = rils_builtins::builtin_member("Iterator", name)
-                && let (Some(method), Some(_)) = (member.builtin_id, member.receiver)
-            {
-                return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(receiver),
-                    method: BuiltinMethod::Runtime(method),
-                })));
-            }
-            if name == "clone" {
-                return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                    receiver: Rc::new(receiver),
-                    method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
-                })));
-            }
-            return Err(RuntimeError::new(
-                format!("type `{type_name}` has no member `{name}`"),
-                span,
-            ));
-        };
-        if function
-            .parameters
-            .first()
-            .map(|parameter| parameter.name.as_str())
-            != Some("self")
-        {
-            return Err(RuntimeError::new(
-                format!("`{type_name}::{name}` is an associated function, not a method"),
-                span,
-            ));
-        }
-        let receiver = match function
-            .parameters
-            .first()
-            .and_then(|parameter| parameter.type_annotation.as_ref())
-        {
-            Some(Type::Reference { mutable, .. }) if !matches!(receiver, Value::Reference(_)) => {
-                let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(*mutable)));
-                storage.borrow_mut().initialize(receiver);
-                Value::Reference(Rc::new(ReferenceValue::new_storage(storage, *mutable)))
-            }
-            _ => receiver,
-        };
-        Ok(Value::BoundMethod(Rc::new(BoundMethod {
-            receiver: Rc::new(receiver),
-            function,
-        })))
-    }
-}
-
-fn builtin_default_value(ty: &Type) -> Option<Value> {
-    use rils_frontend::default::DefaultPlan;
-
-    fn materialize(plan: &DefaultPlan) -> Option<Value> {
-        let sequence = |values: Vec<(Value, Type)>| {
-            Rc::new(SequenceValue {
-                elements: RefCell::new(
-                    values
-                        .into_iter()
-                        .map(|(value, type_annotation)| FieldSlot {
-                            value: Some(value),
-                            type_annotation,
-                            references: 0,
-                        })
-                        .collect(),
-                ),
-                element_type: RefCell::new(None),
-            })
-        };
-        Some(match plan {
-            DefaultPlan::Unit => Value::Unit,
-            DefaultPlan::Bool => Value::Bool(false),
-            DefaultPlan::Integer(crate::IntegerType::I8) => Value::I8(0),
-            DefaultPlan::Integer(crate::IntegerType::I16) => Value::I16(0),
-            DefaultPlan::Integer(crate::IntegerType::I32) => Value::I32(0),
-            DefaultPlan::Integer(crate::IntegerType::I64) => Value::I64(0),
-            DefaultPlan::Integer(crate::IntegerType::I128) => Value::I128(0),
-            DefaultPlan::Integer(crate::IntegerType::Isize) => Value::Isize(0),
-            DefaultPlan::Integer(crate::IntegerType::U8) => Value::U8(0),
-            DefaultPlan::Integer(crate::IntegerType::U16) => Value::U16(0),
-            DefaultPlan::Integer(crate::IntegerType::U32) => Value::U32(0),
-            DefaultPlan::Integer(crate::IntegerType::U64) => Value::U64(0),
-            DefaultPlan::Integer(crate::IntegerType::U128) => Value::U128(0),
-            DefaultPlan::Integer(crate::IntegerType::Usize) => Value::Usize(0),
-            DefaultPlan::Float(crate::FloatType::F32) => Value::F32(0.0),
-            DefaultPlan::Float(crate::FloatType::F64) => Value::F64(0.0),
-            DefaultPlan::Char => Value::Char('\0'),
-            DefaultPlan::String => Value::String(Rc::from("")),
-            DefaultPlan::Tuple(elements) => Value::Tuple(sequence(
-                elements
-                    .iter()
-                    .map(|element| {
-                        let value = materialize(element)?;
-                        let ty = Type::of_value(&value)?;
-                        Some((value, ty))
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-            )),
-            DefaultPlan::Array {
-                element,
-                element_type,
-                length,
-            } => {
-                let values = (0..*length)
-                    .map(|_| Some((materialize(element)?, element_type.clone())))
-                    .collect::<Option<Vec<_>>>()?;
-                let sequence = sequence(values);
-                *sequence.element_type.borrow_mut() = Some(element_type.clone());
-                Value::Array(sequence)
-            }
-            DefaultPlan::Option(inner) => Value::Option {
-                value: None,
-                element_type: Some(inner.clone()),
-            },
-            DefaultPlan::EmptyCollection { name, arguments } if name == "Vec" => {
-                Value::Vec(Rc::new(SequenceValue {
-                    elements: RefCell::new(Vec::new()),
-                    element_type: RefCell::new(Some(arguments[0].clone())),
-                }))
-            }
-            DefaultPlan::EmptyCollection { name, arguments } if name == "HashMap" => {
-                Value::HashMap(Rc::new(HashMapValue {
-                    entries: RefCell::new(std::collections::HashMap::new()),
-                    key_type: RefCell::new(arguments[0].clone()),
-                    value_type: RefCell::new(arguments[1].clone()),
-                }))
-            }
-            DefaultPlan::EmptyCollection { name, arguments } if name == "HashSet" => {
-                Value::HashSet(Rc::new(HashSetValue {
-                    entries: RefCell::new(std::collections::HashSet::new()),
-                    element_type: RefCell::new(arguments[0].clone()),
-                }))
-            }
-            DefaultPlan::EmptyCollection { .. } | DefaultPlan::TraitCall(_) => return None,
-        })
-    }
-
-    materialize(&rils_frontend::default::default_plan(ty)?)
-}
-
-pub(super) fn builtin_runtime_member(
-    value: &Value,
-    name: &str,
-) -> Option<(rils_builtins::BuiltinId, rils_builtins::ReceiverMode)> {
-    let owner = match value {
-        Value::Array(_) => "Array",
-        Value::String(_) => "string",
-        Value::Vec(_) => "Vec",
-        Value::HashMap(_) => "HashMap",
-        Value::HashSet(_) => "HashSet",
-        Value::Range(_) => "Range",
-        Value::Option { .. } => "Option",
-        Value::Result { .. } => "Result",
-        Value::SequenceIterator(_) => "Iterator",
-        Value::HostObject(object) if object.type_definition.name == "Formatter" => "Formatter",
-        _ => return None,
-    };
-    let member = rils_builtins::builtin_member(owner, name)?;
-    Some((member.builtin_id?, member.receiver?))
-}
-
-fn validate_native_arguments(
-    signature: Option<&FunctionSignature>,
-    arguments: &[Value],
-    span: Span,
-) -> Result<(), RuntimeError> {
-    let Some(parameters) = signature.and_then(|signature| signature.parameters.as_ref()) else {
-        return Ok(());
-    };
-    for (index, (expected, argument)) in parameters.iter().zip(arguments).enumerate() {
-        apply_type(
-            Some(expected),
-            argument,
-            span,
-            &format!("native argument {}", index + 1),
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_native_return(
-    signature: Option<&FunctionSignature>,
-    value: Value,
-    span: Span,
-    name: &str,
-) -> Result<Value, RuntimeError> {
-    let Some(signature) = signature else {
-        return Ok(value);
-    };
-    apply_type(
-        Some(&signature.return_type),
-        &value,
-        span,
-        &format!("return value of `{name}`"),
-    )
-}
-
-pub(super) fn select_method(
-    methods: &std::cell::RefCell<HashMap<String, Rc<UserFunction>>>,
-    trait_methods: &std::cell::RefCell<HashMap<String, HashMap<String, Rc<UserFunction>>>>,
-    name: &str,
-) -> Result<Option<Rc<UserFunction>>, Vec<String>> {
-    if let Some(method) = methods.borrow().get(name).cloned() {
-        return Ok(Some(method));
-    }
-    let trait_methods = trait_methods.borrow();
-    let mut candidates = trait_methods
-        .iter()
-        .filter_map(|(trait_name, methods)| {
-            methods
-                .get(name)
-                .cloned()
-                .map(|method| (trait_name.clone(), method))
-        })
-        .collect::<Vec<_>>();
-    match candidates.len() {
-        0 => Ok(None),
-        1 => Ok(Some(candidates.pop().expect("one candidate").1)),
-        _ => {
-            let mut traits = candidates
-                .into_iter()
-                .map(|(trait_name, _)| trait_name)
-                .collect::<Vec<_>>();
-            traits.sort();
-            Err(traits)
         }
     }
 }

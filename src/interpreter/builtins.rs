@@ -60,13 +60,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 }],
                 Type::Unknown,
             )),
-            function: |arguments| match &arguments[0] {
-                Value::Reference(reference) => reference.read()?.clone_owned(),
-                value => Err(format!(
-                    "`clone` expects a reference, found {}; use `clone(&value)`",
-                    value.type_name()
-                )),
-            },
+            function: runtime_clone,
         },
         NativeFunction {
             binding_name: "#rils_native_assert",
@@ -160,13 +154,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 )],
                 Type::Bool,
             )),
-            function: |arguments| match &arguments[0] {
-                Value::Result { value, .. } => Ok(Value::Bool(value.is_ok())),
-                value => Err(format!(
-                    "`is_ok` expects Result, found {}",
-                    value.type_name()
-                )),
-            },
+            function: runtime_result_is_ok,
         },
         NativeFunction {
             binding_name: "is_err",
@@ -180,13 +168,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 )],
                 Type::Bool,
             )),
-            function: |arguments| match &arguments[0] {
-                Value::Result { value, .. } => Ok(Value::Bool(value.is_err())),
-                value => Err(format!(
-                    "`is_err` expects Result, found {}",
-                    value.type_name()
-                )),
-            },
+            function: runtime_result_is_err,
         },
         NativeFunction {
             binding_name: "is_some",
@@ -197,13 +179,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Option(Box::new(Type::Unknown))],
                 Type::Bool,
             )),
-            function: |arguments| match &arguments[0] {
-                Value::Option { value, .. } => Ok(Value::Bool(value.is_some())),
-                value => Err(format!(
-                    "`is_some` expects Option, found {}",
-                    value.type_name()
-                )),
-            },
+            function: runtime_option_is_some,
         },
         NativeFunction {
             binding_name: "is_none",
@@ -214,13 +190,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Option(Box::new(Type::Unknown))],
                 Type::Bool,
             )),
-            function: |arguments| match &arguments[0] {
-                Value::Option { value, .. } => Ok(Value::Bool(value.is_none())),
-                value => Err(format!(
-                    "`is_none` expects Option, found {}",
-                    value.type_name()
-                )),
-            },
+            function: runtime_option_is_none,
         },
         NativeFunction {
             binding_name: "unwrap",
@@ -228,22 +198,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             min_arity: 1,
             max_arity: 1,
             signature: Some(FunctionSignature::fixed(vec![Type::Unknown], Type::Unknown)),
-            function: |arguments| match &arguments[0] {
-                Value::Option {
-                    value: Some(value), ..
-                } => Ok((**value).clone()),
-                Value::Option { value: None, .. } => Err("called `unwrap` on `None`".into()),
-                Value::Result {
-                    value: Ok(value), ..
-                } => Ok((**value).clone()),
-                Value::Result {
-                    value: Err(value), ..
-                } => Err(format!("called `unwrap` on Err({value})")),
-                value => Err(format!(
-                    "`unwrap` expects Option or Result, found {}",
-                    value.type_name()
-                )),
-            },
+            function: runtime_unwrap,
         },
         NativeFunction {
             binding_name: "unwrap_or",
@@ -254,42 +209,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown, Type::Unknown],
                 Type::Unknown,
             )),
-            function: |arguments| match &arguments[0] {
-                Value::Option {
-                    value,
-                    element_type,
-                } => {
-                    if let Some(expected) = element_type
-                        && !expected.accepts(&arguments[1])
-                    {
-                        return Err(format!(
-                            "`unwrap_or` default must be {expected}, found {}",
-                            arguments[1].type_name()
-                        ));
-                    }
-                    Ok(value
-                        .as_ref()
-                        .map_or_else(|| arguments[1].clone(), |value| (**value).clone()))
-                }
-                Value::Result { value, ok_type, .. } => {
-                    if let Some(expected) = ok_type
-                        && !expected.accepts(&arguments[1])
-                    {
-                        return Err(format!(
-                            "`unwrap_or` default must be {expected}, found {}",
-                            arguments[1].type_name()
-                        ));
-                    }
-                    Ok(match value {
-                        Ok(value) => (**value).clone(),
-                        Err(_) => arguments[1].clone(),
-                    })
-                }
-                value => Err(format!(
-                    "`unwrap_or` expects Option or Result, found {}",
-                    value.type_name()
-                )),
-            },
+            function: runtime_unwrap_or,
         },
     ];
 
@@ -415,6 +335,34 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         None,
     );
     install_builtin_modules(environment);
+}
+
+fn runtime_clone(arguments: &[Value]) -> Result<Value, String> {
+    crate::runtime_builtins::call(rils_builtins::BuiltinId::Clone, arguments)
+}
+
+fn runtime_result_is_ok(arguments: &[Value]) -> Result<Value, String> {
+    crate::runtime_builtins::call(rils_builtins::BuiltinId::ResultIsOk, arguments)
+}
+
+fn runtime_result_is_err(arguments: &[Value]) -> Result<Value, String> {
+    crate::runtime_builtins::call(rils_builtins::BuiltinId::ResultIsErr, arguments)
+}
+
+fn runtime_option_is_some(arguments: &[Value]) -> Result<Value, String> {
+    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionIsSome, arguments)
+}
+
+fn runtime_option_is_none(arguments: &[Value]) -> Result<Value, String> {
+    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionIsNone, arguments)
+}
+
+fn runtime_unwrap(arguments: &[Value]) -> Result<Value, String> {
+    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionUnwrap, arguments)
+}
+
+fn runtime_unwrap_or(arguments: &[Value]) -> Result<Value, String> {
+    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionUnwrapOr, arguments)
 }
 
 fn install_builtin_modules(environment: &EnvironmentRef) {

@@ -73,7 +73,19 @@ pub(super) fn expand_sequence(
                 call_span,
             ));
         };
-        let substituted = expand_template(&arm.template, &bindings, None)?;
+        let substituted = expand_template(&arm.template, &bindings, None)?
+            .into_iter()
+            .map(|mut token| {
+                // Native macro templates are synthetic and therefore carry an
+                // empty span. Give their generated callee and punctuation the
+                // invocation span so separate expansions retain distinct
+                // expression identities in later semantic side tables.
+                if token.span == Span::default() {
+                    token.span = call_span;
+                }
+                token
+            })
+            .collect::<Vec<_>>();
         stack.push(name);
         let result = expand_sequence(&substituted, definitions, stack);
         stack.pop();

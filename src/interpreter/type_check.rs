@@ -628,7 +628,9 @@ fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
         | Type::Integer(_)
         | Type::Float(_)
         | Type::IntegerVariable(_)
+        | Type::IntegerInference(_)
         | Type::FloatVariable(_)
+        | Type::FloatInference(_)
         | Type::Char
         | Type::Reference { .. } => true,
         Type::Function { .. } => true,

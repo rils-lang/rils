@@ -25,7 +25,6 @@ mod encoder;
 mod format;
 mod formatting;
 mod host;
-mod runtime_builtins;
 mod verifier;
 mod vm;
 
@@ -35,14 +34,14 @@ pub use format::{BYTECODE_FORMAT_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeFor
 pub use host::{BYTECODE_HOST_ABI_VERSION, BytecodeHost, BytecodeHostHandler, BytecodeImport};
 use vm::VirtualMachine;
 
-pub use rils_compiler::{
-    CompileError, HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM,
-    HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION,
-    HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES,
-    HOST_MANIFEST_MAX_FUNCTIONS, HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS,
-    HOST_MANIFEST_MAX_TYPES, HostCallKind, HostContract, HostEnumDefinition,
-    HostFunctionDeclaration, HostModuleDeclaration, HostReceiver, HostThreadAffinity,
-    HostTypeDeclaration, HostTypeTransport, HostValueLayout,
+pub use rils_compiler::CompileError;
+pub use rils_host::{
+    HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_MANIFEST_FORMAT_VERSION,
+    HOST_MANIFEST_HEADER_SIZE, HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES,
+    HOST_MANIFEST_MAGIC, HOST_MANIFEST_MAX_BYTES, HOST_MANIFEST_MAX_FUNCTIONS,
+    HOST_MANIFEST_MAX_MODULES, HOST_MANIFEST_MAX_PARAMETERS, HOST_MANIFEST_MAX_TYPES, HostCallKind,
+    HostContract, HostEnumDefinition, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver,
+    HostThreadAffinity, HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -578,6 +577,7 @@ pub fn compile_with_host(
     encode(rils_compiler::compile_with_host(source, host)?)
 }
 
+#[cfg(test)]
 pub(crate) fn compile_program_with_host_and_sources(
     program: &crate::ast::Program,
     host: &HostContract,
@@ -586,6 +586,17 @@ pub(crate) fn compile_program_with_host_and_sources(
     validate_contract_abi(host)?;
     encode(rils_compiler::compile_program_with_host_and_sources(
         program, host, sources,
+    )?)
+}
+
+pub(crate) fn compile_program_with_host_and_session(
+    host: &HostContract,
+    session: &rils_frontend::CompilationSession,
+    project: rils_frontend::ProjectId,
+) -> Result<BytecodeModule, CompileError> {
+    validate_contract_abi(host)?;
+    encode(rils_compiler::compile_program_with_host_and_session(
+        host, session, project,
     )?)
 }
 

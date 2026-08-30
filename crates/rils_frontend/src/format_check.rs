@@ -4,13 +4,14 @@ use crate::{
     analysis::AnalysisDiagnostic,
     ast::{Block, Expr, Literal, Program, Stmt},
     format::{FormatKind, FormatPiece, parse_format_string},
+    semantic::ExpressionTypes,
     source::Span,
     types::Type,
 };
 
 pub(crate) fn analyze(
     program: &Program,
-    expression_types: &HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'_>,
     host_types: &HashSet<String>,
 ) -> Vec<AnalysisDiagnostic> {
     let mut checker = Checker {
@@ -26,7 +27,7 @@ pub(crate) fn analyze(
 }
 
 struct Checker<'a> {
-    expression_types: &'a HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'a>,
     host_types: &'a HashSet<String>,
     nominals: HashSet<String>,
     implementations: HashMap<String, HashSet<String>>,
@@ -223,7 +224,7 @@ impl Checker<'_> {
             };
             let ty = self
                 .expression_types
-                .get(&value.span())
+                .get(value)
                 .cloned()
                 .unwrap_or(Type::Unknown);
             let required = match spec.kind {
@@ -279,8 +280,10 @@ impl Checker<'_> {
             | Type::Bool
             | Type::Integer(_)
             | Type::IntegerVariable(_)
+            | Type::IntegerInference(_)
             | Type::Float(_)
             | Type::FloatVariable(_)
+            | Type::FloatInference(_)
             | Type::Char
             | Type::String => true,
             Type::Tuple(elements) => {

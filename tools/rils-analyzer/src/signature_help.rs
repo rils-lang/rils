@@ -14,15 +14,34 @@ impl Server {
             recovered = recover_analysis(self, document, offset);
             recovered.as_ref()
         };
-        let signatures = if let Some(signatures) =
-            self.host_signatures_at_call(current_analysis, &document.text, context.open)
-        {
+        let signatures = if let Some(signatures) = self.host_signatures_at_call(
+            current_analysis,
+            document.source_id,
+            &document.text,
+            context.open,
+        ) {
             signatures
         } else if let Some((name, signature)) = current_analysis
-            .and_then(|analysis| signature_at_call(analysis, &document.text, context.open))
+            .and_then(|analysis| {
+                semantic_signature_at_call(
+                    analysis,
+                    document.source_id,
+                    &document.text,
+                    context.open,
+                )
+            })
+            .or_else(|| {
+                current_analysis
+                    .and_then(|analysis| signature_at_call(analysis, &document.text, context.open))
+            })
             .or_else(|| {
                 current_analysis.and_then(|analysis| {
-                    builtin_signature_at_call(analysis, &document.text, context.open)
+                    builtin_signature_at_call(
+                        analysis,
+                        document.source_id,
+                        &document.text,
+                        context.open,
+                    )
                 })
             })
         {
@@ -75,11 +94,12 @@ impl Server {
     fn host_signatures_at_call(
         &self,
         analysis: Option<&DocumentAnalysis>,
+        source: rils_frontend::SourceId,
         text: &str,
         open: usize,
     ) -> Option<Vec<(String, FunctionSignature)>> {
         if let Some(analysis) = analysis
-            && let Some((name, receiver_type)) = member_call_receiver(analysis, text, open)
+            && let Some((name, receiver_type)) = member_call_receiver(analysis, source, text, open)
         {
             let receiver_type = match receiver_type {
                 Type::Reference { inner, .. } => inner.as_ref(),
@@ -137,8 +157,61 @@ impl Server {
     }
 }
 
+fn semantic_signature_at_call(
+    analysis: &DocumentAnalysis,
+    source: rils_frontend::SourceId,
+    text: &str,
+    open: usize,
+) -> Option<(String, FunctionSignature)> {
+    let (_, call) = analysis
+        .typeck_results
+        .resolved_call_containing(source, open)?;
+    match call {
+        rils_frontend::ResolvedCall::Definition(definition) => {
+            let definition = analysis.def_map.definition(*definition)?;
+            function_signature(definition.name.clone(), definition.inferred_type.clone()?)
+        }
+        rils_frontend::ResolvedCall::Builtin { id, kind, .. } => {
+            let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
+            match kind {
+                rils_frontend::BuiltinCallKind::Intrinsic => {
+                    let intrinsic = rils_builtins::intrinsic(*id)?;
+                    let member_type = match receiver_type {
+                        Type::Integer(integer) => {
+                            rils_frontend::standard_library::integer_intrinsic_type(
+                                intrinsic, *integer,
+                            )
+                        }
+                        Type::Float(float) => {
+                            rils_frontend::standard_library::float_intrinsic_type(intrinsic, *float)
+                        }
+                        _ => return None,
+                    };
+                    function_signature(intrinsic.name.into(), member_type)
+                }
+                rils_frontend::BuiltinCallKind::Runtime => {
+                    let (_, member) = rils_builtins::runtime_member(*id)?;
+                    let member_type = rils_frontend::standard_library::builtin_member_type(
+                        receiver_type,
+                        member.name,
+                    )?;
+                    function_signature(member.name.into(), member_type)
+                }
+            }
+        }
+        rils_frontend::ResolvedCall::Host { .. } => None,
+        rils_frontend::ResolvedCall::Import {
+            name, signature, ..
+        } => Some((
+            name.rsplit("::").next().unwrap_or(name).to_owned(),
+            signature.clone(),
+        )),
+    }
+}
+
 fn member_call_receiver<'a>(
     analysis: &'a DocumentAnalysis,
+    source: rils_frontend::SourceId,
     text: &str,
     open: usize,
 ) -> Option<(String, &'a Type)> {
@@ -149,10 +222,8 @@ fn member_call_receiver<'a>(
         return None;
     }
     let receiver_type = analysis
-        .expression_types
-        .iter()
-        .filter(|(span, _)| span.end == dot)
-        .max_by_key(|(span, _)| span.start)
+        .typeck_results
+        .expression_type_ending_at(source, dot)
         .map(|(_, ty)| ty)
         .or_else(|| {
             let receiver = identifier_before(text, dot)?;
@@ -172,6 +243,7 @@ fn member_call_receiver<'a>(
 
 fn builtin_signature_at_call(
     analysis: &DocumentAnalysis,
+    source: rils_frontend::SourceId,
     text: &str,
     open: usize,
 ) -> Option<(String, FunctionSignature)> {
@@ -182,10 +254,8 @@ fn builtin_signature_at_call(
         return None;
     }
     let receiver_type = analysis
-        .expression_types
-        .iter()
-        .filter(|(span, _)| span.end == dot)
-        .max_by_key(|(span, _)| span.start)
+        .typeck_results
+        .expression_type_ending_at(source, dot)
         .map(|(_, ty)| ty)
         .or_else(|| {
             let receiver = identifier_before(text, dot)?;

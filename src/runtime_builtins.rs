@@ -1,6 +1,15 @@
-use super::*;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+use crate::{
+    environment::AssignError,
+    types::{IntegerType, Type},
+    value::{FieldSlot, SequenceIteratorValue, SequenceValue, Value},
+};
+
+mod option_result;
+mod string;
+
+pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
 
     match id {
@@ -11,91 +20,26 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 value.type_name()
             )),
         },
-        BuiltinId::ResultIsOk => match import_receiver(&arguments[0])? {
-            Value::Result { value, .. } => Ok(Value::Bool(value.is_ok())),
-            value => Err(format!(
-                "`is_ok` expects Result, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::ResultIsErr => match import_receiver(&arguments[0])? {
-            Value::Result { value, .. } => Ok(Value::Bool(value.is_err())),
-            value => Err(format!(
-                "`is_err` expects Result, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::OptionIsSome => match import_receiver(&arguments[0])? {
-            Value::Option { value, .. } => Ok(Value::Bool(value.is_some())),
-            value => Err(format!(
-                "`is_some` expects Option, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::OptionIsNone => match import_receiver(&arguments[0])? {
-            Value::Option { value, .. } => Ok(Value::Bool(value.is_none())),
-            value => Err(format!(
-                "`is_none` expects Option, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::OptionUnwrap | BuiltinId::ResultUnwrap => match &arguments[0] {
-            Value::Option {
-                value: Some(value), ..
-            }
-            | Value::Result {
-                value: Ok(value), ..
-            } => value.clone_owned(),
-            Value::Option { value: None, .. } => Err("called `unwrap` on `None`".into()),
-            Value::Result {
-                value: Err(value), ..
-            } => Err(format!("called `unwrap` on Err({value})")),
-            value => Err(format!(
-                "`unwrap` expects Option or Result, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::OptionUnwrapOr | BuiltinId::ResultUnwrapOr => match &arguments[0] {
-            Value::Option {
-                value,
-                element_type,
-            } => {
-                if let Some(expected) = element_type
-                    && !expected.accepts(&arguments[1])
-                {
-                    return Err(format!(
-                        "`unwrap_or` default must be {expected}, found {}",
-                        arguments[1].type_name()
-                    ));
-                }
-                value
-                    .as_ref()
-                    .map_or_else(|| arguments[1].clone_owned(), |value| value.clone_owned())
-            }
-            Value::Result { value, ok_type, .. } => {
-                if let Some(expected) = ok_type
-                    && !expected.accepts(&arguments[1])
-                {
-                    return Err(format!(
-                        "`unwrap_or` default must be {expected}, found {}",
-                        arguments[1].type_name()
-                    ));
-                }
-                match value {
-                    Ok(value) => value.clone_owned(),
-                    Err(_) => arguments[1].clone_owned(),
-                }
-            }
-            value => Err(format!(
-                "`unwrap_or` expects Option or Result, found {}",
-                value.type_name()
-            )),
-        },
+        BuiltinId::ResultIsOk
+        | BuiltinId::ResultIsErr
+        | BuiltinId::OptionIsSome
+        | BuiltinId::OptionIsNone
+        | BuiltinId::OptionUnwrap
+        | BuiltinId::ResultUnwrap
+        | BuiltinId::OptionUnwrapOr
+        | BuiltinId::ResultUnwrapOr
+        | BuiltinId::OptionExpect
+        | BuiltinId::ResultExpect
+        | BuiltinId::ResultOk
+        | BuiltinId::ResultErr
+        | BuiltinId::ResultUnwrapErr
+        | BuiltinId::ResultExpectErr
+        | BuiltinId::OptionTake
+        | BuiltinId::OptionOr
+        | BuiltinId::OptionXor
+        | BuiltinId::OptionReplace => option_result::call(id, arguments),
         BuiltinId::SequenceLen | BuiltinId::StringLen => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("len receiver must be a reference".into());
-            };
-            let value = reference.read()?;
+            let value = import_receiver(&arguments[0])?;
             let length = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => sequence.elements.borrow().len(),
                 Value::String(value) => value.len(),
@@ -109,10 +53,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             Ok(Value::Usize(length))
         }
         BuiltinId::SequenceIsEmpty | BuiltinId::StringIsEmpty => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("is_empty receiver must be a reference".into());
-            };
-            let value = reference.read()?;
+            let value = import_receiver(&arguments[0])?;
             let empty = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => {
                     sequence.elements.borrow().is_empty()
@@ -123,10 +64,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             Ok(Value::Bool(empty))
         }
         BuiltinId::SequenceContains | BuiltinId::StringContains => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("contains receiver must be a reference".into());
-            };
-            match reference.read()? {
+            match import_receiver(&arguments[0])? {
                 Value::Array(sequence) | Value::Vec(sequence) => {
                     let needle = import_receiver(&arguments[1])?;
                     let contains = sequence
@@ -328,6 +266,34 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 .extend(source_elements.drain(..));
             Ok(Value::Unit)
         }
+        BuiltinId::SequenceIntoIter => {
+            let (Value::Array(sequence) | Value::Vec(sequence)) = &arguments[0] else {
+                return Err("into_iter receiver is not a collection".into());
+            };
+            if sequence
+                .elements
+                .borrow()
+                .iter()
+                .any(|slot| slot.references > 0)
+            {
+                return Err("cannot iterate a collection while an element is referenced".into());
+            }
+            let element_type = sequence
+                .element_type
+                .borrow()
+                .clone()
+                .unwrap_or(Type::Unknown);
+            let items = sequence
+                .elements
+                .borrow_mut()
+                .drain(..)
+                .filter_map(|slot| slot.value)
+                .collect();
+            Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
+                items: RefCell::new(items),
+                element_type,
+            })))
+        }
         BuiltinId::HashMapLen
         | BuiltinId::HashMapIsEmpty
         | BuiltinId::HashMapClear
@@ -352,14 +318,49 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
         | BuiltinId::HashSetDifference
         | BuiltinId::HashSetSymmetricDifference
         | BuiltinId::HashSetIntoIter => crate::hash_collections::call(id, arguments),
-        BuiltinId::IteratorNext
-        | BuiltinId::IteratorCount
+        BuiltinId::IteratorNext => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Iterator::next requires a mutable binding".into());
+            };
+            if !reference.mutable {
+                return Err("Iterator::next requires `&mut self`".into());
+            }
+            let Value::SequenceIterator(iterator) = reference.read()? else {
+                return Err("next receiver is not an iterator".into());
+            };
+            Ok(Value::Option {
+                value: iterator.items.borrow_mut().pop_front().map(Rc::new),
+                element_type: Some(iterator.element_type.clone()),
+            })
+        }
+        BuiltinId::RangeNext => {
+            let Value::Reference(reference) = &arguments[0] else {
+                return Err("Range::next requires a mutable range binding".into());
+            };
+            if !reference.mutable {
+                return Err("Range::next requires `&mut self`".into());
+            }
+            let Value::Range(mut range) = reference.read()? else {
+                return Err("Range::next receiver is not a Range".into());
+            };
+            let element_type = range.element_type();
+            let current = range.next()?;
+            reference
+                .write(Value::Range(range))
+                .map_err(assignment_error_message)?;
+            Ok(Value::Option {
+                value: current.map(Rc::new),
+                element_type: Some(element_type),
+            })
+        }
+        BuiltinId::IteratorCount
         | BuiltinId::IteratorLast
         | BuiltinId::IteratorNth
         | BuiltinId::IteratorCollectVec
         | BuiltinId::IteratorTake
         | BuiltinId::IteratorSkip
-        | BuiltinId::IteratorRev => {
+        | BuiltinId::IteratorRev
+        | BuiltinId::IteratorEnumerate => {
             let Value::SequenceIterator(iterator) = import_receiver(&arguments[0])? else {
                 return Err("iterator method receiver is not a built-in iterator".into());
             };
@@ -374,10 +375,6 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 None => Err("missing iterator count".into()),
             };
             match id {
-                BuiltinId::IteratorNext => Ok(Value::Option {
-                    value: items.pop_front().map(Rc::new),
-                    element_type: Some(element_type),
-                }),
                 BuiltinId::IteratorCount => {
                     let count = items.len();
                     items.clear();
@@ -434,6 +431,14 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                     items.drain(..).rev().collect(),
                     element_type,
                 )),
+                BuiltinId::IteratorEnumerate => Ok(sequence_iterator_value(
+                    items
+                        .drain(..)
+                        .enumerate()
+                        .map(|(index, value)| tuple_value(vec![Value::Usize(index), value]))
+                        .collect(),
+                    Type::Tuple(vec![Type::USIZE, element_type]),
+                )),
                 _ => unreachable!("iterator built-in was matched above"),
             }
         }
@@ -452,246 +457,8 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
         | BuiltinId::StringChars
         | BuiltinId::StringBytes
         | BuiltinId::StringLines
-        | BuiltinId::StringSplit => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("string method receiver must be a reference".into());
-            };
-            let Value::String(value) = reference.read()? else {
-                return Err("string method receiver is not string".into());
-            };
-            let argument = |index: usize| match arguments.get(index) {
-                Some(Value::String(value)) => Ok(value.as_ref()),
-                Some(value) => Err(format!(
-                    "string argument must be string, found {}",
-                    value.type_name()
-                )),
-                None => Err("missing string argument".into()),
-            };
-            match id {
-                BuiltinId::StringStartsWith => Ok(Value::Bool(value.starts_with(argument(1)?))),
-                BuiltinId::StringEndsWith => Ok(Value::Bool(value.ends_with(argument(1)?))),
-                BuiltinId::StringFind => Ok(Value::Option {
-                    value: value
-                        .find(argument(1)?)
-                        .map(|offset| Rc::new(Value::Usize(offset))),
-                    element_type: Some(Type::USIZE),
-                }),
-                BuiltinId::StringTrim => Ok(Value::String(Rc::from(value.trim()))),
-                BuiltinId::StringTrimStart => Ok(Value::String(Rc::from(value.trim_start()))),
-                BuiltinId::StringTrimEnd => Ok(Value::String(Rc::from(value.trim_end()))),
-                BuiltinId::StringToLowercase => Ok(Value::String(Rc::from(value.to_lowercase()))),
-                BuiltinId::StringToUppercase => Ok(Value::String(Rc::from(value.to_uppercase()))),
-                BuiltinId::StringRepeat => {
-                    let Some(Value::Usize(count)) = arguments.get(1) else {
-                        return Err("string repeat count must be usize".into());
-                    };
-                    Ok(Value::String(Rc::from(value.repeat(*count))))
-                }
-                BuiltinId::StringRfind => Ok(Value::Option {
-                    value: value
-                        .rfind(argument(1)?)
-                        .map(|offset| Rc::new(Value::Usize(offset))),
-                    element_type: Some(Type::USIZE),
-                }),
-                BuiltinId::StringStripPrefix | BuiltinId::StringStripSuffix => {
-                    let pattern = argument(1)?;
-                    let stripped = if id == BuiltinId::StringStripPrefix {
-                        value.strip_prefix(pattern)
-                    } else {
-                        value.strip_suffix(pattern)
-                    };
-                    Ok(Value::Option {
-                        value: stripped.map(|text| Rc::new(Value::String(Rc::from(text)))),
-                        element_type: Some(Type::String),
-                    })
-                }
-                BuiltinId::StringChars => Ok(sequence_iterator_value(
-                    value.chars().map(Value::Char).collect(),
-                    Type::Char,
-                )),
-                BuiltinId::StringBytes => Ok(sequence_iterator_value(
-                    value.bytes().map(Value::U8).collect(),
-                    Type::Integer(IntegerType::U8),
-                )),
-                BuiltinId::StringLines => Ok(sequence_iterator_value(
-                    value
-                        .lines()
-                        .map(|line| Value::String(Rc::from(line)))
-                        .collect(),
-                    Type::String,
-                )),
-                BuiltinId::StringSplit => Ok(sequence_iterator_value(
-                    value
-                        .split(argument(1)?)
-                        .map(|part| Value::String(Rc::from(part)))
-                        .collect(),
-                    Type::String,
-                )),
-                _ => unreachable!("string built-in was matched above"),
-            }
-        }
-        BuiltinId::OptionExpect | BuiltinId::ResultExpect => {
-            let Value::String(message) = &arguments[1] else {
-                return Err("expect message must be string".into());
-            };
-            match &arguments[0] {
-                Value::Option {
-                    value: Some(value), ..
-                }
-                | Value::Result {
-                    value: Ok(value), ..
-                } => value.clone_owned(),
-                Value::Option { value: None, .. } => Err(message.to_string()),
-                Value::Result {
-                    value: Err(value), ..
-                } => Err(format!("{message}: {value}")),
-                value => Err(format!(
-                    "expect requires Option or Result, found {}",
-                    value.type_name()
-                )),
-            }
-        }
-        BuiltinId::ResultOk | BuiltinId::ResultErr => {
-            let Value::Result {
-                value,
-                ok_type,
-                error_type,
-            } = &arguments[0]
-            else {
-                return Err("Result conversion receiver is not Result".into());
-            };
-            let (value, element_type) = match (id, value) {
-                (BuiltinId::ResultOk, Ok(value)) => (Some(value.clone()), ok_type.clone()),
-                (BuiltinId::ResultErr, Err(value)) => (Some(value.clone()), error_type.clone()),
-                (BuiltinId::ResultOk, Err(_)) => (None, ok_type.clone()),
-                (BuiltinId::ResultErr, Ok(_)) => (None, error_type.clone()),
-                _ => unreachable!(),
-            };
-            Ok(Value::Option {
-                value,
-                element_type,
-            })
-        }
-        BuiltinId::ResultUnwrapErr | BuiltinId::ResultExpectErr => {
-            let Value::Result { value, .. } = &arguments[0] else {
-                return Err("Result error extraction receiver is not Result".into());
-            };
-            match value {
-                Err(value) => value.clone_owned(),
-                Ok(value) => {
-                    if id == BuiltinId::ResultExpectErr {
-                        let Value::String(message) = &arguments[1] else {
-                            return Err("expect_err message must be string".into());
-                        };
-                        Err(format!("{message}: {value}"))
-                    } else {
-                        Err(format!("called `unwrap_err` on Ok({value})"))
-                    }
-                }
-            }
-        }
-        BuiltinId::OptionTake => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Option::take requires a mutable binding".into());
-            };
-            if !reference.mutable {
-                return Err("Option::take requires `&mut self`".into());
-            }
-            let Value::Option {
-                value,
-                element_type,
-            } = reference.read()?
-            else {
-                return Err("Option::take receiver is not Option".into());
-            };
-            reference
-                .write(Value::Option {
-                    value: None,
-                    element_type: element_type.clone(),
-                })
-                .map_err(|error| assign_error(error, Span::default()).message)?;
-            Ok(Value::Option {
-                value,
-                element_type,
-            })
-        }
-        BuiltinId::OptionOr | BuiltinId::OptionXor => {
-            let Value::Option {
-                value: left,
-                element_type: left_type,
-            } = &arguments[0]
-            else {
-                return Err("Option operation receiver is not Option".into());
-            };
-            let Value::Option {
-                value: right,
-                element_type: right_type,
-            } = &arguments[1]
-            else {
-                return Err("Option operand must be Option".into());
-            };
-            let element_type = crate::types::merge_types(
-                left_type.as_ref().unwrap_or(&Type::Unknown),
-                right_type.as_ref().unwrap_or(&Type::Unknown),
-            )
-            .ok_or_else(|| "Option operand types do not match".to_string())?;
-            let value = if id == BuiltinId::OptionOr {
-                left.as_ref().or(right.as_ref()).cloned()
-            } else {
-                match (left, right) {
-                    (Some(value), None) | (None, Some(value)) => Some(value.clone()),
-                    _ => None,
-                }
-            };
-            Ok(Value::Option {
-                value,
-                element_type: Some(element_type),
-            })
-        }
-        BuiltinId::OptionReplace | BuiltinId::StringReplace => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("replace receiver must be a reference".into());
-            };
-            let receiver = reference.read()?;
-            if let Value::String(value) = receiver {
-                let (Value::String(pattern), Value::String(replacement)) =
-                    (&arguments[1], &arguments[2])
-                else {
-                    return Err("string replace arguments must be string".into());
-                };
-                return Ok(Value::String(Rc::from(
-                    value.replace(pattern.as_ref(), replacement.as_ref()),
-                )));
-            }
-            if !reference.mutable {
-                return Err("Option::replace requires `&mut self`".into());
-            }
-            let Value::Option {
-                value: previous,
-                element_type,
-            } = receiver
-            else {
-                return Err("replace receiver is not Option".into());
-            };
-            let value = &arguments[1];
-            if value.contains_reference() {
-                return Err("Option cannot own local references".into());
-            }
-            let expected = element_type.clone().unwrap_or(Type::Unknown);
-            let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-            let resolved = crate::types::merge_types(&expected, &actual)
-                .ok_or_else(|| format!("Option element type is `{expected}`, found `{actual}`"))?;
-            reference
-                .write(Value::Option {
-                    value: Some(Rc::new(value.clone())),
-                    element_type: Some(resolved.clone()),
-                })
-                .map_err(|error| assign_error(error, Span::default()).message)?;
-            Ok(Value::Option {
-                value: previous,
-                element_type: Some(resolved),
-            })
-        }
+        | BuiltinId::StringSplit
+        | BuiltinId::StringReplace => string::call(id, arguments),
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),
@@ -705,9 +472,221 @@ fn sequence_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value 
     }))
 }
 
+fn tuple_value(values: Vec<Value>) -> Value {
+    let element_types = values
+        .iter()
+        .map(|value| Type::of_value(value).unwrap_or(Type::Unknown))
+        .collect();
+    Value::Tuple(Rc::new(SequenceValue {
+        elements: RefCell::new(
+            values
+                .into_iter()
+                .map(|value| FieldSlot {
+                    type_annotation: Type::of_value(&value).unwrap_or(Type::Unknown),
+                    value: Some(value),
+                    references: 0,
+                })
+                .collect(),
+        ),
+        element_type: RefCell::new(Some(Type::Tuple(element_types))),
+    }))
+}
+
 fn import_receiver(value: &Value) -> Result<Value, String> {
     match value {
         Value::Reference(reference) => reference.read(),
         value => Ok(value.clone()),
+    }
+}
+
+fn assignment_error_message(error: AssignError) -> String {
+    match error {
+        AssignError::Undefined => "assignment target is undefined".into(),
+        AssignError::Immutable => "cannot assign to immutable local".into(),
+        AssignError::TypeMismatch(expected) => {
+            format!("assignment value must have type {expected}")
+        }
+        AssignError::OptionRequiresAnnotation => {
+            "Option assignment requires a type annotation".into()
+        }
+        AssignError::ReferenceEscape => "reference cannot escape its scope".into(),
+        AssignError::BorrowedTarget => {
+            "cannot replace a value while part of it is referenced".into()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{environment::StorageSlot, value::ReferenceValue};
+
+    fn mutable_receiver(value: Value) -> Value {
+        let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+        storage.borrow_mut().initialize(value);
+        Value::Reference(Rc::new(ReferenceValue::new_storage(storage, true)))
+    }
+
+    #[test]
+    fn option_and_result_state_members_use_their_stable_ids() {
+        use rils_builtins::BuiltinId;
+
+        let option = Value::Option {
+            value: Some(Rc::new(Value::I32(7))),
+            element_type: Some(Type::I32),
+        };
+        let result = Value::Result {
+            value: Err(Rc::new(Value::String(Rc::from("failed")))),
+            ok_type: Some(Type::I32),
+            error_type: Some(Type::String),
+        };
+        let cases = [
+            (BuiltinId::OptionIsSome, option.clone(), Value::Bool(true)),
+            (BuiltinId::OptionIsNone, option, Value::Bool(false)),
+            (BuiltinId::ResultIsOk, result.clone(), Value::Bool(false)),
+            (BuiltinId::ResultIsErr, result, Value::Bool(true)),
+        ];
+
+        for (id, receiver, expected) in cases {
+            assert_eq!(call(id, &[receiver]).unwrap(), expected, "{id:?}");
+        }
+    }
+
+    #[test]
+    fn unwrap_members_preserve_success_and_failure_paths() {
+        use rils_builtins::BuiltinId;
+
+        let option = Value::Option {
+            value: Some(Rc::new(Value::I32(7))),
+            element_type: Some(Type::I32),
+        };
+        assert_eq!(
+            call(BuiltinId::OptionUnwrap, &[option]).unwrap(),
+            Value::I32(7)
+        );
+
+        let missing = Value::Option {
+            value: None,
+            element_type: Some(Type::I32),
+        };
+        assert!(
+            call(BuiltinId::OptionUnwrap, &[missing])
+                .unwrap_err()
+                .contains("None")
+        );
+    }
+
+    #[test]
+    fn mutable_members_update_their_receivers() {
+        use rils_builtins::BuiltinId;
+
+        let vector = mutable_receiver(Value::Vec(Rc::new(SequenceValue {
+            elements: RefCell::new(Vec::new()),
+            element_type: RefCell::new(Some(Type::I32)),
+        })));
+        assert_eq!(
+            call(BuiltinId::VecPush, &[vector.clone(), Value::I32(7)]).unwrap(),
+            Value::Unit
+        );
+        let Value::Reference(vector) = &vector else {
+            unreachable!();
+        };
+        let Value::Vec(vector) = vector.read().unwrap() else {
+            unreachable!();
+        };
+        assert_eq!(vector.elements.borrow()[0].value, Some(Value::I32(7)));
+
+        let option = mutable_receiver(Value::Option {
+            value: Some(Rc::new(Value::I32(3))),
+            element_type: Some(Type::I32),
+        });
+        assert_eq!(
+            call(BuiltinId::OptionTake, std::slice::from_ref(&option)).unwrap(),
+            Value::Option {
+                value: Some(Rc::new(Value::I32(3))),
+                element_type: Some(Type::I32),
+            }
+        );
+        let Value::Reference(option) = &option else {
+            unreachable!();
+        };
+        assert!(matches!(
+            option.read().unwrap(),
+            Value::Option { value: None, .. }
+        ));
+
+        let iterator = mutable_receiver(sequence_iterator_value(
+            VecDeque::from([Value::I32(11)]),
+            Type::I32,
+        ));
+        assert_eq!(
+            call(BuiltinId::IteratorNext, std::slice::from_ref(&iterator)).unwrap(),
+            Value::Option {
+                value: Some(Rc::new(Value::I32(11))),
+                element_type: Some(Type::I32),
+            }
+        );
+        assert!(matches!(
+            call(BuiltinId::IteratorNext, &[iterator]).unwrap(),
+            Value::Option { value: None, .. }
+        ));
+
+        let range = mutable_receiver(Value::Range(
+            crate::value::RangeValue::new(Value::I32(2), Value::I32(3)).unwrap(),
+        ));
+        assert_eq!(
+            call(BuiltinId::RangeNext, std::slice::from_ref(&range)).unwrap(),
+            Value::Option {
+                value: Some(Rc::new(Value::I32(2))),
+                element_type: Some(Type::I32),
+            }
+        );
+    }
+
+    #[test]
+    fn mutable_members_reject_non_reference_receivers() {
+        use rils_builtins::BuiltinId;
+
+        assert!(
+            call(BuiltinId::VecPush, &[Value::Unit, Value::I32(1)])
+                .unwrap_err()
+                .contains("mutable binding")
+        );
+        assert!(
+            call(BuiltinId::OptionTake, &[Value::Unit])
+                .unwrap_err()
+                .contains("mutable binding")
+        );
+        assert!(
+            call(
+                BuiltinId::IteratorNext,
+                &[sequence_iterator_value(VecDeque::new(), Type::I32)]
+            )
+            .unwrap_err()
+            .contains("mutable binding")
+        );
+    }
+
+    #[test]
+    fn enumerate_uses_the_shared_builtin_iterator_path() {
+        use rils_builtins::BuiltinId;
+
+        let enumerated = call(
+            BuiltinId::IteratorEnumerate,
+            &[sequence_iterator_value(
+                VecDeque::from([Value::I32(9)]),
+                Type::I32,
+            )],
+        )
+        .unwrap();
+        let Value::SequenceIterator(iterator) = enumerated else {
+            panic!("enumerate must return a built-in iterator");
+        };
+        let Value::Tuple(tuple) = iterator.items.borrow_mut().pop_front().unwrap() else {
+            panic!("enumerate item must be a tuple");
+        };
+        let fields = tuple.elements.borrow();
+        assert_eq!(fields[0].value, Some(Value::Usize(0)));
+        assert_eq!(fields[1].value, Some(Value::I32(9)));
     }
 }

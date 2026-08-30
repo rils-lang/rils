@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use rils_frontend::{FloatType, FunctionSignature, IntegerType, Type};
+use rils_syntax::{FloatType, FunctionSignature, IntegerType, Type};
 use serde_json::{Map, Value, json};
 
 mod binary_v2;
@@ -510,7 +510,8 @@ impl HostContract {
             .filter(move |function| function.name == name)
     }
 
-    pub(crate) fn function_overloads(&self) -> HashMap<String, Vec<HostFunctionDeclaration>> {
+    #[doc(hidden)]
+    pub fn function_overloads(&self) -> HashMap<String, Vec<HostFunctionDeclaration>> {
         let mut overloads = HashMap::<String, Vec<HostFunctionDeclaration>>::new();
         for function in self.functions.values() {
             overloads
@@ -811,9 +812,8 @@ impl HostContract {
             .collect()
     }
 
-    pub(crate) fn method_function_overloads(
-        &self,
-    ) -> HashMap<String, Vec<HostFunctionDeclaration>> {
+    #[doc(hidden)]
+    pub fn method_function_overloads(&self) -> HashMap<String, Vec<HostFunctionDeclaration>> {
         let mut methods = HashMap::<String, Vec<HostFunctionDeclaration>>::new();
         for function in self.functions.values() {
             if function.receiver.is_some()

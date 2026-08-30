@@ -532,12 +532,21 @@ fn analyzes_modules_imports_and_builtin_namespaces() {
 
 #[test]
 fn preserves_external_import_symbol_kinds() {
+    let event_id = SymbolId {
+        source: SourceId::new(2),
+        local: 1,
+    };
+    let timing_id = SymbolId {
+        source: SourceId::new(2),
+        local: 2,
+    };
     let exports = HashMap::from([(
         "event".into(),
         vec![
             ExternalModuleExport {
                 name: "Event".into(),
                 span: Span::in_source(SourceId::new(2), 9, 14),
+                definition_id: Some(event_id),
                 kind: SymbolKind::Type,
                 inferred_type: None,
                 detail: Some("struct Event".into()),
@@ -547,6 +556,7 @@ fn preserves_external_import_symbol_kinds() {
             ExternalModuleExport {
                 name: "timing".into(),
                 span: Span::in_source(SourceId::new(2), 23, 29),
+                definition_id: Some(timing_id),
                 kind: SymbolKind::Function,
                 inferred_type: Some(Type::function(vec![Type::I32], Type::named("Event"))),
                 detail: Some("fn timing(delay: i32) -> Event".into()),
@@ -569,6 +579,12 @@ fn preserves_external_import_symbol_kinds() {
             .find(|symbol| symbol.is_definition && symbol.name == name)
             .map(|symbol| symbol.kind)
     };
+    assert!(analysis.symbols.iter().any(|symbol| {
+        !symbol.is_definition && symbol.name == "Event" && symbol.definition_id == Some(event_id)
+    }));
+    assert!(analysis.symbols.iter().any(|symbol| {
+        !symbol.is_definition && symbol.name == "timing" && symbol.definition_id == Some(timing_id)
+    }));
     assert_eq!(imported_kind("Event"), Some(SymbolKind::Type));
     assert_eq!(imported_kind("timing"), Some(SymbolKind::Function));
     let timing = analysis

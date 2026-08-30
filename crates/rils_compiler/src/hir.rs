@@ -5,11 +5,11 @@ use std::{
 };
 
 use crate::{
-    ast::{Block, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
+    HostContract, HostFunctionDeclaration, HostReceiver,
+    ast::{Block, EnumVariant, Expr, Literal, Pattern, Program, Stmt, UnaryOp},
     bytecode::CompileError,
-    host::{HostContract, HostFunctionDeclaration},
-    source::{SourceFile, Span},
-    types::Type,
+    source::{SourceFile, SourceId, Span},
+    types::{FunctionSignature, Type},
 };
 
 mod combinators;
@@ -138,126 +138,267 @@ fn collect_host_use_aliases(
 pub(crate) fn lower_with_host(
     program: &Program,
     host: &HostContract,
-    expression_types: &HashMap<Span, Type>,
+    analysis: &rils_frontend::analysis::DocumentAnalysis,
     sources: Vec<SourceFile>,
+    entry: Option<rils_frontend::DefId>,
 ) -> Result<HirProgram, CompileError> {
-    ProgramLowerer::new(program, host, expression_types)?.lower(program, sources)
+    let units = [ProgramUnit {
+        module_path: Vec::new(),
+        program,
+        source: SourceId::UNKNOWN,
+    }];
+    ProgramLowerer::new(&units, host, analysis)?.lower(&units, sources, entry)
+}
+
+pub(crate) fn lower_project_with_host(
+    syntax: &rils_frontend::ProjectSyntax,
+    modules: &rils_frontend::ModuleGraph,
+    host: &HostContract,
+    analysis: &rils_frontend::analysis::DocumentAnalysis,
+    sources: Vec<SourceFile>,
+    entry: Option<rils_frontend::DefId>,
+) -> Result<HirProgram, CompileError> {
+    let root = syntax.root_program();
+    let mut units = Vec::with_capacity(syntax.modules().len() + 1);
+    if !root.statements.is_empty() {
+        units.push(ProgramUnit {
+            module_path: Vec::new(),
+            program: &root,
+            source: SourceId::UNKNOWN,
+        });
+    }
+    units.extend(syntax.modules().filter_map(|(id, program)| {
+        let module = modules.module(id)?;
+        Some(ProgramUnit {
+            module_path: module_path_segments(&module.path),
+            program,
+            source: module.source.unwrap_or(SourceId::UNKNOWN),
+        })
+    }));
+    ProgramLowerer::new(&units, host, analysis)?.lower(&units, sources, entry)
+}
+
+struct ProgramUnit<'a> {
+    module_path: Vec<String>,
+    program: &'a Program,
+    source: SourceId,
+}
+
+fn module_path_segments(path: &str) -> Vec<String> {
+    path.split("::")
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 struct ProgramLowerer {
     functions: HashMap<String, FunctionId>,
     methods: HashMap<String, MethodInfo>,
-    method_names: HashMap<String, Option<MethodInfo>>,
     types: HashMap<String, TypeId>,
     type_definitions: Vec<HirTypeDefinition>,
     host_functions: HashMap<String, Vec<HostFunctionDeclaration>>,
     host_methods: HashMap<String, Vec<HostFunctionDeclaration>>,
     host_contract: HostContract,
-    expression_types: HashMap<Span, Type>,
+    expression_ids: rils_frontend::semantic::ExpressionIdentityMap,
+    typeck_results: rils_frontend::semantic::TypeckResults,
+    resolved_definitions: HashMap<rils_frontend::DefId, MethodInfo>,
 }
 
 impl ProgramLowerer {
     fn new(
-        program: &Program,
+        units: &[ProgramUnit<'_>],
         host: &HostContract,
-        expression_types: &HashMap<Span, Type>,
+        analysis: &rils_frontend::analysis::DocumentAnalysis,
     ) -> Result<Self, CompileError> {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
         let mut type_definitions = Vec::new();
-        for statement in &program.statements {
-            if let Some(declaration) = function_declaration(statement) {
-                let id = functions.len() + 1;
-                if functions.insert(declaration.name.to_string(), id).is_some() {
-                    return Err(CompileError::unsupported(
-                        format!("duplicate function `{}`", declaration.name),
-                        declaration.span,
-                    ));
+        for declaration in host.types() {
+            let Some(host_enum) = declaration.enum_definition.as_ref() else {
+                continue;
+            };
+            let id = type_definitions.len();
+            types.insert(declaration.name.clone(), id);
+            if let Some(short_name) = declaration.name.rsplit("::").next() {
+                types.entry(short_name.to_owned()).or_insert(id);
+            }
+            type_definitions.push(HirTypeDefinition::Enum {
+                name: declaration.name.clone(),
+                generic_parameters: Vec::new(),
+                variants: host_enum
+                    .variants
+                    .keys()
+                    .cloned()
+                    .map(|name| EnumVariant::Unit {
+                        name,
+                        span: Span::default(),
+                    })
+                    .collect(),
+            });
+        }
+        for unit in units {
+            for statement in &unit.program.statements {
+                if let Some(declaration) = function_declaration(statement) {
+                    let qualified = qualified_name(&unit.module_path, declaration.name);
+                    let id = functions.values().copied().max().unwrap_or(0) + 1;
+                    if functions.insert(qualified.clone(), id).is_some() {
+                        return Err(CompileError::unsupported(
+                            format!("duplicate function `{qualified}`"),
+                            declaration.span,
+                        ));
+                    }
+                    functions.entry(declaration.name.to_string()).or_insert(id);
+                }
+                let statement = match statement {
+                    Stmt::Public { statement, .. } => statement.as_ref(),
+                    statement => statement,
+                };
+                let definition = match statement {
+                    Stmt::Struct {
+                        name,
+                        generic_parameters,
+                        fields,
+                        ..
+                    } => Some(HirTypeDefinition::Struct {
+                        name: qualified_name(&unit.module_path, name),
+                        generic_parameters: generic_parameters.clone(),
+                        fields: fields.clone(),
+                    }),
+                    Stmt::Enum {
+                        name,
+                        generic_parameters,
+                        variants,
+                        ..
+                    } => Some(HirTypeDefinition::Enum {
+                        name: qualified_name(&unit.module_path, name),
+                        generic_parameters: generic_parameters.clone(),
+                        variants: variants.clone(),
+                    }),
+                    _ => None,
+                };
+                if let Some(definition) = definition {
+                    let name = match &definition {
+                        HirTypeDefinition::Struct { name, .. }
+                        | HirTypeDefinition::Enum { name, .. } => name.clone(),
+                    };
+                    let id = type_definitions.len();
+                    types.insert(name, id);
+                    if let Stmt::Struct { name, .. } | Stmt::Enum { name, .. } = statement {
+                        types.entry(name.clone()).or_insert(id);
+                    }
+                    type_definitions.push(definition);
                 }
             }
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
-            let definition = match statement {
-                Stmt::Struct {
-                    name,
-                    generic_parameters,
-                    fields,
-                    ..
-                } => Some(HirTypeDefinition::Struct {
-                    name: name.clone(),
-                    generic_parameters: generic_parameters.clone(),
-                    fields: fields.clone(),
-                }),
-                Stmt::Enum {
-                    name,
-                    generic_parameters,
-                    variants,
-                    ..
-                } => Some(HirTypeDefinition::Enum {
-                    name: name.clone(),
-                    generic_parameters: generic_parameters.clone(),
-                    variants: variants.clone(),
-                }),
-                _ => None,
-            };
-            if let Some(definition) = definition {
-                let name = match &definition {
-                    HirTypeDefinition::Struct { name, .. }
-                    | HirTypeDefinition::Enum { name, .. } => name.clone(),
-                };
-                types.insert(name, type_definitions.len());
-                type_definitions.push(definition);
-            }
+            collect_nested_symbols(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut functions,
+                &mut types,
+                &mut type_definitions,
+            )?;
         }
-        collect_nested_symbols(
-            &program.statements,
-            &mut Vec::new(),
-            &mut functions,
-            &mut types,
-            &mut type_definitions,
-        )?;
 
         let mut methods = HashMap::new();
-        let mut method_names = HashMap::new();
         let mut next_method_id = functions.values().copied().max().unwrap_or(0) + 1;
-        collect_method_symbols(
-            &program.statements,
-            &mut Vec::new(),
-            &mut next_method_id,
-            &mut methods,
-            &mut method_names,
-        );
+        for unit in units {
+            collect_method_symbols(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut next_method_id,
+                &mut methods,
+            );
+        }
+        let mut declarations = Vec::new();
+        for unit in units {
+            declarations.extend(unit.program.statements.iter().filter_map(|statement| {
+                let mut declaration = function_declaration(statement)?;
+                declaration.qualified_name = qualified_name(&unit.module_path, declaration.name);
+                Some((functions[&declaration.qualified_name], declaration))
+            }));
+            collect_nested_function_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &functions,
+                &mut declarations,
+            );
+            collect_method_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &methods,
+                &mut declarations,
+            );
+        }
+        let method_by_function = methods
+            .values()
+            .map(|method| (method.function, *method))
+            .collect::<HashMap<_, _>>();
+        let resolved_definitions = declarations
+            .iter()
+            .filter_map(|(function, declaration)| {
+                let definition = analysis.def_map.resolution(declaration.name_span)?;
+                let callable = method_by_function
+                    .get(function)
+                    .copied()
+                    .unwrap_or(MethodInfo {
+                        function: *function,
+                        receiver: None,
+                        source: declaration.name_span.source,
+                    });
+                Some((definition, callable))
+            })
+            .collect();
         let mut public_symbols = HashSet::new();
-        collect_public_symbols(&program.statements, &mut Vec::new(), &mut public_symbols);
-        collect_use_aliases(
-            &program.statements,
-            &mut Vec::new(),
-            &mut functions,
-            &mut types,
-            &public_symbols,
-        );
+        for unit in units {
+            collect_public_symbols(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut public_symbols,
+            );
+        }
+        for unit in units {
+            collect_use_aliases(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut functions,
+                &mut types,
+                &public_symbols,
+            );
+        }
         let mut host_functions = host.function_overloads();
-        collect_host_use_aliases(&program.statements, &mut Vec::new(), &mut host_functions);
+        for unit in units {
+            collect_host_use_aliases(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &mut host_functions,
+            );
+        }
         let host_methods = host.method_function_overloads();
+        let mut expression_ids = rils_frontend::semantic::ExpressionIdentityMap::default();
+        for unit in units {
+            expression_ids.extend(rils_frontend::semantic::ExpressionIdentityMap::allocate(
+                unit.program,
+                unit.source,
+            ));
+        }
         Ok(Self {
             functions,
             methods,
-            method_names,
             types,
             type_definitions,
             host_functions,
             host_methods,
             host_contract: host.clone(),
-            expression_types: expression_types.clone(),
+            expression_ids,
+            typeck_results: analysis.typeck_results.clone(),
+            resolved_definitions,
         })
     }
 
     fn lower(
         self,
-        program: &Program,
+        units: &[ProgramUnit<'_>],
         sources: Vec<SourceFile>,
+        entry: Option<rils_frontend::DefId>,
     ) -> Result<HirProgram, CompileError> {
         let generated = GeneratedFunctions {
             next_id: Rc::new(Cell::new(
@@ -272,56 +413,77 @@ impl ProgramLowerer {
             functions: Rc::new(RefCell::new(Vec::new())),
         };
         let mut lowered = Vec::with_capacity(self.functions.len() + 1);
-        let entry_statements = program
-            .statements
+        let entry_statements = units
             .iter()
+            .filter(|unit| unit.module_path.is_empty())
+            .flat_map(|unit| &unit.program.statements)
             .filter(|statement| !is_compile_time_declaration(statement))
             .collect::<Vec<_>>();
-        lowered.push(
-            FunctionLowerer::new(
-                &self.functions,
-                &self.methods,
-                &self.method_names,
-                &self.types,
-                &self.host_functions,
-                &self.host_methods,
-                &self.host_contract,
-                &self.expression_types,
-                generated.clone(),
-            )
-            .lower_entry(&entry_statements)?,
-        );
+        let mut entry_function = FunctionLowerer::new(
+            &self.types,
+            &self.host_functions,
+            &self.host_methods,
+            &self.host_contract,
+            &self.expression_ids,
+            &self.typeck_results,
+            &self.resolved_definitions,
+            generated.clone(),
+        )
+        .lower_entry(&entry_statements)?;
+        if let Some(entry) = entry {
+            let function = self
+                .resolved_definitions
+                .get(&entry)
+                .ok_or_else(|| {
+                    CompileError::new(
+                        "project entry has no lowered function identity",
+                        Span::default(),
+                    )
+                })?
+                .function;
+            entry_function.statements.push(HirStatement::Expression {
+                expression: HirExpression::Call {
+                    function,
+                    arguments: Vec::new(),
+                    span: Span::default(),
+                },
+                terminated: false,
+                span: Span::default(),
+            });
+        }
+        lowered.push(entry_function);
 
-        let mut declarations = program
-            .statements
-            .iter()
-            .filter_map(function_declaration)
-            .map(|declaration| (self.functions[&declaration.qualified_name], declaration))
-            .collect::<Vec<_>>();
-        collect_nested_function_declarations(
-            &program.statements,
-            &mut Vec::new(),
-            &self.functions,
-            &mut declarations,
-        );
-        collect_method_declarations(
-            &program.statements,
-            &mut Vec::new(),
-            &self.methods,
-            &mut declarations,
-        );
+        let mut declarations = Vec::new();
+        for unit in units {
+            declarations.extend(unit.program.statements.iter().filter_map(|statement| {
+                let mut declaration = function_declaration(statement)?;
+                declaration.qualified_name = qualified_name(&unit.module_path, declaration.name);
+                Some((self.functions[&declaration.qualified_name], declaration))
+            }));
+            collect_nested_function_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &self.functions,
+                &mut declarations,
+            );
+            collect_method_declarations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                &self.methods,
+                &mut declarations,
+            );
+        }
         declarations.sort_by_key(|(id, _)| *id);
         for (_, declaration) in declarations {
             lowered.push(
                 FunctionLowerer::new(
-                    &self.functions,
-                    &self.methods,
-                    &self.method_names,
                     &self.types,
                     &self.host_functions,
                     &self.host_methods,
                     &self.host_contract,
-                    &self.expression_types,
+                    &self.expression_ids,
+                    &self.typeck_results,
+                    &self.resolved_definitions,
                     generated.clone(),
                 )
                 .lower_function(declaration)?,
@@ -348,14 +510,13 @@ struct GeneratedFunctions {
 }
 
 struct FunctionLowerer<'a> {
-    functions: &'a HashMap<String, FunctionId>,
-    methods: &'a HashMap<String, MethodInfo>,
-    method_names: &'a HashMap<String, Option<MethodInfo>>,
     types: &'a HashMap<String, TypeId>,
     host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
     host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
     host_contract: &'a HostContract,
-    expression_types: &'a HashMap<Span, Type>,
+    expression_ids: &'a rils_frontend::semantic::ExpressionIdentityMap,
+    typeck_results: &'a rils_frontend::semantic::TypeckResults,
+    resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
     namespace: String,
     self_type: Option<String>,
     scopes: Vec<HashMap<String, LocalId>>,
@@ -372,25 +533,23 @@ impl<'a> FunctionLowerer<'a> {
         reason = "the lowerer borrows one immutable table per compiler identity domain"
     )]
     fn new(
-        functions: &'a HashMap<String, FunctionId>,
-        methods: &'a HashMap<String, MethodInfo>,
-        method_names: &'a HashMap<String, Option<MethodInfo>>,
         types: &'a HashMap<String, TypeId>,
         host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
         host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
         host_contract: &'a HostContract,
-        expression_types: &'a HashMap<Span, Type>,
+        expression_ids: &'a rils_frontend::semantic::ExpressionIdentityMap,
+        typeck_results: &'a rils_frontend::semantic::TypeckResults,
+        resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
         generated: GeneratedFunctions,
     ) -> Self {
         Self {
-            functions,
-            methods,
-            method_names,
             types,
             host_functions,
             host_methods,
             host_contract,
-            expression_types,
+            expression_ids,
+            typeck_results,
+            resolved_definitions,
             namespace: String::new(),
             self_type: None,
             scopes: vec![HashMap::new()],
@@ -557,14 +716,13 @@ impl<'a> FunctionLowerer<'a> {
                 let function = self.generated.next_id.get();
                 self.generated.next_id.set(function + 1);
                 let mut child = FunctionLowerer::new(
-                    self.functions,
-                    self.methods,
-                    self.method_names,
                     self.types,
                     self.host_functions,
                     self.host_methods,
                     self.host_contract,
-                    self.expression_types,
+                    self.expression_ids,
+                    self.typeck_results,
+                    self.resolved_definitions,
                     self.generated.clone(),
                 );
                 child.in_function = true;
@@ -578,6 +736,7 @@ impl<'a> FunctionLowerer<'a> {
                 let qualified_name = format!("{}${}@{}", self.namespace, name, span.start);
                 let lowered = child.lower_function(FunctionDeclaration {
                     name,
+                    name_span: *span,
                     qualified_name,
                     parameters,
                     body,
@@ -604,9 +763,16 @@ impl<'a> FunctionLowerer<'a> {
     }
 
     fn expression(&mut self, expression: &Expr) -> Result<HirExpression, CompileError> {
+        let expression_id = self.expression_id(expression)?;
         match expression {
             Expr::Literal { value, span } => Ok(HirExpression::Literal {
-                value: lower_literal(value),
+                value: lower_expression_literal(
+                    value,
+                    self.typeck_results
+                        .expression_type(expression_id)
+                        .unwrap_or(&Type::Unknown),
+                    *span,
+                )?,
                 span: *span,
             }),
             Expr::Variable { name, span } if name == "None" => {
@@ -615,9 +781,9 @@ impl<'a> FunctionLowerer<'a> {
             Expr::Variable { name, span } => {
                 if let Some(local) = self.lookup(name) {
                     Ok(HirExpression::Local { local, span: *span })
-                } else if let Some(function) = self.function_id(name) {
+                } else if let Some(callable) = self.resolved_value(expression_id) {
                     Ok(HirExpression::Function {
-                        function,
+                        function: callable.function,
                         span: *span,
                     })
                 } else {
@@ -647,9 +813,9 @@ impl<'a> FunctionLowerer<'a> {
                         span: *span,
                     });
                 }
-                if let Some(function) = self.function_id(&segments.join("::")) {
+                if let Some(callable) = self.resolved_value(expression_id) {
                     return Ok(HirExpression::Function {
-                        function,
+                        function: callable.function,
                         span: *span,
                     });
                 }
@@ -660,36 +826,22 @@ impl<'a> FunctionLowerer<'a> {
                     span: *span,
                 })
             }
-            Expr::QualifiedPath {
-                target,
-                trait_name,
-                member,
-                span,
-            } => {
-                let target_name = nominal_type_name(target).ok_or_else(|| {
-                    CompileError::unsupported("UFCS target must be a nominal type", *span)
-                })?;
-                let key = method_key(
-                    &self.scoped_name(target_name),
-                    Some(&self.scoped_name(trait_name)),
-                    member,
-                );
-                let method = self.methods.get(&key).ok_or_else(|| {
-                    CompileError::unsupported(format!("unknown trait method `{key}`"), *span)
+            Expr::QualifiedPath { span, .. } => {
+                let method = self.resolved_value(expression_id).ok_or_else(|| {
+                    CompileError::unsupported(
+                        "semantic analysis did not resolve UFCS function value",
+                        *span,
+                    )
                 })?;
                 Ok(HirExpression::Function {
                     function: method.function,
                     span: *span,
                 })
             }
-            Expr::Member { object, name, span }
-                if self
-                    .method_names
-                    .get(name)
-                    .and_then(|method| *method)
-                    .is_some() =>
-            {
-                let method = self.method_names[name].expect("guarded method");
+            Expr::Member { object, name, span } if self.resolved_value(expression_id).is_some() => {
+                let method = self
+                    .resolved_value(expression_id)
+                    .expect("guarded method value");
                 let receiver = method.receiver.ok_or_else(|| {
                     CompileError::unsupported(
                         format!("associated function `{name}` cannot be bound to a receiver"),
@@ -815,13 +967,10 @@ impl<'a> FunctionLowerer<'a> {
                 left: Box::new(self.expression(left)?),
                 operator: *operator,
                 right: Box::new(self.expression(right)?),
-                integer: self
-                    .expression_types
-                    .get(&left.span())
-                    .and_then(|value| match value {
-                        Type::Integer(integer) => Some(*integer),
-                        _ => None,
-                    }),
+                integer: self.expression_type(left).and_then(|value| match value {
+                    Type::Integer(integer) => Some(integer),
+                    _ => None,
+                }),
                 span: *span,
             }),
             Expr::Logical {
@@ -840,6 +989,18 @@ impl<'a> FunctionLowerer<'a> {
                 arguments,
                 span,
             } => {
+                if let Some((name, signature, capability)) = self.resolved_import(expression_id) {
+                    return Ok(HirExpression::CallImport {
+                        name: name.to_owned(),
+                        signature: signature.clone(),
+                        capability: capability.to_owned(),
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
                 if let Expr::QualifiedPath {
                     target,
                     trait_name,
@@ -858,33 +1019,47 @@ impl<'a> FunctionLowerer<'a> {
                             return Ok(value);
                         }
                     }
-                    let target_name = nominal_type_name(target).ok_or_else(|| {
-                        CompileError::unsupported("UFCS target must be a nominal type", *span)
-                    })?;
-                    let target_name = self.scoped_name(target_name);
-                    let trait_name = self.scoped_name(trait_name);
-                    let key = method_key(&target_name, Some(&trait_name), member);
-                    let method = self.methods.get(&key).copied().ok_or_else(|| {
-                        CompileError::unsupported(format!("unknown trait method `{key}`"), *span)
-                    })?;
-                    return Ok(HirExpression::Call {
-                        function: method.function,
-                        arguments: arguments
-                            .iter()
-                            .map(|argument| self.expression(argument))
-                            .collect::<Result<_, _>>()?,
-                        span: *span,
-                    });
+                    if let Some(callable) = self.resolved_definition(expression_id) {
+                        return Ok(HirExpression::Call {
+                            function: callable.function,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    return Err(CompileError::unsupported(
+                        format!(
+                            "semantic analysis did not resolve UFCS call `<{target} as {trait_name}>::{member}`"
+                        ),
+                        *span,
+                    ));
                 }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
                     let segments = self.resolve_self_path(segments);
-                    let raw_key = segments.join("::");
-                    if let [type_name, member] = segments.as_slice()
+                    if let Some(callable) = self.resolved_definition(expression_id) {
+                        return Ok(HirExpression::Call {
+                            function: callable.function,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
+                    if let [type_name, _] = segments.as_slice()
                         && let Some(target) = crate::types::IntegerType::from_name(type_name)
-                        && let Some(intrinsic) = rils_builtins::integer_associated_function(member)
+                        && let Some(intrinsic) =
+                            self.resolved_builtin(expression_id)
+                                .and_then(|(id, kind, receiver)| {
+                                    (kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
+                                        && receiver.is_none())
+                                    .then_some(id)
+                                })
                     {
                         return Ok(HirExpression::CallIntrinsic {
-                            intrinsic: intrinsic.id,
+                            intrinsic,
                             target: Some(target),
                             arguments: arguments
                                 .iter()
@@ -893,63 +1068,13 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    let key = self.anchored_name(&raw_key);
-                    if let Some((name, signature)) = collection_import_signature(&key) {
-                        return Ok(HirExpression::CallImport {
-                            name: name.into(),
-                            signature,
-                            capability: "core".into(),
-                            arguments: arguments
-                                .iter()
-                                .map(|argument| self.expression(argument))
-                                .collect::<Result<_, _>>()?,
-                            span: *span,
-                        });
-                    }
-                    if let Some(signature) =
-                        rils_frontend::standard_library::standard_function_signature(&key)
+                    if let Some(host_name) = self.resolved_host(expression_id)
+                        && let Some(function) = self.host_function(host_name, arguments, *span)?
                     {
-                        let capability = if key.starts_with("std::fs::") {
-                            "std::fs"
-                        } else {
-                            "std::io"
-                        };
-                        return Ok(HirExpression::CallImport {
-                            name: key,
-                            signature,
-                            capability: capability.into(),
-                            arguments: arguments
-                                .iter()
-                                .map(|argument| self.expression(argument))
-                                .collect::<Result<_, _>>()?,
-                            span: *span,
-                        });
-                    }
-                    if let Some(function) = self.host_function(&key, arguments, *span)? {
                         return Ok(HirExpression::CallImport {
                             name: function.name,
                             signature: function.signature,
                             capability: function.capability,
-                            arguments: arguments
-                                .iter()
-                                .map(|argument| self.expression(argument))
-                                .collect::<Result<_, _>>()?,
-                            span: *span,
-                        });
-                    }
-                    if let Some(function) = self.function_id(&key) {
-                        return Ok(HirExpression::Call {
-                            function,
-                            arguments: arguments
-                                .iter()
-                                .map(|argument| self.expression(argument))
-                                .collect::<Result<_, _>>()?,
-                            span: *span,
-                        });
-                    }
-                    if let Some(method) = self.symbol_id(self.methods, &key) {
-                        return Ok(HirExpression::Call {
-                            function: method.function,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -969,20 +1094,42 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 if let Expr::Member { object, name, .. } = callee.as_ref() {
-                    let intrinsic = self.expression_types.get(&object.span()).and_then(
-                        |receiver| match receiver {
-                            Type::Integer(_) | Type::IntegerVariable(_) => {
-                                rils_builtins::integer_method(name)
-                            }
-                            Type::Float(_) | Type::FloatVariable(_) => {
-                                rils_builtins::float_method(name)
-                            }
+                    if let Some(method) = self.resolved_definition(expression_id) {
+                        let mut lowered = Vec::with_capacity(
+                            arguments.len() + usize::from(method.receiver.is_some()),
+                        );
+                        if let Some(receiver) = method.receiver {
+                            lowered.push(self.method_receiver(object, receiver)?);
+                        }
+                        lowered.extend(
+                            arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        );
+                        return Ok(HirExpression::Call {
+                            function: method.function,
+                            arguments: lowered,
+                            span: *span,
+                        });
+                    }
+                    let semantic_builtin = self
+                        .typeck_results
+                        .resolved_call(expression_id)
+                        .and_then(|call| match call {
+                            rils_frontend::semantic::ResolvedCall::Builtin {
+                                id,
+                                kind,
+                                receiver,
+                            } => Some((*id, *kind, *receiver)),
                             _ => None,
-                        },
-                    );
-                    if self.method_names.get(name).is_none()
-                        && let Some(intrinsic) = intrinsic
-                    {
+                        });
+                    let intrinsic = semantic_builtin
+                        .filter(|(_, kind, _)| {
+                            *kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
+                        })
+                        .map(|(id, _, _)| id);
+                    if let Some(intrinsic) = intrinsic {
                         let mut lowered = Vec::with_capacity(arguments.len() + 1);
                         lowered.push(self.expression(object)?);
                         lowered.extend(
@@ -992,20 +1139,23 @@ impl<'a> FunctionLowerer<'a> {
                                 .collect::<Result<Vec<_>, _>>()?,
                         );
                         return Ok(HirExpression::CallIntrinsic {
-                            intrinsic: intrinsic.id,
+                            intrinsic,
                             target: None,
                             arguments: lowered,
                             span: *span,
                         });
                     }
-                    if self.method_names.get(name).is_none() {
-                        let owner = self
-                            .expression_types
-                            .get(&object.span())
-                            .and_then(rils_frontend::standard_library::builtin_owner_name);
+                    if let Some((builtin, _, receiver)) = semantic_builtin.filter(|(_, kind, _)| {
+                        *kind == rils_frontend::semantic::BuiltinCallKind::Runtime
+                    }) {
                         if name == "into_iter"
                             && arguments.is_empty()
-                            && matches!(owner, Some("Array" | "Vec" | "Range" | "Iterator"))
+                            && matches!(
+                                builtin,
+                                rils_builtins::BuiltinId::SequenceIntoIter
+                                    | rils_builtins::BuiltinId::RangeIntoIter
+                                    | rils_builtins::BuiltinId::IteratorIntoIter
+                            )
                         {
                             return Ok(HirExpression::IntoIterator {
                                 value: Box::new(self.expression(object)?),
@@ -1013,11 +1163,21 @@ impl<'a> FunctionLowerer<'a> {
                             });
                         }
                         if let Some(expression) =
-                            self.builtin_combinator(owner, name, object, arguments, *span)?
+                            self.builtin_combinator(Some(builtin), name, object, arguments, *span)?
                         {
                             return Ok(expression);
                         }
-                        if let Some((builtin, receiver)) = builtin_method_runtime(owner, name) {
+                        if builtin.has_direct_runtime_call()
+                            && let Some(receiver) = receiver.map(|receiver| match receiver {
+                                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
+                                rils_builtins::ReceiverMode::Shared => {
+                                    ReceiverMode::Reference { mutable: false }
+                                }
+                                rils_builtins::ReceiverMode::Mutable => {
+                                    ReceiverMode::Reference { mutable: true }
+                                }
+                            })
+                        {
                             let receiver = self.method_receiver(object, receiver)?;
                             let mut lowered = Vec::with_capacity(arguments.len() + 1);
                             lowered.push(receiver);
@@ -1034,15 +1194,13 @@ impl<'a> FunctionLowerer<'a> {
                             });
                         }
                     }
-                    if let Some(host) = self.host_method(object, name, arguments, *span)? {
+                    if self.resolved_host(expression_id).is_some()
+                        && let Some(host) = self.host_method(object, name, arguments, *span)?
+                    {
                         let receiver = match host.receiver {
-                            Some(crate::host::HostReceiver::Value) => ReceiverMode::Owned,
-                            Some(crate::host::HostReceiver::Ref) => {
-                                ReceiverMode::Reference { mutable: false }
-                            }
-                            Some(crate::host::HostReceiver::RefMut) => {
-                                ReceiverMode::Reference { mutable: true }
-                            }
+                            Some(HostReceiver::Value) => ReceiverMode::Owned,
+                            Some(HostReceiver::Ref) => ReceiverMode::Reference { mutable: false },
+                            Some(HostReceiver::RefMut) => ReceiverMode::Reference { mutable: true },
                             None => unreachable!("host_method only returns receiver methods"),
                         };
                         let mut lowered = Vec::with_capacity(arguments.len() + 1);
@@ -1074,33 +1232,13 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    let method = self
-                        .method_names
-                        .get(name)
-                        .and_then(|value| *value)
-                        .ok_or_else(|| {
-                            CompileError::unsupported(
-                                format!("bytecode method `{name}` is ambiguous or unavailable"),
-                                *span,
-                            )
-                        })?;
-                    let mut lowered = Vec::with_capacity(
-                        arguments.len() + usize::from(method.receiver.is_some()),
-                    );
-                    if let Some(receiver) = method.receiver {
-                        lowered.push(self.method_receiver(object, receiver)?);
-                    }
-                    lowered.extend(
-                        arguments
-                            .iter()
-                            .map(|argument| self.expression(argument))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    );
-                    return Ok(HirExpression::Call {
-                        function: method.function,
-                        arguments: lowered,
-                        span: *span,
-                    });
+                    return Err(CompileError::unsupported(
+                        format!(
+                            "semantic analysis did not resolve method call `{name}` on `{}`",
+                            self.expression_type(object).unwrap_or(Type::Unknown)
+                        ),
+                        *span,
+                    ));
                 }
                 if let Expr::Variable { name, .. } = callee.as_ref()
                     && matches!(name.as_str(), "Some" | "Ok" | "Err")
@@ -1119,57 +1257,27 @@ impl<'a> FunctionLowerer<'a> {
                         _ => unreachable!(),
                     });
                 }
+                if matches!(callee.as_ref(), Expr::Variable { .. })
+                    && let Some(callable) = self.resolved_definition(expression_id)
+                {
+                    return Ok(HirExpression::Call {
+                        function: callable.function,
+                        arguments: arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<_, _>>()?,
+                        span: *span,
+                    });
+                }
                 if let Expr::Variable { name, .. } = callee.as_ref()
                     && self.lookup(name).is_none()
-                    && let Some(function) = self.host_function(name, arguments, *span)?
+                    && let Some(host_name) = self.resolved_host(expression_id)
+                    && let Some(function) = self.host_function(host_name, arguments, *span)?
                 {
                     return Ok(HirExpression::CallImport {
                         name: function.name,
                         signature: function.signature,
                         capability: function.capability,
-                        arguments: arguments
-                            .iter()
-                            .map(|argument| self.expression(argument))
-                            .collect::<Result<_, _>>()?,
-                        span: *span,
-                    });
-                }
-                if let Expr::Variable { name, .. } = callee.as_ref()
-                    && self.lookup(name).is_none()
-                    && let Some(function) = self.function_id(name)
-                {
-                    return Ok(HirExpression::Call {
-                        function,
-                        arguments: arguments
-                            .iter()
-                            .map(|argument| self.expression(argument))
-                            .collect::<Result<_, _>>()?,
-                        span: *span,
-                    });
-                }
-                if let Expr::Variable { name, .. } = callee.as_ref()
-                    && self.lookup(name).is_none()
-                    && let Some((import_name, signature, capability)) = native_macro_import(name)
-                {
-                    return Ok(HirExpression::CallImport {
-                        name: import_name.into(),
-                        signature,
-                        capability: capability.into(),
-                        arguments: arguments
-                            .iter()
-                            .map(|argument| self.expression(argument))
-                            .collect::<Result<_, _>>()?,
-                        span: *span,
-                    });
-                }
-                if let Expr::Variable { name, .. } = callee.as_ref()
-                    && self.lookup(name).is_none()
-                    && let Some(signature) = core_import_signature(name)
-                {
-                    return Ok(HirExpression::CallImport {
-                        name: name.clone(),
-                        signature,
-                        capability: "core".into(),
                         arguments: arguments
                             .iter()
                             .map(|argument| self.expression(argument))
@@ -1380,7 +1488,7 @@ impl<'a> FunctionLowerer<'a> {
             ReceiverMode::Owned => self.expression(expression),
             ReceiverMode::Reference { mutable }
                 if matches!(
-                    self.expression_types.get(&expression.span()),
+                    self.expression_type(expression),
                     Some(Type::Reference { .. })
                 ) =>
             {
@@ -1425,8 +1533,69 @@ impl<'a> FunctionLowerer<'a> {
         })
     }
 
-    fn function_id(&self, name: &str) -> Option<FunctionId> {
-        self.symbol_id(self.functions, name)
+    fn expression_id(&self, expression: &Expr) -> Result<rils_frontend::ExprId, CompileError> {
+        self.expression_ids.get(expression).ok_or_else(|| {
+            CompileError::new("expression has no semantic identity", expression.span())
+        })
+    }
+
+    fn expression_type(&self, expression: &Expr) -> Option<Type> {
+        let id = self.expression_id(expression).ok()?;
+        self.typeck_results.expression_type(id).cloned()
+    }
+
+    fn resolved_definition(&self, id: rils_frontend::ExprId) -> Option<MethodInfo> {
+        let rils_frontend::semantic::ResolvedCall::Definition(definition) =
+            self.typeck_results.resolved_call(id)?
+        else {
+            return None;
+        };
+        self.resolved_definitions.get(definition).copied()
+    }
+
+    fn resolved_value(&self, id: rils_frontend::ExprId) -> Option<MethodInfo> {
+        let definition = self.typeck_results.resolved_value(id)?;
+        self.resolved_definitions.get(&definition).copied()
+    }
+
+    fn resolved_builtin(
+        &self,
+        expression: rils_frontend::ExprId,
+    ) -> Option<(
+        rils_builtins::BuiltinId,
+        rils_frontend::semantic::BuiltinCallKind,
+        Option<rils_builtins::ReceiverMode>,
+    )> {
+        let rils_frontend::semantic::ResolvedCall::Builtin { id, kind, receiver } =
+            self.typeck_results.resolved_call(expression)?
+        else {
+            return None;
+        };
+        Some((*id, *kind, *receiver))
+    }
+
+    fn resolved_import(
+        &self,
+        id: rils_frontend::ExprId,
+    ) -> Option<(&str, &FunctionSignature, &str)> {
+        let rils_frontend::semantic::ResolvedCall::Import {
+            name,
+            signature,
+            capability,
+        } = self.typeck_results.resolved_call(id)?
+        else {
+            return None;
+        };
+        Some((name, signature, capability))
+    }
+
+    fn resolved_host(&self, id: rils_frontend::ExprId) -> Option<&str> {
+        let rils_frontend::semantic::ResolvedCall::Host { path } =
+            self.typeck_results.resolved_call(id)?
+        else {
+            return None;
+        };
+        Some(path)
     }
 
     fn host_function(
@@ -1578,23 +1747,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
             }
         }
-        Ok(self
-            .expression_types
-            .get(&expression.span())
-            .cloned()
-            .unwrap_or(Type::Unknown))
-    }
-
-    fn scoped_name(&self, name: &str) -> String {
-        let anchored = self.anchored_name(name);
-        if anchored != name {
-            return anchored;
-        }
-        if self.namespace.is_empty() || name.contains("::") {
-            name.to_string()
-        } else {
-            format!("{}::{name}", self.namespace)
-        }
+        Ok(self.expression_type(expression).unwrap_or(Type::Unknown))
     }
 
     fn symbol_id<T: Copy>(&self, symbols: &HashMap<String, T>, name: &str) -> Option<T> {
@@ -1677,6 +1830,60 @@ fn lower_literal(value: &Literal) -> HirLiteral {
         ),
         Literal::Float(value) => HirLiteral::F64(*value),
         Literal::String(value) => HirLiteral::String(value.clone()),
+    }
+}
+
+fn lower_expression_literal(
+    value: &Literal,
+    inferred: &Type,
+    span: Span,
+) -> Result<HirLiteral, CompileError> {
+    let overflow = |value: i128, ty: crate::types::IntegerType| {
+        CompileError::new(
+            format!("integer literal `{value}` is outside the `{ty}` range"),
+            span,
+        )
+    };
+    let Literal::Integer(value) = value else {
+        if let Literal::Float(value) = value {
+            return Ok(match inferred {
+                Type::Float(crate::types::FloatType::F32) => HirLiteral::F32(*value as f32),
+                _ => HirLiteral::F64(*value),
+            });
+        }
+        return Ok(lower_literal(value));
+    };
+    let ty = match inferred {
+        Type::Integer(ty) => *ty,
+        _ => crate::types::IntegerType::I32,
+    };
+    macro_rules! signed {
+        ($variant:ident, $type:ty) => {
+            <$type>::try_from(*value)
+                .map(HirLiteral::$variant)
+                .map_err(|_| overflow(*value, ty))
+        };
+    }
+    macro_rules! unsigned {
+        ($variant:ident, $type:ty) => {
+            <$type>::try_from(*value)
+                .map(HirLiteral::$variant)
+                .map_err(|_| overflow(*value, ty))
+        };
+    }
+    match ty {
+        crate::types::IntegerType::I8 => signed!(I8, i8),
+        crate::types::IntegerType::I16 => signed!(I16, i16),
+        crate::types::IntegerType::I32 => signed!(I32, i32),
+        crate::types::IntegerType::I64 => signed!(I64, i64),
+        crate::types::IntegerType::I128 => Ok(HirLiteral::I128(*value)),
+        crate::types::IntegerType::Isize => signed!(Isize, isize),
+        crate::types::IntegerType::U8 => unsigned!(U8, u8),
+        crate::types::IntegerType::U16 => unsigned!(U16, u16),
+        crate::types::IntegerType::U32 => unsigned!(U32, u32),
+        crate::types::IntegerType::U64 => unsigned!(U64, u64),
+        crate::types::IntegerType::U128 => unsigned!(U128, u128),
+        crate::types::IntegerType::Usize => unsigned!(Usize, usize),
     }
 }
 

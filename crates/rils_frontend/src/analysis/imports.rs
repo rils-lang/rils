@@ -15,6 +15,7 @@ use super::{
 pub(super) struct ModuleExport {
     pub(super) name: String,
     pub(super) span: Span,
+    pub(super) definition_id: Option<crate::DefId>,
     pub(super) kind: SymbolKind,
     pub(super) inferred_type: Option<crate::types::Type>,
     pub(super) detail: Option<String>,
@@ -35,9 +36,13 @@ pub(super) fn analyze(analyzer: &mut Analyzer, imports: &[UseImport]) {
                 analyzer.result.symbols.push(SymbolOccurrence {
                     name: segment.clone(),
                     span: *segment_span,
-                    definition_span: None,
+                    definition_span: is_imported_item
+                        .then(|| exported.as_ref().map(|export| export.span))
+                        .flatten(),
                     symbol_id: None,
-                    definition_id: None,
+                    definition_id: is_imported_item
+                        .then(|| exported.as_ref().and_then(|export| export.definition_id))
+                        .flatten(),
                     kind: if is_imported_item {
                         exported
                             .as_ref()
@@ -104,6 +109,19 @@ fn imported_export(analyzer: &Analyzer, import: &UseImport) -> Option<ModuleExpo
     .cloned()
 }
 
+pub(super) fn path_export(
+    exports: &HashMap<String, Vec<ModuleExport>>,
+    prefix: &[String],
+    path: &[String],
+) -> Option<ModuleExport> {
+    let name = path.last()?;
+    module_candidates(prefix, &path[..path.len().saturating_sub(1)])
+        .iter()
+        .find_map(|module| exports.get(module))
+        .and_then(|exports| exports.iter().find(|export| export.name == *name))
+        .cloned()
+}
+
 fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {
     let exports = module_candidates(&analyzer.module_path, &import.path)
         .iter()
@@ -129,7 +147,7 @@ fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {
             export.name,
             Definition {
                 span: Some(export.span),
-                id: None,
+                id: export.definition_id,
                 kind: export.kind,
                 container: Some(SymbolContainer::Module(export.module_path)),
             },
@@ -137,7 +155,10 @@ fn import_glob(analyzer: &mut Analyzer, import: &UseImport) {
     }
 }
 
-pub(super) fn collect_module_exports(statements: &[Stmt]) -> HashMap<String, Vec<ModuleExport>> {
+pub(super) fn collect_module_exports(
+    statements: &[Stmt],
+    module_path: &[String],
+) -> HashMap<String, Vec<ModuleExport>> {
     fn visit(
         statements: &[Stmt],
         prefix: &mut Vec<String>,
@@ -170,7 +191,7 @@ pub(super) fn collect_module_exports(statements: &[Stmt]) -> HashMap<String, Vec
     }
 
     let mut output = HashMap::new();
-    visit(statements, &mut Vec::new(), &mut output);
+    visit(statements, &mut module_path.to_vec(), &mut output);
     output
 }
 
@@ -202,6 +223,7 @@ fn public_export(statement: &Stmt, module_path: &str) -> Option<ModuleExport> {
     Some(ModuleExport {
         name: name.clone(),
         span,
+        definition_id: None,
         kind,
         inferred_type: None,
         detail: None,

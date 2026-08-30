@@ -1,0 +1,10 @@
+use unity_engine::HideFlags;
+
+fn is_hidden(value: HideFlags) -> bool {
+    match value {
+        HideFlags::HideInHierarchy => true,
+        _ => false,
+    }
+}
+
+let flags = HideFlags::HideInHierarchy;

@@ -31,22 +31,32 @@ pub(super) fn collect_external_exports(
             else {
                 continue;
             };
-            let Ok(tokens) = lex_with_source_id(&text, source_id) else {
-                continue;
+            let program = if source_id != SourceId::UNKNOWN {
+                let Ok(program) = server.compilation.sources().parse(source_id) else {
+                    continue;
+                };
+                program
+            } else {
+                let Ok(tokens) = lex_with_source_id(&text, source_id) else {
+                    continue;
+                };
+                let Ok(program) = parse(tokens) else {
+                    continue;
+                };
+                program
             };
-            let Ok(program) = parse(tokens) else {
-                continue;
-            };
-            let analysis = server
-                .documents
-                .get(&uri)
-                .and_then(|document| document.analysis.as_ref().ok());
-            collect_statements(
-                &program.statements,
-                &project_file.module_path,
-                analysis,
-                &mut exports,
-            );
+            let analysis = server.project_analysis(project).or_else(|| {
+                server
+                    .documents
+                    .get(&uri)
+                    .and_then(|document| document.analysis.as_ref().ok())
+            });
+            let module_path = server
+                .project_semantics(project)
+                .and_then(|index| index.module(source_id))
+                .map(|module| module.path.as_str())
+                .unwrap_or(&project_file.module_path);
+            collect_statements(&program.statements, module_path, analysis, &mut exports);
         }
     }
     exports
@@ -134,6 +144,7 @@ fn public_export(
     Some(ExternalModuleExport {
         name: name.clone(),
         span,
+        definition_id: analysis.and_then(|analysis| analysis.def_map.resolution(span)),
         kind,
         inferred_type: analysis.and_then(|analysis| {
             analysis

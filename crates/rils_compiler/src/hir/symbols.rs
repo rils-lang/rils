@@ -12,6 +12,7 @@ use crate::{
 use super::{FunctionId, HirIteratorMethods, HirTraitImplementation, HirTypeDefinition, TypeId};
 pub(super) struct FunctionDeclaration<'a> {
     pub(super) name: &'a str,
+    pub(super) name_span: Span,
     pub(super) qualified_name: String,
     pub(super) parameters: &'a [Parameter],
     pub(super) body: &'a Block,
@@ -41,6 +42,7 @@ pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclarati
     };
     let Stmt::Function {
         name,
+        name_span,
         parameters,
         body,
         span,
@@ -51,6 +53,7 @@ pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclarati
     };
     Some(FunctionDeclaration {
         name,
+        name_span: *name_span,
         qualified_name: name.clone(),
         parameters,
         body,
@@ -406,7 +409,6 @@ pub(super) fn collect_method_symbols(
     prefix: &mut Vec<String>,
     next_function_id: &mut FunctionId,
     methods: &mut HashMap<String, MethodInfo>,
-    method_names: &mut HashMap<String, Option<MethodInfo>>,
 ) {
     for statement in statements {
         match unwrapped_statement(statement) {
@@ -434,10 +436,6 @@ pub(super) fn collect_method_symbols(
                         method_key(&target_name, trait_name.as_deref(), &method.name),
                         info,
                     );
-                    method_names
-                        .entry(method.name.clone())
-                        .and_modify(|value| *value = None)
-                        .or_insert(Some(info));
                 }
             }
             Stmt::Module {
@@ -446,13 +444,7 @@ pub(super) fn collect_method_symbols(
                 ..
             } => {
                 prefix.push(name.clone());
-                collect_method_symbols(
-                    module_statements,
-                    prefix,
-                    next_function_id,
-                    methods,
-                    method_names,
-                );
+                collect_method_symbols(module_statements, prefix, next_function_id, methods);
                 prefix.pop();
             }
             _ => {}
@@ -487,6 +479,7 @@ pub(super) fn collect_method_declarations<'a>(
                         info.function,
                         FunctionDeclaration {
                             name: &method.name,
+                            name_span: method.name_span,
                             qualified_name: qualified_name(prefix, &method.name),
                             parameters: &method.parameters,
                             body: &method.body,
@@ -531,13 +524,6 @@ pub(super) fn qualified_name(prefix: &[String], name: &str) -> String {
         name.to_string()
     } else {
         format!("{}::{name}", prefix.join("::"))
-    }
-}
-
-pub(super) fn nominal_type_name(ty: &Type) -> Option<&str> {
-    match ty {
-        Type::Named { name, .. } => Some(name),
-        _ => None,
     }
 }
 

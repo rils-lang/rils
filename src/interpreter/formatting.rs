@@ -348,13 +348,13 @@ mod tests {
 
     fn evaluate_binding(source: &str, name: &str) -> (Interpreter, Value) {
         let tokens = crate::lexer::lex(source).expect("source should lex");
-        let mut program =
+        let program =
             crate::parser::parse_with_native_macros(tokens, crate::macros::STANDARD_NATIVE_MACROS)
                 .expect("source should parse");
-        rils_frontend::resolve_numeric_literals(&mut program).expect("literals should resolve");
+        let analysis = rils_frontend::analysis::analyze_program(&program);
         let mut interpreter = Interpreter::new();
         interpreter
-            .execute(&program)
+            .execute_with_analysis(&program, &analysis)
             .expect("source should execute");
         let value = interpreter
             .globals

@@ -650,7 +650,7 @@ impl<'a> VirtualMachine<'a> {
                                 &arguments[1],
                                 instruction.span,
                             )?,
-                        _ => super::runtime_builtins::call(builtin, &arguments)
+                        _ => crate::runtime_builtins::call(builtin, &arguments)
                             .map_err(|message| BytecodeError::new(message, instruction.span))?,
                     };
                     self.frame_mut().registers[destination] = Some(value);

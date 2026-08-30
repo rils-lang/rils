@@ -1,0 +1,3 @@
+fn echo(value: string) -> string {
+    unity_engine::strings::echo(value)
+}

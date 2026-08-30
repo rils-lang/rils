@@ -1,0 +1,12 @@
+use unity_engine::{GameObject, Transform, Vector2, Vector3};
+
+fn inspect(go: GameObject) {
+    let mut transform = go.transform();
+    let expected = Vector3::new(1.25f32, -2.5f32, 3.75f32);
+    transform.set_local_position(expected);
+    let actual = transform.local_position();
+    actual.x();
+
+    let planar = Vector2::new(3.0f32, 4.0f32);
+    planar.magnitude();
+}

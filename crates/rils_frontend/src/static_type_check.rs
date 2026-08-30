@@ -3,15 +3,18 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     analysis::AnalysisDiagnostic,
     ast::{BinaryOp, Block, Expr, Program, Stmt, UnaryOp},
+    semantic::ExpressionTypes,
     source::Span,
     types::{Type, merge_types},
 };
 
 pub(crate) fn analyze(
     program: &Program,
-    expression_types: &HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'_>,
+    source: crate::SourceId,
+    host_type_resolutions: &crate::HostTypeResolutionResults,
 ) -> Vec<AnalysisDiagnostic> {
-    Checker::new(program, expression_types).run(program)
+    Checker::new(program, expression_types, source, host_type_resolutions).run(program)
 }
 
 #[derive(Clone)]
@@ -21,21 +24,28 @@ struct Alias {
 }
 
 struct Checker<'a> {
-    expression_types: &'a HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'a>,
     aliases: HashMap<String, Alias>,
     return_types: Vec<Option<Type>>,
     self_types: Vec<Option<Type>>,
     diagnostics: Vec<AnalysisDiagnostic>,
+    host_types: crate::HostTypeResolutionView<'a>,
 }
 
 impl<'a> Checker<'a> {
-    fn new(program: &Program, expression_types: &'a HashMap<Span, Type>) -> Self {
+    fn new(
+        program: &'a Program,
+        expression_types: ExpressionTypes<'a>,
+        source: crate::SourceId,
+        host_type_resolutions: &'a crate::HostTypeResolutionResults,
+    ) -> Self {
         let mut checker = Self {
             expression_types,
             aliases: HashMap::new(),
             return_types: Vec::new(),
             self_types: Vec::new(),
             diagnostics: Vec::new(),
+            host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
         };
         checker.collect_aliases(&program.statements);
         checker
@@ -70,7 +80,7 @@ impl<'a> Checker<'a> {
                                 .iter()
                                 .map(|parameter| parameter.name.clone())
                                 .collect(),
-                            target: target.clone(),
+                            target: self.host_types.resolved_type(target),
                         },
                     );
                 }
@@ -98,8 +108,9 @@ impl<'a> Checker<'a> {
                 ..
             } => {
                 self.expression(initializer);
+                let expected = self.host_types.resolved_type(expected);
                 self.expect(
-                    expected,
+                    &expected,
                     self.ty(initializer),
                     initializer.span(),
                     "initializer",
@@ -108,15 +119,24 @@ impl<'a> Checker<'a> {
             Stmt::Let { initializer, .. } => self.expression(initializer),
             Stmt::Function {
                 return_type, body, ..
-            } => self.function(return_type.as_ref(), body, None),
+            } => self.function(
+                return_type
+                    .as_ref()
+                    .map(|ty| self.host_types.resolved_type(ty)),
+                body,
+                None,
+            ),
             Stmt::Impl {
                 target, methods, ..
             } => {
                 for method in methods {
                     self.function(
-                        method.return_type.as_ref(),
+                        method
+                            .return_type
+                            .as_ref()
+                            .map(|ty| self.host_types.resolved_type(ty)),
                         &method.body,
-                        Some(target.clone()),
+                        Some(self.host_types.resolved_type(target)),
                     );
                 }
             }
@@ -159,11 +179,11 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn function(&mut self, return_type: Option<&Type>, body: &Block, self_type: Option<Type>) {
-        self.return_types.push(return_type.cloned());
+    fn function(&mut self, return_type: Option<Type>, body: &Block, self_type: Option<Type>) {
+        self.return_types.push(return_type.clone());
         self.self_types.push(self_type);
         self.block(body);
-        if let Some(expected) = return_type
+        if let Some(expected) = return_type.as_ref()
             && let Some(Stmt::Expr {
                 expression,
                 terminated: false,
@@ -574,7 +594,7 @@ impl<'a> Checker<'a> {
 
     fn ty(&self, expression: &Expr) -> Type {
         self.expression_types
-            .get(&expression.span())
+            .get(expression)
             .cloned()
             .unwrap_or(Type::Unknown)
     }

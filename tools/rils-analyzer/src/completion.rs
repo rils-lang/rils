@@ -30,10 +30,8 @@ impl Server {
             };
             if let Some(receiver_type) = current_analysis.and_then(|analysis| {
                 analysis
-                    .expression_types
-                    .iter()
-                    .filter(|(span, _)| span.end == dot_offset)
-                    .max_by_key(|(span, _)| span.start)
+                    .typeck_results
+                    .expression_type_ending_at(document.source_id, dot_offset)
                     .map(|(_, ty)| ty)
                     .or_else(|| {
                         let receiver = identifier_before(&document.text, dot_offset)?;
@@ -360,55 +358,76 @@ impl Server {
         else {
             return;
         };
-        let current = project
-            .module_for_file(&path)
-            .map(|file| file.module_path.as_str())
-            .unwrap_or_default();
-        let Some(module_path) = resolve_project_path(current, qualifier) else {
-            return;
-        };
-        let nested_prefix = if module_path.is_empty() {
-            String::new()
+        let (module_path, children, target_uri) = if let Some(index) =
+            self.project_semantics(project)
+            && let Some(document) = self.documents.get(uri)
+            && let Some(module) = index.resolve(document.source_id, qualifier)
+        {
+            (
+                module.path.clone(),
+                index
+                    .children(module.id)
+                    .filter_map(|child| child.path.rsplit("::").next().map(str::to_owned))
+                    .collect::<Vec<_>>(),
+                module
+                    .source
+                    .and_then(|source| self.document_uri_for_source(source))
+                    .map(str::to_owned),
+            )
         } else {
-            format!("{module_path}::")
-        };
-        for file in project.modules() {
-            if file.module_path == module_path {
-                continue;
-            }
-            let Some(remainder) = file.module_path.strip_prefix(&nested_prefix) else {
-                continue;
+            let current = project
+                .module_for_file(&path)
+                .map(|file| file.module_path.as_str())
+                .unwrap_or_default();
+            let Some(module_path) = resolve_project_path(current, qualifier) else {
+                return;
             };
-            if remainder.is_empty() {
-                continue;
-            }
-            let child = remainder.split("::").next().unwrap_or(remainder);
+            let nested_prefix = if module_path.is_empty() {
+                String::new()
+            } else {
+                format!("{module_path}::")
+            };
+            let children = project
+                .modules()
+                .filter_map(|file| {
+                    if file.module_path == module_path {
+                        return None;
+                    }
+                    let remainder = file.module_path.strip_prefix(&nested_prefix)?;
+                    (!remainder.is_empty())
+                        .then(|| remainder.split("::").next().unwrap_or(remainder).to_owned())
+                })
+                .collect::<Vec<_>>();
+            let target_uri = project
+                .module(&module_path)
+                .map(|file| path_to_file_uri(&file.path));
+            (module_path, children, target_uri)
+        };
+        for child in children {
             if child.starts_with(member_prefix) && module_names.insert(child.to_owned()) {
                 items.push(json!({
                     "label": child,
                     "kind": 9,
-                    "detail": format!("module {}", join_module_path(&module_path, child)),
+                    "detail": format!("module {}", join_module_path(&module_path, &child)),
                     "sortText": format!("0_{child}")
                 }));
             }
         }
-        let Some(file) = project.module(&module_path) else {
+        let Some(target_uri) = target_uri else {
             return;
         };
-        let owned_source;
-        let source = if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
-            document.text.as_str()
+        let program = if let Some(document) = self.documents.get(&target_uri) {
+            self.parsed_document(document)
         } else {
-            let Ok(text) = fs::read_to_string(&file.path) else {
+            let Some(target_file) = file_uri_to_path(&target_uri) else {
                 return;
             };
-            owned_source = text;
-            &owned_source
+            let Ok(text) = fs::read_to_string(&target_file) else {
+                return;
+            };
+            lex(&text).ok().and_then(|tokens| parse(tokens).ok())
         };
-        let Ok(tokens) = lex(source) else {
-            return;
-        };
-        let Ok(program) = parse(tokens) else {
+        let Some(program) = program else {
             return;
         };
         for statement in &program.statements {

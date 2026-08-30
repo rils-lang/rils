@@ -1,8 +1,11 @@
 pub mod hir;
-mod host;
 pub mod mir;
 
-pub use host::{
+pub use rils_frontend::{
+    analyze_program_with_host_and_source_id_and_external_exports, analyze_with_host,
+    analyze_with_host_and_source_id_and_external_exports,
+};
+pub use rils_host::{
     HOST_CONTRACT_ABI_VERSION, HOST_CONTRACT_HASH_ALGORITHM, HOST_INLINE_VALUE_MAX_BYTES,
     HOST_INLINE_VALUE_MAX_FIELDS, HOST_MANIFEST_FORMAT_VERSION, HOST_MANIFEST_HEADER_SIZE,
     HOST_MANIFEST_JSON_FORMAT_VERSION, HOST_MANIFEST_JSON_MAX_BYTES, HOST_MANIFEST_MAGIC,
@@ -26,12 +29,11 @@ mod types {
     pub(crate) use rils_frontend::types::*;
 }
 
-use std::{collections::BTreeMap, error::Error, fmt};
+use std::{error::Error, fmt};
 
 use rils_frontend::{
-    analysis::DiagnosticSeverity,
-    ast::{EnumVariant, Program, Stmt},
-    source::{SourceFile, Span},
+    ast::Program,
+    source::{SourceFile, SourceId, Span},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,58 +111,6 @@ pub fn compile_with_host(
     compile_program_with_host(&program, host)
 }
 
-pub fn analyze_with_host(
-    source: &str,
-    host: &HostContract,
-) -> Result<rils_frontend::analysis::DocumentAnalysis, rils_frontend::FrontendError> {
-    let tokens = rils_frontend::lexer::lex(source).map_err(rils_frontend::FrontendError::Lex)?;
-    let mut program =
-        rils_frontend::parser::parse(tokens).map_err(rils_frontend::FrontendError::Parse)?;
-    inject_host_enum_declarations(&mut program, host);
-    let signatures = host.signatures();
-    let host_types = host
-        .types()
-        .map(|declaration| declaration.name.clone())
-        .collect();
-    Ok(
-        rils_frontend::analysis::analyze_program_with_host_declarations(
-            &program,
-            &signatures,
-            &host_types,
-        ),
-    )
-}
-
-pub fn analyze_with_host_and_source_id_and_external_exports(
-    source: &str,
-    source_id: rils_frontend::SourceId,
-    host: &HostContract,
-    external_exports: &std::collections::HashMap<
-        String,
-        Vec<rils_frontend::analysis::ExternalModuleExport>,
-    >,
-) -> Result<rils_frontend::analysis::DocumentAnalysis, rils_frontend::FrontendError> {
-    let tokens = rils_frontend::lexer::lex_with_source_id(source, source_id)
-        .map_err(rils_frontend::FrontendError::Lex)?;
-    let mut program =
-        rils_frontend::parser::parse(tokens).map_err(rils_frontend::FrontendError::Parse)?;
-    inject_host_enum_declarations(&mut program, host);
-    let signatures = host.signatures();
-    let host_types = host
-        .types()
-        .map(|declaration| declaration.name.clone())
-        .collect();
-    Ok(
-        rils_frontend::analysis::analyze_program_with_source_id_and_external_exports_and_host_types(
-            &program,
-            source_id,
-            &signatures,
-            &host_types,
-            external_exports,
-        ),
-    )
-}
-
 pub fn compile_program(program: &Program) -> Result<mir::MirProgram, CompileError> {
     compile_program_with_host(program, &HostContract::new())
 }
@@ -177,119 +127,122 @@ pub fn compile_program_with_host_and_sources(
     host: &HostContract,
     sources: Vec<SourceFile>,
 ) -> Result<mir::MirProgram, CompileError> {
-    let mut program = program.clone();
-    inject_host_enum_declarations(&mut program, host);
-    let signatures = host.signatures();
-    let host_types = host
-        .types()
-        .map(|declaration| declaration.name.clone())
-        .collect();
-    if let Some(error) = rils_frontend::resolve_host_type_names(&mut program, &host_types)
-        .into_iter()
-        .next()
-    {
-        return Err(CompileError::new(error.message, error.span));
-    }
-    rils_frontend::resolve_numeric_literals_with_host_functions(&mut program, &signatures)
-        .map_err(|error| CompileError::new(error.message, error.span))?;
-    let analysis = rils_frontend::analysis::analyze_program_with_host_declarations(
-        &program,
-        &signatures,
-        &host_types,
-    );
-    if let Some(diagnostic) = analysis
-        .diagnostics
-        .into_iter()
-        .find(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
-    {
-        return Err(CompileError::new(diagnostic.message, diagnostic.span));
-    }
-    mir::lower(hir::lower_with_host(
-        &program,
+    compile_program_with_host_and_sources_and_entry(program, host, sources, None)
+}
+
+fn compile_program_with_host_and_sources_and_entry(
+    program: &Program,
+    host: &HostContract,
+    sources: Vec<SourceFile>,
+    entry: Option<(rils_frontend::SourceId, String)>,
+) -> Result<mir::MirProgram, CompileError> {
+    let analysis = rils_frontend::analyze_program_with_host_and_source_id_and_external_exports(
+        program,
+        SourceId::UNKNOWN,
         host,
-        &analysis.expression_types,
-        sources,
+        &std::collections::HashMap::new(),
+    );
+    if let Some(error) = analysis.host_type_resolutions.errors().first() {
+        return Err(CompileError::new(error.message.clone(), error.span));
+    }
+    if let Some(diagnostic) = analysis.first_error() {
+        return Err(CompileError::new(
+            diagnostic.message.clone(),
+            diagnostic.span,
+        ));
+    }
+    let entry = entry
+        .map(|(source, module_path)| {
+            analysis
+                .def_map
+                .definitions()
+                .find(|definition| {
+                    definition.name == "main"
+                        && definition.span.source == source
+                        && definition.kind == rils_frontend::semantic::SymbolKind::Function
+                        && definition.container
+                            == Some(rils_frontend::SymbolContainer::Module(module_path.clone()))
+                })
+                .map(|definition| definition.id)
+                .ok_or_else(|| {
+                    CompileError::new(
+                        "project entry definition was not preserved during analysis",
+                        Span::default(),
+                    )
+                })
+        })
+        .transpose()?;
+    mir::lower(hir::lower_with_host(
+        program, host, &analysis, sources, entry,
     )?)
 }
 
-#[derive(Default)]
-struct HostEnumModule {
-    enums: Vec<(String, Vec<String>)>,
-    children: BTreeMap<String, HostEnumModule>,
-}
-
-fn inject_host_enum_declarations(program: &mut Program, host: &HostContract) {
-    let mut root = HostEnumModule::default();
-    let mut flag_types = Vec::new();
-    for declaration in host.types() {
-        let Some(definition) = declaration.enum_definition.as_ref() else {
-            continue;
-        };
-        let mut segments = declaration.name.split("::").collect::<Vec<_>>();
-        let Some(name) = segments.pop() else {
-            continue;
-        };
-        let mut module = &mut root;
-        for segment in segments {
-            module = module.children.entry(segment.to_owned()).or_default();
-        }
-        module.enums.push((
-            name.to_owned(),
-            definition.variants.keys().cloned().collect(),
+pub fn compile_program_with_host_and_session(
+    host: &HostContract,
+    session: &rils_frontend::CompilationSession,
+    project: rils_frontend::ProjectId,
+) -> Result<mir::MirProgram, CompileError> {
+    let Some(semantics) = session.project(project) else {
+        return Err(CompileError::new(
+            "compilation project is not registered in this session",
+            Span::default(),
         ));
-        if definition.flags {
-            flag_types.push(declaration.name.clone());
-        }
+    };
+    let syntax = session.project_syntax(project).ok_or_else(|| {
+        CompileError::new(
+            "compilation project has no registered syntax state",
+            Span::default(),
+        )
+    })?;
+    let analysis = session.project_analysis(project, host).ok_or_else(|| {
+        CompileError::new(
+            "compilation session has no current project analysis for this host contract",
+            Span::default(),
+        )
+    })?;
+    if let Some(error) = analysis.host_type_resolutions.errors().first() {
+        return Err(CompileError::new(error.message.clone(), error.span));
     }
-    let mut declarations = host_enum_module_statements(root);
-    declarations.extend(flag_types.into_iter().map(|name| Stmt::Impl {
-        generic_parameters: Vec::new(),
-        trait_name: Some("BitFlags".into()),
-        target: rils_frontend::Type::named(name),
-        associated_types: Vec::new(),
-        methods: Vec::new(),
-        span: Span::default(),
-    }));
-    program.statements.splice(0..0, declarations);
-}
-
-fn host_enum_module_statements(module: HostEnumModule) -> Vec<Stmt> {
-    let mut statements = module
-        .enums
-        .into_iter()
-        .map(|(name, variants)| Stmt::Public {
-            statement: Box::new(Stmt::Enum {
-                attributes: Vec::new(),
-                name: name.clone(),
-                name_span: Span::default(),
-                generic_parameters: Vec::new(),
-                variants: variants
-                    .into_iter()
-                    .map(|name| EnumVariant::Unit {
-                        name,
-                        span: Span::default(),
-                    })
-                    .collect(),
-                span: Span::default(),
-            }),
-            span: Span::default(),
+    if let Some(diagnostic) = analysis.first_error() {
+        return Err(CompileError::new(
+            diagnostic.message.clone(),
+            diagnostic.span,
+        ));
+    }
+    let entry = (|| {
+        let source = semantics.entry_source()?;
+        let module = semantics.module(source)?;
+        Some((source, module.path.clone()))
+    })();
+    let entry = entry
+        .map(|(source, module_path)| {
+            analysis
+                .def_map
+                .definitions()
+                .find(|definition| {
+                    definition.name == "main"
+                        && definition.span.source == source
+                        && definition.kind == rils_frontend::semantic::SymbolKind::Function
+                        && definition.container
+                            == Some(rils_frontend::SymbolContainer::Module(module_path.clone()))
+                })
+                .map(|definition| definition.id)
+                .ok_or_else(|| {
+                    CompileError::new(
+                        "project entry definition was not preserved during analysis",
+                        Span::default(),
+                    )
+                })
         })
-        .collect::<Vec<_>>();
-    statements.extend(
-        module
-            .children
-            .into_iter()
-            .map(|(name, child)| Stmt::Public {
-                statement: Box::new(Stmt::Module {
-                    name: name.clone(),
-                    name_span: Span::default(),
-                    statements: Some(host_enum_module_statements(child)),
-                    span: Span::default(),
-                }),
-                span: Span::default(),
-            }),
-    );
-    statements
+        .transpose()?;
+    mir::lower(hir::lower_project_with_host(
+        syntax,
+        semantics.module_graph(),
+        host,
+        analysis,
+        session.sources().source_files(),
+        entry,
+    )?)
 }
 
 #[cfg(test)]

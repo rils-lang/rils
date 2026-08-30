@@ -29,6 +29,7 @@ pub struct UserFunction {
     pub return_type: Option<Type>,
     pub body: Block,
     pub closure: EnvironmentRef,
+    pub semantic_expression_ids: Option<rils_frontend::semantic::ExpressionIdentityMap>,
 }
 
 #[derive(Clone)]

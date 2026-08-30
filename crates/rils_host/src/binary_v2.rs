@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use rils_frontend::{FloatType, FunctionSignature, IntegerType, Type};
+use rils_syntax::{FloatType, FunctionSignature, IntegerType, Type};
 
 use super::*;
 

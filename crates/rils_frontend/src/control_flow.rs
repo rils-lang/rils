@@ -3,30 +3,46 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     analysis::AnalysisDiagnostic,
     ast::{Block, EnumVariant, Expr, Literal, MatchArm, Pattern, Program, Stmt},
+    semantic::ExpressionTypes,
     source::Span,
     types::Type,
 };
 
 pub(crate) fn analyze(
     program: &Program,
-    expression_types: &HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'_>,
+    host_contract: Option<&rils_host::HostContract>,
 ) -> Vec<AnalysisDiagnostic> {
-    Checker::new(program, expression_types).run(program)
+    Checker::new(program, expression_types, host_contract).run(program)
 }
 
 struct Checker<'a> {
-    expression_types: &'a HashMap<Span, Type>,
+    expression_types: ExpressionTypes<'a>,
     enums: HashMap<String, Vec<String>>,
     diagnostics: Vec<AnalysisDiagnostic>,
 }
 
 impl<'a> Checker<'a> {
-    fn new(program: &Program, expression_types: &'a HashMap<Span, Type>) -> Self {
+    fn new(
+        program: &Program,
+        expression_types: ExpressionTypes<'a>,
+        host_contract: Option<&rils_host::HostContract>,
+    ) -> Self {
         let mut checker = Self {
             expression_types,
             enums: HashMap::new(),
             diagnostics: Vec::new(),
         };
+        if let Some(host) = host_contract {
+            for declaration in host.types() {
+                if let Some(host_enum) = declaration.enum_definition.as_ref() {
+                    checker.enums.insert(
+                        declaration.name.clone(),
+                        host_enum.variants.keys().cloned().collect(),
+                    );
+                }
+            }
+        }
         checker.collect_enums(&program.statements);
         checker
     }
@@ -268,7 +284,7 @@ impl<'a> Checker<'a> {
     fn check_match(&mut self, value: &Expr, arms: &[MatchArm]) -> bool {
         let ty = self
             .expression_types
-            .get(&value.span())
+            .get(value)
             .cloned()
             .unwrap_or(Type::Unknown);
         let domain = match_domain(&ty, &self.enums);
