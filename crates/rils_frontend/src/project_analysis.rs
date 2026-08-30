@@ -101,7 +101,8 @@ pub(crate) fn analyze_project_with_host_declarations_and_contract(
         .iter()
         .map(|(_, path, program)| (path.as_slice(), program))
         .collect::<Vec<_>>();
-    let trait_check = crate::trait_check::analyze_project(&trait_units);
+    let trait_check =
+        crate::trait_check::analyze_project(&trait_units, &result.def_map, host_types);
     result.diagnostics.extend(trait_check.diagnostics);
     result.verified_trait_impls.extend(
         trait_check

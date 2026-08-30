@@ -1,0 +1,4 @@
+pub trait Tagged {}
+pub struct State;
+
+impl Tagged for State {}

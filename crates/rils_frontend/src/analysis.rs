@@ -691,7 +691,7 @@ impl Analyzer {
                 self.source_id,
                 host_type_resolutions,
             ));
-        let trait_check = crate::trait_check::analyze(program);
+        let trait_check = crate::trait_check::analyze_with_host_types(program, &self.host_types);
         self.result.diagnostics.extend(trait_check.diagnostics);
         self.result
             .verified_trait_impl_spans

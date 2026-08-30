@@ -215,6 +215,11 @@ Trait impl 会验证：
 - `self` 的位置一致
 - 返回类型一致，包括 `Self`
 - 同一个 trait 不会对同一类型重复实现
+- 遵守孤儿规则：trait 或目标类型至少一个必须声明在当前项目中
+
+项目内不同模块共享同一套 coherence 检查。通过 `use`、alias 或完整模块路径指向同一 trait 和
+目标类型时，只允许一个 impl；不同模块中仅短名称相同的声明保持不同身份。内建类型、内建 trait
+和 Host 类型属于外部身份，因此不能为两个均非本地的身份新增 impl。未来外部库声明也遵循同一规则。
 
 ## Default 与派生
 
@@ -311,7 +316,6 @@ impl core::fmt::Display for Point {
 - 关联常量
 - `where` 子句
 - 带条件的 trait impl，例如 `impl<T: Display> Trait for Box<T>`
-- 孤儿规则与跨模块一致性检查
 
 带条件的 trait impl 会在共享 frontend 阶段返回明确诊断；AST 解释器和字节码编译器采用相同的
 执行前 gate，不会静默忽略泛型参数上的 trait bound。
