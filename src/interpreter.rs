@@ -18,6 +18,7 @@ mod formatting;
 mod operators;
 mod pattern;
 mod place;
+mod project;
 mod traits;
 mod type_check;
 
@@ -378,7 +379,10 @@ impl Interpreter {
             for program in syntax.roots() {
                 self.execute_statements(&program.statements, self.globals.clone())?;
             }
-            for (module, program) in syntax.modules() {
+            for module in project::module_initialization_order(syntax, graph)? {
+                let program = syntax
+                    .module(module)
+                    .expect("initialization order only contains syntax modules");
                 let environment = environments.get(&module).cloned().ok_or_else(|| {
                     RuntimeError::new("project module has no runtime environment", Span::default())
                 })?;

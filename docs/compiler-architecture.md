@@ -140,6 +140,11 @@ compiler、根项目解释器和 Analyzer 都消费 session 中缓存的项目�
 
 compiler 的项目入口通过入口源码身份解析稳定的 `DefId` 后在 HIR 中调用 `main`，不再向编译 AST 插入 synthetic `main()` 调用。frontend 的项目分析按模块路径对独立 `Program` 做导出收集、跨文件复析，并合并项目级 `DefMap` 和 `TypeckResults`；HIR 的声明收集和 lowering 也直接遍历 `ModuleGraph` 与独立 `Program`。配置项目的 AST 解释器同样按 `ModuleGraph` 建立运行时模块环境，以入口 `DefId` 调用 `main`，并在执行前拒绝 frontend 的首个 error diagnostic；原 inline-module compatibility program 已删除。无 manifest 的 legacy entry loader 作为明确兼容入口保留。
 
+配置项目的解释器会从顶层 `use` 建立模块初始化依赖顺序，而不是按模块路径或文件发现顺序执行；
+导入循环会在执行入口前明确报错。HIR lowering 将 struct/enum pattern 中的类型路径规范化为声明模块
+的完整名义路径，解释器则直接比较运行时类型定义身份，因此跨模块同名类型不会因短名称相同而误
+匹配。该规范化只改变内存 HIR 和既有 pattern 字符串内容，不增加磁盘格式字段。
+
 ### 表达式 ID 已按 AST 访问顺序分配
 
 definition collection 已在访问声明时直接分配 `DefId`；函数和方法同时登记 `BodyId`，impl 也在访问节点时直接分配 `ImplId`，不再于分析结束后通过定义 Span 反查 owner。`ExprId` 现在也按每个 `Program` 的 AST preorder 直接分配，调用和值解析按该 ID 写入 side table；共享同一 Span 的表达式会获得不同身份，Span 索引保留完整的一对多关系。
@@ -331,7 +336,6 @@ rils
 - 彻底移除解释器剩余静态检查和名称查找；
 - 按 source revision 缓存 entry `DefId`、项目分析和每模块 HIR；
 - 拆分 frontend、HIR、Host、VM、Value 与根 facade 的大文件；
-- 修复模块初始化顺序和跨模块 enum 名义身份；
 - 建立 Analyzer 统一语义查询、增量分析和完整 `pub use` 支持；
 - 实现 `.rilslib` 声明表、外部链接和 workspace/lockfile。
 

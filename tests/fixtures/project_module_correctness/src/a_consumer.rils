@@ -1,0 +1,5 @@
+use crate::z_provider::State;
+
+pub fn provider_state() -> State {
+    State::Same
+}

@@ -22,8 +22,6 @@
   `rils_bytecode`、`rils_runtime` crate 拆分已评估为暂不启动：须先让运行时表示、bytecode 和宿主 ABI
   形成无循环依赖的独立边界。
 - 在已有统一指令步数与调用深度预算的基础上，继续增加堆、字符串、容器和宿主调用次数预算。
-- 消除项目模块的初始化顺序依赖，并修复字节码 VM 跨模块直接构造或匹配 enum variant 时丢失名义
-  类型身份的问题；项目顶层导入不应要求被依赖模块按路径字典序提前初始化。
 - 评估常量折叠、无效代码删除、分支简化和寄存器复用，并以基准数据决定是否启用。
 - 完善字节码调试信息的可剥离 section、跨版本兼容策略和 fuzz 覆盖。
 - 继续拆分职责过重的 Rust 模块，保持入口文件只包含模块声明、导出和薄入口。
@@ -77,16 +75,14 @@
 以下工作存在依赖关系，但不应继续堆叠在同一个长期 feature 分支中。每组应从最新版本分支拉出
 独立短分支，满足本组验收条件后及时合回：
 
-1. 项目正确性：消除模块初始化顺序依赖，修复 VM 跨模块 enum 名义身份，并增加多文件解释器/VM
-   对照测试。
-2. 解释器语义收缩：逐类迁移剩余类型、trait 和名称查找，保留动态宿主注册所需的运行时防御。
-3. Frontend 增量缓存：以 source revision 缓存 entry `DefId`、项目分析和每模块 HIR，明确依赖图
+1. 解释器语义收缩：逐类迁移剩余类型、trait 和名称查找，保留动态宿主注册所需的运行时防御。
+2. Frontend 增量缓存：以 source revision 缓存 entry `DefId`、项目分析和每模块 HIR，明确依赖图
    失效规则。
-4. 模块职责拆分：机械拆分 `analysis`、`type_inference`、HIR、Host、VM、Value 和根 facade；不在
+3. 模块职责拆分：机械拆分 `analysis`、`type_inference`、HIR、Host、VM、Value 和根 facade；不在
    同一分支混入新语义。
-5. Analyzer 语义查询：建立共享查询接口，再分别实现 `pub use`、增量分析、rename 和 workspace
+4. Analyzer 语义查询：建立共享查询接口，再分别实现 `pub use`、增量分析、rename 和 workspace
    symbol。
-6. 库链接与依赖：单独设计并实现 `.rilslib` 声明表、稳定库身份、外部符号链接以及 workspace/
+5. 库链接与依赖：单独设计并实现 `.rilslib` 声明表、稳定库身份、外部符号链接以及 workspace/
    lockfile；不得混入解释器清理或 VM 性能优化。
 
 正确性修复优先于缓存、性能和新语法；大文件机械拆分应避开同一模块正在进行语义变更的分支。

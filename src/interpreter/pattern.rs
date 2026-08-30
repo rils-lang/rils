@@ -4,6 +4,7 @@ pub(super) fn pattern_matches(
     pattern: &Pattern,
     value: &Value,
     bindings: &mut Vec<(String, Value)>,
+    environment: &EnvironmentRef,
 ) -> bool {
     match pattern {
         Pattern::Wildcard { .. } => true,
@@ -15,27 +16,26 @@ pub(super) fn pattern_matches(
         Pattern::Some { inner, .. } => match value {
             Value::Option {
                 value: Some(value), ..
-            } => pattern_matches(inner, value, bindings),
+            } => pattern_matches(inner, value, bindings, environment),
             _ => false,
         },
         Pattern::None { .. } => matches!(value, Value::Option { value: None, .. }),
         Pattern::Ok { inner, .. } => match value {
             Value::Result {
                 value: Ok(value), ..
-            } => pattern_matches(inner, value, bindings),
+            } => pattern_matches(inner, value, bindings, environment),
             _ => false,
         },
         Pattern::Err { inner, .. } => match value {
             Value::Result {
                 value: Err(value), ..
-            } => pattern_matches(inner, value, bindings),
+            } => pattern_matches(inner, value, bindings, environment),
             _ => false,
         },
         Pattern::TupleVariant { path, fields, .. } => {
             if path.len() < 2 {
                 return false;
             }
-            let enum_name = &path[path.len() - 2];
             let variant_name = &path[path.len() - 1];
             let Value::Enum(instance) = value else {
                 return false;
@@ -43,19 +43,17 @@ pub(super) fn pattern_matches(
             let EnumPayload::Tuple(values) = &instance.payload else {
                 return false;
             };
-            type_name_matches(&instance.type_definition.name, enum_name)
+            nominal_type_matches(path, &instance.type_definition, environment)
                 && instance.variant == *variant_name
                 && fields.len() == values.len()
                 && fields
                     .iter()
                     .zip(values)
-                    .all(|(pattern, value)| pattern_matches(pattern, value, bindings))
+                    .all(|(pattern, value)| pattern_matches(pattern, value, bindings, environment))
         }
         Pattern::Record { path, fields, .. } => {
             if let Value::Struct(instance) = value
-                && path
-                    .last()
-                    .is_some_and(|name| type_name_matches(&instance.type_definition.name, name))
+                && struct_type_matches(path, &instance.type_definition, environment)
             {
                 let values = instance.fields.borrow();
                 return fields.len() == values.len()
@@ -63,16 +61,15 @@ pub(super) fn pattern_matches(
                         values
                             .get(name)
                             .and_then(|field| field.value.as_ref())
-                            .is_some_and(|value| pattern_matches(pattern, value, bindings))
+                            .is_some_and(|value| {
+                                pattern_matches(pattern, value, bindings, environment)
+                            })
                     });
             }
             let values = match value {
                 Value::Enum(instance)
                     if path.len() >= 2
-                        && type_name_matches(
-                            &instance.type_definition.name,
-                            &path[path.len() - 2],
-                        )
+                        && nominal_type_matches(path, &instance.type_definition, environment)
                         && instance.variant == path[path.len() - 1] =>
                 {
                     let EnumPayload::Record(values) = &instance.payload else {
@@ -86,19 +83,18 @@ pub(super) fn pattern_matches(
                 && fields.iter().all(|(name, pattern)| {
                     values
                         .get(name)
-                        .is_some_and(|value| pattern_matches(pattern, value, bindings))
+                        .is_some_and(|value| pattern_matches(pattern, value, bindings, environment))
                 })
         }
         Pattern::Path { path, .. } => {
             if path.len() < 2 {
                 return false;
             }
-            let enum_name = &path[path.len() - 2];
             let variant_name = &path[path.len() - 1];
             matches!(
                 value,
                 Value::Enum(instance)
-                    if type_name_matches(&instance.type_definition.name, enum_name)
+                    if nominal_type_matches(path, &instance.type_definition, environment)
                         && instance.variant == *variant_name
                         && matches!(instance.payload, EnumPayload::Unit)
             )
@@ -106,8 +102,29 @@ pub(super) fn pattern_matches(
     }
 }
 
-fn type_name_matches(canonical: &str, pattern: &str) -> bool {
-    canonical == pattern || canonical.rsplit("::").next() == Some(pattern)
+fn struct_type_matches(
+    type_path: &[String],
+    actual: &Rc<StructType>,
+    environment: &EnvironmentRef,
+) -> bool {
+    matches!(
+        execution::resolve_visible_path(type_path, environment, Span::default()),
+        Ok(Value::StructType(expected)) if Rc::ptr_eq(&expected, actual)
+    )
+}
+
+fn nominal_type_matches(
+    variant_path: &[String],
+    actual: &Rc<EnumType>,
+    environment: &EnvironmentRef,
+) -> bool {
+    let Some((_, type_path)) = variant_path.split_last() else {
+        return false;
+    };
+    matches!(
+        execution::resolve_visible_path(type_path, environment, Span::default()),
+        Ok(Value::EnumType(expected)) if Rc::ptr_eq(&expected, actual)
+    )
 }
 
 pub(super) fn literal_value(literal: &Literal) -> Value {

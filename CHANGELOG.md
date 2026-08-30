@@ -95,6 +95,10 @@
 
 ### Fixed
 
+- 配置项目的 AST 解释器现在按顶层 `use` 依赖初始化模块，不再要求被依赖模块的路径按字典序排在
+  使用方之前；模块导入循环会返回明确错误。
+- 解释器和字节码 VM 的 struct/enum pattern 现在保留声明模块的名义类型身份；不同模块中同名、
+  同 variant 的 enum 不再互相误匹配。
 - Analyzer 现在正确识别 Host enum 与 variant：Hover 显示底层整数类型、原始值及 `BitFlags` 信息，
   并按当前 token 区分 `Enum` 与 `Enum::Variant`；Host 类型保留 Manifest 模块路径，项目符号统一以
   `crate` 为 Hover 根路径。注入的 Host enum 虚拟声明不再污染文件开头或其他模块的语义着色，表达式
