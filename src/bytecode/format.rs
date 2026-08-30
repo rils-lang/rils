@@ -1,11 +1,14 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    error::Error,
-    fmt, fs, io,
+    fs,
     path::Path,
     rc::Rc,
 };
+
+mod error;
+
+pub use error::BytecodeFormatError;
 
 use crate::{
     FloatType, IntegerType,
@@ -46,31 +49,6 @@ const MAX_TYPES: usize = 65_536;
 const MAX_REGISTERS_PER_FUNCTION: usize = 262_144;
 const MAX_LOCALS_PER_FUNCTION: usize = 262_144;
 const MAX_INSTRUCTIONS: usize = 2_000_000;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BytecodeFormatError {
-    pub message: String,
-}
-
-impl BytecodeFormatError {
-    fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-
-    fn io(action: &str, path: &Path, error: io::Error) -> Self {
-        Self::new(format!("failed to {action} `{}`: {error}", path.display()))
-    }
-}
-
-impl fmt::Display for BytecodeFormatError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "bytecode format error: {}", self.message)
-    }
-}
-
-impl Error for BytecodeFormatError {}
 
 type Result<T> = std::result::Result<T, BytecodeFormatError>;
 

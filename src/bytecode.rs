@@ -1,8 +1,6 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    error::Error,
-    fmt,
     rc::Rc,
 };
 
@@ -11,7 +9,7 @@ use crate::{
     environment::{AccessError, AssignError, StorageRef, StorageSlot},
     hir::{HirLiteral, HirPattern, HirTypeDefinition},
     mir::{MirFunction, MirInstruction, MirProgram, MirTerminator},
-    source::{SourceFile, SourceId, Span, format_diagnostic},
+    source::{SourceFile, SourceId, Span},
     types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
@@ -20,18 +18,30 @@ use crate::{
     },
 };
 
+mod compilation;
+mod construction;
 mod core_imports;
 mod encoder;
+mod error;
 mod format;
 mod formatting;
 mod host;
+mod operators;
+mod patterns;
 mod verifier;
 mod vm;
 
+pub(crate) use compilation::compile_program_with_host_and_session;
+#[cfg(test)]
+pub(crate) use compilation::compile_program_with_host_and_sources;
+pub use compilation::{compile, compile_with_host};
+use construction::*;
 use core_imports::*;
-use encoder::encode;
+pub use error::BytecodeError;
 pub use format::{BYTECODE_FORMAT_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeFormatError};
 pub use host::{BYTECODE_HOST_ABI_VERSION, BytecodeHost, BytecodeHostHandler, BytecodeImport};
+use operators::*;
+use patterns::*;
 use vm::VirtualMachine;
 
 pub use rils_compiler::CompileError;
@@ -43,38 +53,6 @@ pub use rils_host::{
     HostContract, HostEnumDefinition, HostFunctionDeclaration, HostModuleDeclaration, HostReceiver,
     HostThreadAffinity, HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BytecodeError {
-    pub message: String,
-    pub span: Span,
-}
-
-impl BytecodeError {
-    fn new(message: impl Into<String>, span: Span) -> Self {
-        Self {
-            message: message.into(),
-            span,
-        }
-    }
-
-    pub fn render(&self, source_name: &str, source: &str) -> String {
-        format_diagnostic(
-            source_name,
-            source,
-            self.span,
-            &format!("bytecode error: {}", self.message),
-        )
-    }
-}
-
-impl fmt::Display for BytecodeError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "bytecode error: {}", self.message)
-    }
-}
-
-impl Error for BytecodeError {}
 
 #[derive(Clone)]
 pub struct BytecodeModule {
@@ -565,55 +543,6 @@ fn assign_error(error: AssignError, span: Span) -> BytecodeError {
     )
 }
 
-pub fn compile(source: &str) -> Result<BytecodeModule, CompileError> {
-    encode(rils_compiler::compile(source)?)
-}
-
-pub fn compile_with_host(
-    source: &str,
-    host: &HostContract,
-) -> Result<BytecodeModule, CompileError> {
-    validate_contract_abi(host)?;
-    encode(rils_compiler::compile_with_host(source, host)?)
-}
-
-#[cfg(test)]
-pub(crate) fn compile_program_with_host_and_sources(
-    program: &crate::ast::Program,
-    host: &HostContract,
-    sources: Vec<SourceFile>,
-) -> Result<BytecodeModule, CompileError> {
-    validate_contract_abi(host)?;
-    encode(rils_compiler::compile_program_with_host_and_sources(
-        program, host, sources,
-    )?)
-}
-
-pub(crate) fn compile_program_with_host_and_session(
-    host: &HostContract,
-    session: &rils_frontend::CompilationSession,
-    project: rils_frontend::ProjectId,
-) -> Result<BytecodeModule, CompileError> {
-    validate_contract_abi(host)?;
-    encode(rils_compiler::compile_program_with_host_and_session(
-        host, session, project,
-    )?)
-}
-
-fn validate_contract_abi(host: &HostContract) -> Result<(), CompileError> {
-    if host.host_abi_version() != BYTECODE_HOST_ABI_VERSION {
-        return Err(CompileError::new(
-            format!(
-                "host contract ABI {} is incompatible with bytecode host ABI {}",
-                host.host_abi_version(),
-                BYTECODE_HOST_ABI_VERSION
-            ),
-            Span::default(),
-        ));
-    }
-    Ok(())
-}
-
 #[derive(Clone)]
 enum Constant {
     Unit,
@@ -888,302 +817,6 @@ enum Instruction {
         source: usize,
     },
     MatchFail,
-}
-
-fn pattern_locals_valid(pattern: &HirPattern, local_count: usize) -> bool {
-    match pattern {
-        HirPattern::Binding(local) => *local < local_count,
-        HirPattern::Some(inner) | HirPattern::Ok(inner) | HirPattern::Err(inner) => {
-            pattern_locals_valid(inner, local_count)
-        }
-        HirPattern::TupleVariant { fields, .. } => fields
-            .iter()
-            .all(|pattern| pattern_locals_valid(pattern, local_count)),
-        HirPattern::Record { fields, .. } => fields
-            .iter()
-            .all(|(_, pattern)| pattern_locals_valid(pattern, local_count)),
-        HirPattern::Wildcard | HirPattern::Literal(_) | HirPattern::None | HirPattern::Path(_) => {
-            true
-        }
-    }
-}
-
-fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
-    match pattern {
-        HirPattern::Wildcard | HirPattern::Binding(_) => true,
-        HirPattern::Literal(literal) => hir_literal_value(literal) == *value,
-        HirPattern::Some(inner) => match value {
-            Value::Option {
-                value: Some(value), ..
-            } => pattern_matches(inner, value),
-            _ => false,
-        },
-        HirPattern::None => matches!(value, Value::Option { value: None, .. }),
-        HirPattern::Ok(inner) => match value {
-            Value::Result {
-                value: Ok(value), ..
-            } => pattern_matches(inner, value),
-            _ => false,
-        },
-        HirPattern::Err(inner) => match value {
-            Value::Result {
-                value: Err(value), ..
-            } => pattern_matches(inner, value),
-            _ => false,
-        },
-        HirPattern::TupleVariant { path, fields } => {
-            let Some((enum_path, variant_name)) = pattern_variant(path) else {
-                return false;
-            };
-            let Value::Enum(instance) = value else {
-                return false;
-            };
-            let EnumPayload::Tuple(values) = &instance.payload else {
-                return false;
-            };
-            type_path_matches(&instance.type_definition.name, enum_path)
-                && instance.variant == variant_name
-                && fields.len() == values.len()
-                && fields
-                    .iter()
-                    .zip(values)
-                    .all(|(pattern, value)| pattern_matches(pattern, value))
-        }
-        HirPattern::Record { path, fields } => {
-            if let Value::Struct(instance) = value
-                && type_path_matches(&instance.type_definition.name, path)
-            {
-                let values = instance.fields.borrow();
-                return fields.len() == values.len()
-                    && fields.iter().all(|(name, pattern)| {
-                        values
-                            .get(name)
-                            .and_then(|field| field.value.as_ref())
-                            .is_some_and(|value| pattern_matches(pattern, value))
-                    });
-            }
-            let Some((enum_path, variant_name)) = pattern_variant(path) else {
-                return false;
-            };
-            let Value::Enum(instance) = value else {
-                return false;
-            };
-            let EnumPayload::Record(values) = &instance.payload else {
-                return false;
-            };
-            type_path_matches(&instance.type_definition.name, enum_path)
-                && instance.variant == variant_name
-                && fields.len() == values.len()
-                && fields.iter().all(|(name, pattern)| {
-                    values
-                        .get(name)
-                        .is_some_and(|value| pattern_matches(pattern, value))
-                })
-        }
-        HirPattern::Path(path) => {
-            let Some((enum_path, variant_name)) = pattern_variant(path) else {
-                return false;
-            };
-            matches!(
-                value,
-                Value::Enum(instance)
-                    if type_path_matches(&instance.type_definition.name, enum_path)
-                        && instance.variant == variant_name
-                        && matches!(instance.payload, EnumPayload::Unit)
-            )
-        }
-    }
-}
-
-fn collect_pattern_bindings(
-    pattern: &HirPattern,
-    value: &Value,
-    bindings: &mut Vec<(usize, Value)>,
-) {
-    match pattern {
-        HirPattern::Binding(local) => bindings.push((*local, value.clone())),
-        HirPattern::Some(inner) => {
-            if let Value::Option {
-                value: Some(value), ..
-            } = value
-            {
-                collect_pattern_bindings(inner, value, bindings);
-            }
-        }
-        HirPattern::Ok(inner) => {
-            if let Value::Result {
-                value: Ok(value), ..
-            } = value
-            {
-                collect_pattern_bindings(inner, value, bindings);
-            }
-        }
-        HirPattern::Err(inner) => {
-            if let Value::Result {
-                value: Err(value), ..
-            } = value
-            {
-                collect_pattern_bindings(inner, value, bindings);
-            }
-        }
-        HirPattern::TupleVariant { fields, .. } => {
-            if let Value::Enum(instance) = value
-                && let EnumPayload::Tuple(values) = &instance.payload
-            {
-                for (pattern, value) in fields.iter().zip(values) {
-                    collect_pattern_bindings(pattern, value, bindings);
-                }
-            }
-        }
-        HirPattern::Record { fields, .. } => match value {
-            Value::Struct(instance) => {
-                let values = instance.fields.borrow();
-                for (name, pattern) in fields {
-                    if let Some(value) = values.get(name).and_then(|field| field.value.as_ref()) {
-                        collect_pattern_bindings(pattern, value, bindings);
-                    }
-                }
-            }
-            Value::Enum(instance) => {
-                if let EnumPayload::Record(values) = &instance.payload {
-                    for (name, pattern) in fields {
-                        if let Some(value) = values.get(name) {
-                            collect_pattern_bindings(pattern, value, bindings);
-                        }
-                    }
-                }
-            }
-            _ => {}
-        },
-        HirPattern::Wildcard | HirPattern::Literal(_) | HirPattern::None | HirPattern::Path(_) => {}
-    }
-}
-
-fn hir_literal_value(literal: &HirLiteral) -> Value {
-    match literal {
-        HirLiteral::Unit => Value::Unit,
-        HirLiteral::Bool(value) => Value::Bool(*value),
-        HirLiteral::I8(value) => Value::I8(*value),
-        HirLiteral::I16(value) => Value::I16(*value),
-        HirLiteral::I32(value) => Value::I32(*value),
-        HirLiteral::I64(value) => Value::I64(*value),
-        HirLiteral::I128(value) => Value::I128(*value),
-        HirLiteral::Isize(value) => Value::Isize(*value),
-        HirLiteral::U8(value) => Value::U8(*value),
-        HirLiteral::U16(value) => Value::U16(*value),
-        HirLiteral::U32(value) => Value::U32(*value),
-        HirLiteral::U64(value) => Value::U64(*value),
-        HirLiteral::U128(value) => Value::U128(*value),
-        HirLiteral::Usize(value) => Value::Usize(*value),
-        HirLiteral::F32(value) => Value::F32(*value),
-        HirLiteral::F64(value) => Value::F64(*value),
-        HirLiteral::Char(value) => Value::Char(*value),
-        HirLiteral::String(value) => Value::String(Rc::from(value.as_str())),
-    }
-}
-
-fn pattern_variant(path: &[String]) -> Option<(&[String], &str)> {
-    let (variant, type_path) = path.split_last()?;
-    (!type_path.is_empty()).then_some((type_path, variant.as_str()))
-}
-
-fn type_path_matches(canonical: &str, pattern: &[String]) -> bool {
-    canonical.split("::").eq(pattern.iter().map(String::as_str))
-}
-
-fn sequence_value(values: Vec<Value>, array: bool, span: Span) -> Result<Value, BytecodeError> {
-    let mut element_type = Type::Unknown;
-    if array {
-        for value in &values {
-            let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-            element_type = merge_sequence_types(&element_type, &actual).ok_or_else(|| {
-                BytecodeError::new(
-                    format!(
-                        "array elements must have one type, found `{element_type}` and `{actual}`"
-                    ),
-                    span,
-                )
-            })?;
-        }
-    }
-    let elements = values
-        .into_iter()
-        .map(|value| FieldSlot {
-            type_annotation: if array {
-                element_type.clone()
-            } else {
-                Type::of_value(&value).unwrap_or(Type::Unknown)
-            },
-            value: Some(value),
-            references: 0,
-        })
-        .collect();
-    let sequence = Rc::new(SequenceValue {
-        elements: RefCell::new(elements),
-        element_type: RefCell::new(array.then_some(element_type)),
-    });
-    Ok(if array {
-        Value::Array(sequence)
-    } else {
-        Value::Tuple(sequence)
-    })
-}
-
-fn merge_sequence_types(left: &Type, right: &Type) -> Option<Type> {
-    if left == &Type::Unknown {
-        return Some(right.clone());
-    }
-    if right == &Type::Unknown || left == right {
-        return Some(left.clone());
-    }
-    None
-}
-
-fn condition_value(value: &Value, span: Span) -> Result<bool, BytecodeError> {
-    match value {
-        Value::Unit => Err(BytecodeError::new(
-            "`()` cannot be used as a condition",
-            span,
-        )),
-        Value::Option { .. } => Err(BytecodeError::new(
-            "Option cannot be used as a condition",
-            span,
-        )),
-        value => Ok(value.is_truthy()),
-    }
-}
-
-fn unary(operator: UnaryOp, value: Value, span: Span) -> Result<Value, BytecodeError> {
-    match (operator, value) {
-        (UnaryOp::Not, value) => Ok(Value::Bool(!condition_value(&value, span)?)),
-        (UnaryOp::Negate, value) => {
-            crate::numeric::negate(value).map_err(|message| BytecodeError::new(message, span))
-        }
-        (UnaryOp::Dereference, _) => Err(BytecodeError::new(
-            "dereference is not supported by the bytecode MVP",
-            span,
-        )),
-    }
-}
-
-fn binary(
-    left: Value,
-    operator: BinaryOp,
-    right: Value,
-    span: Span,
-) -> Result<Value, BytecodeError> {
-    use BinaryOp::*;
-    if matches!(operator, Equal | NotEqual) {
-        let equal = left == right;
-        return Ok(Value::Bool(if operator == Equal { equal } else { !equal }));
-    }
-    if operator == Add
-        && let (Value::String(left), Value::String(right)) = (&left, &right)
-    {
-        return Ok(Value::String(Rc::from(format!("{left}{right}"))));
-    }
-    crate::numeric::binary(left, operator, right)
-        .map_err(|message| BytecodeError::new(message, span))
 }
 
 #[cfg(test)]
