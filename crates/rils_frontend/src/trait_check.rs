@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     analysis::AnalysisDiagnostic,
-    ast::{ImplMethod, Program, Stmt, TraitMethod},
+    ast::{AssociatedType, ImplMethod, Program, Stmt, TraitMethod},
     types::Type,
 };
 
@@ -10,6 +10,7 @@ use crate::{
 struct TraitRequirement {
     name: String,
     bounds: Vec<String>,
+    associated_types: Vec<AssociatedType>,
     methods: Vec<TraitMethod>,
 }
 
@@ -77,6 +78,7 @@ fn collect_project_traits(
             Stmt::Trait {
                 name,
                 bounds,
+                associated_types,
                 methods,
                 ..
             } => {
@@ -85,6 +87,7 @@ fn collect_project_traits(
                     TraitRequirement {
                         name: name.clone(),
                         bounds: bounds.clone(),
+                        associated_types: associated_types.clone(),
                         methods: methods.clone(),
                     },
                 );
@@ -118,6 +121,7 @@ fn check_project_impls(
             Stmt::Impl {
                 trait_name: Some(trait_name),
                 target: Type::Named { .. },
+                associated_types,
                 methods,
                 span,
                 ..
@@ -129,7 +133,13 @@ fn check_project_impls(
                 let Some(requirement) = traits.get(&trait_name) else {
                     continue;
                 };
-                if check_methods(requirement, methods, &mut result.diagnostics) {
+                if check_contract(
+                    requirement,
+                    associated_types,
+                    methods,
+                    *span,
+                    &mut result.diagnostics,
+                ) {
                     result.verified_impls.push(*span);
                 }
             }
@@ -259,12 +269,14 @@ fn collect(
             Stmt::Trait {
                 name,
                 bounds,
+                associated_types,
                 methods,
                 ..
             } => {
                 let requirement = TraitRequirement {
                     name: name.clone(),
                     bounds: bounds.clone(),
+                    associated_types: associated_types.clone(),
                     methods: methods.clone(),
                 };
                 traits.insert(name.clone(), requirement.clone());
@@ -301,6 +313,7 @@ fn check_impls(
             Stmt::Impl {
                 trait_name: Some(trait_name),
                 target: Type::Named { name, .. },
+                associated_types,
                 methods,
                 span,
                 ..
@@ -322,12 +335,79 @@ fn check_impls(
                         ));
                     }
                 }
-                if check_methods(requirement, methods, &mut result.diagnostics) {
+                if check_contract(
+                    requirement,
+                    associated_types,
+                    methods,
+                    *span,
+                    &mut result.diagnostics,
+                ) {
                     result.verified_impls.push(*span);
                 }
             }
             _ => {}
         }
+    }
+}
+
+fn check_contract(
+    requirement: &TraitRequirement,
+    associated_types: &[AssociatedType],
+    methods: &[ImplMethod],
+    impl_span: crate::Span,
+    diagnostics: &mut Vec<AnalysisDiagnostic>,
+) -> bool {
+    let diagnostics_start = diagnostics.len();
+    check_associated_types(requirement, associated_types, impl_span, diagnostics);
+    check_methods(requirement, methods, diagnostics);
+    diagnostics.len() == diagnostics_start
+}
+
+fn check_associated_types(
+    requirement: &TraitRequirement,
+    implementations: &[AssociatedType],
+    impl_span: crate::Span,
+    diagnostics: &mut Vec<AnalysisDiagnostic>,
+) {
+    for required in &requirement.associated_types {
+        let Some(implementation) = implementations
+            .iter()
+            .find(|implementation| implementation.name == required.name)
+        else {
+            if required.value.is_none() {
+                diagnostics.push(AnalysisDiagnostic::error(
+                    format!(
+                        "impl of trait `{}` is missing associated type `{}`",
+                        requirement.name, required.name
+                    ),
+                    impl_span,
+                ));
+            }
+            continue;
+        };
+        if implementation.generic_parameters.len() != required.generic_parameters.len() {
+            diagnostics.push(AnalysisDiagnostic::error(
+                format!(
+                    "associated type `{}` has the wrong number of generic parameters",
+                    required.name
+                ),
+                implementation.span,
+            ));
+        }
+    }
+    if let Some(extra) = implementations.iter().find(|implementation| {
+        !requirement
+            .associated_types
+            .iter()
+            .any(|required| required.name == implementation.name)
+    }) {
+        diagnostics.push(AnalysisDiagnostic::error(
+            format!(
+                "associated type `{}` is not a member of trait `{}`",
+                extra.name, requirement.name
+            ),
+            extra.span,
+        ));
     }
 }
 

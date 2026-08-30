@@ -1,0 +1,7 @@
+use crate::api::Source;
+
+struct State;
+
+impl Source for State {}
+
+fn main() {}

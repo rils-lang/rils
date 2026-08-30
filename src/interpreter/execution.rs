@@ -493,6 +493,10 @@ impl Interpreter {
                         })
                     })
                     .transpose()?;
+                let frontend_impl_verified = self
+                    .frontend_impl_ids
+                    .get(span)
+                    .is_some_and(|id| self.frontend_verified_trait_impls.contains(id));
                 let associated_type_values = if let Some(definition) = &trait_definition {
                     let mut values = HashMap::new();
                     for required in &definition.associated_types {
@@ -502,8 +506,9 @@ impl Interpreter {
                         let (generic_parameters, value, value_span) = if let Some(implementation) =
                             implementation
                         {
-                            if implementation.generic_parameters.len()
-                                != required.generic_parameters.len()
+                            if !frontend_impl_verified
+                                && implementation.generic_parameters.len()
+                                    != required.generic_parameters.len()
                             {
                                 return Err(RuntimeError::new(
                                     format!(
@@ -523,7 +528,7 @@ impl Interpreter {
                             )
                         } else if let Some(default) = &required.value {
                             (required.generic_parameters.clone(), default, required.span)
-                        } else {
+                        } else if !frontend_impl_verified {
                             return Err(RuntimeError::new(
                                 format!(
                                     "impl of trait `{}` is missing associated type `{}`",
@@ -531,6 +536,8 @@ impl Interpreter {
                                 ),
                                 *span,
                             ));
+                        } else {
+                            unreachable!("frontend verified all required associated types")
                         };
                         values.insert(
                             required.name.clone(),
@@ -541,12 +548,14 @@ impl Interpreter {
                             },
                         );
                     }
-                    if let Some(extra) = associated_types.iter().find(|item| {
-                        !definition
-                            .associated_types
-                            .iter()
-                            .any(|required| required.name == item.name)
-                    }) {
+                    if !frontend_impl_verified
+                        && let Some(extra) = associated_types.iter().find(|item| {
+                            !definition
+                                .associated_types
+                                .iter()
+                                .any(|required| required.name == item.name)
+                        })
+                    {
                         return Err(RuntimeError::new(
                             format!(
                                 "associated type `{}` is not a member of trait `{}`",
@@ -582,11 +591,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    if !self
-                        .frontend_impl_ids
-                        .get(span)
-                        .is_some_and(|id| self.frontend_verified_trait_impls.contains(id))
-                    {
+                    if !frontend_impl_verified {
                         validate_trait_implementation(
                             definition,
                             &associated_type_values,

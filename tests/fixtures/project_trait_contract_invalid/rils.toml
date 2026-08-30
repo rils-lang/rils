@@ -1,0 +1,3 @@
+[project]
+name = "project_trait_contract_invalid"
+src = "src"
