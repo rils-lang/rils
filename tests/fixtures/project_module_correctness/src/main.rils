@@ -1,0 +1,14 @@
+fn main() -> i32 {
+    let provider = crate::a_consumer::provider_state();
+    let foreign = crate::a_first::State::Same;
+
+    let provider_score = match provider {
+        crate::z_provider::State::Same => 20,
+        _ => 0,
+    };
+    let foreign_score = match foreign {
+        crate::z_provider::State::Same => 100,
+        _ => 22,
+    };
+    provider_score + foreign_score
+}

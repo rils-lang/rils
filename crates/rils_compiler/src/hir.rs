@@ -421,6 +421,7 @@ impl ProgramLowerer {
             .collect::<Vec<_>>();
         let mut entry_function = FunctionLowerer::new(
             &self.types,
+            &self.type_definitions,
             &self.host_functions,
             &self.host_methods,
             &self.host_contract,
@@ -478,6 +479,7 @@ impl ProgramLowerer {
             lowered.push(
                 FunctionLowerer::new(
                     &self.types,
+                    &self.type_definitions,
                     &self.host_functions,
                     &self.host_methods,
                     &self.host_contract,
@@ -511,6 +513,7 @@ struct GeneratedFunctions {
 
 struct FunctionLowerer<'a> {
     types: &'a HashMap<String, TypeId>,
+    type_definitions: &'a [HirTypeDefinition],
     host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
     host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
     host_contract: &'a HostContract,
@@ -534,6 +537,7 @@ impl<'a> FunctionLowerer<'a> {
     )]
     fn new(
         types: &'a HashMap<String, TypeId>,
+        type_definitions: &'a [HirTypeDefinition],
         host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
         host_methods: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
         host_contract: &'a HostContract,
@@ -544,6 +548,7 @@ impl<'a> FunctionLowerer<'a> {
     ) -> Self {
         Self {
             types,
+            type_definitions,
             host_functions,
             host_methods,
             host_contract,
@@ -717,6 +722,7 @@ impl<'a> FunctionLowerer<'a> {
                 self.generated.next_id.set(function + 1);
                 let mut child = FunctionLowerer::new(
                     self.types,
+                    self.type_definitions,
                     self.host_functions,
                     self.host_methods,
                     self.host_contract,
@@ -1423,21 +1429,23 @@ impl<'a> FunctionLowerer<'a> {
             Pattern::None { .. } => HirPattern::None,
             Pattern::Ok { inner, .. } => HirPattern::Ok(Box::new(self.pattern(inner)?)),
             Pattern::Err { inner, .. } => HirPattern::Err(Box::new(self.pattern(inner)?)),
-            Pattern::TupleVariant { path, fields, .. } => HirPattern::TupleVariant {
-                path: path.clone(),
+            Pattern::TupleVariant { path, fields, span } => HirPattern::TupleVariant {
+                path: self.canonical_enum_variant_path(path, *span)?,
                 fields: fields
                     .iter()
                     .map(|pattern| self.pattern(pattern))
                     .collect::<Result<_, _>>()?,
             },
-            Pattern::Record { path, fields, .. } => HirPattern::Record {
-                path: path.clone(),
+            Pattern::Record { path, fields, span } => HirPattern::Record {
+                path: self.canonical_record_pattern_path(path, *span)?,
                 fields: fields
                     .iter()
                     .map(|(name, pattern)| Ok((name.clone(), self.pattern(pattern)?)))
                     .collect::<Result<_, CompileError>>()?,
             },
-            Pattern::Path { path, .. } => HirPattern::Path(path.clone()),
+            Pattern::Path { path, span } => {
+                HirPattern::Path(self.canonical_enum_variant_path(path, *span)?)
+            }
         })
     }
 
@@ -1803,6 +1811,42 @@ impl<'a> FunctionLowerer<'a> {
             self.type_id(&path[..path.len() - 1].join("::"), span)?,
             path.last().unwrap().clone(),
         ))
+    }
+
+    fn canonical_record_pattern_path(
+        &self,
+        path: &[String],
+        span: Span,
+    ) -> Result<Vec<String>, CompileError> {
+        let name = path.join("::");
+        if let Some(type_id) = self.symbol_id(self.types, &name) {
+            return Ok(self.canonical_type_path(type_id));
+        }
+        self.canonical_enum_variant_path(path, span)
+    }
+
+    fn canonical_enum_variant_path(
+        &self,
+        path: &[String],
+        span: Span,
+    ) -> Result<Vec<String>, CompileError> {
+        let Some((variant, type_path)) = path.split_last() else {
+            return Err(CompileError::unsupported(
+                "expected an enum variant path",
+                span,
+            ));
+        };
+        let type_id = self.type_id(&type_path.join("::"), span)?;
+        let mut canonical = self.canonical_type_path(type_id);
+        canonical.push(variant.clone());
+        Ok(canonical)
+    }
+
+    fn canonical_type_path(&self, type_id: TypeId) -> Vec<String> {
+        let name = match &self.type_definitions[type_id] {
+            HirTypeDefinition::Struct { name, .. } | HirTypeDefinition::Enum { name, .. } => name,
+        };
+        name.split("::").map(str::to_owned).collect()
     }
 }
 

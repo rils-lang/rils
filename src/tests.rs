@@ -3179,6 +3179,30 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
 }
 
 #[test]
+fn project_module_initialization_and_enum_identity_match_between_backends() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/project_module_correctness/src/main.rils");
+
+    let interpreted = Engine::new().eval_file(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+
+    assert_eq!(interpreted, Value::I32(42));
+    assert_eq!(compiled, interpreted);
+}
+
+#[test]
+fn project_module_initialization_reports_import_cycles() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/project_module_cycle/src/main.rils");
+
+    let error = Engine::new().eval_file(&entry).unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains("project module import cycle"));
+    assert!(message.contains("a -> b -> a"));
+}
+
+#[test]
 fn configured_projects_reject_frontend_errors_before_execution() {
     let unique = format!(
         "rils-project-static-error-{}-{}",

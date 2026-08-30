@@ -932,7 +932,7 @@ fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
             _ => false,
         },
         HirPattern::TupleVariant { path, fields } => {
-            let Some((enum_name, variant_name)) = pattern_variant(path) else {
+            let Some((enum_path, variant_name)) = pattern_variant(path) else {
                 return false;
             };
             let Value::Enum(instance) = value else {
@@ -941,7 +941,7 @@ fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
             let EnumPayload::Tuple(values) = &instance.payload else {
                 return false;
             };
-            type_name_matches(&instance.type_definition.name, enum_name)
+            type_path_matches(&instance.type_definition.name, enum_path)
                 && instance.variant == variant_name
                 && fields.len() == values.len()
                 && fields
@@ -951,9 +951,7 @@ fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
         }
         HirPattern::Record { path, fields } => {
             if let Value::Struct(instance) = value
-                && path
-                    .last()
-                    .is_some_and(|name| type_name_matches(&instance.type_definition.name, name))
+                && type_path_matches(&instance.type_definition.name, path)
             {
                 let values = instance.fields.borrow();
                 return fields.len() == values.len()
@@ -964,7 +962,7 @@ fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
                             .is_some_and(|value| pattern_matches(pattern, value))
                     });
             }
-            let Some((enum_name, variant_name)) = pattern_variant(path) else {
+            let Some((enum_path, variant_name)) = pattern_variant(path) else {
                 return false;
             };
             let Value::Enum(instance) = value else {
@@ -973,7 +971,7 @@ fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
             let EnumPayload::Record(values) = &instance.payload else {
                 return false;
             };
-            type_name_matches(&instance.type_definition.name, enum_name)
+            type_path_matches(&instance.type_definition.name, enum_path)
                 && instance.variant == variant_name
                 && fields.len() == values.len()
                 && fields.iter().all(|(name, pattern)| {
@@ -983,13 +981,13 @@ fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
                 })
         }
         HirPattern::Path(path) => {
-            let Some((enum_name, variant_name)) = pattern_variant(path) else {
+            let Some((enum_path, variant_name)) = pattern_variant(path) else {
                 return false;
             };
             matches!(
                 value,
                 Value::Enum(instance)
-                    if type_name_matches(&instance.type_definition.name, enum_name)
+                    if type_path_matches(&instance.type_definition.name, enum_path)
                         && instance.variant == variant_name
                         && matches!(instance.payload, EnumPayload::Unit)
             )
@@ -1084,12 +1082,13 @@ fn hir_literal_value(literal: &HirLiteral) -> Value {
     }
 }
 
-fn pattern_variant(path: &[String]) -> Option<(&str, &str)> {
-    (path.len() >= 2).then(|| (path[path.len() - 2].as_str(), path[path.len() - 1].as_str()))
+fn pattern_variant(path: &[String]) -> Option<(&[String], &str)> {
+    let (variant, type_path) = path.split_last()?;
+    (!type_path.is_empty()).then_some((type_path, variant.as_str()))
 }
 
-fn type_name_matches(canonical: &str, pattern: &str) -> bool {
-    canonical == pattern || canonical.rsplit("::").next() == Some(pattern)
+fn type_path_matches(canonical: &str, pattern: &[String]) -> bool {
+    canonical.split("::").eq(pattern.iter().map(String::as_str))
 }
 
 fn sequence_value(values: Vec<Value>, array: bool, span: Span) -> Result<Value, BytecodeError> {

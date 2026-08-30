@@ -105,8 +105,8 @@ impl Interpreter {
                 for arm in arms {
                     self.tick(arm.pattern.span())?;
                     let mut bindings = Vec::new();
-                    if pattern_matches(&arm.pattern, &value, &mut bindings) {
-                        let branch_environment = Environment::child(environment);
+                    if pattern_matches(&arm.pattern, &value, &mut bindings, &environment) {
+                        let branch_environment = Environment::child(environment.clone());
                         for (name, value) in bindings {
                             branch_environment
                                 .borrow_mut()
