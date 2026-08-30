@@ -3230,6 +3230,22 @@ fn configured_projects_reject_frontend_errors_before_execution() {
 }
 
 #[test]
+fn project_trait_associated_type_contracts_are_shared_by_both_backends() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/project_trait_contract_invalid/src/main.rils");
+
+    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let compiled = match compile_file(&entry) {
+        Ok(_) => panic!("invalid trait contract should not compile"),
+        Err(error) => error.to_string(),
+    };
+
+    for message in [interpreted, compiled] {
+        assert!(message.contains("missing associated type `Item`"));
+    }
+}
+
+#[test]
 fn project_modules_can_use_standard_native_macros() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

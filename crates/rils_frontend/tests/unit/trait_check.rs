@@ -39,10 +39,11 @@ fn records_impls_whose_method_contracts_were_checked() {
 #[test]
 fn project_checks_imported_trait_impls() {
     let trait_program =
-        parse(lex("pub trait Describe { fn describe(self) -> string; }").unwrap()).unwrap();
+        parse(lex("pub trait Describe { type Output; fn describe(self) -> string; }").unwrap())
+            .unwrap();
     let implementation_program = parse(
         lex(
-            "use crate::api::Describe; struct State; impl Describe for State { fn describe(self) -> string { \"state\" } }",
+            "use crate::api::Describe; struct State; impl Describe for State { type Output = string; fn describe(self) -> string { \"state\" } }",
         )
         .unwrap(),
     )
@@ -54,6 +55,45 @@ fn project_checks_imported_trait_impls() {
         (app.as_slice(), &implementation_program),
     ]);
 
+    assert!(result.diagnostics.is_empty());
+    assert_eq!(result.verified_impls.len(), 1);
+}
+
+#[test]
+fn validates_associated_type_contracts() {
+    let cases = [
+        (
+            "trait Source { type Item; } struct State; impl Source for State {}",
+            "missing associated type `Item`",
+        ),
+        (
+            "trait Source {} struct State; impl Source for State { type Extra = i32; }",
+            "associated type `Extra` is not a member of trait `Source`",
+        ),
+        (
+            "trait Source { type Item<T>; } struct State; impl Source for State { type Item = i32; }",
+            "associated type `Item` has the wrong number of generic parameters",
+        ),
+    ];
+
+    for (source, expected) in cases {
+        let program = parse(lex(source).unwrap()).unwrap();
+        let result = trait_check::analyze(&program);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(expected)),
+            "expected diagnostic containing `{expected}`"
+        );
+        assert!(result.verified_impls.is_empty());
+    }
+
+    let defaulted = parse(
+        lex("trait Source { type Item = i32; } struct State; impl Source for State {}").unwrap(),
+    )
+    .unwrap();
+    let result = trait_check::analyze(&defaulted);
     assert!(result.diagnostics.is_empty());
     assert_eq!(result.verified_impls.len(), 1);
 }
