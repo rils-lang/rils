@@ -50,10 +50,14 @@ fn project_checks_imported_trait_impls() {
     .unwrap();
     let api = vec!["api".to_owned()];
     let app = vec!["app".to_owned()];
-    let result = trait_check::analyze_project(&[
-        (api.as_slice(), &trait_program),
-        (app.as_slice(), &implementation_program),
-    ]);
+    let result = trait_check::analyze_project(
+        &[
+            (api.as_slice(), &trait_program),
+            (app.as_slice(), &implementation_program),
+        ],
+        &Default::default(),
+        &Default::default(),
+    );
 
     assert!(result.diagnostics.is_empty());
     assert_eq!(result.verified_impls.len(), 1);
@@ -132,6 +136,60 @@ fn rejects_conditional_trait_impl_bounds() {
             .unwrap();
     let result = trait_check::analyze(&inherent);
     assert!(result.diagnostics.is_empty());
+}
+
+#[test]
+fn enforces_orphan_rules_without_rejecting_a_local_side() {
+    let orphan = parse(lex("impl Clone for string {}").unwrap()).unwrap();
+    let result = trait_check::analyze(&orphan);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.message.contains("violates the orphan rule") })
+    );
+
+    for source in [
+        "struct Local; impl Clone for Local {}",
+        "trait LocalTrait {} impl LocalTrait for string {}",
+    ] {
+        let program = parse(lex(source).unwrap()).unwrap();
+        let result = trait_check::analyze(&program);
+        assert!(
+            !result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("violates the orphan rule")),
+            "unexpected orphan diagnostic for `{source}`"
+        );
+    }
+
+    let host_target = parse(lex("impl Clone for UnityObject {}").unwrap()).unwrap();
+    let host_types = ["UnityObject".to_owned()].into_iter().collect();
+    let result = trait_check::analyze_with_host_types(&host_target, &host_types);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("violates the orphan rule"))
+    );
+}
+
+#[test]
+fn rejects_duplicate_trait_implementations_by_identity() {
+    let program = parse(
+        lex("trait Tagged {} struct State; impl Tagged for State {} impl Tagged for State {}")
+            .unwrap(),
+    )
+    .unwrap();
+    let result = trait_check::analyze(&program);
+
+    assert!(result.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("trait `Tagged` is already implemented for `State`")
+    }));
+    assert_eq!(result.verified_impls.len(), 1);
 }
 
 #[test]

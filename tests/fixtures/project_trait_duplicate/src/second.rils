@@ -1,0 +1,4 @@
+use crate::api::Tagged;
+use crate::model::State;
+
+impl Tagged for State {}

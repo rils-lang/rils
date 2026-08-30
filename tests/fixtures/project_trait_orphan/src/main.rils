@@ -1,0 +1,3 @@
+impl Clone for string {}
+
+fn main() {}

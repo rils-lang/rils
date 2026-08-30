@@ -3262,6 +3262,50 @@ fn project_conditional_trait_impls_are_rejected_by_both_backends() {
 }
 
 #[test]
+fn project_duplicate_trait_impls_are_rejected_by_both_backends() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/project_trait_duplicate/src/main.rils");
+
+    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let compiled = match compile_file(&entry) {
+        Ok(_) => panic!("duplicate trait impl should not compile"),
+        Err(error) => error.to_string(),
+    };
+
+    for message in [interpreted, compiled] {
+        assert!(message.contains("trait `Tagged` is already implemented for `State`"));
+    }
+}
+
+#[test]
+fn project_orphan_trait_impls_are_rejected_by_both_backends() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/project_trait_orphan/src/main.rils");
+
+    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let compiled = match compile_file(&entry) {
+        Ok(_) => panic!("orphan trait impl should not compile"),
+        Err(error) => error.to_string(),
+    };
+
+    for message in [interpreted, compiled] {
+        assert!(message.contains("violates the orphan rule"));
+    }
+}
+
+#[test]
+fn project_trait_coherence_distinguishes_same_named_local_definitions() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/project_trait_distinct/src/main.rils");
+
+    let interpreted = Engine::new().eval_file(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+
+    assert_eq!(interpreted, Value::I32(42));
+    assert_eq!(compiled, interpreted);
+}
+
+#[test]
 fn project_modules_can_use_standard_native_macros() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

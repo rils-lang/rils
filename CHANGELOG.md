@@ -7,6 +7,8 @@
 
 ### Breaking Changes
 
+- trait impl 现在执行孤儿规则：trait 或目标类型至少一方必须声明在当前项目中。此前对内建/Host
+  trait 与内建/Host 类型双方均非本地的 impl 将被 frontend 拒绝。
 - `rils.toml` 的项目源码根配置由 `script_paths` 更名为 `src`；`src` 接受单个字符串或字符串列表，默认值为 `"src"`。
 - `.rilbc` 格式由 v6 提升为 v7：runtime member ID 与 intrinsic ID 合并为统一的 32 位稳定
   `BuiltinId`；runtime member 通过 `CallRuntime` 直接按 ID 分派，不再进入字符串 host import 表，
@@ -35,6 +37,8 @@
 
 ### Migration
 
+- 将违反孤儿规则的 impl 改为针对项目内 wrapper 类型实现外部 trait，或声明项目内 trait；不要直接
+  为两个均来自内建、Host 或未来外部库的身份增加 impl。
 - 将 `[project]` 下的 `script_paths = ["src"]` 改为 `src = "src"`；多个源码根改为 `src = ["path-a", "path-b"]`。
 - 从源码重新生成全部 `.rilbc`、Unity `.bytes` 和嵌入 `.rilslib` 字节码模块；v7 loader 会明确拒绝
   v6 及更早产物。使用内建 ID 的 Rust 宿主代码应从 `RuntimeMemberId` / `IntrinsicId` 迁移到
@@ -95,6 +99,8 @@
 
 ### Fixed
 
+- frontend 现在使用项目内 trait/type 的稳定 `DefId` 检测重复 trait impl；跨模块导入同一声明时
+  解释器与编译器都会在执行前拒绝，不同模块中的同名声明不会误碰撞。
 - 带 trait bound 的条件 trait impl 现在由共享 frontend 明确拒绝，并保留泛型参数源码范围；配置
   项目的解释器与字节码编译器不再出现一个运行时报错、另一个忽略约束的行为分歧。
 - trait impl 的 associated type 契约现在由共享 frontend 检查，覆盖缺失成员、额外成员和泛型参数

@@ -1,10 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
+    DefId,
     analysis::AnalysisDiagnostic,
     ast::{AssociatedType, GenericParameter, ImplMethod, Program, Stmt, TraitMethod},
     types::Type,
 };
+
+mod coherence;
+
+use coherence::{CoherenceKey, check_local_coherence, check_project_coherence};
 
 #[derive(Clone)]
 struct TraitRequirement {
@@ -14,12 +19,27 @@ struct TraitRequirement {
     methods: Vec<TraitMethod>,
 }
 
+struct ProjectDeclarations<'a> {
+    traits: &'a HashMap<String, TraitRequirement>,
+    trait_ids: &'a HashMap<String, DefId>,
+    types: &'a HashMap<String, DefId>,
+    host_types: &'a HashSet<String>,
+}
+
 pub(crate) struct TraitCheckResult {
     pub(crate) diagnostics: Vec<AnalysisDiagnostic>,
     pub(crate) verified_impls: Vec<crate::Span>,
 }
 
+#[cfg(test)]
 pub(crate) fn analyze(program: &Program) -> TraitCheckResult {
+    analyze_with_host_types(program, &HashSet::new())
+}
+
+pub(crate) fn analyze_with_host_types(
+    program: &Program,
+    host_types: &HashSet<String>,
+) -> TraitCheckResult {
     let mut traits = HashMap::new();
     let mut implementations: HashMap<String, HashSet<String>> = HashMap::new();
     collect(
@@ -34,35 +54,61 @@ pub(crate) fn analyze(program: &Program) -> TraitCheckResult {
         verified_impls: Vec::new(),
     };
     check_impls(&program.statements, &traits, &implementations, &mut result);
+    check_local_coherence(program, host_types, &mut result);
     result
 }
 
-pub(crate) fn analyze_project(programs: &[(&[String], &Program)]) -> TraitCheckResult {
+pub(crate) fn analyze_project(
+    programs: &[(&[String], &Program)],
+    definitions: &crate::semantic::DefMap,
+    host_types: &HashSet<String>,
+) -> TraitCheckResult {
     let mut traits = HashMap::new();
+    let mut trait_ids = HashMap::new();
+    let mut types = HashMap::new();
     for (module_path, program) in programs {
-        collect_project_traits(&program.statements, &mut module_path.to_vec(), &mut traits);
+        collect_project_declarations(
+            &program.statements,
+            &mut module_path.to_vec(),
+            definitions,
+            &mut traits,
+            &mut trait_ids,
+            &mut types,
+        );
     }
 
     let mut result = TraitCheckResult {
         diagnostics: Vec::new(),
         verified_impls: Vec::new(),
     };
+    let declarations = ProjectDeclarations {
+        traits: &traits,
+        trait_ids: &trait_ids,
+        types: &types,
+        host_types,
+    };
+    let mut implementations = HashMap::new();
     for (module_path, program) in programs {
         check_project_impls(
             &program.statements,
             module_path,
-            &traits,
+            &declarations,
             &mut HashMap::new(),
+            &mut HashMap::new(),
+            &mut implementations,
             &mut result,
         );
     }
     result
 }
 
-fn collect_project_traits(
+fn collect_project_declarations(
     statements: &[Stmt],
     module_path: &mut Vec<String>,
+    definitions: &crate::semantic::DefMap,
     traits: &mut HashMap<String, TraitRequirement>,
+    trait_ids: &mut HashMap<String, DefId>,
+    types: &mut HashMap<String, DefId>,
 ) {
     for statement in statements {
         match unwrap_public(statement) {
@@ -72,18 +118,27 @@ fn collect_project_traits(
                 ..
             } => {
                 module_path.push(name.clone());
-                collect_project_traits(children, module_path, traits);
+                collect_project_declarations(
+                    children,
+                    module_path,
+                    definitions,
+                    traits,
+                    trait_ids,
+                    types,
+                );
                 module_path.pop();
             }
             Stmt::Trait {
                 name,
+                name_span,
                 bounds,
                 associated_types,
                 methods,
                 ..
             } => {
+                let path = qualified(module_path, name);
                 traits.insert(
-                    qualified(module_path, name),
+                    path.clone(),
                     TraitRequirement {
                         name: name.clone(),
                         bounds: bounds.clone(),
@@ -91,6 +146,19 @@ fn collect_project_traits(
                         methods: methods.clone(),
                     },
                 );
+                if let Some(definition) = definitions.definition_at(*name_span) {
+                    trait_ids.insert(path, definition.id);
+                }
+            }
+            Stmt::Struct {
+                name, name_span, ..
+            }
+            | Stmt::Enum {
+                name, name_span, ..
+            } => {
+                if let Some(definition) = definitions.definition_at(*name_span) {
+                    types.insert(qualified(module_path, name), definition.id);
+                }
             }
             _ => {}
         }
@@ -100,15 +168,22 @@ fn collect_project_traits(
 fn check_project_impls(
     statements: &[Stmt],
     module_path: &[String],
-    traits: &HashMap<String, TraitRequirement>,
-    aliases: &mut HashMap<String, String>,
+    declarations: &ProjectDeclarations<'_>,
+    trait_aliases: &mut HashMap<String, String>,
+    type_aliases: &mut HashMap<String, String>,
+    implementations: &mut HashMap<CoherenceKey, crate::Span>,
     result: &mut TraitCheckResult,
 ) {
     for statement in statements {
         match unwrap_public(statement) {
-            Stmt::Use { imports, .. } => {
-                collect_trait_imports(imports, module_path, traits, aliases)
-            }
+            Stmt::Use { imports, .. } => collect_project_imports(
+                imports,
+                module_path,
+                declarations.traits,
+                declarations.types,
+                trait_aliases,
+                type_aliases,
+            ),
             Stmt::Module {
                 name,
                 statements: Some(children),
@@ -116,12 +191,20 @@ fn check_project_impls(
             } => {
                 let mut child_path = module_path.to_vec();
                 child_path.push(name.clone());
-                check_project_impls(children, &child_path, traits, &mut HashMap::new(), result);
+                check_project_impls(
+                    children,
+                    &child_path,
+                    declarations,
+                    &mut HashMap::new(),
+                    &mut HashMap::new(),
+                    implementations,
+                    result,
+                );
             }
             Stmt::Impl {
                 generic_parameters,
                 trait_name: Some(trait_name),
-                target: Type::Named { .. },
+                target,
                 associated_types,
                 methods,
                 span,
@@ -129,11 +212,25 @@ fn check_project_impls(
             } => {
                 let supported =
                     check_impl_generic_bounds(generic_parameters, &mut result.diagnostics);
-                let Some(trait_name) = resolve_trait_name(trait_name, module_path, aliases, traits)
+                let coherent = check_project_coherence(
+                    trait_name,
+                    target,
+                    *span,
+                    module_path,
+                    declarations.trait_ids,
+                    declarations.types,
+                    declarations.host_types,
+                    trait_aliases,
+                    type_aliases,
+                    implementations,
+                    result,
+                );
+                let Some(trait_name) =
+                    resolve_item_name(trait_name, module_path, trait_aliases, declarations.traits)
                 else {
                     continue;
                 };
-                let Some(requirement) = traits.get(&trait_name) else {
+                let Some(requirement) = declarations.traits.get(&trait_name) else {
                     continue;
                 };
                 let contract_valid = check_contract(
@@ -143,7 +240,7 @@ fn check_project_impls(
                     *span,
                     &mut result.diagnostics,
                 );
-                if supported && contract_valid {
+                if supported && contract_valid && coherent {
                     result.verified_impls.push(*span);
                 }
             }
@@ -152,20 +249,28 @@ fn check_project_impls(
     }
 }
 
-fn collect_trait_imports(
+fn collect_project_imports<T>(
     imports: &[crate::ast::UseImport],
     module_path: &[String],
     traits: &HashMap<String, TraitRequirement>,
-    aliases: &mut HashMap<String, String>,
+    types: &HashMap<String, T>,
+    trait_aliases: &mut HashMap<String, String>,
+    type_aliases: &mut HashMap<String, String>,
 ) {
     for import in imports {
         match import.kind {
             crate::ast::UseImportKind::Single => {
                 let path = import.path.join("::");
-                if let Some(trait_name) = resolve_trait_name(&path, module_path, aliases, traits)
+                if let Some(trait_name) =
+                    resolve_item_name(&path, module_path, trait_aliases, traits)
                     && let Some(binding) = import.binding_name()
                 {
-                    aliases.insert(binding.to_owned(), trait_name);
+                    trait_aliases.insert(binding.to_owned(), trait_name);
+                }
+                if let Some(type_name) = resolve_item_name(&path, module_path, type_aliases, types)
+                    && let Some(binding) = import.binding_name()
+                {
+                    type_aliases.insert(binding.to_owned(), type_name);
                 }
             }
             crate::ast::UseImportKind::Glob => {
@@ -185,18 +290,28 @@ fn collect_trait_imports(
                         .rsplit("::")
                         .next()
                         .expect("trait name is non-empty");
-                    aliases.insert(binding.to_owned(), trait_name.clone());
+                    trait_aliases.insert(binding.to_owned(), trait_name.clone());
+                }
+                for type_name in types.keys().filter(|name| {
+                    name.strip_prefix(&prefix)
+                        .is_some_and(|suffix| !suffix.contains("::"))
+                }) {
+                    let binding = type_name
+                        .rsplit("::")
+                        .next()
+                        .expect("type name is non-empty");
+                    type_aliases.insert(binding.to_owned(), type_name.clone());
                 }
             }
         }
     }
 }
 
-fn resolve_trait_name(
+fn resolve_item_name<T>(
     name: &str,
     module_path: &[String],
     aliases: &HashMap<String, String>,
-    traits: &HashMap<String, TraitRequirement>,
+    items: &HashMap<String, T>,
 ) -> Option<String> {
     if let Some(alias) = aliases.get(name) {
         return Some(alias.clone());
@@ -204,7 +319,7 @@ fn resolve_trait_name(
     let path = name.split("::").map(str::to_owned).collect::<Vec<_>>();
     if path.len() == 1 {
         let local = qualified(module_path, name);
-        if traits.contains_key(&local) {
+        if items.contains_key(&local) {
             return Some(local);
         }
     }
@@ -217,7 +332,7 @@ fn resolve_trait_name(
                 Some(format!("{module}::{name}"))
             }
         })
-        .filter(|candidate| traits.contains_key(candidate))
+        .filter(|candidate| items.contains_key(candidate))
 }
 
 fn resolve_module_path(path: &[String], module_path: &[String]) -> Option<String> {
