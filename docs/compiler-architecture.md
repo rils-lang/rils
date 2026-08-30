@@ -27,7 +27,7 @@ rils
 - `rils_compiler`：HIR lowering 和 MIR lowering，并为现有调用方兼容转发 Host API。
 - 根 `rils` crate：公共 `Engine`、项目加载、AST 解释器、运行时 `Value`、字节码编码与格式、verifier、VM、宿主执行和标准库实际行为。
 
-目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 都共享这一会话模型及其项目分析缓存；compiler 和配置项目解释器都直接消费独立模块 AST，不再拼装 synthetic project AST。AST 保持解析后的原貌，数值具体化与 Host 名称解析通过语义 side table 完成。当前剩余重复主要位于解释器静态检查、runtime builtin、Analyzer 查询适配和 bytecode import 链接。
+目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 都共享这一会话模型及其项目分析缓存；compiler 和配置项目解释器都直接消费独立模块 AST，不再拼装 synthetic project AST。AST 保持解析后的原貌，数值具体化与 Host 名称解析通过语义 side table 完成。当前剩余重复主要位于解释器静态检查和名称查找、Analyzer 查询适配，以及后续非标准或外部 bytecode import 的链接分类。
 
 ## 与 Rust 编译器的对照
 
@@ -179,16 +179,14 @@ DefMap + TypeckResults
 
 解释器最终只负责 AST 求值、动态作用域状态和宿主交互，不再维护另一套静态分析器。
 
-### Interpreter 与 VM 的 runtime builtin 重复实现
+### Interpreter 与 VM 的 runtime builtin 重复实现（纯运行时分发已收敛）
 
-当前主要分发表位于：
+纯运行时 builtin 已集中到后端中立的 `src/runtime_builtins.rs` 及其子模块。解释器、bytecode core
+import 和 VM 通过稳定 `BuiltinId` 进入同一 dispatcher；数值、Range、HashMap/HashSet、String、
+Vec、Option/Result 和无 callback 的内建 Iterator 操作不再各自维护行为实现。
 
-- `src/interpreter/builtin_methods.rs`
-- `src/runtime_builtins.rs`
-
-Vec、Option、Result 和 Iterator 的大量行为、类型约束及错误信息仍分别实现。数值 intrinsic 已经复用 `numeric.rs`，HashMap/HashSet 已经复用 `hash_collections.rs`，String runtime member 也已统一调用 bytecode runtime dispatcher。下一步应把该 dispatcher 移到后端中立模块，并继续收敛其余纯运行时操作。
-
-纯运行时操作应进入共享的 ID dispatcher。需要调用 Rils 函数值的 Iterator combinator 可以通过后端 callback adapter 保留执行差异：
+需要调用 Rils 函数值的 Option/Result combinator 和自定义 Iterator 操作仍通过解释器或 VM 各自的
+callback adapter 执行。这是用户函数调用机制的后端差异，不属于重复的纯 builtin 分发：
 
 ```text
 共享 builtin operation
@@ -196,7 +194,8 @@ Vec、Option、Result 和 Iterator 的大量行为、类型约束及错误信息
     └── VM callback adapter
 ```
 
-应增加解释器与 VM 运行同一源码的矩阵测试，防止收敛过程中改变语义。
+后续增加带 callback 的能力时仍应使用解释器/VM 同源码矩阵测试，不应重新建立按名称分发的第二套
+runtime builtin 目录。
 
 ### Bytecode core import 字符串分发（标准 core import 已完成）
 
@@ -313,12 +312,31 @@ rils
 2. 已完成：`CompilationSession` 以 `ProjectSyntax` 保存独立模块 AST，项目 analysis、跨文件调用解析、HIR lowering 和配置项目解释执行均直接消费模块集合；compiler 与解释器入口不再依赖 synthetic project AST。
 3. 已完成：`DefId`、`BodyId`、`ImplId` 和 `ExprId` 均在 AST/definition 访问时直接分配；类型推断、调用解析、静态检查器、Analyzer 与 HIR lowering 均按 `ExprId` 查询，表达式 Span 兼容主表已移除。
 4. 已完成：compiler 与 AST 解释器直接按 semantic type 具体化 numeric literal；Host type side table 已由 compiler、Analyzer、静态检查和 HIR 消费；numeric、Host type rewrite 和 Host enum synthetic injection 均已删除。
-5. 进行中：AST 解释器已消费共享 `TypeckResults`，配置项目入口使用项目 `DefMap` 并以 frontend error diagnostic 作为执行前 gate；已跳过项目执行中重复的 trait supertrait 验证。frontend 在项目级按模块路径解析 trait 声明与 `use` 导入，将完成方法契约检查的 impl 记录为稳定 `ImplId`；项目解释器仅对这些 impl 跳过重复的方法成员/签名验证。无法由项目语义解析的路径仍保留运行时防御。继续收缩其旧静态检查和名称查找逻辑。
+5. 本轮边界已完成：AST 解释器消费共享 `TypeckResults`，配置项目入口使用项目 `DefMap` 并以 frontend error diagnostic 作为执行前 gate；frontend 在项目级按模块路径解析 trait 声明与 `use` 导入，将完成 supertrait 和方法契约检查的 impl 记录为稳定 `ImplId`，项目解释器对这些 impl 复用验证结果。无法由项目语义解析的路径继续保留运行时防御。剩余静态检查和名称查找收缩属于后续独立迭代，不阻塞本轮语义身份迁移收口。
 6. 已完成：数值、Range、HashMap/HashSet、String、Vec、Option/Result，以及内建 `SequenceIterator` 的无 callback 操作（含 `enumerate`）已共享根 runtime dispatcher；解释器、bytecode core import 和 VM 均直接调用该后端中立层。需要调用 Rils 函数值的 Option/Result 和自定义 Iterator callback adapter 刻意保留在解释器中，属于执行用户回调而非纯 runtime builtin 分发。
 7. 已完成：标准 bytecode core import 在 host 初始化时解析为稳定 ID 或专用操作，执行热路径不再按字符串分发。
-8. 按职责拆分大文件和根 facade。
+8. 后续独立重构：按职责拆分大文件和根 facade；机械拆分不与新的语言语义混在同一分支。
 9. 已完成评估：当前不拆分 `rils_bytecode`、`rils_runtime`；待运行时表示、bytecode 与宿主 ABI 达到上述独立边界后再重新立项。
 10. 已完成决定：legacy project、macro 与 manifest 兼容层维持“读取旧格式、只写当前格式”的策略；删除必须作为单独破坏性版本的提案，包含实际使用者审计、迁移指南、`CHANGELOG.md` 说明与明确授权，当前不设删除日期。
+
+## 本轮语义身份迁移的收口边界
+
+本轮迁移以“源码节点和定义拥有稳定语义身份，项目、compiler、解释器与 Analyzer 能共享对应分析
+结果”为完成条件。Host Contract 独立层、结构化项目 session、`DefId`/`BodyId`/`ImplId`/`ExprId`、
+类型与 Host 解析 side table、项目 frontend gate、trait impl 契约复用，以及纯 runtime builtin 的
+稳定 ID dispatcher 均已进入这一边界。
+
+以下事项建立在该基础上，但具有各自独立的验收条件，不属于本轮退出条件：
+
+- 彻底移除解释器剩余静态检查和名称查找；
+- 按 source revision 缓存 entry `DefId`、项目分析和每模块 HIR；
+- 拆分 frontend、HIR、Host、VM、Value 与根 facade 的大文件；
+- 修复模块初始化顺序和跨模块 enum 名义身份；
+- 建立 Analyzer 统一语义查询、增量分析和完整 `pub use` 支持；
+- 实现 `.rilslib` 声明表、外部链接和 workspace/lockfile。
+
+这些工作应记录在 `TODO.md` 并从最新版本分支分别拉出短分支。除非发现由本轮迁移直接引入的回归，
+否则不再扩张本轮 feature 的实现范围。
 
 ## 每阶段验证要求
 

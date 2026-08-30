@@ -15,8 +15,9 @@
 
 ### 运行时与编译器
 
-- 评估以源码 revision 缓存 entry `DefId` 与每模块 HIR；继续收缩 AST 解释器内重复的静态检查和名称
-  查找逻辑。
+- 评估以源码 revision 缓存 entry `DefId` 与每模块 HIR，并为项目分析建立细粒度失效边界。
+- 继续收缩 AST 解释器内重复的静态检查和名称查找逻辑；每次只迁移一类检查，以解释器/VM 对照
+  测试证明行为不变，不把这项开放式清理作为其他 feature 分支的退出条件。
 - 标准 bytecode core import 已在链接时解析为稳定 ID；后续新增内建或外部 import 也应沿用该模式。
   `rils_bytecode`、`rils_runtime` crate 拆分已评估为暂不启动：须先让运行时表示、bytecode 和宿主 ABI
   形成无循环依赖的独立边界。
@@ -70,6 +71,25 @@
 - 已建立独立的 `tools/rils-bench` release 基准工具和 `python tools/benchmark.py` 稳定入口；继续扩展
   解释器、磁盘字节码和 Analyzer 场景，并在基线稳定后建立持续性能回归。
 - 增加跨平台原生构建与发布矩阵，并明确各宿主的 ABI/字节码兼容策略。
+
+## 建议迭代拆分
+
+以下工作存在依赖关系，但不应继续堆叠在同一个长期 feature 分支中。每组应从最新版本分支拉出
+独立短分支，满足本组验收条件后及时合回：
+
+1. 项目正确性：消除模块初始化顺序依赖，修复 VM 跨模块 enum 名义身份，并增加多文件解释器/VM
+   对照测试。
+2. 解释器语义收缩：逐类迁移剩余类型、trait 和名称查找，保留动态宿主注册所需的运行时防御。
+3. Frontend 增量缓存：以 source revision 缓存 entry `DefId`、项目分析和每模块 HIR，明确依赖图
+   失效规则。
+4. 模块职责拆分：机械拆分 `analysis`、`type_inference`、HIR、Host、VM、Value 和根 facade；不在
+   同一分支混入新语义。
+5. Analyzer 语义查询：建立共享查询接口，再分别实现 `pub use`、增量分析、rename 和 workspace
+   symbol。
+6. 库链接与依赖：单独设计并实现 `.rilslib` 声明表、稳定库身份、外部符号链接以及 workspace/
+   lockfile；不得混入解释器清理或 VM 性能优化。
+
+正确性修复优先于缓存、性能和新语法；大文件机械拆分应避开同一模块正在进行语义变更的分支。
 
 ## 记录规则
 

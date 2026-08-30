@@ -58,6 +58,7 @@ Unity 项目通过独立的 [RilsForUnity](https://github.com/rils-lang/RilsForU
 - [项目模型](docs/project.md)
 - [项目依赖与打包](docs/project-dependencies-and-packaging.md)
 - [Rils 库产物](docs/library-artifacts.md)
+- [编译器架构与迁移边界](docs/compiler-architecture.md)
 - [Analyzer 与编辑器能力](docs/analyzer.md)
 - [字节码设计](docs/bytecode.md)
 - [发布与分支流程](docs/release-process.md)
