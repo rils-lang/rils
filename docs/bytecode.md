@@ -12,8 +12,9 @@ Rils 的执行后端分为两条路径：树遍历解释器负责快速验证完
 source -> lexer/parser -> static analysis -> HIR -> MIR -> bytecode -> verifier -> VM
 ```
 
-当前 crate 边界中，`rils_frontend` 负责解析和静态分析，`rils_compiler` 负责 HIR/MIR lowering；主
-crate 消费 MIR 并完成字节码编码、验证和 VM 执行。encoder 迁移前需先让字节码类型表摆脱运行时
+当前 crate 边界中，`rils_frontend` 负责解析和静态分析，`rils_compiler` 负责 HIR/MIR lowering；
+`rils_runtime` 消费 MIR 并完成字节码编码、验证和 VM 执行，根 `rils` 仅作公共转发。后续抽取
+`rils_bytecode` 前需先让字节码类型表摆脱运行时
 `StructType`/`EnumType`，改为可独立验证和链接的静态描述。
 
 - HIR 完成词法作用域名称解析，把局部变量转换为稳定槽位，并保留源码范围。

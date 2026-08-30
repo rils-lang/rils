@@ -138,15 +138,15 @@ pub(crate) fn from_ffi_value(
                     Span::default(),
                 ));
             }
-            let handle = rils::OpaqueHostHandle {
+            let handle = rils_runtime::OpaqueHostHandle {
                 object_id,
                 generation,
                 type_id,
             };
             Ok(logical_host_type.map_or_else(
-                || rils::opaque_host_value(handle),
+                || rils_runtime::opaque_host_value(handle),
                 |logical| {
-                    rils::opaque_host_value_typed(
+                    rils_runtime::opaque_host_value_typed(
                         handle,
                         logical.name.clone(),
                         logical.base_types.clone(),
@@ -190,7 +190,10 @@ pub(crate) fn from_ffi_value(
                     Span::default(),
                 ));
             }
-            Ok(rils::inline_host_value_typed(bytes, logical.name.clone()))
+            Ok(rils_runtime::inline_host_value_typed(
+                bytes,
+                logical.name.clone(),
+            ))
         }
         _ => Err(fail(
             RILS_STATUS_UNSUPPORTED_VALUE,
@@ -233,13 +236,13 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
         Value::String(value) => scalar(RILS_VALUE_STRING, insert_string(value.to_string())?, 0),
         Value::HostObject(object) => {
             let value = Value::HostObject(object);
-            if let Some(handle) = rils::opaque_host_handle(&value) {
+            if let Some(handle) = rils_runtime::opaque_host_handle(&value) {
                 scalar(
                     RILS_VALUE_HOST_HANDLE,
                     u64::from_le_bytes(handle.object_id.to_le_bytes()),
                     (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
                 )
-            } else if let Some(inline) = rils::inline_host_value(&value) {
+            } else if let Some(inline) = rils_runtime::inline_host_value(&value) {
                 scalar(
                     RILS_VALUE_INLINE_VALUE,
                     u64::from_le_bytes(inline.bytes[..8].try_into().expect("fixed payload")),
@@ -407,11 +410,11 @@ pub(crate) fn portable_integer_tag(integer: IntegerType) -> u32 {
 }
 
 pub(crate) fn validate_c_dispatcher_contract(contract: &HostContract) -> Result<(), String> {
-    if contract.host_abi_version() != rils::BYTECODE_HOST_ABI_VERSION {
+    if contract.host_abi_version() != rils_runtime::BYTECODE_HOST_ABI_VERSION {
         return Err(format!(
             "host manifest ABI {} is incompatible with runtime ABI {}",
             contract.host_abi_version(),
-            rils::BYTECODE_HOST_ABI_VERSION
+            rils_runtime::BYTECODE_HOST_ABI_VERSION
         ));
     }
     for function in contract.functions() {
@@ -454,7 +457,7 @@ pub(crate) fn to_ffi_host_argument(
             .host_type(name)
             .and_then(|declaration| declaration.enum_definition.as_ref())
     {
-        let raw = rils::host_enum_raw(value, name, definition)
+        let raw = rils_runtime::host_enum_raw(value, name, definition)
             .map_err(|message| fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default()))?;
         return Ok(enum_raw_to_ffi(raw, definition.underlying_type));
     }
@@ -487,7 +490,7 @@ pub(crate) fn enum_raw_to_ffi(raw: u128, underlying: IntegerType) -> RilsValue {
 pub(crate) fn from_ffi_host_enum(
     value: RilsValue,
     type_name: &str,
-    definition: &rils::HostEnumDefinition,
+    definition: &rils_runtime::HostEnumDefinition,
 ) -> Result<Value, i32> {
     let expected_tag = portable_integer_tag(definition.underlying_type);
     if value.tag != expected_tag {
@@ -517,6 +520,6 @@ pub(crate) fn from_ffi_host_enum(
         Value::Usize(value) => value as u128,
         _ => unreachable!("host enum transport tag was checked as an integer"),
     };
-    rils::host_enum_value(type_name, definition, raw)
+    rils_runtime::host_enum_value(type_name, definition, raw)
         .map_err(|message| fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default()))
 }

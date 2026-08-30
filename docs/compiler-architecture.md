@@ -15,6 +15,8 @@ rils_frontend
     ↓
 rils_compiler
     ↓
+rils_runtime
+    ↓
 rils
 ```
 
@@ -25,7 +27,8 @@ rils
 - `rils_host`：Host Contract、Host 类型与函数声明、ABI 常量，以及 Manifest 编解码和验证。
 - `rils_frontend`：源码数据库、模块索引、静态分析、名称与调用解析、类型推断、所有权和引用逃逸检查。
 - `rils_compiler`：HIR lowering 和 MIR lowering，并为现有调用方兼容转发 Host API。
-- 根 `rils` crate：公共 `Engine`、项目加载、AST 解释器、运行时 `Value`、字节码编码与格式、verifier、VM、宿主执行和标准库实际行为。
+- `rils_runtime`：公共 `Engine`、项目加载、AST 解释器、运行时 `Value`、字节码编码与格式、verifier、VM、宿主执行和标准库实际行为。字节码职责将在下一阶段继续抽入 `rils_bytecode`。
+- 根 `rils` crate：面向外部用户的兼容 facade，只转发 `rils_runtime` 的公共入口与预设能力。
 
 目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 都共享这一会话模型及其项目分析缓存；compiler 和配置项目解释器都直接消费独立模块 AST，不再拼装 synthetic project AST。AST 保持解析后的原貌，数值具体化与 Host 名称解析通过语义 side table 完成。当前剩余重复主要位于解释器静态检查和名称查找、Analyzer 查询适配，以及后续非标准或外部 bytecode import 的链接分类。
 
@@ -284,7 +287,7 @@ Analyzer 只负责容错输入和 LSP 数据转换。
 
 ## 长期 crate 边界
 
-在共享语义和项目 session 完成后，可以再评估以下拆分：
+当前按以下目标边界分阶段拆分：
 
 ```text
 rils_compiler
@@ -297,12 +300,12 @@ rils_runtime
     Value + runtime builtins + VM + host execution
 
 rils
-    public facade + Engine
+    public compatibility facade
 ```
 
-已于当前架构阶段评估：暂不创建 `rils_bytecode` 或 `rils_runtime` crate。`Value`、bytecode type table、Host ABI、解释器与 VM 的宿主调用仍在根 crate 内共享具体表示；此时拆分只会形成跨 crate 的高扇入依赖，不能降低耦合。
-
-只有在以下条件同时满足时才重新开启拆分：
+第一阶段已经创建 `rils_runtime`，将原根 crate 的执行核心与其测试按原结构整体迁入，并把根 `rils`
+收窄为薄转发层。这一步刻意不提前拆开共享具体表示，确保是可验证的机械迁移。下一阶段创建
+`rils_bytecode` 时必须满足以下边界：
 
 - `Value` 与 Host ABI 的运行时表示可由一个不依赖解释器或 bytecode 的稳定 crate 提供；
 - bytecode 编码、格式、verifier 与 VM 仅依赖该运行时 crate 和 frontend/host 的公共模型；
@@ -320,8 +323,10 @@ rils
 5. AST 解释器消费共享 `TypeckResults`，配置项目入口使用项目 `DefMap` 并以 frontend error diagnostic 作为执行前 gate；frontend 在项目级按模块路径解析 trait 声明与 `use` 导入，将完成 supertrait、associated type 声明、coherence 和方法契约检查的 impl 记录为稳定 `ImplId`，项目解释器对这些 impl 复用验证结果。associated type 检查覆盖缺失成员、额外成员和泛型参数数量；暂不支持的条件 trait impl 也由 frontend 在带 bound 的泛型参数处统一诊断。coherence 使用项目声明的 trait/type `DefId`，因此跨模块别名指向同一身份时能检测重复 impl，不同模块的同名声明不会误碰撞；内建与 Host 身份视为外部身份并执行孤儿规则。普通 `eval` 或无法由项目语义解析的动态路径继续保留运行时防御。剩余类型兼容检查和名称查找收缩属于后续独立迭代。
 6. 已完成：数值、Range、HashMap/HashSet、String、Vec、Option/Result，以及内建 `SequenceIterator` 的无 callback 操作（含 `enumerate`）已共享根 runtime dispatcher；解释器、bytecode core import 和 VM 均直接调用该后端中立层。需要调用 Rils 函数值的 Option/Result 和自定义 Iterator callback adapter 刻意保留在解释器中，属于执行用户回调而非纯 runtime builtin 分发。
 7. 已完成：标准 bytecode core import 在 host 初始化时解析为稳定 ID 或专用操作，执行热路径不再按字符串分发。
-8. 后续独立重构：按职责拆分大文件和根 facade；机械拆分不与新的语言语义混在同一分支。
-9. 已完成评估：当前不拆分 `rils_bytecode`、`rils_runtime`；待运行时表示、bytecode 与宿主 ABI 达到上述独立边界后再重新立项。
+8. 已完成：职责过重的 frontend、HIR、Host、VM、C API 等入口已机械拆分；根 `rils` facade 已通过
+   整体迁入 `rils_runtime` 收窄为薄转发层。
+9. 下一独立阶段：从 `rils_runtime` 抽出 `rils_bytecode`，明确 bytecode/VM 使用的运行时支持接口，
+   并保持解释器/VM 对照、磁盘 verifier 与 C API 测试通过。
 10. 已完成决定：legacy project、macro 与 manifest 兼容层维持“读取旧格式、只写当前格式”的策略；删除必须作为单独破坏性版本的提案，包含实际使用者审计、迁移指南、`CHANGELOG.md` 说明与明确授权，当前不设删除日期。
 
 ## 本轮语义身份迁移的收口边界

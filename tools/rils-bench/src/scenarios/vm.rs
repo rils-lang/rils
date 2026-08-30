@@ -1,6 +1,6 @@
 use std::{fs, hint::black_box, path::PathBuf};
 
-use rils::{BytecodeHost, BytecodeModule, ExecutionLimits, Value};
+use rils_runtime::{BytecodeHost, BytecodeModule, ExecutionLimits, Value};
 
 use crate::args::IntegerType;
 
@@ -59,7 +59,7 @@ fn benchmark_case(
     integer_type: Option<&'static str>,
 ) -> Result<Benchmark, String> {
     let source = read_case(case_name)?;
-    let module = rils::compile(&source).map_err(|error| error.to_string())?;
+    let module = rils_runtime::compile(&source).map_err(|error| error.to_string())?;
     let host = BytecodeHost::standard();
     let limits = execution_limits(work);
     verify_result(

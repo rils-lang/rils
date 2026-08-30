@@ -13,7 +13,7 @@ use std::{
     sync::atomic::{AtomicU16, Ordering},
 };
 
-use rils::{
+use rils_runtime::{
     BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostCallKind, HostContract,
     HostReceiver, HostThreadAffinity, HostTypeTransport, HostValueLayout, IntegerType, Span, Type,
     Value,

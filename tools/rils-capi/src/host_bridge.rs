@@ -197,14 +197,14 @@ pub(crate) fn configure_host_value_formatter(
         let Value::HostObject(object) = value else {
             return Ok(None);
         };
-        let native = if let Some(handle) = rils::opaque_host_handle(value) {
+        let native = if let Some(handle) = rils_runtime::opaque_host_handle(value) {
             RilsValue {
                 tag: RILS_VALUE_HOST_HANDLE,
                 low: u64::from_le_bytes(handle.object_id.to_le_bytes()),
                 high: (u64::from(handle.generation) << 32) | u64::from(handle.type_id),
                 ..RilsValue::default()
             }
-        } else if let Some(inline) = rils::inline_host_value(value) {
+        } else if let Some(inline) = rils_runtime::inline_host_value(value) {
             RilsValue {
                 tag: RILS_VALUE_INLINE_VALUE,
                 low: u64::from_le_bytes(inline.bytes[..8].try_into().expect("fixed payload")),
@@ -219,8 +219,8 @@ pub(crate) fn configure_host_value_formatter(
             length: object.type_definition.name.len(),
         };
         let kind = match spec.kind {
-            rils::HostFormatKind::Display => 0,
-            rils::HostFormatKind::Debug => 1,
+            rils_runtime::HostFormatKind::Display => 0,
+            rils_runtime::HostFormatKind::Debug => 1,
         };
         let precision = spec.precision.unwrap_or(usize::MAX);
         // SAFETY: The embedding host owns the callback and user data. All inputs are call-scoped.

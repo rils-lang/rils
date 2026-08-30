@@ -17,16 +17,12 @@ include = [
 ]
 
 [dependencies]
-rils_compiler.workspace = true
-rils_host.workspace = true
-rils_frontend.workspace = true
-rils_builtins.workspace = true
-rils_project.workspace = true
-stacker = "0.1"
+rils_runtime.workspace = true
 
 [workspace]
 members = [
     ".",
+    "crates/rils_runtime",
     "crates/rils_compiler",
     "crates/rils_host",
     "crates/rils_frontend",
@@ -50,6 +46,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/rils-lang/rils"
 
 [workspace.dependencies]
+rils_runtime = { version = "0.3.0", path = "crates/rils_runtime" }
 rils_compiler = { version = "0.3.0", path = "crates/rils_compiler" }
 rils_host = { version = "0.3.0", path = "crates/rils_host" }
 rils_frontend = { version = "0.3.0", path = "crates/rils_frontend" }

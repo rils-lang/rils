@@ -1,0 +1,17 @@
+[package]
+name = "rils_runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+description = "Runtime, interpreter, and bytecode execution for the Rils scripting language"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rils_compiler.workspace = true
+rils_host.workspace = true
+rils_frontend.workspace = true
+rils_builtins.workspace = true
+rils_project.workspace = true
+stacker = "0.1"

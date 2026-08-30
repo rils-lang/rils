@@ -569,12 +569,7 @@ dependencies = [
 name = "rils"
 version = "0.3.0"
 dependencies = [
- "rils_builtins",
- "rils_compiler",
- "rils_frontend",
- "rils_host",
- "rils_project",
- "stacker",
+ "rils_runtime",
 ]
 
 [[package]]
@@ -594,7 +589,7 @@ name = "rils_bench"
 version = "0.3.0"
 dependencies = [
  "clap",
- "rils",
+ "rils_runtime",
 ]
 
 [[package]]
@@ -620,7 +615,7 @@ dependencies = [
 name = "rils_capi"
 version = "0.3.0"
 dependencies = [
- "rils",
+ "rils_runtime",
 ]
 
 [[package]]
@@ -663,6 +658,18 @@ version = "0.3.0"
 dependencies = [
  "serde",
  "toml",
+]
+
+[[package]]
+name = "rils_runtime"
+version = "0.3.0"
+dependencies = [
+ "rils_builtins",
+ "rils_compiler",
+ "rils_frontend",
+ "rils_host",
+ "rils_project",
+ "stacker",
 ]
 
 [[package]]
