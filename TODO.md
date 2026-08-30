@@ -17,8 +17,8 @@
 
 - 评估以源码 revision 缓存 entry `DefId` 与每模块 HIR，并为项目分析建立细粒度失效边界。
 - 继续收缩 AST 解释器内剩余的类型兼容检查和名称查找逻辑；trait impl associated type 的声明契约
-  已迁入共享 frontend。后续仍应每次只迁移一类检查，以解释器/VM 对照测试证明行为不变，不把这项
-  开放式清理作为其他 feature 分支的退出条件。
+  以及暂不支持的条件 trait impl 诊断已迁入共享 frontend。后续仍应每次只迁移一类检查，以解释器/
+  VM 对照测试证明行为不变，不把这项开放式清理作为其他 feature 分支的退出条件。
 - 标准 bytecode core import 已在链接时解析为稳定 ID；后续新增内建或外部 import 也应沿用该模式。
   `rils_bytecode`、`rils_runtime` crate 拆分已评估为暂不启动：须先让运行时表示、bytecode 和宿主 ABI
   形成无循环依赖的独立边界。

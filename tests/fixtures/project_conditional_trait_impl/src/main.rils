@@ -1,0 +1,9 @@
+use crate::api::Tagged;
+
+struct Wrapper<T> {
+    value: T,
+}
+
+impl<T: Clone> Tagged for Wrapper<T> {}
+
+fn main() {}

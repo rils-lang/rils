@@ -569,9 +569,10 @@ impl Interpreter {
                     HashMap::new()
                 };
                 if let Some(definition) = &trait_definition {
-                    if generic_parameters
-                        .iter()
-                        .any(|parameter| !parameter.bounds.is_empty())
+                    if !self.frontend_semantics_verified
+                        && generic_parameters
+                            .iter()
+                            .any(|parameter| !parameter.bounds.is_empty())
                     {
                         return Err(RuntimeError::new(
                             "conditional trait impl bounds are not supported yet",
