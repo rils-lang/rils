@@ -99,6 +99,42 @@ fn validates_associated_type_contracts() {
 }
 
 #[test]
+fn rejects_conditional_trait_impl_bounds() {
+    let source =
+        "trait Tagged {} struct Wrapper<T> { value: T } impl<T: Clone> Tagged for Wrapper<T> {}";
+    let conditional = parse(lex(source).unwrap()).unwrap();
+    let result = trait_check::analyze(&conditional);
+    let diagnostic = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| {
+            diagnostic
+                .message
+                .contains("conditional trait impl bounds are not supported yet")
+        })
+        .expect("conditional impl diagnostic");
+    let parameter_start = source.find("T: Clone").unwrap();
+    assert_eq!(diagnostic.span.start, parameter_start);
+    assert_eq!(diagnostic.span.end, parameter_start + 1);
+    assert!(result.verified_impls.is_empty());
+
+    let unbounded = parse(
+        lex("trait Tagged {} struct Wrapper<T> { value: T } impl<T> Tagged for Wrapper<T> {}")
+            .unwrap(),
+    )
+    .unwrap();
+    let result = trait_check::analyze(&unbounded);
+    assert!(result.diagnostics.is_empty());
+    assert_eq!(result.verified_impls.len(), 1);
+
+    let inherent =
+        parse(lex("struct Wrapper<T> { value: T } impl<T: Clone> Wrapper<T> {} ").unwrap())
+            .unwrap();
+    let result = trait_check::analyze(&inherent);
+    assert!(result.diagnostics.is_empty());
+}
+
+#[test]
 fn validates_trait_method_members_and_signatures() {
     let program = parse(
         lex(

@@ -312,3 +312,6 @@ impl core::fmt::Display for Point {
 - `where` 子句
 - 带条件的 trait impl，例如 `impl<T: Display> Trait for Box<T>`
 - 孤儿规则与跨模块一致性检查
+
+带条件的 trait impl 会在共享 frontend 阶段返回明确诊断；AST 解释器和字节码编译器采用相同的
+执行前 gate，不会静默忽略泛型参数上的 trait bound。

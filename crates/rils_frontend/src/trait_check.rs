@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     analysis::AnalysisDiagnostic,
-    ast::{AssociatedType, ImplMethod, Program, Stmt, TraitMethod},
+    ast::{AssociatedType, GenericParameter, ImplMethod, Program, Stmt, TraitMethod},
     types::Type,
 };
 
@@ -119,6 +119,7 @@ fn check_project_impls(
                 check_project_impls(children, &child_path, traits, &mut HashMap::new(), result);
             }
             Stmt::Impl {
+                generic_parameters,
                 trait_name: Some(trait_name),
                 target: Type::Named { .. },
                 associated_types,
@@ -126,6 +127,8 @@ fn check_project_impls(
                 span,
                 ..
             } => {
+                let supported =
+                    check_impl_generic_bounds(generic_parameters, &mut result.diagnostics);
                 let Some(trait_name) = resolve_trait_name(trait_name, module_path, aliases, traits)
                 else {
                     continue;
@@ -133,13 +136,14 @@ fn check_project_impls(
                 let Some(requirement) = traits.get(&trait_name) else {
                     continue;
                 };
-                if check_contract(
+                let contract_valid = check_contract(
                     requirement,
                     associated_types,
                     methods,
                     *span,
                     &mut result.diagnostics,
-                ) {
+                );
+                if supported && contract_valid {
                     result.verified_impls.push(*span);
                 }
             }
@@ -311,6 +315,7 @@ fn check_impls(
                 ..
             } => check_impls(module_statements, traits, implementations, result),
             Stmt::Impl {
+                generic_parameters,
                 trait_name: Some(trait_name),
                 target: Type::Named { name, .. },
                 associated_types,
@@ -318,6 +323,8 @@ fn check_impls(
                 span,
                 ..
             } => {
+                let supported =
+                    check_impl_generic_bounds(generic_parameters, &mut result.diagnostics);
                 let Some(requirement) = traits.get(trait_name) else {
                     continue;
                 };
@@ -335,19 +342,37 @@ fn check_impls(
                         ));
                     }
                 }
-                if check_contract(
+                let contract_valid = check_contract(
                     requirement,
                     associated_types,
                     methods,
                     *span,
                     &mut result.diagnostics,
-                ) {
+                );
+                if supported && contract_valid {
                     result.verified_impls.push(*span);
                 }
             }
             _ => {}
         }
     }
+}
+
+fn check_impl_generic_bounds(
+    generic_parameters: &[GenericParameter],
+    diagnostics: &mut Vec<AnalysisDiagnostic>,
+) -> bool {
+    let diagnostics_start = diagnostics.len();
+    for parameter in generic_parameters
+        .iter()
+        .filter(|parameter| !parameter.bounds.is_empty())
+    {
+        diagnostics.push(AnalysisDiagnostic::error(
+            "conditional trait impl bounds are not supported yet",
+            parameter.span,
+        ));
+    }
+    diagnostics.len() == diagnostics_start
 }
 
 fn check_contract(
