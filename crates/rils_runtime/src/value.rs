@@ -2,7 +2,6 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    fmt,
     rc::Rc,
 };
 
@@ -10,14 +9,25 @@ use crate::{
     ast::{
         AssociatedType, Block, EnumVariant, GenericParameter, NamedField, Parameter, TraitMethod,
     },
-    environment::{AssignError, EnvironmentRef, StorageRef},
+    environment::{EnvironmentRef, StorageRef},
     types::{FunctionSignature, Type},
 };
+
+#[path = "value/display.rs"]
+mod display;
 
 #[path = "value/hash.rs"]
 mod hash;
 pub use hash::{HashKey, HashMapValue, HashSetValue};
-use hash::{clone_hash_map, display_hash_map, display_hash_set, hash_maps_equal};
+use hash::{clone_hash_map, hash_maps_equal};
+
+#[path = "value/range.rs"]
+mod range;
+pub use range::RangeValue;
+
+#[path = "value/reference.rs"]
+mod reference;
+pub use reference::ReferenceValue;
 
 pub type HostFunctionHandler = dyn Fn(&[Value]) -> Result<Value, String>;
 
@@ -125,99 +135,6 @@ pub struct TypeAliasType {
     pub target: Type,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RangeValue {
-    current: Box<Value>,
-    end: Box<Value>,
-    element_type: Type,
-}
-
-impl RangeValue {
-    pub fn new(current: Value, end: Value) -> Result<Self, String> {
-        let element_type = match (&current, &end) {
-            (Value::I8(_), Value::I8(_)) => Type::Integer(crate::IntegerType::I8),
-            (Value::I16(_), Value::I16(_)) => Type::Integer(crate::IntegerType::I16),
-            (Value::I32(_), Value::I32(_)) => Type::I32,
-            (Value::I64(_), Value::I64(_)) => Type::Integer(crate::IntegerType::I64),
-            (Value::I128(_), Value::I128(_)) => Type::Integer(crate::IntegerType::I128),
-            (Value::Isize(_), Value::Isize(_)) => Type::Integer(crate::IntegerType::Isize),
-            (Value::U8(_), Value::U8(_)) => Type::Integer(crate::IntegerType::U8),
-            (Value::U16(_), Value::U16(_)) => Type::Integer(crate::IntegerType::U16),
-            (Value::U32(_), Value::U32(_)) => Type::Integer(crate::IntegerType::U32),
-            (Value::U64(_), Value::U64(_)) => Type::Integer(crate::IntegerType::U64),
-            (Value::U128(_), Value::U128(_)) => Type::Integer(crate::IntegerType::U128),
-            (Value::Usize(_), Value::Usize(_)) => Type::USIZE,
-            _ => return Err("range bounds must have the same integer type".into()),
-        };
-        Ok(Self {
-            current: Box::new(current),
-            end: Box::new(end),
-            element_type,
-        })
-    }
-
-    pub fn element_type(&self) -> Type {
-        self.element_type.clone()
-    }
-
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Result<Option<Value>, String> {
-        fn advance<T: Copy + Ord>(
-            current: &mut T,
-            end: &T,
-            add_one: impl FnOnce(T) -> Option<T>,
-        ) -> Result<Option<T>, String> {
-            if *current >= *end {
-                Ok(None)
-            } else {
-                let value = *current;
-                *current =
-                    add_one(value).ok_or_else(|| "range iteration overflowed".to_string())?;
-                Ok(Some(value))
-            }
-        }
-        match (self.current.as_mut(), self.end.as_ref()) {
-            (Value::I8(a), Value::I8(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I8))
-            }
-            (Value::I16(a), Value::I16(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I16))
-            }
-            (Value::I32(a), Value::I32(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I32))
-            }
-            (Value::I64(a), Value::I64(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I64))
-            }
-            (Value::I128(a), Value::I128(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I128))
-            }
-            (Value::Isize(a), Value::Isize(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::Isize))
-            }
-            (Value::U8(a), Value::U8(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U8))
-            }
-            (Value::U16(a), Value::U16(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U16))
-            }
-            (Value::U32(a), Value::U32(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U32))
-            }
-            (Value::U64(a), Value::U64(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U64))
-            }
-            (Value::U128(a), Value::U128(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U128))
-            }
-            (Value::Usize(a), Value::Usize(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::Usize))
-            }
-            _ => Err("range bounds have incompatible types".into()),
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct StructInstance {
     pub type_definition: Rc<StructType>,
@@ -312,187 +229,6 @@ pub struct TraitMethodSelector {
     pub trait_name: String,
     pub method_name: String,
     pub environment: EnvironmentRef,
-}
-
-pub struct ReferenceValue {
-    pub mutable: bool,
-    target: ReferenceTarget,
-    _guard: Option<Rc<ReferenceValue>>,
-}
-
-enum ReferenceTarget {
-    Storage(StorageRef),
-    StructField {
-        instance: Rc<StructInstance>,
-        name: String,
-    },
-    SequenceElement {
-        sequence: Rc<SequenceValue>,
-        index: usize,
-    },
-}
-
-impl ReferenceValue {
-    pub fn new_storage(target: StorageRef, mutable: bool) -> Self {
-        target.borrow_mut().add_reference();
-        Self {
-            mutable,
-            target: ReferenceTarget::Storage(target),
-            _guard: None,
-        }
-    }
-
-    pub fn new_struct_field(
-        instance: Rc<StructInstance>,
-        name: String,
-        mutable: bool,
-    ) -> Result<Self, String> {
-        Self::new_guarded_struct_field(instance, name, mutable, None)
-    }
-
-    pub fn new_guarded_struct_field(
-        instance: Rc<StructInstance>,
-        name: String,
-        mutable: bool,
-        guard: Option<Rc<ReferenceValue>>,
-    ) -> Result<Self, String> {
-        let mut fields = instance.fields.borrow_mut();
-        let field = fields
-            .get_mut(&name)
-            .ok_or_else(|| format!("unknown field `{name}`"))?;
-        if field.value.is_none() {
-            return Err(format!("cannot reference moved field `{name}`"));
-        }
-        field.references += 1;
-        drop(fields);
-        Ok(Self {
-            mutable,
-            target: ReferenceTarget::StructField { instance, name },
-            _guard: guard,
-        })
-    }
-
-    pub fn new_sequence_element(
-        sequence: Rc<SequenceValue>,
-        index: usize,
-        mutable: bool,
-    ) -> Result<Self, String> {
-        Self::new_guarded_sequence_element(sequence, index, mutable, None)
-    }
-
-    pub fn new_guarded_sequence_element(
-        sequence: Rc<SequenceValue>,
-        index: usize,
-        mutable: bool,
-        guard: Option<Rc<ReferenceValue>>,
-    ) -> Result<Self, String> {
-        let mut elements = sequence.elements.borrow_mut();
-        let slot = elements
-            .get_mut(index)
-            .ok_or_else(|| format!("index {index} is out of bounds"))?;
-        if slot.value.is_none() {
-            return Err(format!("cannot reference moved element at index {index}"));
-        }
-        slot.references += 1;
-        drop(elements);
-        Ok(Self {
-            mutable,
-            target: ReferenceTarget::SequenceElement { sequence, index },
-            _guard: guard,
-        })
-    }
-
-    pub fn reborrow(&self, mutable: bool) -> Result<Self, String> {
-        if mutable && !self.mutable {
-            return Err("cannot mutably borrow through an immutable reference".into());
-        }
-        match &self.target {
-            ReferenceTarget::Storage(target) => Ok(Self::new_storage(target.clone(), mutable)),
-            ReferenceTarget::StructField { instance, name } => Self::new_guarded_struct_field(
-                instance.clone(),
-                name.clone(),
-                mutable,
-                self._guard.clone(),
-            ),
-            ReferenceTarget::SequenceElement { sequence, index } => {
-                Self::new_guarded_sequence_element(
-                    sequence.clone(),
-                    *index,
-                    mutable,
-                    self._guard.clone(),
-                )
-            }
-        }
-    }
-
-    pub fn read(&self) -> Result<Value, String> {
-        match &self.target {
-            ReferenceTarget::Storage(target) => target
-                .borrow()
-                .read()
-                .map_err(|_| "reference target has been moved".into()),
-            ReferenceTarget::StructField { instance, name } => instance
-                .fields
-                .borrow()
-                .get(name)
-                .and_then(|field| field.value.clone())
-                .ok_or_else(|| format!("reference target field `{name}` has been moved")),
-            ReferenceTarget::SequenceElement { sequence, index } => sequence
-                .elements
-                .borrow()
-                .get(*index)
-                .and_then(|slot| slot.value.clone())
-                .ok_or_else(|| format!("reference target element {index} has been moved")),
-        }
-    }
-
-    pub fn write(&self, value: Value) -> Result<(), AssignError> {
-        if !self.mutable {
-            return Err(AssignError::Immutable);
-        }
-        match &self.target {
-            ReferenceTarget::Storage(target) => target.borrow_mut().assign_through_reference(value),
-            ReferenceTarget::StructField { instance, name } => {
-                let mut fields = instance.fields.borrow_mut();
-                let field = fields.get_mut(name).ok_or(AssignError::Undefined)?;
-                field.value = Some(
-                    field
-                        .type_annotation
-                        .constrain(&value)
-                        .ok_or_else(|| AssignError::TypeMismatch(field.type_annotation.clone()))?,
-                );
-                Ok(())
-            }
-            ReferenceTarget::SequenceElement { sequence, index } => {
-                let mut elements = sequence.elements.borrow_mut();
-                let slot = elements.get_mut(*index).ok_or(AssignError::Undefined)?;
-                slot.value = Some(
-                    slot.type_annotation
-                        .constrain(&value)
-                        .ok_or_else(|| AssignError::TypeMismatch(slot.type_annotation.clone()))?,
-                );
-                Ok(())
-            }
-        }
-    }
-}
-
-impl Drop for ReferenceValue {
-    fn drop(&mut self) {
-        match &self.target {
-            ReferenceTarget::Storage(target) => target.borrow_mut().remove_reference(),
-            ReferenceTarget::StructField { instance, name } => {
-                if let Some(field) = instance.fields.borrow_mut().get_mut(name) {
-                    field.references = field.references.saturating_sub(1);
-                }
-            }
-            ReferenceTarget::SequenceElement { sequence, index } => {
-                if let Some(slot) = sequence.elements.borrow_mut().get_mut(*index) {
-                    slot.references = slot.references.saturating_sub(1);
-                }
-            }
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -987,134 +723,6 @@ impl PartialEq for Value {
     }
 }
 
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unit => write!(f, "()"),
-            Self::Bool(value) => write!(f, "{value}"),
-            Self::I8(value) => write!(f, "{value}"),
-            Self::I16(value) => write!(f, "{value}"),
-            Self::I32(value) => write!(f, "{value}"),
-            Self::I64(value) => write!(f, "{value}"),
-            Self::I128(value) => write!(f, "{value}"),
-            Self::Isize(value) => write!(f, "{value}"),
-            Self::U8(value) => write!(f, "{value}"),
-            Self::U16(value) => write!(f, "{value}"),
-            Self::U32(value) => write!(f, "{value}"),
-            Self::U64(value) => write!(f, "{value}"),
-            Self::U128(value) => write!(f, "{value}"),
-            Self::Usize(value) => write!(f, "{value}"),
-            Self::F32(value) => write!(f, "{value}"),
-            Self::F64(value) => write!(f, "{value}"),
-            Self::Char(value) => write!(f, "{value}"),
-            Self::String(value) => write!(f, "{value}"),
-            Self::Tuple(sequence) => display_sequence(f, sequence, "(", ")", true),
-            Self::Array(sequence) | Self::Vec(sequence) => {
-                display_sequence(f, sequence, "[", "]", false)
-            }
-            Self::HashMap(map) => display_hash_map(f, map),
-            Self::HashSet(set) => display_hash_set(f, set),
-            Self::SequenceIterator(_) => write!(f, "<sequence iterator>"),
-            Self::BytecodeIterator(_) => write!(f, "<bytecode iterator>"),
-            Self::Reference(reference) => match reference.read() {
-                Ok(value) => write!(f, "{value}"),
-                Err(_) => write!(f, "<invalid reference>"),
-            },
-            Self::Option { value: None, .. } => write!(f, "None"),
-            Self::Option {
-                value: Some(value), ..
-            } => write!(f, "Some({value})"),
-            Self::Result { value, .. } => match value {
-                Ok(value) => write!(f, "Ok({value})"),
-                Err(value) => write!(f, "Err({value})"),
-            },
-            Self::Function(function) => write!(f, "<fn {}>", function.name),
-            Self::BytecodeFunction(function) => write!(f, "<fn {}>", function.name),
-            Self::NativeFunction(function) => write!(f, "<native fn {}>", function.name),
-            Self::HostFunction(function) => write!(f, "<host fn {}>", function.name),
-            Self::HostType(definition) => write!(f, "<host type {}>", definition.name),
-            Self::HostObject(object) => write!(f, "<{}>", object.type_definition.name),
-            Self::HostBoundMethod(method) => write!(f, "<bound host fn {}>", method.function.name),
-            Self::BuiltinType(BuiltinType::Vec) => write!(f, "<type Vec>"),
-            Self::BuiltinType(BuiltinType::HashMap) => write!(f, "<type HashMap>"),
-            Self::BuiltinType(BuiltinType::HashSet) => write!(f, "<type HashSet>"),
-            Self::BuiltinType(BuiltinType::Integer(kind)) => write!(f, "<type {kind}>"),
-            Self::BuiltinType(BuiltinType::Float(kind)) => write!(f, "<type {kind}>"),
-            Self::BuiltinFunction(_) => write!(f, "<builtin function>"),
-            Self::Module(module) => write!(f, "<module {}>", module.name),
-            Self::StructType(definition) => write!(f, "<struct {}>", definition.name),
-            Self::EnumType(definition) => write!(f, "<enum {}>", definition.name),
-            Self::TraitType(definition) => write!(f, "<trait {}>", definition.name),
-            Self::TypeAlias(definition) => write!(f, "<type alias {}>", definition.name),
-            Self::Struct(instance) => {
-                write!(f, "{} {{ ", instance.type_definition.name)?;
-                let fields = instance.fields.borrow();
-                for (index, field) in instance.type_definition.fields.iter().enumerate() {
-                    if index > 0 {
-                        write!(f, ", ")?;
-                    }
-                    let value = &fields[&field.name].value;
-                    if let Some(value) = value {
-                        write!(f, "{}: {value}", field.name)?;
-                    } else {
-                        write!(f, "{}: <moved>", field.name)?;
-                    }
-                }
-                write!(f, " }}")
-            }
-            Self::Enum(instance) => {
-                write!(f, "{}::{}", instance.type_definition.name, instance.variant)?;
-                match &instance.payload {
-                    EnumPayload::Unit => Ok(()),
-                    EnumPayload::Tuple(values) => {
-                        write!(f, "(")?;
-                        for (index, value) in values.iter().enumerate() {
-                            if index > 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{value}")?;
-                        }
-                        write!(f, ")")
-                    }
-                    EnumPayload::Record(values) => {
-                        write!(f, " {{ ")?;
-                        let variant = instance
-                            .type_definition
-                            .variants
-                            .iter()
-                            .find(|variant| enum_variant_name(variant) == instance.variant)
-                            .expect("enum instance refers to a declared variant");
-                        let fields = match variant {
-                            EnumVariant::Record { fields, .. } => fields,
-                            _ => unreachable!(),
-                        };
-                        for (index, field) in fields.iter().enumerate() {
-                            if index > 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{}: {}", field.name, values[&field.name])?;
-                        }
-                        write!(f, " }}")
-                    }
-                }
-            }
-            Self::Range(range) => write!(f, "{}..{}", range.current, range.end),
-            Self::VariantConstructor(constructor) => write!(
-                f,
-                "<constructor {}::{}>",
-                constructor.type_definition.name, constructor.variant
-            ),
-            Self::BoundMethod(method) => write!(f, "<bound fn {}>", method.function.name),
-            Self::BuiltinBoundMethod(_) => write!(f, "<bound builtin method>"),
-            Self::TraitMethodSelector(selector) => write!(
-                f,
-                "<trait method {}::{}>",
-                selector.trait_name, selector.method_name
-            ),
-        }
-    }
-}
-
 pub fn enum_variant_name(variant: &EnumVariant) -> &str {
     match variant {
         EnumVariant::Unit { name, .. }
@@ -1156,138 +764,11 @@ fn sequence_equal(left: &SequenceValue, right: &SequenceValue) -> bool {
             .all(|(left, right)| left.value == right.value)
 }
 
-fn display_sequence(
-    f: &mut fmt::Formatter<'_>,
-    sequence: &SequenceValue,
-    open: &str,
-    close: &str,
-    tuple: bool,
-) -> fmt::Result {
-    write!(f, "{open}")?;
-    let elements = sequence.elements.borrow();
-    for (index, slot) in elements.iter().enumerate() {
-        if index > 0 {
-            write!(f, ", ")?;
-        }
-        match &slot.value {
-            Some(value) => write!(f, "{value}")?,
-            None => write!(f, "<moved>")?,
-        }
-    }
-    if tuple && elements.len() == 1 {
-        write!(f, ",")?;
-    }
-    write!(f, "{close}")
-}
-
 fn enum_payload_equal(left: &EnumPayload, right: &EnumPayload) -> bool {
     match (left, right) {
         (EnumPayload::Unit, EnumPayload::Unit) => true,
         (EnumPayload::Tuple(left), EnumPayload::Tuple(right)) => left == right,
         (EnumPayload::Record(left), EnumPayload::Record(right)) => left == right,
         _ => false,
-    }
-}
-
-impl fmt::Debug for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            return match self {
-                Self::Tuple(sequence) => {
-                    let elements = sequence.elements.borrow();
-                    let mut tuple = f.debug_tuple("");
-                    for slot in elements.iter() {
-                        match &slot.value {
-                            Some(value) => {
-                                tuple.field(value);
-                            }
-                            None => {
-                                tuple.field(&"<moved>");
-                            }
-                        }
-                    }
-                    tuple.finish()
-                }
-                Self::Array(sequence) | Self::Vec(sequence) => {
-                    let elements = sequence.elements.borrow();
-                    let mut list = f.debug_list();
-                    for slot in elements.iter() {
-                        match &slot.value {
-                            Some(value) => {
-                                list.entry(value);
-                            }
-                            None => {
-                                list.entry(&"<moved>");
-                            }
-                        }
-                    }
-                    list.finish()
-                }
-                Self::Option { value: None, .. } => f.write_str("None"),
-                Self::Option {
-                    value: Some(value), ..
-                } => f.debug_tuple("Some").field(value).finish(),
-                Self::Result {
-                    value: Ok(value), ..
-                } => f.debug_tuple("Ok").field(value).finish(),
-                Self::Result {
-                    value: Err(value), ..
-                } => f.debug_tuple("Err").field(value).finish(),
-                Self::Struct(instance) => {
-                    let fields = instance.fields.borrow();
-                    let mut structure = f.debug_struct(&instance.type_definition.name);
-                    for field in &instance.type_definition.fields {
-                        match &fields[&field.name].value {
-                            Some(value) => {
-                                structure.field(&field.name, value);
-                            }
-                            None => {
-                                structure.field(&field.name, &"<moved>");
-                            }
-                        }
-                    }
-                    structure.finish()
-                }
-                Self::Enum(instance) => {
-                    let name = format!("{}::{}", instance.type_definition.name, instance.variant);
-                    match &instance.payload {
-                        EnumPayload::Unit => f.write_str(&name),
-                        EnumPayload::Tuple(values) => {
-                            let mut tuple = f.debug_tuple(&name);
-                            for value in values {
-                                tuple.field(value);
-                            }
-                            tuple.finish()
-                        }
-                        EnumPayload::Record(values) => {
-                            let variant = instance
-                                .type_definition
-                                .variants
-                                .iter()
-                                .find(|variant| enum_variant_name(variant) == instance.variant)
-                                .expect("enum instance refers to a declared variant");
-                            let EnumVariant::Record { fields, .. } = variant else {
-                                unreachable!()
-                            };
-                            let mut structure = f.debug_struct(&name);
-                            for field in fields {
-                                structure.field(&field.name, &values[&field.name]);
-                            }
-                            structure.finish()
-                        }
-                    }
-                }
-                Self::Reference(reference) => match reference.read() {
-                    Ok(value) => write!(f, "{value:#?}"),
-                    Err(_) => f.write_str("<invalid reference>"),
-                },
-                Self::String(value) => write!(f, "{value:#?}"),
-                _ => write!(f, "{self}"),
-            };
-        }
-        match self {
-            Self::String(value) => write!(f, "{value:?}"),
-            _ => write!(f, "{self}"),
-        }
     }
 }

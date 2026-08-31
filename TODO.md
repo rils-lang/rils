@@ -28,6 +28,8 @@
 - 评估常量折叠、无效代码删除、分支简化和寄存器复用，并以基准数据决定是否启用。
 - 完善字节码调试信息的可剥离 section、跨版本兼容策略和 fuzz 覆盖。
 - 继续拆分职责过重的 Rust 模块，保持入口文件只包含模块声明、导出和薄入口。
+  `rils_runtime::value` 已拆出 hash collection、range、reference 和 display/debug 子模块；后续仅在
+  稳定运行时值 crate 边界明确后继续拆分 primitive、aggregate、callable 与 host value 声明。
 
 ### 基础类型与标准能力
 
