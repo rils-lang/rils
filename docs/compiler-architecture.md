@@ -252,25 +252,19 @@ Analyzer 只负责容错输入和 LSP 数据转换。
 
 ## 需要拆分但不应删除的模块
 
-以下文件职责合理，但体积或职责组合已超过薄入口和单一职责要求：
+以下文件职责合理，但体积或职责组合仍超过薄入口和单一职责要求：
 
 - `crates/rils_frontend/src/analysis.rs`
 - `crates/rils_frontend/src/type_inference.rs`
-- `crates/rils_compiler/src/hir.rs`
-- `crates/rils_host/src/lib.rs`
-- `src/bytecode/vm.rs`
-- `src/value.rs`
-- 根 `src/lib.rs`
 
 建议拆分方向：
 
 - `analysis`：definition collection、scope/import resolution、member enrichment、diagnostic orchestration。
 - `type_inference`：constraint collection、call inference、expression visitor、constraint solving。
-- `hir`：program/function lowering、expression lowering、call lowering、type lowering。
-- `rils_host`：contract model、validation、inheritance、manifest codec/API。
-- `vm`：frame/call、instruction execution、imports、value operations。
-- `value`：primitive、aggregate、callable、host、reference value。
-- 根 `lib.rs`：拆出 `engine`、`project_compilation`、`compile_facade` 和 `source_diagnostics`。
+
+HIR、Host、VM、C API 和根 facade 已完成首轮机械拆分。`rils_runtime::value` 也已将 hash collection、
+range、reference 以及 display/debug 实现分离为职责明确的子模块，同时保留原有公共导出路径；后续如需
+继续拆分 primitive、aggregate、callable 和 host value，应与稳定运行时值 crate 的边界设计一起进行。
 
 `src/runtime_type.rs` 是静态 `Type` 与动态 `Value` 之间的运行时桥接，职责本身合理。它可以按集合、函数和聚合值拆分，但不属于应删除的重复类型系统。
 
@@ -329,7 +323,9 @@ rils
 9. 已完成：从 `rils_runtime` 抽出 `rils_bytecode`，建立 `rils_bytecode → rils_runtime` 单向依赖；
    bytecode/VM 通过隐藏的支持层复用值、环境、格式化和 builtin 操作，独立 crate 测试覆盖格式、
    verifier、VM、解释器对照与 `.rilslib`。
-10. 已完成决定：legacy project、macro 与 manifest 兼容层维持“读取旧格式、只写当前格式”的策略；删除必须作为单独破坏性版本的提案，包含实际使用者审计、迁移指南、`CHANGELOG.md` 说明与明确授权，当前不设删除日期。
+10. 已完成：`rils_runtime::value` 的 range、reference、hash collection 和显示实现已拆入子模块，
+    `value.rs` 保留公共值类型、值操作和兼容导出，解释器与 bytecode 调用路径不变。
+11. 已完成决定：legacy project、macro 与 manifest 兼容层维持“读取旧格式、只写当前格式”的策略；删除必须作为单独破坏性版本的提案，包含实际使用者审计、迁移指南、`CHANGELOG.md` 说明与明确授权，当前不设删除日期。
 
 ## 本轮语义身份迁移的收口边界
 
@@ -342,7 +338,7 @@ rils
 
 - 彻底移除解释器剩余静态检查和名称查找；
 - 按 source revision 缓存 entry `DefId`、项目分析和每模块 HIR；
-- 拆分 frontend、HIR、Host、VM、Value 与根 facade 的大文件；
+- 继续拆分 frontend 大文件，并在稳定值层边界确定后按需细分 Value 的声明类别；
 - 建立 Analyzer 统一语义查询、增量分析和完整 `pub use` 支持；
 - 实现 `.rilslib` 声明表、外部链接和 workspace/lockfile。
 
