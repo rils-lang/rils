@@ -569,6 +569,7 @@ dependencies = [
 name = "rils"
 version = "0.3.0"
 dependencies = [
+ "rils_bytecode",
  "rils_runtime",
 ]
 
@@ -589,6 +590,7 @@ name = "rils_bench"
 version = "0.3.0"
 dependencies = [
  "clap",
+ "rils_bytecode",
  "rils_runtime",
 ]
 
@@ -612,9 +614,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rils_bytecode"
+version = "0.3.0"
+dependencies = [
+ "rils_builtins",
+ "rils_compiler",
+ "rils_frontend",
+ "rils_host",
+ "rils_project",
+ "rils_runtime",
+]
+
+[[package]]
 name = "rils_capi"
 version = "0.3.0"
 dependencies = [
+ "rils_bytecode",
  "rils_runtime",
 ]
 
@@ -665,7 +680,6 @@ name = "rils_runtime"
 version = "0.3.0"
 dependencies = [
  "rils_builtins",
- "rils_compiler",
  "rils_frontend",
  "rils_host",
  "rils_project",

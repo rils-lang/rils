@@ -309,7 +309,7 @@ fn host_function(
     }))
 }
 
-pub(crate) fn bytecode_host_functions() -> Vec<(String, Rc<HostFunction>)> {
+pub fn bytecode_host_functions() -> Vec<(String, Rc<HostFunction>)> {
     let environment = Environment::global();
     let io = Rc::new(ModuleValue {
         name: "io".into(),

@@ -13,7 +13,7 @@ pub struct StorageSlot {
 }
 
 impl StorageSlot {
-    pub(crate) fn uninitialized(mutable: bool) -> Self {
+    pub fn uninitialized(mutable: bool) -> Self {
         Self {
             value: None,
             mutable,
@@ -22,11 +22,11 @@ impl StorageSlot {
         }
     }
 
-    pub(crate) fn initialize(&mut self, value: Value) {
+    pub fn initialize(&mut self, value: Value) {
         self.value = Some(value);
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.value = None;
     }
 
@@ -68,7 +68,7 @@ impl StorageSlot {
         self.references = self.references.saturating_sub(1);
     }
 
-    pub(crate) fn assign(&mut self, mut value: Value) -> Result<(), AssignError> {
+    pub fn assign(&mut self, mut value: Value) -> Result<(), AssignError> {
         if !self.mutable {
             return Err(AssignError::Immutable);
         }

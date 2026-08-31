@@ -12,11 +12,11 @@ rils_syntax
 rils_builtins + rils_host
     ↓
 rils_frontend
-    ↓
-rils_compiler
-    ↓
-rils_runtime
-    ↓
+    ├──→ rils_runtime
+    └──→ rils_compiler
+             ↓
+        rils_bytecode ←── rils_runtime
+             ↓
 rils
 ```
 
@@ -27,8 +27,9 @@ rils
 - `rils_host`：Host Contract、Host 类型与函数声明、ABI 常量，以及 Manifest 编解码和验证。
 - `rils_frontend`：源码数据库、模块索引、静态分析、名称与调用解析、类型推断、所有权和引用逃逸检查。
 - `rils_compiler`：HIR lowering 和 MIR lowering，并为现有调用方兼容转发 Host API。
-- `rils_runtime`：公共 `Engine`、项目加载、AST 解释器、运行时 `Value`、字节码编码与格式、verifier、VM、宿主执行和标准库实际行为。字节码职责将在下一阶段继续抽入 `rils_bytecode`。
-- 根 `rils` crate：面向外部用户的兼容 facade，只转发 `rils_runtime` 的公共入口与预设能力。
+- `rils_runtime`：公共 `Engine`、项目加载、AST 解释器、运行时 `Value`、共享 builtin、宿主值和标准库实际行为；不依赖 compiler 或 bytecode。
+- `rils_bytecode`：消费 compiler 的 HIR/MIR 和 `rils_runtime` 的窄支持层，负责字节码编码、磁盘格式、verifier、VM 与 bytecode host。
+- 根 `rils` crate：面向外部用户的兼容 facade，组合并转发 `rils_runtime` 与 `rils_bytecode` 的公共入口。
 
 目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 都共享这一会话模型及其项目分析缓存；compiler 和配置项目解释器都直接消费独立模块 AST，不再拼装 synthetic project AST。AST 保持解析后的原貌，数值具体化与 Host 名称解析通过语义 side table 完成。当前剩余重复主要位于解释器静态检查和名称查找、Analyzer 查询适配，以及后续非标准或外部 bytecode import 的链接分类。
 
@@ -294,18 +295,18 @@ rils_compiler
     frontend orchestration + HIR/MIR
 
 rils_bytecode
-    bytecode IR + encoder + disk format + verifier
+    bytecode IR + encoder + disk format + verifier + VM + bytecode host
 
 rils_runtime
-    Value + runtime builtins + VM + host execution
+    Engine + AST interpreter + Value + runtime builtins + host values
 
 rils
     public compatibility facade
 ```
 
-第一阶段已经创建 `rils_runtime`，将原根 crate 的执行核心与其测试按原结构整体迁入，并把根 `rils`
-收窄为薄转发层。这一步刻意不提前拆开共享具体表示，确保是可验证的机械迁移。下一阶段创建
-`rils_bytecode` 时必须满足以下边界：
+第一阶段将原根 crate 的执行核心整体迁入 `rils_runtime`；第二阶段已创建 `rils_bytecode` 并迁移
+编译、格式、verifier、VM、bytecode host 与 `.rilslib`。当前依赖严格为 `rils_bytecode → rils_runtime`，
+根 `rils` 只负责组合转发。后续演进必须维持以下边界：
 
 - `Value` 与 Host ABI 的运行时表示可由一个不依赖解释器或 bytecode 的稳定 crate 提供；
 - bytecode 编码、格式、verifier 与 VM 仅依赖该运行时 crate 和 frontend/host 的公共模型；
@@ -325,8 +326,9 @@ rils
 7. 已完成：标准 bytecode core import 在 host 初始化时解析为稳定 ID 或专用操作，执行热路径不再按字符串分发。
 8. 已完成：职责过重的 frontend、HIR、Host、VM、C API 等入口已机械拆分；根 `rils` facade 已通过
    整体迁入 `rils_runtime` 收窄为薄转发层。
-9. 下一独立阶段：从 `rils_runtime` 抽出 `rils_bytecode`，明确 bytecode/VM 使用的运行时支持接口，
-   并保持解释器/VM 对照、磁盘 verifier 与 C API 测试通过。
+9. 已完成：从 `rils_runtime` 抽出 `rils_bytecode`，建立 `rils_bytecode → rils_runtime` 单向依赖；
+   bytecode/VM 通过隐藏的支持层复用值、环境、格式化和 builtin 操作，独立 crate 测试覆盖格式、
+   verifier、VM、解释器对照与 `.rilslib`。
 10. 已完成决定：legacy project、macro 与 manifest 兼容层维持“读取旧格式、只写当前格式”的策略；删除必须作为单独破坏性版本的提案，包含实际使用者审计、迁移指南、`CHANGELOG.md` 说明与明确授权，当前不设删除日期。
 
 ## 本轮语义身份迁移的收口边界

@@ -12,4 +12,5 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+rils_bytecode.workspace = true
 rils_runtime.workspace = true

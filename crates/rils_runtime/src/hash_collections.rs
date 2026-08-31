@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-pub(crate) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     match id {
         BuiltinId::HashMapLen
         | BuiltinId::HashMapIsEmpty
