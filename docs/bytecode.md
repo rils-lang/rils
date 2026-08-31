@@ -13,9 +13,9 @@ source -> lexer/parser -> static analysis -> HIR -> MIR -> bytecode -> verifier 
 ```
 
 当前 crate 边界中，`rils_frontend` 负责解析和静态分析，`rils_compiler` 负责 HIR/MIR lowering；
-`rils_runtime` 消费 MIR 并完成字节码编码、验证和 VM 执行，根 `rils` 仅作公共转发。后续抽取
-`rils_bytecode` 前需先让字节码类型表摆脱运行时
-`StructType`/`EnumType`，改为可独立验证和链接的静态描述。
+`rils_bytecode` 消费 MIR 并完成字节码编码、磁盘格式、验证、VM 和 bytecode host，单向依赖
+`rils_runtime` 提供的值模型与运行时操作；根 `rils` 仅作公共转发。磁盘类型表仍使用可独立验证和
+链接的静态描述，加载后才构造运行时 `StructType`/`EnumType`。
 
 - HIR 完成词法作用域名称解析，把局部变量转换为稳定槽位，并保留源码范围。
 - MIR 使用寄存器和基本块显式表示值流与控制流。

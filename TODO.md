@@ -21,9 +21,9 @@
   后续仍应每次只迁移一类检查，以解释器/VM 对照测试证明行为不变，不把这项开放式清理作为其他
   feature 分支的退出条件。
 - 标准 bytecode core import 已在链接时解析为稳定 ID；后续新增内建或外部 import 也应沿用该模式。
-  根 crate 的实现已整体迁入 `rils_runtime`，`rils` 只保留兼容转发层。下一阶段应从
-  `rils_runtime` 抽出 `rils_bytecode`，并把 bytecode/VM 所需的共享值与运行时操作收敛为明确接口，
-  避免重新形成跨 crate 的双向依赖。
+  `rils_runtime` 与 `rils_bytecode` 已形成单向依赖，根 `rils` 只保留兼容转发层。后续应继续收窄
+  `rils_runtime::support`，把 bytecode/VM 所需的共享值、环境槽位、格式化和 builtin 操作整理成稳定
+  的最小接口，不允许重新形成跨 crate 的双向依赖。
 - 在已有统一指令步数与调用深度预算的基础上，继续增加堆、字符串、容器和宿主调用次数预算。
 - 评估常量折叠、无效代码删除、分支简化和寄存器复用，并以基准数据决定是否启用。
 - 完善字节码调试信息的可剥离 section、跨版本兼容策略和 fuzz 覆盖。
@@ -81,8 +81,8 @@
 1. 解释器语义收缩：逐类迁移剩余类型、trait 和名称查找，保留动态宿主注册所需的运行时防御。
 2. Frontend 增量缓存：以 source revision 缓存 entry `DefId`、项目分析和每模块 HIR，明确依赖图
    失效规则。
-3. 模块与 crate 职责拆分：根 facade 已完成薄转发化；继续以独立分支抽取 `rils_bytecode`，随后再
-   收窄 `rils_runtime` 的公共支持接口，不在同一分支混入新语义。
+3. 模块与 crate 职责拆分：根 facade、`rils_runtime` 和 `rils_bytecode` 已完成首轮拆分；后续以
+   独立分支收窄共享支持接口和项目 driver，不在同一分支混入新语义。
 4. Analyzer 语义查询：建立共享查询接口，再分别实现 `pub use`、增量分析、rename 和 workspace
    symbol。
 5. 库链接与依赖：单独设计并实现 `.rilslib` 声明表、稳定库身份、外部符号链接以及 workspace/

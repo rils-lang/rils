@@ -36,7 +36,7 @@ pub unsafe extern "C" fn rils_module_compile(
             Ok(value) => value,
             Err(status) => return status,
         };
-        let bytecode = match rils_runtime::compile_with_host(source, &contract) {
+        let bytecode = match rils_bytecode::compile_with_host(source, &contract) {
             Ok(module) => module,
             Err(error) => {
                 return fail(
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn rils_module_compile_file(
             Ok(value) => value,
             Err(status) => return status,
         };
-        let bytecode = match rils_runtime::compile_file_with_host(path, &contract) {
+        let bytecode = match rils_bytecode::compile_file_with_host(path, &contract) {
             Ok(module) => module,
             Err(error) => {
                 let source_name = error.source_name().unwrap_or(path).to_owned();

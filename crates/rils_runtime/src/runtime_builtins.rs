@@ -9,7 +9,7 @@ use crate::{
 mod option_result;
 mod string;
 
-pub(crate) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
 
     match id {

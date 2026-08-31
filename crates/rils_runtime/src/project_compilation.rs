@@ -8,14 +8,14 @@ use rils_frontend::{CompilationSession, ProjectId};
 use crate::{Project, RilsError, SourceId, ast, lexer, macros, parser};
 
 #[derive(Default)]
-pub(crate) struct ProjectCompilation {
+pub struct ProjectCompilation {
     by_path: HashMap<PathBuf, SourceId>,
     session: CompilationSession,
     project: Option<ProjectId>,
 }
 
 impl ProjectCompilation {
-    pub(crate) fn register_project(&mut self, project: &Project) {
+    pub fn register_project(&mut self, project: &Project) {
         let project_id = self.session.register_project(project.name());
         self.project = Some(project_id);
         for file in project.modules() {
@@ -38,7 +38,7 @@ impl ProjectCompilation {
         id
     }
 
-    pub(crate) fn register_source(&mut self, path: &Path, source: &str) -> SourceId {
+    pub fn register_source(&mut self, path: &Path, source: &str) -> SourceId {
         let id = self.register_path(path);
         let name = self
             .session
@@ -53,20 +53,20 @@ impl ProjectCompilation {
         id
     }
 
-    pub(crate) fn source_id(&self, path: &Path) -> Option<SourceId> {
+    pub fn source_id(&self, path: &Path) -> Option<SourceId> {
         self.by_path.get(&source_path_key(path)).copied()
     }
 
-    pub(crate) fn session(&self) -> &CompilationSession {
+    pub fn session(&self) -> &CompilationSession {
         &self.session
     }
 
-    pub(crate) fn project_id(&self) -> ProjectId {
+    pub fn project_id(&self) -> ProjectId {
         self.project
             .expect("project compilation must register a project before compiling")
     }
 
-    pub(crate) fn set_entry_source(&mut self, source: SourceId) {
+    pub fn set_entry_source(&mut self, source: SourceId) {
         let project = self.project_id();
         self.session
             .project_mut(project)
@@ -74,7 +74,7 @@ impl ProjectCompilation {
             .set_entry_source(source);
     }
 
-    pub(crate) fn push_root_program(&mut self, program: ast::Program) {
+    pub fn push_root_program(&mut self, program: ast::Program) {
         let project = self.project_id();
         self.session
             .project_syntax_mut(project)
@@ -82,7 +82,7 @@ impl ProjectCompilation {
             .push_root(program);
     }
 
-    pub(crate) fn set_module_program(&mut self, source: SourceId, program: ast::Program) {
+    pub fn set_module_program(&mut self, source: SourceId, program: ast::Program) {
         let project = self.project_id();
         let module = self
             .session
@@ -96,7 +96,7 @@ impl ProjectCompilation {
             .insert_module(module, program);
     }
 
-    pub(crate) fn analyze_project(&mut self, host: &crate::HostContract) {
+    pub fn analyze_project(&mut self, host: &crate::HostContract) {
         let project = self.project_id();
         let analysis = {
             let semantics = self
@@ -159,7 +159,7 @@ impl ProjectCompilation {
         interpreter.execute_project_with_analysis(syntax, semantics.module_graph(), analysis, entry)
     }
 
-    pub(crate) fn parse(
+    pub fn parse(
         &self,
         id: SourceId,
         native_macros: &[macros::NativeMacroDefinition],
@@ -176,7 +176,7 @@ impl ProjectCompilation {
         parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)
     }
 
-    pub(crate) fn location(&self, id: SourceId) -> Option<(&str, &str)> {
+    pub fn location(&self, id: SourceId) -> Option<(&str, &str)> {
         let file = self.session.sources().source_file(id)?;
         let source = self.session.sources().source_text(id)?;
         Some((&file.name, source))

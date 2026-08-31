@@ -1336,7 +1336,7 @@ fn discovers_trait_entries_and_calls_persistent_script_values() {
 
 #[test]
 fn loads_and_executes_bytecode_from_memory() {
-    let image = rils_runtime::compile("40 + 2")
+    let image = rils_bytecode::compile("40 + 2")
         .unwrap()
         .to_bytes()
         .expect("bytecode serializes");

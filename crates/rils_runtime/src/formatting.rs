@@ -10,14 +10,14 @@ use std::{
 use crate::Value;
 
 #[derive(Default)]
-pub(crate) struct FormatterBuffer {
+pub struct FormatterBuffer {
     output: RefCell<String>,
     alternate: Cell<bool>,
     depth: Cell<usize>,
 }
 
 impl FormatterBuffer {
-    pub(crate) fn new(alternate: bool) -> Self {
+    pub fn new(alternate: bool) -> Self {
         Self {
             output: RefCell::new(String::new()),
             alternate: Cell::new(alternate),
@@ -25,28 +25,28 @@ impl FormatterBuffer {
         }
     }
 
-    pub(crate) fn write_str(&self, value: &str) {
+    pub fn write_str(&self, value: &str) {
         self.output.borrow_mut().push_str(value);
     }
 
-    pub(crate) fn finish(&self) -> String {
+    pub fn finish(&self) -> String {
         self.output.borrow().clone()
     }
 
-    pub(crate) fn alternate(&self) -> bool {
+    pub fn alternate(&self) -> bool {
         self.alternate.get()
     }
 
-    pub(crate) fn depth(&self) -> usize {
+    pub fn depth(&self) -> usize {
         self.depth.get()
     }
 
-    pub(crate) fn set_depth(&self, depth: usize) {
+    pub fn set_depth(&self, depth: usize) {
         self.depth.set(depth);
     }
 }
 
-pub(crate) fn buffer_from_value(value: &Value) -> Result<Rc<FormatterBuffer>, String> {
+pub fn buffer_from_value(value: &Value) -> Result<Rc<FormatterBuffer>, String> {
     let mut value = value.clone();
     while let Value::Reference(reference) = value {
         value = reference.read()?;
@@ -61,11 +61,11 @@ pub(crate) fn buffer_from_value(value: &Value) -> Result<Rc<FormatterBuffer>, St
         .ok_or_else(|| "invalid Formatter payload".into())
 }
 
-pub(crate) fn format_arguments(format: &str, arguments: &[Value]) -> Result<String, String> {
+pub fn format_arguments(format: &str, arguments: &[Value]) -> Result<String, String> {
     format_arguments_with(format, arguments, format_value)
 }
 
-pub(crate) fn format_arguments_with(
+pub fn format_arguments_with(
     format: &str,
     arguments: &[Value],
     mut render: impl FnMut(&Value, &FormatSpec) -> Result<String, String>,
@@ -86,12 +86,12 @@ pub(crate) fn format_arguments_with(
     Ok(output)
 }
 
-pub(crate) fn format_value(value: &Value, spec: &FormatSpec) -> Result<String, String> {
+pub fn format_value(value: &Value, spec: &FormatSpec) -> Result<String, String> {
     let rendered = render_value(value, spec)?;
     Ok(apply_width(rendered, spec))
 }
 
-pub(crate) fn finish_rendered(rendered: String, spec: &FormatSpec) -> String {
+pub fn finish_rendered(rendered: String, spec: &FormatSpec) -> String {
     apply_width(rendered, spec)
 }
 

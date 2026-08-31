@@ -5,21 +5,15 @@ use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 mod float_methods;
 mod integer_methods;
 
-pub(crate) fn integer_constant(
-    target: IntegerType,
-    constant: rils_builtins::IntegerConstantId,
-) -> Value {
+pub fn integer_constant(target: IntegerType, constant: rils_builtins::IntegerConstantId) -> Value {
     integer_methods::constant(target, constant)
 }
 
-pub(crate) fn float_constant(
-    target: crate::FloatType,
-    constant: rils_builtins::FloatConstantId,
-) -> Value {
+pub fn float_constant(target: crate::FloatType, constant: rils_builtins::FloatConstantId) -> Value {
     float_methods::constant(target, constant)
 }
 
-pub(crate) fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> {
+pub fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> {
     enum IntegerValue {
         Signed(i128),
         Unsigned(u128),
@@ -93,7 +87,7 @@ pub(crate) fn cast_integer(value: Value, target: IntegerType) -> Result<Value, S
     })
 }
 
-pub(crate) fn execute_integer_intrinsic(
+pub fn execute_integer_intrinsic(
     id: rils_builtins::BuiltinId,
     target: Option<IntegerType>,
     values: &[Value],
@@ -135,7 +129,7 @@ pub(crate) fn execute_integer_intrinsic(
     }
 }
 
-pub(crate) fn execute_intrinsic(
+pub fn execute_intrinsic(
     id: rils_builtins::BuiltinId,
     target: Option<IntegerType>,
     values: &[Value],
@@ -384,7 +378,7 @@ macro_rules! float_binary {
     }};
 }
 
-pub(crate) fn negate(value: Value) -> Result<Value, String> {
+pub fn negate(value: Value) -> Result<Value, String> {
     macro_rules! signed {
         ($value:expr, $constructor:path) => {
             $value
@@ -409,7 +403,7 @@ pub(crate) fn negate(value: Value) -> Result<Value, String> {
     }
 }
 
-pub(crate) fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Value, String> {
+pub fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Value, String> {
     match (left, right) {
         (Value::I8(left), Value::I8(right)) => {
             integer_binary!(left, operator, right, Value::I8)
@@ -466,7 +460,7 @@ pub(crate) fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Va
 /// The VM still validates dynamic values at its trust boundary, but this avoids dispatching
 /// across every numeric representation for each integer instruction.
 #[inline]
-pub(crate) fn integer_binary_typed(
+pub fn integer_binary_typed(
     left: Value,
     integer: IntegerType,
     operator: BinaryOp,

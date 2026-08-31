@@ -34,17 +34,17 @@ pub struct UserFunction {
 
 #[derive(Clone)]
 pub struct BytecodeFunctionValue {
-    pub(crate) function: usize,
-    pub(crate) name: String,
-    pub(crate) parameter_count: usize,
-    pub(crate) captures: Vec<StorageRef>,
-    pub(crate) bound_arguments: Vec<Value>,
+    pub function: usize,
+    pub name: String,
+    pub parameter_count: usize,
+    pub captures: Vec<StorageRef>,
+    pub bound_arguments: Vec<Value>,
 }
 
 #[derive(Clone)]
 pub struct BytecodeIteratorValue {
-    pub(crate) storage: StorageRef,
-    pub(crate) next_function: usize,
+    pub storage: StorageRef,
+    pub next_function: usize,
 }
 
 #[derive(Clone)]
@@ -160,6 +160,7 @@ impl RangeValue {
         self.element_type.clone()
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<Option<Value>, String> {
         fn advance<T: Copy + Ord>(
             current: &mut T,

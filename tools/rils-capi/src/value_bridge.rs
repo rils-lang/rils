@@ -410,11 +410,11 @@ pub(crate) fn portable_integer_tag(integer: IntegerType) -> u32 {
 }
 
 pub(crate) fn validate_c_dispatcher_contract(contract: &HostContract) -> Result<(), String> {
-    if contract.host_abi_version() != rils_runtime::BYTECODE_HOST_ABI_VERSION {
+    if contract.host_abi_version() != rils_bytecode::BYTECODE_HOST_ABI_VERSION {
         return Err(format!(
             "host manifest ABI {} is incompatible with runtime ABI {}",
             contract.host_abi_version(),
-            rils_runtime::BYTECODE_HOST_ABI_VERSION
+            rils_bytecode::BYTECODE_HOST_ABI_VERSION
         ));
     }
     for function in contract.functions() {

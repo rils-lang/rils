@@ -13,10 +13,10 @@ use std::{
     sync::atomic::{AtomicU16, Ordering},
 };
 
+use rils_bytecode::{BytecodeHost, BytecodeModule};
 use rils_runtime::{
-    BytecodeHost, BytecodeModule, FloatType, FunctionSignature, HostCallKind, HostContract,
-    HostReceiver, HostThreadAffinity, HostTypeTransport, HostValueLayout, IntegerType, Span, Type,
-    Value,
+    FloatType, FunctionSignature, HostCallKind, HostContract, HostReceiver, HostThreadAffinity,
+    HostTypeTransport, HostValueLayout, IntegerType, Span, Type, Value,
 };
 
 pub const RILS_ABI_VERSION: u32 = 7;

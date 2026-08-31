@@ -19,7 +19,7 @@ pub struct HostFormatSpec {
 
 pub type HostValueFormatter = dyn Fn(&Value, HostFormatSpec) -> Result<Option<String>, String>;
 
-pub(crate) fn default_output_handler() -> Rc<OutputHandler> {
+pub fn default_output_handler() -> Rc<OutputHandler> {
     Rc::new(|text, newline| {
         let mut stdout = std::io::stdout().lock();
         stdout
