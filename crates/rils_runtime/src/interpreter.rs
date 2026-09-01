@@ -53,7 +53,7 @@ pub struct RuntimeError {
 }
 
 impl RuntimeError {
-    fn new(message: impl Into<String>, span: Span) -> Self {
+    pub(crate) fn new(message: impl Into<String>, span: Span) -> Self {
         Self {
             message: message.into(),
             span,
