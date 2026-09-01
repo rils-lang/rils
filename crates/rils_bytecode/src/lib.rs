@@ -2,10 +2,10 @@
 
 use std::{fs, path::Path};
 
-use rils_runtime::support::ProjectCompilation;
+use rils_driver::ProjectSources;
 use rils_runtime::{
     ExecutionLimits, FloatType, HostFormatKind, HostFormatSpec, HostValueFormatter, IntegerType,
-    OutputHandler, Project, ProjectError, ProjectKind, Span,
+    OutputHandler, Project, ProjectKind, Span,
 };
 
 #[cfg(test)]
@@ -95,7 +95,7 @@ pub fn compile_with_host(
 /// reusable in-memory bytecode module.
 pub fn compile_file(path: impl AsRef<Path>) -> Result<BytecodeModule, CompileError> {
     let path = path.as_ref();
-    let project = discover_entry_project(path)
+    let project = rils_driver::discover_entry_project(path)
         .map_err(|error| CompileError::new(error.to_string(), Span::default()))?;
     let mut host: Option<HostContract> = None;
     for manifest in project.host_manifests() {
@@ -185,15 +185,9 @@ pub fn compile_file_with_host(
     host: &HostContract,
 ) -> Result<BytecodeModule, CompileError> {
     let path = path.as_ref();
-    let project = discover_entry_project(path)
+    let project = rils_driver::discover_entry_project(path)
         .map_err(|error| CompileError::new(error.to_string(), Span::default()))?;
     compile_project_file_with_host(path, &project, host, project.requires_entry())
-}
-
-fn discover_entry_project(path: &Path) -> Result<Project, ProjectError> {
-    Project::discover_configured(path, None)?
-        .map(Ok)
-        .unwrap_or_else(|| Project::for_legacy_entry(path))
 }
 
 fn compile_project_file_with_host(
@@ -202,7 +196,7 @@ fn compile_project_file_with_host(
     host: &HostContract,
     require_entry: bool,
 ) -> Result<BytecodeModule, CompileError> {
-    let mut sources = ProjectCompilation::default();
+    let mut sources = ProjectSources::default();
     sources.register_project(project);
     let result = (|| {
         let source = fs::read_to_string(path).map_err(|error| {
@@ -218,7 +212,7 @@ fn compile_project_file_with_host(
         let mut program = sources
             .parse(source_id, macros::STANDARD_NATIVE_MACROS)
             .map_err(|error| CompileError::new(error.to_string(), error.span()))?;
-        rils_runtime::load_file_modules(
+        rils_driver::load_file_modules(
             &mut program,
             path,
             project,
@@ -237,7 +231,7 @@ fn compile_project_file_with_host(
     result.map_err(|error| locate_compile_error(error, &sources))
 }
 
-fn locate_compile_error(error: CompileError, sources: &ProjectCompilation) -> CompileError {
+fn locate_compile_error(error: CompileError, sources: &ProjectSources) -> CompileError {
     if error.source_name().is_some() {
         return error;
     }

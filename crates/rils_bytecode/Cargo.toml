@@ -15,3 +15,4 @@ rils_host.workspace = true
 rils_frontend.workspace = true
 rils_builtins.workspace = true
 rils_project.workspace = true
+rils_driver.workspace = true

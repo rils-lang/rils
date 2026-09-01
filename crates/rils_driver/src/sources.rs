@@ -3,18 +3,24 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rils_frontend::{CompilationSession, ProjectId};
-
-use crate::{Project, RilsError, SourceId, ast, lexer, macros, parser};
+use rils_frontend::{
+    CompilationSession, FrontendError, ProjectId, SourceId,
+    ast::Program,
+    lexer,
+    macros::{self, NativeMacroDefinition},
+    parser,
+};
+use rils_host::HostContract;
+use rils_project::Project;
 
 #[derive(Default)]
-pub struct ProjectCompilation {
+pub struct ProjectSources {
     by_path: HashMap<PathBuf, SourceId>,
     session: CompilationSession,
     project: Option<ProjectId>,
 }
 
-impl ProjectCompilation {
+impl ProjectSources {
     pub fn register_project(&mut self, project: &Project) {
         let project_id = self.session.register_project(project.name());
         self.project = Some(project_id);
@@ -63,7 +69,7 @@ impl ProjectCompilation {
 
     pub fn project_id(&self) -> ProjectId {
         self.project
-            .expect("project compilation must register a project before compiling")
+            .expect("project sources must register a project before use")
     }
 
     pub fn set_entry_source(&mut self, source: SourceId) {
@@ -74,7 +80,7 @@ impl ProjectCompilation {
             .set_entry_source(source);
     }
 
-    pub fn push_root_program(&mut self, program: ast::Program) {
+    pub fn push_root_program(&mut self, program: Program) {
         let project = self.project_id();
         self.session
             .project_syntax_mut(project)
@@ -82,7 +88,7 @@ impl ProjectCompilation {
             .push_root(program);
     }
 
-    pub fn set_module_program(&mut self, source: SourceId, program: ast::Program) {
+    pub fn set_module_program(&mut self, source: SourceId, program: Program) {
         let project = self.project_id();
         let module = self
             .session
@@ -96,7 +102,7 @@ impl ProjectCompilation {
             .insert_module(module, program);
     }
 
-    pub fn analyze_project(&mut self, host: &crate::HostContract) {
+    pub fn analyze_project(&mut self, host: &HostContract) {
         let project = self.project_id();
         let analysis = {
             let semantics = self
@@ -112,68 +118,21 @@ impl ProjectCompilation {
         self.session.set_project_analysis(project, host, analysis);
     }
 
-    pub(crate) fn execute_project(
-        &mut self,
-        interpreter: &mut crate::interpreter::Interpreter,
-        host: &crate::HostContract,
-    ) -> Result<crate::Value, crate::interpreter::RuntimeError> {
-        self.analyze_project(host);
-        let project = self.project_id();
-        let semantics = self
-            .session
-            .project(project)
-            .expect("registered project has semantic state");
-        let syntax = self
-            .session
-            .project_syntax(project)
-            .expect("registered project has syntax state");
-        let analysis = self
-            .session
-            .project_analysis(project, host)
-            .expect("project analysis was stored");
-        if let Some(diagnostic) = analysis.first_error() {
-            return Err(crate::interpreter::RuntimeError {
-                message: diagnostic.message.clone(),
-                span: diagnostic.span,
-                stack: Vec::new(),
-            });
-        }
-        let source = semantics
-            .entry_source()
-            .expect("executable project has an entry source");
-        let module = semantics
-            .module(source)
-            .expect("entry source has a module identity");
-        let entry = analysis
-            .def_map
-            .definitions()
-            .find(|definition| {
-                definition.name == "main"
-                    && definition.span.source == source
-                    && definition.kind == rils_frontend::semantic::SymbolKind::Function
-                    && definition.container
-                        == Some(rils_frontend::SymbolContainer::Module(module.path.clone()))
-            })
-            .map(|definition| definition.id)
-            .expect("validated executable project preserves main definition");
-        interpreter.execute_project_with_analysis(syntax, semantics.module_graph(), analysis, entry)
-    }
-
     pub fn parse(
         &self,
         id: SourceId,
-        native_macros: &[macros::NativeMacroDefinition],
-    ) -> Result<ast::Program, RilsError> {
+        native_macros: &[NativeMacroDefinition],
+    ) -> Result<Program, FrontendError> {
         if native_macros == macros::STANDARD_NATIVE_MACROS {
-            return self.session.sources().parse(id).map_err(Into::into);
+            return self.session.sources().parse(id);
         }
         let source = self
             .session
             .sources()
             .source_text(id)
             .expect("source must be registered before parsing");
-        let tokens = lexer::lex_with_source_id(source, id).map_err(RilsError::Lex)?;
-        parser::parse_with_native_macros(tokens, native_macros).map_err(RilsError::Parse)
+        let tokens = lexer::lex_with_source_id(source, id).map_err(FrontendError::Lex)?;
+        parser::parse_with_native_macros(tokens, native_macros).map_err(FrontendError::Parse)
     }
 
     pub fn location(&self, id: SourceId) -> Option<(&str, &str)> {

@@ -25,6 +25,7 @@ members = [
     ".",
     "crates/rils_bytecode",
     "crates/rils_runtime",
+    "crates/rils_driver",
     "crates/rils_compiler",
     "crates/rils_host",
     "crates/rils_frontend",
@@ -50,6 +51,7 @@ repository = "https://github.com/rils-lang/rils"
 [workspace.dependencies]
 rils_bytecode = { version = "0.3.0", path = "crates/rils_bytecode" }
 rils_runtime = { version = "0.3.0", path = "crates/rils_runtime" }
+rils_driver = { version = "0.3.0", path = "crates/rils_driver" }
 rils_compiler = { version = "0.3.0", path = "crates/rils_compiler" }
 rils_host = { version = "0.3.0", path = "crates/rils_host" }
 rils_frontend = { version = "0.3.0", path = "crates/rils_frontend" }

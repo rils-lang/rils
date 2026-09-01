@@ -7,7 +7,6 @@ mod limits;
 mod native_type;
 mod numeric;
 mod output;
-mod project_compilation;
 mod runtime_builtins;
 mod runtime_type;
 mod standard_library;
@@ -39,9 +38,6 @@ pub mod support {
     pub mod value {
         pub use crate::value::*;
     }
-
-    pub use crate::load_file_modules;
-    pub use crate::project_compilation::ProjectCompilation;
 }
 
 pub mod analysis {
@@ -88,14 +84,9 @@ mod types {
     pub(crate) use rils_frontend::types::*;
 }
 
-use std::{
-    collections::HashSet,
-    fmt, fs,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{fs, path::Path, rc::Rc};
 
-use project_compilation::ProjectCompilation;
+use rils_driver::{DriverError, ProjectSources};
 
 pub use error::RilsError;
 pub use limits::ExecutionLimits;
@@ -304,29 +295,33 @@ impl Engine {
 
     pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value, RilsError> {
         let path = path.as_ref();
-        let mut sources = ProjectCompilation::default();
+        let mut sources = ProjectSources::default();
         let result = (|| {
-            let project =
-                discover_entry_project(path).map_err(|error| module_message(error.to_string()))?;
+            let project = rils_driver::discover_entry_project(path)
+                .map_err(|error| driver_message(error.to_string()))?;
             sources.register_project(&project);
-            let source =
-                fs::read_to_string(path).map_err(|error| module_load_error(path, error))?;
+            let source = fs::read_to_string(path).map_err(|error| {
+                driver_message(format!(
+                    "failed to load module `{}`: {error}",
+                    path.display()
+                ))
+            })?;
             let source_id = sources.register_source(path, &source);
             if project.manifest_path().is_some() {
                 sources.set_entry_source(source_id);
             }
             let mut program = sources.parse(source_id, &self.native_macros)?;
-            load_file_modules(
+            rils_driver::load_file_modules(
                 &mut program,
                 path,
                 &project,
                 &self.native_macros,
                 &mut sources,
                 true,
-            )?;
+            )
+            .map_err(driver_error_to_rils)?;
             if project.manifest_path().is_some() {
-                sources
-                    .execute_project(&mut self.interpreter, &HostContract::new())
+                execute_project(&mut sources, &mut self.interpreter, &HostContract::new())
                     .map_err(RilsError::Runtime)
             } else {
                 let analysis = rils_frontend::analysis::analyze_program(&program);
@@ -339,7 +334,7 @@ impl Engine {
     }
 }
 
-fn locate_rils_error(error: RilsError, sources: &ProjectCompilation) -> RilsError {
+fn locate_rils_error(error: RilsError, sources: &ProjectSources) -> RilsError {
     if matches!(error, RilsError::Located { .. }) {
         return error;
     }
@@ -374,271 +369,68 @@ pub(crate) fn is_identifier(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_alphanumeric())
 }
 
-fn load_external_modules(
-    statements: &mut [ast::Stmt],
-    base: &Path,
-    native_macros: &[macros::NativeMacroDefinition],
-    loading: &mut HashSet<PathBuf>,
-    sources: &mut ProjectCompilation,
-) -> Result<(), RilsError> {
-    for statement in statements {
-        let statement = match statement {
-            ast::Stmt::Public { statement, .. } => statement.as_mut(),
-            statement => statement,
-        };
-        let ast::Stmt::Module {
-            name, statements, ..
-        } = statement
-        else {
-            continue;
-        };
-        if let Some(statements) = statements {
-            load_external_modules(statements, base, native_macros, loading, sources)?;
-            continue;
-        }
-
-        let flat = base.join(format!("{name}.rils"));
-        let nested = base.join(name.as_str()).join("mod.rils");
-        let path = if flat.is_file() {
-            flat
-        } else if nested.is_file() {
-            nested
-        } else {
-            return Err(module_message(format!(
-                "cannot find module `{name}`; expected `{}` or `{}`",
-                flat.display(),
-                nested.display()
-            )));
-        };
-        let canonical = path
-            .canonicalize()
-            .map_err(|error| module_load_error(&path, error))?;
-        if !loading.insert(canonical.clone()) {
-            return Err(module_message(format!(
-                "cyclic module load detected at `{}`",
-                path.display()
-            )));
-        }
-        let source = fs::read_to_string(&path).map_err(|error| module_load_error(&path, error))?;
-        let source_id = sources.register_source(&path, &source);
-        let mut module = sources.parse(source_id, native_macros)?;
-        load_external_modules(
-            &mut module.statements,
-            path.parent().unwrap_or(base),
-            native_macros,
-            loading,
-            sources,
-        )?;
-        loading.remove(&canonical);
-        *statements = Some(module.statements);
-    }
-    Ok(())
-}
-
-pub fn load_file_modules(
-    program: &mut ast::Program,
-    entry_path: &Path,
-    project: &Project,
-    native_macros: &[macros::NativeMacroDefinition],
-    sources: &mut ProjectCompilation,
-    require_entry: bool,
-) -> Result<(), RilsError> {
-    if project.manifest_path().is_none() {
-        let base = entry_path.parent().unwrap_or_else(|| Path::new("."));
-        let mut loading = HashSet::new();
-        if let Ok(canonical) = entry_path.canonicalize() {
-            loading.insert(canonical);
-        }
-        load_external_modules(
-            &mut program.statements,
-            base,
-            native_macros,
-            &mut loading,
-            sources,
-        )?;
-        sources.push_root_program(program.clone());
-        return Ok(());
-    }
-    let entry = project.module_for_file(entry_path);
-    let entry_source = sources.source_id(entry_path);
-    let entry_is_prelude = project.prelude().is_some_and(|prelude_path| {
-        prelude_path == entry_path
-            || entry_path.canonicalize().is_ok_and(|entry_path| {
-                prelude_path
-                    .canonicalize()
-                    .is_ok_and(|path| path == entry_path)
-            })
-    });
-    if entry.is_none() && !entry_is_prelude {
-        return Err(module_message(format!(
-            "entry script `{}` is outside the src roots configured by `{}`",
-            entry_path.display(),
-            project.manifest_path().unwrap().display()
-        )));
-    }
-    let entry_statements = if require_entry {
-        prepare_project_entry(std::mem::take(&mut program.statements))?
-    } else {
-        reject_external_module_declarations(&program.statements)?;
-        std::mem::take(&mut program.statements)
-    };
-    let mut entry_program = program.clone();
-    entry_program.statements = entry_statements;
-    if entry_is_prelude {
-        sources.push_root_program(entry_program.clone());
-    } else if let Some(prelude_path) = project.prelude() {
-        let source = fs::read_to_string(prelude_path)
-            .map_err(|error| module_load_error(prelude_path, error))?;
-        let source_id = sources.register_source(prelude_path, &source);
-        let prelude = sources.parse(source_id, native_macros)?;
-        reject_external_module_declarations(&prelude.statements)?;
-        sources.push_root_program(prelude);
-    }
-    for dependency in project.dependencies() {
-        let Some(prelude_path) = dependency.prelude.as_deref() else {
-            continue;
-        };
-        let source = fs::read_to_string(prelude_path)
-            .map_err(|error| module_load_error(prelude_path, error))?;
-        let source_id = sources.register_source(prelude_path, &source);
-        let prelude = sources.parse(source_id, native_macros)?;
-        reject_external_module_declarations(&prelude.statements)?;
-        sources.push_root_program(prelude);
-    }
-    for file in project.modules() {
-        let file_source = sources
-            .source_id(&file.path)
-            .expect("project modules were registered before loading");
-        let module_program = if entry_source == Some(file_source) {
-            entry_program.clone()
-        } else {
-            let source = fs::read_to_string(&file.path)
-                .map_err(|error| module_load_error(&file.path, error))?;
-            let source_id = sources.register_source(&file.path, &source);
-            let program = sources.parse(source_id, native_macros)?;
-            reject_external_module_declarations(&program.statements)?;
-            program
-        };
-        sources.set_module_program(file_source, module_program);
-    }
-    Ok(())
-}
-
-fn prepare_project_entry(statements: Vec<ast::Stmt>) -> Result<Vec<ast::Stmt>, RilsError> {
-    reject_external_module_declarations(&statements)?;
-    let mut found = false;
-    let mut prepared = Vec::with_capacity(statements.len());
-    for statement in statements {
-        match statement {
-            ast::Stmt::Function {
-                ref name,
-                ref parameters,
-                span,
-                ..
-            } if name == "main" => {
-                if found {
-                    return Err(RilsError::Runtime(RuntimeError {
-                        message: "project entry contains more than one `fn main()`".into(),
-                        span,
-                        stack: Vec::new(),
-                    }));
-                }
-                if !parameters.is_empty() {
-                    return Err(RilsError::Runtime(RuntimeError {
-                        message: "project entry `fn main()` must not have parameters".into(),
-                        span,
-                        stack: Vec::new(),
-                    }));
-                }
-                found = true;
-                prepared.push(ast::Stmt::Public {
-                    statement: Box::new(statement),
-                    span,
-                });
-            }
-            ast::Stmt::Public { statement, span } => {
-                if let ast::Stmt::Function {
-                    name,
-                    parameters,
-                    span: function_span,
-                    ..
-                } = statement.as_ref()
-                    && name == "main"
-                {
-                    if found {
-                        return Err(RilsError::Runtime(RuntimeError {
-                            message: "project entry contains more than one `fn main()`".into(),
-                            span: *function_span,
-                            stack: Vec::new(),
-                        }));
-                    }
-                    if !parameters.is_empty() {
-                        return Err(RilsError::Runtime(RuntimeError {
-                            message: "project entry `fn main()` must not have parameters".into(),
-                            span: *function_span,
-                            stack: Vec::new(),
-                        }));
-                    }
-                    found = true;
-                }
-                prepared.push(ast::Stmt::Public { statement, span });
-            }
-            statement => prepared.push(statement),
-        }
-    }
-    if !found {
-        return Err(module_message(
-            "a rils.toml project entry must define a zero-parameter `fn main()`".into(),
-        ));
-    }
-    Ok(prepared)
-}
-
-fn reject_external_module_declarations(statements: &[ast::Stmt]) -> Result<(), RilsError> {
-    for statement in statements {
-        let statement = match statement {
-            ast::Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
-        if let ast::Stmt::Module {
-            name,
-            statements: None,
-            span,
-            ..
-        } = statement
-        {
-            return Err(RilsError::Runtime(RuntimeError {
-                message: format!(
-                    "external `mod {name};` declarations are not used in rils.toml projects; reference the module with `use` or a qualified path"
-                ),
-                span: *span,
-                stack: Vec::new(),
-            }));
-        }
-        if let ast::Stmt::Module {
-            statements: Some(statements),
-            ..
-        } = statement
-        {
-            reject_external_module_declarations(statements)?;
-        }
-    }
-    Ok(())
-}
-
-fn module_load_error(path: &Path, error: impl fmt::Display) -> RilsError {
-    module_message(format!(
-        "failed to load module `{}`: {error}",
-        path.display()
-    ))
-}
-
-fn module_message(message: String) -> RilsError {
+fn driver_message(message: String) -> RilsError {
     RilsError::Runtime(RuntimeError {
         message,
         span: Span::default(),
         stack: Vec::new(),
     })
+}
+
+fn execute_project(
+    sources: &mut ProjectSources,
+    interpreter: &mut Interpreter,
+    host: &HostContract,
+) -> Result<Value, RuntimeError> {
+    sources.analyze_project(host);
+    let project = sources.project_id();
+    let session = sources.session();
+    let semantics = session
+        .project(project)
+        .expect("registered project has semantic state");
+    let syntax = session
+        .project_syntax(project)
+        .expect("registered project has syntax state");
+    let analysis = session
+        .project_analysis(project, host)
+        .expect("project analysis was stored");
+    if let Some(diagnostic) = analysis.first_error() {
+        return Err(RuntimeError {
+            message: diagnostic.message.clone(),
+            span: diagnostic.span,
+            stack: Vec::new(),
+        });
+    }
+    let source = semantics
+        .entry_source()
+        .expect("executable project has an entry source");
+    let module = semantics
+        .module(source)
+        .expect("entry source has a module identity");
+    let entry = analysis
+        .def_map
+        .definitions()
+        .find(|definition| {
+            definition.name == "main"
+                && definition.span.source == source
+                && definition.kind == rils_frontend::semantic::SymbolKind::Function
+                && definition.container
+                    == Some(rils_frontend::SymbolContainer::Module(module.path.clone()))
+        })
+        .map(|definition| definition.id)
+        .expect("validated executable project preserves main definition");
+    interpreter.execute_project_with_analysis(syntax, semantics.module_graph(), analysis, entry)
+}
+
+fn driver_error_to_rils(error: DriverError) -> RilsError {
+    match error {
+        DriverError::Frontend(error) => error.into(),
+        DriverError::Message { message, span } => RilsError::Runtime(RuntimeError {
+            message,
+            span,
+            stack: Vec::new(),
+        }),
+    }
 }
 
 #[macro_export]
@@ -656,10 +448,4 @@ macro_rules! rils_forward_macro {
 
 pub fn eval(source: &str) -> Result<Value, RilsError> {
     Engine::new().eval(source)
-}
-
-fn discover_entry_project(path: &Path) -> Result<Project, ProjectError> {
-    Project::discover_configured(path, None)?
-        .map(Ok)
-        .unwrap_or_else(|| Project::for_legacy_entry(path))
 }
