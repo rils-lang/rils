@@ -18,10 +18,9 @@ use crate::{
     },
 };
 
-mod compilation;
+mod compiler;
 mod construction;
 mod core_imports;
-mod encoder;
 mod error;
 mod format;
 mod formatting;
@@ -31,10 +30,10 @@ mod patterns;
 mod verifier;
 mod vm;
 
-pub(crate) use compilation::compile_program_with_host_and_session;
+pub(crate) use compiler::compile_program_with_host_and_session;
 #[cfg(test)]
-pub(crate) use compilation::compile_program_with_host_and_sources;
-pub use compilation::{compile, compile_with_host};
+pub(crate) use compiler::compile_program_with_host_and_sources;
+pub use compiler::{compile, compile_with_host};
 use construction::*;
 use core_imports::*;
 pub use error::BytecodeError;
@@ -820,5 +819,4 @@ enum Instruction {
 }
 
 #[cfg(test)]
-#[path = "bytecode/tests.rs"]
 mod tests;

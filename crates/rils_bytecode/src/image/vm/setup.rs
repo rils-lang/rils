@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> VirtualMachine<'a> {
-    pub(in crate::bytecode) fn new(
+    pub(in crate::image) fn new(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
         host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
@@ -26,7 +26,7 @@ impl<'a> VirtualMachine<'a> {
         }
     }
 
-    pub(in crate::bytecode) fn new_call(
+    pub(in crate::image) fn new_call(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
         host_value_formatter: Option<Rc<crate::HostValueFormatter>>,

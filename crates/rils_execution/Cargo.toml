@@ -1,10 +1,10 @@
 [package]
-name = "rils_runtime"
+name = "rils_execution"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = ["crates-io"]
-description = "Runtime values, interpreter, and host execution for the Rils scripting language"
+description = "Shared runtime values and execution primitives for Rils backends"
 license.workspace = true
 repository.workspace = true
 
@@ -12,7 +12,3 @@ repository.workspace = true
 rils_host.workspace = true
 rils_frontend.workspace = true
 rils_builtins.workspace = true
-rils_project.workspace = true
-rils_driver.workspace = true
-rils_execution.workspace = true
-stacker = "0.1"

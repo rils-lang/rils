@@ -1,0 +1,14 @@
+[package]
+name = "rils_driver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+description = "Project source preparation and module loading for the Rils toolchain"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rils_frontend.workspace = true
+rils_host.workspace = true
+rils_project.workspace = true
