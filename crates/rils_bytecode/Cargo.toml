@@ -9,10 +9,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-rils_runtime.workspace = true
+rils_execution.workspace = true
 rils_compiler.workspace = true
 rils_host.workspace = true
 rils_frontend.workspace = true
 rils_builtins.workspace = true
 rils_project.workspace = true
 rils_driver.workspace = true
+
+[dev-dependencies]
+rils_runtime.workspace = true

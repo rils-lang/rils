@@ -620,6 +620,7 @@ dependencies = [
  "rils_builtins",
  "rils_compiler",
  "rils_driver",
+ "rils_execution",
  "rils_frontend",
  "rils_host",
  "rils_project",
@@ -661,6 +662,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rils_execution"
+version = "0.3.0"
+dependencies = [
+ "rils_builtins",
+ "rils_frontend",
+ "rils_host",
+]
+
+[[package]]
 name = "rils_frontend"
 version = "0.3.0"
 dependencies = [
@@ -691,6 +701,7 @@ version = "0.3.0"
 dependencies = [
  "rils_builtins",
  "rils_driver",
+ "rils_execution",
  "rils_frontend",
  "rils_host",
  "rils_project",

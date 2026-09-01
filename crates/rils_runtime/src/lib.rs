@@ -1,43 +1,29 @@
-mod environment;
+mod environment {
+    pub(crate) use rils_execution::environment::*;
+}
 mod error;
-mod formatting;
-mod hash_collections;
+mod formatting {
+    pub(crate) use rils_execution::formatting::*;
+}
+mod hash_collections {
+    pub(crate) use rils_execution::hash_collections::*;
+}
 mod interpreter;
-mod limits;
 mod native_type;
-mod numeric;
-mod output;
-mod runtime_builtins;
-mod runtime_type;
-mod standard_library;
-mod value;
-
-#[doc(hidden)]
-pub mod support {
-    pub mod environment {
-        pub use crate::environment::*;
-    }
-    pub mod formatting {
-        pub use crate::formatting::*;
-    }
-    pub mod hash_collections {
-        pub use crate::hash_collections::*;
-    }
-    pub mod numeric {
-        pub use crate::numeric::*;
-    }
-    pub mod output {
-        pub use crate::output::*;
-    }
-    pub mod runtime_builtins {
-        pub use crate::runtime_builtins::*;
-    }
-    pub mod standard_library {
-        pub use crate::standard_library::*;
-    }
-    pub mod value {
-        pub use crate::value::*;
-    }
+mod numeric {
+    pub(crate) use rils_execution::numeric::*;
+}
+mod output {
+    pub(crate) use rils_execution::output::default_output_handler;
+}
+mod runtime_builtins {
+    pub(crate) use rils_execution::runtime_builtins::*;
+}
+mod standard_library {
+    pub(crate) use rils_execution::standard_library::*;
+}
+mod value {
+    pub(crate) use rils_execution::value::*;
 }
 
 pub mod analysis {
@@ -89,13 +75,14 @@ use std::{fs, path::Path, rc::Rc};
 use rils_driver::{DriverError, ProjectSources};
 
 pub use error::RilsError;
-pub use limits::ExecutionLimits;
 pub use native_type::{NativeFunctionHandler, NativeTypeHandle};
 pub use opaque_host::{
     InlineHostValue, OpaqueHostHandle, host_enum_raw, host_enum_value, inline_host_value,
     inline_host_value_typed, opaque_host_handle, opaque_host_value, opaque_host_value_typed,
 };
-pub use output::{HostFormatKind, HostFormatSpec, HostValueFormatter, OutputHandler};
+pub use rils_execution::ExecutionLimits;
+pub use rils_execution::Value;
+pub use rils_execution::{HostFormatKind, HostFormatSpec, HostValueFormatter, OutputHandler};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,
@@ -109,7 +96,6 @@ pub use rils_host::{
     HostThreadAffinity, HostTypeDeclaration, HostTypeTransport, HostValueLayout,
 };
 pub use rils_project::{Project, ProjectDependency, ProjectError, ProjectFile, ProjectKind};
-pub use value::Value;
 
 use interpreter::{Interpreter, RuntimeError};
 

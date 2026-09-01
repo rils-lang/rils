@@ -3,10 +3,12 @@
 use std::{fs, path::Path};
 
 use rils_driver::ProjectSources;
-use rils_runtime::{
+use rils_execution::{
     ExecutionLimits, FloatType, HostFormatKind, HostFormatSpec, HostValueFormatter, IntegerType,
-    OutputHandler, Project, ProjectKind, Span,
+    OutputHandler,
 };
+use rils_frontend::Span;
+use rils_project::{Project, ProjectKind};
 
 #[cfg(test)]
 use rils_runtime::{Value, eval};
@@ -15,13 +17,13 @@ mod ast {
     pub(crate) use rils_frontend::ast::*;
 }
 mod environment {
-    pub(crate) use rils_runtime::support::environment::*;
+    pub(crate) use rils_execution::environment::*;
 }
 mod formatting {
-    pub(crate) use rils_runtime::support::formatting::*;
+    pub(crate) use rils_execution::formatting::*;
 }
 mod hash_collections {
-    pub(crate) use rils_runtime::support::hash_collections::*;
+    pub(crate) use rils_execution::hash_collections::*;
 }
 mod hir {
     pub(crate) use rils_compiler::hir::*;
@@ -37,29 +39,29 @@ mod mir {
     pub(crate) use rils_compiler::mir::*;
 }
 mod numeric {
-    pub(crate) use rils_runtime::support::numeric::*;
+    pub(crate) use rils_execution::numeric::*;
 }
 mod output {
-    pub(crate) use rils_runtime::support::output::*;
+    pub(crate) use rils_execution::output::*;
 }
 mod parser {
     #[allow(unused_imports)]
     pub(crate) use rils_frontend::parser::*;
 }
 mod runtime_builtins {
-    pub(crate) use rils_runtime::support::runtime_builtins::*;
+    pub(crate) use rils_execution::runtime_builtins::*;
 }
 mod source {
     pub(crate) use rils_frontend::source::*;
 }
 mod standard_library {
-    pub(crate) use rils_runtime::support::standard_library::*;
+    pub(crate) use rils_execution::standard_library::*;
 }
 mod types {
     pub(crate) use rils_frontend::types::*;
 }
 mod value {
-    pub(crate) use rils_runtime::support::value::*;
+    pub(crate) use rils_execution::value::*;
 }
 
 pub mod bytecode;

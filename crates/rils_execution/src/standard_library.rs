@@ -17,7 +17,8 @@ use crate::{
     },
 };
 
-pub(super) fn install(
+#[doc(hidden)]
+pub fn install(
     environment: &EnvironmentRef,
     std_module: &Rc<ModuleValue>,
     io_module: &Rc<ModuleValue>,
