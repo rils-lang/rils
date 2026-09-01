@@ -111,7 +111,7 @@ fn collect_project_declarations(
     types: &mut HashMap<String, DefId>,
 ) {
     for statement in statements {
-        match unwrap_public(statement) {
+        match statement {
             Stmt::Module {
                 name,
                 statements: Some(children),
@@ -175,7 +175,7 @@ fn check_project_impls(
     result: &mut TraitCheckResult,
 ) {
     for statement in statements {
-        match unwrap_public(statement) {
+        match statement {
             Stmt::Use { imports, .. } => collect_project_imports(
                 imports,
                 module_path,
@@ -374,7 +374,6 @@ fn collect(
     implementations: &mut HashMap<String, HashSet<String>>,
 ) {
     for statement in statements {
-        let statement = unwrap_public(statement);
         match statement {
             Stmt::Module {
                 name,
@@ -423,7 +422,6 @@ fn check_impls(
     result: &mut TraitCheckResult,
 ) {
     for statement in statements {
-        let statement = unwrap_public(statement);
         match statement {
             Stmt::Module {
                 statements: Some(module_statements),
@@ -623,13 +621,6 @@ fn qualified(path: &[String], name: &str) -> String {
         name.to_owned()
     } else {
         format!("{}::{name}", path.join("::"))
-    }
-}
-
-fn unwrap_public(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => statement,
-        statement => statement,
     }
 }
 

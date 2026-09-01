@@ -93,10 +93,6 @@ fn collect_host_use_aliases(
     functions: &mut HashMap<String, Vec<HostFunctionDeclaration>>,
 ) {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         match statement {
             Stmt::Use { imports, .. } => {
                 for import in imports {

@@ -18,6 +18,7 @@ impl Parser {
             (Some(statements), end.span)
         };
         Ok(Stmt::Module {
+            visibility: Visibility::Private,
             name,
             name_span,
             statements,
@@ -30,6 +31,7 @@ impl Parser {
         self.use_tree(Vec::new(), Vec::new(), &mut imports)?;
         let end = self.expect(&TokenKind::Semicolon, "expected `;` after use item")?;
         Ok(Stmt::Use {
+            visibility: Visibility::Private,
             imports,
             span: start.merge(end.span),
         })
@@ -155,6 +157,7 @@ impl Parser {
     pub(super) fn function_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         let method = self.function_declaration(start, false)?;
         Ok(Stmt::Function {
+            visibility: Visibility::Private,
             attributes: Vec::new(),
             name: method.name,
             name_span: method.name_span,
@@ -246,6 +249,7 @@ impl Parser {
         };
         self.generic_scopes.pop();
         Ok(Stmt::Struct {
+            visibility: Visibility::Private,
             attributes: Vec::new(),
             name,
             name_span,
@@ -322,6 +326,7 @@ impl Parser {
         let right = self.expect(&TokenKind::RightBrace, "expected `}` after enum variants")?;
         self.generic_scopes.pop();
         Ok(Stmt::Enum {
+            visibility: Visibility::Private,
             attributes: Vec::new(),
             name,
             name_span,
@@ -506,6 +511,7 @@ impl Parser {
         }
         let right = self.expect(&TokenKind::RightBrace, "expected `}` after trait")?;
         Ok(Stmt::Trait {
+            visibility: Visibility::Private,
             name,
             name_span,
             bounds,
@@ -524,6 +530,7 @@ impl Parser {
         let end = self.expect(&TokenKind::Semicolon, "type alias must end with `;`")?;
         self.generic_scopes.pop();
         Ok(Stmt::TypeAlias {
+            visibility: Visibility::Private,
             name,
             name_span,
             generic_parameters,

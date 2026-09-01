@@ -114,10 +114,6 @@ impl ProgramLowerer {
                     }
                     functions.entry(declaration.name.to_string()).or_insert(id);
                 }
-                let statement = match statement {
-                    Stmt::Public { statement, .. } => statement.as_ref(),
-                    statement => statement,
-                };
                 let definition = match statement {
                     Stmt::Struct {
                         name,

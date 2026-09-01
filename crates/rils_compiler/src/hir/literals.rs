@@ -226,8 +226,7 @@ pub(super) fn float_constant_literal(
 
 pub(super) fn statement_span(statement: &Stmt) -> Span {
     match statement {
-        Stmt::Public { span, .. }
-        | Stmt::Module { span, .. }
+        Stmt::Module { span, .. }
         | Stmt::Use { span, .. }
         | Stmt::Let { span, .. }
         | Stmt::Function { span, .. }

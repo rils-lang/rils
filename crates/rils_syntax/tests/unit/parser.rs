@@ -26,12 +26,55 @@ fn parses_and_expands_default_derive() {
     let program =
         parse(lex("#[derive(Default)] pub struct Settings { enabled: bool, count: i32 }").unwrap())
             .unwrap();
-    assert!(matches!(program.statements[0], Stmt::Public { .. }));
+    assert!(matches!(
+        program.statements[0],
+        Stmt::Struct {
+            visibility: Visibility::Public,
+            ..
+        }
+    ));
     assert!(matches!(
         &program.statements[1],
         Stmt::Impl { trait_name: Some(name), methods, .. }
             if name == "Default" && methods.len() == 1 && methods[0].name == "default"
     ));
+}
+
+#[test]
+fn visibility_is_declaration_metadata() {
+    let program = parse(lex("pub fn exported() {} fn private() {}").unwrap()).unwrap();
+    assert!(matches!(
+        program.statements.as_slice(),
+        [
+            Stmt::Function {
+                visibility: Visibility::Public,
+                span: public_span,
+                ..
+            },
+            Stmt::Function {
+                visibility: Visibility::Private,
+                ..
+            }
+        ] if public_span.start == 0
+    ));
+    assert!(!Visibility::Restricted(crate::ast::VisibilityScope::Crate).is_public());
+}
+
+#[test]
+fn rejects_visibility_on_non_declarations_and_duplicate_visibility() {
+    let invalid_target = parse(lex("pub let answer = 42;").unwrap()).unwrap_err();
+    assert!(
+        invalid_target
+            .message
+            .contains("only allowed on declarations"),
+        "{invalid_target:?}"
+    );
+
+    let duplicate = parse(lex("pub pub fn answer() {}").unwrap()).unwrap_err();
+    assert!(
+        duplicate.message.contains("already specified"),
+        "{duplicate:?}"
+    );
 }
 
 #[test]

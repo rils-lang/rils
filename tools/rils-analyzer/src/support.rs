@@ -205,10 +205,6 @@ pub(super) fn resolve_path_alias(text: &str, qualifier: &str) -> String {
         && let Ok(program) = parse(tokens)
     {
         for statement in &program.statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             let Stmt::Use { imports, .. } = statement else {
                 continue;
             };

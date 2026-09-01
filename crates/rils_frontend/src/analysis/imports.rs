@@ -165,10 +165,6 @@ pub(super) fn collect_module_exports(
         output: &mut HashMap<String, Vec<ModuleExport>>,
     ) {
         for statement in statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             let Stmt::Module {
                 name,
                 statements: Some(module_statements),
@@ -196,10 +192,13 @@ pub(super) fn collect_module_exports(
 }
 
 fn public_export(statement: &Stmt, module_path: &str) -> Option<ModuleExport> {
-    let Stmt::Public { statement, .. } = statement else {
+    if !statement
+        .visibility()
+        .is_some_and(|visibility| visibility.is_public())
+    {
         return None;
-    };
-    let (name, span, kind) = match statement.as_ref() {
+    }
+    let (name, span, kind) = match statement {
         Stmt::Function {
             name, name_span, ..
         } => (name, *name_span, SymbolKind::Function),

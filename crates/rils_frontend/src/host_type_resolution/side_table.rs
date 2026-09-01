@@ -8,7 +8,7 @@ use crate::{
     types::Type,
 };
 
-use super::{HostTypeResolutionError, path_candidates, public_inner};
+use super::{HostTypeResolutionError, path_candidates};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HostTypeResolutionResults {
@@ -214,7 +214,7 @@ impl<'a> Resolver<'a> {
 
     fn collect_local_types(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            let name = match public_inner(statement) {
+            let name = match statement {
                 Stmt::Struct { name, .. }
                 | Stmt::Enum { name, .. }
                 | Stmt::TypeAlias { name, .. }
@@ -231,7 +231,7 @@ impl<'a> Resolver<'a> {
 
     fn collect_imports(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            let Stmt::Use { imports, .. } = public_inner(statement) else {
+            let Stmt::Use { imports, .. } = statement else {
                 continue;
             };
             for import in imports {
@@ -314,7 +314,6 @@ impl<'a> Resolver<'a> {
 
     fn resolve_statement(&mut self, statement: &Stmt) {
         match statement {
-            Stmt::Public { statement, .. } => self.resolve_statement(statement),
             Stmt::Module {
                 name,
                 statements: Some(statements),

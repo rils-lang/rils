@@ -106,7 +106,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     for statement in &program.statements {
         let Stmt::Impl {
             target, methods, ..
-        } = public_inner(statement)
+        } = statement
         else {
             continue;
         };
@@ -261,13 +261,6 @@ fn same_method_declaration(left: &ImplMethod, right: &ImplMethod) -> bool {
             .iter()
             .zip(&right.attributes)
             .all(|(left, right)| left.path == right.path && left.arguments == right.arguments)
-}
-
-fn public_inner(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => public_inner(statement),
-        other => other,
-    }
 }
 
 fn has_attribute(attributes: &[Attribute], name: &str) -> bool {

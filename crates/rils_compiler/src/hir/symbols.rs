@@ -35,11 +35,9 @@ pub(super) enum ReceiverMode {
 }
 
 pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclaration<'_>> {
-    let exported = matches!(statement, Stmt::Public { .. });
-    let statement = match statement {
-        Stmt::Public { statement, .. } => statement.as_ref(),
-        statement => statement,
-    };
+    let exported = statement
+        .visibility()
+        .is_some_and(|visibility| visibility.is_public());
     let Stmt::Function {
         name,
         name_span,
@@ -63,13 +61,6 @@ pub(super) fn function_declaration(statement: &Stmt) -> Option<FunctionDeclarati
     })
 }
 
-pub(super) fn unwrapped_statement(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => statement.as_ref(),
-        statement => statement,
-    }
-}
-
 pub(super) fn collect_nested_symbols(
     statements: &[Stmt],
     prefix: &mut Vec<String>,
@@ -82,13 +73,12 @@ pub(super) fn collect_nested_symbols(
             name,
             statements: Some(module_statements),
             ..
-        } = unwrapped_statement(statement)
+        } = statement
         else {
             continue;
         };
         prefix.push(name.clone());
         for statement in module_statements {
-            let statement = unwrapped_statement(statement);
             match statement {
                 Stmt::Function { name, span, .. } => {
                     let qualified = qualified_name(prefix, name);
@@ -159,7 +149,7 @@ pub(super) fn collect_nested_function_declarations<'a>(
             name,
             statements: Some(module_statements),
             ..
-        } = unwrapped_statement(statement)
+        } = statement
         else {
             continue;
         };
@@ -183,7 +173,7 @@ pub(super) fn collect_use_aliases(
     public_symbols: &HashSet<String>,
 ) {
     for statement in statements {
-        match unwrapped_statement(statement) {
+        match statement {
             Stmt::Use { imports, .. } => {
                 for import in imports {
                     let candidates = use_resolution_candidates(prefix, &import.path);
@@ -298,10 +288,9 @@ pub(super) fn collect_public_symbols(
     output: &mut HashSet<String>,
 ) {
     for statement in statements {
-        let (statement, public) = match statement {
-            Stmt::Public { statement, .. } => (statement.as_ref(), true),
-            statement => (statement, false),
-        };
+        let public = statement
+            .visibility()
+            .is_some_and(|visibility| visibility.is_public());
         if public {
             match statement {
                 Stmt::Function { name, .. }
@@ -411,7 +400,7 @@ pub(super) fn collect_method_symbols(
     methods: &mut HashMap<String, MethodInfo>,
 ) {
     for statement in statements {
-        match unwrapped_statement(statement) {
+        match statement {
             Stmt::Impl {
                 target,
                 trait_name,
@@ -459,7 +448,7 @@ pub(super) fn collect_method_declarations<'a>(
     declarations: &mut Vec<(FunctionId, FunctionDeclaration<'a>)>,
 ) {
     for statement in statements {
-        match unwrapped_statement(statement) {
+        match statement {
             Stmt::Impl {
                 target,
                 trait_name,
@@ -609,10 +598,6 @@ pub(super) fn trait_implementations(
 }
 
 pub(super) fn is_compile_time_declaration(statement: &Stmt) -> bool {
-    let statement = match statement {
-        Stmt::Public { statement, .. } => statement.as_ref(),
-        statement => statement,
-    };
     matches!(
         statement,
         Stmt::Function { .. }

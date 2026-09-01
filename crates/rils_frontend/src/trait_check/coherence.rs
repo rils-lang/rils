@@ -8,7 +8,7 @@ use crate::{
 
 use super::{
     TraitCheckResult, TraitRequirement, collect, collect_project_imports, qualified,
-    resolve_item_name, unwrap_public,
+    resolve_item_name,
 };
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -162,7 +162,7 @@ pub(super) fn check_local_coherence(
         types: &mut HashMap<String, ()>,
     ) {
         for statement in statements {
-            match unwrap_public(statement) {
+            match statement {
                 Stmt::Module {
                     name,
                     statements: Some(children),
@@ -194,7 +194,7 @@ pub(super) fn check_local_coherence(
         result: &mut TraitCheckResult,
     ) {
         for statement in statements {
-            match unwrap_public(statement) {
+            match statement {
                 Stmt::Use { imports, .. } => collect_project_imports(
                     imports,
                     module_path,

@@ -7,6 +7,8 @@
 
 ### Breaking Changes
 
+- `rils_syntax::Stmt` 不再使用独立的 `Stmt::Public` 包装节点；可导出的 module、use、function、
+  struct、enum、type alias 与 trait 声明现在直接携带 `Visibility` 字段。
 - trait impl 现在执行孤儿规则：trait 或目标类型至少一方必须声明在当前项目中。此前对内建/Host
   trait 与内建/Host 类型双方均非本地的 impl 将被 frontend 拒绝。
 - `rils.toml` 的项目源码根配置由 `script_paths` 更名为 `src`；`src` 接受单个字符串或字符串列表，默认值为 `"src"`。
@@ -37,6 +39,8 @@
 
 ### Migration
 
+- 直接消费 AST 的 Rust 代码应移除对 `Stmt::Public` 的解包，改为匹配声明本身，并通过
+  `Stmt::visibility()` 或声明的 `visibility` 字段判断是否为 `Visibility::Public`。
 - 将违反孤儿规则的 impl 改为针对项目内 wrapper 类型实现外部 trait，或声明项目内 trait；不要直接
   为两个均来自内建、Host 或未来外部库的身份增加 impl。
 - 将 `[project]` 下的 `script_paths = ["src"]` 改为 `src = "src"`；多个源码根改为 `src = ["path-a", "path-b"]`。

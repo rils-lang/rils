@@ -4,19 +4,12 @@ mod side_table;
 
 pub use side_table::{HostTypeResolutionResults, HostTypeResolutionView, resolve_host_types};
 
-use crate::{ast::Stmt, source::Span};
+use crate::source::Span;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostTypeResolutionError {
     pub message: String,
     pub span: Span,
-}
-
-fn public_inner(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => statement,
-        statement => statement,
-    }
 }
 
 fn path_candidates(prefix: &[String], path: &[String]) -> Vec<String> {

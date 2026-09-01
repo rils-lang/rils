@@ -10,7 +10,7 @@ use crate::{
     ast::{
         AssociatedType, Attribute, BinaryOp, Block, EnumVariant, Expr, GenericParameter,
         ImplMethod, Literal, LogicalOp, MacroSymbol, MatchArm, NamedField, Parameter, Pattern,
-        Program, Stmt, TraitMethod, TypeReference, UnaryOp, UseImport, UseImportKind,
+        Program, Stmt, TraitMethod, TypeReference, UnaryOp, UseImport, UseImportKind, Visibility,
     },
     source::Span,
     token::{Token, TokenKind},
@@ -259,10 +259,6 @@ impl Parser {
             let attributes = self.attributes()?;
             let mut statement = self.statement()?;
             let target = match &mut statement {
-                Stmt::Public { statement, .. } => statement.as_mut(),
-                statement => statement,
-            };
-            let target = match target {
                 Stmt::Struct { attributes, .. }
                 | Stmt::Enum { attributes, .. }
                 | Stmt::Function { attributes, .. } => attributes,
@@ -296,27 +292,27 @@ impl Parser {
             });
         }
         if let Some(token) = self.take(&TokenKind::Pub) {
-            let statement = self.statement()?;
-            if !matches!(
-                statement,
-                Stmt::Function { .. }
-                    | Stmt::Struct { .. }
-                    | Stmt::Enum { .. }
-                    | Stmt::TypeAlias { .. }
-                    | Stmt::Trait { .. }
-                    | Stmt::Module { .. }
-                    | Stmt::Use { .. }
-            ) {
-                return Err(ParseError {
-                    message: "`pub` is only allowed on declarations, modules, and use items".into(),
-                    span: token.span,
-                });
+            let mut statement = self.statement()?;
+            match statement.visibility() {
+                Some(Visibility::Private) => {
+                    statement.set_visibility(Visibility::Public);
+                }
+                Some(_) => {
+                    return Err(ParseError {
+                        message: "visibility is already specified for this declaration".into(),
+                        span: token.span,
+                    });
+                }
+                None => {
+                    return Err(ParseError {
+                        message: "`pub` is only allowed on declarations, modules, and use items"
+                            .into(),
+                        span: token.span,
+                    });
+                }
             }
-            let span = token.span.merge(statement_span_for_parser(&statement));
-            return Ok(Stmt::Public {
-                statement: Box::new(statement),
-                span,
-            });
+            merge_statement_start(&mut statement, token.span);
+            return Ok(statement);
         }
         if let Some(token) = self.take(&TokenKind::Mod) {
             return self.module_statement(token.span);
@@ -407,26 +403,18 @@ impl Parser {
     }
 }
 
-fn statement_span_for_parser(statement: &Stmt) -> Span {
-    match statement {
-        Stmt::Public { span, .. }
-        | Stmt::Module { span, .. }
+fn merge_statement_start(statement: &mut Stmt, start: Span) {
+    let span = match statement {
+        Stmt::Module { span, .. }
         | Stmt::Use { span, .. }
-        | Stmt::Let { span, .. }
         | Stmt::Function { span, .. }
         | Stmt::Struct { span, .. }
         | Stmt::Enum { span, .. }
         | Stmt::TypeAlias { span, .. }
-        | Stmt::Impl { span, .. }
-        | Stmt::Trait { span, .. }
-        | Stmt::While { span, .. }
-        | Stmt::Loop { span, .. }
-        | Stmt::For { span, .. }
-        | Stmt::Return { span, .. }
-        | Stmt::Break { span, .. }
-        | Stmt::Continue { span, .. } => *span,
-        Stmt::Expr { expression, .. } => expression.span(),
-    }
+        | Stmt::Trait { span, .. } => span,
+        _ => return,
+    };
+    *span = start.merge(*span);
 }
 
 fn expression_path(expression: &Expr) -> Option<Vec<String>> {

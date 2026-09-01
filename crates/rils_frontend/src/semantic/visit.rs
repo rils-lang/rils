@@ -12,10 +12,6 @@ pub(super) fn visit_statements(
     visitor: &mut impl FnMut(&Expr, &[String], Option<&str>),
 ) {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         match statement {
             Stmt::Module {
                 name,
@@ -69,7 +65,6 @@ pub(super) fn visit_statements(
             | Stmt::TypeAlias { .. }
             | Stmt::Trait { .. }
             | Stmt::Continue { .. } => {}
-            Stmt::Public { .. } => unreachable!("public statements were unwrapped"),
         }
     }
 }

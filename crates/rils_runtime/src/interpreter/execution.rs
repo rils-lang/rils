@@ -13,7 +13,7 @@ impl Interpreter {
                 target,
                 span,
                 ..
-            } = unwrap_public(statement)
+            } = statement
             {
                 if environment.borrow().get(name).is_some() {
                     return Err(RuntimeError::new(
@@ -93,7 +93,6 @@ impl Interpreter {
         environment: EnvironmentRef,
     ) -> Result<Flow, RuntimeError> {
         match statement {
-            Stmt::Public { statement, .. } => self.execute_statement(statement, environment),
             Stmt::Module {
                 name,
                 statements,
@@ -947,21 +946,17 @@ impl Interpreter {
     }
 }
 
-fn unwrap_public(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => statement,
-        statement => statement,
-    }
-}
-
 pub(super) fn public_names(
     statement: &Stmt,
     environment: &EnvironmentRef,
 ) -> Result<Vec<String>, RuntimeError> {
-    let Stmt::Public { statement, .. } = statement else {
+    if !statement
+        .visibility()
+        .is_some_and(|visibility| visibility.is_public())
+    {
         return Ok(Vec::new());
-    };
-    Ok(match statement.as_ref() {
+    }
+    Ok(match statement {
         Stmt::Function { name, .. }
         | Stmt::Struct { name, .. }
         | Stmt::Enum { name, .. }
