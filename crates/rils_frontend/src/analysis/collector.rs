@@ -7,10 +7,6 @@ impl Analyzer {
             output: &mut HashMap<String, Vec<HashMap<String, StructFieldSymbol>>>,
         ) {
             for statement in statements {
-                let statement = match statement {
-                    Stmt::Public { statement, .. } => statement.as_ref(),
-                    statement => statement,
-                };
                 match statement {
                     Stmt::Struct { name, fields, .. } => {
                         output.entry(name.clone()).or_default().push(
@@ -204,10 +200,6 @@ impl Analyzer {
 
     pub(super) fn collect_type_aliases(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             match statement {
                 Stmt::Module {
                     statements: Some(statements),
@@ -237,10 +229,6 @@ impl Analyzer {
 
     pub(super) fn collect_trait_members(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            if let Stmt::Public { statement, .. } = statement {
-                self.collect_trait_members(std::slice::from_ref(statement));
-                continue;
-            }
             if let Stmt::Module {
                 statements: Some(statements),
                 ..
@@ -272,10 +260,6 @@ impl Analyzer {
 
     pub(super) fn collect_inherent_methods(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            if let Stmt::Public { statement, .. } = statement {
-                self.collect_inherent_methods(std::slice::from_ref(statement));
-                continue;
-            }
             if let Stmt::Module {
                 statements: Some(statements),
                 ..
@@ -313,10 +297,6 @@ impl Analyzer {
             output: &mut HashMap<(String, String), EnumVariantSymbol>,
         ) {
             for statement in statements {
-                let statement = match statement {
-                    Stmt::Public { statement, .. } => statement.as_ref(),
-                    statement => statement,
-                };
                 if let Stmt::Module {
                     name,
                     statements: Some(statements),

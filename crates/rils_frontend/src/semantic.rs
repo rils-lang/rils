@@ -700,10 +700,6 @@ fn collect_callable_definitions(
     output: &mut CallableDefinitions,
 ) {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         match statement {
             Stmt::Module {
                 name,
@@ -757,10 +753,6 @@ fn collect_host_aliases(
     output: &mut HashMap<String, String>,
 ) {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         match statement {
             Stmt::Module {
                 name,
@@ -802,10 +794,6 @@ fn collect_callable_aliases(
     callables: &mut CallableDefinitions,
 ) {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         match statement {
             Stmt::Module {
                 name,
@@ -911,10 +899,6 @@ fn collect_trait_implementations(
     output: &mut HashSet<String>,
 ) {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         match statement {
             Stmt::Module {
                 name,

@@ -29,20 +29,11 @@ impl Analyzer {
     }
 
     pub(super) fn statement(&mut self, statement: &Stmt) {
+        let first_symbol = self.result.symbols.len();
+        let is_public = statement
+            .visibility()
+            .is_some_and(|visibility| visibility.is_public());
         match statement {
-            Stmt::Public { statement, .. } => {
-                let first_symbol = self.result.symbols.len();
-                self.statement(statement);
-                if let Some(symbol) = self.result.symbols.get_mut(first_symbol)
-                    && symbol.is_definition
-                {
-                    if let Some(detail) = &mut symbol.detail {
-                        *detail = format!("pub {detail}");
-                    } else if symbol.kind == SymbolKind::Module {
-                        symbol.detail = Some(format!("pub mod {}", symbol.name));
-                    }
-                }
-            }
             Stmt::Module {
                 name,
                 name_span,
@@ -294,6 +285,16 @@ impl Analyzer {
             }
             Stmt::Continue { .. } => {}
             Stmt::Expr { expression, .. } => self.expression(expression),
+        }
+        if is_public
+            && let Some(symbol) = self.result.symbols.get_mut(first_symbol)
+            && symbol.is_definition
+        {
+            if let Some(detail) = &mut symbol.detail {
+                *detail = format!("pub {detail}");
+            } else if symbol.kind == SymbolKind::Module {
+                symbol.detail = Some(format!("pub mod {}", symbol.name));
+            }
         }
     }
 

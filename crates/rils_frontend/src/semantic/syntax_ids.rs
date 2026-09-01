@@ -99,10 +99,6 @@ impl SyntaxIdentityMaps {
 
     fn visit_statements(&mut self, statements: &[Stmt], fallback_source: SourceId) {
         for statement in statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             match statement {
                 Stmt::Module {
                     statements: Some(statements),
@@ -233,7 +229,6 @@ impl SyntaxIdentityMaps {
                 }
                 | Stmt::Use { .. }
                 | Stmt::Continue { .. } => {}
-                Stmt::Public { .. } => unreachable!("public statements were unwrapped"),
             }
         }
     }

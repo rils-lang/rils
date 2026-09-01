@@ -156,8 +156,7 @@ pub(super) fn literal_value(literal: &Literal) -> Value {
 
 pub(super) fn statement_span(statement: &Stmt) -> Span {
     match statement {
-        Stmt::Public { span, .. }
-        | Stmt::Module { span, .. }
+        Stmt::Module { span, .. }
         | Stmt::Use { span, .. }
         | Stmt::Let { span, .. }
         | Stmt::Function { span, .. }

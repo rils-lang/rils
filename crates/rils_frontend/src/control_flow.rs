@@ -54,10 +54,6 @@ impl<'a> Checker<'a> {
 
     fn collect_enums(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             match statement {
                 Stmt::Module {
                     statements: Some(statements),
@@ -100,7 +96,6 @@ impl<'a> Checker<'a> {
 
     fn statement(&mut self, statement: &Stmt) -> bool {
         match statement {
-            Stmt::Public { statement, .. } => self.statement(statement),
             Stmt::Module {
                 statements: Some(statements),
                 ..
@@ -498,7 +493,6 @@ fn block_contains_break(block: &Block) -> bool {
 fn statement_contains_break(statement: &Stmt) -> bool {
     match statement {
         Stmt::Break { .. } => true,
-        Stmt::Public { statement, .. } => statement_contains_break(statement),
         Stmt::Expr { expression, .. } => expression_contains_break(expression),
         Stmt::While { .. }
         | Stmt::Loop { .. }
@@ -536,8 +530,7 @@ fn is_irrefutable(pattern: &Pattern) -> bool {
 
 fn statement_span(statement: &Stmt) -> Span {
     match statement {
-        Stmt::Public { span, .. }
-        | Stmt::Module { span, .. }
+        Stmt::Module { span, .. }
         | Stmt::Use { span, .. }
         | Stmt::Let { span, .. }
         | Stmt::Function { span, .. }

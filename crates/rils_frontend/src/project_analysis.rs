@@ -168,10 +168,9 @@ fn collect_statements(
     let path = module_path.join("::");
     let exports = output.entry(path.clone()).or_default();
     for statement in statements {
-        let (statement, public) = match statement {
-            Stmt::Public { statement, .. } => (statement.as_ref(), true),
-            statement => (statement, false),
-        };
+        let public = statement
+            .visibility()
+            .is_some_and(|visibility| visibility.is_public());
         if (public || include_private)
             && let Some(export) = declaration_export(statement, &path, analysis)
         {
@@ -179,10 +178,6 @@ fn collect_statements(
         }
     }
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         if let Stmt::Module {
             name,
             statements: Some(children),

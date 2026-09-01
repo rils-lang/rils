@@ -93,7 +93,6 @@ impl<'a> FunctionLowerer<'a> {
 
     pub(super) fn statement(&mut self, statement: &Stmt) -> Result<HirStatement, CompileError> {
         match statement {
-            Stmt::Public { statement, .. } => self.statement(statement),
             Stmt::Let {
                 name,
                 mutable,

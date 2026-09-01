@@ -318,20 +318,10 @@ fn discover_rils_files(directory: &Path, files: &mut Vec<PathBuf>) -> std::io::R
     Ok(())
 }
 
-fn public_inner(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => public_inner(statement),
-        other => other,
-    }
-}
-
 fn is_catalog(statements: &[Stmt]) -> bool {
-    statements.iter().all(|statement| {
-        matches!(
-            public_inner(statement),
-            Stmt::Module { .. } | Stmt::Function { .. }
-        )
-    })
+    statements
+        .iter()
+        .all(|statement| matches!(statement, Stmt::Module { .. } | Stmt::Function { .. }))
 }
 
 fn catalog_prefix(path: &Path) -> String {
@@ -356,12 +346,7 @@ fn catalog_prefix(path: &Path) -> String {
 fn catalog_declaration_count(statements: &[Stmt]) -> usize {
     statements
         .iter()
-        .filter(|statement| {
-            matches!(
-                public_inner(statement),
-                Stmt::Module { .. } | Stmt::Function { .. }
-            )
-        })
+        .filter(|statement| matches!(statement, Stmt::Module { .. } | Stmt::Function { .. }))
         .count()
 }
 
@@ -372,7 +357,7 @@ fn infer_builtin_prefix(
     let mut explicit = BTreeSet::new();
     let mut method_names = Vec::new();
     for statement in &file.program.statements {
-        match public_inner(statement) {
+        match statement {
             Stmt::Impl { methods, .. } => {
                 for method in methods {
                     collect_method_path(
@@ -472,18 +457,16 @@ fn direct_member<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
 }
 
 fn primary_declaration_name(statements: &[Stmt]) -> Option<&str> {
-    statements
-        .iter()
-        .find_map(|statement| match public_inner(statement) {
-            Stmt::Enum { name, .. } | Stmt::Struct { name, .. } | Stmt::Trait { name, .. } => {
-                Some(name.as_str())
-            }
-            Stmt::Impl {
-                target: rils_syntax::Type::String,
-                ..
-            } => Some("string"),
-            _ => None,
-        })
+    statements.iter().find_map(|statement| match statement {
+        Stmt::Enum { name, .. } | Stmt::Struct { name, .. } | Stmt::Trait { name, .. } => {
+            Some(name.as_str())
+        }
+        Stmt::Impl {
+            target: rils_syntax::Type::String,
+            ..
+        } => Some("string"),
+        _ => None,
+    })
 }
 
 fn collect_module_tree(
@@ -492,7 +475,7 @@ fn collect_module_tree(
     modules: &mut BTreeMap<String, BTreeSet<String>>,
 ) {
     for statement in statements {
-        match public_inner(statement) {
+        match statement {
             Stmt::Module {
                 name, statements, ..
             } => {
@@ -533,7 +516,7 @@ fn collect_catalog_exports(
         return;
     }
     for statement in statements {
-        if let Stmt::Function { name, .. } = public_inner(statement) {
+        if let Stmt::Function { name, .. } = statement {
             modules
                 .entry(prefix.to_owned())
                 .or_default()
@@ -555,7 +538,7 @@ fn collect_type_exports(file: &SourceFile, modules: &mut BTreeMap<String, BTreeS
         relative.replace('/', "::")
     };
     for statement in &file.program.statements {
-        match public_inner(statement) {
+        match statement {
             Stmt::Enum { name, variants, .. } => {
                 let members = modules.entry(module.clone()).or_default();
                 members.insert(name.clone());

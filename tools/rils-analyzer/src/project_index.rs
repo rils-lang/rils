@@ -70,10 +70,9 @@ fn collect_statements(
 ) {
     let mut module_exports = Vec::new();
     for statement in statements {
-        let (statement, is_public) = match statement {
-            Stmt::Public { statement, .. } => (statement.as_ref(), true),
-            statement => (statement, false),
-        };
+        let is_public = statement
+            .visibility()
+            .is_some_and(|visibility| visibility.is_public());
         if is_public {
             if let Some(export) = public_export(statement, module_path, analysis) {
                 module_exports.push(export);

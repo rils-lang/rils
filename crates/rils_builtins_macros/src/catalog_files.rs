@@ -113,11 +113,14 @@ fn declaration_tokens(
     backend: &proc_macro2::TokenStream,
     source: &str,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    let declaration_span = match statement {
-        Stmt::Public { span, .. } => *span,
-        _ => Span::default(),
+    let declaration_span = if statement
+        .visibility()
+        .is_some_and(|visibility| visibility.is_public())
+    {
+        statement_span(statement)
+    } else {
+        Span::default()
     };
-    let statement = public_inner(statement);
     match statement {
         Stmt::Module { name, span, .. } => {
             let path = path_literal(prefix, name);
@@ -236,10 +239,10 @@ fn declaration_tokens(
     }
 }
 
-fn public_inner(statement: &Stmt) -> &Stmt {
+fn statement_span(statement: &Stmt) -> Span {
     match statement {
-        Stmt::Public { statement, .. } => public_inner(statement),
-        other => other,
+        Stmt::Module { span, .. } | Stmt::Function { span, .. } => *span,
+        _ => Span::default(),
     }
 }
 

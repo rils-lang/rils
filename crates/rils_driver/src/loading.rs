@@ -6,7 +6,7 @@ use std::{
 
 use rils_frontend::{
     Span,
-    ast::{Program, Stmt},
+    ast::{Program, Stmt, Visibility},
     macros::NativeMacroDefinition,
 };
 use rils_project::{Project, ProjectError};
@@ -27,10 +27,6 @@ fn load_external_modules(
     sources: &mut ProjectSources,
 ) -> Result<(), DriverError> {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_mut(),
-            statement => statement,
-        };
         let Stmt::Module {
             name, statements, ..
         } = statement
@@ -174,58 +170,31 @@ fn prepare_project_entry(statements: Vec<Stmt>) -> Result<Vec<Stmt>, DriverError
     reject_external_module_declarations(&statements)?;
     let mut found = false;
     let mut prepared = Vec::with_capacity(statements.len());
-    for statement in statements {
-        match statement {
+    for mut statement in statements {
+        match &statement {
             Stmt::Function {
-                ref name,
-                ref parameters,
+                name,
+                parameters,
                 span,
                 ..
             } if name == "main" => {
                 if found {
                     return Err(DriverError::message(
                         "project entry contains more than one `fn main()`",
-                        span,
+                        *span,
                     ));
                 }
                 if !parameters.is_empty() {
                     return Err(DriverError::message(
                         "project entry `fn main()` must not have parameters",
-                        span,
+                        *span,
                     ));
                 }
                 found = true;
-                prepared.push(Stmt::Public {
-                    statement: Box::new(statement),
-                    span,
-                });
+                statement.set_visibility(Visibility::Public);
+                prepared.push(statement);
             }
-            Stmt::Public { statement, span } => {
-                if let Stmt::Function {
-                    name,
-                    parameters,
-                    span: function_span,
-                    ..
-                } = statement.as_ref()
-                    && name == "main"
-                {
-                    if found {
-                        return Err(DriverError::message(
-                            "project entry contains more than one `fn main()`",
-                            *function_span,
-                        ));
-                    }
-                    if !parameters.is_empty() {
-                        return Err(DriverError::message(
-                            "project entry `fn main()` must not have parameters",
-                            *function_span,
-                        ));
-                    }
-                    found = true;
-                }
-                prepared.push(Stmt::Public { statement, span });
-            }
-            statement => prepared.push(statement),
+            _ => prepared.push(statement),
         }
     }
     if !found {
@@ -238,10 +207,6 @@ fn prepare_project_entry(statements: Vec<Stmt>) -> Result<Vec<Stmt>, DriverError
 
 fn reject_external_module_declarations(statements: &[Stmt]) -> Result<(), DriverError> {
     for statement in statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         if let Stmt::Module {
             name,
             statements: None,

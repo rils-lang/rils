@@ -37,7 +37,7 @@ struct Checker<'a> {
 impl Checker<'_> {
     fn collect(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            match unwrap_public(statement) {
+            match statement {
                 Stmt::Module {
                     statements: Some(statements),
                     ..
@@ -68,7 +68,7 @@ impl Checker<'_> {
 
     fn statements(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            match unwrap_public(statement) {
+            match statement {
                 Stmt::Module {
                     statements: Some(statements),
                     ..
@@ -324,11 +324,4 @@ fn deref_type(mut ty: &Type) -> &Type {
         ty = inner;
     }
     ty
-}
-
-fn unwrap_public(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => statement,
-        statement => statement,
-    }
 }

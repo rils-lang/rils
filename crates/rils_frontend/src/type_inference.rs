@@ -377,10 +377,6 @@ impl<'a> Inferencer<'a> {
 
     fn collect_type_definitions(&mut self, statements: &[Stmt], prefix: &mut Vec<String>) {
         for statement in statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             match statement {
                 Stmt::Module {
                     name,
@@ -539,7 +535,6 @@ impl<'a> Inferencer<'a> {
 
     fn statement(&mut self, statement: &Stmt, returns: &mut Vec<Type>) -> Type {
         match statement {
-            Stmt::Public { statement, .. } => self.statement(statement, returns),
             Stmt::Module {
                 name,
                 name_span,

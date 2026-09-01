@@ -138,19 +138,38 @@ impl UseImport {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Visibility {
+    #[default]
+    Private,
+    Public,
+    Restricted(VisibilityScope),
+}
+
+impl Visibility {
+    pub const fn is_public(self) -> bool {
+        matches!(self, Self::Public)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VisibilityScope {
+    SelfModule,
+    ParentModule,
+    Crate,
+}
+
 #[derive(Clone, Debug)]
 pub enum Stmt {
-    Public {
-        statement: Box<Stmt>,
-        span: Span,
-    },
     Module {
+        visibility: Visibility,
         name: String,
         name_span: Span,
         statements: Option<Vec<Stmt>>,
         span: Span,
     },
     Use {
+        visibility: Visibility,
         imports: Vec<UseImport>,
         span: Span,
     },
@@ -163,6 +182,7 @@ pub enum Stmt {
         span: Span,
     },
     Function {
+        visibility: Visibility,
         attributes: Vec<Attribute>,
         name: String,
         name_span: Span,
@@ -173,6 +193,7 @@ pub enum Stmt {
         span: Span,
     },
     Struct {
+        visibility: Visibility,
         attributes: Vec<Attribute>,
         name: String,
         name_span: Span,
@@ -181,6 +202,7 @@ pub enum Stmt {
         span: Span,
     },
     Enum {
+        visibility: Visibility,
         attributes: Vec<Attribute>,
         name: String,
         name_span: Span,
@@ -189,6 +211,7 @@ pub enum Stmt {
         span: Span,
     },
     TypeAlias {
+        visibility: Visibility,
         name: String,
         name_span: Span,
         generic_parameters: Vec<GenericParameter>,
@@ -204,6 +227,7 @@ pub enum Stmt {
         span: Span,
     },
     Trait {
+        visibility: Visibility,
         name: String,
         name_span: Span,
         bounds: Vec<String>,
@@ -242,6 +266,36 @@ pub enum Stmt {
         expression: Expr,
         terminated: bool,
     },
+}
+
+impl Stmt {
+    pub fn visibility(&self) -> Option<Visibility> {
+        match self {
+            Self::Module { visibility, .. }
+            | Self::Use { visibility, .. }
+            | Self::Function { visibility, .. }
+            | Self::Struct { visibility, .. }
+            | Self::Enum { visibility, .. }
+            | Self::TypeAlias { visibility, .. }
+            | Self::Trait { visibility, .. } => Some(*visibility),
+            _ => None,
+        }
+    }
+
+    pub fn set_visibility(&mut self, value: Visibility) -> bool {
+        let visibility = match self {
+            Self::Module { visibility, .. }
+            | Self::Use { visibility, .. }
+            | Self::Function { visibility, .. }
+            | Self::Struct { visibility, .. }
+            | Self::Enum { visibility, .. }
+            | Self::TypeAlias { visibility, .. }
+            | Self::Trait { visibility, .. } => visibility,
+            _ => return false,
+        };
+        *visibility = value;
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

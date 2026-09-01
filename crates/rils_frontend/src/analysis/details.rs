@@ -238,10 +238,6 @@ pub(super) fn collect_self_type_references(program: &Program) -> HashMap<Span, S
         output: &mut HashMap<Span, String>,
     ) {
         for statement in statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             match statement {
                 Stmt::Module {
                     statements: Some(statements),

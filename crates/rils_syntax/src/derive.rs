@@ -24,7 +24,6 @@ fn expand_scope(statements: &mut Vec<Stmt>) -> Result<(), ParseError> {
     let mut explicit_defaults = HashSet::new();
     let mut explicit_debug = HashSet::new();
     for statement in statements.iter() {
-        let statement = unwrap_public(statement);
         match statement {
             Stmt::Struct {
                 name, attributes, ..
@@ -74,7 +73,6 @@ fn expand_scope(statements: &mut Vec<Stmt>) -> Result<(), ParseError> {
         if let Some(name) = derived.intersection(explicit).next() {
             let span = statements
                 .iter()
-                .map(unwrap_public)
                 .find_map(|statement| match statement {
                     Stmt::Struct {
                         name: candidate,
@@ -98,16 +96,11 @@ fn expand_scope(statements: &mut Vec<Stmt>) -> Result<(), ParseError> {
         if let Stmt::Module {
             statements: Some(module_statements),
             ..
-        } = unwrap_public_mut(&mut statement)
+        } = &mut statement
         {
             expand_scope(module_statements)?;
         }
-        let derived = derive_statements(
-            unwrap_public(&statement),
-            &default_types,
-            &debug_types,
-            &nominal_types,
-        )?;
+        let derived = derive_statements(&statement, &default_types, &debug_types, &nominal_types)?;
         expanded.push(statement);
         expanded.extend(derived);
     }
@@ -170,6 +163,7 @@ fn derive_default_statement(
         generic_parameters,
         fields,
         span,
+        ..
     } = statement
     else {
         return Ok(None);
@@ -292,6 +286,7 @@ fn derive_debug_statement(
             generic_parameters,
             fields,
             span,
+            ..
         } => (
             attributes,
             name,
@@ -310,6 +305,7 @@ fn derive_debug_statement(
             generic_parameters,
             variants,
             span,
+            ..
         } => {
             let mut types = Vec::new();
             for variant in variants {
@@ -574,18 +570,4 @@ fn default_expression_from_plan(plan: &DefaultPlan, span: Span) -> Result<Expr, 
             span,
         },
     })
-}
-
-fn unwrap_public(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => statement,
-        statement => statement,
-    }
-}
-
-fn unwrap_public_mut(statement: &mut Stmt) -> &mut Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => statement,
-        statement => statement,
-    }
 }

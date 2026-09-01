@@ -431,9 +431,12 @@ impl Server {
             return;
         };
         for statement in &program.statements {
-            let Stmt::Public { statement, .. } = statement else {
+            if !statement
+                .visibility()
+                .is_some_and(|visibility| visibility.is_public())
+            {
                 continue;
-            };
+            }
             items.extend(public_completion_items(statement, member_prefix));
         }
     }
@@ -551,22 +554,16 @@ fn implements_iterator_at_completion(text: &str, offset: usize, receiver: &Type)
 }
 
 fn statements_implement_iterator(statements: &[Stmt], target_name: &str) -> bool {
-    statements.iter().any(|statement| {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
-        match statement {
-            Stmt::Impl {
-                trait_name: Some(trait_name),
-                target: Type::Named { name, .. },
-                ..
-            } => trait_name == "Iterator" && name == target_name,
-            Stmt::Module {
-                statements: Some(statements),
-                ..
-            } => statements_implement_iterator(statements, target_name),
-            _ => false,
-        }
+    statements.iter().any(|statement| match statement {
+        Stmt::Impl {
+            trait_name: Some(trait_name),
+            target: Type::Named { name, .. },
+            ..
+        } => trait_name == "Iterator" && name == target_name,
+        Stmt::Module {
+            statements: Some(statements),
+            ..
+        } => statements_implement_iterator(statements, target_name),
+        _ => false,
     })
 }

@@ -98,10 +98,6 @@ impl<'a> Checker<'a> {
 
     fn collect_nominals(&mut self, statements: &[Stmt]) {
         for statement in statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             match statement {
                 Stmt::Module {
                     statements: Some(statements),
@@ -219,7 +215,6 @@ impl<'a> Checker<'a> {
 
     fn statement(&mut self, statement: &Stmt) {
         match statement {
-            Stmt::Public { statement, .. } => self.statement(statement),
             Stmt::Module {
                 statements: Some(statements),
                 ..

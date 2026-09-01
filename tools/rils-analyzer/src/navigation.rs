@@ -79,9 +79,12 @@ impl Server {
         };
         let program = parse(lex(source).ok()?).ok()?;
         let span = program.statements.iter().find_map(|statement| {
-            let Stmt::Public { statement, .. } = statement else {
+            if !statement
+                .visibility()
+                .is_some_and(|visibility| visibility.is_public())
+            {
                 return None;
-            };
+            }
             declaration_name_span(statement, &member)
         })?;
         Some(json!({
@@ -180,9 +183,12 @@ impl Server {
         let target_document = self.documents.get(&target_uri)?;
         let program = self.parsed_document(target_document)?;
         let public_span = program.statements.iter().find_map(|statement| {
-            let Stmt::Public { statement, .. } = statement else {
+            if !statement
+                .visibility()
+                .is_some_and(|visibility| visibility.is_public())
+            {
                 return None;
-            };
+            }
             declaration_name_span(statement, &member)
         })?;
         let definition = analysis(target_document)?
@@ -495,10 +501,6 @@ fn imported_path_at(server: &Server, document: &Document, offset: usize) -> Opti
     let identifier = identifier_at(&document.text, offset)?;
     let program = server.parsed_document(document)?;
     for statement in &program.statements {
-        let statement = match statement {
-            Stmt::Public { statement, .. } => statement.as_ref(),
-            statement => statement,
-        };
         let Stmt::Use { imports, .. } = statement else {
             continue;
         };

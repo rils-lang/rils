@@ -155,7 +155,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     let mut primitive_declaration: Option<(String, Vec<String>, String, proc_macro2::TokenStream)> =
         None;
     for statement in &program.statements {
-        match public_inner(statement) {
+        match statement {
             Stmt::Enum {
                 name,
                 generic_parameters,
@@ -361,16 +361,8 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     })
 }
 
-fn public_inner(statement: &Stmt) -> &Stmt {
-    match statement {
-        Stmt::Public { statement, .. } => public_inner(statement),
-        other => other,
-    }
-}
-
 fn statement_span(statement: &Stmt) -> Span {
     match statement {
-        Stmt::Public { span, .. } => *span,
         Stmt::Enum { span, .. }
         | Stmt::Struct { span, .. }
         | Stmt::Impl { span, .. }

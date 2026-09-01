@@ -17,10 +17,6 @@ pub(super) fn module_initialization_order(
     for (module, program) in syntax.modules() {
         let mut module_dependencies = Vec::new();
         for statement in &program.statements {
-            let statement = match statement {
-                Stmt::Public { statement, .. } => statement.as_ref(),
-                statement => statement,
-            };
             let Stmt::Use { imports, .. } = statement else {
                 continue;
             };
