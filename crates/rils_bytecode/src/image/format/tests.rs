@@ -15,7 +15,7 @@ fn rejects_unresolved_identity_scoped_inference_types() {
 
 #[test]
 fn round_trip_executes_the_same_module() {
-    let module = crate::bytecode::compile(
+    let module = crate::image::compile(
         r#"
             struct Pair { left: i32, right: i32 }
             struct CounterRange { current: i32, end: i32 }
@@ -60,7 +60,7 @@ fn round_trip_preserves_source_ids_and_rejects_unknown_span_sources() {
     let source_id = SourceId::new(9);
     let tokens = crate::lexer::lex_with_source_id("1 / 0", source_id).unwrap();
     let program = crate::parser::parse(tokens).unwrap();
-    let module = crate::bytecode::compile_program_with_host_and_sources(
+    let module = crate::image::compile_program_with_host_and_sources(
         &program,
         &crate::HostContract::new(),
         vec![SourceFile {
@@ -109,7 +109,7 @@ fn round_trip_preserves_source_ids_and_rejects_unknown_span_sources() {
 
 #[test]
 fn rejects_corrupted_payload() {
-    let module = crate::bytecode::compile("1 + 2").expect("source compiles");
+    let module = crate::image::compile("1 + 2").expect("source compiles");
     let mut bytes = module.to_bytes().expect("module serializes");
     *bytes.last_mut().expect("payload exists") ^= 0xff;
     let error = BytecodeModule::from_bytes(&bytes)
@@ -120,7 +120,7 @@ fn rejects_corrupted_payload() {
 
 #[test]
 fn rejects_invalid_instruction_after_checksum_is_updated() {
-    let module = crate::bytecode::compile("1 + 2").expect("source compiles");
+    let module = crate::image::compile("1 + 2").expect("source compiles");
     let mut bytes = module.to_bytes().expect("module serializes");
     let section_count = u16::from_le_bytes(bytes[22..24].try_into().unwrap()) as usize;
     let directory_end = HEADER_LEN + section_count * DIRECTORY_ENTRY_LEN;
@@ -230,7 +230,7 @@ fn runtime_instructions_store_and_validate_u32_builtin_ids() {
 
 #[test]
 fn rejects_excessive_register_allocation_before_execution() {
-    let module = crate::bytecode::compile("1 + 2").expect("source compiles");
+    let module = crate::image::compile("1 + 2").expect("source compiles");
     let mut bytes = module.to_bytes().expect("module serializes");
     let section_count = u16::from_le_bytes(bytes[22..24].try_into().unwrap()) as usize;
     let directory_end = HEADER_LEN + section_count * DIRECTORY_ENTRY_LEN;
