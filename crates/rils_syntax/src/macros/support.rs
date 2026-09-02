@@ -29,8 +29,6 @@ pub(super) fn slice_delimited<'a>(
             if depth == 0 {
                 return Ok((&tokens[start..current], current + 1));
             }
-        } else if matches!(tokens[current].kind, TokenKind::Eof) {
-            break;
         }
         current += 1;
     }

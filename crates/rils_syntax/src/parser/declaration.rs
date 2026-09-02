@@ -11,7 +11,7 @@ impl Parser {
                 "expected `{` or `;` after module name",
             )?;
             let mut statements = Vec::new();
-            while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+            while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
                 statements.push(self.statement()?);
             }
             let end = self.expect(&TokenKind::RightBrace, "expected `}` after module")?;
@@ -265,7 +265,7 @@ impl Parser {
         self.generic_scopes.push(generic_parameters.clone());
         self.expect(&TokenKind::LeftBrace, "expected `{` after enum name")?;
         let mut variants = Vec::new();
-        while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             let (variant_name, variant_start) =
                 self.expect_identifier("expected enum variant name")?;
             if variants
@@ -374,7 +374,7 @@ impl Parser {
         self.expect(&TokenKind::LeftBrace, "expected `{` after impl target")?;
         let mut methods = Vec::new();
         let mut associated_types = Vec::new();
-        while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             let attributes = self.attributes()?;
             if let Some(keyword) = self.take(&TokenKind::Type) {
                 if !attributes.is_empty() {
@@ -470,7 +470,7 @@ impl Parser {
         self.expect(&TokenKind::LeftBrace, "expected `{` after trait name")?;
         let mut methods = Vec::new();
         let mut associated_types = Vec::new();
-        while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             let attributes = self.attributes()?;
             if let Some(keyword) = self.take(&TokenKind::Type) {
                 if !attributes.is_empty() {
@@ -634,7 +634,7 @@ impl Parser {
     ) -> Result<(Vec<NamedField>, Span), ParseError> {
         self.expect(&TokenKind::LeftBrace, message)?;
         let mut fields = Vec::new();
-        while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             let (name, span) = self.expect_identifier("expected field name")?;
             if fields.iter().any(|field: &NamedField| field.name == name) {
                 return Err(ParseError {
@@ -757,7 +757,7 @@ impl Parser {
         };
         let end = if let Some(token) = self.take(&TokenKind::Semicolon) {
             token.span
-        } else if self.check(&TokenKind::RightBrace) || self.check(&TokenKind::Eof) {
+        } else if self.check(&TokenKind::RightBrace) || self.is_at_end() {
             value.as_ref().map_or(start, Expr::span)
         } else {
             return Err(self.error_here("expected `;` after return value"));
@@ -782,7 +782,7 @@ impl Parser {
         };
         let end = if let Some(token) = self.take(&TokenKind::Semicolon) {
             token.span
-        } else if self.check(&TokenKind::RightBrace) || self.check(&TokenKind::Eof) {
+        } else if self.check(&TokenKind::RightBrace) || self.is_at_end() {
             value.as_ref().map_or(start, Expr::span)
         } else {
             return Err(self.error_here("expected `;` after break value"));
@@ -811,7 +811,7 @@ impl Parser {
     pub(super) fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
         let expression = self.expression()?;
         let mut terminated = self.take(&TokenKind::Semicolon).is_some();
-        let at_boundary = self.check(&TokenKind::RightBrace) || self.check(&TokenKind::Eof);
+        let at_boundary = self.check(&TokenKind::RightBrace) || self.is_at_end();
         let is_block_like = matches!(
             expression,
             Expr::If { .. } | Expr::Match { .. } | Expr::Block(_)

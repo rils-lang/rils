@@ -306,7 +306,6 @@ impl<'a> Lexer<'a> {
             "pub" => TokenKind::Pub,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
-            "nil" => TokenKind::Nil,
             _ => TokenKind::Identifier(text.to_owned()),
         };
         self.add(kind);

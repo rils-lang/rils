@@ -123,7 +123,7 @@ impl Parser {
 
         if self.take(&TokenKind::LeftBrace).is_some() {
             let mut fields = Vec::new();
-            while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+            while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
                 let (field_name, field_span) =
                     self.expect_identifier("expected field name in record pattern")?;
                 if fields

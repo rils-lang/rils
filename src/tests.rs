@@ -1700,9 +1700,9 @@ fn option_cannot_be_used_as_an_implicit_nullable_condition() {
 }
 
 #[test]
-fn nil_reports_an_option_migration_error() {
+fn nil_is_no_longer_a_literal() {
     let error = eval("nil").unwrap_err();
-    assert!(error.to_string().contains("use `None`"));
+    assert!(error.to_string().contains("undefined variable `nil`"));
 }
 
 #[test]

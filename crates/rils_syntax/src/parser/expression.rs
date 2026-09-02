@@ -343,12 +343,6 @@ impl Parser {
                 value: Literal::Bool(false),
                 span: token.span,
             },
-            TokenKind::Nil => {
-                return Err(ParseError {
-                    message: "`nil` has been removed; use `None` with an `Option<T>` type".into(),
-                    span: token.span,
-                });
-            }
             TokenKind::Identifier(name) => {
                 let mut segments = vec![name];
                 let mut span = token.span;
@@ -480,7 +474,7 @@ impl Parser {
         self.expect(&TokenKind::LeftBrace, "expected `{` after match expression")?;
         let mut arms = Vec::new();
 
-        while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             let pattern = self.pattern()?;
             self.expect(&TokenKind::FatArrow, "expected `=>` after match pattern")?;
             let expression = self.expression()?;

@@ -1,5 +1,6 @@
 use std::mem::discriminant;
 
+mod cursor;
 mod declaration;
 mod expression;
 mod pattern;
@@ -16,6 +17,7 @@ use crate::{
     token::{Token, TokenKind},
     types::Type,
 };
+use cursor::TokenStream;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParseError {
@@ -143,11 +145,9 @@ pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
     if tokens.is_empty() || !has_balanced_delimiters(tokens) {
         return false;
     }
-    let mut fragment = mask_macro_invocations(tokens);
-    let end = fragment.last().map_or(0, |token| token.span.end);
-    fragment.push(Token::new(TokenKind::Eof, Span::new(end, end)));
+    let fragment = mask_macro_invocations(tokens);
     let mut parser = Parser::new(fragment, Vec::new(), false);
-    parser.expression().is_ok() && parser.check(&TokenKind::Eof)
+    parser.expression().is_ok() && parser.is_at_end()
 }
 
 fn has_balanced_delimiters(tokens: &[Token]) -> bool {
@@ -214,8 +214,7 @@ fn mask_macro_invocations(tokens: &[Token]) -> Vec<Token> {
 }
 
 struct Parser {
-    tokens: Vec<Token>,
-    current: usize,
+    stream: TokenStream,
     generic_scopes: Vec<Vec<GenericParameter>>,
     type_references: Vec<TypeReference>,
     macros: Vec<MacroSymbol>,
@@ -225,14 +224,17 @@ struct Parser {
 }
 
 impl Parser {
+    pub(super) fn is_at_end(&self) -> bool {
+        self.stream.is_at_end()
+    }
+
     fn new(
         tokens: Vec<Token>,
         macros: Vec<MacroSymbol>,
         allow_nested_parameter_references: bool,
     ) -> Self {
         Self {
-            tokens,
-            current: 0,
+            stream: TokenStream::new(tokens),
             generic_scopes: Vec::new(),
             type_references: Vec::new(),
             macros,
@@ -244,7 +246,7 @@ impl Parser {
 
     fn parse_program(mut self) -> Result<Program, ParseError> {
         let mut statements = Vec::new();
-        while !self.check(&TokenKind::Eof) {
+        while !self.is_at_end() {
             statements.push(self.statement()?);
         }
         Ok(Program {

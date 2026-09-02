@@ -35,7 +35,7 @@ impl Parser {
         self.block_depth += 1;
         let result = (|| {
             let mut statements = Vec::new();
-            while !self.check(&TokenKind::RightBrace) && !self.check(&TokenKind::Eof) {
+            while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
                 statements.push(self.statement()?);
             }
             let right = self.expect(&TokenKind::RightBrace, "expected `}` after block")?;
@@ -84,31 +84,31 @@ impl Parser {
     }
 
     pub(super) fn take(&mut self, kind: &TokenKind) -> Option<Token> {
-        if self.check(kind) {
-            self.current += 1;
-            Some(self.previous().clone())
-        } else {
-            None
-        }
+        self.stream.take(kind)
     }
 
     pub(super) fn check(&self, kind: &TokenKind) -> bool {
-        discriminant(&self.peek().kind) == discriminant(kind)
+        self.stream.check(kind)
     }
 
     pub(super) fn advance(&mut self) -> &Token {
-        if !self.check(&TokenKind::Eof) {
-            self.current += 1;
+        if self.stream.is_at_end() {
+            self.stream.previous().expect("parser advanced past start")
+        } else {
+            self.stream.advance().expect("checked stream boundary")
         }
-        self.previous()
     }
 
     pub(super) fn peek(&self) -> &Token {
-        &self.tokens[self.current]
+        self.stream
+            .peek()
+            .unwrap_or_else(|| self.stream.previous().expect("parser reached end of input"))
     }
 
     pub(super) fn previous(&self) -> &Token {
-        &self.tokens[self.current.saturating_sub(1)]
+        self.stream
+            .previous()
+            .expect("parser has no previous token")
     }
 
     pub(super) fn error_here(&self, message: impl Into<String>) -> ParseError {
@@ -121,12 +121,12 @@ impl Parser {
     pub(super) fn looks_like_record_literal(&self) -> bool {
         self.check(&TokenKind::LeftBrace)
             && self
-                .tokens
-                .get(self.current + 1)
+                .stream
+                .get(self.stream.position() + 1)
                 .is_some_and(|token| matches!(token.kind, TokenKind::Identifier(_)))
             && self
-                .tokens
-                .get(self.current + 2)
+                .stream
+                .get(self.stream.position() + 2)
                 .is_some_and(|token| matches!(token.kind, TokenKind::Colon))
     }
 
