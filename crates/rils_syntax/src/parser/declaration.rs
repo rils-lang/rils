@@ -1,6 +1,6 @@
 use super::*;
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn module_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         let (name, name_span) = self.expect_identifier("expected module name after `mod`")?;
         let (statements, end) = if let Some(end) = self.take(&TokenKind::Semicolon) {

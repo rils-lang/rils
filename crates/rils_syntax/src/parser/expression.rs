@@ -1,6 +1,6 @@
 use super::*;
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn expression(&mut self) -> Result<Expr, ParseError> {
         self.assignment()
     }

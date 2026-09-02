@@ -1,6 +1,6 @@
 use super::*;
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn pattern(&mut self) -> Result<Pattern, ParseError> {
         let token = self.advance().clone();
         if let Some(value) = scalar_literal(&token.kind) {

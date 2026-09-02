@@ -1,12 +1,12 @@
 use std::mem::discriminant;
 
-mod cursor;
 mod declaration;
 mod expression;
 mod pattern;
 mod support;
 mod type_annotation;
 
+use crate::cursor::TokenStream;
 use crate::{
     ast::{
         AssociatedType, Attribute, BinaryOp, Block, EnumVariant, Expr, GenericParameter,
@@ -17,7 +17,6 @@ use crate::{
     token::{Token, TokenKind},
     types::Type,
 };
-use cursor::TokenStream;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParseError {
@@ -49,12 +48,9 @@ fn parse_with_options(
 ) -> Result<Program, ParseError> {
     validate_delimiters(&tokens)?;
     let expansion = crate::macros::expand(tokens, native_macros)?;
-    let mut program = Parser::new(
-        expansion.tokens,
-        expansion.macros,
-        allow_nested_parameter_references,
-    )
-    .parse_program()?;
+    let stream = TokenStream::new(expansion.tokens);
+    let mut program = Parser::new(&stream, expansion.macros, allow_nested_parameter_references)
+        .parse_program()?;
     if !allow_nested_parameter_references {
         crate::derive::expand(&mut program)?;
     }
@@ -146,7 +142,8 @@ pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
         return false;
     }
     let fragment = mask_macro_invocations(tokens);
-    let mut parser = Parser::new(fragment, Vec::new(), false);
+    let stream = TokenStream::new(fragment);
+    let mut parser = Parser::new(&stream, Vec::new(), false);
     parser.expression().is_ok() && parser.is_at_end()
 }
 
@@ -213,8 +210,9 @@ fn mask_macro_invocations(tokens: &[Token]) -> Vec<Token> {
     output
 }
 
-struct Parser {
-    stream: TokenStream,
+struct Parser<'a> {
+    stream: &'a TokenStream,
+    position: usize,
     generic_scopes: Vec<Vec<GenericParameter>>,
     type_references: Vec<TypeReference>,
     macros: Vec<MacroSymbol>,
@@ -223,18 +221,19 @@ struct Parser {
     allow_nested_parameter_references: bool,
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub(super) fn is_at_end(&self) -> bool {
-        self.stream.is_at_end()
+        self.position >= self.stream.as_slice().len()
     }
 
     fn new(
-        tokens: Vec<Token>,
+        stream: &'a TokenStream,
         macros: Vec<MacroSymbol>,
         allow_nested_parameter_references: bool,
     ) -> Self {
         Self {
-            stream: TokenStream::new(tokens),
+            stream,
+            position: 0,
             generic_scopes: Vec::new(),
             type_references: Vec::new(),
             macros,

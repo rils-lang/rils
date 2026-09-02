@@ -1,6 +1,6 @@
 use super::*;
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn type_annotation(&mut self) -> Result<Type, ParseError> {
         if self.take(&TokenKind::Less).is_some() {
             let base = self.type_annotation()?;

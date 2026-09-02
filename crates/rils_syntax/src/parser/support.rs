@@ -1,6 +1,6 @@
 use super::*;
 
-impl Parser {
+impl Parser<'_> {
     pub(super) fn if_expression(&mut self, start: Span) -> Result<Expr, ParseError> {
         let condition = self.expression()?;
         let then_branch = self.block("expected `{` after `if` condition")?;
@@ -84,29 +84,40 @@ impl Parser {
     }
 
     pub(super) fn take(&mut self, kind: &TokenKind) -> Option<Token> {
-        self.stream.take(kind)
+        let (token, next) = self.stream.cursor_at(self.position).take(kind)?;
+        self.position = next.position();
+        Some(token.clone())
     }
 
     pub(super) fn check(&self, kind: &TokenKind) -> bool {
-        self.stream.check(kind)
+        self.stream.cursor_at(self.position).check(kind)
     }
 
     pub(super) fn advance(&mut self) -> &Token {
-        if self.stream.is_at_end() {
-            self.stream.previous().expect("parser advanced past start")
+        let cursor = self.stream.cursor_at(self.position);
+        if let Some((token, next)) = cursor.advance() {
+            self.position = next.position();
+            token
         } else {
-            self.stream.advance().expect("checked stream boundary")
+            cursor.previous().expect("parser advanced past start")
         }
     }
 
     pub(super) fn peek(&self) -> &Token {
         self.stream
+            .cursor_at(self.position)
             .peek()
-            .unwrap_or_else(|| self.stream.previous().expect("parser reached end of input"))
+            .unwrap_or_else(|| {
+                self.stream
+                    .cursor_at(self.position)
+                    .previous()
+                    .expect("parser reached end of input")
+            })
     }
 
     pub(super) fn previous(&self) -> &Token {
         self.stream
+            .cursor_at(self.position)
             .previous()
             .expect("parser has no previous token")
     }
@@ -122,11 +133,13 @@ impl Parser {
         self.check(&TokenKind::LeftBrace)
             && self
                 .stream
-                .get(self.stream.position() + 1)
+                .as_slice()
+                .get(self.position + 1)
                 .is_some_and(|token| matches!(token.kind, TokenKind::Identifier(_)))
             && self
                 .stream
-                .get(self.stream.position() + 2)
+                .as_slice()
+                .get(self.position + 2)
                 .is_some_and(|token| matches!(token.kind, TokenKind::Colon))
     }
 
