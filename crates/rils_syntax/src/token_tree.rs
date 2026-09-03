@@ -209,9 +209,6 @@ mod tests {
                 .token()
                 .is_some_and(|token| matches!(token.kind, TokenKind::Integer(1)))
         );
-        assert!(
-            rest.token()
-                .is_some_and(|token| matches!(token.kind, TokenKind::Eof))
-        );
+        assert!(rest.is_empty());
     }
 }
