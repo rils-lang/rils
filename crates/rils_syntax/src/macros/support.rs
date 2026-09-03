@@ -47,7 +47,9 @@ pub(super) fn expect_identifier(
     current: &mut usize,
     message: &str,
 ) -> Result<(String, Span), ParseError> {
-    match tokens.get(*current) {
+    let stream = TokenStream::new(tokens.to_vec());
+    let cursor = stream.cursor_at(*current);
+    match cursor.peek() {
         Some(Token {
             kind: TokenKind::Identifier(name),
             span,
@@ -73,15 +75,12 @@ pub(super) fn expect(
 }
 
 pub(super) fn take(tokens: &[Token], current: &mut usize, expected: &TokenKind) -> bool {
-    if tokens
-        .get(*current)
-        .is_some_and(|token| token_kinds_equal(&token.kind, expected))
-    {
-        *current += 1;
-        true
-    } else {
-        false
-    }
+    let stream = TokenStream::new(tokens.to_vec());
+    stream
+        .cursor_at(*current)
+        .check(expected)
+        .then(|| *current += 1)
+        .is_some()
 }
 
 pub(super) fn token_kinds_equal(left: &TokenKind, right: &TokenKind) -> bool {
