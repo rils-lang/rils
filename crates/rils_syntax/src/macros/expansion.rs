@@ -1,4 +1,5 @@
 use super::*;
+use crate::cursor::TokenStream;
 
 pub(super) fn expand_sequence(
     tokens: &[Token],
@@ -6,8 +7,10 @@ pub(super) fn expand_sequence(
     stack: &mut Vec<String>,
 ) -> Result<Vec<Token>, ParseError> {
     let mut output = Vec::new();
-    let mut current = 0;
-    while current < tokens.len() {
+    let stream = TokenStream::new(tokens.to_vec());
+    let mut cursor = stream.cursor();
+    while let Some(token) = cursor.peek() {
+        let current = cursor.position();
         let invocation = match tokens.get(current..current + 3) {
             Some(
                 [
@@ -29,8 +32,8 @@ pub(super) fn expand_sequence(
         };
 
         let Some((name, call_span)) = invocation else {
-            output.push(tokens[current].clone());
-            current += 1;
+            output.push(token.clone());
+            cursor = cursor.advance().expect("cursor token was present").1;
             continue;
         };
         let definition = definitions
@@ -90,7 +93,7 @@ pub(super) fn expand_sequence(
         let result = expand_sequence(&substituted, definitions, stack);
         stack.pop();
         output.extend(result?);
-        current = next;
+        cursor = stream.cursor_at(next);
     }
     Ok(output)
 }
