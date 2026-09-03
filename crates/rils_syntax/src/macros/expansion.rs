@@ -194,18 +194,3 @@ fn top_level_arguments(tokens: &[Token]) -> Vec<&[Token]> {
     arguments.push(&tokens[start..]);
     arguments
 }
-
-pub(super) fn invocation_input(
-    tokens: &[Token],
-    opening_paren: usize,
-    call_span: Span,
-) -> Result<(Vec<Token>, usize), ParseError> {
-    let (input, next) = slice_delimited(
-        tokens,
-        opening_paren + 1,
-        &TokenKind::LeftParen,
-        &TokenKind::RightParen,
-        call_span,
-    )?;
-    Ok((input.to_vec(), next))
-}
