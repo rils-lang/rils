@@ -47,6 +47,31 @@ impl<'a> TreeCursor<'a> {
             },
         ))
     }
+
+    pub(crate) fn token(self) -> Option<&'a Token> {
+        match self.first()? {
+            TokenTree::Token(token) => Some(token),
+            TokenTree::Group { .. } => None,
+        }
+    }
+
+    pub(crate) fn group(self) -> Option<(Delimiter, Span, TreeCursor<'a>, Self)> {
+        let (tree, next) = self.step()?;
+        match tree {
+            TokenTree::Group {
+                delimiter,
+                open,
+                children,
+                close,
+            } => Some((
+                *delimiter,
+                group_span(open.span, close.span),
+                TreeCursor::new(children),
+                next,
+            )),
+            TokenTree::Token(_) => None,
+        }
+    }
 }
 
 pub(crate) fn delimiter_pair(token: &Token) -> Option<(Delimiter, bool)> {
@@ -113,6 +138,7 @@ pub(crate) fn build_tree(tokens: &[Token]) -> Result<Vec<TokenTree>, Span> {
 mod tests {
     use super::*;
     use crate::lexer::lex;
+    use crate::token::TokenKind;
 
     #[test]
     fn builds_nested_groups() {
@@ -145,5 +171,24 @@ mod tests {
             next.first(),
             Some(TokenTree::Token(_)) | Some(TokenTree::Group { .. })
         ));
+    }
+
+    #[test]
+    fn tree_cursor_enters_delimiter_groups() {
+        let trees = build_tree(&lex("call!(1)").unwrap()).unwrap();
+        let cursor = TreeCursor::new(&trees);
+        let (_, cursor) = cursor.step().unwrap();
+        let (_, cursor) = cursor.step().unwrap();
+        let (delimiter, _, inner, rest) = cursor.group().expect("call arguments group");
+        assert_eq!(delimiter, Delimiter::Parenthesis);
+        assert!(
+            inner
+                .token()
+                .is_some_and(|token| matches!(token.kind, TokenKind::Integer(1)))
+        );
+        assert!(
+            rest.token()
+                .is_some_and(|token| matches!(token.kind, TokenKind::Eof))
+        );
     }
 }
