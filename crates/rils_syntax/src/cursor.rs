@@ -1,6 +1,7 @@
 use crate::token::{Token, TokenKind};
 
 /// Owned, stable token storage shared by parser and macro processing.
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TokenStream {
     tokens: Box<[Token]>,
     source_end: usize,
