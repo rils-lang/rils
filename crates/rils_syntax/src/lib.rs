@@ -8,6 +8,7 @@ pub mod macros;
 pub mod parser;
 pub mod source;
 pub mod token;
+mod token_tree;
 pub mod types;
 
 pub use lexer::{LexError, lex, lex_with_source_id};

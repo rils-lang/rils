@@ -1,4 +1,5 @@
 use super::*;
+use crate::cursor::TokenStream;
 
 pub(super) fn delimited(
     tokens: &[Token],
@@ -19,18 +20,24 @@ pub(super) fn slice_delimited<'a>(
     closing: &TokenKind,
     span: Span,
 ) -> Result<(&'a [Token], usize), ParseError> {
+    let stream = TokenStream::new(tokens[start..].to_vec());
+    let mut cursor = stream.cursor();
+    let mut offset = 0usize;
     let mut depth = 1usize;
-    let mut current = start;
-    while current < tokens.len() {
-        if token_kinds_equal(&tokens[current].kind, opening) {
+    while let Some(token) = cursor.peek() {
+        if token_kinds_equal(&token.kind, opening) {
             depth += 1;
-        } else if token_kinds_equal(&tokens[current].kind, closing) {
+        } else if token_kinds_equal(&token.kind, closing) {
             depth -= 1;
             if depth == 0 {
-                return Ok((&tokens[start..current], current + 1));
+                return Ok((&tokens[start..start + offset], start + offset + 1));
             }
         }
-        current += 1;
+        let Some((_, next)) = cursor.advance() else {
+            break;
+        };
+        cursor = next;
+        offset += 1;
     }
     Err(error("unterminated delimited token tree", span))
 }
