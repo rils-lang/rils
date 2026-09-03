@@ -18,6 +18,26 @@ pub(crate) enum TokenTree {
     },
 }
 
+impl TokenTree {
+    pub(crate) fn flatten_into(&self, output: &mut Vec<Token>) {
+        match self {
+            Self::Token(token) => output.push(token.clone()),
+            Self::Group {
+                open,
+                children,
+                close,
+                ..
+            } => {
+                output.push(open.clone());
+                for child in children.iter() {
+                    child.flatten_into(output);
+                }
+                output.push(close.clone());
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct TreeCursor<'a> {
     trees: &'a [TokenTree],
@@ -36,6 +56,9 @@ impl<'a> TreeCursor<'a> {
     }
     pub(crate) fn first(self) -> Option<&'a TokenTree> {
         self.trees.get(self.position)
+    }
+    pub(crate) fn remaining(self) -> &'a [TokenTree] {
+        &self.trees[self.position.min(self.trees.len())..]
     }
     pub(crate) fn step(self) -> Option<(&'a TokenTree, Self)> {
         let tree = self.first()?;

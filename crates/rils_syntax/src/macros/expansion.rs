@@ -1,5 +1,8 @@
 use super::*;
-use crate::cursor::TokenStream;
+use crate::{
+    cursor::TokenStream,
+    token_tree::{Delimiter, TokenTree, TreeCursor},
+};
 
 pub(super) fn expand_sequence(
     tokens: &[Token],
@@ -8,32 +11,38 @@ pub(super) fn expand_sequence(
 ) -> Result<Vec<Token>, ParseError> {
     let mut output = Vec::new();
     let stream = TokenStream::new(tokens.to_vec());
-    let mut cursor = stream.cursor();
-    while let Some(token) = cursor.peek() {
-        let current = cursor.position();
-        let invocation = match tokens.get(current..current + 3) {
-            Some(
-                [
-                    Token {
-                        kind: TokenKind::Identifier(name),
-                        span,
+    let mut cursor = TreeCursor::new(stream.trees());
+    while let Some(tree) = cursor.first() {
+        let invocation = match tree {
+            TokenTree::Token(Token {
+                kind: TokenKind::Identifier(name),
+                span,
+            }) => {
+                let Some((_, after_identifier)) = cursor.step() else {
+                    return Err(error("invalid macro invocation", *span));
+                };
+                match after_identifier.step() {
+                    Some((bang, after_bang)) => match (bang, after_bang.first()) {
+                        (
+                            TokenTree::Token(Token {
+                                kind: TokenKind::Bang,
+                                ..
+                            }),
+                            Some(TokenTree::Group {
+                                delimiter: Delimiter::Parenthesis,
+                                ..
+                            }),
+                        ) => Some((name.clone(), *span)),
+                        _ => None,
                     },
-                    Token {
-                        kind: TokenKind::Bang,
-                        ..
-                    },
-                    Token {
-                        kind: TokenKind::LeftParen,
-                        ..
-                    },
-                ],
-            ) => Some((name.clone(), *span)),
+                    None => None,
+                }
+            }
             _ => None,
         };
-
         let Some((name, call_span)) = invocation else {
-            output.push(token.clone());
-            cursor = cursor.advance().expect("cursor token was present").1;
+            tree.flatten_into(&mut output);
+            cursor = cursor.step().expect("cursor tree was present").1;
             continue;
         };
         let definition = definitions
@@ -51,7 +60,17 @@ pub(super) fn expand_sequence(
             ));
         }
 
-        let (input, next) = invocation_input(tokens, current + 2, call_span)?;
+        let (_, after_bang) = cursor
+            .step()
+            .expect("identifier was present")
+            .1
+            .step()
+            .expect("bang was present");
+        let (_, _, input_cursor, next) = after_bang.group().expect("invocation group was present");
+        let mut input = Vec::new();
+        for child in input_cursor.remaining().iter() {
+            child.flatten_into(&mut input);
+        }
         if matches!(name.as_str(), "print" | "println") {
             validate_format_invocation(&name, &input, call_span)?;
         }
@@ -93,7 +112,7 @@ pub(super) fn expand_sequence(
         let result = expand_sequence(&substituted, definitions, stack);
         stack.pop();
         output.extend(result?);
-        cursor = stream.cursor_at(next);
+        cursor = next;
     }
     Ok(output)
 }
