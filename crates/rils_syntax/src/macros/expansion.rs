@@ -11,8 +11,29 @@ pub(super) fn expand_sequence(
 ) -> Result<Vec<Token>, ParseError> {
     let mut output = Vec::new();
     let stream = TokenStream::new(tokens.to_vec());
-    let mut cursor = TreeCursor::new(stream.trees());
+    let mut cursor = TreeCursor::from_stream(&stream);
     while let Some(tree) = cursor.first() {
+        if let TokenTree::Group {
+            open,
+            children,
+            close,
+            ..
+        } = tree
+        {
+            // Macro invocations can occur inside function/block bodies and
+            // nested expression groups.  Walk each group's child stream
+            // recursively while retaining its delimiters in the output.
+            let mut nested = Vec::new();
+            for child in children.iter() {
+                child.flatten_into(&mut nested);
+            }
+            let expanded = expand_sequence(&nested, definitions, stack)?;
+            output.push(open.clone());
+            output.extend(expanded);
+            output.push(close.clone());
+            cursor = cursor.step().expect("cursor tree was present").1;
+            continue;
+        }
         let invocation = match tree {
             TokenTree::Token(Token {
                 kind: TokenKind::Identifier(name),

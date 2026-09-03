@@ -81,7 +81,6 @@ pub enum TokenKind {
     Pub,
     True,
     False,
-    Eof,
 }
 
 impl TokenKind {
@@ -164,7 +163,6 @@ impl TokenKind {
             Self::Pub => "`pub`",
             Self::True => "`true`",
             Self::False => "`false`",
-            Self::Eof => "end of file",
         }
     }
 }

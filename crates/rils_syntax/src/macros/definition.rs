@@ -212,7 +212,7 @@ pub(super) fn branching_arms(
         });
         take(tokens, current, &TokenKind::Comma);
         take(tokens, current, &TokenKind::Semicolon);
-        if matches!(tokens.get(*current).map(|token| &token.kind), None) {
+        if tokens.get(*current).map(|token| &token.kind).is_none() {
             return Err(error("unterminated macro declaration", declaration_span));
         }
     }

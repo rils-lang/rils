@@ -41,10 +41,6 @@ impl<'a> Lexer<'a> {
             self.start = self.current;
             self.scan_token()?;
         }
-        self.tokens.push(Token::new(
-            TokenKind::Eof,
-            self.span(self.current, self.current),
-        ));
         Ok(self.tokens)
     }
 

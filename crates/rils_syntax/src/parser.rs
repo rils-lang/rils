@@ -219,11 +219,12 @@ struct Parser<'a> {
     loop_depth: usize,
     block_depth: usize,
     allow_nested_parameter_references: bool,
+    fallback_token: Token,
 }
 
 impl<'a> Parser<'a> {
     pub(super) fn is_at_end(&self) -> bool {
-        self.position >= self.stream.as_slice().len()
+        self.stream.cursor_at(self.position).is_at_end()
     }
 
     fn new(
@@ -240,6 +241,7 @@ impl<'a> Parser<'a> {
             loop_depth: 0,
             block_depth: 0,
             allow_nested_parameter_references,
+            fallback_token: Token::new(TokenKind::Identifier(String::new()), Span::new(0, 0)),
         }
     }
 

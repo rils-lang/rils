@@ -142,7 +142,7 @@ impl Engine {
         let name_tokens = lexer::lex(macro_name).map_err(|error| error.message)?;
         if !matches!(
             name_tokens.as_slice(),
-            [token::Token { kind: token::TokenKind::Identifier(name), .. }, token::Token { kind: token::TokenKind::Eof, .. }] if name == macro_name
+            [token::Token { kind: token::TokenKind::Identifier(name), .. }] if name == macro_name
         ) {
             return Err(format!("`{macro_name}` is not a valid macro name"));
         }

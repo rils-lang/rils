@@ -111,14 +111,8 @@ pub(crate) fn expand(
             .unwrap_or_default();
     }
 
-    let eof = tokens.last().cloned().ok_or_else(|| ParseError {
-        message: "missing end-of-file token".into(),
-        span: Span::new(0, 0),
-    })?;
-    let body = &tokens[..tokens.len().saturating_sub(1)];
     let mut stack = Vec::new();
-    let mut expanded = expand_sequence(body, &definitions, &mut stack)?;
-    expanded.push(eof);
+    let expanded = expand_sequence(&tokens, &definitions, &mut stack)?;
     Ok(MacroExpansion {
         tokens: expanded,
         macros,

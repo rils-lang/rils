@@ -44,7 +44,16 @@ pub(crate) struct TreeCursor<'a> {
     position: usize,
 }
 
+#[allow(dead_code)]
 impl<'a> TreeCursor<'a> {
+    /// Creates a cursor over the root tree view owned by a token stream.
+    ///
+    /// Keeping construction on `TokenStream` mirrors the lifetime-bound
+    /// cursor model used by the parser and prevents callers from having to
+    /// manage a detached slice of token trees.
+    pub(crate) fn from_stream(stream: &'a crate::cursor::TokenStream) -> Self {
+        Self::new(stream.trees())
+    }
     pub(crate) fn new(trees: &'a [TokenTree]) -> Self {
         Self { trees, position: 0 }
     }

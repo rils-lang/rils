@@ -99,7 +99,7 @@ impl Parser<'_> {
             self.position = next.position();
             token
         } else {
-            cursor.previous().expect("parser advanced past start")
+            &self.fallback_token
         }
     }
 
@@ -107,19 +107,15 @@ impl Parser<'_> {
         self.stream
             .cursor_at(self.position)
             .peek()
-            .unwrap_or_else(|| {
-                self.stream
-                    .cursor_at(self.position)
-                    .previous()
-                    .expect("parser reached end of input")
-            })
+            .or_else(|| self.stream.cursor_at(self.position).previous())
+            .unwrap_or(&self.fallback_token)
     }
 
     pub(super) fn previous(&self) -> &Token {
         self.stream
             .cursor_at(self.position)
             .previous()
-            .expect("parser has no previous token")
+            .unwrap_or(&self.fallback_token)
     }
 
     pub(super) fn error_here(&self, message: impl Into<String>) -> ParseError {
@@ -133,13 +129,13 @@ impl Parser<'_> {
         self.check(&TokenKind::LeftBrace)
             && self
                 .stream
-                .as_slice()
-                .get(self.position + 1)
+                .cursor_at(self.position + 1)
+                .peek()
                 .is_some_and(|token| matches!(token.kind, TokenKind::Identifier(_)))
             && self
                 .stream
-                .as_slice()
-                .get(self.position + 2)
+                .cursor_at(self.position + 2)
+                .peek()
                 .is_some_and(|token| matches!(token.kind, TokenKind::Colon))
     }
 

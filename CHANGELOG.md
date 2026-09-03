@@ -7,6 +7,11 @@
 
 ### Breaking Changes
 
+- Lexer output no longer appends an `Eof` sentinel. `TokenStream` now owns a
+  single grouped token-tree representation; parser and macro cursors determine
+  end-of-input from cursor exhaustion. Consumers that previously removed or
+  matched the trailing `TokenKind::Eof` should stop doing so.
+
 - `rils_syntax::Stmt` 不再使用独立的 `Stmt::Public` 包装节点；可导出的 module、use、function、
   struct、enum、type alias 与 trait 声明现在直接携带 `Visibility` 字段。
 - trait impl 现在执行孤儿规则：trait 或目标类型至少一方必须声明在当前项目中。此前对内建/Host
