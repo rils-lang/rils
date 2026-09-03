@@ -343,13 +343,15 @@ pub(super) fn validate_template_tokens(
     single: &HashSet<String>,
     repeated: &HashSet<String>,
 ) -> Result<(), ParseError> {
-    let mut current = 0;
-    while current < tokens.len() {
-        if !matches!(tokens[current].kind, TokenKind::Dollar) {
-            current += 1;
+    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+    let mut cursor = stream.cursor();
+    while let Some(token) = cursor.peek() {
+        let mut current = cursor.position();
+        if !matches!(token.kind, TokenKind::Dollar) {
+            cursor = cursor.advance().expect("cursor token was present").1;
             continue;
         }
-        let span = tokens[current].span;
+        let span = token.span;
         current += 1;
         if matches!(
             tokens.get(current).map(|token| &token.kind),
@@ -366,6 +368,7 @@ pub(super) fn validate_template_tokens(
             validate_template_tokens(inner, true, single, repeated)?;
             let (_, _, next) = repetition_suffix(tokens, next, span)?;
             current = next;
+            cursor = stream.cursor_at(current);
             continue;
         }
         let (name, name_span) =
@@ -376,6 +379,7 @@ pub(super) fn validate_template_tokens(
                 name_span,
             ));
         }
+        cursor = stream.cursor_at(current);
         if repeated.contains(&name) && !inside_repeat {
             return Err(error(
                 format!("repeated capture `${name}` must be used inside a repetition"),
