@@ -18,6 +18,37 @@ pub(crate) enum TokenTree {
     },
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct TreeCursor<'a> {
+    trees: &'a [TokenTree],
+    position: usize,
+}
+
+impl<'a> TreeCursor<'a> {
+    pub(crate) fn new(trees: &'a [TokenTree]) -> Self {
+        Self { trees, position: 0 }
+    }
+    pub(crate) fn is_empty(self) -> bool {
+        self.position >= self.trees.len()
+    }
+    pub(crate) fn position(self) -> usize {
+        self.position
+    }
+    pub(crate) fn first(self) -> Option<&'a TokenTree> {
+        self.trees.get(self.position)
+    }
+    pub(crate) fn step(self) -> Option<(&'a TokenTree, Self)> {
+        let tree = self.first()?;
+        Some((
+            tree,
+            Self {
+                position: self.position + 1,
+                ..self
+            },
+        ))
+    }
+}
+
 pub(crate) fn delimiter_pair(token: &Token) -> Option<(Delimiter, bool)> {
     Some(match token.kind {
         crate::token::TokenKind::LeftParen => (Delimiter::Parenthesis, true),
@@ -100,5 +131,19 @@ mod tests {
     fn rejects_unclosed_groups() {
         let tokens = lex("foo!(a").unwrap();
         assert!(build_tree(&tokens).is_err());
+    }
+
+    #[test]
+    fn tree_cursor_is_copyable_and_advances_without_mutating_storage() {
+        let trees = build_tree(&lex("call!(1)").unwrap()).unwrap();
+        let cursor = TreeCursor::new(&trees);
+        let fork = cursor;
+        let (_, next) = cursor.step().unwrap();
+        assert_eq!(fork.position(), 0);
+        assert_eq!(next.position(), 1);
+        assert!(matches!(
+            next.first(),
+            Some(TokenTree::Token(_)) | Some(TokenTree::Group { .. })
+        ));
     }
 }
