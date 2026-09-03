@@ -1,9 +1,11 @@
 use crate::token::{Token, TokenKind};
+use crate::token_tree::{TokenTree, build_tree};
 
 /// Owned, stable token storage shared by parser and macro processing.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TokenStream {
     tokens: Box<[Token]>,
+    trees: Box<[TokenTree]>,
     source_end: usize,
 }
 
@@ -13,8 +15,10 @@ impl TokenStream {
             tokens.pop();
         }
         let source_end = tokens.last().map_or(0, |token| token.span.end);
+        let trees = build_tree(&tokens).unwrap_or_default().into_boxed_slice();
         Self {
             tokens: tokens.into_boxed_slice(),
+            trees,
             source_end,
         }
     }
@@ -33,6 +37,9 @@ impl TokenStream {
     }
     pub(crate) fn as_slice(&self) -> &[Token] {
         &self.tokens
+    }
+    pub(crate) fn trees(&self) -> &[TokenTree] {
+        &self.trees
     }
 }
 
@@ -74,5 +81,17 @@ impl<'a> Cursor<'a> {
     }
     pub(crate) fn take(self, kind: &TokenKind) -> Option<(&'a Token, Self)> {
         self.check(kind).then(|| self.advance()).flatten()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::lex;
+
+    #[test]
+    fn stream_builds_tree_view() {
+        let stream = TokenStream::new(lex("call!(1)").unwrap());
+        assert_eq!(stream.trees().len(), 3);
     }
 }
