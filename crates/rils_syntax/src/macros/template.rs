@@ -1,4 +1,5 @@
 use super::*;
+use crate::cursor::TokenStream;
 
 pub(super) fn expand_template(
     template: &[Token],
@@ -6,11 +7,13 @@ pub(super) fn expand_template(
     iteration: Option<usize>,
 ) -> Result<Vec<Token>, ParseError> {
     let mut output = Vec::new();
-    let mut current = 0;
-    while current < template.len() {
-        if !matches!(template[current].kind, TokenKind::Dollar) {
-            output.push(template[current].clone());
-            current += 1;
+    let stream = TokenStream::new(template.to_vec());
+    let mut cursor = stream.cursor();
+    while let Some(token) = cursor.peek() {
+        let mut current = cursor.position();
+        if !matches!(token.kind, TokenKind::Dollar) {
+            output.push(token.clone());
+            cursor = cursor.advance().expect("cursor token was present").1;
             continue;
         }
         let span = template[current].span;
@@ -44,6 +47,7 @@ pub(super) fn expand_template(
                 output.extend(expand_template(inner, bindings, Some(index))?);
             }
             current = next;
+            cursor = stream.cursor_at(current);
             continue;
         }
         let (name, name_span) =
@@ -69,6 +73,7 @@ pub(super) fn expand_template(
                 name_span,
             ));
         }
+        cursor = stream.cursor_at(current);
     }
     Ok(output)
 }
@@ -100,13 +105,15 @@ pub(super) fn template_capture_names(
     tokens: &[Token],
     names: &mut Vec<String>,
 ) -> Result<(), ParseError> {
-    let mut current = 0;
-    while current < tokens.len() {
-        if !matches!(tokens[current].kind, TokenKind::Dollar) {
-            current += 1;
+    let stream = TokenStream::new(tokens.to_vec());
+    let mut cursor = stream.cursor();
+    while let Some(token) = cursor.peek() {
+        let mut current = cursor.position();
+        if !matches!(token.kind, TokenKind::Dollar) {
+            cursor = cursor.advance().expect("cursor token was present").1;
             continue;
         }
-        let span = tokens[current].span;
+        let span = token.span;
         current += 1;
         if matches!(
             tokens.get(current).map(|token| &token.kind),
@@ -123,10 +130,12 @@ pub(super) fn template_capture_names(
             template_capture_names(inner, names)?;
             let (_, _, next) = repetition_suffix(tokens, next, span)?;
             current = next;
+            cursor = stream.cursor_at(current);
         } else {
             let (name, _) =
                 expect_identifier(tokens, &mut current, "expected capture name after `$`")?;
             names.push(name);
+            cursor = stream.cursor_at(current);
         }
     }
     Ok(())
