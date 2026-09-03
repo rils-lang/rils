@@ -427,24 +427,35 @@ pub(super) fn contains_capture(elements: &[MatcherElement]) -> bool {
 
 pub(super) fn invocation_references(tokens: &[Token]) -> HashMap<String, Vec<Span>> {
     let mut references: HashMap<String, Vec<Span>> = HashMap::new();
-    for window in tokens.windows(3) {
-        if let [
-            Token {
-                kind: TokenKind::Identifier(name),
-                span,
-            },
-            Token {
-                kind: TokenKind::Bang,
-                ..
-            },
-            Token {
-                kind: TokenKind::LeftParen,
-                ..
-            },
-        ] = window
-        {
-            references.entry(name.clone()).or_default().push(*span);
+    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+
+    fn visit(trees: &[crate::token_tree::TokenTree], references: &mut HashMap<String, Vec<Span>>) {
+        for window in trees.windows(3) {
+            if let [
+                crate::token_tree::TokenTree::Token(Token {
+                    kind: TokenKind::Identifier(name),
+                    span,
+                }),
+                crate::token_tree::TokenTree::Token(Token {
+                    kind: TokenKind::Bang,
+                    ..
+                }),
+                crate::token_tree::TokenTree::Group {
+                    delimiter: crate::token_tree::Delimiter::Parenthesis,
+                    ..
+                },
+            ] = window
+            {
+                references.entry(name.clone()).or_default().push(*span);
+            }
+        }
+        for tree in trees {
+            if let crate::token_tree::TokenTree::Group { children, .. } = tree {
+                visit(children, references);
+            }
         }
     }
+
+    visit(stream.trees(), &mut references);
     references
 }
