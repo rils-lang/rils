@@ -315,10 +315,16 @@ pub(super) fn repetition_suffix(
     current: usize,
     span: Span,
 ) -> Result<(Option<TokenKind>, bool, usize), ParseError> {
-    match tokens.get(current).map(|token| &token.kind) {
+    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+    let cursor = stream.cursor_at(current);
+    match cursor.peek().map(|token| &token.kind) {
         Some(TokenKind::Star) => Ok((None, false, current + 1)),
         Some(TokenKind::Plus) => Ok((None, true, current + 1)),
-        Some(separator) => match tokens.get(current + 1).map(|token| &token.kind) {
+        Some(separator) => match cursor
+            .advance()
+            .and_then(|(_, next)| next.peek())
+            .map(|token| &token.kind)
+        {
             Some(TokenKind::Star) => Ok((Some(separator.clone()), false, current + 2)),
             Some(TokenKind::Plus) => Ok((Some(separator.clone()), true, current + 2)),
             _ => Err(error("expected `*` or `+` after macro repetition", span)),
