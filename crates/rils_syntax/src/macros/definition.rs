@@ -231,15 +231,17 @@ pub(super) fn parse_matcher(
     names: &mut HashSet<String>,
 ) -> Result<Vec<MatcherElement>, ParseError> {
     let mut elements = Vec::new();
-    let mut current = 0;
-    while current < tokens.len() {
-        if !matches!(tokens[current].kind, TokenKind::Dollar) {
-            elements.push(MatcherElement::Token(tokens[current].kind.clone()));
-            current += 1;
+    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+    let mut cursor = stream.cursor();
+    while let Some(token) = cursor.peek() {
+        let mut current = cursor.position();
+        if !matches!(token.kind, TokenKind::Dollar) {
+            elements.push(MatcherElement::Token(token.kind.clone()));
+            cursor = cursor.advance().expect("cursor token was present").1;
             continue;
         }
 
-        let dollar_span = tokens[current].span;
+        let dollar_span = token.span;
         current += 1;
         if matches!(
             tokens.get(current).map(|token| &token.kind),
@@ -274,6 +276,7 @@ pub(super) fn parse_matcher(
                 separator,
                 one_or_more,
             });
+            cursor = stream.cursor_at(current);
             continue;
         }
 
@@ -302,6 +305,7 @@ pub(super) fn parse_matcher(
             }
         };
         elements.push(MatcherElement::Capture { name, kind });
+        cursor = stream.cursor_at(current);
     }
     Ok(elements)
 }
