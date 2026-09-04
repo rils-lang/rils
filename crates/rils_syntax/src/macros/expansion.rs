@@ -90,14 +90,13 @@ pub(super) fn expand_sequence(
             .expect("bang was present");
         let (_, _, input_cursor, next) = after_bang.group().expect("invocation group was present");
         let input_stream = TokenStream::from_trees(input_cursor.remaining());
-        let input = input_stream.flatten();
         if matches!(name.as_str(), "print" | "println") {
-            validate_format_invocation(&name, &input, call_span)?;
+            validate_format_invocation(&name, &input_stream, call_span)?;
         }
         let Some((arm, bindings)) = definition
             .arms
             .iter()
-            .find_map(|arm| match_arm(&arm.matcher, &input).map(|bindings| (arm, bindings)))
+            .find_map(|arm| match_arm(&arm.matcher, &input_stream).map(|bindings| (arm, bindings)))
         else {
             if let [arm] = definition.arms.as_slice()
                 && let Some(expected) = arm.legacy_arity
@@ -139,12 +138,10 @@ pub(super) fn expand_sequence(
 
 fn validate_format_invocation(
     name: &str,
-    input: &[Token],
+    input_stream: &TokenStream,
     call_span: Span,
 ) -> Result<(), ParseError> {
-    let stream = TokenStream::new(input.to_vec())
-        .map_err(|span| error("unterminated delimited token tree", span))?;
-    let arguments = top_level_arguments(&stream);
+    let arguments = top_level_arguments(input_stream);
     if arguments.is_empty() {
         return if name == "println" {
             Ok(())

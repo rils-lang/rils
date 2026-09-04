@@ -1,8 +1,10 @@
 use super::*;
+use crate::cursor::TokenStream;
 
-pub(super) fn match_arm(matcher: &[MatcherElement], input: &[Token]) -> Option<Bindings> {
+pub(super) fn match_arm(matcher: &[MatcherElement], stream: &TokenStream) -> Option<Bindings> {
+    let input = stream.flatten();
     let bindings = Bindings::default();
-    let (position, bindings) = match_elements(matcher, input, 0, bindings, false)?;
+    let (position, bindings) = match_elements(matcher, &input, 0, bindings, false)?;
     (position == input.len()).then_some(bindings)
 }
 
