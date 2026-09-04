@@ -160,7 +160,7 @@ pub(super) fn capture_ends(kind: FragmentKind, input: &[TokenTree], position: us
         FragmentKind::Expr => ((position + 1)..=input.len())
             .filter(|end| {
                 let stream = TokenStream::from_trees(&input[position..*end]);
-                is_expression_fragment(&stream.flatten())
+                is_expression_fragment_stream(&stream)
             })
             .collect(),
         FragmentKind::Tokens => ((position + 1)..=input.len()).collect(),

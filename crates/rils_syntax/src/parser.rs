@@ -15,6 +15,7 @@ use crate::{
     },
     source::Span,
     token::{Token, TokenKind},
+    token_tree::{Delimiter, TokenTree},
     types::Type,
 };
 
@@ -140,76 +141,67 @@ fn negated_scalar_literal(kind: &TokenKind) -> Option<Literal> {
     })
 }
 
+#[allow(dead_code)]
 pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
-    if tokens.is_empty() || !has_balanced_delimiters(tokens) {
-        return false;
-    }
-    let fragment = mask_macro_invocations(tokens);
-    let Ok(stream) = TokenStream::new(fragment) else {
+    let Ok(stream) = TokenStream::new(tokens.to_vec()) else {
         return false;
     };
-    let mut parser = Parser::new(&stream, Vec::new(), false);
+    is_expression_fragment_stream(&stream)
+}
+
+pub(crate) fn is_expression_fragment_stream(stream: &TokenStream) -> bool {
+    if stream.trees().is_empty() {
+        return false;
+    }
+    let masked = mask_macro_invocations(stream.trees());
+    let masked = TokenStream::from_trees(&masked);
+    let mut parser = Parser::new(&masked, Vec::new(), false);
     parser.expression().is_ok() && parser.is_at_end()
 }
 
-fn has_balanced_delimiters(tokens: &[Token]) -> bool {
-    let mut parens = 0usize;
-    let mut braces = 0usize;
-    let mut brackets = 0usize;
-    for token in tokens {
-        match token.kind {
-            TokenKind::LeftParen => parens += 1,
-            TokenKind::RightParen if parens > 0 => parens -= 1,
-            TokenKind::RightParen => return false,
-            TokenKind::LeftBrace => braces += 1,
-            TokenKind::RightBrace if braces > 0 => braces -= 1,
-            TokenKind::RightBrace => return false,
-            TokenKind::LeftBracket => brackets += 1,
-            TokenKind::RightBracket if brackets > 0 => brackets -= 1,
-            TokenKind::RightBracket => return false,
-            _ => {}
-        }
-    }
-    parens == 0 && braces == 0 && brackets == 0
-}
-
-fn mask_macro_invocations(tokens: &[Token]) -> Vec<Token> {
+fn mask_macro_invocations(trees: &[TokenTree]) -> Vec<TokenTree> {
     let mut output = Vec::new();
     let mut current = 0;
-    while current < tokens.len() {
-        if matches!(
-            tokens.get(current).map(|token| &token.kind),
-            Some(TokenKind::Identifier(_))
-        ) && matches!(
-            tokens.get(current + 1).map(|token| &token.kind),
-            Some(TokenKind::Bang)
-        ) && matches!(
-            tokens.get(current + 2).map(|token| &token.kind),
-            Some(TokenKind::LeftParen)
-        ) {
-            let mut depth = 1usize;
-            let mut end = current + 3;
-            while end < tokens.len() {
-                match tokens[end].kind {
-                    TokenKind::LeftParen => depth += 1,
-                    TokenKind::RightParen => {
-                        depth -= 1;
-                        if depth == 0 {
-                            let span = tokens[current].span.merge(tokens[end].span);
-                            output.push(Token::new(TokenKind::I32(0), span));
-                            current = end + 1;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-                end += 1;
-            }
-            if depth == 0 {
-                continue;
-            }
+    while current < trees.len() {
+        if let Some(
+            [
+                TokenTree::Token(Token {
+                    kind: TokenKind::Identifier(_),
+                    span,
+                }),
+                TokenTree::Token(Token {
+                    kind: TokenKind::Bang,
+                    ..
+                }),
+                TokenTree::Group {
+                    delimiter: Delimiter::Parenthesis,
+                    close,
+                    ..
+                },
+            ],
+        ) = trees.get(current..current + 3)
+        {
+            output.push(TokenTree::Token(Token::new(
+                TokenKind::I32(0),
+                span.merge(close.span),
+            )));
+            current += 3;
+            continue;
         }
-        output.push(tokens[current].clone());
+        match &trees[current] {
+            TokenTree::Group {
+                delimiter,
+                open,
+                children,
+                close,
+            } => output.push(TokenTree::Group {
+                delimiter: *delimiter,
+                open: open.clone(),
+                children: mask_macro_invocations(children).into_boxed_slice(),
+                close: close.clone(),
+            }),
+            tree => output.push(tree.clone()),
+        }
         current += 1;
     }
     output

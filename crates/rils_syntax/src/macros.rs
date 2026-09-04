@@ -15,7 +15,7 @@ use template::*;
 use crate::{
     ast::MacroSymbol,
     cursor::TokenStream,
-    parser::{ParseError, is_expression_fragment},
+    parser::{ParseError, is_expression_fragment_stream},
     source::Span,
     token::{Token, TokenKind},
 };
