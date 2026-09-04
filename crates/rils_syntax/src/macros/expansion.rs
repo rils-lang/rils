@@ -105,7 +105,7 @@ pub(super) fn expand_sequence(
                 return Err(error(
                     format!(
                         "macro `{name}` expects {expected} argument(s), but received {}",
-                        top_level_argument_count(&input)
+                        top_level_argument_count(&input_stream)
                     ),
                     call_span,
                 ));

@@ -137,24 +137,21 @@ pub(super) fn capture_ends(kind: FragmentKind, input: &[Token], position: usize)
     }
 }
 
-pub(super) fn top_level_argument_count(input: &[Token]) -> usize {
-    if input.is_empty() {
+pub(super) fn top_level_argument_count(stream: &crate::cursor::TokenStream) -> usize {
+    let trees = stream.trees();
+    if trees.is_empty() {
         return 0;
     }
-    let mut parens = 0usize;
-    let mut braces = 0usize;
-    let mut brackets = 0usize;
     let mut count = 1usize;
-    for token in input {
-        match token.kind {
-            TokenKind::LeftParen => parens += 1,
-            TokenKind::RightParen => parens = parens.saturating_sub(1),
-            TokenKind::LeftBrace => braces += 1,
-            TokenKind::RightBrace => braces = braces.saturating_sub(1),
-            TokenKind::LeftBracket => brackets += 1,
-            TokenKind::RightBracket => brackets = brackets.saturating_sub(1),
-            TokenKind::Comma if parens == 0 && braces == 0 && brackets == 0 => count += 1,
-            _ => {}
+    for tree in trees {
+        if matches!(
+            tree,
+            crate::token_tree::TokenTree::Token(Token {
+                kind: TokenKind::Comma,
+                ..
+            })
+        ) {
+            count += 1;
         }
     }
     count
