@@ -243,10 +243,7 @@ pub(super) fn parse_matcher(
 
         let dollar_span = token.span;
         current += 1;
-        if matches!(
-            tokens.get(current).map(|token| &token.kind),
-            Some(TokenKind::LeftParen)
-        ) {
+        if stream.cursor_at(current).check(&TokenKind::LeftParen) {
             if inside_repeat {
                 return Err(error(
                     "nested macro repetitions are not supported",
@@ -359,10 +356,7 @@ pub(super) fn validate_template_tokens(
         }
         let span = token.span;
         current += 1;
-        if matches!(
-            tokens.get(current).map(|token| &token.kind),
-            Some(TokenKind::LeftParen)
-        ) {
+        if stream.cursor_at(current).check(&TokenKind::LeftParen) {
             current += 1;
             let (inner, next) = slice_delimited(
                 tokens,

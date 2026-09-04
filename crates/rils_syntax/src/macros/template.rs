@@ -18,10 +18,7 @@ pub(super) fn expand_template(
         }
         let span = template[current].span;
         current += 1;
-        if matches!(
-            template.get(current).map(|token| &token.kind),
-            Some(TokenKind::LeftParen)
-        ) {
+        if stream.cursor_at(current).check(&TokenKind::LeftParen) {
             current += 1;
             let (inner, next) = slice_delimited(
                 template,
@@ -115,10 +112,7 @@ pub(super) fn template_capture_names(
         }
         let span = token.span;
         current += 1;
-        if matches!(
-            tokens.get(current).map(|token| &token.kind),
-            Some(TokenKind::LeftParen)
-        ) {
+        if stream.cursor_at(current).check(&TokenKind::LeftParen) {
             current += 1;
             let (inner, next) = slice_delimited(
                 tokens,
