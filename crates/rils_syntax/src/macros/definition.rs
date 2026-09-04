@@ -1,4 +1,5 @@
 use super::*;
+use crate::token_tree::Delimiter;
 
 pub(super) fn collect_definitions(
     tokens: Vec<Token>,
@@ -230,67 +231,106 @@ pub(super) fn parse_matcher(
     inside_repeat: bool,
     names: &mut HashSet<String>,
 ) -> Result<Vec<MatcherElement>, ParseError> {
-    let mut elements = Vec::new();
     let stream = crate::cursor::TokenStream::new(tokens.to_vec())
         .map_err(|span| error("unterminated delimited token tree", span))?;
-    let mut cursor = stream.cursor();
-    while let Some(token) = cursor.peek() {
-        let mut current = cursor.position();
+    parse_matcher_trees(stream.trees(), inside_repeat, names)
+}
+
+fn parse_matcher_trees(
+    trees: &[crate::token_tree::TokenTree],
+    inside_repeat: bool,
+    names: &mut HashSet<String>,
+) -> Result<Vec<MatcherElement>, ParseError> {
+    let mut elements = Vec::new();
+    let mut current = 0;
+    while let Some(tree) = trees.get(current) {
+        let crate::token_tree::TokenTree::Token(token) = tree else {
+            let crate::token_tree::TokenTree::Group {
+                delimiter,
+                children,
+                ..
+            } = tree
+            else {
+                unreachable!()
+            };
+            elements.push(MatcherElement::Group {
+                delimiter: *delimiter,
+                elements: parse_matcher_trees(children, inside_repeat, names)?,
+            });
+            current += 1;
+            continue;
+        };
         if !matches!(token.kind, TokenKind::Dollar) {
             elements.push(MatcherElement::Token(token.kind.clone()));
-            cursor = cursor.advance().expect("cursor token was present").1;
+            current += 1;
             continue;
         }
-
         let dollar_span = token.span;
         current += 1;
-        if stream.cursor_at(current).check(&TokenKind::LeftParen) {
+        if let Some(crate::token_tree::TokenTree::Group {
+            delimiter: Delimiter::Parenthesis,
+            children,
+            ..
+        }) = trees.get(current)
+        {
             if inside_repeat {
                 return Err(error(
                     "nested macro repetitions are not supported",
                     dollar_span,
                 ));
             }
-            current += 1;
-            let (inner_tokens, next) = slice_delimited(
-                tokens,
-                current,
-                &TokenKind::LeftParen,
-                &TokenKind::RightParen,
-                dollar_span,
-            )?;
-            current = next;
-            let inner = parse_matcher(&inner_tokens, true, names)?;
+            let inner = parse_matcher_trees(children, true, names)?;
             if !contains_capture(&inner) {
                 return Err(error(
                     "macro repetition must contain at least one capture",
                     dollar_span,
                 ));
             }
-            let (separator, one_or_more, next) = repetition_suffix(tokens, current, dollar_span)?;
+            current += 1;
+            let (separator, one_or_more, next) =
+                repetition_suffix_trees(trees, current, dollar_span)?;
             current = next;
             elements.push(MatcherElement::Repeat {
                 elements: inner,
                 separator,
                 one_or_more,
             });
-            cursor = stream.cursor_at(current);
             continue;
         }
 
-        let (name, span) =
-            expect_identifier(tokens, &mut current, "expected capture name after `$`")?;
+        let Some(crate::token_tree::TokenTree::Token(Token {
+            kind: TokenKind::Identifier(name),
+            span,
+        })) = trees.get(current)
+        else {
+            return Err(error("expected capture name after `$`", dollar_span));
+        };
+        let name = name.clone();
+        let span = *span;
+        current += 1;
         if !names.insert(name.clone()) {
             return Err(error(format!("duplicate macro capture `${name}`"), span));
         }
-        expect(
-            tokens,
-            &mut current,
-            &TokenKind::Colon,
-            "expected fragment type after macro capture",
-        )?;
-        let (fragment, fragment_span) =
-            expect_identifier(tokens, &mut current, "expected macro fragment type")?;
+        if !matches!(
+            trees.get(current),
+            Some(crate::token_tree::TokenTree::Token(Token {
+                kind: TokenKind::Colon,
+                ..
+            }))
+        ) {
+            return Err(error("expected fragment type after macro capture", span));
+        }
+        current += 1;
+        let Some(crate::token_tree::TokenTree::Token(Token {
+            kind: TokenKind::Identifier(fragment),
+            span: fragment_span,
+        })) = trees.get(current)
+        else {
+            return Err(error("expected macro fragment type", span));
+        };
+        let fragment = fragment.clone();
+        let fragment_span = *fragment_span;
+        current += 1;
         let kind = match fragment.as_str() {
             "expr" => FragmentKind::Expr,
             "lit" => FragmentKind::Lit,
@@ -303,9 +343,31 @@ pub(super) fn parse_matcher(
             }
         };
         elements.push(MatcherElement::Capture { name, kind });
-        cursor = stream.cursor_at(current);
     }
     Ok(elements)
+}
+
+fn repetition_suffix_trees(
+    trees: &[crate::token_tree::TokenTree],
+    current: usize,
+    span: Span,
+) -> Result<(Option<TokenKind>, bool, usize), ParseError> {
+    fn token_kind(tree: Option<&crate::token_tree::TokenTree>) -> Option<&TokenKind> {
+        match tree {
+            Some(crate::token_tree::TokenTree::Token(token)) => Some(&token.kind),
+            _ => None,
+        }
+    }
+    match token_kind(trees.get(current)) {
+        Some(TokenKind::Star) => Ok((None, false, current + 1)),
+        Some(TokenKind::Plus) => Ok((None, true, current + 1)),
+        Some(separator) => match token_kind(trees.get(current + 1)) {
+            Some(TokenKind::Star) => Ok((Some(separator.clone()), false, current + 2)),
+            Some(TokenKind::Plus) => Ok((Some(separator.clone()), true, current + 2)),
+            _ => Err(error("expected `*` or `+` after macro repetition", span)),
+        },
+        None => Err(error("expected `*` or `+` after macro repetition", span)),
+    }
 }
 
 pub(super) fn repetition_suffix(
@@ -410,6 +472,9 @@ pub(super) fn collect_capture_names(
             MatcherElement::Repeat { elements, .. } => {
                 collect_capture_names(elements, true, single, repeated);
             }
+            MatcherElement::Group { elements, .. } => {
+                collect_capture_names(elements, inside_repeat, single, repeated);
+            }
             MatcherElement::Token(_) => {}
         }
     }
@@ -419,6 +484,7 @@ pub(super) fn contains_capture(elements: &[MatcherElement]) -> bool {
     elements.iter().any(|element| {
         matches!(element, MatcherElement::Capture { .. })
             || matches!(element, MatcherElement::Repeat { elements, .. } if contains_capture(elements))
+            || matches!(element, MatcherElement::Group { elements, .. } if contains_capture(elements))
     })
 }
 

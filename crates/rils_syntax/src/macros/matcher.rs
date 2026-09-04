@@ -1,16 +1,16 @@
 use super::*;
 use crate::cursor::TokenStream;
+use crate::token_tree::{Delimiter, TokenTree};
 
 pub(super) fn match_arm(matcher: &[MatcherElement], stream: &TokenStream) -> Option<Bindings> {
-    let input = stream.flatten();
     let bindings = Bindings::default();
-    let (position, bindings) = match_elements(matcher, &input, 0, bindings, false)?;
-    (position == input.len()).then_some(bindings)
+    let (position, bindings) = match_elements(matcher, stream.trees(), 0, bindings, false)?;
+    (position == stream.trees().len()).then_some(bindings)
 }
 
 pub(super) fn match_elements(
     elements: &[MatcherElement],
-    input: &[Token],
+    input: &[TokenTree],
     position: usize,
     bindings: Bindings,
     inside_repeat: bool,
@@ -20,14 +20,33 @@ pub(super) fn match_elements(
     };
     match first {
         MatcherElement::Token(expected) => {
-            let actual = input.get(position)?;
+            let TokenTree::Token(actual) = input.get(position)? else {
+                return None;
+            };
             token_kinds_equal(&actual.kind, expected).then_some(())?;
+            match_elements(rest, input, position + 1, bindings, inside_repeat)
+        }
+        MatcherElement::Group {
+            delimiter,
+            elements,
+        } => {
+            let TokenTree::Group {
+                delimiter: actual,
+                children,
+                ..
+            } = input.get(position)?
+            else {
+                return None;
+            };
+            (actual == delimiter).then_some(())?;
+            let (end, bindings) = match_elements(elements, children, 0, bindings, inside_repeat)?;
+            (end == children.len()).then_some(())?;
             match_elements(rest, input, position + 1, bindings, inside_repeat)
         }
         MatcherElement::Capture { name, kind } => {
             for end in capture_ends(*kind, input, position).into_iter().rev() {
                 let mut candidate = bindings.clone();
-                let captured = TokenStream::new(input[position..end].to_vec()).ok()?;
+                let captured = TokenStream::from_trees(&input[position..end]);
                 if inside_repeat {
                     candidate
                         .repeated
@@ -64,7 +83,7 @@ pub(super) fn match_repetition(
     separator: Option<&TokenKind>,
     one_or_more: bool,
     rest: &[MatcherElement],
-    input: &[Token],
+    input: &[TokenTree],
     position: usize,
     mut bindings: Bindings,
 ) -> Option<(usize, Bindings)> {
@@ -74,7 +93,7 @@ pub(super) fn match_repetition(
         let (start, state) = states.last().cloned()?;
         let item_start = if states.len() > 1 {
             if let Some(separator) = separator {
-                let Some(token) = input.get(start) else {
+                let Some(TokenTree::Token(token)) = input.get(start) else {
                     break;
                 };
                 if !token_kinds_equal(&token.kind, separator) {
@@ -117,20 +136,32 @@ pub(super) fn initialize_repeated_bindings(elements: &[MatcherElement], bindings
             MatcherElement::Repeat { elements, .. } => {
                 initialize_repeated_bindings(elements, bindings);
             }
+            MatcherElement::Group { elements, .. } => {
+                initialize_repeated_bindings(elements, bindings);
+            }
             MatcherElement::Token(_) => {}
         }
     }
 }
 
-pub(super) fn capture_ends(kind: FragmentKind, input: &[Token], position: usize) -> Vec<usize> {
+pub(super) fn capture_ends(kind: FragmentKind, input: &[TokenTree], position: usize) -> Vec<usize> {
     match kind {
         FragmentKind::Ident => input
             .get(position)
-            .filter(|token| matches!(token.kind, TokenKind::Identifier(_)))
-            .map_or_else(Vec::new, |_| vec![position + 1]),
+            .and_then(|tree| match tree {
+                TokenTree::Token(token) if matches!(token.kind, TokenKind::Identifier(_)) => {
+                    Some(position + 1)
+                }
+                _ => None,
+            })
+            .into_iter()
+            .collect(),
         FragmentKind::Lit => literal_end(input, position).into_iter().collect(),
         FragmentKind::Expr => ((position + 1)..=input.len())
-            .filter(|end| is_expression_fragment(&input[position..*end]))
+            .filter(|end| {
+                let stream = TokenStream::from_trees(&input[position..*end]);
+                is_expression_fragment(&stream.flatten())
+            })
             .collect(),
         FragmentKind::Tokens => ((position + 1)..=input.len()).collect(),
     }
@@ -156,8 +187,10 @@ pub(super) fn top_level_argument_count(stream: &crate::cursor::TokenStream) -> u
     count
 }
 
-pub(super) fn literal_end(input: &[Token], position: usize) -> Option<usize> {
-    let token = input.get(position)?;
+pub(super) fn literal_end(input: &[TokenTree], position: usize) -> Option<usize> {
+    let TokenTree::Token(token) = input.get(position)? else {
+        return None;
+    };
     if matches!(
         token.kind,
         TokenKind::Integer(_)
@@ -183,13 +216,32 @@ pub(super) fn literal_end(input: &[Token], position: usize) -> Option<usize> {
     ) {
         return Some(position + 1);
     }
-    if matches!(token.kind, TokenKind::LeftParen)
-        && matches!(
-            input.get(position + 1).map(|token| &token.kind),
-            Some(TokenKind::RightParen)
-        )
+    if let TokenTree::Group {
+        delimiter: Delimiter::Parenthesis,
+        children,
+        ..
+    } = input.get(position)?
+        && children.is_empty()
     {
-        return Some(position + 2);
+        return Some(position + 1);
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{lexer::lex, macros::definition::parse_matcher};
+    use std::collections::HashSet;
+
+    #[test]
+    fn matches_groups_without_flattening_the_input_boundary() {
+        let pattern = lex("($value:expr)").unwrap();
+        let mut names = HashSet::new();
+        let matcher = parse_matcher(&pattern, false, &mut names).unwrap();
+        let input = TokenStream::new(lex("(1 + 2)").unwrap()).unwrap();
+        let bindings = match_arm(&matcher, &input).expect("group matcher should match");
+        let captured = bindings.single.get("value").expect("capture");
+        assert_eq!(captured.flatten().len(), 3);
+    }
 }

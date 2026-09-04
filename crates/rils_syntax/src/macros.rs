@@ -54,6 +54,10 @@ enum FragmentKind {
 #[derive(Clone, Debug)]
 enum MatcherElement {
     Token(TokenKind),
+    Group {
+        delimiter: crate::token_tree::Delimiter,
+        elements: Vec<MatcherElement>,
+    },
     Capture {
         name: String,
         kind: FragmentKind,
