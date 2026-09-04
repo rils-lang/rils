@@ -142,7 +142,9 @@ fn validate_format_invocation(
     input: &[Token],
     call_span: Span,
 ) -> Result<(), ParseError> {
-    let arguments = top_level_arguments(input);
+    let stream = TokenStream::new(input.to_vec())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
+    let arguments = top_level_arguments(&stream);
     if arguments.is_empty() {
         return if name == "println" {
             Ok(())
@@ -155,7 +157,7 @@ fn validate_format_invocation(
             kind: TokenKind::String(format),
             span,
         },
-    ] = arguments[0]
+    ] = arguments[0].as_slice()
     else {
         return Err(error(
             format!("macro `{name}` requires a string literal as its first argument"),
@@ -191,26 +193,26 @@ fn validate_format_invocation(
     Ok(())
 }
 
-fn top_level_arguments(tokens: &[Token]) -> Vec<&[Token]> {
-    if tokens.is_empty() {
+fn top_level_arguments(stream: &TokenStream) -> Vec<Vec<Token>> {
+    let trees = stream.trees();
+    if trees.is_empty() {
         return Vec::new();
     }
     let mut arguments = Vec::new();
-    let mut start = 0usize;
-    let mut depth = 0usize;
-    for (index, token) in tokens.iter().enumerate() {
-        match token.kind {
-            TokenKind::LeftParen | TokenKind::LeftBrace | TokenKind::LeftBracket => depth += 1,
-            TokenKind::RightParen | TokenKind::RightBrace | TokenKind::RightBracket => {
-                depth = depth.saturating_sub(1);
-            }
-            TokenKind::Comma if depth == 0 => {
-                arguments.push(&tokens[start..index]);
-                start = index + 1;
-            }
-            _ => {}
+    let mut current = Vec::new();
+    for tree in trees {
+        if matches!(
+            tree,
+            TokenTree::Token(Token {
+                kind: TokenKind::Comma,
+                ..
+            })
+        ) {
+            arguments.push(std::mem::take(&mut current));
+        } else {
+            tree.flatten_into(&mut current);
         }
     }
-    arguments.push(&tokens[start..]);
+    arguments.push(current);
     arguments
 }
