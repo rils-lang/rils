@@ -231,7 +231,8 @@ pub(super) fn parse_matcher(
     names: &mut HashSet<String>,
 ) -> Result<Vec<MatcherElement>, ParseError> {
     let mut elements = Vec::new();
-    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+    let stream = crate::cursor::TokenStream::new(tokens.to_vec())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     let mut cursor = stream.cursor();
     while let Some(token) = cursor.peek() {
         let mut current = cursor.position();
@@ -312,7 +313,8 @@ pub(super) fn repetition_suffix(
     current: usize,
     span: Span,
 ) -> Result<(Option<TokenKind>, bool, usize), ParseError> {
-    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+    let stream = crate::cursor::TokenStream::new(tokens.to_vec())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     let cursor = stream.cursor_at(current);
     match cursor.peek().map(|token| &token.kind) {
         Some(TokenKind::Star) => Ok((None, false, current + 1)),
@@ -346,7 +348,8 @@ pub(super) fn validate_template_tokens(
     single: &HashSet<String>,
     repeated: &HashSet<String>,
 ) -> Result<(), ParseError> {
-    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+    let stream = crate::cursor::TokenStream::new(tokens.to_vec())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     let mut cursor = stream.cursor();
     while let Some(token) = cursor.peek() {
         let mut current = cursor.position();
@@ -421,7 +424,9 @@ pub(super) fn contains_capture(elements: &[MatcherElement]) -> bool {
 
 pub(super) fn invocation_references(tokens: &[Token]) -> HashMap<String, Vec<Span>> {
     let mut references: HashMap<String, Vec<Span>> = HashMap::new();
-    let stream = crate::cursor::TokenStream::new(tokens.to_vec());
+    let Ok(stream) = crate::cursor::TokenStream::new(tokens.to_vec()) else {
+        return references;
+    };
 
     fn visit(trees: &[crate::token_tree::TokenTree], references: &mut HashMap<String, Vec<Span>>) {
         for window in trees.windows(3) {

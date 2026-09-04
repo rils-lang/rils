@@ -48,7 +48,10 @@ fn parse_with_options(
 ) -> Result<Program, ParseError> {
     validate_delimiters(&tokens)?;
     let expansion = crate::macros::expand(tokens, native_macros)?;
-    let stream = TokenStream::new(expansion.tokens);
+    let stream = TokenStream::new(expansion.tokens).map_err(|span| ParseError {
+        message: "unterminated delimited token tree".into(),
+        span,
+    })?;
     let mut program = Parser::new(&stream, expansion.macros, allow_nested_parameter_references)
         .parse_program()?;
     if !allow_nested_parameter_references {
@@ -142,7 +145,9 @@ pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
         return false;
     }
     let fragment = mask_macro_invocations(tokens);
-    let stream = TokenStream::new(fragment);
+    let Ok(stream) = TokenStream::new(fragment) else {
+        return false;
+    };
     let mut parser = Parser::new(&stream, Vec::new(), false);
     parser.expression().is_ok() && parser.is_at_end()
 }

@@ -10,20 +10,15 @@ pub(crate) struct TokenStream {
 }
 
 impl TokenStream {
-    pub(crate) fn new(tokens: Vec<Token>) -> Self {
+    pub(crate) fn new(tokens: Vec<Token>) -> Result<Self, crate::source::Span> {
         let source_end = tokens.last().map_or(0, |token| token.span.end);
         let token_len = tokens.len();
-        // Most callers validate delimiters before constructing a stream.  A
-        // few macro helpers intentionally work on fragments, though, so keep
-        // malformed fragments traversable instead of silently dropping them.
-        let trees = build_tree(&tokens)
-            .unwrap_or_else(|_| tokens.into_iter().map(TokenTree::Token).collect())
-            .into_boxed_slice();
-        Self {
+        let trees = build_tree(&tokens)?.into_boxed_slice();
+        Ok(Self {
             trees,
             token_len,
             source_end,
-        }
+        })
     }
 
     pub(crate) fn cursor(&self) -> Cursor<'_> {
@@ -135,7 +130,7 @@ mod tests {
 
     #[test]
     fn stream_builds_tree_view() {
-        let stream = TokenStream::new(lex("call!(1)").unwrap());
+        let stream = TokenStream::new(lex("call!(1)").unwrap()).unwrap();
         assert_eq!(stream.trees().len(), 3);
         assert_eq!(stream.source_end(), 8);
     }
@@ -143,7 +138,7 @@ mod tests {
     #[test]
     fn flattened_cursor_order_matches_lexer() {
         let tokens = lex("assert!([1, 2].into_iter().any(is_two));").unwrap();
-        let stream = TokenStream::new(tokens.clone());
+        let stream = TokenStream::new(tokens.clone()).unwrap();
         let mut cursor = stream.cursor();
         let mut got = Vec::new();
         while let Some(token) = cursor.peek() {
@@ -151,5 +146,11 @@ mod tests {
             cursor = cursor.advance().unwrap().1;
         }
         assert_eq!(got, tokens.into_iter().map(|t| t.kind).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn rejects_unbalanced_tokens_at_stream_boundary() {
+        let tokens = lex("call!(1").unwrap();
+        assert!(TokenStream::new(tokens).is_err());
     }
 }

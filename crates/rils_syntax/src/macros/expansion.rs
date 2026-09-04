@@ -10,7 +10,8 @@ pub(super) fn expand_sequence(
     stack: &mut Vec<String>,
 ) -> Result<Vec<Token>, ParseError> {
     let mut output = Vec::new();
-    let stream = TokenStream::new(tokens.to_vec());
+    let stream = TokenStream::new(tokens.to_vec())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     let mut cursor = TreeCursor::from_stream(&stream);
     while let Some(tree) = cursor.first() {
         if let TokenTree::Group {

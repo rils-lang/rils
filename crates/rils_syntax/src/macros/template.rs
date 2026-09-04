@@ -7,7 +7,8 @@ pub(super) fn expand_template(
     iteration: Option<usize>,
 ) -> Result<Vec<Token>, ParseError> {
     let mut output = Vec::new();
-    let stream = TokenStream::new(template.to_vec());
+    let stream = TokenStream::new(template.to_vec())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     let mut cursor = stream.cursor();
     while let Some(token) = cursor.peek() {
         let mut current = cursor.position();
@@ -102,7 +103,8 @@ pub(super) fn template_capture_names(
     tokens: &[Token],
     names: &mut Vec<String>,
 ) -> Result<(), ParseError> {
-    let stream = TokenStream::new(tokens.to_vec());
+    let stream = TokenStream::new(tokens.to_vec())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     let mut cursor = stream.cursor();
     while let Some(token) = cursor.peek() {
         let mut current = cursor.position();
