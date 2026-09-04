@@ -193,7 +193,7 @@ def main() -> int:
     ):
         raise RuntimeError(
             "--preview-version must be a SemVer prerelease, for example "
-            "0.3.0-preview.0"
+            "0.4.0-preview.0"
         )
 
     cargo = command_prefix("cargo")

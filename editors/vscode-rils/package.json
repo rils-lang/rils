@@ -2,7 +2,7 @@
   "name": "rils-language",
   "displayName": "Rils Language",
   "description": "Syntax highlighting and language intelligence for the Rust-Inspired Lightweight Script language.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "rils-lang",
   "license": "MIT OR Apache-2.0",
   "repository": {

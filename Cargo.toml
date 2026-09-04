@@ -43,24 +43,24 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rils-lang/rils"
 
 [workspace.dependencies]
-rils_bytecode = { version = "0.3.0", path = "crates/rils_bytecode" }
-rils_runtime = { version = "0.3.0", path = "crates/rils_runtime" }
-rils_driver = { version = "0.3.0", path = "crates/rils_driver" }
-rils_execution = { version = "0.3.0", path = "crates/rils_execution" }
-rils_compiler = { version = "0.3.0", path = "crates/rils_compiler" }
-rils_host = { version = "0.3.0", path = "crates/rils_host" }
-rils_frontend = { version = "0.3.0", path = "crates/rils_frontend" }
-rils_syntax = { version = "0.3.0", path = "crates/rils_syntax" }
-rils_builtins = { version = "0.3.0", path = "crates/rils_builtins" }
-rils_builtins_macros = { version = "0.3.0", path = "crates/rils_builtins_macros" }
-rils_project = { version = "0.3.0", path = "crates/rils_project" }
+rils_bytecode = { version = "0.4.0", path = "crates/rils_bytecode" }
+rils_runtime = { version = "0.4.0", path = "crates/rils_runtime" }
+rils_driver = { version = "0.4.0", path = "crates/rils_driver" }
+rils_execution = { version = "0.4.0", path = "crates/rils_execution" }
+rils_compiler = { version = "0.4.0", path = "crates/rils_compiler" }
+rils_host = { version = "0.4.0", path = "crates/rils_host" }
+rils_frontend = { version = "0.4.0", path = "crates/rils_frontend" }
+rils_syntax = { version = "0.4.0", path = "crates/rils_syntax" }
+rils_builtins = { version = "0.4.0", path = "crates/rils_builtins" }
+rils_builtins_macros = { version = "0.4.0", path = "crates/rils_builtins_macros" }
+rils_project = { version = "0.4.0", path = "crates/rils_project" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"

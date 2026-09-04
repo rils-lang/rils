@@ -69,5 +69,5 @@ Unity 项目通过独立的 [RilsForUnity](https://github.com/rils-lang/RilsForU
 - [未来规划与待办](TODO.md)
 - [变更日志](CHANGELOG.md)
 
-当前代码处于 `0.3.0` 阶段，适合语言实验、工具开发和受控宿主嵌入。Unity、UE 等引擎集成由
+当前代码处于 `0.4.0` 阶段，适合语言实验、工具开发和受控宿主嵌入。Unity、UE 等引擎集成由
 各自独立的插件工程维护，不属于 Rils 核心仓库的版本标准。

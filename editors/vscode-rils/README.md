@@ -79,7 +79,7 @@ metadata in a temporary directory, does not publish the package, and writes the
 VSIX to `dist/` as usual:
 
 ```console
-python tools/release-vscode.py --allow-dirty --skip-install --preview-version 0.3.0-preview.0
+python tools/release-vscode.py --allow-dirty --skip-install --preview-version 0.4.0-preview.0
 ```
 
 Use a numeric preview suffix when publishing several local builds so VS Code can

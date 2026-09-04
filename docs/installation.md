@@ -131,7 +131,7 @@ rils-up override set 0.4.0
 `.rils-version`、全局默认版本。也可以仅为一次命令选择版本：
 
 ```console
-rils +0.3.0 script.rils
+rils +0.4.0 script.rils
 ```
 
 ## 从源码构建

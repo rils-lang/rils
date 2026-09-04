@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "rils"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_bytecode",
  "rils_runtime",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "rils_analyzer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "lsp-server",
  "rils_builtins",
@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "rils_bench"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "rils_bytecode",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "rils_builtins"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_builtins_macros",
  "rils_syntax",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "rils_builtins_macros"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "rils_bytecode"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_builtins",
  "rils_compiler",
@@ -629,7 +629,7 @@ dependencies = [
 
 [[package]]
 name = "rils_capi"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_bytecode",
  "rils_runtime",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "rils_cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "rils",
@@ -645,7 +645,7 @@ dependencies = [
 
 [[package]]
 name = "rils_compiler"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_builtins",
  "rils_frontend",
@@ -654,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "rils_driver"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_frontend",
  "rils_host",
@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "rils_execution"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_builtins",
  "rils_frontend",
@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "rils_frontend"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_builtins",
  "rils_host",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "rils_host"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_syntax",
  "serde_json",
@@ -689,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "rils_project"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "toml",
@@ -697,7 +697,7 @@ dependencies = [
 
 [[package]]
 name = "rils_runtime"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rils_builtins",
  "rils_driver",
@@ -710,7 +710,7 @@ dependencies = [
 
 [[package]]
 name = "rils_syntax"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "rils_up"
