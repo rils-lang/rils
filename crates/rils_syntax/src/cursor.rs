@@ -38,6 +38,38 @@ impl TokenStream {
         &self.trees
     }
 
+    pub(crate) fn tree_cursor(&self) -> crate::token_tree::TreeCursor<'_> {
+        crate::token_tree::TreeCursor::new(&self.trees)
+    }
+
+    pub(crate) fn from_trees(trees: &[TokenTree]) -> Self {
+        fn count(tree: &TokenTree) -> usize {
+            match tree {
+                TokenTree::Token(_) => 1,
+                TokenTree::Group { children, .. } => 2 + children.iter().map(count).sum::<usize>(),
+            }
+        }
+        fn end(tree: &TokenTree) -> usize {
+            match tree {
+                TokenTree::Token(token) => token.span.end,
+                TokenTree::Group { close, .. } => close.span.end,
+            }
+        }
+        Self {
+            trees: trees.to_vec().into_boxed_slice(),
+            token_len: trees.iter().map(count).sum(),
+            source_end: trees.last().map_or(0, end),
+        }
+    }
+
+    pub(crate) fn flatten(&self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        for tree in &self.trees {
+            tree.flatten_into(&mut tokens);
+        }
+        tokens
+    }
+
     fn token_at(&self, position: usize) -> Option<&Token> {
         fn visit<'a>(
             trees: &'a [TokenTree],
@@ -152,5 +184,13 @@ mod tests {
     fn rejects_unbalanced_tokens_at_stream_boundary() {
         let tokens = lex("call!(1").unwrap();
         assert!(TokenStream::new(tokens).is_err());
+    }
+
+    #[test]
+    fn nested_tree_stream_preserves_group_structure() {
+        let stream = TokenStream::new(lex("call!(1)").unwrap()).unwrap();
+        let nested = TokenStream::from_trees(&stream.trees()[2..]);
+        assert_eq!(nested.flatten().len(), 3);
+        assert!(nested.tree_cursor().group().is_some());
     }
 }

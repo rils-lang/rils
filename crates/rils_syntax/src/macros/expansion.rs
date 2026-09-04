@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     cursor::TokenStream,
-    token_tree::{Delimiter, TokenTree, TreeCursor},
+    token_tree::{Delimiter, TokenTree},
 };
 
 pub(super) fn expand_sequence(
@@ -12,7 +12,7 @@ pub(super) fn expand_sequence(
     let mut output = Vec::new();
     let stream = TokenStream::new(tokens.to_vec())
         .map_err(|span| error("unterminated delimited token tree", span))?;
-    let mut cursor = TreeCursor::from_stream(&stream);
+    let mut cursor = stream.tree_cursor();
     while let Some(tree) = cursor.first() {
         if let TokenTree::Group {
             open,
@@ -89,10 +89,8 @@ pub(super) fn expand_sequence(
             .step()
             .expect("bang was present");
         let (_, _, input_cursor, next) = after_bang.group().expect("invocation group was present");
-        let mut input = Vec::new();
-        for child in input_cursor.remaining().iter() {
-            child.flatten_into(&mut input);
-        }
+        let input_stream = TokenStream::from_trees(input_cursor.remaining());
+        let input = input_stream.flatten();
         if matches!(name.as_str(), "print" | "println") {
             validate_format_invocation(&name, &input, call_span)?;
         }
