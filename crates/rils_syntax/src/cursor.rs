@@ -13,7 +13,7 @@ impl TokenStream {
     pub(crate) fn new(tokens: Vec<Token>) -> Result<Self, crate::source::Span> {
         let source_end = tokens.last().map_or(0, |token| token.span.end);
         let token_len = tokens.len();
-        let trees = build_tree(&tokens)?.into_boxed_slice();
+        let trees = build_tree(tokens)?.into_boxed_slice();
         Ok(Self {
             trees,
             token_len,
@@ -67,10 +67,11 @@ impl TokenStream {
         }
     }
 
-    pub(crate) fn flatten(&self) -> Vec<Token> {
+    /// Materialize the stream for the parser/lexer compatibility boundary.
+    pub(crate) fn to_tokens(&self) -> Vec<Token> {
         let mut tokens = Vec::new();
         for tree in &self.trees {
-            tree.flatten_into(&mut tokens);
+            tree.append_tokens(&mut tokens);
         }
         tokens
     }
@@ -195,7 +196,7 @@ mod tests {
     fn nested_tree_stream_preserves_group_structure() {
         let stream = TokenStream::new(lex("call!(1)").unwrap()).unwrap();
         let nested = TokenStream::from_trees(&stream.trees()[2..]);
-        assert_eq!(nested.flatten().len(), 3);
+        assert_eq!(nested.to_tokens().len(), 3);
         assert!(nested.tree_cursor().group().is_some());
     }
 }

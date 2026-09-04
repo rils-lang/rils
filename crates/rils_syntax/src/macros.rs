@@ -123,7 +123,7 @@ pub(crate) fn expand(
     let mut stack = Vec::new();
     let expanded = expand_sequence(&tokens, &definitions, &mut stack)?;
     Ok(MacroExpansion {
-        tokens: expanded.flatten(),
+        tokens: expanded.to_tokens(),
         macros,
     })
 }

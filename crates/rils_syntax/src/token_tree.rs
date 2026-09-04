@@ -19,7 +19,7 @@ pub(crate) enum TokenTree {
 }
 
 impl TokenTree {
-    pub(crate) fn flatten_into(&self, output: &mut Vec<Token>) {
+    pub(crate) fn append_tokens(&self, output: &mut Vec<Token>) {
         match self {
             Self::Token(token) => output.push(token.clone()),
             Self::Group {
@@ -30,7 +30,7 @@ impl TokenTree {
             } => {
                 output.push(open.clone());
                 for child in children.iter() {
-                    child.flatten_into(output);
+                    child.append_tokens(output);
                 }
                 output.push(close.clone());
             }
@@ -114,14 +114,18 @@ pub(crate) fn group_span(open: Span, close: Span) -> Span {
     open.merge(close)
 }
 
-pub(crate) fn build_tree(tokens: &[Token]) -> Result<Vec<TokenTree>, Span> {
+pub(crate) fn build_tree(tokens: Vec<Token>) -> Result<Vec<TokenTree>, Span> {
+    struct TokenBuffer {
+        tokens: Vec<Token>,
+    }
+
     fn parse(
-        tokens: &[Token],
+        buffer: &TokenBuffer,
         index: &mut usize,
         closing: Option<Delimiter>,
     ) -> Result<Vec<TokenTree>, Span> {
         let mut output = Vec::new();
-        while let Some(token) = tokens.get(*index) {
+        while let Some(token) = buffer.tokens.get(*index) {
             if let Some((delimiter, is_open)) = delimiter_pair(token) {
                 if !is_open {
                     if Some(delimiter) == closing {
@@ -131,8 +135,8 @@ pub(crate) fn build_tree(tokens: &[Token]) -> Result<Vec<TokenTree>, Span> {
                 }
                 let open = token.clone();
                 *index += 1;
-                let children = parse(tokens, index, Some(delimiter))?;
-                let Some(close) = tokens.get(*index) else {
+                let children = parse(buffer, index, Some(delimiter))?;
+                let Some(close) = buffer.tokens.get(*index) else {
                     return Err(open.span);
                 };
                 *index += 1;
@@ -148,13 +152,17 @@ pub(crate) fn build_tree(tokens: &[Token]) -> Result<Vec<TokenTree>, Span> {
             }
         }
         if closing.is_some() {
-            Err(tokens.last().map_or(Span::default(), |token| token.span))
+            Err(buffer
+                .tokens
+                .last()
+                .map_or(Span::default(), |token| token.span))
         } else {
             Ok(output)
         }
     }
     let mut index = 0;
-    let trees = parse(tokens, &mut index, None)?;
+    let buffer = TokenBuffer { tokens };
+    let trees = parse(&buffer, &mut index, None)?;
     Ok(trees)
 }
 
@@ -167,7 +175,7 @@ mod tests {
     #[test]
     fn builds_nested_groups() {
         let tokens = lex("foo!(a[1])").unwrap();
-        let trees = build_tree(&tokens).unwrap();
+        let trees = build_tree(tokens).unwrap();
         assert!(matches!(
             trees[2],
             TokenTree::Group {
@@ -180,12 +188,12 @@ mod tests {
     #[test]
     fn rejects_unclosed_groups() {
         let tokens = lex("foo!(a").unwrap();
-        assert!(build_tree(&tokens).is_err());
+        assert!(build_tree(tokens).is_err());
     }
 
     #[test]
     fn tree_cursor_is_copyable_and_advances_without_mutating_storage() {
-        let trees = build_tree(&lex("call!(1)").unwrap()).unwrap();
+        let trees = build_tree(lex("call!(1)").unwrap()).unwrap();
         let cursor = TreeCursor::new(&trees);
         let fork = cursor;
         let (_, next) = cursor.step().unwrap();
@@ -199,7 +207,7 @@ mod tests {
 
     #[test]
     fn tree_cursor_enters_delimiter_groups() {
-        let trees = build_tree(&lex("call!(1)").unwrap()).unwrap();
+        let trees = build_tree(lex("call!(1)").unwrap()).unwrap();
         let cursor = TreeCursor::new(&trees);
         let (_, cursor) = cursor.step().unwrap();
         let (_, cursor) = cursor.step().unwrap();

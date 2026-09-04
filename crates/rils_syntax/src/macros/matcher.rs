@@ -243,6 +243,6 @@ mod tests {
         let input = TokenStream::new(lex("(1 + 2)").unwrap()).unwrap();
         let bindings = match_arm(&matcher, &input).expect("group matcher should match");
         let captured = bindings.single.get("value").expect("capture");
-        assert_eq!(captured.flatten().len(), 3);
+        assert_eq!(captured.to_tokens().len(), 3);
     }
 }
