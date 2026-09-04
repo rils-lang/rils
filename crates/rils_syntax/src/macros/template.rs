@@ -57,14 +57,15 @@ pub(super) fn expand_template(
                     name_span,
                 )
             })?;
-            output.extend(values.get(index).cloned().ok_or_else(|| {
+            let value = values.get(index).ok_or_else(|| {
                 error(
                     format!("repeated capture `${name}` has inconsistent length"),
                     name_span,
                 )
-            })?);
+            })?;
+            output.extend(value.flatten());
         } else if let Some(value) = bindings.single.get(&name) {
-            output.extend(value.iter().cloned());
+            output.extend(value.flatten());
         } else {
             return Err(error(
                 format!("unknown macro parameter or capture `${name}`"),

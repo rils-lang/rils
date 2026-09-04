@@ -14,6 +14,7 @@ use template::*;
 
 use crate::{
     ast::MacroSymbol,
+    cursor::TokenStream,
     parser::{ParseError, is_expression_fragment},
     source::Span,
     token::{Token, TokenKind},
@@ -84,8 +85,8 @@ struct CollectedMacros {
 
 #[derive(Clone, Debug, Default)]
 struct Bindings {
-    single: HashMap<String, Vec<Token>>,
-    repeated: HashMap<String, Vec<Vec<Token>>>,
+    single: HashMap<String, TokenStream>,
+    repeated: HashMap<String, Vec<TokenStream>>,
 }
 
 #[derive(Debug)]

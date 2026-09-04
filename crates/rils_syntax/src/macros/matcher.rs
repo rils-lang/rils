@@ -27,17 +27,14 @@ pub(super) fn match_elements(
         MatcherElement::Capture { name, kind } => {
             for end in capture_ends(*kind, input, position).into_iter().rev() {
                 let mut candidate = bindings.clone();
+                let captured = TokenStream::new(input[position..end].to_vec()).ok()?;
                 if inside_repeat {
                     candidate
                         .repeated
                         .entry(name.clone())
                         .or_default()
-                        .push(input[position..end].to_vec());
-                } else if candidate
-                    .single
-                    .insert(name.clone(), input[position..end].to_vec())
-                    .is_some()
-                {
+                        .push(captured);
+                } else if candidate.single.insert(name.clone(), captured).is_some() {
                     continue;
                 }
                 if let Some(result) = match_elements(rest, input, end, candidate, inside_repeat) {
