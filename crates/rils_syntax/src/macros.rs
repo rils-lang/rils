@@ -72,7 +72,7 @@ enum MatcherElement {
 #[derive(Clone, Debug)]
 struct MacroArm {
     matcher: Vec<MatcherElement>,
-    template: Vec<Token>,
+    template: TokenStream,
     legacy_arity: Option<usize>,
 }
 
@@ -82,7 +82,7 @@ struct MacroTemplate {
 }
 
 struct CollectedMacros {
-    tokens: Vec<Token>,
+    tokens: TokenStream,
     definitions: HashMap<String, MacroTemplate>,
     symbols: Vec<MacroSymbol>,
 }
@@ -103,7 +103,11 @@ pub(crate) fn expand(
     tokens: Vec<Token>,
     native_macros: &[NativeMacroDefinition],
 ) -> Result<MacroExpansion, ParseError> {
-    let references = invocation_references(&tokens);
+    let input_stream = TokenStream::new(tokens.clone()).map_err(|span| ParseError {
+        message: "expected closing delimiter".into(),
+        span,
+    })?;
+    let references = invocation_references(&input_stream);
     let CollectedMacros {
         tokens,
         definitions,
@@ -119,7 +123,7 @@ pub(crate) fn expand(
     let mut stack = Vec::new();
     let expanded = expand_sequence(&tokens, &definitions, &mut stack)?;
     Ok(MacroExpansion {
-        tokens: expanded,
+        tokens: expanded.flatten(),
         macros,
     })
 }

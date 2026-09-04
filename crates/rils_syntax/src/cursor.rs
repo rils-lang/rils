@@ -38,11 +38,16 @@ impl TokenStream {
         &self.trees
     }
 
+    #[allow(dead_code)]
     pub(crate) fn tree_cursor(&self) -> crate::token_tree::TreeCursor<'_> {
         crate::token_tree::TreeCursor::new(&self.trees)
     }
 
     pub(crate) fn from_trees(trees: &[TokenTree]) -> Self {
+        Self::from_trees_owned(trees.to_vec())
+    }
+
+    pub(crate) fn from_trees_owned(trees: Vec<TokenTree>) -> Self {
         fn count(tree: &TokenTree) -> usize {
             match tree {
                 TokenTree::Token(_) => 1,
@@ -56,9 +61,9 @@ impl TokenStream {
             }
         }
         Self {
-            trees: trees.to_vec().into_boxed_slice(),
             token_len: trees.iter().map(count).sum(),
             source_end: trees.last().map_or(0, end),
+            trees: trees.into_boxed_slice(),
         }
     }
 

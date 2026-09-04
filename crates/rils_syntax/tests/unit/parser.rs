@@ -148,7 +148,8 @@ fn only_functions_can_be_declared_inside_blocks() {
 #[test]
 fn recognizes_function_call_comparisons_as_macro_expression_fragments() {
     let tokens = crate::lexer::lex("type_of(getter) == \"fn() -> i32\"").unwrap();
-    assert!(super::is_expression_fragment(&tokens));
+    let stream = crate::cursor::TokenStream::new(tokens).unwrap();
+    assert!(super::is_expression_fragment_stream(&stream));
 }
 
 #[test]

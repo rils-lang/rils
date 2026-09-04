@@ -1,34 +1,63 @@
 use super::*;
-use crate::cursor::TokenStream;
+use crate::{
+    cursor::TokenStream,
+    token_tree::{Delimiter, TokenTree},
+};
 
 pub(super) fn expand_template(
-    template: &[Token],
+    stream: &TokenStream,
     bindings: &Bindings,
     iteration: Option<usize>,
-) -> Result<Vec<Token>, ParseError> {
+) -> Result<TokenStream, ParseError> {
+    Ok(TokenStream::from_trees_owned(expand_trees(
+        stream.trees(),
+        bindings,
+        iteration,
+    )?))
+}
+
+fn expand_trees(
+    trees: &[TokenTree],
+    bindings: &Bindings,
+    iteration: Option<usize>,
+) -> Result<Vec<TokenTree>, ParseError> {
     let mut output = Vec::new();
-    let stream = TokenStream::new(template.to_vec())
-        .map_err(|span| error("unterminated delimited token tree", span))?;
-    let mut cursor = stream.cursor();
-    while let Some(token) = cursor.peek() {
-        let mut current = cursor.position();
+    let mut current = 0;
+    while current < trees.len() {
+        let TokenTree::Token(token) = &trees[current] else {
+            let TokenTree::Group {
+                delimiter,
+                open,
+                children,
+                close,
+            } = &trees[current]
+            else {
+                unreachable!()
+            };
+            output.push(TokenTree::Group {
+                delimiter: *delimiter,
+                open: open.clone(),
+                children: expand_trees(children, bindings, iteration)?.into_boxed_slice(),
+                close: close.clone(),
+            });
+            current += 1;
+            continue;
+        };
         if !matches!(token.kind, TokenKind::Dollar) {
-            output.push(token.clone());
-            cursor = cursor.advance().expect("cursor token was present").1;
+            output.push(TokenTree::Token(token.clone()));
+            current += 1;
             continue;
         }
-        let span = template[current].span;
-        current += 1;
-        if stream.cursor_at(current).check(&TokenKind::LeftParen) {
-            current += 1;
-            let (inner, next) = slice_delimited(
-                template,
-                current,
-                &TokenKind::LeftParen,
-                &TokenKind::RightParen,
-                span,
-            )?;
-            let (separator, one_or_more, next) = repetition_suffix(template, next, span)?;
+        let span = token.span;
+        let next = current + 1;
+        if let Some(TokenTree::Group {
+            delimiter: Delimiter::Parenthesis,
+            children,
+            ..
+        }) = trees.get(next)
+        {
+            let (separator, one_or_more, after) = repetition_suffix_trees(trees, next + 1, span)?;
+            let inner = TokenStream::from_trees(children);
             let count = repetition_count(&inner, bindings, span)?;
             if one_or_more && count == 0 {
                 return Err(error(
@@ -40,16 +69,22 @@ pub(super) fn expand_template(
                 if index > 0
                     && let Some(separator) = &separator
                 {
-                    output.push(Token::new(separator.clone(), span));
+                    output.push(TokenTree::Token(Token::new(separator.clone(), span)));
                 }
-                output.extend(expand_template(&inner, bindings, Some(index))?);
+                output.extend(expand_trees(children, bindings, Some(index))?);
             }
-            current = next;
-            cursor = stream.cursor_at(current);
+            current = after;
             continue;
         }
-        let (name, name_span) =
-            expect_identifier(template, &mut current, "expected capture name after `$`")?;
+        let Some(TokenTree::Token(Token {
+            kind: TokenKind::Identifier(name),
+            span: name_span,
+        })) = trees.get(next)
+        else {
+            return Err(error("expected capture name after `$`", span));
+        };
+        let name = name.clone();
+        let name_span = *name_span;
         if let Some(values) = bindings.repeated.get(&name) {
             let index = iteration.ok_or_else(|| {
                 error(
@@ -63,22 +98,45 @@ pub(super) fn expand_template(
                     name_span,
                 )
             })?;
-            output.extend(value.flatten());
+            output.extend(value.trees().iter().cloned());
         } else if let Some(value) = bindings.single.get(&name) {
-            output.extend(value.flatten());
+            output.extend(value.trees().iter().cloned());
         } else {
             return Err(error(
                 format!("unknown macro parameter or capture `${name}`"),
                 name_span,
             ));
         }
-        cursor = stream.cursor_at(current);
+        current += 2;
     }
     Ok(output)
 }
 
+fn repetition_suffix_trees(
+    trees: &[TokenTree],
+    current: usize,
+    span: Span,
+) -> Result<(Option<TokenKind>, bool, usize), ParseError> {
+    fn token_kind(tree: Option<&TokenTree>) -> Option<&TokenKind> {
+        match tree {
+            Some(TokenTree::Token(token)) => Some(&token.kind),
+            _ => None,
+        }
+    }
+    match token_kind(trees.get(current)) {
+        Some(TokenKind::Star) => Ok((None, false, current + 1)),
+        Some(TokenKind::Plus) => Ok((None, true, current + 1)),
+        Some(separator) => match token_kind(trees.get(current + 1)) {
+            Some(TokenKind::Star) => Ok((Some(separator.clone()), false, current + 2)),
+            Some(TokenKind::Plus) => Ok((Some(separator.clone()), true, current + 2)),
+            _ => Err(error("expected `*` or `+` after macro repetition", span)),
+        },
+        None => Err(error("expected `*` or `+` after macro repetition", span)),
+    }
+}
+
 pub(super) fn repetition_count(
-    template: &[Token],
+    template: &TokenStream,
     bindings: &Bindings,
     span: Span,
 ) -> Result<usize, ParseError> {
@@ -101,39 +159,36 @@ pub(super) fn repetition_count(
 }
 
 pub(super) fn template_capture_names(
-    tokens: &[Token],
+    stream: &TokenStream,
     names: &mut Vec<String>,
 ) -> Result<(), ParseError> {
-    let stream = TokenStream::new(tokens.to_vec())
-        .map_err(|span| error("unterminated delimited token tree", span))?;
-    let mut cursor = stream.cursor();
-    while let Some(token) = cursor.peek() {
-        let mut current = cursor.position();
-        if !matches!(token.kind, TokenKind::Dollar) {
-            cursor = cursor.advance().expect("cursor token was present").1;
-            continue;
+    fn visit(trees: &[TokenTree], names: &mut Vec<String>) -> Result<(), ParseError> {
+        let mut current = 0;
+        while current < trees.len() {
+            match &trees[current] {
+                TokenTree::Group { children, .. } => {
+                    visit(children, names)?;
+                    current += 1;
+                }
+                TokenTree::Token(token) if matches!(token.kind, TokenKind::Dollar) => {
+                    if let Some(TokenTree::Group { children, .. }) = trees.get(current + 1) {
+                        visit(children, names)?;
+                        current += 2;
+                    } else if let Some(TokenTree::Token(Token {
+                        kind: TokenKind::Identifier(name),
+                        ..
+                    })) = trees.get(current + 1)
+                    {
+                        names.push(name.clone());
+                        current += 2;
+                    } else {
+                        return Err(error("expected capture name after `$`", token.span));
+                    }
+                }
+                TokenTree::Token(_) => current += 1,
+            }
         }
-        let span = token.span;
-        current += 1;
-        if stream.cursor_at(current).check(&TokenKind::LeftParen) {
-            current += 1;
-            let (inner, next) = slice_delimited(
-                tokens,
-                current,
-                &TokenKind::LeftParen,
-                &TokenKind::RightParen,
-                span,
-            )?;
-            template_capture_names(&inner, names)?;
-            let (_, _, next) = repetition_suffix(tokens, next, span)?;
-            current = next;
-            cursor = stream.cursor_at(current);
-        } else {
-            let (name, _) =
-                expect_identifier(tokens, &mut current, "expected capture name after `$`")?;
-            names.push(name);
-            cursor = stream.cursor_at(current);
-        }
+        Ok(())
     }
-    Ok(())
+    visit(stream.trees(), names)
 }

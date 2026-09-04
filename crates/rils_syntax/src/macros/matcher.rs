@@ -238,6 +238,7 @@ mod tests {
     fn matches_groups_without_flattening_the_input_boundary() {
         let pattern = lex("($value:expr)").unwrap();
         let mut names = HashSet::new();
+        let pattern = TokenStream::new(pattern).unwrap();
         let matcher = parse_matcher(&pattern, false, &mut names).unwrap();
         let input = TokenStream::new(lex("(1 + 2)").unwrap()).unwrap();
         let bindings = match_arm(&matcher, &input).expect("group matcher should match");

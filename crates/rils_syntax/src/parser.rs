@@ -1,5 +1,3 @@
-use std::mem::discriminant;
-
 mod declaration;
 mod expression;
 mod pattern;
@@ -47,7 +45,6 @@ fn parse_with_options(
     native_macros: &[crate::macros::NativeMacroDefinition],
     allow_nested_parameter_references: bool,
 ) -> Result<Program, ParseError> {
-    validate_delimiters(&tokens)?;
     let expansion = crate::macros::expand(tokens, native_macros)?;
     let stream = TokenStream::new(expansion.tokens).map_err(|span| ParseError {
         message: "unterminated delimited token tree".into(),
@@ -59,47 +56,6 @@ fn parse_with_options(
         crate::derive::expand(&mut program)?;
     }
     Ok(program)
-}
-
-fn validate_delimiters(tokens: &[Token]) -> Result<(), ParseError> {
-    let mut stack = Vec::new();
-    for token in tokens {
-        let expected = match token.kind {
-            TokenKind::LeftParen => Some(TokenKind::RightParen),
-            TokenKind::LeftBracket => Some(TokenKind::RightBracket),
-            TokenKind::LeftBrace => Some(TokenKind::RightBrace),
-            _ => None,
-        };
-        if let Some(expected) = expected {
-            stack.push((expected, token.span));
-            continue;
-        }
-        if matches!(
-            token.kind,
-            TokenKind::RightParen | TokenKind::RightBracket | TokenKind::RightBrace
-        ) {
-            let Some((expected, _)) = stack.pop() else {
-                return Err(ParseError {
-                    message: format!("unexpected {}", token.kind.name()),
-                    span: token.span,
-                });
-            };
-            if discriminant(&expected) != discriminant(&token.kind) {
-                return Err(ParseError {
-                    message: format!("expected {}, found {}", expected.name(), token.kind.name()),
-                    span: token.span,
-                });
-            }
-        }
-    }
-    if let Some((expected, open)) = stack.pop() {
-        let eof = tokens.last().map_or(open, |token| token.span);
-        return Err(ParseError {
-            message: format!("expected {} after delimiter", expected.name()),
-            span: eof,
-        });
-    }
-    Ok(())
 }
 
 fn scalar_literal(kind: &TokenKind) -> Option<Literal> {
@@ -139,14 +95,6 @@ fn negated_scalar_literal(kind: &TokenKind) -> Option<Literal> {
         TokenKind::Float(value) => Literal::Float(-value),
         _ => return None,
     })
-}
-
-#[allow(dead_code)]
-pub(crate) fn is_expression_fragment(tokens: &[Token]) -> bool {
-    let Ok(stream) = TokenStream::new(tokens.to_vec()) else {
-        return false;
-    };
-    is_expression_fragment_stream(&stream)
 }
 
 pub(crate) fn is_expression_fragment_stream(stream: &TokenStream) -> bool {

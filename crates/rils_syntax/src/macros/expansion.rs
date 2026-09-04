@@ -5,66 +5,53 @@ use crate::{
 };
 
 pub(super) fn expand_sequence(
-    tokens: &[Token],
+    stream: &TokenStream,
     definitions: &HashMap<String, MacroTemplate>,
     stack: &mut Vec<String>,
-) -> Result<Vec<Token>, ParseError> {
+) -> Result<TokenStream, ParseError> {
+    let trees = stream.trees();
     let mut output = Vec::new();
-    let stream = TokenStream::new(tokens.to_vec())
-        .map_err(|span| error("unterminated delimited token tree", span))?;
-    let mut cursor = stream.tree_cursor();
-    while let Some(tree) = cursor.first() {
+    let mut current = 0;
+    while current < trees.len() {
+        let tree = &trees[current];
         if let TokenTree::Group {
+            delimiter,
             open,
             children,
             close,
-            ..
         } = tree
         {
-            // Macro invocations can occur inside function/block bodies and
-            // nested expression groups.  Walk each group's child stream
-            // recursively while retaining its delimiters in the output.
-            let mut nested = Vec::new();
-            for child in children.iter() {
-                child.flatten_into(&mut nested);
-            }
-            let expanded = expand_sequence(&nested, definitions, stack)?;
-            output.push(open.clone());
-            output.extend(expanded);
-            output.push(close.clone());
-            cursor = cursor.step().expect("cursor tree was present").1;
+            let expanded = expand_sequence(&TokenStream::from_trees(children), definitions, stack)?;
+            output.push(TokenTree::Group {
+                delimiter: *delimiter,
+                open: open.clone(),
+                children: expanded.trees().to_vec().into_boxed_slice(),
+                close: close.clone(),
+            });
+            current += 1;
             continue;
         }
-        let invocation = match tree {
+        let Some((name, call_span)) = (match tree {
             TokenTree::Token(Token {
                 kind: TokenKind::Identifier(name),
                 span,
-            }) => {
-                let Some((_, after_identifier)) = cursor.step() else {
-                    return Err(error("invalid macro invocation", *span));
-                };
-                match after_identifier.step() {
-                    Some((bang, after_bang)) => match (bang, after_bang.first()) {
-                        (
-                            TokenTree::Token(Token {
-                                kind: TokenKind::Bang,
-                                ..
-                            }),
-                            Some(TokenTree::Group {
-                                delimiter: Delimiter::Parenthesis,
-                                ..
-                            }),
-                        ) => Some((name.clone(), *span)),
-                        _ => None,
-                    },
-                    None => None,
-                }
-            }
+            }) => match (trees.get(current + 1), trees.get(current + 2)) {
+                (
+                    Some(TokenTree::Token(Token {
+                        kind: TokenKind::Bang,
+                        ..
+                    })),
+                    Some(TokenTree::Group {
+                        delimiter: Delimiter::Parenthesis,
+                        ..
+                    }),
+                ) => Some((name.clone(), *span)),
+                _ => None,
+            },
             _ => None,
-        };
-        let Some((name, call_span)) = invocation else {
-            tree.flatten_into(&mut output);
-            cursor = cursor.step().expect("cursor tree was present").1;
+        }) else {
+            output.push(tree.clone());
+            current += 1;
             continue;
         };
         let definition = definitions
@@ -81,15 +68,10 @@ pub(super) fn expand_sequence(
                 call_span,
             ));
         }
-
-        let (_, after_bang) = cursor
-            .step()
-            .expect("identifier was present")
-            .1
-            .step()
-            .expect("bang was present");
-        let (_, _, input_cursor, next) = after_bang.group().expect("invocation group was present");
-        let input_stream = TokenStream::from_trees(input_cursor.remaining());
+        let TokenTree::Group { children, .. } = &trees[current + 2] else {
+            unreachable!()
+        };
+        let input_stream = TokenStream::from_trees(children);
         if matches!(name.as_str(), "print" | "println") {
             validate_format_invocation(&name, &input_stream, call_span)?;
         }
@@ -114,26 +96,53 @@ pub(super) fn expand_sequence(
                 call_span,
             ));
         };
-        let substituted = expand_template(&arm.template, &bindings, None)?
-            .into_iter()
-            .map(|mut token| {
-                // Native macro templates are synthetic and therefore carry an
-                // empty span. Give their generated callee and punctuation the
-                // invocation span so separate expansions retain distinct
-                // expression identities in later semantic side tables.
-                if token.span == Span::default() {
-                    token.span = call_span;
-                }
-                token
-            })
-            .collect::<Vec<_>>();
+        let substituted = expand_template(&arm.template, &bindings, None)?;
+        let substituted = fix_spans(substituted, call_span);
         stack.push(name);
         let result = expand_sequence(&substituted, definitions, stack);
         stack.pop();
-        output.extend(result?);
-        cursor = next;
+        output.extend(result?.trees().iter().cloned());
+        current += 3;
     }
-    Ok(output)
+    Ok(TokenStream::from_trees_owned(output))
+}
+
+fn fix_spans(stream: TokenStream, span: Span) -> TokenStream {
+    fn visit(tree: &mut TokenTree, span: Span) {
+        match tree {
+            TokenTree::Token(token) => {
+                if token.span == Span::default() {
+                    token.span = span
+                }
+            }
+            TokenTree::Group {
+                open,
+                children,
+                close,
+                ..
+            } => {
+                if open.span == Span::default() {
+                    open.span = span;
+                }
+                if close.span == Span::default() {
+                    close.span = span;
+                }
+                for child in children.iter_mut() {
+                    visit(child, span);
+                }
+            }
+        }
+    }
+    let trees = stream
+        .trees()
+        .iter()
+        .cloned()
+        .map(|mut tree| {
+            visit(&mut tree, span);
+            tree
+        })
+        .collect();
+    TokenStream::from_trees_owned(trees)
 }
 
 fn validate_format_invocation(
@@ -150,19 +159,18 @@ fn validate_format_invocation(
         };
     }
     let [
-        Token {
+        TokenTree::Token(Token {
             kind: TokenKind::String(format),
             span,
-        },
-    ] = arguments[0].as_slice()
+        }),
+    ] = arguments[0].trees()
     else {
         return Err(error(
             format!("macro `{name}` requires a string literal as its first argument"),
-            arguments[0].first().map_or(call_span, |token| token.span),
+            arguments[0].trees().first().map_or(call_span, tree_span),
         ));
     };
-    let pieces = crate::format::parse_format_string(format)
-        .map_err(|format_error| error(format_error.message, *span))?;
+    let pieces = crate::format::parse_format_string(format).map_err(|e| error(e.message, *span))?;
     let value_count = arguments.len() - 1;
     let mut used = vec![false; value_count];
     for piece in pieces {
@@ -183,21 +191,18 @@ fn validate_format_invocation(
         return Err(error(
             format!("format argument {} is never used", unused + 1),
             arguments[unused + 1]
+                .trees()
                 .first()
-                .map_or(call_span, |token| token.span),
+                .map_or(call_span, tree_span),
         ));
     }
     Ok(())
 }
 
-fn top_level_arguments(stream: &TokenStream) -> Vec<Vec<Token>> {
-    let trees = stream.trees();
-    if trees.is_empty() {
-        return Vec::new();
-    }
+fn top_level_arguments(stream: &TokenStream) -> Vec<TokenStream> {
     let mut arguments = Vec::new();
     let mut current = Vec::new();
-    for tree in trees {
+    for tree in stream.trees() {
         if matches!(
             tree,
             TokenTree::Token(Token {
@@ -205,11 +210,20 @@ fn top_level_arguments(stream: &TokenStream) -> Vec<Vec<Token>> {
                 ..
             })
         ) {
-            arguments.push(std::mem::take(&mut current));
+            arguments.push(TokenStream::from_trees_owned(std::mem::take(&mut current)));
         } else {
-            tree.flatten_into(&mut current);
+            current.push(tree.clone());
         }
     }
-    arguments.push(current);
+    if !current.is_empty() || !arguments.is_empty() {
+        arguments.push(TokenStream::from_trees_owned(current));
+    }
     arguments
+}
+
+fn tree_span(tree: &TokenTree) -> Span {
+    match tree {
+        TokenTree::Token(token) => token.span,
+        TokenTree::Group { open, close, .. } => open.span.merge(close.span),
+    }
 }

@@ -1,45 +1,65 @@
 use super::*;
+use crate::cursor::TokenStream;
 pub(super) fn delimited(
-    tokens: &[Token],
+    stream: &TokenStream,
     current: &mut usize,
     opening: TokenKind,
     closing: TokenKind,
     span: Span,
-) -> Result<Vec<Token>, ParseError> {
-    let (body, next) = slice_delimited(tokens, *current, &opening, &closing, span)?;
+) -> Result<TokenStream, ParseError> {
+    let (body, next) = slice_delimited(stream, *current, &opening, &closing, span)?;
     *current = next;
     Ok(body)
 }
 
 pub(super) fn slice_delimited(
-    tokens: &[Token],
+    stream: &TokenStream,
     start: usize,
     opening: &TokenKind,
     closing: &TokenKind,
     span: Span,
-) -> Result<(Vec<Token>, usize), ParseError> {
+) -> Result<(TokenStream, usize), ParseError> {
     let mut offset = 0usize;
     let mut depth = 1usize;
-    while let Some(token) = tokens.get(start + offset) {
+    let mut cursor = stream.cursor_at(start);
+    while let Some(token) = cursor.peek() {
         if token_kinds_equal(&token.kind, opening) {
             depth += 1;
         } else if token_kinds_equal(&token.kind, closing) {
             depth -= 1;
             if depth == 0 {
-                return Ok((tokens[start..start + offset].to_vec(), start + offset + 1));
+                let mut body = Vec::with_capacity(offset);
+                let mut body_cursor = stream.cursor_at(start);
+                for _ in 0..offset {
+                    let Some(token) = body_cursor.peek() else {
+                        return Err(error("unterminated delimited token tree", span));
+                    };
+                    body.push(token.clone());
+                    body_cursor = body_cursor
+                        .advance()
+                        .expect("body cursor token was present")
+                        .1;
+                }
+                let body = TokenStream::new(body)
+                    .map_err(|span| error("unterminated delimited token tree", span))?;
+                return Ok((body, start + offset + 1));
             }
         }
         offset += 1;
+        cursor = cursor
+            .advance()
+            .expect("delimited cursor token was present")
+            .1;
     }
     Err(error("unterminated delimited token tree", span))
 }
 
 pub(super) fn expect_identifier(
-    tokens: &[Token],
+    stream: &TokenStream,
     current: &mut usize,
     message: &str,
 ) -> Result<(String, Span), ParseError> {
-    match tokens.get(*current) {
+    match stream.cursor_at(*current).peek() {
         Some(Token {
             kind: TokenKind::Identifier(name),
             span,
@@ -52,21 +72,25 @@ pub(super) fn expect_identifier(
 }
 
 pub(super) fn expect(
-    tokens: &[Token],
+    stream: &TokenStream,
     current: &mut usize,
     expected: &TokenKind,
     message: &str,
 ) -> Result<(), ParseError> {
-    if take(tokens, current, expected) {
+    if take(stream, current, expected) {
         Ok(())
     } else {
-        Err(error(message, token_span(tokens.get(*current))))
+        Err(error(
+            message,
+            token_span(stream.cursor_at(*current).peek()),
+        ))
     }
 }
 
-pub(super) fn take(tokens: &[Token], current: &mut usize, expected: &TokenKind) -> bool {
-    tokens
-        .get(*current)
+pub(super) fn take(stream: &TokenStream, current: &mut usize, expected: &TokenKind) -> bool {
+    stream
+        .cursor_at(*current)
+        .peek()
         .is_some_and(|token| token_kinds_equal(&token.kind, expected))
         .then(|| *current += 1)
         .is_some()

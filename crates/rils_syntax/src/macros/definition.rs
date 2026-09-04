@@ -16,6 +16,8 @@ pub(super) fn collect_definitions(
         .collect::<HashMap<_, _>>();
     let mut symbols = Vec::new();
     let mut output = Vec::new();
+    let stream = crate::cursor::TokenStream::new(tokens.clone())
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     let mut current = 0;
     let mut brace_depth = 0usize;
     let mut paren_depth = 0usize;
@@ -31,11 +33,11 @@ pub(super) fn collect_definitions(
             let start = tokens[current].span;
             current += 1;
             let (name, name_span) =
-                expect_identifier(&tokens, &mut current, "expected macro name")?;
-            let arms = if take(&tokens, &mut current, &TokenKind::LeftParen) {
-                vec![legacy_arm(&tokens, &mut current, start)?]
-            } else if take(&tokens, &mut current, &TokenKind::LeftBrace) {
-                branching_arms(&tokens, &mut current, start)?
+                expect_identifier(&stream, &mut current, "expected macro name")?;
+            let arms = if take(&stream, &mut current, &TokenKind::LeftParen) {
+                vec![legacy_arm(&stream, &mut current, start)?]
+            } else if take(&stream, &mut current, &TokenKind::LeftBrace) {
+                branching_arms(&stream, &mut current, start)?
             } else {
                 return Err(error(
                     "expected `(` or `{` after macro name",
@@ -68,6 +70,8 @@ pub(super) fn collect_definitions(
         current += 1;
     }
 
+    let output = crate::cursor::TokenStream::new(output)
+        .map_err(|span| error("unterminated delimited token tree", span))?;
     Ok(CollectedMacros {
         tokens: output,
         definitions,
@@ -88,7 +92,7 @@ pub(super) fn forwarding_template(target: &str) -> MacroTemplate {
                 separator: Some(TokenKind::Comma),
                 one_or_more: false,
             }],
-            template: vec![
+            template: crate::cursor::TokenStream::new(vec![
                 Token::new(TokenKind::Identifier(target.to_owned()), span),
                 Token::new(TokenKind::LeftParen, span),
                 Token::new(TokenKind::Dollar, span),
@@ -99,28 +103,29 @@ pub(super) fn forwarding_template(target: &str) -> MacroTemplate {
                 Token::new(TokenKind::Comma, span),
                 Token::new(TokenKind::Star, span),
                 Token::new(TokenKind::RightParen, span),
-            ],
+            ])
+            .expect("synthetic native macro template delimiters are balanced"),
             legacy_arity: None,
         }],
     }
 }
 
 pub(super) fn legacy_arm(
-    tokens: &[Token],
+    stream: &crate::cursor::TokenStream,
     current: &mut usize,
     start: Span,
 ) -> Result<MacroArm, ParseError> {
     let mut matcher = Vec::new();
     let mut names = HashSet::new();
-    if !take(tokens, current, &TokenKind::RightParen) {
+    if !take(stream, current, &TokenKind::RightParen) {
         loop {
             expect(
-                tokens,
+                stream,
                 current,
                 &TokenKind::Dollar,
                 "expected `$` before macro parameter",
             )?;
-            let (name, span) = expect_identifier(tokens, current, "expected macro parameter name")?;
+            let (name, span) = expect_identifier(stream, current, "expected macro parameter name")?;
             if !names.insert(name.clone()) {
                 return Err(error(format!("duplicate macro parameter `${name}`"), span));
             }
@@ -128,11 +133,11 @@ pub(super) fn legacy_arm(
                 name,
                 kind: FragmentKind::Tokens,
             });
-            if take(tokens, current, &TokenKind::RightParen) {
+            if take(stream, current, &TokenKind::RightParen) {
                 break;
             }
             expect(
-                tokens,
+                stream,
                 current,
                 &TokenKind::Comma,
                 "expected `,` between macro parameters",
@@ -141,13 +146,13 @@ pub(super) fn legacy_arm(
         }
     }
     expect(
-        tokens,
+        stream,
         current,
         &TokenKind::LeftBrace,
         "expected `{` before macro body",
     )?;
     let template = delimited(
-        tokens,
+        stream,
         current,
         TokenKind::LeftBrace,
         TokenKind::RightBrace,
@@ -162,23 +167,24 @@ pub(super) fn legacy_arm(
 }
 
 pub(super) fn branching_arms(
-    tokens: &[Token],
+    stream: &crate::cursor::TokenStream,
     current: &mut usize,
     declaration_span: Span,
 ) -> Result<Vec<MacroArm>, ParseError> {
     let mut arms = Vec::new();
-    while !take(tokens, current, &TokenKind::RightBrace) {
-        let start = tokens
-            .get(*current)
+    while !take(stream, current, &TokenKind::RightBrace) {
+        let start = stream
+            .cursor_at(*current)
+            .peek()
             .map_or(declaration_span, |token| token.span);
         expect(
-            tokens,
+            stream,
             current,
             &TokenKind::LeftParen,
             "expected `(` before macro matcher",
         )?;
         let matcher_tokens = delimited(
-            tokens,
+            stream,
             current,
             TokenKind::LeftParen,
             TokenKind::RightParen,
@@ -187,19 +193,19 @@ pub(super) fn branching_arms(
         let mut names = HashSet::new();
         let matcher = parse_matcher(&matcher_tokens, false, &mut names)?;
         expect(
-            tokens,
+            stream,
             current,
             &TokenKind::FatArrow,
             "expected `=>` after macro matcher",
         )?;
         expect(
-            tokens,
+            stream,
             current,
             &TokenKind::LeftBrace,
             "expected `{` before macro expansion",
         )?;
         let template = delimited(
-            tokens,
+            stream,
             current,
             TokenKind::LeftBrace,
             TokenKind::RightBrace,
@@ -211,9 +217,9 @@ pub(super) fn branching_arms(
             template,
             legacy_arity: None,
         });
-        take(tokens, current, &TokenKind::Comma);
-        take(tokens, current, &TokenKind::Semicolon);
-        if tokens.get(*current).map(|token| &token.kind).is_none() {
+        take(stream, current, &TokenKind::Comma);
+        take(stream, current, &TokenKind::Semicolon);
+        if stream.cursor_at(*current).peek().is_none() {
             return Err(error("unterminated macro declaration", declaration_span));
         }
     }
@@ -227,12 +233,10 @@ pub(super) fn branching_arms(
 }
 
 pub(super) fn parse_matcher(
-    tokens: &[Token],
+    stream: &crate::cursor::TokenStream,
     inside_repeat: bool,
     names: &mut HashSet<String>,
 ) -> Result<Vec<MatcherElement>, ParseError> {
-    let stream = crate::cursor::TokenStream::new(tokens.to_vec())
-        .map_err(|span| error("unterminated delimited token tree", span))?;
     parse_matcher_trees(stream.trees(), inside_repeat, names)
 }
 
@@ -371,12 +375,10 @@ fn repetition_suffix_trees(
 }
 
 pub(super) fn repetition_suffix(
-    tokens: &[Token],
+    stream: &crate::cursor::TokenStream,
     current: usize,
     span: Span,
 ) -> Result<(Option<TokenKind>, bool, usize), ParseError> {
-    let stream = crate::cursor::TokenStream::new(tokens.to_vec())
-        .map_err(|span| error("unterminated delimited token tree", span))?;
     let cursor = stream.cursor_at(current);
     match cursor.peek().map(|token| &token.kind) {
         Some(TokenKind::Star) => Ok((None, false, current + 1)),
@@ -395,7 +397,7 @@ pub(super) fn repetition_suffix(
 }
 
 pub(super) fn validate_template(
-    template: &[Token],
+    template: &crate::cursor::TokenStream,
     matcher: &[MatcherElement],
 ) -> Result<(), ParseError> {
     let mut single = HashSet::new();
@@ -405,13 +407,11 @@ pub(super) fn validate_template(
 }
 
 pub(super) fn validate_template_tokens(
-    tokens: &[Token],
+    stream: &crate::cursor::TokenStream,
     inside_repeat: bool,
     single: &HashSet<String>,
     repeated: &HashSet<String>,
 ) -> Result<(), ParseError> {
-    let stream = crate::cursor::TokenStream::new(tokens.to_vec())
-        .map_err(|span| error("unterminated delimited token tree", span))?;
     let mut cursor = stream.cursor();
     while let Some(token) = cursor.peek() {
         let mut current = cursor.position();
@@ -424,20 +424,20 @@ pub(super) fn validate_template_tokens(
         if stream.cursor_at(current).check(&TokenKind::LeftParen) {
             current += 1;
             let (inner, next) = slice_delimited(
-                tokens,
+                stream,
                 current,
                 &TokenKind::LeftParen,
                 &TokenKind::RightParen,
                 span,
             )?;
             validate_template_tokens(&inner, true, single, repeated)?;
-            let (_, _, next) = repetition_suffix(tokens, next, span)?;
+            let (_, _, next) = repetition_suffix(stream, next, span)?;
             current = next;
             cursor = stream.cursor_at(current);
             continue;
         }
         let (name, name_span) =
-            expect_identifier(tokens, &mut current, "expected capture name after `$`")?;
+            expect_identifier(stream, &mut current, "expected capture name after `$`")?;
         if !single.contains(&name) && !repeated.contains(&name) {
             return Err(error(
                 format!("unknown macro parameter or capture `${name}`"),
@@ -488,11 +488,10 @@ pub(super) fn contains_capture(elements: &[MatcherElement]) -> bool {
     })
 }
 
-pub(super) fn invocation_references(tokens: &[Token]) -> HashMap<String, Vec<Span>> {
+pub(super) fn invocation_references(
+    stream: &crate::cursor::TokenStream,
+) -> HashMap<String, Vec<Span>> {
     let mut references: HashMap<String, Vec<Span>> = HashMap::new();
-    let Ok(stream) = crate::cursor::TokenStream::new(tokens.to_vec()) else {
-        return references;
-    };
 
     fn visit(trees: &[crate::token_tree::TokenTree], references: &mut HashMap<String, Vec<Span>>) {
         for window in trees.windows(3) {
