@@ -188,6 +188,15 @@ pub(super) fn top_level_argument_count(stream: &crate::cursor::TokenStream) -> u
 }
 
 pub(super) fn literal_end(input: &[TokenTree], position: usize) -> Option<usize> {
+    if let TokenTree::Group {
+        delimiter: Delimiter::Parenthesis,
+        children,
+        ..
+    } = input.get(position)?
+        && children.is_empty()
+    {
+        return Some(position + 1);
+    }
     let TokenTree::Token(token) = input.get(position)? else {
         return None;
     };
@@ -214,15 +223,6 @@ pub(super) fn literal_end(input: &[TokenTree], position: usize) -> Option<usize>
             | TokenKind::True
             | TokenKind::False
     ) {
-        return Some(position + 1);
-    }
-    if let TokenTree::Group {
-        delimiter: Delimiter::Parenthesis,
-        children,
-        ..
-    } = input.get(position)?
-        && children.is_empty()
-    {
         return Some(position + 1);
     }
     None
