@@ -1,6 +1,4 @@
 use super::*;
-use crate::cursor::TokenStream;
-
 pub(super) fn delimited(
     tokens: &[Token],
     current: &mut usize,
@@ -10,33 +8,27 @@ pub(super) fn delimited(
 ) -> Result<Vec<Token>, ParseError> {
     let (body, next) = slice_delimited(tokens, *current, &opening, &closing, span)?;
     *current = next;
-    Ok(body.to_vec())
+    Ok(body)
 }
 
-pub(super) fn slice_delimited<'a>(
-    tokens: &'a [Token],
+pub(super) fn slice_delimited(
+    tokens: &[Token],
     start: usize,
     opening: &TokenKind,
     closing: &TokenKind,
     span: Span,
-) -> Result<(&'a [Token], usize), ParseError> {
-    let stream = TokenStream::new(tokens[start..].to_vec());
-    let mut cursor = stream.cursor();
+) -> Result<(Vec<Token>, usize), ParseError> {
     let mut offset = 0usize;
     let mut depth = 1usize;
-    while let Some(token) = cursor.peek() {
+    while let Some(token) = tokens.get(start + offset) {
         if token_kinds_equal(&token.kind, opening) {
             depth += 1;
         } else if token_kinds_equal(&token.kind, closing) {
             depth -= 1;
             if depth == 0 {
-                return Ok((&tokens[start..start + offset], start + offset + 1));
+                return Ok((tokens[start..start + offset].to_vec(), start + offset + 1));
             }
         }
-        let Some((_, next)) = cursor.advance() else {
-            break;
-        };
-        cursor = next;
         offset += 1;
     }
     Err(error("unterminated delimited token tree", span))
@@ -47,9 +39,7 @@ pub(super) fn expect_identifier(
     current: &mut usize,
     message: &str,
 ) -> Result<(String, Span), ParseError> {
-    let stream = TokenStream::new(tokens.to_vec());
-    let cursor = stream.cursor_at(*current);
-    match cursor.peek() {
+    match tokens.get(*current) {
         Some(Token {
             kind: TokenKind::Identifier(name),
             span,
@@ -75,10 +65,9 @@ pub(super) fn expect(
 }
 
 pub(super) fn take(tokens: &[Token], current: &mut usize, expected: &TokenKind) -> bool {
-    let stream = TokenStream::new(tokens.to_vec());
-    stream
-        .cursor_at(*current)
-        .check(expected)
+    tokens
+        .get(*current)
+        .is_some_and(|token| token_kinds_equal(&token.kind, expected))
         .then(|| *current += 1)
         .is_some()
 }

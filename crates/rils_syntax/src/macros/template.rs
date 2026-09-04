@@ -31,7 +31,7 @@ pub(super) fn expand_template(
                 span,
             )?;
             let (separator, one_or_more, next) = repetition_suffix(template, next, span)?;
-            let count = repetition_count(inner, bindings, span)?;
+            let count = repetition_count(&inner, bindings, span)?;
             if one_or_more && count == 0 {
                 return Err(error(
                     "`+` macro expansion requires at least one value",
@@ -44,7 +44,7 @@ pub(super) fn expand_template(
                 {
                     output.push(Token::new(separator.clone(), span));
                 }
-                output.extend(expand_template(inner, bindings, Some(index))?);
+                output.extend(expand_template(&inner, bindings, Some(index))?);
             }
             current = next;
             cursor = stream.cursor_at(current);
@@ -127,7 +127,7 @@ pub(super) fn template_capture_names(
                 &TokenKind::RightParen,
                 span,
             )?;
-            template_capture_names(inner, names)?;
+            template_capture_names(&inner, names)?;
             let (_, _, next) = repetition_suffix(tokens, next, span)?;
             current = next;
             cursor = stream.cursor_at(current);

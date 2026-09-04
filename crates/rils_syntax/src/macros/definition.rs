@@ -262,7 +262,7 @@ pub(super) fn parse_matcher(
                 dollar_span,
             )?;
             current = next;
-            let inner = parse_matcher(inner_tokens, true, names)?;
+            let inner = parse_matcher(&inner_tokens, true, names)?;
             if !contains_capture(&inner) {
                 return Err(error(
                     "macro repetition must contain at least one capture",
@@ -371,7 +371,7 @@ pub(super) fn validate_template_tokens(
                 &TokenKind::RightParen,
                 span,
             )?;
-            validate_template_tokens(inner, true, single, repeated)?;
+            validate_template_tokens(&inner, true, single, repeated)?;
             let (_, _, next) = repetition_suffix(tokens, next, span)?;
             current = next;
             cursor = stream.cursor_at(current);
