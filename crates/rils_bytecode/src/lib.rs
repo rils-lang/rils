@@ -6,7 +6,9 @@ use rils_execution::{
 };
 
 #[cfg(test)]
-use rils_runtime::{Value, eval};
+use rils_execution::Value;
+#[cfg(test)]
+use rils_runtime::eval;
 
 mod ast {
     pub(crate) use rils_frontend::ast::*;
