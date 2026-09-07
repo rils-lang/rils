@@ -74,7 +74,9 @@ pub enum DiagnosticSeverity {
 }
 
 impl AnalysisDiagnostic {
-    pub(crate) fn error(message: impl Into<String>, span: Span) -> Self {
+    /// Creates an error diagnostic that can be attached to a best-effort
+    /// analysis result by editor tooling.
+    pub fn error(message: impl Into<String>, span: Span) -> Self {
         Self {
             message: message.into(),
             span,

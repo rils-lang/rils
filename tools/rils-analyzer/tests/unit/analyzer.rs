@@ -2162,6 +2162,45 @@ fn parse_errors_remain_diagnostics_not_request_failures() {
 }
 
 #[test]
+fn keeps_last_valid_symbols_when_an_edit_is_temporarily_invalid() {
+    let uri = "file:///stale-analysis.rils".to_owned();
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        host_types: HashSet::new(),
+        projects: Vec::new(),
+        compilation: CompilationSession::default(),
+        next_source_id: 1,
+    };
+
+    server
+        .update_document(uri.clone(), "fn keep() -> i32 { 1 }".into())
+        .unwrap();
+    server
+        .update_document(uri.clone(), "fn keep() -> i32 { 1 }\nlet broken = ;".into())
+        .unwrap();
+
+    let document = server.documents.get(&uri).unwrap();
+    let analysis = analysis(document).expect("last valid analysis should remain available");
+    assert!(
+        analysis
+            .symbols
+            .iter()
+            .any(|symbol| symbol.is_definition && symbol.name == "keep")
+    );
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("parse error"))
+    );
+}
+
+#[test]
 fn publishes_control_flow_diagnostics() {
     let text = "fn value(flag: bool) -> i32 { if flag { 1 } }";
     let result = rils_frontend::analysis::analyze(text);

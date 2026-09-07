@@ -70,6 +70,10 @@
 
 ### Added
 
+- Analyzer edits are now resilient to temporary syntax errors: diagnostics are
+  reported for the invalid revision while symbols, navigation, completion, and
+  project exports continue to use the latest successfully parsed snapshot.
+
 - Windows Release 新增自包含的交互式本地安装器：安装前显示版本、目标目录和 PATH 变更并请求确认，
   将 Rils toolchain 与全局 `rils-up` 安装到 `~/.rils`，自动更新用户 `PATH`，安装结束后保持终端可见；
   自动化环境可使用 `--yes`，或通过 `--no-path` 禁止修改 PATH。

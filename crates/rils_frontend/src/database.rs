@@ -189,6 +189,13 @@ struct SourceEntry {
     initialized: bool,
     revision: u64,
     parsed: Result<Program, FrontendError>,
+    /// The last syntax tree that parsed successfully before the current edit.
+    ///
+    /// Editor clients frequently produce temporarily invalid source while a
+    /// user is typing. Keeping this snapshot separate from `parsed` lets
+    /// tooling continue to answer semantic requests without making the
+    /// compiler accept the invalid revision.
+    last_valid: Option<Program>,
 }
 
 /// In-memory source storage shared by compilers and editor tooling.
@@ -276,6 +283,17 @@ impl SourceDatabase {
         self.sources.get(&id).map(|entry| entry.parsed.clone())
     }
 
+    /// Returns the most recent successfully parsed revision when the current
+    /// source revision is invalid. This is intended for editor tooling only;
+    /// compilers must continue to use [`Self::parse`] and report the current
+    /// syntax error.
+    pub fn last_valid_parse(&self, id: SourceId) -> Option<Program> {
+        self.sources
+            .get(&id)
+            .filter(|entry| entry.parsed.is_err())
+            .and_then(|entry| entry.last_valid.clone())
+    }
+
     pub fn source_files(&self) -> Vec<SourceFile> {
         self.sources
             .values()
@@ -299,6 +317,7 @@ impl SourceDatabase {
                 initialized,
                 revision: 0,
                 parsed,
+                last_valid: None,
             },
         );
     }
@@ -316,7 +335,13 @@ impl SourceDatabase {
                 .expect("source revision overflow");
         }
         entry.initialized = true;
-        entry.parsed = parse_source(&entry.text, id);
+        let parsed = parse_source(&entry.text, id);
+        if parsed.is_ok() {
+            entry.last_valid = None;
+        } else if let Ok(program) = &entry.parsed {
+            entry.last_valid = Some(program.clone());
+        }
+        entry.parsed = parsed;
     }
 }
 

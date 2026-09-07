@@ -10,7 +10,8 @@ use rils_frontend::{
     CompilationSession, DefinitionData, FrontendError, FunctionSignature, ProjectSemanticIndex,
     SourceId, Span, Type,
     analysis::{
-        DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind, SymbolOccurrence,
+        AnalysisDiagnostic, DiagnosticSeverity, DocumentAnalysis, SymbolContainer, SymbolKind,
+        SymbolOccurrence,
     },
     ast::Stmt,
     lexer::{lex, lex_with_source_id},
@@ -99,6 +100,42 @@ fn project_session_name(project: &Project) -> String {
 }
 
 impl Server {
+    /// Analyze the current revision, falling back to the last valid syntax
+    /// tree while an editor is in the middle of an invalid edit. The fallback
+    /// is deliberately kept in `SourceDatabase` and never used by compiler
+    /// entry points, so diagnostics still report the current syntax error.
+    fn analyze_source(
+        &self,
+        source_id: SourceId,
+        external_exports: &HashMap<String, Vec<rils_frontend::analysis::ExternalModuleExport>>,
+    ) -> Result<DocumentAnalysis, FrontendError> {
+        match self.compilation.sources().parse(source_id) {
+            Ok(program) => Ok(
+                analyze_program_with_host_and_source_id_and_external_exports(
+                    &program,
+                    source_id,
+                    &self.host_contract,
+                    external_exports,
+                ),
+            ),
+            Err(error) => {
+                let Some(program) = self.compilation.sources().last_valid_parse(source_id) else {
+                    return Err(error);
+                };
+                let mut analysis = analyze_program_with_host_and_source_id_and_external_exports(
+                    &program,
+                    source_id,
+                    &self.host_contract,
+                    external_exports,
+                );
+                analysis
+                    .diagnostics
+                    .push(AnalysisDiagnostic::error(error.to_string(), error.span()));
+                Ok(analysis)
+            }
+        }
+    }
+
     fn load_projects(&mut self, initialization: &Value) -> Result<(), AnyError> {
         let mut seen = HashSet::new();
         self.projects = workspace_roots(initialization)
@@ -198,14 +235,7 @@ impl Server {
         self.compilation
             .sources_mut()
             .set_source_with_id(source_id, uri.clone(), text.clone());
-        let analysis = self.compilation.sources().parse(source_id).map(|program| {
-            analyze_program_with_host_and_source_id_and_external_exports(
-                &program,
-                source_id,
-                &self.host_contract,
-                &HashMap::new(),
-            )
-        });
+        let analysis = self.analyze_source(source_id, &HashMap::new());
         self.documents.insert(
             uri.clone(),
             Document {
@@ -324,14 +354,7 @@ impl Server {
                 uri,
                 Document {
                     source_id,
-                    analysis: self.compilation.sources().parse(source_id).map(|program| {
-                        analyze_program_with_host_and_source_id_and_external_exports(
-                            &program,
-                            source_id,
-                            &self.host_contract,
-                            &HashMap::new(),
-                        )
-                    }),
+                    analysis: self.analyze_source(source_id, &HashMap::new()),
                     text,
                 },
             );
@@ -351,19 +374,21 @@ impl Server {
         }
         self.rebuild_project_semantics();
         let exports = project_index::collect_external_exports(self);
+        let analyses = self
+            .documents
+            .values()
+            .map(|document| {
+                (
+                    document.source_id,
+                    self.analyze_source(document.source_id, &exports),
+                )
+            })
+            .collect::<HashMap<_, _>>();
         for document in self.documents.values_mut() {
-            document.analysis =
-                self.compilation
-                    .sources()
-                    .parse(document.source_id)
-                    .map(|program| {
-                        analyze_program_with_host_and_source_id_and_external_exports(
-                            &program,
-                            document.source_id,
-                            &self.host_contract,
-                            &exports,
-                        )
-                    });
+            document.analysis = analyses
+                .get(&document.source_id)
+                .cloned()
+                .expect("analysis collected for every document");
         }
         self.rebuild_project_semantics();
     }
@@ -379,7 +404,17 @@ impl Server {
             for file in project.modules() {
                 if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
                     let module = index.register(&file.module_path, document.source_id);
-                    if let Ok(program) = self.compilation.sources().parse(document.source_id) {
+                    if let Some(program) = self
+                        .compilation
+                        .sources()
+                        .parse(document.source_id)
+                        .ok()
+                        .or_else(|| {
+                            self.compilation
+                                .sources()
+                                .last_valid_parse(document.source_id)
+                        })
+                    {
                         programs.push((module, program));
                     }
                 }

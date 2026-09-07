@@ -32,19 +32,19 @@ pub(super) fn collect_external_exports(
                 continue;
             };
             let program = if source_id != SourceId::UNKNOWN {
-                let Ok(program) = server.compilation.sources().parse(source_id) else {
-                    continue;
-                };
-                program
+                server
+                    .compilation
+                    .sources()
+                    .parse(source_id)
+                    .ok()
+                    .or_else(|| server.compilation.sources().last_valid_parse(source_id))
             } else {
                 let Ok(tokens) = lex_with_source_id(&text, source_id) else {
                     continue;
                 };
-                let Ok(program) = parse(tokens) else {
-                    continue;
-                };
-                program
+                parse(tokens).ok()
             };
+            let Some(program) = program else { continue };
             let analysis = server.project_analysis(project).or_else(|| {
                 server
                     .documents

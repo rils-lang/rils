@@ -28,6 +28,28 @@ fn source_ids_survive_edits_and_parsing_is_revision_scoped() {
 }
 
 #[test]
+fn invalid_edits_keep_a_tooling_snapshot_without_changing_strict_parse() {
+    let mut database = SourceDatabase::default();
+    let id = database.set_source("src/main.rils", "fn value() { 1 }");
+    let previous = database.parse(id).expect("initial source parses");
+
+    database.set_source("src/main.rils", "fn value() { 1 }\nlet broken = ;");
+
+    assert!(database.parse(id).is_err());
+    let snapshot = database
+        .last_valid_parse(id)
+        .expect("last valid syntax snapshot");
+    assert_eq!(snapshot.statements.len(), previous.statements.len());
+    assert!(matches!(
+        &snapshot.statements[0],
+        crate::ast::Stmt::Function { name, .. } if name == "value"
+    ));
+
+    database.set_source("src/main.rils", "fn fixed() { 2 }");
+    assert!(database.last_valid_parse(id).is_none());
+}
+
+#[test]
 fn reserved_source_starts_its_first_text_at_revision_zero() {
     let mut database = SourceDatabase::default();
     let id = database.reserve("src/lib.rils");
