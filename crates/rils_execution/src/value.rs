@@ -424,6 +424,40 @@ impl Value {
         }
     }
 
+    pub fn contains_local_reference(&self, environment: &EnvironmentRef) -> bool {
+        match self {
+            Self::Reference(reference) => reference.is_local_to(environment),
+            Self::Option {
+                value: Some(value), ..
+            } => value.contains_local_reference(environment),
+            Self::Result { value, .. } => match value {
+                Ok(value) | Err(value) => value.contains_local_reference(environment),
+            },
+            Self::Tuple(sequence) | Self::Array(sequence) | Self::Vec(sequence) => sequence
+                .elements
+                .borrow()
+                .iter()
+                .filter_map(|slot| slot.value.as_ref())
+                .any(|value| value.contains_local_reference(environment)),
+            Self::Struct(instance) => instance
+                .fields
+                .borrow()
+                .values()
+                .filter_map(|field| field.value.as_ref())
+                .any(|value| value.contains_local_reference(environment)),
+            Self::Enum(instance) => match &instance.payload {
+                EnumPayload::Unit => false,
+                EnumPayload::Tuple(values) => values
+                    .iter()
+                    .any(|value| value.contains_local_reference(environment)),
+                EnumPayload::Record(values) => values
+                    .values()
+                    .any(|value| value.contains_local_reference(environment)),
+            },
+            _ => false,
+        }
+    }
+
     pub fn has_active_references(&self) -> bool {
         match self {
             Self::Struct(instance) => instance.fields.borrow().values().any(|field| {
@@ -476,7 +510,7 @@ impl Value {
 
     pub fn clone_owned(&self) -> Result<Self, String> {
         Ok(match self {
-            Self::Reference(_) => return Err("references cannot be cloned as owned values".into()),
+            Self::Reference(reference) => return Ok(Self::Reference(reference.clone())),
             Self::Option {
                 value,
                 element_type,

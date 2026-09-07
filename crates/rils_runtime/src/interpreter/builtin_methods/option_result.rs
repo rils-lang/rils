@@ -43,12 +43,6 @@ impl Interpreter {
         match (id, value) {
             (OptionMap, Some(value)) => {
                 let mapped = self.call(function, &[value.as_ref().clone()], span)?;
-                if mapped.contains_reference() {
-                    return Err(RuntimeError::new(
-                        "Option cannot own local references",
-                        span,
-                    ));
-                }
                 Ok(Value::Option {
                     element_type: Type::of_value(&mapped),
                     value: Some(Rc::new(mapped)),
@@ -177,12 +171,6 @@ fn owned_result(
     let contained = match &value {
         Ok(value) | Err(value) => value,
     };
-    if contained.contains_reference() {
-        return Err(RuntimeError::new(
-            "Result cannot own local references",
-            span,
-        ));
-    }
     let (value, inferred_ok, inferred_error) = match value {
         Ok(value) => (
             Ok(Rc::new(value.clone())),

@@ -68,12 +68,6 @@ impl Interpreter {
                     .map(|expression| self.evaluate(expression, environment))
                     .transpose()?
                     .unwrap_or(Value::Unit);
-                if value.contains_reference() {
-                    return Err(RuntimeError::new(
-                        "references cannot be returned from functions",
-                        *span,
-                    ));
-                }
                 Ok(Flow::Return(value))
             }
             Stmt::Expr {
@@ -195,7 +189,7 @@ impl Interpreter {
                     .map(|ty| expand_type_aliases(ty, &environment, *span))
                     .transpose()?;
                 let value = self.evaluate(initializer, environment.clone())?;
-                if matches!(value, Value::Reference(_)) {
+                if value.contains_reference() {
                     if Rc::ptr_eq(&environment, &self.globals) {
                         return Err(RuntimeError::new(
                             "references cannot be stored in global bindings",
@@ -208,12 +202,6 @@ impl Interpreter {
                             *span,
                         ));
                     }
-                }
-                if value.contains_reference() && !matches!(value, Value::Reference(_)) {
-                    return Err(RuntimeError::new(
-                        "references cannot be stored inside owned values",
-                        *span,
-                    ));
                 }
                 if type_annotation.is_none()
                     && matches!(

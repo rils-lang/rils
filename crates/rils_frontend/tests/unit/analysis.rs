@@ -843,7 +843,11 @@ fn preserves_copy_values_and_allows_multiple_mutable_references() {
 #[test]
 fn reports_mutability_borrow_and_reference_escape_errors() {
     let source = r#"
-            fn invalid_return(value: &i32) { value }
+            fn valid_return(value: &i32) -> &i32 { value }
+            fn invalid_return() -> &i32 {
+                let local = 1;
+                &local
+            }
             fn invalid_local() {
                 let immutable = 1;
                 immutable = 2;
@@ -865,7 +869,6 @@ fn reports_mutability_borrow_and_reference_escape_errors() {
         "cannot assign to immutable",
         "cannot mutably reference immutable",
         "while it is referenced",
-        "cannot be stored inside owned values",
     ] {
         assert!(
             analysis

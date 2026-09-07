@@ -218,9 +218,6 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 return Err("replace receiver is not Option".into());
             };
             let value = &arguments[1];
-            if value.contains_reference() {
-                return Err("Option cannot own local references".into());
-            }
             let expected = element_type.clone().unwrap_or(Type::Unknown);
             let actual = Type::of_value(value).unwrap_or(Type::Unknown);
             let resolved = crate::types::merge_types(&expected, &actual)

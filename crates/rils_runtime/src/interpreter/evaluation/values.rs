@@ -7,16 +7,10 @@ impl Interpreter {
         environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
         match expression {
-            Expr::Tuple { elements, span } => {
+            Expr::Tuple { elements, span: _ } => {
                 let mut slots = Vec::with_capacity(elements.len());
                 for element in elements {
                     let value = self.evaluate(element, environment.clone())?;
-                    if value.contains_reference() {
-                        return Err(RuntimeError::new(
-                            "tuple values cannot own local references",
-                            *span,
-                        ));
-                    }
                     let ty = Type::of_value(&value).unwrap_or(Type::Unknown);
                     slots.push(FieldSlot {
                         value: Some(value),
@@ -37,12 +31,6 @@ impl Interpreter {
                 let mut values = Vec::new();
                 if let Some(count) = repeat {
                     let value = self.evaluate(&elements[0], environment.clone())?;
-                    if value.contains_reference() {
-                        return Err(RuntimeError::new(
-                            "arrays cannot own local references",
-                            *span,
-                        ));
-                    }
                     if !value.is_copy() {
                         return Err(RuntimeError::new(
                             "array repeat syntax requires a Copy value",
@@ -63,12 +51,6 @@ impl Interpreter {
                 } else {
                     for element in elements {
                         let value = self.evaluate(element, environment.clone())?;
-                        if value.contains_reference() {
-                            return Err(RuntimeError::new(
-                                "arrays cannot own local references",
-                                *span,
-                            ));
-                        }
                         values.push(value);
                     }
                 }

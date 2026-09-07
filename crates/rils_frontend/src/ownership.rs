@@ -27,6 +27,7 @@ struct Binding {
     ty: Type,
     moved: bool,
     moved_places: HashSet<String>,
+    reference_region: Option<RegionId>,
 }
 
 #[derive(Clone)]
@@ -40,12 +41,19 @@ struct Scope {
 struct Borrow {
     root: String,
     interior: bool,
+    region: RegionId,
 }
 
 #[derive(Default)]
 struct ExpressionValue {
-    contains_reference: bool,
+    reference_region: Option<RegionId>,
     borrows: Vec<Borrow>,
+}
+
+impl ExpressionValue {
+    fn contains_reference(&self) -> bool {
+        self.reference_region.is_some()
+    }
 }
 
 #[derive(Clone)]
@@ -73,6 +81,7 @@ struct Checker<'a> {
     active_borrows: HashMap<String, (usize, usize)>,
     break_states: Vec<Vec<Snapshot>>,
     diagnostics: Vec<AnalysisDiagnostic>,
+    return_destinations: Vec<RegionId>,
 }
 
 impl<'a> Checker<'a> {
@@ -97,6 +106,7 @@ impl<'a> Checker<'a> {
             active_borrows: HashMap::new(),
             break_states: Vec::new(),
             diagnostics: Vec::new(),
+            return_destinations: Vec::new(),
         };
         checker.collect_nominals(&program.statements);
         checker
@@ -244,20 +254,15 @@ impl<'a> Checker<'a> {
                 name,
                 name_span,
                 mutable,
-                type_annotation,
+                type_annotation: _,
                 initializer,
                 span,
             } => {
                 let value = self.expression(initializer);
-                if self.scopes.len() == 1 && value.contains_reference {
+                if self.scopes.len() == 1 && value.contains_reference() {
                     self.diagnostic("references cannot be stored in global bindings", *span);
                 }
-                if type_annotation.as_ref().is_some_and(|ty| {
-                    ty.contains_reference() && !matches!(ty, Type::Reference { .. })
-                }) {
-                    self.diagnostic("references cannot be stored inside owned values", *span);
-                }
-                if value.contains_reference
+                if value.contains_reference()
                     && self.scopes.last().is_some_and(|scope| {
                         scope
                             .bindings
@@ -270,7 +275,7 @@ impl<'a> Checker<'a> {
                         *span,
                     );
                 }
-                self.define(name, *name_span, *mutable);
+                self.define_with_region(name, *name_span, *mutable, value.reference_region);
                 self.retain(value.borrows);
             }
             Stmt::Function {
@@ -384,16 +389,14 @@ impl<'a> Checker<'a> {
             Stmt::Return { value, span } => {
                 if let Some(value) = value {
                     let result = self.expression(value);
-                    if result.contains_reference {
-                        self.diagnostic("references cannot be returned from a function", *span);
-                    }
+                    self.check_return(&result, *span);
                     self.discard(result);
                 }
             }
             Stmt::Break { value, span } => {
                 if let Some(value) = value {
                     let result = self.expression(value);
-                    if result.contains_reference {
+                    if result.contains_reference() {
                         self.diagnostic("references cannot escape a loop through `break`", *span);
                     }
                     self.discard(result);
@@ -417,9 +420,16 @@ impl<'a> Checker<'a> {
         body: &Block,
     ) {
         let snapshot = self.snapshot();
+        let destination = self.scopes.last().expect("scope exists").region;
         self.push_scope();
+        self.return_destinations.push(destination);
         for (name, span, mutable) in parameters {
-            self.define(name, span, mutable);
+            let parameter_region = self
+                .binding_types
+                .get(&span)
+                .filter(|ty| ty.contains_reference())
+                .map(|_| Regions::ROOT);
+            self.define_with_region(name, span, mutable, parameter_region);
         }
         let last = body.statements.len().saturating_sub(1);
         for (index, statement) in body.statements.iter().enumerate() {
@@ -430,18 +440,14 @@ impl<'a> Checker<'a> {
                 } = statement
             {
                 let value = self.expression(expression);
-                if value.contains_reference {
-                    self.diagnostic(
-                        "references cannot be returned from a function",
-                        expression.span(),
-                    );
-                }
+                self.check_return(&value, expression.span());
                 self.discard(value);
                 continue;
             }
             self.statement(statement);
         }
         self.pop_scope();
+        self.return_destinations.pop();
         self.restore(snapshot);
     }
 
@@ -461,16 +467,19 @@ impl<'a> Checker<'a> {
             }
             self.statement(statement);
         }
-        let contains_reference = result.contains_reference;
-        if contains_reference {
+        let parent_region = self.scopes.last().expect("scope exists").region;
+        let valid = result
+            .reference_region
+            .is_none_or(|region| self.regions.outlives(region, parent_region));
+        if !valid {
             self.diagnostic("reference cannot escape its local block", block.span);
         }
-        self.discard(result);
-        self.pop_scope();
-        ExpressionValue {
-            contains_reference,
-            borrows: Vec::new(),
+        if !valid {
+            self.discard(result);
+            result = ExpressionValue::default();
         }
+        self.pop_scope();
+        result
     }
 
     fn expression(&mut self, expression: &Expr) -> ExpressionValue {
@@ -532,14 +541,11 @@ impl<'a> Checker<'a> {
                 }
                 self.typed_value(expression)
             }
-            Expr::Tuple { elements, span } | Expr::Array { elements, span, .. } => {
+            Expr::Tuple { elements, .. } | Expr::Array { elements, .. } => {
                 let mut values = elements
                     .iter()
                     .map(|element| self.expression(element))
                     .collect::<Vec<_>>();
-                if values.iter().any(|value| value.contains_reference) {
-                    self.diagnostic("owned collections cannot contain local references", *span);
-                }
                 if let Expr::Array {
                     repeat: Some(repeat),
                     ..
@@ -548,31 +554,37 @@ impl<'a> Checker<'a> {
                     let repeat = self.expression(repeat);
                     self.discard(repeat);
                 }
+                let reference_region = values
+                    .iter()
+                    .filter_map(|value| value.reference_region)
+                    .reduce(|a, b| self.shorter_region(a, b));
                 let borrows = values.drain(..).flat_map(|value| value.borrows).collect();
                 ExpressionValue {
-                    contains_reference: false,
+                    reference_region,
                     borrows,
                 }
             }
             Expr::Try { operand, .. } => {
                 let value = self.expression(operand);
-                self.discard(value);
-                self.typed_value(expression)
+                if value.contains_reference() {
+                    value
+                } else {
+                    self.discard(value);
+                    self.typed_value(expression)
+                }
             }
-            Expr::RecordLiteral { fields, span, .. } => {
+            Expr::RecordLiteral { fields, .. } => {
                 let values = fields
                     .iter()
                     .map(|field| self.expression(&field.value))
                     .collect::<Vec<_>>();
-                if values.iter().any(|value| value.contains_reference) {
-                    self.diagnostic(
-                        "struct and enum fields cannot contain local references",
-                        *span,
-                    );
-                }
+                let reference_region = values
+                    .iter()
+                    .filter_map(|value| value.reference_region)
+                    .reduce(|a, b| self.shorter_region(a, b));
                 let borrows = values.into_iter().flat_map(|value| value.borrows).collect();
                 ExpressionValue {
-                    contains_reference: false,
+                    reference_region,
                     borrows,
                 }
             }
@@ -582,8 +594,8 @@ impl<'a> Checker<'a> {
                 span,
             } => {
                 let value = self.expression(value);
-                self.assign_place(target, value.contains_reference, *span);
-                if value.contains_reference {
+                self.assign_place(target, value.reference_region, *span);
+                if value.contains_reference() {
                     self.retain(value.borrows);
                 } else {
                     self.discard(value);
@@ -631,7 +643,7 @@ impl<'a> Checker<'a> {
             Expr::Call {
                 callee,
                 arguments,
-                span,
+                span: _,
             } => {
                 if matches!(
                     callee_name(callee),
@@ -661,20 +673,34 @@ impl<'a> Checker<'a> {
                     .iter()
                     .map(|argument| self.expression(argument))
                     .collect::<Vec<_>>();
-                if matches!(
-                    callee_name(callee_expression(expression)),
-                    Some("Some" | "Ok" | "Err")
-                ) && values.iter().any(|value| value.contains_reference)
-                {
-                    self.diagnostic("references cannot be stored inside owned values", *span);
-                }
-                for value in values {
-                    self.discard(value);
+                let result_type = self.expression_types.get(expression);
+                let result_region =
+                    result_type
+                        .filter(|ty| ty.contains_reference())
+                        .and_then(|_| {
+                            values
+                                .iter()
+                                .filter_map(|value| value.reference_region)
+                                .reduce(|a, b| self.shorter_region(a, b))
+                        });
+                let result_borrows = values
+                    .iter()
+                    .flat_map(|value| value.borrows.clone())
+                    .collect::<Vec<_>>();
+                if result_region.is_none() {
+                    for value in values {
+                        self.discard(value);
+                    }
                 }
                 if let Some(receiver) = receiver {
                     self.discard(receiver);
                 }
-                self.typed_value(expression)
+                let mut result = self.typed_value(expression);
+                if result_type.is_some_and(Type::contains_reference) {
+                    result.reference_region = result_region;
+                    result.borrows = result_borrows;
+                }
+                result
             }
             Expr::If {
                 condition,
@@ -696,8 +722,10 @@ impl<'a> Checker<'a> {
                 self.restore(base);
                 self.merge_moved(&[then_state, else_state]);
                 ExpressionValue {
-                    contains_reference: then_value.contains_reference
-                        || else_value.contains_reference,
+                    reference_region: [then_value.reference_region, else_value.reference_region]
+                        .into_iter()
+                        .flatten()
+                        .reduce(|a, b| self.shorter_region(a, b)),
                     borrows: Vec::new(),
                 }
             }
@@ -705,14 +733,17 @@ impl<'a> Checker<'a> {
                 let value = self.expression(value);
                 self.discard(value);
                 let base = self.snapshot();
-                let mut contains_reference = false;
+                let mut reference_region = None;
                 let mut states = Vec::new();
                 for arm in arms {
                     self.restore(base.clone());
                     self.push_scope();
                     self.pattern(&arm.pattern);
                     let value = self.expression(&arm.expression);
-                    contains_reference |= value.contains_reference;
+                    reference_region = match (reference_region, value.reference_region) {
+                        (None, region) | (region, None) => region,
+                        (Some(a), Some(b)) => Some(self.shorter_region(a, b)),
+                    };
                     self.discard(value);
                     self.pop_scope();
                     states.push(self.snapshot());
@@ -720,7 +751,7 @@ impl<'a> Checker<'a> {
                 self.restore(base);
                 self.merge_moved(&states);
                 ExpressionValue {
-                    contains_reference,
+                    reference_region,
                     borrows: Vec::new(),
                 }
             }
@@ -765,7 +796,11 @@ impl<'a> Checker<'a> {
             }
         }
         ExpressionValue {
-            contains_reference: binding.ty.contains_reference(),
+            reference_region: if binding.ty.contains_reference() {
+                binding.reference_region
+            } else {
+                None
+            },
             borrows: Vec::new(),
         }
     }
@@ -845,10 +880,22 @@ impl<'a> Checker<'a> {
                 );
             }
         }
-        let borrow = Borrow { root, interior };
+        let region = self
+            .lookup(&root)
+            .and_then(|binding| binding.reference_region)
+            .or_else(|| {
+                self.binding_scope(&root)
+                    .map(|index| self.scopes[index].region)
+            })
+            .unwrap_or(Regions::ROOT);
+        let borrow = Borrow {
+            root,
+            interior,
+            region,
+        };
         self.add_borrow(&borrow);
         ExpressionValue {
-            contains_reference: true,
+            reference_region: Some(borrow.region),
             borrows: vec![borrow],
         }
     }
@@ -892,7 +939,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn assign_place(&mut self, target: &Expr, contains_reference: bool, span: Span) {
+    fn assign_place(&mut self, target: &Expr, reference_region: Option<RegionId>, span: Span) {
         match target {
             Expr::Variable { name, .. } => {
                 let scope_index = self.binding_scope(name);
@@ -916,19 +963,17 @@ impl<'a> Checker<'a> {
                         );
                     }
                 }
-                if contains_reference
-                    && scope_index.is_some_and(|index| {
-                        !self.regions.outlives(
-                            self.scopes.last().expect("scope exists").region,
-                            self.scopes[index].region,
-                        )
+                if reference_region.is_some_and(|source| {
+                    scope_index.is_some_and(|index| {
+                        !self.regions.outlives(source, self.scopes[index].region)
                     })
-                {
+                }) {
                     self.diagnostic("reference cannot escape its local scope", span);
                 }
                 if let Some(binding) = self.lookup_mut(name) {
                     binding.moved = false;
                     binding.moved_places.clear();
+                    binding.reference_region = reference_region;
                 }
             }
             Expr::Unary {
@@ -992,22 +1037,52 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn typed_value(&self, expression: &Expr) -> ExpressionValue {
+    fn typed_value(&self, _expression: &Expr) -> ExpressionValue {
         ExpressionValue {
-            contains_reference: self
-                .expression_types
-                .get(expression)
-                .is_some_and(Type::contains_reference),
+            reference_region: None,
             borrows: Vec::new(),
         }
     }
 
+    fn shorter_region(&self, left: RegionId, right: RegionId) -> RegionId {
+        if self.regions.outlives(left, right) {
+            right
+        } else {
+            left
+        }
+    }
+
+    fn check_return(&mut self, value: &ExpressionValue, span: Span) {
+        let Some(source) = value.reference_region else {
+            return;
+        };
+        let destination = self
+            .return_destinations
+            .last()
+            .copied()
+            .unwrap_or(Regions::ROOT);
+        if !self.regions.outlives(source, destination) {
+            self.diagnostic("references cannot be returned from a function", span);
+        }
+    }
+
     fn define(&mut self, name: &str, span: Span, mutable: bool) {
+        self.define_with_region(name, span, mutable, None);
+    }
+
+    fn define_with_region(
+        &mut self,
+        name: &str,
+        span: Span,
+        mutable: bool,
+        reference_region: Option<RegionId>,
+    ) {
         let ty = self
             .binding_types
             .get(&span)
             .cloned()
             .unwrap_or(Type::Unknown);
+        let has_reference = ty.contains_reference();
         self.scopes
             .last_mut()
             .expect("scope exists")
@@ -1019,6 +1094,11 @@ impl<'a> Checker<'a> {
                     ty,
                     moved: false,
                     moved_places: HashSet::new(),
+                    reference_region: if has_reference {
+                        reference_region
+                    } else {
+                        None
+                    },
                 },
             );
     }
@@ -1114,13 +1194,6 @@ fn places_overlap(left: &str, right: &str) -> bool {
         || right
             .strip_prefix(left)
             .is_some_and(|suffix| suffix.starts_with('.'))
-}
-
-fn callee_expression(expression: &Expr) -> &Expr {
-    let Expr::Call { callee, .. } = expression else {
-        unreachable!("callee_expression requires a call")
-    };
-    callee
 }
 
 fn callee_name(expression: &Expr) -> Option<&str> {

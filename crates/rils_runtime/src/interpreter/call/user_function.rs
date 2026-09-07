@@ -78,7 +78,7 @@ impl Interpreter {
             &mut self.semantic_expression_ids,
             function.semantic_expression_ids.clone(),
         );
-        let result = self.execute_statements(&function.body.statements, environment);
+        let result = self.execute_statements(&function.body.statements, environment.clone());
         self.semantic_expression_ids = previous_expression_ids;
         self.function_depth -= 1;
         let result = match result {
@@ -92,7 +92,7 @@ impl Interpreter {
         };
         match result {
             Ok(Flow::Value(value) | Flow::Return(value)) => {
-                if value.contains_reference() {
+                if value.contains_local_reference(&environment) {
                     return Err(RuntimeError::new(
                         "references cannot be returned from functions",
                         span,

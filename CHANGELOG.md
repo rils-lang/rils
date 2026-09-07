@@ -7,6 +7,10 @@
 
 ### Breaking Changes
 
+- 引用现在带有自动推导的词法作用域。`Option<&T>`、`Result<&T, E>`、`Vec<&T>`
+  以及 tuple/array 和泛型实例可以在局部作用域中携带引用；来自函数参数的引用可以返回，
+  局部值产生的引用仍禁止返回或存入全局值。直接引用字段的 struct/enum 约束保持不变。
+
 - Lexer output no longer appends an `Eof` sentinel. `TokenStream` now owns a
   single grouped token-tree representation; parser and macro cursors determine
   end-of-input from cursor exhaustion. Consumers that previously removed or
