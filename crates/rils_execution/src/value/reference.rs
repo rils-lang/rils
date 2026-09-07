@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::environment::{AssignError, StorageRef};
+use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
 use super::{SequenceValue, StructInstance, Value};
 
@@ -23,6 +23,13 @@ enum ReferenceTarget {
 }
 
 impl ReferenceValue {
+    pub fn is_local_to(&self, environment: &EnvironmentRef) -> bool {
+        match &self.target {
+            ReferenceTarget::Storage(target) => environment.borrow().owns_storage(target),
+            ReferenceTarget::StructField { .. } | ReferenceTarget::SequenceElement { .. } => false,
+        }
+    }
+
     pub fn new_storage(target: StorageRef, mutable: bool) -> Self {
         target.borrow_mut().add_reference();
         Self {

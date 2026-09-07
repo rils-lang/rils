@@ -11,16 +11,6 @@ impl Interpreter {
         parent: EnvironmentRef,
     ) -> Result<Flow, RuntimeError> {
         let flow = self.execute_statements(&block.statements, Environment::child(parent))?;
-        let value = match &flow {
-            Flow::Value(value) | Flow::Return(value) | Flow::Break(value) => Some(value),
-            Flow::Continue => None,
-        };
-        if value.is_some_and(Value::contains_reference) {
-            return Err(RuntimeError::new(
-                "reference cannot escape its local block",
-                block.span,
-            ));
-        }
         Ok(flow)
     }
 

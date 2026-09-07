@@ -131,6 +131,10 @@ impl Environment {
         }))
     }
 
+    pub fn owns_storage(&self, target: &StorageRef) -> bool {
+        self.values.values().any(|slot| Rc::ptr_eq(slot, target))
+    }
+
     pub fn module_child(parent: EnvironmentRef) -> EnvironmentRef {
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
@@ -219,9 +223,6 @@ impl Environment {
     pub fn assign(&mut self, name: &str, value: Value) -> Result<(), AssignError> {
         if let Some(slot) = self.values.get(name) {
             return slot.borrow_mut().assign(value);
-        }
-        if value.contains_reference() {
-            return Err(AssignError::ReferenceEscape);
         }
         if let Some(parent) = &self.parent {
             return parent.borrow_mut().assign(name, value);

@@ -131,7 +131,6 @@ impl Parser<'_> {
         let (name, name_span) = self.expect_identifier("expected variable name after `let`")?;
         let type_annotation = if self.take(&TokenKind::Colon).is_some() {
             let ty = self.type_annotation()?;
-            reject_nested_reference(&ty, name_span)?;
             Some(ty)
         } else {
             None
@@ -215,7 +214,6 @@ impl Parser<'_> {
         self.expect(&TokenKind::RightParen, "expected `)` after parameters")?;
         let return_type = if self.take(&TokenKind::Arrow).is_some() {
             let ty = self.type_annotation()?;
-            reject_return_reference(&ty, name_span)?;
             Some(ty)
         } else {
             None
@@ -607,7 +605,6 @@ impl Parser<'_> {
         self.expect(&TokenKind::RightParen, "expected `)` after parameters")?;
         let return_type = if self.take(&TokenKind::Arrow).is_some() {
             let ty = self.type_annotation()?;
-            reject_return_reference(&ty, name_span)?;
             Some(ty)
         } else {
             None
@@ -690,9 +687,6 @@ impl Parser<'_> {
         let (name, span) = self.expect_identifier(message)?;
         let type_annotation = if self.take(&TokenKind::Colon).is_some() {
             let ty = self.type_annotation()?;
-            if !self.allow_nested_parameter_references {
-                reject_nested_reference(&ty, span)?;
-            }
             Some(ty)
         } else {
             None
@@ -829,30 +823,10 @@ impl Parser<'_> {
     }
 }
 
-fn reject_nested_reference(ty: &Type, span: Span) -> Result<(), ParseError> {
-    if ty.contains_reference() && !matches!(ty, Type::Reference { .. }) {
-        return Err(ParseError {
-            message: "references cannot be stored inside owned types".into(),
-            span,
-        });
-    }
-    Ok(())
-}
-
 fn reject_owned_reference(ty: &Type, span: Span) -> Result<(), ParseError> {
     if ty.contains_reference() {
         return Err(ParseError {
             message: "structs and enums cannot contain reference fields".into(),
-            span,
-        });
-    }
-    Ok(())
-}
-
-fn reject_return_reference(ty: &Type, span: Span) -> Result<(), ParseError> {
-    if ty.contains_reference() {
-        return Err(ParseError {
-            message: "functions cannot return references".into(),
             span,
         });
     }

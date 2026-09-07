@@ -1502,10 +1502,7 @@ fn immutable_references_reject_writes() {
 fn references_cannot_escape_or_enter_owned_types() {
     for source in [
         "let value = 1; let global = &value;",
-        "fn invalid(value: &i32) -> &i32 { value }",
         "struct Invalid { value: &i32 }",
-        "let value = 1; let invalid: Option<&i32> = None;",
-        "let value = 1; let invalid = Some(&value);",
         "let escaped = { let value = 1; &value };",
         "fn outer() { let value = 1; let reference = &value; fn nested() {} } outer()",
     ] {

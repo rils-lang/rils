@@ -94,9 +94,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 return Err("push receiver is not Vec".into());
             };
             let value = &arguments[1];
-            if value.contains_reference() {
-                return Err("Vec cannot own local references".into());
-            }
             let current = sequence
                 .elements
                 .borrow()
@@ -192,9 +189,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                     return Err(format!("index {index} is out of bounds for insertion"));
                 }
                 let value = &arguments[2];
-                if value.contains_reference() {
-                    return Err("Vec cannot own local references".into());
-                }
                 let expected = sequence
                     .element_type
                     .borrow()

@@ -93,9 +93,6 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 Type::Option(Box::new(Type::Unknown)),
             )),
             function: |arguments| {
-                if arguments[0].contains_reference() {
-                    return Err("references cannot be stored in Option".into());
-                }
                 Ok(Value::Option {
                     value: Some(Rc::new(arguments[0].clone())),
                     element_type: Type::of_value(&arguments[0]),
@@ -112,9 +109,6 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
             function: |arguments| {
-                if arguments[0].contains_reference() {
-                    return Err("references cannot be stored in Result".into());
-                }
                 Ok(Value::Result {
                     value: Ok(Rc::new(arguments[0].clone())),
                     ok_type: Type::of_value(&arguments[0]),
@@ -132,9 +126,6 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
             function: |arguments| {
-                if arguments[0].contains_reference() {
-                    return Err("references cannot be stored in Result".into());
-                }
                 Ok(Value::Result {
                     value: Err(Rc::new(arguments[0].clone())),
                     ok_type: None,

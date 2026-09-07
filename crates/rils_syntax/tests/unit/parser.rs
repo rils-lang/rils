@@ -153,6 +153,12 @@ fn recognizes_function_call_comparisons_as_macro_expression_fragments() {
 }
 
 #[test]
+fn accepts_reference_types_inside_generic_signatures() {
+    parse(lex("fn identity(value: &i32) -> Option<&i32> { Some(value) }").unwrap())
+        .expect("generic containers may carry inferred reference regions");
+}
+
+#[test]
 fn reports_removed_numeric_type_names() {
     let integer = parse(lex("let value: int = 1;").unwrap()).unwrap_err();
     assert!(integer.message.contains("`int` was removed"));

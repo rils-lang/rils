@@ -8,12 +8,6 @@ impl Interpreter {
         span: Span,
         environment: &EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
-        if values.values().any(Value::contains_reference) {
-            return Err(RuntimeError::new(
-                "references cannot be stored in struct or enum fields",
-                span,
-            ));
-        }
         let direct = self.resolve_path(path, environment, span).ok();
         if let Some(Value::StructType(definition)) = direct {
             let name = definition.name.as_str();

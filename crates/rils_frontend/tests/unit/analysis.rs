@@ -843,7 +843,11 @@ fn preserves_copy_values_and_allows_multiple_mutable_references() {
 #[test]
 fn reports_mutability_borrow_and_reference_escape_errors() {
     let source = r#"
-            fn invalid_return(value: &i32) { value }
+            fn valid_return(value: &i32) -> &i32 { value }
+            fn invalid_return() -> &i32 {
+                let local = 1;
+                &local
+            }
             fn invalid_local() {
                 let immutable = 1;
                 immutable = 2;
@@ -865,7 +869,6 @@ fn reports_mutability_borrow_and_reference_escape_errors() {
         "cannot assign to immutable",
         "cannot mutably reference immutable",
         "while it is referenced",
-        "cannot be stored inside owned values",
     ] {
         assert!(
             analysis
@@ -876,6 +879,50 @@ fn reports_mutability_borrow_and_reference_escape_errors() {
             analysis.diagnostics
         );
     }
+}
+
+#[test]
+fn propagates_reference_regions_and_borrows_through_branches() {
+    let source = r#"
+        fn valid(value: &i32, flag: bool) -> Option<&i32> {
+            if flag { Some(value) } else { Some(value) }
+        }
+        fn invalid() {
+            let value = "value";
+            let reference = if true { Some(&value) } else { None };
+            let moved = value;
+        }
+    "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("while it is referenced")),
+        "expected branch result to retain its borrow: {:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn tracks_nested_generic_reference_regions_at_return_boundaries() {
+    let source = r#"
+        fn valid(value: &i32) -> Result<Option<&i32>, string> {
+            Ok(Some(value))
+        }
+
+        fn invalid() -> Result<Option<&i32>, string> {
+            let local = 1;
+            Ok(Some(&local))
+        }
+    "#;
+    let analysis = analyze(source).unwrap();
+    let returns = analysis
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message.contains("cannot be returned"))
+        .collect::<Vec<_>>();
+    assert_eq!(returns.len(), 1, "{:?}", analysis.diagnostics);
 }
 
 #[test]

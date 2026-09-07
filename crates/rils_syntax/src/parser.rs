@@ -50,8 +50,7 @@ fn parse_with_options(
         message: "unterminated delimited token tree".into(),
         span,
     })?;
-    let mut program = Parser::new(&stream, expansion.macros, allow_nested_parameter_references)
-        .parse_program()?;
+    let mut program = Parser::new(&stream, expansion.macros).parse_program()?;
     if !allow_nested_parameter_references {
         crate::derive::expand(&mut program)?;
     }
@@ -103,7 +102,7 @@ pub(crate) fn is_expression_fragment_stream(stream: &TokenStream) -> bool {
     }
     let masked = mask_macro_invocations(stream.trees());
     let masked = TokenStream::from_trees(&masked);
-    let mut parser = Parser::new(&masked, Vec::new(), false);
+    let mut parser = Parser::new(&masked, Vec::new());
     parser.expression().is_ok() && parser.is_at_end()
 }
 
@@ -163,7 +162,6 @@ struct Parser<'a> {
     macros: Vec<MacroSymbol>,
     loop_depth: usize,
     block_depth: usize,
-    allow_nested_parameter_references: bool,
     fallback_token: Token,
 }
 
@@ -172,11 +170,7 @@ impl<'a> Parser<'a> {
         self.stream.cursor_at(self.position).is_at_end()
     }
 
-    fn new(
-        stream: &'a TokenStream,
-        macros: Vec<MacroSymbol>,
-        allow_nested_parameter_references: bool,
-    ) -> Self {
+    fn new(stream: &'a TokenStream, macros: Vec<MacroSymbol>) -> Self {
         Self {
             stream,
             position: 0,
@@ -185,7 +179,6 @@ impl<'a> Parser<'a> {
             macros,
             loop_depth: 0,
             block_depth: 0,
-            allow_nested_parameter_references,
             fallback_token: Token::new(TokenKind::Identifier(String::new()), Span::new(0, 0)),
         }
     }
