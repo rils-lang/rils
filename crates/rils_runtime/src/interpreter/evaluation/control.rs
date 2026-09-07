@@ -113,12 +113,6 @@ impl Interpreter {
                                 .define(name, value, false, None);
                         }
                         let result = self.evaluate(&arm.expression, branch_environment)?;
-                        if result.contains_reference() {
-                            return Err(RuntimeError::new(
-                                "reference cannot escape its match arm",
-                                arm.expression.span(),
-                            ));
-                        }
                         return Ok(result);
                     }
                 }

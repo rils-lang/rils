@@ -71,3 +71,20 @@ fn rejects_local_reference_return_escape() {
     .expect_err("a local reference must not escape its function");
     assert!(error.to_string().contains("cannot be returned"));
 }
+
+#[test]
+fn generic_structs_can_carry_local_references() {
+    let value = eval(
+        r#"
+        struct Wrapper<T> { value: T }
+        fn run() -> i32 {
+            let source = 7;
+            let wrapped: Wrapper<&i32> = Wrapper { value: &source };
+            *wrapped.value
+        }
+        run()
+        "#,
+    )
+    .expect("generic struct instances may carry local references");
+    assert_eq!(value, Value::I32(7));
+}

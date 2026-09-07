@@ -166,11 +166,8 @@ fn owned_result(
     value: Result<Value, Value>,
     ok_type: Option<Type>,
     error_type: Option<Type>,
-    span: Span,
+    _span: Span,
 ) -> Result<Value, RuntimeError> {
-    let contained = match &value {
-        Ok(value) | Err(value) => value,
-    };
     let (value, inferred_ok, inferred_error) = match value {
         Ok(value) => (
             Ok(Rc::new(value.clone())),

@@ -882,6 +882,29 @@ fn reports_mutability_borrow_and_reference_escape_errors() {
 }
 
 #[test]
+fn propagates_reference_regions_and_borrows_through_branches() {
+    let source = r#"
+        fn valid(value: &i32, flag: bool) -> Option<&i32> {
+            if flag { Some(value) } else { Some(value) }
+        }
+        fn invalid() {
+            let value = "value";
+            let reference = if true { Some(&value) } else { None };
+            let moved = value;
+        }
+    "#;
+    let analysis = analyze(source).unwrap();
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("while it is referenced")),
+        "expected branch result to retain its borrow: {:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
 fn releases_local_and_temporary_borrows() {
     let source = r#"
             fn inspect(value: &string) -> i32 { 1 }

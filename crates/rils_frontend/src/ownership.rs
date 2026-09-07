@@ -720,13 +720,21 @@ impl<'a> Checker<'a> {
                     .unwrap_or_default();
                 let else_state = self.snapshot();
                 self.restore(base);
-                self.merge_moved(&[then_state, else_state]);
+                self.merge_moved(&[then_state.clone(), else_state.clone()]);
+                self.merge_active_borrows(&[then_state, else_state]);
+                let mut borrows = then_value.borrows;
+                borrows.extend(else_value.borrows);
+                borrows.dedup_by(|left, right| {
+                    left.root == right.root
+                        && left.interior == right.interior
+                        && left.region == right.region
+                });
                 ExpressionValue {
                     reference_region: [then_value.reference_region, else_value.reference_region]
                         .into_iter()
                         .flatten()
                         .reduce(|a, b| self.shorter_region(a, b)),
-                    borrows: Vec::new(),
+                    borrows,
                 }
             }
             Expr::Match { value, arms, .. } => {
@@ -734,6 +742,7 @@ impl<'a> Checker<'a> {
                 self.discard(value);
                 let base = self.snapshot();
                 let mut reference_region = None;
+                let mut borrows = Vec::new();
                 let mut states = Vec::new();
                 for arm in arms {
                     self.restore(base.clone());
@@ -744,15 +753,25 @@ impl<'a> Checker<'a> {
                         (None, region) | (region, None) => region,
                         (Some(a), Some(b)) => Some(self.shorter_region(a, b)),
                     };
-                    self.discard(value);
+                    if value.contains_reference() {
+                        borrows.extend(value.borrows);
+                    } else {
+                        self.discard(value);
+                    }
                     self.pop_scope();
                     states.push(self.snapshot());
                 }
                 self.restore(base);
                 self.merge_moved(&states);
+                self.merge_active_borrows(&states);
+                borrows.dedup_by(|left, right| {
+                    left.root == right.root
+                        && left.interior == right.interior
+                        && left.region == right.region
+                });
                 ExpressionValue {
                     reference_region,
-                    borrows: Vec::new(),
+                    borrows,
                 }
             }
             Expr::Block(block) => self.block(block),

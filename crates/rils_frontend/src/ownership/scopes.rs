@@ -125,4 +125,16 @@ impl Checker<'_> {
             }
         }
     }
+
+    pub(super) fn merge_active_borrows(&mut self, states: &[Snapshot]) {
+        let mut merged = HashMap::new();
+        for (_, active) in states {
+            for (root, counts) in active {
+                let entry = merged.entry(root.clone()).or_insert((0, 0));
+                entry.0 = entry.0.max(counts.0);
+                entry.1 = entry.1.max(counts.1);
+            }
+        }
+        self.active_borrows = merged;
+    }
 }
