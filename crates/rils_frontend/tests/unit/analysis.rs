@@ -905,6 +905,27 @@ fn propagates_reference_regions_and_borrows_through_branches() {
 }
 
 #[test]
+fn tracks_nested_generic_reference_regions_at_return_boundaries() {
+    let source = r#"
+        fn valid(value: &i32) -> Result<Option<&i32>, string> {
+            Ok(Some(value))
+        }
+
+        fn invalid() -> Result<Option<&i32>, string> {
+            let local = 1;
+            Ok(Some(&local))
+        }
+    "#;
+    let analysis = analyze(source).unwrap();
+    let returns = analysis
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message.contains("cannot be returned"))
+        .collect::<Vec<_>>();
+    assert_eq!(returns.len(), 1, "{:?}", analysis.diagnostics);
+}
+
+#[test]
 fn releases_local_and_temporary_borrows() {
     let source = r#"
             fn inspect(value: &string) -> i32 { 1 }

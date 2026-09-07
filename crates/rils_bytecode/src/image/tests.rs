@@ -41,6 +41,26 @@ fn emits_and_round_trips_typed_integer_binary_instructions() {
 }
 
 #[test]
+fn reference_containers_match_the_interpreter() {
+    assert_matches_interpreter(
+        r#"
+        fn identity(value: &i32) -> Option<&i32> {
+            Some(value)
+        }
+
+        fn run(flag: bool) -> i32 {
+            let source = 41;
+            let wrapped = if flag { identity(&source) } else { Some(&source) };
+            let values = [wrapped];
+            *values[0].unwrap()
+        }
+
+        run(true) + run(false)
+        "#,
+    );
+}
+
+#[test]
 fn trait_metadata_constructs_and_calls_persistent_default_instances() {
     let module = compile(
         r#"
