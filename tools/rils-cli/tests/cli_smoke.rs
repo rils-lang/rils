@@ -108,32 +108,36 @@ fn runs_a_project_directory() {
 }
 
 #[test]
-fn runs_all_deterministic_bundled_examples() {
+fn runs_all_bundled_examples() {
     let cli = env!("CARGO_BIN_EXE_rils");
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let examples = repository.join("examples");
-    let entries = [
-        "collections_and_closures.rils",
-        "domain_model.rils",
-        "fallible_pipeline.rils",
-        "hello.rils",
-        "iterators.rils",
-        "macros.rils",
-        "references.rils",
-        "task_board",
-        "telemetry_pipeline",
-    ];
+    let working_directory = temporary_directory();
+    let mut entries = fs::read_dir(&examples)
+        .expect("read bundled examples directory")
+        .map(|entry| entry.expect("read bundled example entry").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "rils")
+                || path.join("rils.toml").is_file()
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
+
+    assert!(!entries.is_empty(), "no runnable bundled examples found");
     for entry in entries {
-        let path = examples.join(entry);
         let result = Command::new(cli)
-            .args(["run", path.to_str().expect("example path is UTF-8")])
+            .args(["run", entry.to_str().expect("example path is UTF-8")])
+            .current_dir(&working_directory)
             .output()
             .expect("run bundled example through CLI");
         assert!(
             result.status.success(),
             "example `{}` failed: {}",
-            path.display(),
+            entry.display(),
             String::from_utf8_lossy(&result.stderr)
         );
     }
+
+    fs::remove_dir_all(&working_directory).expect("remove example working directory");
 }
