@@ -338,6 +338,12 @@ fn run_path(path: &str) -> ExitCode {
     if path.is_dir() {
         return run_project(path);
     }
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "rils")
+    {
+        return run_source_file(path);
+    }
     run_bytecode(path.to_string_lossy().as_ref())
 }
 

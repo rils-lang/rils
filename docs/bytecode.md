@@ -174,8 +174,10 @@ CLI 入口为：
 rils compile scripts/main.rils -o scripts/main.rilbc
 rils verify scripts/main.rilbc
 rils run scripts/main.rilbc
+rils run scripts/main.rils
 ```
 
+`run` 可以直接执行 `.rils` 源文件，也可以执行 `.rilbc` 字节码；传入项目目录时会加载其 `rils.toml`。
 `compile` 仍不访问文件；CLI 和 `compile_file` 采用统一的项目/兼容模块加载规则，将入口和模块
 链接为一个 `.rilbc`。C# 的 `RilsRuntime.LoadBytecode(byte[])` 可直接消费 AssetBundle 或
 Addressables 中的 bytes，不要求发布包保留 `.rils` 文件布局。

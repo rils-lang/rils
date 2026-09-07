@@ -1,3 +1,5 @@
+#![allow(linker_messages)]
+
 mod builtin_files;
 mod builtin_ids;
 mod catalog_files;

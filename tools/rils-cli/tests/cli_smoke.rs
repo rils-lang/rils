@@ -106,3 +106,34 @@ fn runs_a_project_directory() {
 
     fs::remove_dir_all(&directory).expect("remove temporary CLI test directory");
 }
+
+#[test]
+fn runs_all_deterministic_bundled_examples() {
+    let cli = env!("CARGO_BIN_EXE_rils");
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let examples = repository.join("examples");
+    let entries = [
+        "collections_and_closures.rils",
+        "domain_model.rils",
+        "fallible_pipeline.rils",
+        "hello.rils",
+        "iterators.rils",
+        "macros.rils",
+        "references.rils",
+        "task_board",
+        "telemetry_pipeline",
+    ];
+    for entry in entries {
+        let path = examples.join(entry);
+        let result = Command::new(cli)
+            .args(["run", path.to_str().expect("example path is UTF-8")])
+            .output()
+            .expect("run bundled example through CLI");
+        assert!(
+            result.status.success(),
+            "example `{}` failed: {}",
+            path.display(),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
