@@ -67,9 +67,6 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 .get(2)
                 .ok_or_else(|| "missing HashMap value".to_string())?
                 .clone();
-            if value.contains_reference() {
-                return Err("HashMap values cannot contain references".into());
-            }
             let key_type = merge_collection_type(&map.key_type, key.ty(), "HashMap key")?;
             let value_type = merge_collection_type(
                 &map.value_type,

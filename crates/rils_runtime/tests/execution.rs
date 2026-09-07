@@ -88,3 +88,22 @@ fn generic_structs_can_carry_local_references() {
     .expect("generic struct instances may carry local references");
     assert_eq!(value, Value::I32(7));
 }
+
+#[test]
+fn hash_maps_can_carry_reference_values_locally() {
+    let value = eval(
+        r#"
+        fn run() -> i32 {
+            let mut values: HashMap<string, &i32> = HashMap::new();
+            let key = "answer";
+            let source = 42;
+            values.insert(key.clone(), &source);
+            let found = values.get_cloned(&key);
+            *found.unwrap()
+        }
+        run()
+        "#,
+    )
+    .expect("HashMap values may carry local references");
+    assert_eq!(value, Value::I32(42));
+}

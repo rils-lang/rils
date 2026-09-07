@@ -367,12 +367,6 @@ impl Interpreter {
                 self.call(Value::Function(function), arguments, span)
             }
             Value::VariantConstructor(constructor) => {
-                if arguments.iter().any(Value::contains_reference) {
-                    return Err(RuntimeError::new(
-                        "references cannot be stored in enum fields",
-                        span,
-                    ));
-                }
                 let variant = constructor
                     .type_definition
                     .variants

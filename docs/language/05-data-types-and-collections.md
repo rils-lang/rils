@@ -117,8 +117,8 @@ tags.insert("player");
 tags.insert("online");
 ```
 
-Map 提供 `len/is_empty/clear/contains_key/insert/get_cloned/remove`。由于引用不能存入 `Option`，
-查询接口不会返回 `Option<&V>`；`get_cloned` 明确生成拥有型副本。`keys_cloned`、`values_cloned`
+Map 提供 `len/is_empty/clear/contains_key/insert/get_cloned/remove`。Map value 可以在局部作用域中携带引用；
+`get_cloned` 返回对应值的副本（引用值会复制引用本身）。`keys_cloned`、`values_cloned`
 和消费 Map 的 `into_iter` 分别产生键、值以及 `(K, V)` 的拥有型迭代器。
 
 Set 还提供 `is_subset/is_superset/is_disjoint` 与
