@@ -1,3 +1,5 @@
+#![allow(linker_messages)]
+
 //! Experimental, panic-safe, host-neutral C ABI for embedding Rils.
 //!
 //! Handles and their backing objects are bound to the thread that created them.
