@@ -13,6 +13,7 @@ pub struct Project {
     pub(crate) dependencies: BTreeMap<String, ProjectDependency>,
     pub(crate) modules: BTreeMap<String, ProjectFile>,
     pub(crate) origin: ProjectOrigin,
+    pub(crate) language_dependencies: Vec<LanguagePackageKind>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

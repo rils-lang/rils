@@ -147,9 +147,12 @@ impl Server {
         };
         self.projects.iter().any(|project| {
             matches!(project.origin(), ProjectOrigin::Language(_))
-                && project
+                && (project
                     .modules()
                     .any(|file| path_to_file_uri(&file.path) == source_name)
+                    || project
+                        .prelude()
+                        .is_some_and(|path| path_to_file_uri(path) == source_name))
         })
     }
 
@@ -218,11 +221,17 @@ impl Server {
                     for error in load.errors {
                         self.show_workspace_error(error)?;
                     }
-                    self.projects.extend(
-                        load.projects
-                            .into_iter()
-                            .filter(|project| seen.insert(project.root().to_path_buf())),
-                    );
+                    self.projects
+                        .extend(load.projects.into_iter().filter_map(|mut project| {
+                            if !seen.insert(project.root().to_path_buf()) {
+                                return None;
+                            }
+                            if stdlib_root.is_some() {
+                                project
+                                    .add_language_dependency(LanguagePackageKind::StandardLibrary);
+                            }
+                            Some(project)
+                        }));
                 }
                 Err(error) => self.show_workspace_error(format!(
                     "failed to load workspace `{}`: {error}",
@@ -430,14 +439,13 @@ impl Server {
         let files = self
             .projects
             .iter()
-            .flat_map(|project| project.modules().cloned())
-            .collect::<Vec<_>>();
-        for project_file in files {
-            let path = &project_file.path;
-            let Ok(text) = fs::read_to_string(path) else {
+            .flat_map(|project| project.modules().map(|file| file.path.clone()))
+            .collect::<HashSet<_>>();
+        for path in files {
+            let Ok(text) = fs::read_to_string(&path) else {
                 continue;
             };
-            let uri = path_to_file_uri(path);
+            let uri = path_to_file_uri(&path);
             let source_id = self.source_id_for_uri(&uri);
             self.compilation
                 .sources_mut()
@@ -489,10 +497,30 @@ impl Server {
     fn rebuild_project_semantics(&mut self) {
         self.compilation.clear_projects();
         for project in &self.projects {
+            self.compilation
+                .register_project(project_session_name(project));
+        }
+        let standard_library = self
+            .projects
+            .iter()
+            .find(|project| {
+                project.origin() == ProjectOrigin::Language(LanguagePackageKind::StandardLibrary)
+            })
+            .and_then(|project| self.compilation.project_id(&project_session_name(project)));
+        for project in &self.projects {
             let project_id = self
                 .compilation
                 .register_project(project_session_name(project));
             let mut index = ProjectSemanticIndex::default();
+            for dependency in project.language_dependencies() {
+                match dependency {
+                    LanguagePackageKind::StandardLibrary => {
+                        if let Some(dependency) = standard_library {
+                            index.add_dependency(dependency);
+                        }
+                    }
+                }
+            }
             let mut programs = Vec::new();
             for file in project.modules() {
                 if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {

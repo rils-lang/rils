@@ -2311,6 +2311,60 @@ fn loads_reserved_standard_library_modules_as_a_language_package() {
 }
 
 #[test]
+fn workspace_projects_receive_the_standard_library_prelude_dependency() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-analyzer-language-dependency-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("main.rils"), "type_of(42);").unwrap();
+
+    let uri = path_to_file_uri(&root);
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        host_types: HashSet::new(),
+        projects: Vec::new(),
+        compilation: CompilationSession::default(),
+        next_source_id: 1,
+    };
+    server
+        .load_projects(&json!({
+            "rootUri": uri,
+            "workspaceFolders": [{ "uri": uri, "name": "fixture" }]
+        }))
+        .unwrap();
+    let workspace = server
+        .projects
+        .iter()
+        .find(|project| project.origin() == rils_project::ProjectOrigin::Workspace)
+        .unwrap();
+    assert_eq!(
+        workspace.language_dependencies().collect::<Vec<_>>(),
+        [LanguagePackageKind::StandardLibrary]
+    );
+
+    let stdlib = server
+        .projects
+        .iter()
+        .find(|project| {
+            project.origin()
+                == rils_project::ProjectOrigin::Language(LanguagePackageKind::StandardLibrary)
+        })
+        .unwrap();
+    assert!(stdlib.prelude().is_some());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn malformed_nested_project_is_reported_without_dropping_other_projects() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

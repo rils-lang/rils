@@ -111,6 +111,7 @@ impl Project {
             dependencies: BTreeMap::new(),
             modules: BTreeMap::new(),
             origin: ProjectOrigin::Workspace,
+            language_dependencies: Vec::new(),
         })
     }
 
@@ -199,6 +200,7 @@ impl Project {
             dependencies,
             modules,
             origin,
+            language_dependencies: Vec::new(),
         })
     }
 
@@ -216,6 +218,14 @@ impl Project {
     }
     pub fn origin(&self) -> ProjectOrigin {
         self.origin
+    }
+    pub fn add_language_dependency(&mut self, dependency: LanguagePackageKind) {
+        if !self.language_dependencies.contains(&dependency) {
+            self.language_dependencies.push(dependency);
+        }
+    }
+    pub fn language_dependencies(&self) -> impl ExactSizeIterator<Item = LanguagePackageKind> + '_ {
+        self.language_dependencies.iter().copied()
     }
     pub fn requires_entry(&self) -> bool {
         self.kind == ProjectKind::Bin

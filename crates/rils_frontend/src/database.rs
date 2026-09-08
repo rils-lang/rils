@@ -376,6 +376,7 @@ pub struct ProjectSemanticIndex {
     modules: ModuleGraph,
     definitions: HashMap<DefId, DefinitionData>,
     entry_source: Option<SourceId>,
+    dependencies: Vec<ProjectId>,
 }
 
 impl ProjectSemanticIndex {
@@ -422,6 +423,16 @@ impl ProjectSemanticIndex {
 
     pub fn entry_source(&self) -> Option<SourceId> {
         self.entry_source
+    }
+
+    pub fn add_dependency(&mut self, dependency: ProjectId) {
+        if !self.dependencies.contains(&dependency) {
+            self.dependencies.push(dependency);
+        }
+    }
+
+    pub fn dependencies(&self) -> impl ExactSizeIterator<Item = ProjectId> + '_ {
+        self.dependencies.iter().copied()
     }
 }
 
