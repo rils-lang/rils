@@ -32,6 +32,24 @@ pub(crate) fn analyze_project_with_host_declarations_and_contract(
     host_types: &HashSet<String>,
     host_contract: Option<&rils_host::HostContract>,
 ) -> DocumentAnalysis {
+    analyze_project_with_host_declarations_and_contract_and_external_exports(
+        syntax,
+        modules,
+        host_functions,
+        host_types,
+        host_contract,
+        &HashMap::new(),
+    )
+}
+
+fn analyze_project_with_host_declarations_and_contract_and_external_exports(
+    syntax: &ProjectSyntax,
+    modules: &ModuleGraph,
+    host_functions: &HashMap<String, FunctionSignature>,
+    host_types: &HashSet<String>,
+    host_contract: Option<&rils_host::HostContract>,
+    inherited_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+) -> DocumentAnalysis {
     let root = syntax.root_program();
     let mut units =
         Vec::with_capacity(syntax.modules().len() + usize::from(!root.statements.is_empty()));
@@ -47,7 +65,7 @@ pub(crate) fn analyze_project_with_host_declarations_and_contract(
         ))
     }));
 
-    let mut exports = HashMap::new();
+    let mut exports = inherited_exports.clone();
     for (_, path, program) in &units {
         collect_exports(program, path, None, path.is_empty(), &mut exports);
     }
@@ -66,9 +84,15 @@ pub(crate) fn analyze_project_with_host_declarations_and_contract(
             )
         })
         .collect::<Vec<_>>();
-    exports.clear();
+    let mut resolved_exports = inherited_exports.clone();
     for ((_, path, program), analysis) in units.iter().zip(&first_pass) {
-        collect_exports(program, path, Some(analysis), path.is_empty(), &mut exports);
+        collect_exports(
+            program,
+            path,
+            Some(analysis),
+            path.is_empty(),
+            &mut resolved_exports,
+        );
     }
 
     let mut result = DocumentAnalysis::default();
@@ -79,7 +103,7 @@ pub(crate) fn analyze_project_with_host_declarations_and_contract(
                 *source,
                 host_functions,
                 host_types,
-                &exports,
+                &resolved_exports,
                 path,
                 host_contract,
             ),
@@ -139,6 +163,27 @@ pub fn analyze_project_with_host(
         &host_functions,
         &host_types,
         Some(host),
+    )
+}
+
+pub fn analyze_project_with_host_and_external_exports(
+    syntax: &ProjectSyntax,
+    modules: &ModuleGraph,
+    host: &rils_host::HostContract,
+    external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+) -> DocumentAnalysis {
+    let host_functions = host.signatures();
+    let host_types = host
+        .types()
+        .map(|declaration| declaration.name.clone())
+        .collect();
+    analyze_project_with_host_declarations_and_contract_and_external_exports(
+        syntax,
+        modules,
+        &host_functions,
+        &host_types,
+        Some(host),
+        external_exports,
     )
 }
 

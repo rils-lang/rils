@@ -29,7 +29,10 @@ pub use host_type_resolution::{
     HostTypeResolutionError, HostTypeResolutionResults, HostTypeResolutionView, resolve_host_types,
 };
 pub use numeric_literals::{NumericLiteralError, concretize_numeric_literal};
-pub use project_analysis::{analyze_project_with_host, analyze_project_with_host_declarations};
+pub use project_analysis::{
+    analyze_project_with_host, analyze_project_with_host_and_external_exports,
+    analyze_project_with_host_declarations,
+};
 pub use rils_builtins::{
     BuiltinId, FLOAT_INTRINSICS, INTEGER_INTRINSICS, IntrinsicDeclaration, IntrinsicKind,
     TypePattern, float_constant, float_method, integer_associated_function, integer_constant,

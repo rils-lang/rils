@@ -473,7 +473,7 @@ impl Server {
                 document.text.clone(),
             );
         }
-        self.rebuild_project_semantics();
+        self.rebuild_project_semantics(None);
         let exports = project_index::collect_external_exports(self);
         let analyses = self
             .documents
@@ -491,10 +491,15 @@ impl Server {
                 .cloned()
                 .expect("analysis collected for every document");
         }
-        self.rebuild_project_semantics();
+        self.rebuild_project_semantics(Some(&exports));
     }
 
-    fn rebuild_project_semantics(&mut self) {
+    fn rebuild_project_semantics(
+        &mut self,
+        inherited_exports: Option<
+            &HashMap<String, Vec<rils_frontend::analysis::ExternalModuleExport>>,
+        >,
+    ) {
         self.compilation.clear_projects();
         for project in &self.projects {
             self.compilation
@@ -554,11 +559,41 @@ impl Server {
                     .compilation
                     .project_syntax(project_id)
                     .expect("registered project must have syntax storage");
-                rils_frontend::analyze_project_with_host(
-                    syntax,
-                    semantics.module_graph(),
-                    &self.host_contract,
-                )
+                let language_dependency = project
+                    .language_dependencies()
+                    .any(|dependency| dependency == LanguagePackageKind::StandardLibrary);
+                if language_dependency {
+                    if let Some(exports) = inherited_exports {
+                        let language_exports = exports
+                            .iter()
+                            .filter(|(path, _)| {
+                                path.is_empty()
+                                    || path.starts_with("core::")
+                                    || path.starts_with("std::")
+                                    || path.starts_with("prelude::")
+                            })
+                            .map(|(path, exports)| (path.clone(), exports.clone()))
+                            .collect::<HashMap<_, _>>();
+                        rils_frontend::analyze_project_with_host_and_external_exports(
+                            syntax,
+                            semantics.module_graph(),
+                            &self.host_contract,
+                            &language_exports,
+                        )
+                    } else {
+                        rils_frontend::analyze_project_with_host(
+                            syntax,
+                            semantics.module_graph(),
+                            &self.host_contract,
+                        )
+                    }
+                } else {
+                    rils_frontend::analyze_project_with_host(
+                        syntax,
+                        semantics.module_graph(),
+                        &self.host_contract,
+                    )
+                }
             };
             self.compilation
                 .project_mut(project_id)
