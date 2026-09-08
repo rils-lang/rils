@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use crate::parser::ParseCapabilities;
 use crate::{
     DefId, DefMap, DefinitionData, FrontendError, ModuleId, SourceFile, SourceId,
     analysis::DocumentAnalysis, ast::Program,
@@ -189,6 +190,7 @@ struct SourceEntry {
     initialized: bool,
     revision: u64,
     parsed: Result<Program, FrontendError>,
+    capabilities: ParseCapabilities,
     /// The last syntax tree that parsed successfully before the current edit.
     ///
     /// Editor clients frequently produce temporarily invalid source while a
@@ -217,19 +219,28 @@ impl SourceDatabase {
             return *id;
         }
         let id = self.allocate_id();
-        self.insert(id, name, String::new(), false);
+        self.insert(id, name, String::new(), false, ParseCapabilities::USER);
         id
     }
 
     pub fn set_source(&mut self, name: impl Into<String>, text: impl Into<String>) -> SourceId {
+        self.set_source_with_capabilities(name, text, ParseCapabilities::USER)
+    }
+
+    pub fn set_source_with_capabilities(
+        &mut self,
+        name: impl Into<String>,
+        text: impl Into<String>,
+        capabilities: ParseCapabilities,
+    ) -> SourceId {
         let name = name.into();
         let text = text.into();
         if let Some(id) = self.by_name.get(&name).copied() {
-            self.update(id, text);
+            self.update(id, text, capabilities);
             return id;
         }
         let id = self.allocate_id();
-        self.insert(id, name, text, true);
+        self.insert(id, name, text, true, capabilities);
         id
     }
 
@@ -238,6 +249,16 @@ impl SourceDatabase {
         id: SourceId,
         name: impl Into<String>,
         text: impl Into<String>,
+    ) {
+        self.set_source_with_id_and_capabilities(id, name, text, ParseCapabilities::USER);
+    }
+
+    pub fn set_source_with_id_and_capabilities(
+        &mut self,
+        id: SourceId,
+        name: impl Into<String>,
+        text: impl Into<String>,
+        capabilities: ParseCapabilities,
     ) {
         assert!(id != SourceId::UNKNOWN, "source database IDs must be known");
         let name = name.into();
@@ -248,14 +269,14 @@ impl SourceDatabase {
                 existing.file.name, name,
                 "source ID reused for another name"
             );
-            self.update(id, text);
+            self.update(id, text, capabilities);
             return;
         }
         assert!(
             !self.by_name.contains_key(&name),
             "source name reused with another ID"
         );
-        self.insert(id, name, text, true);
+        self.insert(id, name, text, true, capabilities);
     }
 
     pub fn source_id(&self, name: &str) -> Option<SourceId> {
@@ -272,6 +293,10 @@ impl SourceDatabase {
 
     pub fn revision(&self, id: SourceId) -> Option<u64> {
         self.sources.get(&id).map(|entry| entry.revision)
+    }
+
+    pub fn parse_capabilities(&self, id: SourceId) -> Option<ParseCapabilities> {
+        self.sources.get(&id).map(|entry| entry.capabilities)
     }
 
     pub fn parse(&self, id: SourceId) -> Result<Program, FrontendError> {
@@ -306,8 +331,15 @@ impl SourceDatabase {
         SourceId::new(self.next_id)
     }
 
-    fn insert(&mut self, id: SourceId, name: String, text: String, initialized: bool) {
-        let parsed = parse_source(&text, id);
+    fn insert(
+        &mut self,
+        id: SourceId,
+        name: String,
+        text: String,
+        initialized: bool,
+        capabilities: ParseCapabilities,
+    ) {
+        let parsed = parse_source(&text, id, capabilities);
         self.by_name.insert(name.clone(), id);
         self.sources.insert(
             id,
@@ -317,37 +349,50 @@ impl SourceDatabase {
                 initialized,
                 revision: 0,
                 parsed,
+                capabilities,
                 last_valid: None,
             },
         );
     }
 
-    fn update(&mut self, id: SourceId, text: String) {
+    fn update(&mut self, id: SourceId, text: String, capabilities: ParseCapabilities) {
         let entry = self.sources.get_mut(&id).expect("registered source");
-        if entry.initialized && entry.text == text {
+        let text_changed = entry.text != text;
+        let capabilities_changed = entry.capabilities != capabilities;
+        if entry.initialized && !text_changed && !capabilities_changed {
             return;
         }
         entry.text = text;
-        if entry.initialized {
+        if entry.initialized && text_changed {
             entry.revision = entry
                 .revision
                 .checked_add(1)
                 .expect("source revision overflow");
         }
         entry.initialized = true;
-        let parsed = parse_source(&entry.text, id);
-        if parsed.is_ok() {
+        let parsed = parse_source(&entry.text, id, capabilities);
+        if parsed.is_ok() || capabilities_changed {
             entry.last_valid = None;
         } else if let Ok(program) = &entry.parsed {
             entry.last_valid = Some(program.clone());
         }
         entry.parsed = parsed;
+        entry.capabilities = capabilities;
     }
 }
 
-fn parse_source(source: &str, source_id: SourceId) -> Result<Program, FrontendError> {
+fn parse_source(
+    source: &str,
+    source_id: SourceId,
+    capabilities: ParseCapabilities,
+) -> Result<Program, FrontendError> {
     let tokens = crate::lexer::lex_with_source_id(source, source_id).map_err(FrontendError::Lex)?;
-    crate::parser::parse(tokens).map_err(FrontendError::Parse)
+    crate::parser::parse_with_capabilities(
+        tokens,
+        crate::macros::STANDARD_NATIVE_MACROS,
+        capabilities,
+    )
+    .map_err(FrontendError::Parse)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

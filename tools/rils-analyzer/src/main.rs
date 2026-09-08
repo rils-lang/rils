@@ -136,24 +136,20 @@ impl Server {
         }
     }
 
-    fn is_language_source(&self, source_id: SourceId) -> bool {
-        let Some(source_name) = self
-            .compilation
-            .sources()
-            .source_file(source_id)
-            .map(|file| file.name.as_str())
-        else {
-            return false;
-        };
-        self.projects.iter().any(|project| {
+    fn parse_capabilities_for_uri(&self, uri: &str) -> ParseCapabilities {
+        if self.projects.iter().any(|project| {
             matches!(project.origin(), ProjectOrigin::Language(_))
                 && (project
                     .modules()
-                    .any(|file| path_to_file_uri(&file.path) == source_name)
+                    .any(|file| path_to_file_uri(&file.path) == uri)
                     || project
                         .prelude()
-                        .is_some_and(|path| path_to_file_uri(path) == source_name))
-        })
+                        .is_some_and(|path| path_to_file_uri(path) == uri))
+        }) {
+            ParseCapabilities::STANDARD_LIBRARY
+        } else {
+            ParseCapabilities::USER
+        }
     }
 
     pub(crate) fn parse_tokens(
@@ -161,34 +157,31 @@ impl Server {
         source_id: SourceId,
         tokens: Vec<rils_frontend::token::Token>,
     ) -> Result<rils_frontend::ast::Program, rils_frontend::parser::ParseError> {
-        if self.is_language_source(source_id) {
-            rils_frontend::parse_with_capabilities(
-                tokens,
-                rils_frontend::macros::STANDARD_NATIVE_MACROS,
-                ParseCapabilities::STANDARD_LIBRARY,
-            )
-        } else {
-            parse(tokens)
-        }
+        let capabilities = self
+            .compilation
+            .sources()
+            .parse_capabilities(source_id)
+            .unwrap_or(ParseCapabilities::USER);
+        rils_frontend::parse_with_capabilities(
+            tokens,
+            rils_frontend::macros::STANDARD_NATIVE_MACROS,
+            capabilities,
+        )
     }
 
     pub(crate) fn parse_source(
         &self,
         source_id: SourceId,
     ) -> Result<rils_frontend::ast::Program, FrontendError> {
-        let text = self
-            .compilation
+        self.compilation
             .sources()
-            .source_text(source_id)
+            .try_parse(source_id)
             .ok_or_else(|| {
                 FrontendError::Parse(rils_frontend::parser::ParseError {
                     message: "source is not available".into(),
                     span: Span::new(0, 0),
                 })
-            })?;
-        let tokens = lex_with_source_id(text, source_id).map_err(FrontendError::Lex)?;
-        self.parse_tokens(source_id, tokens)
-            .map_err(FrontendError::Parse)
+            })?
     }
 
     fn load_projects(&mut self, initialization: &Value) -> Result<(), AnyError> {
@@ -335,9 +328,19 @@ impl Server {
     fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri);
+        let capabilities = self
+            .compilation
+            .sources()
+            .parse_capabilities(source_id)
+            .unwrap_or_else(|| self.parse_capabilities_for_uri(&uri));
         self.compilation
             .sources_mut()
-            .set_source_with_id(source_id, uri.clone(), text.clone());
+            .set_source_with_id_and_capabilities(
+                source_id,
+                uri.clone(),
+                text.clone(),
+                capabilities,
+            );
         let analysis = self.analyze_source(source_id, &HashMap::new());
         self.documents.insert(
             uri.clone(),
@@ -447,9 +450,15 @@ impl Server {
             };
             let uri = path_to_file_uri(&path);
             let source_id = self.source_id_for_uri(&uri);
+            let capabilities = self.parse_capabilities_for_uri(&uri);
             self.compilation
                 .sources_mut()
-                .set_source_with_id(source_id, uri.clone(), text.clone());
+                .set_source_with_id_and_capabilities(
+                    source_id,
+                    uri.clone(),
+                    text.clone(),
+                    capabilities,
+                );
             self.workspace_documents.insert(uri.clone());
             self.documents.insert(
                 uri,
@@ -467,11 +476,19 @@ impl Server {
 
     fn reanalyze_documents(&mut self) {
         for (uri, document) in &self.documents {
-            self.compilation.sources_mut().set_source_with_id(
-                document.source_id,
-                uri.clone(),
-                document.text.clone(),
-            );
+            let capabilities = self
+                .compilation
+                .sources()
+                .parse_capabilities(document.source_id)
+                .unwrap_or_else(|| self.parse_capabilities_for_uri(uri));
+            self.compilation
+                .sources_mut()
+                .set_source_with_id_and_capabilities(
+                    document.source_id,
+                    uri.clone(),
+                    document.text.clone(),
+                    capabilities,
+                );
         }
         self.rebuild_project_semantics(None);
         let exports = project_index::collect_external_exports(self);

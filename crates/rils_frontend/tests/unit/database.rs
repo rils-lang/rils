@@ -61,6 +61,47 @@ fn reserved_source_starts_its_first_text_at_revision_zero() {
 }
 
 #[test]
+fn source_parsing_uses_explicit_capabilities() {
+    let source = "fn identity(value: _) -> _ {}";
+    let mut database = SourceDatabase::default();
+    let user_id = database.set_source("src/main.rils", source);
+    assert!(database.parse(user_id).is_err());
+    assert_eq!(
+        database.parse_capabilities(user_id),
+        Some(crate::parser::ParseCapabilities::USER)
+    );
+
+    let stdlib_id = database.set_source_with_capabilities(
+        "stdlib/core.rils",
+        source,
+        crate::parser::ParseCapabilities::STANDARD_LIBRARY,
+    );
+    assert!(database.parse(stdlib_id).is_ok());
+    assert_eq!(
+        database.parse_capabilities(stdlib_id),
+        Some(crate::parser::ParseCapabilities::STANDARD_LIBRARY)
+    );
+}
+
+#[test]
+fn changing_capabilities_reparses_an_unchanged_source() {
+    let source = "fn identity(value: _) -> _ {}";
+    let mut database = SourceDatabase::default();
+    let id = database.set_source("stdlib/core.rils", source);
+    assert!(database.parse(id).is_err());
+    assert_eq!(database.revision(id), Some(0));
+
+    database.set_source_with_capabilities(
+        "stdlib/core.rils",
+        source,
+        crate::parser::ParseCapabilities::STANDARD_LIBRARY,
+    );
+    assert!(database.parse(id).is_ok());
+    assert_eq!(database.revision(id), Some(0));
+    assert!(database.last_valid_parse(id).is_none());
+}
+
+#[test]
 fn module_graph_creates_stable_parent_nodes() {
     let mut graph = ModuleGraph::default();
     let source = SourceId::new(7);

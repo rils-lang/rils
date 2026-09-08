@@ -7,9 +7,13 @@ use rils_frontend::{
     analysis::{DocumentAnalysis, ExternalModuleExport, ExternalTypeField, SymbolKind},
     ast::Stmt,
     lexer::lex_with_source_id,
+    macros::STANDARD_NATIVE_MACROS,
+    parse_with_capabilities,
+    parser::ParseCapabilities,
 };
 
 use crate::{Server, path_to_file_uri};
+use rils_project::ProjectOrigin;
 
 pub(super) fn collect_external_exports(
     server: &Server,
@@ -39,7 +43,12 @@ pub(super) fn collect_external_exports(
                 let Ok(tokens) = lex_with_source_id(&text, source_id) else {
                     continue;
                 };
-                server.parse_tokens(source_id, tokens).ok()
+                let capabilities = if matches!(project.origin(), ProjectOrigin::Language(_)) {
+                    ParseCapabilities::STANDARD_LIBRARY
+                } else {
+                    ParseCapabilities::USER
+                };
+                parse_with_capabilities(tokens, STANDARD_NATIVE_MACROS, capabilities).ok()
             };
             let Some(program) = program else { continue };
             let analysis = server.project_analysis(project).or_else(|| {
