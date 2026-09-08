@@ -69,6 +69,7 @@
   `InlineValue` transport 注册函数；不要直接 `memcpy` 宿主 struct。
 
 ### Added
+- VS Code 发布版优先使用 VSIX 内置的同版本 `rils-analyzer`，避免旧的 managed toolchain analyzer 与扩展协议不匹配。
 
 - Analyzer edits are now resilient to temporary syntax errors: diagnostics are
   reported for the invalid revision while symbols, navigation, completion, and

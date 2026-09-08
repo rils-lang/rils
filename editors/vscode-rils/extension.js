@@ -23,14 +23,15 @@ function resolveServer(context) {
   const executable = process.platform === "win32"
     ? "rils-analyzer.exe"
     : "rils-analyzer";
+  const bundled = path.join(context.extensionPath, "server", executable);
+  if (fs.existsSync(bundled)) {
+    return bundled;
+  }
+
   const rilsHome = process.env.RILS_HOME?.trim() || path.join(os.homedir(), ".rils");
   const managed = path.join(rilsHome, "bin", executable);
   if (fs.existsSync(managed)) {
     return managed;
-  }
-  const bundled = path.join(context.extensionPath, "server", executable);
-  if (fs.existsSync(bundled)) {
-    return bundled;
   }
 
   const workspaceCandidates = [];
