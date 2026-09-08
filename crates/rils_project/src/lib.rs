@@ -9,7 +9,7 @@ mod types;
 
 pub use error::ProjectError;
 pub use project::Project;
-pub use types::{ProjectDependency, ProjectFile, ProjectKind};
+pub use types::{LanguagePackageKind, ProjectDependency, ProjectFile, ProjectKind, ProjectOrigin};
 
 pub const PROJECT_FILE_NAME: &str = "rils.toml";
 pub const DEFAULT_HOST_MANIFEST_PATHS: &[&str] =

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use rils_project::{PROJECT_FILE_NAME, Project, ProjectKind};
+use rils_project::{LanguagePackageKind, PROJECT_FILE_NAME, Project, ProjectKind, ProjectOrigin};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -66,4 +66,23 @@ fn rejects_an_invalid_project_name() {
         Project::from_file(fixture("invalid_project").join("invalid-project.toml")).unwrap_err();
 
     assert!(error.message.contains("must be a valid Rils identifier"));
+}
+
+#[test]
+fn only_a_trusted_loader_can_open_reserved_language_modules() {
+    let manifest = fixture("language_package").join(PROJECT_FILE_NAME);
+    let error = Project::from_file(&manifest).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("does not map to a valid module path")
+    );
+
+    let project =
+        Project::from_language_package(manifest, LanguagePackageKind::StandardLibrary).unwrap();
+    assert_eq!(
+        project.origin(),
+        ProjectOrigin::Language(LanguagePackageKind::StandardLibrary)
+    );
+    assert!(project.module("core::example").is_some());
 }

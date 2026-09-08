@@ -52,6 +52,13 @@ pub(crate) fn is_identifier(value: &str) -> bool {
         && characters.all(|character| character == '_' || character.is_alphanumeric())
 }
 
+pub(crate) fn is_module_identifier(value: &str, allow_reserved: bool) -> bool {
+    if allow_reserved && matches!(value, "core" | "std" | "prelude") {
+        return true;
+    }
+    is_identifier(value)
+}
+
 fn normalize_path(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {

@@ -5,7 +5,8 @@ use std::{
 };
 
 use crate::{
-    PROJECT_FILE_NAME, ProjectDependency, ProjectFile, ProjectKind, config,
+    LanguagePackageKind, PROJECT_FILE_NAME, ProjectDependency, ProjectFile, ProjectKind,
+    ProjectOrigin, config,
     error::ProjectError,
     files,
     paths::{absolutize, ancestors_within, is_identifier},
@@ -109,6 +110,7 @@ impl Project {
             unity_binding_assemblies: Vec::new(),
             dependencies: BTreeMap::new(),
             modules: BTreeMap::new(),
+            origin: ProjectOrigin::Workspace,
         })
     }
 
@@ -138,7 +140,23 @@ impl Project {
         })
     }
 
+    /// Load a trusted language package. The origin is supplied by the caller
+    /// (for example the analyzer's sysroot loader), never by manifest data.
+    pub fn from_language_package(
+        path: impl AsRef<Path>,
+        kind: LanguagePackageKind,
+    ) -> Result<Self, ProjectError> {
+        Self::build_with_origin(
+            config::load_project(absolutize(path.as_ref())?)?,
+            ProjectOrigin::Language(kind),
+        )
+    }
+
     fn build(input: ProjectBuild) -> Result<Self, ProjectError> {
+        Self::build_with_origin(input, ProjectOrigin::Workspace)
+    }
+
+    fn build_with_origin(input: ProjectBuild, origin: ProjectOrigin) -> Result<Self, ProjectError> {
         let ProjectBuild {
             root,
             manifest_path,
@@ -162,11 +180,11 @@ impl Project {
             };
         let mut modules = BTreeMap::new();
         for source_root in &source_roots {
-            files::collect_modules(&mut modules, source_root, "")?;
+            files::collect_modules(&mut modules, source_root, "", origin)?;
         }
         for dependency in dependencies.values() {
             for source_root in &dependency.source_roots {
-                files::collect_modules(&mut modules, source_root, &dependency.name)?;
+                files::collect_modules(&mut modules, source_root, &dependency.name, origin)?;
             }
         }
         Ok(Self {
@@ -180,6 +198,7 @@ impl Project {
             unity_binding_assemblies,
             dependencies,
             modules,
+            origin,
         })
     }
 
@@ -194,6 +213,9 @@ impl Project {
     }
     pub fn kind(&self) -> ProjectKind {
         self.kind
+    }
+    pub fn origin(&self) -> ProjectOrigin {
+        self.origin
     }
     pub fn requires_entry(&self) -> bool {
         self.kind == ProjectKind::Bin

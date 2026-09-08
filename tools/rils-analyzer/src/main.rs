@@ -15,14 +15,14 @@ use rils_frontend::{
     },
     ast::Stmt,
     lexer::{lex, lex_with_source_id},
-    parser::parse,
+    parser::{parse, parse_builtin_declarations},
 };
 use rils_frontend::{
     analyze_program_with_host_and_source_id_and_external_exports,
     analyze_with_host_and_source_id_and_external_exports,
 };
 use rils_host::{HOST_CONTRACT_ABI_VERSION, HostContract};
-use rils_project::Project;
+use rils_project::{LanguagePackageKind, Project, ProjectOrigin};
 use serde_json::{Value, json};
 
 type AnyError = Box<dyn Error + Send + Sync>;
@@ -109,7 +109,7 @@ impl Server {
         source_id: SourceId,
         external_exports: &HashMap<String, Vec<rils_frontend::analysis::ExternalModuleExport>>,
     ) -> Result<DocumentAnalysis, FrontendError> {
-        match self.compilation.sources().parse(source_id) {
+        match self.parse_source(source_id) {
             Ok(program) => Ok(
                 analyze_program_with_host_and_source_id_and_external_exports(
                     &program,
@@ -136,17 +136,107 @@ impl Server {
         }
     }
 
+    fn is_language_source(&self, source_id: SourceId) -> bool {
+        let Some(source_name) = self
+            .compilation
+            .sources()
+            .source_file(source_id)
+            .map(|file| file.name.as_str())
+        else {
+            return false;
+        };
+        self.projects.iter().any(|project| {
+            matches!(project.origin(), ProjectOrigin::Language(_))
+                && project
+                    .modules()
+                    .any(|file| path_to_file_uri(&file.path) == source_name)
+        })
+    }
+
+    pub(crate) fn parse_tokens(
+        &self,
+        source_id: SourceId,
+        tokens: Vec<rils_frontend::token::Token>,
+    ) -> Result<rils_frontend::ast::Program, rils_frontend::parser::ParseError> {
+        if self.is_language_source(source_id) {
+            parse_builtin_declarations(tokens)
+        } else {
+            parse(tokens)
+        }
+    }
+
+    pub(crate) fn parse_source(
+        &self,
+        source_id: SourceId,
+    ) -> Result<rils_frontend::ast::Program, FrontendError> {
+        let text = self
+            .compilation
+            .sources()
+            .source_text(source_id)
+            .ok_or_else(|| {
+                FrontendError::Parse(rils_frontend::parser::ParseError {
+                    message: "source is not available".into(),
+                    span: Span::new(0, 0),
+                })
+            })?;
+        let tokens = lex_with_source_id(text, source_id).map_err(FrontendError::Lex)?;
+        self.parse_tokens(source_id, tokens)
+            .map_err(FrontendError::Parse)
+    }
+
     fn load_projects(&mut self, initialization: &Value) -> Result<(), AnyError> {
         let mut seen = HashSet::new();
-        self.projects = workspace_roots(initialization)
-            .into_iter()
-            .map(|root| workspace_projects(&root))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .filter(|project| seen.insert(project.root().to_path_buf()))
-            .collect();
+        self.projects.clear();
+        let stdlib_root = match language_package_root() {
+            Ok(root) => Some(root),
+            Err(error) => {
+                self.show_workspace_error(error)?;
+                None
+            }
+        };
+        if let Some(root) = stdlib_root.as_deref() {
+            match Project::from_language_package(
+                root.join(rils_project::PROJECT_FILE_NAME),
+                LanguagePackageKind::StandardLibrary,
+            ) {
+                Ok(project) => {
+                    seen.insert(project.root().to_path_buf());
+                    self.projects.push(project);
+                }
+                Err(error) => {
+                    self.show_workspace_error(format!("failed to load standard library: {error}"))?
+                }
+            }
+        }
+        for root in workspace_roots(initialization) {
+            match workspace::workspace_projects_with_language(&root, stdlib_root.as_deref()) {
+                Ok(load) => {
+                    for error in load.errors {
+                        self.show_workspace_error(error)?;
+                    }
+                    self.projects.extend(
+                        load.projects
+                            .into_iter()
+                            .filter(|project| seen.insert(project.root().to_path_buf())),
+                    );
+                }
+                Err(error) => self.show_workspace_error(format!(
+                    "failed to load workspace `{}`: {error}",
+                    root.display()
+                ))?,
+            }
+        }
         self.compilation.clear_projects();
+        Ok(())
+    }
+
+    fn show_workspace_error(&self, message: String) -> Result<(), AnyError> {
+        self.connection
+            .sender
+            .send(Message::Notification(Notification::new(
+                "window/showMessage".to_owned(),
+                json!({"type": 1, "message": message}),
+            )))?;
         Ok(())
     }
 
@@ -262,17 +352,16 @@ impl Server {
     }
 
     fn parsed_document(&self, document: &Document) -> Option<rils_frontend::ast::Program> {
-        self.compilation
+        if self
+            .compilation
             .sources()
             .source_text(document.source_id)
-            .filter(|source| *source == document.text)
-            .and_then(|_| self.compilation.sources().try_parse(document.source_id))
-            .unwrap_or_else(|| {
-                let tokens = lex_with_source_id(&document.text, document.source_id)
-                    .map_err(FrontendError::Lex)?;
-                parse(tokens).map_err(FrontendError::Parse)
-            })
-            .ok()
+            .is_some_and(|source| source == document.text)
+        {
+            return self.parse_source(document.source_id).ok();
+        }
+        let tokens = lex_with_source_id(&document.text, document.source_id).ok()?;
+        self.parse_tokens(document.source_id, tokens).ok()
     }
 
     fn load_host_manifests(&mut self, initialization: &Value) -> Result<(), AnyError> {
@@ -404,12 +493,8 @@ impl Server {
             for file in project.modules() {
                 if let Some(document) = self.documents.get(&path_to_file_uri(&file.path)) {
                     let module = index.register(&file.module_path, document.source_id);
-                    if let Some(program) = self
-                        .compilation
-                        .sources()
-                        .parse(document.source_id)
-                        .ok()
-                        .or_else(|| {
+                    if let Some(program) =
+                        self.parse_source(document.source_id).ok().or_else(|| {
                             self.compilation
                                 .sources()
                                 .last_valid_parse(document.source_id)
@@ -587,73 +672,18 @@ impl Server {
     }
 }
 
-fn workspace_projects(root: &Path) -> Result<Vec<Project>, AnyError> {
-    let manifest = root.join("rils.toml");
-    if manifest.is_file() {
-        return Ok(vec![Project::from_file(manifest)?]);
-    }
-
-    let mut projects = vec![Project::from_root(root)?];
-    let mut manifests = Vec::new();
-    collect_nested_project_manifests(root, &mut manifests)?;
-    manifests.sort_by(|left, right| {
-        left.components()
-            .count()
-            .cmp(&right.components().count())
-            .then_with(|| left.cmp(right))
-    });
-
-    let mut configured_roots = Vec::new();
-    for manifest in manifests {
-        let project_root = manifest
-            .parent()
-            .expect("project manifest always has a parent");
-        if configured_roots
-            .iter()
-            .any(|configured_root: &PathBuf| project_root.starts_with(configured_root))
-        {
-            continue;
-        }
-        let project = Project::from_file(&manifest)?;
-        configured_roots.push(project.root().to_path_buf());
-        projects.push(project);
-    }
-    Ok(projects)
-}
-
-fn collect_nested_project_manifests(
-    root: &Path,
-    manifests: &mut Vec<PathBuf>,
-) -> std::io::Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        if matches!(
-            entry.file_name().to_str(),
-            Some(".git" | ".rils" | "target" | "node_modules" | "dist" | "Library")
-        ) {
-            continue;
-        }
-        let manifest = path.join("rils.toml");
-        if manifest.is_file() {
-            manifests.push(manifest);
-            continue;
-        }
-        collect_nested_project_manifests(&path, manifests)?;
-    }
-    Ok(())
-}
-
 mod completion;
 mod navigation;
 mod signature_help;
 mod support;
 mod symbols;
+mod workspace;
 
 use support::*;
+
+use workspace::language_package_root;
+#[cfg(test)]
+use workspace::workspace_projects;
 
 #[cfg(test)]
 #[path = "../tests/unit/analyzer.rs"]

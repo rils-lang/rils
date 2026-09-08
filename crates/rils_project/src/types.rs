@@ -12,6 +12,19 @@ pub struct Project {
     pub(crate) unity_binding_assemblies: Vec<String>,
     pub(crate) dependencies: BTreeMap<String, ProjectDependency>,
     pub(crate) modules: BTreeMap<String, ProjectFile>,
+    pub(crate) origin: ProjectOrigin,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProjectOrigin {
+    Workspace,
+    Dependency,
+    Language(LanguagePackageKind),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LanguagePackageKind {
+    StandardLibrary,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

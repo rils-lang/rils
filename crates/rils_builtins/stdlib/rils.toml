@@ -1,0 +1,6 @@
+[project]
+name = "rils_stdlib"
+src = "."
+
+[lib]
+prelude = "prelude.rils"

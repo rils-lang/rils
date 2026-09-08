@@ -1,7 +1,7 @@
 use super::{
-    CompilationSession, Document, Project, Server, SourceId, Type, analysis, diagnostics,
-    file_uri_to_path, function_declaration, offset, path_to_file_uri, position,
-    project_session_name, workspace_projects,
+    CompilationSession, Document, LanguagePackageKind, Project, Server, SourceId, Type, analysis,
+    diagnostics, file_uri_to_path, function_declaration, offset, path_to_file_uri, position,
+    project_session_name, workspace, workspace_projects,
 };
 use lsp_server::Connection;
 use rils_frontend::FunctionSignature;
@@ -2290,5 +2290,46 @@ fn workspace_projects_index_nested_projects_without_treating_package_paths_as_mo
     assert_eq!(projects.len(), 2);
     assert!(projects[0].module("root").is_some());
     assert!(projects[1].module("behaviour").is_some());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn loads_reserved_standard_library_modules_as_a_language_package() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("crates")
+        .join("rils_builtins")
+        .join("stdlib");
+    let package = Project::from_language_package(
+        root.join("rils.toml"),
+        LanguagePackageKind::StandardLibrary,
+    )
+    .unwrap();
+    assert!(package.module("core::array").is_some());
+    assert!(package.module("std::io").is_some());
+}
+
+#[test]
+fn malformed_nested_project_is_reported_without_dropping_other_projects() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-analyzer-workspace-errors-{}-{unique}",
+        std::process::id()
+    ));
+    fs::create_dir_all(root.join("broken")).unwrap();
+    fs::write(root.join("main.rils"), "let answer = 42;").unwrap();
+    fs::write(
+        root.join("broken/rils.toml"),
+        "[project]\nname = \"not-valid\"\n",
+    )
+    .unwrap();
+
+    let load = workspace::workspace_projects_with_language(&root, None).unwrap();
+    assert_eq!(load.projects.len(), 1);
+    assert_eq!(load.errors.len(), 1);
     fs::remove_dir_all(root).unwrap();
 }

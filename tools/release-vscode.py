@@ -118,11 +118,14 @@ def detect_platform_target() -> str:
 
 def verify_bundled_analyzer(package_path: Path, executable: str) -> None:
     expected_entry = f"extension/server/{executable}"
+    expected_stdlib = "extension/sysroot/packages/rils_stdlib/rils.toml"
     with zipfile.ZipFile(package_path) as archive:
         if expected_entry not in archive.namelist():
             raise RuntimeError(
                 f"VSIX does not contain the bundled analyzer: {expected_entry}"
             )
+        if expected_stdlib not in archive.namelist():
+            raise RuntimeError(f"VSIX does not contain the bundled standard library: {expected_stdlib}")
 
 
 def stage_preview_extension(version: str) -> tempfile.TemporaryDirectory[str]:
@@ -265,16 +268,22 @@ def main() -> int:
     try:
         extension_license = package_root / "LICENSE"
         server_directory = package_root / "server"
+        sysroot_directory = package_root / "sysroot"
         if server_directory.exists():
             raise RuntimeError(
                 f"Temporary analyzer staging directory already exists: {server_directory}"
             )
         temporary_license = not extension_license.exists()
         server_directory.mkdir()
+        sysroot_directory.mkdir()
         try:
             if temporary_license:
                 shutil.copy2(repository_license, extension_license)
             shutil.copy2(analyzer_path, server_directory / analyzer_executable)
+            shutil.copytree(
+                REPOSITORY_ROOT / "crates" / "rils_builtins" / "stdlib",
+                sysroot_directory / "packages" / "rils_stdlib",
+            )
             package_command = [
                 *vsce,
                 "package",
@@ -293,6 +302,7 @@ def main() -> int:
             verify_bundled_analyzer(package_path, analyzer_executable)
         finally:
             shutil.rmtree(server_directory)
+            shutil.rmtree(sysroot_directory)
             if temporary_license:
                 extension_license.unlink(missing_ok=True)
     finally:

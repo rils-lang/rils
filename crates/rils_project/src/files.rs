@@ -6,14 +6,16 @@ use std::{
 
 use crate::{
     DEFAULT_HOST_MANIFEST_DIR, DEFAULT_HOST_MANIFEST_PATHS, PROJECT_FILE_NAME, ProjectFile,
+    ProjectOrigin,
     error::{ProjectError, project_error},
-    paths::is_identifier,
+    paths::is_module_identifier,
 };
 
 pub(crate) fn collect_modules(
     modules: &mut BTreeMap<String, ProjectFile>,
     source_root: &Path,
     prefix: &str,
+    origin: ProjectOrigin,
 ) -> Result<(), ProjectError> {
     let mut files = Vec::new();
     collect_rils_files(source_root, &mut files).map_err(|error| {
@@ -26,7 +28,7 @@ pub(crate) fn collect_modules(
         if path.file_name().is_some_and(|name| name == "prelude.rils") {
             continue;
         }
-        let local_path = module_path(source_root, &path)?;
+        let local_path = module_path(source_root, &path, origin)?;
         let module_path = if prefix.is_empty() {
             local_path
         } else {
@@ -98,7 +100,11 @@ pub(crate) fn collect_manifest_files(root: &Path) -> Result<Vec<PathBuf>, Projec
     Ok(output)
 }
 
-pub(crate) fn module_path(source_root: &Path, file: &Path) -> Result<String, ProjectError> {
+pub(crate) fn module_path(
+    source_root: &Path,
+    file: &Path,
+    origin: ProjectOrigin,
+) -> Result<String, ProjectError> {
     let relative = file.strip_prefix(source_root).map_err(|_| {
         project_error(format!(
             "script `{}` is outside source root `{}`",
@@ -119,7 +125,12 @@ pub(crate) fn module_path(source_root: &Path, file: &Path) -> Result<String, Pro
     if stem != "mod" {
         segments.push(stem.to_owned());
     }
-    if segments.is_empty() || segments.iter().any(|segment| !is_identifier(segment)) {
+    let allow_reserved = matches!(origin, ProjectOrigin::Language(_));
+    if segments.is_empty()
+        || segments
+            .iter()
+            .any(|segment| !is_module_identifier(segment, allow_reserved))
+    {
         return Err(project_error(format!(
             "script `{}` does not map to a valid module path",
             file.display()

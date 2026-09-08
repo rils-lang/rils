@@ -69,6 +69,12 @@
   `InlineValue` transport 注册函数；不要直接 `memcpy` 宿主 struct。
 
 ### Added
+
+- Standard library sources are now loaded as a trusted language package by the
+  analyzer. Reserved `core`, `std`, and `prelude` module paths are accepted
+  only for that package; workspace manifests cannot self-assign language
+  package privileges. CLI and VS Code distributions include the same
+  `rils_stdlib` package, and project-load failures no longer terminate LSP.
 - VS Code 发布版优先使用 VSIX 内置的同版本 `rils-analyzer`，避免旧的 managed toolchain analyzer 与扩展协议不匹配。
 
 - Analyzer edits are now resilient to temporary syntax errors: diagnostics are

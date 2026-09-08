@@ -7,7 +7,6 @@ use rils_frontend::{
     analysis::{DocumentAnalysis, ExternalModuleExport, ExternalTypeField, SymbolKind},
     ast::Stmt,
     lexer::lex_with_source_id,
-    parser::parse,
 };
 
 use crate::{Server, path_to_file_uri};
@@ -33,16 +32,14 @@ pub(super) fn collect_external_exports(
             };
             let program = if source_id != SourceId::UNKNOWN {
                 server
-                    .compilation
-                    .sources()
-                    .parse(source_id)
+                    .parse_source(source_id)
                     .ok()
                     .or_else(|| server.compilation.sources().last_valid_parse(source_id))
             } else {
                 let Ok(tokens) = lex_with_source_id(&text, source_id) else {
                     continue;
                 };
-                parse(tokens).ok()
+                server.parse_tokens(source_id, tokens).ok()
             };
             let Some(program) = program else { continue };
             let analysis = server.project_analysis(project).or_else(|| {

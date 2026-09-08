@@ -133,6 +133,13 @@ def copy_package_contents(staging_root: Path, binary_directory: Path, suffix: st
         shutil.copy2(source, staging_root / name)
     shutil.copytree(REPOSITORY_ROOT / "docs", staging_root / "docs")
     shutil.copytree(REPOSITORY_ROOT / "examples", staging_root / "examples")
+    stdlib_source = REPOSITORY_ROOT / "crates" / "rils_builtins" / "stdlib"
+    if not (stdlib_source / "rils.toml").is_file():
+        raise RuntimeError(f"Standard library package manifest is missing: {stdlib_source}")
+    shutil.copytree(
+        stdlib_source,
+        staging_root / "lib" / "rils" / "packages" / "rils_stdlib",
+    )
 
 
 def create_archive(staging_root: Path, output_directory: Path, archive_format: str) -> Path:
