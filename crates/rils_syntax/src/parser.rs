@@ -23,35 +23,63 @@ pub struct ParseError {
     pub span: Span,
 }
 
+/// Controls parser behavior that is reserved for trusted language packages.
+/// User source uses [`ParseCapabilities::USER`]; the standard library loader
+/// opts into the additional declaration shapes it needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParseCapabilities {
+    pub allow_builtin_attributes: bool,
+    pub allow_signature_placeholders: bool,
+}
+
+impl ParseCapabilities {
+    pub const USER: Self = Self {
+        allow_builtin_attributes: false,
+        allow_signature_placeholders: false,
+    };
+    pub const STANDARD_LIBRARY: Self = Self {
+        allow_builtin_attributes: true,
+        allow_signature_placeholders: true,
+    };
+}
+
 pub fn parse(tokens: Vec<Token>) -> Result<Program, ParseError> {
-    parse_with_options(tokens, crate::macros::STANDARD_NATIVE_MACROS, false)
+    parse_with_capabilities(
+        tokens,
+        crate::macros::STANDARD_NATIVE_MACROS,
+        ParseCapabilities::USER,
+    )
 }
 
 pub fn parse_with_native_macros(
     tokens: Vec<Token>,
     native_macros: &[crate::macros::NativeMacroDefinition],
 ) -> Result<Program, ParseError> {
-    parse_with_options(tokens, native_macros, false)
+    parse_with_capabilities(tokens, native_macros, ParseCapabilities::USER)
 }
 
 /// Parses trusted standard-library declarations, whose callback signatures may
 /// contain lexical reference parameters without constructing an owned reference value.
 pub fn parse_builtin_declarations(tokens: Vec<Token>) -> Result<Program, ParseError> {
-    parse_with_options(tokens, crate::macros::STANDARD_NATIVE_MACROS, true)
+    parse_with_capabilities(
+        tokens,
+        crate::macros::STANDARD_NATIVE_MACROS,
+        ParseCapabilities::STANDARD_LIBRARY,
+    )
 }
 
-fn parse_with_options(
+pub fn parse_with_capabilities(
     tokens: Vec<Token>,
     native_macros: &[crate::macros::NativeMacroDefinition],
-    allow_nested_parameter_references: bool,
+    capabilities: ParseCapabilities,
 ) -> Result<Program, ParseError> {
     let expansion = crate::macros::expand(tokens, native_macros)?;
     let stream = TokenStream::new(expansion.tokens).map_err(|span| ParseError {
         message: "unterminated delimited token tree".into(),
         span,
     })?;
-    let mut program = Parser::new(&stream, expansion.macros).parse_program()?;
-    if !allow_nested_parameter_references {
+    let mut program = Parser::new(&stream, expansion.macros, capabilities).parse_program()?;
+    if !capabilities.allow_builtin_attributes {
         crate::derive::expand(&mut program)?;
     }
     Ok(program)
@@ -102,7 +130,7 @@ pub(crate) fn is_expression_fragment_stream(stream: &TokenStream) -> bool {
     }
     let masked = mask_macro_invocations(stream.trees());
     let masked = TokenStream::from_trees(&masked);
-    let mut parser = Parser::new(&masked, Vec::new());
+    let mut parser = Parser::new(&masked, Vec::new(), ParseCapabilities::USER);
     parser.expression().is_ok() && parser.is_at_end()
 }
 
@@ -163,6 +191,7 @@ struct Parser<'a> {
     loop_depth: usize,
     block_depth: usize,
     fallback_token: Token,
+    capabilities: ParseCapabilities,
 }
 
 impl<'a> Parser<'a> {
@@ -170,7 +199,11 @@ impl<'a> Parser<'a> {
         self.stream.cursor_at(self.position).is_at_end()
     }
 
-    fn new(stream: &'a TokenStream, macros: Vec<MacroSymbol>) -> Self {
+    fn new(
+        stream: &'a TokenStream,
+        macros: Vec<MacroSymbol>,
+        capabilities: ParseCapabilities,
+    ) -> Self {
         Self {
             stream,
             position: 0,
@@ -180,6 +213,7 @@ impl<'a> Parser<'a> {
             loop_depth: 0,
             block_depth: 0,
             fallback_token: Token::new(TokenKind::Identifier(String::new()), Span::new(0, 0)),
+            capabilities,
         }
     }
 

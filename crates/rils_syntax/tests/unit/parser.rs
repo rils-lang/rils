@@ -9,6 +9,25 @@ fn parses_function_and_if_expression() {
 }
 
 #[test]
+fn signature_placeholders_require_trusted_parser_capabilities() {
+    let tokens = lex("fn identity(value: _) -> _ {}").unwrap();
+    let error = parse(tokens.clone()).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("reserved for trusted language packages")
+    );
+
+    let program = crate::parser::parse_with_capabilities(
+        tokens,
+        crate::macros::STANDARD_NATIVE_MACROS,
+        crate::parser::ParseCapabilities::STANDARD_LIBRARY,
+    )
+    .unwrap();
+    assert!(matches!(program.statements[0], Stmt::Function { .. }));
+}
+
+#[test]
 fn parses_unit_and_empty_braced_structs() {
     let program = parse(lex("struct Unit; struct Empty {}").unwrap()).unwrap();
     assert!(matches!(

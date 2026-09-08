@@ -39,7 +39,10 @@ pub use rils_syntax::{
     BodyId, DefId, ExprId, FloatType, FunctionSignature, ImplId, IntegerType, ModuleId, PatternId,
     RuntimeValue, SourceFile, SourceId, Span, SymbolId, Type, TypeRefId,
 };
-pub use rils_syntax::{LexError, ParseError, lex, lex_with_source_id, parse};
+pub use rils_syntax::{
+    LexError, ParseCapabilities, ParseError, lex, lex_with_source_id, parse,
+    parse_with_capabilities,
+};
 pub use semantic::{
     BuiltinCallKind, DefMap, DefinitionData, ResolvedCall, SymbolContainer, SymbolKind,
     TypeckResults,

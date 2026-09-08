@@ -113,6 +113,13 @@ impl Parser<'_> {
 
         let (name, name_span) = self.expect_path_segment("expected type name")?;
         if name == "_" {
+            if !self.capabilities.allow_signature_placeholders {
+                return Err(ParseError {
+                    message: "`_` type placeholders are reserved for trusted language packages"
+                        .into(),
+                    span: name_span,
+                });
+            }
             return Ok(Type::Unknown);
         }
         let generic_definition = self

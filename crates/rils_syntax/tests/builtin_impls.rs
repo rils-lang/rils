@@ -1,4 +1,4 @@
-use rils_syntax::{Type, ast::Stmt, lex, parse};
+use rils_syntax::{ParseCapabilities, Type, ast::Stmt, lex, parse, parse_with_capabilities};
 
 #[test]
 fn parses_impls_for_builtin_generic_types() {
@@ -50,9 +50,12 @@ fn parses_primitive_impls_and_builtin_member_attributes() {
 
 #[test]
 fn parses_inferred_builtin_parameter_types_as_unknown() {
-    let program =
-        parse(lex("impl Formatter { fn write(&mut self, value: &_) {} }").expect("source lexes"))
-            .expect("source parses");
+    let program = parse_with_capabilities(
+        lex("impl Formatter { fn write(&mut self, value: &_) {} }").expect("source lexes"),
+        rils_syntax::macros::STANDARD_NATIVE_MACROS,
+        ParseCapabilities::STANDARD_LIBRARY,
+    )
+    .expect("source parses");
     let [Stmt::Impl { methods, .. }] = program.statements.as_slice() else {
         panic!("expected one impl declaration");
     };

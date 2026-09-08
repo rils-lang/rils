@@ -12,7 +12,7 @@ mod token_tree;
 pub mod types;
 
 pub use lexer::{LexError, lex, lex_with_source_id};
-pub use parser::{ParseError, parse};
+pub use parser::{ParseCapabilities, ParseError, parse, parse_with_capabilities};
 pub use source::{
     BodyId, DefId, ExprId, ImplId, ModuleId, PatternId, SourceFile, SourceId, Span, SymbolId,
     TypeRefId,

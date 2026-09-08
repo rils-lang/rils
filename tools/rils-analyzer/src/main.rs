@@ -15,7 +15,7 @@ use rils_frontend::{
     },
     ast::Stmt,
     lexer::{lex, lex_with_source_id},
-    parser::{parse, parse_builtin_declarations},
+    parser::{ParseCapabilities, parse},
 };
 use rils_frontend::{
     analyze_program_with_host_and_source_id_and_external_exports,
@@ -159,7 +159,11 @@ impl Server {
         tokens: Vec<rils_frontend::token::Token>,
     ) -> Result<rils_frontend::ast::Program, rils_frontend::parser::ParseError> {
         if self.is_language_source(source_id) {
-            parse_builtin_declarations(tokens)
+            rils_frontend::parse_with_capabilities(
+                tokens,
+                rils_frontend::macros::STANDARD_NATIVE_MACROS,
+                ParseCapabilities::STANDARD_LIBRARY,
+            )
         } else {
             parse(tokens)
         }

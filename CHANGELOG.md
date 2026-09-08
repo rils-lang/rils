@@ -7,6 +7,10 @@
 
 ### Breaking Changes
 
+- Type placeholder `_` in a type signature is now reserved for trusted
+  language-package declarations. User code must provide a concrete type or use
+  generic inference at the call site.
+
 - 引用现在带有自动推导的词法作用域。`Option<&T>`、`Result<&T, E>`、`Vec<&T>`
   以及 tuple/array 和泛型实例可以在局部作用域中携带引用；来自函数参数的引用可以返回，
   局部值产生的引用仍禁止返回或存入全局值。直接引用字段的 struct/enum 约束保持不变。
