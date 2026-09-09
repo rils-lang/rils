@@ -443,6 +443,11 @@ impl Server {
             .projects
             .iter()
             .flat_map(|project| project.modules().map(|file| file.path.clone()))
+            .chain(
+                self.projects
+                    .iter()
+                    .filter_map(|project| project.prelude().map(Path::to_path_buf)),
+            )
             .collect::<HashSet<_>>();
         for path in files {
             let Ok(text) = fs::read_to_string(&path) else {
@@ -558,11 +563,25 @@ impl Server {
                     }
                 }
             }
+            let prelude_program = project.prelude().and_then(|path| {
+                self.documents
+                    .get(&path_to_file_uri(path))
+                    .and_then(|document| {
+                        self.parse_source(document.source_id).ok().or_else(|| {
+                            self.compilation
+                                .sources()
+                                .last_valid_parse(document.source_id)
+                        })
+                    })
+            });
             self.compilation.replace_project(project_id, index);
             let syntax = self
                 .compilation
                 .project_syntax_mut(project_id)
                 .expect("registered project must have syntax storage");
+            if let Some(program) = prelude_program {
+                syntax.push_root(program);
+            }
             for (module, program) in programs {
                 syntax.insert_module(module, program);
             }

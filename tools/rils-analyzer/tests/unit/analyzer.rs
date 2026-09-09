@@ -2360,7 +2360,22 @@ fn workspace_projects_receive_the_standard_library_prelude_dependency() {
                 == rils_project::ProjectOrigin::Language(LanguagePackageKind::StandardLibrary)
         })
         .unwrap();
-    assert!(stdlib.prelude().is_some());
+    let prelude = stdlib.prelude().expect("standard library has a prelude");
+    let prelude_uri = path_to_file_uri(prelude);
+
+    server.load_workspace().unwrap();
+    assert!(server.documents.contains_key(&prelude_uri));
+    let main_uri = path_to_file_uri(&root.join("main.rils"));
+    let main_analysis = server.documents[&main_uri]
+        .analysis
+        .as_ref()
+        .expect("workspace document has analysis");
+    assert!(
+        !main_analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("undefined name `type_of`"))
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

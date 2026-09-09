@@ -1,11 +1,11 @@
 //! Project-level declarations shared by independent document analyses.
 
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, path::Path};
 
 use rils_frontend::{
     SourceId,
     analysis::{DocumentAnalysis, ExternalModuleExport, ExternalTypeField, SymbolKind},
-    ast::Stmt,
+    ast::{Program, Stmt},
     lexer::lex_with_source_id,
     macros::STANDARD_NATIVE_MACROS,
     parse_with_capabilities,
@@ -13,7 +13,7 @@ use rils_frontend::{
 };
 
 use crate::{Server, path_to_file_uri};
-use rils_project::ProjectOrigin;
+use rils_project::{Project, ProjectOrigin};
 
 pub(super) fn collect_external_exports(
     server: &Server,
@@ -22,50 +22,62 @@ pub(super) fn collect_external_exports(
     for project in &server.projects {
         for project_file in project.modules() {
             let uri = path_to_file_uri(&project_file.path);
-            let Some((text, source_id)) = server
-                .documents
-                .get(&uri)
-                .map(|document| (document.text.clone(), document.source_id))
-                .or_else(|| {
-                    fs::read_to_string(&project_file.path)
-                        .ok()
-                        .map(|text| (text, SourceId::UNKNOWN))
-                })
-            else {
+            let Some(program) = parse_project_file(server, project, &project_file.path) else {
                 continue;
             };
-            let program = if source_id != SourceId::UNKNOWN {
-                server
-                    .parse_source(source_id)
-                    .ok()
-                    .or_else(|| server.compilation.sources().last_valid_parse(source_id))
-            } else {
-                let Ok(tokens) = lex_with_source_id(&text, source_id) else {
-                    continue;
-                };
-                let capabilities = if matches!(project.origin(), ProjectOrigin::Language(_)) {
-                    ParseCapabilities::STANDARD_LIBRARY
-                } else {
-                    ParseCapabilities::USER
-                };
-                parse_with_capabilities(tokens, STANDARD_NATIVE_MACROS, capabilities).ok()
-            };
-            let Some(program) = program else { continue };
             let analysis = server.project_analysis(project).or_else(|| {
                 server
                     .documents
                     .get(&uri)
                     .and_then(|document| document.analysis.as_ref().ok())
             });
-            let module_path = server
-                .project_semantics(project)
-                .and_then(|index| index.module(source_id))
-                .map(|module| module.path.as_str())
-                .unwrap_or(&project_file.module_path);
-            collect_statements(&program.statements, module_path, analysis, &mut exports);
+            collect_statements(
+                &program.statements,
+                &project_file.module_path,
+                analysis,
+                &mut exports,
+            );
+        }
+        if let Some(path) = project.prelude()
+            && let Some(program) = parse_project_file(server, project, path)
+        {
+            let uri = path_to_file_uri(path);
+            let analysis = server.project_analysis(project).or_else(|| {
+                server
+                    .documents
+                    .get(&uri)
+                    .and_then(|document| document.analysis.as_ref().ok())
+            });
+            collect_statements(&program.statements, "", analysis, &mut exports);
         }
     }
     exports
+}
+
+fn parse_project_file(server: &Server, project: &Project, path: &Path) -> Option<Program> {
+    let uri = path_to_file_uri(path);
+    let (text, source_id) = server
+        .documents
+        .get(&uri)
+        .map(|document| (document.text.clone(), document.source_id))
+        .or_else(|| {
+            fs::read_to_string(path)
+                .ok()
+                .map(|text| (text, SourceId::UNKNOWN))
+        })?;
+    if source_id != SourceId::UNKNOWN {
+        return server
+            .parse_source(source_id)
+            .ok()
+            .or_else(|| server.compilation.sources().last_valid_parse(source_id));
+    }
+    let tokens = lex_with_source_id(&text, source_id).ok()?;
+    let capabilities = if matches!(project.origin(), ProjectOrigin::Language(_)) {
+        ParseCapabilities::STANDARD_LIBRARY
+    } else {
+        ParseCapabilities::USER
+    };
+    parse_with_capabilities(tokens, STANDARD_NATIVE_MACROS, capabilities).ok()
 }
 
 fn collect_statements(
@@ -100,9 +112,7 @@ fn collect_statements(
             }
         }
     }
-    if !module_path.is_empty() {
-        output.insert(module_path.to_owned(), module_exports);
-    }
+    output.insert(module_path.to_owned(), module_exports);
 }
 
 fn public_export(
