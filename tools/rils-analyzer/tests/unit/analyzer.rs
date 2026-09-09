@@ -3,6 +3,7 @@ use super::{
     diagnostics, file_uri_to_path, function_declaration, offset, path_to_file_uri, position,
     project_session_name, workspace, workspace_projects,
 };
+use crate::project_index;
 use lsp_server::Connection;
 use rils_frontend::FunctionSignature;
 use rils_frontend::analysis::analyze_with_source_id_and_external_exports_and_host_types;
@@ -1809,6 +1810,77 @@ fn completes_project_modules_public_items_and_crate_aliases() {
         completion
             .as_array()
             .is_some_and(|items| items.iter().any(|item| completion_named(item, "add")))
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_exports_are_scoped_to_their_own_project() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rils-analyzer-export-scope-{}-{unique}",
+        std::process::id()
+    ));
+    let first_root = root.join("first");
+    let second_root = root.join("second");
+    for (project_root, name, function) in [
+        (&first_root, "first", "first_only"),
+        (&second_root, "second", "second_only"),
+    ] {
+        fs::create_dir_all(project_root.join("src")).unwrap();
+        fs::write(
+            project_root.join("rils.toml"),
+            format!("[project]\nname = \"{name}\"\nsrc = \"src\"\n"),
+        )
+        .unwrap();
+        fs::write(
+            project_root.join("src/main.rils"),
+            format!("pub fn {function}() {{}}"),
+        )
+        .unwrap();
+    }
+    let first = Project::from_file(first_root.join("rils.toml")).unwrap();
+    let second = Project::from_file(second_root.join("rils.toml")).unwrap();
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        host_types: HashSet::new(),
+        projects: vec![first, second],
+        compilation: CompilationSession::default(),
+        next_source_id: 1,
+    };
+    server.load_workspace().unwrap();
+    let exports = project_index::collect_external_exports(&server);
+    let first_exports = exports.for_project(&server, &server.projects[0], false);
+    let second_exports = exports.for_project(&server, &server.projects[1], false);
+    assert!(
+        first_exports
+            .get("main")
+            .is_some_and(|items| items.iter().any(|item| item.name == "first_only"))
+    );
+    assert!(
+        !first_exports
+            .values()
+            .flatten()
+            .any(|item| item.name == "second_only")
+    );
+    assert!(
+        second_exports
+            .get("main")
+            .is_some_and(|items| items.iter().any(|item| item.name == "second_only"))
+    );
+    assert!(
+        !second_exports
+            .values()
+            .flatten()
+            .any(|item| item.name == "first_only")
     );
     fs::remove_dir_all(root).unwrap();
 }

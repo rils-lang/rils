@@ -152,6 +152,22 @@ impl Server {
         }
     }
 
+    fn project_for_source(&self, source_id: SourceId) -> Option<&Project> {
+        let uri = self
+            .compilation
+            .sources()
+            .source_file(source_id)
+            .map(|file| file.name.as_str())?;
+        self.projects.iter().find(|project| {
+            project
+                .modules()
+                .any(|file| path_to_file_uri(&file.path) == uri)
+                || project
+                    .prelude()
+                    .is_some_and(|path| path_to_file_uri(path) == uri)
+        })
+    }
+
     pub(crate) fn parse_tokens(
         &self,
         source_id: SourceId,
@@ -501,9 +517,13 @@ impl Server {
             .documents
             .values()
             .map(|document| {
+                let external_exports = self
+                    .project_for_source(document.source_id)
+                    .map(|project| exports.for_project(self, project, true))
+                    .unwrap_or_default();
                 (
                     document.source_id,
-                    self.analyze_source(document.source_id, &exports),
+                    self.analyze_source(document.source_id, &external_exports),
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -518,9 +538,7 @@ impl Server {
 
     fn rebuild_project_semantics(
         &mut self,
-        inherited_exports: Option<
-            &HashMap<String, Vec<rils_frontend::analysis::ExternalModuleExport>>,
-        >,
+        inherited_exports: Option<&project_index::ProjectExportIndex>,
     ) {
         self.compilation.clear_projects();
         for project in &self.projects {
@@ -600,16 +618,7 @@ impl Server {
                     .any(|dependency| dependency == LanguagePackageKind::StandardLibrary);
                 if language_dependency {
                     if let Some(exports) = inherited_exports {
-                        let language_exports = exports
-                            .iter()
-                            .filter(|(path, _)| {
-                                path.is_empty()
-                                    || path.starts_with("core::")
-                                    || path.starts_with("std::")
-                                    || path.starts_with("prelude::")
-                            })
-                            .map(|(path, exports)| (path.clone(), exports.clone()))
-                            .collect::<HashMap<_, _>>();
+                        let language_exports = exports.dependencies_for_project(self, project);
                         rils_frontend::analyze_project_with_host_and_external_exports(
                             syntax,
                             semantics.module_graph(),

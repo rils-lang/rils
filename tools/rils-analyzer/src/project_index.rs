@@ -15,11 +15,60 @@ use rils_frontend::{
 use crate::{Server, path_to_file_uri};
 use rils_project::{Project, ProjectOrigin};
 
-pub(super) fn collect_external_exports(
-    server: &Server,
-) -> HashMap<String, Vec<ExternalModuleExport>> {
-    let mut exports = HashMap::new();
+pub(super) struct ProjectExportIndex {
+    by_project: HashMap<std::path::PathBuf, HashMap<String, Vec<ExternalModuleExport>>>,
+}
+
+impl ProjectExportIndex {
+    pub(super) fn for_project(
+        &self,
+        server: &Server,
+        project: &Project,
+        include_dependencies: bool,
+    ) -> HashMap<String, Vec<ExternalModuleExport>> {
+        let mut result = self
+            .by_project
+            .get(project.root())
+            .cloned()
+            .unwrap_or_default();
+        if include_dependencies {
+            merge_exports(
+                &mut result,
+                self.dependencies_for_project(server, project).iter(),
+            );
+        }
+        result
+    }
+
+    pub(super) fn dependencies_for_project(
+        &self,
+        server: &Server,
+        project: &Project,
+    ) -> HashMap<String, Vec<ExternalModuleExport>> {
+        let mut result = HashMap::new();
+        for dependency in project.language_dependencies() {
+            if let Some(language_project) = server
+                .projects
+                .iter()
+                .find(|candidate| candidate.origin() == ProjectOrigin::Language(dependency))
+            {
+                merge_exports(
+                    &mut result,
+                    self.by_project
+                        .get(language_project.root())
+                        .into_iter()
+                        .flatten(),
+                );
+            }
+        }
+        result
+    }
+}
+
+pub(super) fn collect_external_exports(server: &Server) -> ProjectExportIndex {
+    let mut by_project = HashMap::new();
     for project in &server.projects {
+        let mut exports = HashMap::new();
         for project_file in project.modules() {
             let uri = path_to_file_uri(&project_file.path);
             let Some(program) = parse_project_file(server, project, &project_file.path) else {
@@ -50,8 +99,21 @@ pub(super) fn collect_external_exports(
             });
             collect_statements(&program.statements, "", analysis, &mut exports);
         }
+        by_project.insert(project.root().to_path_buf(), exports);
     }
-    exports
+    ProjectExportIndex { by_project }
+}
+
+fn merge_exports<'a>(
+    target: &mut HashMap<String, Vec<ExternalModuleExport>>,
+    source: impl IntoIterator<Item = (&'a String, &'a Vec<ExternalModuleExport>)>,
+) {
+    for (path, exports) in source {
+        target
+            .entry(path.clone())
+            .or_default()
+            .extend(exports.iter().cloned());
+    }
 }
 
 fn parse_project_file(server: &Server, project: &Project, path: &Path) -> Option<Program> {
