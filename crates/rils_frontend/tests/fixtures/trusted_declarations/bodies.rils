@@ -1,0 +1,5 @@
+pub fn declared(value: i32) -> i32 { missing_body_name; }
+pub struct Sample;
+impl Sample {
+    fn value(&self) -> i32 { missing_method_name; }
+}

@@ -54,6 +54,17 @@ pub fn analyze_program_with_host_and_source_id_and_external_exports(
     host: &HostContract,
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
 ) -> DocumentAnalysis {
+    analyze_module_with_host(program, source_id, &[], host, external_exports)
+}
+
+/// Analyze one source in its project namespace using the shared export table.
+pub fn analyze_module_with_host(
+    program: &Program,
+    source_id: SourceId,
+    module_path: &[String],
+    host: &HostContract,
+    external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
+) -> DocumentAnalysis {
     let signatures = host.signatures();
     let host_types = host
         .types()
@@ -65,7 +76,7 @@ pub fn analyze_program_with_host_and_source_id_and_external_exports(
         &signatures,
         &host_types,
         external_exports,
-        &[],
+        module_path,
         host,
     )
 }

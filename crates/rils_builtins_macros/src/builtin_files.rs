@@ -389,7 +389,7 @@ fn member_builtin_path(
         attribute.path.len() != 1
             || !matches!(
                 attribute.path[0].as_str(),
-                "metadata" | "runtime" | "import" | "provided"
+                "metadata" | "runtime" | "import" | "provided" | "compiler_internal"
             )
     }) {
         return Err(Error::new(
@@ -743,9 +743,7 @@ pub(crate) fn type_tokens(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
             quote!(TypePattern::AnyInteger)
         }
         Type::Named { name, arguments }
-            if name.len() == 1
-                && name.as_bytes()[0].is_ascii_uppercase()
-                && arguments.is_empty() =>
+            if rils_syntax::ast::is_builtin_signature_placeholder(name) && arguments.is_empty() =>
         {
             let name = LitStr::new(name, proc_macro2::Span::call_site());
             quote!(TypePattern::Generic(#name))

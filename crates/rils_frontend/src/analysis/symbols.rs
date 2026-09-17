@@ -1,6 +1,18 @@
 use super::*;
 
 impl Analyzer {
+    pub(super) fn replaces_builtin(&self, name: &str, span: Span, kind: SymbolKind) -> bool {
+        self.builtin_globals.get(name) == Some(&kind)
+            && self.language_declaration_spans.iter().any(|region| {
+                region.source == span.source && region.start <= span.start && span.end <= region.end
+            })
+            && self
+                .scopes
+                .last()
+                .and_then(|scope| scope.get(name))
+                .is_some_and(|definition| definition.span.is_none() && definition.kind == kind)
+    }
+
     pub(super) fn define(&mut self, name: &str, span: Span, kind: SymbolKind) -> SymbolId {
         let merges_host_module = kind == SymbolKind::Module
             && self
@@ -10,7 +22,13 @@ impl Analyzer {
                 .is_some_and(|definition| {
                     definition.kind == SymbolKind::Module && definition.span.is_none()
                 });
+        // Builtin declarations are inserted as synthetic (span-less) globals
+        // so ordinary source can refer to them before a package declaration is
+        // visited.  A trusted language package may provide the source-side
+        // signature for such a builtin; that declaration replaces the
+        // synthetic entry and must not be reported as a duplicate.
         if !merges_host_module
+            && !self.replaces_builtin(name, span, kind)
             && self
                 .scopes
                 .last()
@@ -64,6 +82,11 @@ impl Analyzer {
 
     pub(super) fn reference(&mut self, name: &str, span: Span, fallback_kind: SymbolKind) {
         if let Some(definition) = self.lookup(name).cloned() {
+            let export = self
+                .module_exports
+                .values()
+                .flatten()
+                .find(|export| Some(export.span) == definition.span);
             self.result.symbols.push(SymbolOccurrence {
                 name: name.into(),
                 span,
@@ -72,8 +95,8 @@ impl Analyzer {
                 definition_id: definition.id,
                 kind: definition.kind,
                 is_definition: false,
-                inferred_type: None,
-                detail: None,
+                inferred_type: export.and_then(|export| export.inferred_type.clone()),
+                detail: export.and_then(|export| export.detail.clone()),
                 container: definition.container,
             });
         } else {

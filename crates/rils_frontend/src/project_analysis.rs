@@ -1,12 +1,12 @@
+use crate::exports::{collect_exports, resolve_reexports};
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    ModuleGraph, ProjectSyntax, SourceId, Type,
+    ModuleGraph, ProjectSyntax, SourceId,
     analysis::{
-        DocumentAnalysis, ExternalModuleExport, ExternalTypeField, SymbolKind,
+        DocumentAnalysis, ExternalModuleExport,
         analyze_program_in_module_with_external_exports_and_host_types,
     },
-    ast::{Program, Stmt},
     types::FunctionSignature,
 };
 
@@ -69,6 +69,12 @@ fn analyze_project_with_host_declarations_and_contract_and_external_exports(
     for (_, path, program) in &units {
         collect_exports(program, path, None, path.is_empty(), &mut exports);
     }
+    resolve_reexports(
+        &mut exports,
+        units
+            .iter()
+            .map(|(_, path, program)| (path.as_slice(), program)),
+    );
 
     let first_pass = units
         .iter()
@@ -96,6 +102,12 @@ fn analyze_project_with_host_declarations_and_contract_and_external_exports(
     }
 
     let mut result = DocumentAnalysis::default();
+    result.diagnostics.extend(resolve_reexports(
+        &mut resolved_exports,
+        units
+            .iter()
+            .map(|(_, path, program)| (path.as_slice(), program)),
+    ));
     for (source, path, program) in &units {
         result.extend(
             analyze_program_in_module_with_external_exports_and_host_types(
@@ -185,133 +197,6 @@ pub fn analyze_project_with_host_and_external_exports(
         Some(host),
         external_exports,
     )
-}
-
-fn collect_exports(
-    program: &Program,
-    module_path: &[String],
-    analysis: Option<&DocumentAnalysis>,
-    include_private: bool,
-    output: &mut HashMap<String, Vec<ExternalModuleExport>>,
-) {
-    collect_statements(
-        &program.statements,
-        module_path,
-        analysis,
-        include_private,
-        output,
-    );
-}
-
-fn collect_statements(
-    statements: &[Stmt],
-    module_path: &[String],
-    analysis: Option<&DocumentAnalysis>,
-    include_private: bool,
-    output: &mut HashMap<String, Vec<ExternalModuleExport>>,
-) {
-    let path = module_path.join("::");
-    let exports = output.entry(path.clone()).or_default();
-    for statement in statements {
-        let public = statement
-            .visibility()
-            .is_some_and(|visibility| visibility.is_public());
-        if (public || include_private)
-            && let Some(export) = declaration_export(statement, &path, analysis)
-        {
-            exports.push(export);
-        }
-    }
-    for statement in statements {
-        if let Stmt::Module {
-            name,
-            statements: Some(children),
-            ..
-        } = statement
-        {
-            let mut child_path = module_path.to_vec();
-            child_path.push(name.clone());
-            collect_statements(children, &child_path, analysis, false, output);
-        }
-    }
-}
-
-fn declaration_export(
-    statement: &Stmt,
-    module_path: &str,
-    analysis: Option<&DocumentAnalysis>,
-) -> Option<ExternalModuleExport> {
-    let (name, span, kind, inferred_type, fields) = match statement {
-        Stmt::Function {
-            name,
-            name_span,
-            parameters,
-            return_type,
-            ..
-        } => (
-            name,
-            *name_span,
-            SymbolKind::Function,
-            Some(Type::function(
-                parameters
-                    .iter()
-                    .map(|parameter| parameter.type_annotation.clone().unwrap_or(Type::Unknown))
-                    .collect(),
-                return_type.clone().unwrap_or(Type::Unknown),
-            )),
-            Vec::new(),
-        ),
-        Stmt::Struct {
-            name,
-            name_span,
-            fields,
-            ..
-        } => (
-            name,
-            *name_span,
-            SymbolKind::Type,
-            None,
-            fields
-                .iter()
-                .map(|field| ExternalTypeField {
-                    name: field.name.clone(),
-                    span: field.span,
-                    ty: field.type_annotation.clone(),
-                })
-                .collect(),
-        ),
-        Stmt::Enum {
-            name, name_span, ..
-        }
-        | Stmt::TypeAlias {
-            name, name_span, ..
-        } => (name, *name_span, SymbolKind::Type, None, Vec::new()),
-        Stmt::Trait {
-            name, name_span, ..
-        } => (name, *name_span, SymbolKind::Trait, None, Vec::new()),
-        Stmt::Module {
-            name, name_span, ..
-        } => (name, *name_span, SymbolKind::Module, None, Vec::new()),
-        _ => return None,
-    };
-    let symbol = analysis.and_then(|analysis| {
-        analysis
-            .symbols
-            .iter()
-            .find(|symbol| symbol.is_definition && symbol.span == span)
-    });
-    Some(ExternalModuleExport {
-        name: name.clone(),
-        span,
-        definition_id: analysis.and_then(|analysis| analysis.def_map.resolution(span)),
-        kind,
-        inferred_type: symbol
-            .and_then(|symbol| symbol.inferred_type.clone())
-            .or(inferred_type),
-        detail: symbol.and_then(|symbol| symbol.detail.clone()),
-        module_path: module_path.to_owned(),
-        fields,
-    })
 }
 
 fn module_path_segments(path: &str) -> Vec<String> {

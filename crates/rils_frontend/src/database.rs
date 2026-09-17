@@ -15,6 +15,13 @@ struct ProjectAnalysisState {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProjectId(u32);
 
+/// A module identity qualified by its owning project in this session.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct ProjectModuleId {
+    pub project: ProjectId,
+    pub module: ModuleId,
+}
+
 impl ProjectId {
     pub const fn new(value: u32) -> Self {
         Self(value)
@@ -44,6 +51,8 @@ impl CompilationSession {
     pub fn register_project(&mut self, name: impl Into<String>) -> ProjectId {
         let name = name.into();
         if let Some(id) = self.projects_by_name.get(&name) {
+            self.projects.entry(*id).or_default();
+            self.project_syntax.entry(*id).or_default();
             return *id;
         }
         self.next_project_id = self
@@ -58,7 +67,10 @@ impl CompilationSession {
     }
 
     pub fn project_id(&self, name: &str) -> Option<ProjectId> {
-        self.projects_by_name.get(name).copied()
+        self.projects_by_name
+            .get(name)
+            .copied()
+            .filter(|id| self.projects.contains_key(id))
     }
 
     pub fn project(&self, id: ProjectId) -> Option<&ProjectSemanticIndex> {
@@ -117,7 +129,8 @@ impl CompilationSession {
     }
 
     pub fn clear_projects(&mut self) {
-        self.projects_by_name.clear();
+        // Retain the name-to-ID interner across rebuilds. Only live project
+        // state and cached analyses are invalidated.
         self.projects.clear();
         self.project_syntax.clear();
         self.project_analyses.clear();
@@ -125,6 +138,23 @@ impl CompilationSession {
 
     pub fn projects(&self) -> impl Iterator<Item = &ProjectSemanticIndex> {
         self.projects.values()
+    }
+
+    pub fn resolve_module(
+        &self,
+        project: ProjectId,
+        source: SourceId,
+        path: &str,
+    ) -> Option<ProjectModuleId> {
+        let module = self.project(project)?.resolve(source, path)?;
+        Some(ProjectModuleId {
+            project,
+            module: module.id,
+        })
+    }
+
+    pub fn module(&self, id: ProjectModuleId) -> Option<&ModuleData> {
+        self.project(id.project)?.module_graph().module(id.module)
     }
 }
 
@@ -170,11 +200,15 @@ impl ProjectSyntax {
 
     pub fn root_program(&self) -> Program {
         let mut program = Program {
+            language_declaration_spans: Vec::new(),
             statements: Vec::new(),
             type_references: Vec::new(),
             macros: Vec::new(),
         };
         for root in &self.roots {
+            program
+                .language_declaration_spans
+                .extend(root.language_declaration_spans.clone());
             program.statements.extend(root.statements.clone());
             program.type_references.extend(root.type_references.clone());
             program.macros.extend(root.macros.clone());

@@ -1,0 +1,4 @@
+mod exports {
+    pub fn type_of(value: i32) -> string { "i32" }
+}
+use exports::*;

@@ -90,7 +90,9 @@ impl DefMap {
                 };
                 id
             };
-            result.resolutions.insert(symbol.span, id);
+            result
+                .resolutions
+                .insert(symbol.span, symbol.definition_id.unwrap_or(id));
         }
         for (definition, body_span) in owners.bodies {
             let body = BodyId(definition);

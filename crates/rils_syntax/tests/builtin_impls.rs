@@ -68,3 +68,58 @@ fn parses_inferred_builtin_parameter_types_as_unknown() {
         })
     );
 }
+
+#[test]
+fn compiler_internal_is_reserved_and_marked_for_trusted_declarations() {
+    let user_error = parse(lex("#[compiler_internal] fn hidden() {}").unwrap())
+        .expect_err("compiler_internal must not be available to user source");
+    assert!(
+        user_error
+            .message
+            .contains("reserved for trusted language packages")
+    );
+
+    let program = parse_with_capabilities(
+        lex("fn hidden() {}").expect("source lexes"),
+        rils_syntax::macros::STANDARD_NATIVE_MACROS,
+        ParseCapabilities::STANDARD_LIBRARY,
+    )
+    .expect("trusted declaration parses");
+    let Stmt::Function { attributes, .. } = &program.statements[0] else {
+        panic!("expected function declaration");
+    };
+    assert!(
+        attributes
+            .iter()
+            .any(|attribute| attribute.is_compiler_internal())
+    );
+}
+
+#[test]
+fn internal_attributes_reject_arguments_even_in_trusted_packages() {
+    let error = parse_with_capabilities(
+        lex("#[compiler_internal(unchecked)] fn hidden() {}").unwrap(),
+        rils_syntax::macros::STANDARD_NATIVE_MACROS,
+        ParseCapabilities::STANDARD_LIBRARY,
+    )
+    .unwrap_err();
+    assert!(error.message.contains("does not accept arguments"));
+}
+
+#[test]
+fn signature_template_names_are_only_builtin_in_trusted_packages() {
+    for capabilities in [ParseCapabilities::USER, ParseCapabilities::STANDARD_LIBRARY] {
+        let program = parse_with_capabilities(
+            lex("fn template(value: integer, item: T) -> MissingType {}").unwrap(),
+            rils_syntax::macros::STANDARD_NATIVE_MACROS,
+            capabilities,
+        )
+        .unwrap();
+        for reference in &program.type_references {
+            assert_eq!(
+                reference.is_builtin,
+                reference.name != "MissingType" && capabilities.allow_signature_placeholders
+            );
+        }
+    }
+}

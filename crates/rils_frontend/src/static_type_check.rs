@@ -113,18 +113,28 @@ impl<'a> Checker<'a> {
             }
             Stmt::Let { initializer, .. } => self.expression(initializer),
             Stmt::Function {
-                return_type, body, ..
-            } => self.function(
-                return_type
-                    .as_ref()
-                    .map(|ty| self.host_types.resolved_type(ty)),
+                attributes,
+                return_type,
                 body,
-                None,
-            ),
+                ..
+            } => {
+                if !crate::ast::has_compiler_internal_attribute(attributes) {
+                    self.function(
+                        return_type
+                            .as_ref()
+                            .map(|ty| self.host_types.resolved_type(ty)),
+                        body,
+                        None,
+                    );
+                }
+            }
             Stmt::Impl {
                 target, methods, ..
             } => {
                 for method in methods {
+                    if crate::ast::has_compiler_internal_attribute(&method.attributes) {
+                        continue;
+                    }
                     self.function(
                         method
                             .return_type

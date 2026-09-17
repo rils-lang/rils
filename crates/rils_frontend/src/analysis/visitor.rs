@@ -58,6 +58,7 @@ impl Analyzer {
                 self.define(name, *name_span, SymbolKind::Variable);
             }
             Stmt::Function {
+                attributes,
                 name,
                 name_span,
                 generic_parameters,
@@ -84,7 +85,9 @@ impl Analyzer {
                     for parameter in parameters {
                         analyzer.define(&parameter.name, parameter.span, SymbolKind::Parameter);
                     }
-                    analyzer.block_contents(body);
+                    if !crate::ast::has_compiler_internal_attribute(attributes) {
+                        analyzer.block_contents(body);
+                    }
                 });
             }
             Stmt::Struct {
@@ -248,7 +251,9 @@ impl Analyzer {
                         for parameter in &method.parameters {
                             analyzer.define(&parameter.name, parameter.span, SymbolKind::Parameter);
                         }
-                        analyzer.block_contents(&method.body);
+                        if !crate::ast::has_compiler_internal_attribute(&method.attributes) {
+                            analyzer.block_contents(&method.body);
+                        }
                         analyzer.self_types.pop();
                     });
                 }

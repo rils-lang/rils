@@ -279,6 +279,7 @@ impl<'a> Checker<'a> {
                 self.retain(value.borrows);
             }
             Stmt::Function {
+                attributes,
                 name,
                 name_span,
                 parameters,
@@ -286,6 +287,9 @@ impl<'a> Checker<'a> {
                 ..
             } => {
                 self.define(name, *name_span, false);
+                if crate::ast::has_compiler_internal_attribute(attributes) {
+                    return;
+                }
                 if !self.active_borrows.is_empty()
                     || self.scopes.iter().any(|scope| {
                         scope
@@ -340,6 +344,9 @@ impl<'a> Checker<'a> {
             }
             Stmt::Impl { methods, .. } => {
                 for method in methods {
+                    if crate::ast::has_compiler_internal_attribute(&method.attributes) {
+                        continue;
+                    }
                     self.function(
                         method
                             .parameters

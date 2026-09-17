@@ -2,6 +2,7 @@ mod declaration;
 mod expression;
 mod pattern;
 mod support;
+mod trusted;
 mod type_annotation;
 
 use crate::cursor::TokenStream;
@@ -28,16 +29,20 @@ pub struct ParseError {
 /// opts into the additional declaration shapes it needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseCapabilities {
+    /// Treat package function bodies as compiler/runtime-provided declarations.
+    pub declaration_only_bodies: bool,
     pub allow_builtin_attributes: bool,
     pub allow_signature_placeholders: bool,
 }
 
 impl ParseCapabilities {
     pub const USER: Self = Self {
+        declaration_only_bodies: false,
         allow_builtin_attributes: false,
         allow_signature_placeholders: false,
     };
     pub const STANDARD_LIBRARY: Self = Self {
+        declaration_only_bodies: true,
         allow_builtin_attributes: true,
         allow_signature_placeholders: true,
     };
@@ -79,6 +84,12 @@ pub fn parse_with_capabilities(
         span,
     })?;
     let mut program = Parser::new(&stream, expansion.macros, capabilities).parse_program()?;
+    if capabilities.allow_builtin_attributes {
+        trusted::record_declarations(&mut program);
+    }
+    if capabilities.declaration_only_bodies {
+        trusted::mark_bodies(&mut program.statements);
+    }
     if !capabilities.allow_builtin_attributes {
         crate::derive::expand(&mut program)?;
     }
@@ -223,6 +234,7 @@ impl<'a> Parser<'a> {
             statements.push(self.statement()?);
         }
         Ok(Program {
+            language_declaration_spans: Vec::new(),
             statements,
             type_references: self.type_references,
             macros: self.macros,
@@ -346,6 +358,12 @@ impl<'a> Parser<'a> {
             while self.take(&TokenKind::ColonColon).is_some() {
                 path.push(self.expect_identifier("expected attribute path segment")?.0);
             }
+            if path == ["compiler_internal"] && !self.capabilities.allow_builtin_attributes {
+                return Err(ParseError {
+                    message: "`compiler_internal` is reserved for trusted language packages".into(),
+                    span: hash.span,
+                });
+            }
             let mut arguments = Vec::new();
             if self.take(&TokenKind::LeftParen).is_some() {
                 if !self.check(&TokenKind::RightParen) {
@@ -368,6 +386,12 @@ impl<'a> Parser<'a> {
                 )?;
             }
             let right = self.expect(&TokenKind::RightBracket, "expected `]` after attribute")?;
+            if path == ["compiler_internal"] && !arguments.is_empty() {
+                return Err(ParseError {
+                    message: "`compiler_internal` does not accept arguments".into(),
+                    span: hash.span.merge(right.span),
+                });
+            }
             attributes.push(Attribute {
                 path,
                 arguments,

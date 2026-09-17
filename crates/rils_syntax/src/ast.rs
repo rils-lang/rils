@@ -1,8 +1,17 @@
 use crate::source::Span;
 use crate::types::Type;
 
+/// Template-only type names accepted by built-in declaration generators.
+/// They are not additional types in ordinary Rils source.
+pub fn is_builtin_signature_placeholder(name: &str) -> bool {
+    name == "integer" || (name.len() == 1 && name.as_bytes()[0].is_ascii_uppercase())
+}
+
 #[derive(Clone, Debug)]
 pub struct Program {
+    /// Source ranges parsed with trusted language-package privileges.
+    /// Retained per declaration so merging roots never grants privileges to user code.
+    pub language_declaration_spans: Vec<Span>,
     pub statements: Vec<Stmt>,
     pub type_references: Vec<TypeReference>,
     pub macros: Vec<MacroSymbol>,
@@ -57,6 +66,21 @@ pub struct Attribute {
     pub path: Vec<String>,
     pub arguments: Vec<Vec<String>>,
     pub span: Span,
+}
+
+impl Attribute {
+    /// Returns whether this is a compiler-owned implementation marker.
+    ///
+    /// The marker is only accepted for trusted language packages and is used
+    /// for declarations whose body is supplied by the compiler/runtime rather
+    /// than by Rils source code.
+    pub fn is_compiler_internal(&self) -> bool {
+        self.path == ["compiler_internal"] && self.arguments.is_empty()
+    }
+}
+
+pub fn has_compiler_internal_attribute(attributes: &[Attribute]) -> bool {
+    attributes.iter().any(Attribute::is_compiler_internal)
 }
 
 #[derive(Clone, Debug)]

@@ -544,6 +544,7 @@ fn preserves_external_import_symbol_kinds() {
         "event".into(),
         vec![
             ExternalModuleExport {
+                target_module: None,
                 name: "Event".into(),
                 span: Span::in_source(SourceId::new(2), 9, 14),
                 definition_id: Some(event_id),
@@ -554,6 +555,7 @@ fn preserves_external_import_symbol_kinds() {
                 fields: Vec::new(),
             },
             ExternalModuleExport {
+                target_module: None,
                 name: "timing".into(),
                 span: Span::in_source(SourceId::new(2), 23, 29),
                 definition_id: Some(timing_id),

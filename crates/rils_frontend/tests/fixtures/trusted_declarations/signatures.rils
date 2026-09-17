@@ -1,0 +1,3 @@
+pub fn broken(value: MissingType) -> MissingResult {}
+pub fn duplicate() {}
+pub fn duplicate() {}

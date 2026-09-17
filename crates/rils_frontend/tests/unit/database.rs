@@ -1,6 +1,33 @@
 use super::*;
 
 #[test]
+fn project_rebuilds_preserve_ids_and_qualify_same_named_modules() {
+    let mut session = CompilationSession::default();
+    let first = session.register_project("one");
+    let second = session.register_project("two");
+    session.clear_projects();
+    assert!(session.project_id("one").is_none());
+    assert_eq!(session.register_project("two"), second);
+    assert_eq!(session.register_project("one"), first);
+    for (project, source) in [(first, SourceId::new(1)), (second, SourceId::new(2))] {
+        session
+            .project_mut(project)
+            .unwrap()
+            .register("api", source);
+    }
+    let one = session
+        .resolve_module(first, SourceId::new(1), "crate::api")
+        .unwrap();
+    let two = session
+        .resolve_module(second, SourceId::new(2), "crate::api")
+        .unwrap();
+    assert_eq!(one.module, two.module);
+    assert_ne!(one, two);
+    assert_eq!(session.module(one).unwrap().source, Some(SourceId::new(1)));
+    assert_eq!(session.module(two).unwrap().source, Some(SourceId::new(2)));
+}
+
+#[test]
 fn source_ids_survive_edits_and_parsing_is_revision_scoped() {
     let mut database = SourceDatabase::default();
     let id = database.set_source("src/main.rils", "let value = 1;");

@@ -7,29 +7,46 @@ impl Analyzer {
                 .self_type_references
                 .get(&reference.span)
                 .map_or(reference.name.as_str(), String::as_str);
-            let resolved = reference.definition_span.or_else(|| {
-                self.result
-                    .symbols
-                    .iter()
-                    .find(|symbol| {
-                        symbol.is_definition
-                            && symbol.name == resolved_name
-                            && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
-                    })
-                    .map(|symbol| symbol.span)
-            });
-            let definition_id = self
-                .result
-                .symbols
-                .iter()
-                .find(|symbol| {
-                    symbol.is_definition
-                        && symbol.name == resolved_name
-                        && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
+            let imported = self
+                .lookup(resolved_name)
+                .filter(|definition| {
+                    matches!(definition.kind, SymbolKind::Type | SymbolKind::Trait)
                 })
-                .and_then(|symbol| symbol.symbol_id);
+                .cloned();
+            let resolved = reference
+                .definition_span
+                .or_else(|| imported.as_ref().and_then(|definition| definition.span))
+                .or_else(|| {
+                    self.result
+                        .symbols
+                        .iter()
+                        .find(|symbol| {
+                            symbol.is_definition
+                                && symbol.name == resolved_name
+                                && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
+                        })
+                        .map(|symbol| symbol.span)
+                });
+            let definition_id = imported
+                .as_ref()
+                .filter(|definition| definition.span == resolved)
+                .and_then(|definition| definition.id)
+                .or_else(|| {
+                    self.result
+                        .symbols
+                        .iter()
+                        .find(|symbol| {
+                            symbol.is_definition
+                                && Some(symbol.span) == resolved
+                                && matches!(symbol.kind, SymbolKind::Type | SymbolKind::Trait)
+                        })
+                        .and_then(|symbol| symbol.symbol_id)
+                });
             if resolved.is_none()
                 && !reference.is_builtin
+                && !self.lookup(resolved_name).is_some_and(|definition| {
+                    matches!(definition.kind, SymbolKind::Type | SymbolKind::Trait)
+                })
                 && !self.host_type_segments.contains(&reference.name)
             {
                 self.result.diagnostics.push(AnalysisDiagnostic::error(
@@ -59,7 +76,15 @@ impl Analyzer {
                 kind: SymbolKind::Type,
                 is_definition: false,
                 inferred_type: None,
-                detail: self.type_alias_detail(&reference.name, &reference.arguments),
+                detail: self
+                    .type_alias_detail(&reference.name, &reference.arguments)
+                    .or_else(|| {
+                        self.module_exports
+                            .values()
+                            .flatten()
+                            .find(|export| Some(export.span) == resolved)
+                            .and_then(|export| export.detail.clone())
+                    }),
                 container: self
                     .lookup(resolved_name)
                     .and_then(|definition| definition.container.clone()),

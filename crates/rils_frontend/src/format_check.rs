@@ -73,10 +73,18 @@ impl Checker<'_> {
                     statements: Some(statements),
                     ..
                 } => self.statements(statements),
-                Stmt::Function { body, .. } => self.block(body),
+                Stmt::Function {
+                    attributes, body, ..
+                } => {
+                    if !crate::ast::has_compiler_internal_attribute(attributes) {
+                        self.block(body);
+                    }
+                }
                 Stmt::Impl { methods, .. } => {
                     for method in methods {
-                        self.block(&method.body);
+                        if !crate::ast::has_compiler_internal_attribute(&method.attributes) {
+                            self.block(&method.body);
+                        }
                     }
                 }
                 Stmt::Let { initializer, .. } => self.expression(initializer),

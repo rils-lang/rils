@@ -167,11 +167,10 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     let mut intrinsics = Vec::new();
     let mut constants = Vec::new();
     for method in methods {
-        if let Some(attribute) = method
-            .attributes
-            .iter()
-            .find(|attribute| attribute.path.as_slice() != ["constant"])
-        {
+        if let Some(attribute) = method.attributes.iter().find(|attribute| {
+            attribute.path.as_slice() != ["constant"]
+                && attribute.path.as_slice() != ["compiler_internal"]
+        }) {
             return Err(Error::new(
                 input.source_path.span(),
                 format!(

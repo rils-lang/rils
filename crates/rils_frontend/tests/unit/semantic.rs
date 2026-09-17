@@ -169,6 +169,7 @@ fn expressions_with_the_same_span_keep_distinct_identities() {
         span,
     };
     let program = crate::ast::Program {
+        language_declaration_spans: Vec::new(),
         statements: vec![
             crate::ast::Stmt::Expr {
                 expression: first,

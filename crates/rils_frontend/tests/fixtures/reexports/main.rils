@@ -1,0 +1,6 @@
+use crate::api::{calculate, Data};
+fn identity<Data>(value: Data) -> Data { value }
+fn main() -> i32 {
+    let record: Data = Data { value: calculate(41) };
+    record.value
+}

@@ -1,0 +1,5 @@
+use crate::api::{calculate, Data};
+fn main() -> i32 {
+    let record: Data = Data { value: calculate(41) };
+    record.value
+}

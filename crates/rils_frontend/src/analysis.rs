@@ -29,6 +29,8 @@ use imports::{ModuleExport, collect_module_exports};
 /// being analyzed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExternalModuleExport {
+    /// Canonical module path for module aliases; absent for other declarations.
+    pub target_module: Option<String>,
     pub name: String,
     pub span: Span,
     pub definition_id: Option<SymbolId>,
@@ -358,6 +360,8 @@ fn append_host_type_resolution_errors(
 }
 
 struct Analyzer {
+    language_declaration_spans: Vec<Span>,
+    builtin_globals: HashMap<String, SymbolKind>,
     source_id: SourceId,
     next_symbol: HashMap<SourceId, u32>,
     scopes: Vec<HashMap<String, Definition>>,
@@ -420,21 +424,29 @@ impl Analyzer {
                     .iter()
                     .map(|export| ModuleExport {
                         name: export.name.clone(),
+                        target_module: export.target_module.clone(),
                         span: export.span,
                         definition_id: export.definition_id,
                         kind: export.kind,
                         inferred_type: export.inferred_type.clone(),
                         detail: export.detail.clone(),
                         module_path: export.module_path.clone(),
+                        fields: export.fields.clone(),
                     })
                     .collect()
             });
         }
+        let export_diagnostics =
+            crate::exports::resolve_reexports(&mut module_exports, [(module_path, program)]);
         let mut globals = HashMap::new();
         let mut struct_fields = HashMap::new();
+        let mut indexed_external_fields = HashSet::new();
         for exports in external_exports.values() {
             for export in exports {
-                if export.fields.is_empty() || export.span.source == source_id {
+                if export.fields.is_empty()
+                    || export.span.source == source_id
+                    || !indexed_external_fields.insert((export.name.clone(), export.span))
+                {
                     continue;
                 }
                 struct_fields
@@ -480,6 +492,9 @@ impl Analyzer {
             && let Some(exports) = external_exports.get("")
         {
             for export in exports {
+                if export.target_module.is_some() && export.span.start == export.span.end {
+                    continue;
+                }
                 globals.entry(export.name.clone()).or_insert(Definition {
                     span: Some(export.span),
                     id: export.definition_id,
@@ -543,6 +558,11 @@ impl Analyzer {
                 },
             );
         }
+        let builtin_globals = globals
+            .iter()
+            .filter(|(_, definition)| definition.span.is_none())
+            .map(|(name, definition)| (name.clone(), definition.kind))
+            .collect();
         for name in host_functions.keys() {
             let Some(root) = name.split("::").next() else {
                 continue;
@@ -594,6 +614,8 @@ impl Analyzer {
             )
             .collect();
         let mut analyzer = Self {
+            language_declaration_spans: program.language_declaration_spans.clone(),
+            builtin_globals,
             source_id,
             next_symbol: HashMap::new(),
             scopes: vec![globals],
@@ -616,7 +638,10 @@ impl Analyzer {
             host_functions: host_functions.clone(),
             host_types: host_types.clone(),
             host_type_segments,
-            result: DocumentAnalysis::default(),
+            result: DocumentAnalysis {
+                diagnostics: export_diagnostics,
+                ..DocumentAnalysis::default()
+            },
             owner_ids: crate::semantic::SemanticOwnerIds::default(),
         };
         analyzer.collect_host_enum_variants();

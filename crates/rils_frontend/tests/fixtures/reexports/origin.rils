@@ -1,0 +1,4 @@
+pub fn compute(value: i32) -> i32 { value + 1 }
+pub struct Data { value: i32 }
+pub trait Label { fn label(&self) -> string; }
+fn hidden() {}

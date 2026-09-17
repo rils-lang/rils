@@ -104,14 +104,21 @@ impl<'a> Checker<'a> {
                 true
             }
             Stmt::Function {
-                return_type, body, ..
+                attributes,
+                return_type,
+                body,
+                ..
             } => {
-                self.function(return_type.as_ref(), body);
+                if !crate::ast::has_compiler_internal_attribute(attributes) {
+                    self.function(return_type.as_ref(), body);
+                }
                 true
             }
             Stmt::Impl { methods, .. } => {
                 for method in methods {
-                    self.function(method.return_type.as_ref(), &method.body);
+                    if !crate::ast::has_compiler_internal_attribute(&method.attributes) {
+                        self.function(method.return_type.as_ref(), &method.body);
+                    }
                 }
                 true
             }

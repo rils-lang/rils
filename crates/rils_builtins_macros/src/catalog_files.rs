@@ -156,7 +156,13 @@ fn declaration_tokens(
             let mut variadic = false;
             let mut metadata = false;
             for attribute in attributes {
-                if attribute.path.as_slice() == ["variadic"] && attribute.arguments.is_empty() {
+                if attribute.path.as_slice() == ["compiler_internal"]
+                    && attribute.arguments.is_empty()
+                {
+                    continue;
+                } else if attribute.path.as_slice() == ["variadic"]
+                    && attribute.arguments.is_empty()
+                {
                     variadic = true;
                 } else if attribute.path.as_slice() == ["metadata"]
                     && attribute.arguments.is_empty()
