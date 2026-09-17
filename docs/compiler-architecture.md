@@ -33,7 +33,19 @@ rils
 
 目前已经建立了 `CompilationSession`、`ProjectId`、`SourceDatabase`、`ModuleGraph`、`DefMap`、`TypeckResults`、HIR 和 MIR。项目加载器、compiler 输入和 Analyzer 都共享这一会话模型及其项目分析缓存；compiler 和配置项目解释器都直接消费独立模块 AST，不再拼装 synthetic project AST。AST 保持解析后的原貌，数值具体化与 Host 名称解析通过语义 side table 完成。当前剩余重复主要位于解释器静态检查和名称查找、Analyzer 查询适配，以及后续非标准或外部 bytecode import 的链接分类。
 
+标准库解析使用显式 `ParseCapabilities`。`declaration_only_bodies` 与内建属性权限分离；普通源码
+使用 `USER`，标准库使用 `STANDARD_LIBRARY`。Parser 为占位实现添加内部标记，并以
+`Program::language_declaration_spans` 保留可信声明的来源范围；合并根时逐来源保留这些范围，
+不能将整个合并结果视为可信。Frontend 仅跳过内部占位体检查，仍分析签名与声明冲突，LSP 不再
+按文件来源清空诊断。内建模板类型名的判定由语法层和目录生成器共用。
+
 ## 与 Rust 编译器的对照
+
+源码导出由 `rils_frontend::exports` 统一收集和查询，项目分析与 Analyzer 不再各自维护一份
+公开声明扫描器。重导出以固定点传播原声明记录，别名仅改变公开名称；模块别名额外保留规范目标
+路径。导出来源与声明身份用于跳转和字段去重，不用文本同名替代身份比较。
+`CompilationSession` 保留项目名称到 ProjectId 的会话内分配，清理重建只清除活动项目状态；
+`ProjectModuleId` 为查询补足项目归属。它们是后续依赖失效的基础，不等同于已经实现增量分析。
 
 Rust 编译器大致按以下职责分层：
 

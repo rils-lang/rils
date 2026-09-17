@@ -15,7 +15,7 @@ Rust 的生命周期和唯一可变借用限制。
 5. [Struct、Enum 与集合](05-data-types-and-collections.md)
 6. [Impl、泛型与 Trait](06-impl-generics-and-traits.md)
 7. [模式匹配与宏](07-patterns-and-macros.md)
-8. [标准能力、模块与 IO](08-modules-and-standard-library.md)
+8. [标准能力、模块与 IO（含可信标准库声明包）](08-modules-and-standard-library.md)
 9. [语法摘要](09-grammar-and-roadmap.md)
 
 ## 核心语义

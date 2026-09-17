@@ -20,6 +20,13 @@
 
 ## 模块、可见性与 Prelude
 
+标准库的 `core`、`std` 和 prelude 声明由可信语言包提供。其占位函数体不代表可执行的空实现，
+实际行为由共享内建目录关联到编译器或运行时后端。普通源码不能使用 `#[compiler_internal]` 绕过
+检查，也不能在类型签名中使用 `_`。声明包中的 `integer` 和单个大写字母模板类型名用于内建签名
+生成，不会向用户代码增加新类型；用户泛型仍须显式声明，例如 `fn identity<T>(value: T) -> T`。
+
+包发现、分发目录和诊断规则见 [Analyzer 标准库声明包](../analyzer.md#标准库声明包)。
+
 内联模块使用 `mod name { ... }`，只有带 `pub` 的声明能通过模块路径访问：
 
 ```rust
@@ -55,6 +62,18 @@ manifests = ["generated/extra.rilhm"] # 可选的额外 fragment
 
 项目路径支持 Rust 风格锚点：`crate::` 从当前项目根开始，`self::` 从当前文件模块开始，
 `super::` 返回父模块且可以重复。`use crate::gameplay::player as player;` 与完整限定调用都可使用。
+
+模块可以重导出其他模块的公开声明：
+
+```rils
+pub use crate::origin::{compute as calculate, Data};
+```
+
+其他模块可继续 `pub use crate::relay::*;`，调用方从最终模块导入 `calculate` 或 `Data`。
+Analyzer 的签名、字段信息、定义跳转和引用查找会沿公开重导出链追踪原声明；重导出不复制声明，
+也不能将私有声明变为公开声明。同名候选来自不同声明时会报告歧义。当前编辑器重导出边界详见
+[Analyzer 说明](../analyzer.md#当前边界)。
+
 `project.name` 是稳定的 crate 标识，为后续外部项目依赖预留；当前项目内部应使用 `crate::`。
 
 `.rils/manifest/**/*.rilhm` 会按规范化路径排序并合并成一个逻辑 Host Contract。相同声明可以在

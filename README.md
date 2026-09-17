@@ -21,6 +21,12 @@ rils examples/hello.rils
 rils repl
 ```
 
+VS Code 和 CLI 工具链发行包均携带同源的 `rils_stdlib` 声明包，供 Analyzer 索引标准库签名与定义。
+自定义安装可通过 `RILS_SYSROOT` 指定包含 `packages/rils_stdlib/rils.toml` 的目录；发现顺序和
+工作区加载失败的处理方式见 [Analyzer 说明](docs/analyzer.md#标准库声明包)。
+项目中的公开源码声明可通过多层 `pub use` 重导出；Analyzer 的补全、Hover、跳转和引用查找
+会追踪到原声明，并隔离不同项目中的同名符号。
+
 ## Rust 嵌入
 
 ```rust

@@ -7,6 +7,15 @@
 
 ### Breaking Changes
 
+- Rust consumers constructing `ExternalModuleExport` now supply `target_module`:
+  `None` for value/type declarations, or the canonical target path for module
+  exports. Module aliases preserve that target when their public name changes.
+
+- Rust AST consumers constructing `Program` must initialize `language_declaration_spans`
+  (empty for user code) and preserve it when merging parsed roots. Prefer
+  `ParseCapabilities::USER` / `STANDARD_LIBRARY`; custom capability literals now also
+  specify `declaration_only_bodies` independently of builtin attribute permissions.
+
 - Type placeholder `_` in a type signature is now reserved for trusted
   language-package declarations. User code must provide a concrete type or use
   generic inference at the call site.
@@ -74,6 +83,11 @@
 
 ### Added
 
+- Analyzer 与 frontend 现在共用源码导出查询，支持函数、类型、trait 和模块的 `pub use` 多层
+  重导出、别名、分组及通配导入。补全、Hover、定义跳转和引用查找保留原声明身份、签名与字段；
+  不可解析或歧义的公开重导出在导入文件报告诊断，引用结果不重复列出同一位置。
+- Analyzer 重建工作区时保留会话内 ProjectId；带项目身份的模块查询可区分不同项目中的同名模块。
+
 - Standard library sources are now loaded as a trusted language package by the
   analyzer. Reserved `core`, `std`, and `prelude` module paths are accepted
   only for that package; workspace manifests cannot self-assign language
@@ -126,6 +140,23 @@
   Player 通过静态注册桥使用生成代码，无需运行时反射。
 
 ### Fixed
+
+- Analyzer 不再因单个 Host Manifest 读取、解码、ABI 校验或合并失败退出：启动加载其余有效片段，
+  热重载失败保留上一次有效宿主模型，合并失败不泄漏部分声明。源码读取失败会报告路径。
+- 错误的 LSP 通知参数不再终止服务；请求参数错误返回独立错误响应。关闭过程容忍在途消息，
+  并在等待 IO 线程前释放通道，避免退出挂起。VS Code Manifest 扫描失败不再阻断客户端启动。
+
+- Analyzer workspace discovery now keeps loading nested `rils.toml` projects
+  when a repository-level legacy scan encounters an unrelated invalid script
+  path. Cross-module navigation in projects such as `task_board` and
+  `telemetry_pipeline` remains available.
+- Trusted standard-library declaration bodies are marked `compiler_internal`;
+  their signature-only placeholders no longer produce user-facing Problems
+  diagnostics, while symbols and definitions remain indexed.
+- Standard-library syntax errors, unknown signature types and duplicate declarations
+  remain visible in LSP diagnostics. Trusted builtin replacements no longer grant
+  the same exception to user declarations or host symbols. Workspace directory
+  scan failures are reported without discarding other discovered projects.
 
 - frontend 现在使用项目内 trait/type 的稳定 `DefId` 检测重复 trait impl；跨模块导入同一声明时
   解释器与编译器都会在执行前拒绝，不同模块中的同名声明不会误碰撞。
