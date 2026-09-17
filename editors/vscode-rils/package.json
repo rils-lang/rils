@@ -25,7 +25,7 @@
   "main": "./out/extension.js",
   "scripts": {
     "build": "node ./scripts/build.js",
-    "check": "npm run build --silent && node ./scripts/check.js",
+    "check": "npm run build --silent && node ./scripts/check.js && node --test tests/*.test.js",
     "vscode:prepublish": "npm run build"
   },
   "contributes": {

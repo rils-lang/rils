@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const vscode = require("vscode");
+const { scanManifests } = require("./manifest-scan");
 const {
   LanguageClient,
   TransportKind,
@@ -44,9 +45,15 @@ function resolveServer(context) {
       for (const profile of ["release", "debug"]) {
         const candidate = path.join(directory, "target", profile, executable);
         if (fs.existsSync(candidate)) {
+          let modified;
+          try {
+            modified = fs.statSync(candidate).mtimeMs;
+          } catch {
+            continue; // A build may replace a candidate during discovery.
+          }
           workspaceCandidates.push({
             path: candidate,
-            modified: fs.statSync(candidate).mtimeMs,
+            modified,
           });
         }
       }
@@ -62,7 +69,7 @@ function resolveServer(context) {
   return "rils-analyzer";
 }
 
-function resolveHostManifestPaths() {
+function resolveHostManifestPaths(strict = false) {
   const paths = new Set();
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     const configured = vscode.workspace
@@ -77,18 +84,15 @@ function resolveHostManifestPaths() {
     }
 
     const manifestDirectory = path.join(folder.uri.fsPath, ".rils", "manifest");
-    const visit = (directory) => {
-      if (!fs.existsSync(directory)) return;
-      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-        const entryPath = path.join(directory, entry.name);
-        if (entry.isDirectory()) {
-          visit(entryPath);
-        } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".rilhm")) {
-          paths.add(entryPath);
-        }
-      }
-    };
-    visit(manifestDirectory);
+    const scan = scanManifests(manifestDirectory);
+    for (const manifest of scan.paths) paths.add(manifest);
+    for (const error of scan.errors) {
+      console.error(error);
+      void vscode.window.showWarningMessage(error);
+    }
+    if (strict && scan.errors.length) {
+      throw new Error("Rils manifest scan failed; retaining the previous host model.");
+    }
   }
   return [...paths].sort((left, right) => left.localeCompare(right));
 }
@@ -125,11 +129,15 @@ async function activate(context) {
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     const pattern = new vscode.RelativePattern(folder, ".rils/manifest/**/*.rilhm");
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    const refresh = () => {
+    const refresh = async () => {
       if (client) {
-        client.sendNotification("rils/hostManifestChanged", {
-          hostManifestPaths: resolveHostManifestPaths(),
-        });
+        try {
+          await client.sendNotification("rils/hostManifestChanged", {
+            hostManifestPaths: resolveHostManifestPaths(true),
+          });
+        } catch (error) {
+          console.error("Rils manifest refresh failed:", error);
+        }
       }
     };
     watcher.onDidCreate(refresh, null, context.subscriptions);
