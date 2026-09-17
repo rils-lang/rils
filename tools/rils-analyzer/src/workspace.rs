@@ -23,7 +23,7 @@ pub(crate) fn workspace_projects_with_language(
     root: &Path,
     language_root: Option<&Path>,
 ) -> Result<WorkspaceLoad, AnyError> {
-    if language_root.is_some_and(|language_root| root == language_root) {
+    if language_root.is_some_and(|language_root| same_directory(root, language_root)) {
         return Ok(WorkspaceLoad {
             projects: Vec::new(),
             errors: Vec::new(),
@@ -37,9 +37,23 @@ pub(crate) fn workspace_projects_with_language(
         });
     }
 
-    let mut projects = vec![Project::from_root(root)?];
+    // A workspace root without a manifest is kept as a legacy project for
+    // loose `.rils` files.  Its recursive scan is best-effort, though: a
+    // repository can contain fixtures or tooling scripts whose paths are not
+    // valid module identifiers.  Do not let one such file prevent explicit
+    // nested `rils.toml` projects from loading (for example the examples
+    // workspace contains both `task_board` and `telemetry_pipeline`).
+    let mut projects = Vec::new();
+    let mut errors = Vec::new();
+    match Project::from_root(root) {
+        Ok(project) => projects.push(project),
+        Err(error) => errors.push(format!(
+            "failed to load legacy workspace root `{}`: {error}",
+            root.display()
+        )),
+    }
     let mut manifests = Vec::new();
-    collect_nested_project_manifests(root, &mut manifests)?;
+    collect_nested_project_manifests(root, &mut manifests, &mut errors);
     manifests.sort_by(|left, right| {
         left.components()
             .count()
@@ -48,7 +62,6 @@ pub(crate) fn workspace_projects_with_language(
     });
 
     let mut configured_roots = Vec::new();
-    let mut errors = Vec::new();
     for manifest in manifests {
         let project_root = manifest
             .parent()
@@ -56,7 +69,8 @@ pub(crate) fn workspace_projects_with_language(
         if configured_roots
             .iter()
             .any(|configured_root: &PathBuf| project_root.starts_with(configured_root))
-            || language_root.is_some_and(|language_root| project_root == language_root)
+            || language_root
+                .is_some_and(|language_root| same_directory(project_root, language_root))
         {
             continue;
         }
@@ -72,7 +86,21 @@ pub(crate) fn workspace_projects_with_language(
 }
 
 pub(crate) fn language_package_root() -> Result<PathBuf, String> {
-    if let Some(configured) = std::env::var_os("RILS_SYSROOT").map(PathBuf::from) {
+    resolve_language_package_root(
+        std::env::var_os("RILS_SYSROOT")
+            .map(PathBuf::from)
+            .as_deref(),
+        std::env::current_exe().ok().as_deref(),
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/rils_builtins/stdlib"),
+    )
+}
+
+pub(crate) fn resolve_language_package_root(
+    configured: Option<&Path>,
+    executable: Option<&Path>,
+    development_root: &Path,
+) -> Result<PathBuf, String> {
+    if let Some(configured) = configured {
         let package = configured.join("packages/rils_stdlib");
         if package.join(rils_project::PROJECT_FILE_NAME).is_file() {
             return Ok(package);
@@ -82,7 +110,6 @@ pub(crate) fn language_package_root() -> Result<PathBuf, String> {
             configured.display()
         ));
     }
-    let executable = std::env::current_exe().ok();
     executable
         .into_iter()
         .flat_map(|path| {
@@ -95,9 +122,7 @@ pub(crate) fn language_package_root() -> Result<PathBuf, String> {
                 })
                 .unwrap_or_default()
         })
-        .chain(std::iter::once(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/rils_builtins/stdlib"),
-        ))
+        .chain(std::iter::once(development_root.to_path_buf()))
         .map(|path| path.components().collect::<PathBuf>())
         .find(|path| path.join(rils_project::PROJECT_FILE_NAME).is_file())
         .ok_or_else(|| {
@@ -105,14 +130,42 @@ pub(crate) fn language_package_root() -> Result<PathBuf, String> {
         })
 }
 
-fn collect_nested_project_manifests(
+fn same_directory(left: &Path, right: &Path) -> bool {
+    crate::support::path_to_file_uri(left) == crate::support::path_to_file_uri(right)
+}
+
+pub(crate) fn collect_nested_project_manifests(
     root: &Path,
     manifests: &mut Vec<PathBuf>,
-) -> std::io::Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
+    errors: &mut Vec<String>,
+) {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            errors.push(format!("failed to scan `{}`: {error}", root.display()));
+            return;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                errors.push(format!(
+                    "failed to read entry in `{}`: {error}",
+                    root.display()
+                ));
+                continue;
+            }
+        };
         let path = entry.path();
-        if !entry.file_type()?.is_dir() {
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                errors.push(format!("failed to inspect `{}`: {error}", path.display()));
+                continue;
+            }
+        };
+        if !file_type.is_dir() {
             continue;
         }
         if matches!(
@@ -126,7 +179,6 @@ fn collect_nested_project_manifests(
             manifests.push(manifest);
             continue;
         }
-        collect_nested_project_manifests(&path, manifests)?;
+        collect_nested_project_manifests(&path, manifests, errors);
     }
-    Ok(())
 }

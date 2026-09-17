@@ -20,7 +20,7 @@ impl Server {
         if let Some(definition) = self.project_definition(&uri, document, offset) {
             return Ok(definition);
         }
-        let target_id = symbol.symbol_id.or(symbol.definition_id);
+        let target_id = symbol.definition_id.or(symbol.symbol_id);
         if let Some(target_id) = target_id {
             if let Some(definition) = self.project_definition_by_id(target_id)
                 && let Some(target_uri) = self.document_uri_for_source(definition.span.source)
@@ -110,7 +110,7 @@ impl Server {
             .and_then(Value::as_bool)
             .unwrap_or(true);
         let target_id = if symbol.is_definition {
-            symbol.symbol_id.or(symbol.definition_id)
+            symbol.definition_id.or(symbol.symbol_id)
         } else {
             self.project_symbol_id(&uri, document, offset, symbol.kind)
                 .or(symbol.definition_id)
@@ -118,7 +118,7 @@ impl Server {
         let Some(target_id) = target_id else {
             return Ok(json!([]));
         };
-        let locations = self
+        let mut locations = self
             .documents
             .iter()
             .flat_map(|(candidate_uri, candidate_document)| {
@@ -139,6 +139,16 @@ impl Server {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
+        locations.sort_by_cached_key(|location| {
+            (
+                location["uri"].as_str().unwrap_or_default().to_owned(),
+                location["range"]["start"]["line"].as_u64(),
+                location["range"]["start"]["character"].as_u64(),
+                location["range"]["end"]["line"].as_u64(),
+                location["range"]["end"]["character"].as_u64(),
+            )
+        });
+        locations.dedup();
         Ok(json!(locations))
     }
 

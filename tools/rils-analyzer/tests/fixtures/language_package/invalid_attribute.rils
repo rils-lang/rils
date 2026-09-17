@@ -1,0 +1,2 @@
+#[compiler_internal(unchecked)]
+pub fn broken() {}

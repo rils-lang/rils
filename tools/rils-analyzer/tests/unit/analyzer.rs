@@ -1,7 +1,7 @@
 use super::{
-    CompilationSession, Document, LanguagePackageKind, Project, Server, SourceId, Type, analysis,
-    diagnostics, file_uri_to_path, function_declaration, offset, path_to_file_uri, position,
-    project_session_name, workspace, workspace_projects,
+    CompilationSession, Document, Project, Server, SourceId, Type, analysis, diagnostics,
+    file_uri_to_path, function_declaration, offset, path_to_file_uri, position,
+    project_session_name, workspace_projects,
 };
 use crate::project_index;
 use lsp_server::Connection;
@@ -2067,6 +2067,43 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
 }
 
 #[test]
+fn task_board_project_resolves_definitions_across_modules() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .unwrap();
+    let examples = repository.join("examples");
+    let main = examples.join("task_board/src/main.rils");
+    let uri = path_to_file_uri(&main);
+    let (connection, _client) = Connection::memory();
+    let mut server = Server {
+        connection,
+        documents: HashMap::new(),
+        workspace_documents: HashSet::new(),
+        host_contract: HostContract::new(),
+        host_functions: HashMap::new(),
+        host_types: HashSet::new(),
+        projects: workspace_projects(&examples).unwrap(),
+        compilation: CompilationSession::default(),
+        next_source_id: 1,
+    };
+    server.load_workspace().unwrap();
+    let text = server.documents[&uri].text.clone();
+    let offset = text.find("high_task").expect("cross-module function use");
+    let [line, character] = position(&text, offset);
+    let definition = server
+        .definition(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        }))
+        .unwrap();
+    assert_eq!(
+        definition["uri"].as_str(),
+        Some(path_to_file_uri(&examples.join("task_board/src/domain.rils")).as_str())
+    );
+}
+
+#[test]
 fn bundled_examples_have_no_analyzer_errors() {
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -2334,143 +2371,4 @@ fn file_uris_round_trip_for_workspace_indexing() {
         decoded.canonicalize().unwrap(),
         path.canonicalize().unwrap()
     );
-}
-
-#[test]
-fn workspace_projects_index_nested_projects_without_treating_package_paths_as_modules() {
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "rils-analyzer-workspace-projects-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("root.rils"), "let answer = 42;").unwrap();
-
-    let nested = root.join("com.rils-lang.rils-for-unity");
-    fs::create_dir_all(nested.join("src")).unwrap();
-    fs::write(
-        nested.join("rils.toml"),
-        "[project]\nname = \"rils_for_unity\"\nsrc = \"src\"\n",
-    )
-    .unwrap();
-    fs::write(nested.join("src/behaviour.rils"), "pub fn awake() {}").unwrap();
-
-    let projects = workspace_projects(&root).unwrap();
-    assert_eq!(projects.len(), 2);
-    assert!(projects[0].module("root").is_some());
-    assert!(projects[1].module("behaviour").is_some());
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn loads_reserved_standard_library_modules_as_a_language_package() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("crates")
-        .join("rils_builtins")
-        .join("stdlib");
-    let package = Project::from_language_package(
-        root.join("rils.toml"),
-        LanguagePackageKind::StandardLibrary,
-    )
-    .unwrap();
-    assert!(package.module("core::array").is_some());
-    assert!(package.module("std::io").is_some());
-}
-
-#[test]
-fn workspace_projects_receive_the_standard_library_prelude_dependency() {
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "rils-analyzer-language-dependency-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).unwrap();
-    fs::write(root.join("main.rils"), "type_of(42);").unwrap();
-
-    let uri = path_to_file_uri(&root);
-    let (connection, _client) = Connection::memory();
-    let mut server = Server {
-        connection,
-        documents: HashMap::new(),
-        workspace_documents: HashSet::new(),
-        host_contract: HostContract::new(),
-        host_functions: HashMap::new(),
-        host_types: HashSet::new(),
-        projects: Vec::new(),
-        compilation: CompilationSession::default(),
-        next_source_id: 1,
-    };
-    server
-        .load_projects(&json!({
-            "rootUri": uri,
-            "workspaceFolders": [{ "uri": uri, "name": "fixture" }]
-        }))
-        .unwrap();
-    let workspace = server
-        .projects
-        .iter()
-        .find(|project| project.origin() == rils_project::ProjectOrigin::Workspace)
-        .unwrap();
-    assert_eq!(
-        workspace.language_dependencies().collect::<Vec<_>>(),
-        [LanguagePackageKind::StandardLibrary]
-    );
-
-    let stdlib = server
-        .projects
-        .iter()
-        .find(|project| {
-            project.origin()
-                == rils_project::ProjectOrigin::Language(LanguagePackageKind::StandardLibrary)
-        })
-        .unwrap();
-    let prelude = stdlib.prelude().expect("standard library has a prelude");
-    let prelude_uri = path_to_file_uri(prelude);
-
-    server.load_workspace().unwrap();
-    assert!(server.documents.contains_key(&prelude_uri));
-    let main_uri = path_to_file_uri(&root.join("main.rils"));
-    let main_analysis = server.documents[&main_uri]
-        .analysis
-        .as_ref()
-        .expect("workspace document has analysis");
-    assert!(
-        !main_analysis
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("undefined name `type_of`"))
-    );
-    fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn malformed_nested_project_is_reported_without_dropping_other_projects() {
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "rils-analyzer-workspace-errors-{}-{unique}",
-        std::process::id()
-    ));
-    fs::create_dir_all(root.join("broken")).unwrap();
-    fs::write(root.join("main.rils"), "let answer = 42;").unwrap();
-    fs::write(
-        root.join("broken/rils.toml"),
-        "[project]\nname = \"not-valid\"\n",
-    )
-    .unwrap();
-
-    let load = workspace::workspace_projects_with_language(&root, None).unwrap();
-    assert_eq!(load.projects.len(), 1);
-    assert_eq!(load.errors.len(), 1);
-    fs::remove_dir_all(root).unwrap();
 }

@@ -1,0 +1,2 @@
+use crate::api::calculate;
+fn main() -> i32 { calculate(41) }
