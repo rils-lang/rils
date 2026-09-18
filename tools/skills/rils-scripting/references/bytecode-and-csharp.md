@@ -24,11 +24,11 @@ Rust hosts use `BytecodeModule::to_bytes` / `from_bytes` or `write_file` / `read
 
 ## Respect the experimental format boundary
 
-`.rilbc` v1 uses an explicit little-endian section container, not Rust enum or memory serialization. It records the
+`.rilbc` v7 uses an explicit little-endian section container, not Rust enum or memory serialization. It records the
 format version, language version, host ABI, target pointer width, required sections, and a CRC32 payload checksum.
 Loading performs structural limits and the normal bytecode verifier before execution.
 
-Do not describe v1 as cross-version stable. Because it can contain `usize` and `isize`, reject artifacts whose
+Do not describe v7 as cross-version stable. Because it can contain `usize` and `isize`, reject artifacts whose
 32/64-bit pointer width differs from the runtime. Recompile artifacts for the target runtime instead of converting
 their bytes manually.
 
@@ -64,9 +64,10 @@ The matching C ABI entries are `rils_module_load_bytecode` and `rils_module_load
 borrowed only for the call. Runtime/module/instance handles are thread-bound, generation-checked, and must be
 disposed on their creating thread. A runtime disposes its child handles.
 
-The current cross-boundary value protocol supports unit, bool, concrete integers, `isize`/`usize`, `f32`/`f64`, and
-`char`. Do not claim strings, collections, Option/Result, host objects, callbacks, or persistent instance state are
-available until the project facade exposes them.
+The current cross-boundary value protocol supports unit, bool, concrete integers, `isize`/`usize`, `f32`/`f64`, `char`,
+owned UTF-8 strings, named opaque handles, host enums, and Manifest-declared fixed-layout inline values. Collections
+and `Option`/`Result` transport remain unavailable; callbacks and persistent instance state are exposed only through
+the explicit host APIs that document their lifetime and thread rules.
 
 ## Build and validate in the Rils repository
 

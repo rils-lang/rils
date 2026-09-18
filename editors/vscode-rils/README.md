@@ -4,7 +4,7 @@ This extension provides syntax highlighting and language intelligence through
 `rils-analyzer`. Published platform-specific VSIX packages include the matching
 Analyzer executable, so users do not need to install it separately.
 
-Version 0.2 follows the Rils 0.2 language version. Its TextMate grammar covers
+Version 0.4 follows the Rils 0.4 language version. Its TextMate grammar covers
 the implemented declarations, generics and trait bounds, trait implementations,
 nominal types and variants, pattern matching, function types, and function-like
 macro syntax. It also highlights ownership operations and local `&T`/`&mut T`

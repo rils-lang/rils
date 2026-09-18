@@ -90,7 +90,7 @@ receiver 和引用 receiver 只允许立即调用，不能进入可复制的绑�
 | 模块 | 已支持 | 内联模块、use/as、多段路径及 `compile_file` 外部模块链接 |
 | 迭代器 | 部分支持 | Range、数组、Vec 和自定义 Iterator/IntoIterator；借用迭代器待实现 |
 | 标准库/宿主 | 部分支持 | core/Vec、内置宏、显式授权的 std::io/std::fs，以及编译期自定义 HostContract 已链接；解释器 Engine 与同一契约的整合待完成 |
-| 磁盘预编译 | 实验可用 | `.rilbc` v6、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
+| 磁盘预编译 | 实验可用 | `.rilbc` v7、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
 
 Rust 宿主入口如下：
 
@@ -137,14 +137,14 @@ game.validate_host(&game_host)?;
 
 ## 磁盘格式
 
-当前已实现实验性 `.rilbc` v6。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
+当前已实现实验性 `.rilbc` v7。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
 内存布局：
 
 ```text
 magic | format version | language version | host ABI | pointer width | flags | section directory | CRC32
 ```
 
-v6 包含 module、imports、types、iterators、functions、sources 和 trait implementations 七个必需
+v7 包含 module、imports、types、iterators、functions、sources 和 trait implementations 七个必需
 section。trait implementations 表以受 verifier 校验的类型名、trait 名、声明 SourceId、方法名和函数索引保留实现身份，
 宿主无需扫描源码或猜测函数名即可发现入口并精确分发 trait 方法。sources 表只
 保存确定性 `SourceId -> 来源名称` 映射，不嵌入源码正文；常量、指令和源码 Span 使用各自的显式
