@@ -232,10 +232,11 @@ impl Analyzer {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
-    pub(super) fn with_scope(&mut self, action: impl FnOnce(&mut Self)) {
+    pub(super) fn with_scope(&mut self, span: Span, action: impl FnOnce(&mut Self)) {
         self.scopes.push(HashMap::new());
         self.glob_imports.push(false);
         action(self);
+        self.record_scope(span);
         self.glob_imports.pop();
         self.scopes.pop();
     }

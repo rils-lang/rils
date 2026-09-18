@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 本文档记录 Rils 的用户可见变化和升级注意事项。尚未正式发布的内容始终放在最上方的
 `Unreleased`；正式版本按 SemVer 从新到旧排列。
@@ -82,6 +82,10 @@
   `InlineValue` transport 注册函数；不要直接 `memcpy` 宿主 struct。
 
 ### Added
+
+- VS Code completion now covers visible bindings, functions, types, traits, modules, enum variants, macros,
+  keywords, and receiver fields in addition to methods. Completion is triggered for common Rils path and
+  punctuation contexts, and the extension implementation has moved to a typed TypeScript structure.
 
 - Analyzer 与 frontend 现在共用源码导出查询，支持函数、类型、trait 和模块的 `pub use` 多层
   重导出、别名、分组及通配导入。补全、Hover、定义跳转和引用查找保留原声明身份、签名与字段；
@@ -413,3 +417,5 @@
 - Rust 风格的显式所有权、词法局部引用、函数与闭包、struct/enum、trait/impl、泛型、模式匹配、
   模块、宏、数组、Vec、Option、Result 和迭代器基础能力。
 - VS Code 语法高亮与语言服务器支持，以及用于验证解释器和字节码一致性的示例与测试。
+
+

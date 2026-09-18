@@ -305,6 +305,84 @@ fn completes_manifest_enum_variants() {
 }
 
 #[test]
+fn completes_unqualified_bindings_keywords_traits_and_macros() {
+    let text =
+        "trait Printable {}\nfn compute(value: i32) -> i32 { let result = value; result }\npri\npu";
+    let uri = "file:///unqualified-completion.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 2, "character": 3 }
+        }))
+        .unwrap();
+    assert!(
+        items.as_array().is_some_and(|items| {
+            items.iter().any(|item| completion_named(item, "print!"))
+                && items.iter().any(|item| completion_named(item, "println!"))
+        }),
+        "{items}"
+    );
+
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 3, "character": 2 }
+        }))
+        .unwrap();
+    assert!(
+        items
+            .as_array()
+            .is_some_and(|items| { items.iter().any(|item| completion_named(item, "pub")) }),
+        "{items}"
+    );
+
+    let valid_text =
+        "trait Printable {}\nfn compute(value: i32) -> i32 { let result = value; result }";
+    let valid_uri = "file:///valid-completion.rils".to_owned();
+    let valid_server = test_server(&valid_uri, valid_text, HashMap::new(), HostContract::new());
+    let items = valid_server
+        .completion(&json!({
+            "textDocument": { "uri": valid_uri },
+            "position": { "line": 1, "character": 55 }
+        }))
+        .unwrap();
+    assert!(
+        items
+            .as_array()
+            .is_some_and(|items| { items.iter().any(|item| completion_named(item, "result")) }),
+        "{items}"
+    );
+}
+
+#[test]
+fn completes_struct_fields_after_member_access() {
+    let text = "struct Point { x: i32, y: i32 }\nfn read(point: Point) { point. }";
+    let uri = "file:///field-completion.rils".to_owned();
+    let server = test_server(&uri, text, HashMap::new(), HostContract::new());
+    let items = server
+        .completion(&json!({
+            "textDocument": { "uri": uri },
+            "position": {
+                "line": 1,
+                "character": text.lines().nth(1).unwrap().find("point.").unwrap() + 6
+            }
+        }))
+        .unwrap();
+    assert!(
+        items.as_array().is_some_and(|items| {
+            items.iter().any(|item| completion_named(item, "x"))
+                && items.iter().any(|item| completion_named(item, "y"))
+                && items
+                    .iter()
+                    .filter(|item| completion_named(item, "x"))
+                    .any(|item| item["kind"] == 5)
+        }),
+        "{items}"
+    );
+}
+
+#[test]
 fn host_enum_completion_describes_flags_and_script_methods() {
     let mut contract = HostContract::new();
     contract

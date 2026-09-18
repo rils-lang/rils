@@ -1,8 +1,10 @@
 mod collector;
 mod details;
+mod scope;
 mod symbols;
 mod types;
 mod visitor;
+pub use scope::VisibleName;
 
 use details::*;
 
@@ -97,6 +99,7 @@ impl AnalysisDiagnostic {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DocumentAnalysis {
+    lexical_scopes: Vec<scope::LexicalScope>,
     pub diagnostics: Vec<AnalysisDiagnostic>,
     pub symbols: Vec<SymbolOccurrence>,
     pub inlay_hints: Vec<InlayTypeHint>,
@@ -116,6 +119,7 @@ impl DocumentAnalysis {
     }
 
     pub(crate) fn extend(&mut self, other: Self) {
+        self.lexical_scopes.extend(other.lexical_scopes);
         self.diagnostics.extend(other.diagnostics);
         self.symbols.extend(other.symbols);
         self.inlay_hints.extend(other.inlay_hints);
@@ -661,6 +665,7 @@ impl Analyzer {
         self.collect_type_aliases(&program.statements);
         self.macros(program);
         self.statements(&program.statements);
+        self.record_scope(Span::in_source(self.source_id, 0, usize::MAX));
         self.type_references(program);
         let mut inference_functions = self.host_functions.clone();
         for (module, exports) in &self.module_exports {

@@ -12,7 +12,7 @@ pub(super) fn start() -> Result<(), AnyError> {
             "triggerCharacters": ["(", ","]
         },
         "completionProvider": {
-            "triggerCharacters": [":", "."]
+            "triggerCharacters": [":", ".", "#", "!", " "]
         },
         "inlayHintProvider": true,
         "documentSymbolProvider": true,
