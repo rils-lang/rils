@@ -38,12 +38,13 @@ impl Analyzer {
                 name,
                 name_span,
                 statements,
+                span,
                 ..
             } => {
                 self.define(name, *name_span, SymbolKind::Module);
                 if let Some(statements) = statements {
                     self.module_path.push(name.clone());
-                    self.with_scope(|analyzer| analyzer.statements(statements));
+                    self.with_scope(*span, |analyzer| analyzer.statements(statements));
                     self.module_path.pop();
                 }
             }
@@ -81,7 +82,7 @@ impl Analyzer {
                 for parameter in generic_parameters {
                     self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                 }
-                self.with_scope(|analyzer| {
+                self.with_scope(body.span, |analyzer| {
                     for parameter in parameters {
                         analyzer.define(&parameter.name, parameter.span, SymbolKind::Parameter);
                     }
@@ -237,7 +238,7 @@ impl Analyzer {
                     for parameter in &method.generic_parameters {
                         self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
                     }
-                    self.with_scope(|analyzer| {
+                    self.with_scope(method.body.span, |analyzer| {
                         analyzer.self_types.push(self_type.clone());
                         if let Some(self_type) = &self_type
                             && let Some(definition) = analyzer.lookup(self_type).cloned()
@@ -273,7 +274,7 @@ impl Analyzer {
                 ..
             } => {
                 self.expression(iterable);
-                self.with_scope(|analyzer| {
+                self.with_scope(body.span, |analyzer| {
                     analyzer.define(binding, *binding_span, SymbolKind::Variable);
                     analyzer.block_contents(body);
                 });
@@ -597,7 +598,7 @@ impl Analyzer {
             Expr::Match { value, arms, .. } => {
                 self.expression(value);
                 for arm in arms {
-                    self.with_scope(|analyzer| {
+                    self.with_scope(arm.expression.span(), |analyzer| {
                         analyzer.pattern(&arm.pattern);
                         analyzer.expression(&arm.expression);
                     });
@@ -647,7 +648,7 @@ impl Analyzer {
     }
 
     pub(super) fn block(&mut self, block: &Block) {
-        self.with_scope(|analyzer| analyzer.block_contents(block));
+        self.with_scope(block.span, |analyzer| analyzer.block_contents(block));
     }
 
     pub(super) fn block_contents(&mut self, block: &Block) {

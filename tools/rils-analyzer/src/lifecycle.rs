@@ -12,7 +12,7 @@ pub(super) fn start() -> Result<(), AnyError> {
             "triggerCharacters": ["(", ","]
         },
         "completionProvider": {
-            "triggerCharacters": [":", "."]
+            "triggerCharacters": [":", ".", "#", "!", " "]
         },
         "inlayHintProvider": true,
         "documentSymbolProvider": true,
@@ -104,7 +104,7 @@ impl Server {
             "textDocument/didOpen" => {
                 let uri = string_at(&notification.params, &["textDocument", "uri"])?;
                 let text = string_at(&notification.params, &["textDocument", "text"])?;
-                self.update_document(uri, text)?;
+                self.update_document_fast(uri, text)?;
             }
             "textDocument/didChange" => {
                 let uri = string_at(&notification.params, &["textDocument", "uri"])?;
@@ -125,7 +125,7 @@ impl Server {
                 let Some(text) = text else {
                     return Ok(());
                 };
-                self.update_document(uri, text)?;
+                self.update_document_fast(uri, text)?;
             }
             "textDocument/didClose" => {
                 let uri = normalize_document_uri(&string_at(

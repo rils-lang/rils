@@ -149,7 +149,20 @@ impl Server {
         let Some((qualifier, member_prefix)) = use_tree_completion_target(&document.text, offset)
             .or_else(|| completion_target(&document.text, offset))
         else {
-            return Ok(json!([]));
+            let recovered = analysis(document).is_none().then(|| {
+                recover_member_completion_analysis(
+                    &document.text,
+                    offset,
+                    document.source_id,
+                    &self.host_contract,
+                )
+            });
+            return Ok(json!(unqualified_completions(
+                analysis(document).or_else(|| recovered.as_ref().and_then(Option::as_ref)),
+                document.source_id,
+                &document.text,
+                offset,
+            )));
         };
         if rils_builtins::IntegerType::from_name(&qualifier).is_some() {
             let mut items = rils_builtins::INTEGER_CONSTANTS
@@ -341,6 +354,97 @@ impl Server {
     }
 }
 
+fn unqualified_completions(
+    document_analysis: Option<&DocumentAnalysis>,
+    source_id: SourceId,
+    source: &str,
+    offset: usize,
+) -> Vec<Value> {
+    let prefix = completion_prefix(source, offset);
+    let mut items = Vec::new();
+    let mut names = HashSet::new();
+
+    for keyword in [
+        "as", "break", "const", "continue", "crate", "else", "enum", "fn", "for", "if", "impl",
+        "in", "let", "loop", "match", "mod", "mut", "pub", "return", "self", "struct", "super",
+        "trait", "type", "use", "while",
+    ] {
+        if keyword.starts_with(&prefix) && names.insert(keyword.to_owned()) {
+            items.push(json!({
+                "label": keyword,
+                "filterText": keyword,
+                "insertText": keyword,
+                "kind": 14,
+                "detail": "Rils keyword",
+                "sortText": format!("0_{keyword}"),
+            }));
+        }
+    }
+    for macro_name in ["assert!", "print!", "println!"] {
+        if macro_name
+            .trim_end_matches('!')
+            .starts_with(prefix.trim_end_matches('!'))
+            && names.insert(macro_name.to_owned())
+        {
+            items.push(json!({
+                "label": macro_name,
+                "filterText": macro_name,
+                "insertText": macro_name,
+                "kind": 3,
+                "detail": "built-in macro",
+                "sortText": format!("1_{macro_name}"),
+            }));
+        }
+    }
+    if let Some(analysis) = document_analysis {
+        for symbol in analysis.visible_names(source_id, offset) {
+            if !symbol.name.starts_with(&prefix) || !names.insert(symbol.name.clone()) {
+                continue;
+            }
+            let label = if symbol.kind == SymbolKind::Macro {
+                format!("{}!", symbol.name)
+            } else {
+                symbol.name.clone()
+            };
+            items.push(json!({
+                "label": label,
+                "filterText": symbol.name,
+                "insertText": label,
+                "kind": completion_kind(symbol.kind),
+                "detail": symbol.detail.clone().unwrap_or_else(|| kind_label(symbol.kind).into()),
+                "sortText": format!("2_{}", symbol.name),
+            }));
+        }
+    }
+    items.sort_by(|left, right| left["sortText"].as_str().cmp(&right["sortText"].as_str()));
+    items
+}
+
+fn completion_prefix(source: &str, offset: usize) -> String {
+    let end = floor_char_boundary(source, offset.min(source.len()));
+    let before = &source[..end];
+    let start = before
+        .char_indices()
+        .rev()
+        .take_while(|(_, character)| *character == '_' || character.is_alphanumeric())
+        .last()
+        .map_or(before.len(), |(index, _)| index);
+    before[start..].to_owned()
+}
+
+fn completion_kind(kind: SymbolKind) -> u32 {
+    match kind {
+        SymbolKind::Variable | SymbolKind::Parameter => 6,
+        SymbolKind::Function | SymbolKind::Macro => 3,
+        SymbolKind::Type => 7,
+        SymbolKind::Trait => 8,
+        SymbolKind::Method => 2,
+        SymbolKind::Field => 5,
+        SymbolKind::Variant => 20,
+        SymbolKind::Module => 9,
+    }
+}
+
 fn inherent_method_completions(
     analysis: &DocumentAnalysis,
     source: &str,
@@ -355,7 +459,7 @@ fn inherent_method_completions(
         .iter()
         .filter(|symbol| {
             symbol.is_definition
-                && symbol.kind == SymbolKind::Method
+                && matches!(symbol.kind, SymbolKind::Method | SymbolKind::Field)
                 && symbol.name.starts_with(prefix)
                 && symbol.container.as_ref().is_some_and(|container| {
                     let SymbolContainer::Type(owner) = container else {
@@ -365,19 +469,28 @@ fn inherent_method_completions(
                 })
         })
         .map(|symbol| {
-            let detail = symbol
-                .detail
-                .clone()
-                .unwrap_or_else(|| format!("fn {}", symbol.name));
+            let is_field = symbol.kind == SymbolKind::Field;
+            let detail = symbol.detail.clone().unwrap_or_else(|| {
+                if is_field {
+                    format!("field {}", symbol.name)
+                } else {
+                    format!("fn {}", symbol.name)
+                }
+            });
+            let documentation = if is_field {
+                format!("Field of `{name}`")
+            } else {
+                format!("Rils method implemented for `{name}`")
+            };
             json!({
                 "label": detail,
                 "filterText": symbol.name,
                 "insertText": symbol.name,
-                "kind": 2,
+                "kind": if is_field { 5 } else { 2 },
                 "detail": detail,
                 "documentation": {
                     "kind": "markdown",
-                    "value": format!("Rils method implemented for `{name}`")
+                    "value": documentation
                 }
             })
         })

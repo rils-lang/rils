@@ -1,0 +1,5 @@
+fn added() -> i32 { 2 }
+
+fn value() -> i32 { 1 }
+let answer = value();
+let another = added();

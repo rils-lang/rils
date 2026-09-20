@@ -66,7 +66,25 @@ impl Server {
             })?
     }
 
+    #[cfg(test)]
     pub(super) fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
+        self.update_document_state(uri, text, true)
+    }
+
+    pub(super) fn update_document_fast(
+        &mut self,
+        uri: String,
+        text: String,
+    ) -> Result<(), AnyError> {
+        self.update_document_state(uri, text, false)
+    }
+
+    fn update_document_state(
+        &mut self,
+        uri: String,
+        text: String,
+        rebuild_project: bool,
+    ) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri)?;
         let capabilities = self
@@ -82,7 +100,17 @@ impl Server {
                 text.clone(),
                 capabilities,
             );
-        let analysis = self.analyze_source(source_id, &HashMap::new());
+        // Recompute the current document so spans and newly introduced symbols
+        // follow edits. The fast path deliberately avoids rebuilding project
+        // semantics and relinking every open document.
+        let analysis = if rebuild_project {
+            self.analyze_source(source_id, &HashMap::new())
+        } else {
+            // A last-valid tree belongs to an older text revision. Do not use
+            // its spans for navigation or semantic highlighting of this text.
+            self.parse_source(source_id)
+                .and_then(|_| self.analyze_source(source_id, &HashMap::new()))
+        };
         self.documents.insert(
             uri.clone(),
             Document {
@@ -91,9 +119,18 @@ impl Server {
                 analysis,
             },
         );
-        self.reanalyze_documents();
-        self.refresh_project_symbol_links();
-        self.publish_all_diagnostics()
+        if rebuild_project {
+            self.reanalyze_documents();
+            self.refresh_project_symbol_links();
+            self.publish_all_diagnostics()
+        } else {
+            let diagnostics = self
+                .documents
+                .get(&uri)
+                .map(|document| diagnostics(&document.text, &document.analysis))
+                .unwrap_or_default();
+            self.publish_diagnostics(&uri, diagnostics)
+        }
     }
 
     pub(super) fn source_id_for_uri(&mut self, uri: &str) -> Result<SourceId, AnyError> {

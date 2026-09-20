@@ -2,6 +2,9 @@
 dist/**
 node_modules/**
 scripts/**
-extension.js
+src/**
+tsconfig.json
+tests/**
+out/test/**
 package-lock.json
 *.vsix

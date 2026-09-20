@@ -48,6 +48,9 @@ in a Rils inherent `impl` for a host enum or another host type are included in r
 
 Project modules use the same completion flow. After `crate::`, `self::`, `super::`, a module path, or a
 `use` alias, the Analyzer lists child modules and public declarations from the target `.rils` file.
+Unqualified completion also offers visible local variables and parameters, functions, types, traits, modules,
+enum variants, macros, and language keywords. Receiver completion includes struct and enum fields alongside
+methods, with `:`, `.`, `::`, `#`, `!`, and whitespace trigger characters enabled for the Rils language.
 
 Changes to `.rils/manifest/**/*.rilhm` and `rils.toml` are watched by the extension. The Analyzer reloads the
 contract and republishes diagnostics without requiring a window reload; malformed replacements keep the previous
@@ -113,7 +116,8 @@ For another analyzer location, set `rils.server.path`.
 
 ## Architecture
 
-The extension owns only VS Code integration and TextMate grammar files.
+The extension is implemented in TypeScript and owns VS Code integration, language-client lifecycle, manifest
+watching, and TextMate grammar files. Its bundled entry point is built from `src/extension.ts`.
 Parsing and semantic analysis stay in the Rils Rust crate, while the
 editor-neutral protocol implementation lives in `tools/rils-analyzer`. This
 keeps the analyzer reusable by a future Rider plugin or another editor.

@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 本文档记录 Rils 的用户可见变化和升级注意事项。尚未正式发布的内容始终放在最上方的
 `Unreleased`；正式版本按 SemVer 从新到旧排列。
@@ -83,6 +83,10 @@
 
 ### Added
 
+- VS Code completion now covers visible bindings, functions, types, traits, modules, enum variants, macros,
+  keywords, and receiver fields in addition to methods. Completion is triggered for common Rils path and
+  punctuation contexts, and the extension implementation has moved to a typed TypeScript structure.
+
 - Analyzer 与 frontend 现在共用源码导出查询，支持函数、类型、trait 和模块的 `pub use` 多层
   重导出、别名、分组及通配导入。补全、Hover、定义跳转和引用查找保留原声明身份、签名与字段；
   不可解析或歧义的公开重导出在导入文件报告诊断，引用结果不重复列出同一位置。
@@ -140,6 +144,10 @@
   Player 通过静态注册桥使用生成代码，无需运行时反射。
 
 ### Fixed
+
+- Analyzer refreshes the edited document's semantic spans and new symbol definitions
+  without rebuilding the entire workspace; invalid edits no longer reuse old spans
+  for semantic highlighting.
 
 - Analyzer 不再因单个 Host Manifest 读取、解码、ABI 校验或合并失败退出：启动加载其余有效片段，
   热重载失败保留上一次有效宿主模型，合并失败不泄漏部分声明。源码读取失败会报告路径。
@@ -413,3 +421,4 @@
 - Rust 风格的显式所有权、词法局部引用、函数与闭包、struct/enum、trait/impl、泛型、模式匹配、
   模块、宏、数组、Vec、Option、Result 和迭代器基础能力。
 - VS Code 语法高亮与语言服务器支持，以及用于验证解释器和字节码一致性的示例与测试。
+

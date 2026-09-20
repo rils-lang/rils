@@ -2,7 +2,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { scanManifests } = require("../manifest-scan");
+const { scanManifests } = require("../out/test/manifest-scan");
 
 test("inaccessible subtree does not discard sibling manifests", () => {
   const root = path.resolve("manifests");
