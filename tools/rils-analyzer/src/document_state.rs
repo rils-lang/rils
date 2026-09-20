@@ -67,6 +67,23 @@ impl Server {
     }
 
     pub(super) fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
+        self.update_document_state(uri, text, true)
+    }
+
+    pub(super) fn update_document_fast(
+        &mut self,
+        uri: String,
+        text: String,
+    ) -> Result<(), AnyError> {
+        self.update_document_state(uri, text, false)
+    }
+
+    fn update_document_state(
+        &mut self,
+        uri: String,
+        text: String,
+        rebuild_project: bool,
+    ) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri)?;
         let capabilities = self
@@ -91,7 +108,9 @@ impl Server {
                 analysis,
             },
         );
-        self.reanalyze_documents();
+        if rebuild_project {
+            self.reanalyze_documents();
+        }
         self.refresh_project_symbol_links();
         self.publish_all_diagnostics()
     }

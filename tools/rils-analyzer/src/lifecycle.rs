@@ -125,7 +125,7 @@ impl Server {
                 let Some(text) = text else {
                     return Ok(());
                 };
-                self.update_document(uri, text)?;
+                self.update_document_fast(uri, text)?;
             }
             "textDocument/didClose" => {
                 let uri = normalize_document_uri(&string_at(
