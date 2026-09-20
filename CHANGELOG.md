@@ -145,6 +145,10 @@
 
 ### Fixed
 
+- Analyzer refreshes the edited document's semantic spans and new symbol definitions
+  without rebuilding the entire workspace; invalid edits no longer reuse old spans
+  for semantic highlighting.
+
 - Analyzer 不再因单个 Host Manifest 读取、解码、ABI 校验或合并失败退出：启动加载其余有效片段，
   热重载失败保留上一次有效宿主模型，合并失败不泄漏部分声明。源码读取失败会报告路径。
 - 错误的 LSP 通知参数不再终止服务；请求参数错误返回独立错误响应。关闭过程容忍在途消息，
@@ -417,5 +421,4 @@
 - Rust 风格的显式所有权、词法局部引用、函数与闭包、struct/enum、trait/impl、泛型、模式匹配、
   模块、宏、数组、Vec、Option、Result 和迭代器基础能力。
 - VS Code 语法高亮与语言服务器支持，以及用于验证解释器和字节码一致性的示例与测试。
-
 

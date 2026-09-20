@@ -71,3 +71,7 @@ mod workspace_tests;
 #[cfg(test)]
 #[path = "../tests/unit/reexports.rs"]
 mod reexport_tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/edit_revisions.rs"]
+mod edit_revision_tests;

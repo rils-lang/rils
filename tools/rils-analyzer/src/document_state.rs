@@ -66,7 +66,7 @@ impl Server {
             })?
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(super) fn update_document(&mut self, uri: String, text: String) -> Result<(), AnyError> {
         self.update_document_state(uri, text, true)
     }
@@ -87,11 +87,6 @@ impl Server {
     ) -> Result<(), AnyError> {
         let uri = normalize_document_uri(&uri);
         let source_id = self.source_id_for_uri(&uri)?;
-        let previous_analysis = self
-            .documents
-            .get(&uri)
-            .map(|document| document.analysis.clone());
-        let had_previous_analysis = previous_analysis.is_some();
         let capabilities = self
             .compilation
             .sources()
@@ -105,15 +100,16 @@ impl Server {
                 text.clone(),
                 capabilities,
             );
-        // Keep the last valid semantic snapshot while typing. Parsing and
-        // semantic analysis can be much more expensive than an LSP keystroke;
-        // the next full project refresh replaces this snapshot. Completion can
-        // therefore answer immediately from stable symbols instead of blocking
-        // behind analysis of the whole edited file.
-        let analysis = if !rebuild_project {
-            previous_analysis.unwrap_or_else(|| self.analyze_source(source_id, &HashMap::new()))
-        } else {
+        // Recompute the current document so spans and newly introduced symbols
+        // follow edits. The fast path deliberately avoids rebuilding project
+        // semantics and relinking every open document.
+        let analysis = if rebuild_project {
             self.analyze_source(source_id, &HashMap::new())
+        } else {
+            // A last-valid tree belongs to an older text revision. Do not use
+            // its spans for navigation or semantic highlighting of this text.
+            self.parse_source(source_id)
+                .and_then(|_| self.analyze_source(source_id, &HashMap::new()))
         };
         self.documents.insert(
             uri.clone(),
@@ -128,14 +124,11 @@ impl Server {
             self.refresh_project_symbol_links();
             self.publish_all_diagnostics()
         } else {
-            let diagnostics = if had_previous_analysis {
-                Vec::new()
-            } else {
-                self.documents
-                    .get(&uri)
-                    .map(|document| diagnostics(&document.text, &document.analysis))
-                    .unwrap_or_default()
-            };
+            let diagnostics = self
+                .documents
+                .get(&uri)
+                .map(|document| diagnostics(&document.text, &document.analysis))
+                .unwrap_or_default();
             self.publish_diagnostics(&uri, diagnostics)
         }
     }
