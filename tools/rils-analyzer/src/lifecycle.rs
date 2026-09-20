@@ -104,7 +104,7 @@ impl Server {
             "textDocument/didOpen" => {
                 let uri = string_at(&notification.params, &["textDocument", "uri"])?;
                 let text = string_at(&notification.params, &["textDocument", "text"])?;
-                self.update_document(uri, text)?;
+                self.update_document_fast(uri, text)?;
             }
             "textDocument/didChange" => {
                 let uri = string_at(&notification.params, &["textDocument", "uri"])?;
