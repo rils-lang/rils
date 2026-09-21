@@ -663,6 +663,9 @@ impl Analyzer {
         self.collect_enum_variants(&program.statements);
         self.collect_struct_fields(&program.statements);
         self.collect_type_aliases(&program.statements);
+        self.result
+            .diagnostics
+            .extend(crate::recursive_types::analyze(program));
         self.macros(program);
         self.statements(&program.statements);
         self.record_scope(Span::in_source(self.source_id, 0, usize::MAX));

@@ -487,7 +487,7 @@ fn completion_named(item: &serde_json::Value, name: &str) -> bool {
 
 #[test]
 fn hover_shows_expanded_type_aliases() {
-    let text = "struct Box<T> { value: T }\ntype ValueBox<T> = Box<T>;\ntype IntBox = ValueBox<i32>;\nlet value: IntBox = Box { value: 1 };";
+    let text = "struct Wrapper<T> { value: T }\ntype ValueBox<T> = Wrapper<T>;\ntype IntBox = ValueBox<i32>;\nlet value: IntBox = Box { value: 1 };";
     let uri = "file:///aliases.rils".to_owned();
     let (connection, _client) = Connection::memory();
     let mut documents = HashMap::new();
@@ -521,7 +521,7 @@ fn hover_shows_expanded_type_aliases() {
         hover
             .pointer("/contents/value")
             .and_then(|value| value.as_str()),
-        Some("`crate`\n\n```rils\ntype IntBox = Box<i32>\n```")
+        Some("`crate`\n\n```rils\ntype IntBox = Wrapper<i32>\n```")
     );
 }
 

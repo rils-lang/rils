@@ -78,6 +78,24 @@ impl ProgramLowerer {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
         let mut type_definitions = Vec::new();
+        // Box is a compiler-provided heap indirection. Keep its nominal
+        // declaration in the HIR even when the standard-library source is not
+        // part of a standalone compilation unit.
+        let box_id = type_definitions.len();
+        types.insert("Box".to_owned(), box_id);
+        type_definitions.push(HirTypeDefinition::Struct {
+            name: "Box".to_owned(),
+            generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                name: "T".to_owned(),
+                bounds: Vec::new(),
+                span: Span::default(),
+            }],
+            fields: vec![rils_frontend::ast::NamedField {
+                name: "value".to_owned(),
+                type_annotation: Type::Variable("T".to_owned()),
+                span: Span::default(),
+            }],
+        });
         for declaration in host.types() {
             let Some(host_enum) = declaration.enum_definition.as_ref() else {
                 continue;
