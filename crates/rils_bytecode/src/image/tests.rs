@@ -519,6 +519,24 @@ fn calls_named_functions_with_arguments() {
 }
 
 #[test]
+fn executes_recursive_generic_structs_through_heap_indirection() {
+    let module = compile(
+        r#"
+            struct Node { value: i32, next: Option<Box<Node>> }
+            pub fn main() -> i32 {
+                let tail: Node = Node { value: 42, next: None };
+                let head: Node = Node { value: 1, next: Some(Box { value: tail }) };
+                let boxed = head.next.unwrap();
+                let node = boxed.value;
+                node.value
+            }
+        "#,
+    )
+    .expect("recursive generic source should compile");
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(42));
+}
+
+#[test]
 fn compiles_functions_recursion_and_early_return() {
     let source = r#"
             fn factorial(n: i32) -> i32 {

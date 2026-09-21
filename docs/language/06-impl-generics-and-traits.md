@@ -101,6 +101,20 @@ let holder: Holder<i32> = Holder {
 
 泛型类型采用运行时单态参数信息，但当前不会生成专用机器码。尚不支持显式 turbofish、默认类型参数、显式生命周期参数、const 泛型和 `where`；引用生命周期由词法作用域自动推导。
 
+### Recursive structures and heap indirection
+
+Recursive fields must pass through a fixed-size heap handle or container. The compiler treats `Box<T>`, `Vec<T>`, `HashMap<K, V>`, `HashSet<T>`, iterator handles, and `string` as heap-backed indirection. For example:
+
+```rust
+struct Node {
+    value: i32,
+    next: Option<Box<Node>>,
+    children: Vec<Node>,
+}
+```
+
+The rule is based on the field layout, rather than requiring one specific type. Ordinary structs, tuples, fixed-size arrays, and `Option<Node>` remain inline and direct recursion reports an infinite-size error. Elements stored in heap containers still follow Rils explicit move rules.
+
 ### 类型别名
 
 `type` 声明透明类型别名，可以带泛型参数，也可以引用另一个别名：

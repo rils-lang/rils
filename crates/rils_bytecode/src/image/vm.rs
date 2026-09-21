@@ -626,7 +626,11 @@ impl<'a> VirtualMachine<'a> {
                             Value::Struct(Rc::new(StructInstance {
                                 type_definition: definition.clone(),
                                 fields: RefCell::new(slots),
-                                type_arguments: Vec::new(),
+                                type_arguments: infer_generic_arguments(
+                                    &definition.generic_parameters,
+                                    &definition.fields,
+                                    &values,
+                                ),
                             }))
                         }
                         (RuntimeType::Enum(definition), Some(variant)) => {
@@ -964,5 +968,86 @@ impl<'a> VirtualMachine<'a> {
 
     fn current_function(&self) -> &BytecodeFunction {
         &self.module.functions[self.frame().function]
+    }
+}
+
+fn infer_generic_arguments(
+    parameters: &[rils_frontend::ast::GenericParameter],
+    fields: &[rils_frontend::ast::NamedField],
+    values: &HashMap<String, Value>,
+) -> Vec<Type> {
+    let mut inferred = HashMap::new();
+    for field in fields {
+        if let Some(value) = values.get(&field.name) {
+            infer_type_arguments(&field.type_annotation, value, &mut inferred);
+        }
+    }
+    parameters
+        .iter()
+        .map(|parameter| inferred.remove(&parameter.name).unwrap_or(Type::Unknown))
+        .collect()
+}
+
+fn infer_type_arguments(expected: &Type, value: &Value, inferred: &mut HashMap<String, Type>) {
+    match expected {
+        Type::Variable(name) => {
+            if let Some(actual) = Type::of_value(value) {
+                inferred.entry(name.clone()).or_insert(actual);
+            }
+        }
+        Type::Option(inner) => {
+            if let Value::Option {
+                value: Some(value), ..
+            } = value
+            {
+                infer_type_arguments(inner, value, inferred);
+            }
+        }
+        Type::Array { element, .. } => {
+            if let Value::Array(sequence) = value {
+                for slot in sequence.elements.borrow().iter() {
+                    if let Some(value) = &slot.value {
+                        infer_type_arguments(element, value, inferred);
+                    }
+                }
+            }
+        }
+        Type::Named { arguments, .. } => {
+            if let Some(Type::Named {
+                arguments: actual, ..
+            }) = Type::of_value(value)
+            {
+                for (expected, actual) in arguments.iter().zip(actual.iter()) {
+                    infer_type_from_types(expected, actual, inferred);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn infer_type_from_types(expected: &Type, actual: &Type, inferred: &mut HashMap<String, Type>) {
+    match expected {
+        Type::Variable(name) => {
+            inferred
+                .entry(name.clone())
+                .or_insert_with(|| actual.clone());
+        }
+        Type::Option(inner) => {
+            if let Type::Option(actual) = actual {
+                infer_type_from_types(inner, actual, inferred);
+            }
+        }
+        Type::Named { arguments, .. } => {
+            if let Type::Named {
+                arguments: actual, ..
+            } = actual
+            {
+                for (expected, actual) in arguments.iter().zip(actual.iter()) {
+                    infer_type_from_types(expected, actual, inferred);
+                }
+            }
+        }
+        _ => {}
     }
 }

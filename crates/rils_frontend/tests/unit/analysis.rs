@@ -342,8 +342,8 @@ fn classifies_called_members_as_methods_and_other_members_as_fields() {
 #[test]
 fn describes_type_aliases_with_recursively_expanded_targets() {
     let source = r#"
-            struct Box<T> { value: T }
-            type ValueBox<T> = Box<T>;
+            struct Wrapper<T> { value: T }
+            type ValueBox<T> = Wrapper<T>;
             type IntBox = ValueBox<i32>;
             fn consume(value: IntBox) {}
         "#;
@@ -355,9 +355,9 @@ fn describes_type_aliases_with_recursively_expanded_targets() {
     );
 
     for expected in [
-        "type ValueBox<T> = Box<T>",
-        "type ValueBox<i32> = Box<i32>",
-        "type IntBox = Box<i32>",
+        "type ValueBox<T> = Wrapper<T>",
+        "type ValueBox<i32> = Wrapper<i32>",
+        "type IntBox = Wrapper<i32>",
     ] {
         assert!(
             analysis

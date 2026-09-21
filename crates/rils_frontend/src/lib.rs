@@ -9,6 +9,7 @@ mod host_type_resolution;
 mod numeric_literals;
 mod ownership;
 mod project_analysis;
+mod recursive_types;
 pub mod semantic;
 pub mod standard_library;
 mod static_type_check;
