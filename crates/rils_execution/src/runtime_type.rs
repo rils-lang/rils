@@ -386,6 +386,10 @@ fn type_of_value(value: &Value) -> Option<Type> {
                     .unwrap_or(Type::Unknown),
             ],
         }),
+        Value::Rc(value) => Some(Type::Named {
+            name: "Rc".into(),
+            arguments: vec![value.type_argument.clone()],
+        }),
         Value::HashMap(map) => Some(Type::Named {
             name: "HashMap".into(),
             arguments: vec![

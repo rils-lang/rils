@@ -13,6 +13,32 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     use rils_builtins::BuiltinId;
 
     match id {
+        BuiltinId::RcNew => {
+            let value = arguments
+                .first()
+                .cloned()
+                .ok_or_else(|| "Rc::new expects one value".to_owned())?;
+            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+            Ok(Value::Rc(Rc::new(crate::value::RcValue {
+                value,
+                type_argument,
+            })))
+        }
+        BuiltinId::RcClone => match import_receiver(&arguments[0])? {
+            Value::Rc(value) => Ok(Value::Rc(value)),
+            Value::Struct(value) if value.type_definition.name == "Rc" => Ok(Value::Struct(value)),
+            value => Err(format!("Rc::clone expects Rc, found {}", value.type_name())),
+        },
+        BuiltinId::RcStrongCount => match import_receiver(&arguments[0])? {
+            Value::Rc(value) => Ok(Value::Usize(Rc::strong_count(&value))),
+            Value::Struct(value) if value.type_definition.name == "Rc" => {
+                Ok(Value::Usize(Rc::strong_count(&value)))
+            }
+            value => Err(format!(
+                "Rc::strong_count expects Rc, found {}",
+                value.type_name()
+            )),
+        },
         BuiltinId::Clone => match &arguments[0] {
             Value::Reference(reference) => reference.read()?.clone_owned(),
             value => Err(format!(

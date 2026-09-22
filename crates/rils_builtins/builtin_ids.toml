@@ -214,3 +214,9 @@ min = 0x0C10
 max = 0x0C11
 clamp = 0x0C12
 mul_add = 0x0C13
+
+# Shared ownership operations: 0x0D00-0x0DFF.
+[core.rc]
+new = 0x0D00
+clone = 0x0D01
+strong_count = 0x0D02

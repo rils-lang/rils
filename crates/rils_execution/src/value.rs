@@ -162,6 +162,12 @@ pub struct SequenceIteratorValue {
 }
 
 #[derive(Clone)]
+pub struct RcValue {
+    pub value: Value,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
 pub enum EnumPayload {
     Unit,
     Tuple(Vec<Value>),
@@ -256,6 +262,7 @@ pub enum Value {
     Vec(Rc<SequenceValue>),
     HashMap(Rc<HashMapValue>),
     HashSet(Rc<HashSetValue>),
+    Rc(Rc<RcValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
@@ -357,6 +364,7 @@ impl Value {
             Self::HostObject(object) => object.type_definition.copy,
             Self::String(_)
             | Self::Range(_)
+            | Self::Rc(_)
             | Self::Vec(_)
             | Self::HashMap(_)
             | Self::HashSet(_)
@@ -630,6 +638,7 @@ impl Value {
             Self::HashSet(_) => {
                 Type::of_value(self).map_or_else(|| "HashSet".into(), |ty| ty.to_string())
             }
+            Self::Rc(_) => Type::of_value(self).map_or_else(|| "Rc".into(), |ty| ty.to_string()),
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())
             }

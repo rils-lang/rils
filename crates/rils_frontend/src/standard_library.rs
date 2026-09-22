@@ -156,20 +156,21 @@ pub fn erased_builtin_member_signature(
     member: &rils_builtins::BuiltinMember,
 ) -> Option<FunctionSignature> {
     let signature = member.signature?;
-    let receiver = match member.receiver? {
-        rils_builtins::ReceiverMode::Owned => Type::Unknown,
-        rils_builtins::ReceiverMode::Shared => Type::Reference {
+    let receiver = match member.receiver {
+        Some(rils_builtins::ReceiverMode::Owned) => Some(Type::Unknown),
+        Some(rils_builtins::ReceiverMode::Shared) => Some(Type::Reference {
             mutable: false,
             inner: Box::new(Type::Unknown),
-        },
-        rils_builtins::ReceiverMode::Mutable => Type::Reference {
+        }),
+        Some(rils_builtins::ReceiverMode::Mutable) => Some(Type::Reference {
             mutable: true,
             inner: Box::new(Type::Unknown),
-        },
+        }),
+        None => None,
     };
     let generics = HashMap::new();
     let mut parameters = Vec::with_capacity(signature.parameters.len() + 1);
-    parameters.push(receiver);
+    parameters.extend(receiver);
     parameters.extend(
         signature
             .parameters
@@ -241,7 +242,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
         Type::Named { name, arguments }
             if matches!(
                 name.as_str(),
-                "Vec" | "HashMap" | "HashSet" | "Range" | "SequenceIterator"
+                "Vec" | "HashMap" | "HashSet" | "Range" | "SequenceIterator" | "Rc"
             ) =>
         {
             match name.as_str() {
@@ -266,6 +267,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     "HashSet" => "HashSet",
                     "Range" => "Range",
                     "SequenceIterator" => "Iterator",
+                    "Rc" => "Rc",
                     _ => unreachable!(),
                 },
                 object.clone(),

@@ -537,6 +537,23 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
 }
 
 #[test]
+fn constructs_and_clones_rc_handles_with_explicit_type_arguments() {
+    let module = compile(
+        r#"
+            pub fn main() -> usize {
+                let value: i32 = 7;
+                let handle: Rc<i32> = Rc::<i32>::new(value);
+                let clone = handle.clone();
+                clone.strong_count()
+            }
+        "#,
+    )
+    .expect("Rc source should compile");
+    let strong_count = module.call("main", Vec::new()).unwrap();
+    assert!(matches!(strong_count, Value::Usize(count) if count >= 2));
+}
+
+#[test]
 fn compiles_functions_recursion_and_early_return() {
     let source = r#"
             fn factorial(n: i32) -> i32 {

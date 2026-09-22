@@ -473,6 +473,7 @@ impl<'a> Checker<'a> {
             Expr::Literal { .. }
             | Expr::Variable { .. }
             | Expr::Path { .. }
+            | Expr::GenericPath { .. }
             | Expr::QualifiedPath { .. } => {}
         }
     }

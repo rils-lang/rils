@@ -834,7 +834,7 @@ impl<'a> Inferencer<'a> {
             Expr::Variable { name, .. } => self
                 .lookup(name)
                 .map_or(Type::Unknown, |binding| binding.ty.clone()),
-            Expr::Path { segments, .. } => {
+            Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } => {
                 let segments = self
                     .host_types
                     .resolved_expression_path(expression)

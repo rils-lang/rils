@@ -346,13 +346,39 @@ impl Parser<'_> {
             TokenKind::Identifier(name) => {
                 let mut segments = vec![name];
                 let mut span = token.span;
+                let mut generic_arguments = None;
                 while self.take(&TokenKind::ColonColon).is_some() {
+                    if self.take(&TokenKind::Less).is_some() {
+                        let mut arguments = Vec::new();
+                        while !self.check(&TokenKind::Greater) {
+                            arguments.push(self.type_annotation()?);
+                            if self.take(&TokenKind::Comma).is_none() {
+                                break;
+                            }
+                        }
+                        let greater = self.expect(
+                            &TokenKind::Greater,
+                            "expected `>` after explicit type arguments",
+                        )?;
+                        span = span.merge(greater.span);
+                        generic_arguments = Some(arguments);
+                        self.expect(
+                            &TokenKind::ColonColon,
+                            "expected `::` after explicit type arguments",
+                        )?;
+                    }
                     let (segment, segment_span) =
                         self.expect_path_segment("expected name after `::`")?;
                     segments.push(segment);
                     span = span.merge(segment_span);
                 }
-                if segments.len() == 1 {
+                if let Some(arguments) = generic_arguments {
+                    Expr::GenericPath {
+                        segments,
+                        arguments,
+                        span,
+                    }
+                } else if segments.len() == 1 {
                     Expr::Variable {
                         name: segments.pop().expect("one segment"),
                         span,

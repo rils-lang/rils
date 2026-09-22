@@ -325,7 +325,10 @@ impl SyntaxIdentityMaps {
                 }
             }
             Expr::Block(block) => self.visit_block(block, fallback_source),
-            Expr::Literal { .. } | Expr::Variable { .. } | Expr::Path { .. } => {}
+            Expr::Literal { .. }
+            | Expr::Variable { .. }
+            | Expr::Path { .. }
+            | Expr::GenericPath { .. } => {}
         }
     }
 

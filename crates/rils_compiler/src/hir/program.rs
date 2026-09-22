@@ -96,6 +96,17 @@ impl ProgramLowerer {
                 span: Span::default(),
             }],
         });
+        let rc_id = type_definitions.len();
+        types.insert("Rc".to_owned(), rc_id);
+        type_definitions.push(HirTypeDefinition::Struct {
+            name: "Rc".to_owned(),
+            generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                name: "T".to_owned(),
+                bounds: Vec::new(),
+                span: Span::default(),
+            }],
+            fields: Vec::new(),
+        });
         for declaration in host.types() {
             let Some(host_enum) = declaration.enum_definition.as_ref() else {
                 continue;

@@ -577,7 +577,7 @@ impl<'a> Resolver<'a> {
                 }
             }
             Expr::Block(block) => self.resolve_block(block),
-            Expr::Path { segments, span } => {
+            Expr::Path { segments, span } | Expr::GenericPath { segments, span, .. } => {
                 if let Some(path) = self.resolve_path(segments, *span) {
                     let id = self
                         .expression_ids
