@@ -107,6 +107,17 @@ impl ProgramLowerer {
             }],
             fields: Vec::new(),
         });
+        let cell_id = type_definitions.len();
+        types.insert("Cell".to_owned(), cell_id);
+        type_definitions.push(HirTypeDefinition::Struct {
+            name: "Cell".to_owned(),
+            generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                name: "T".to_owned(),
+                bounds: Vec::new(),
+                span: Span::default(),
+            }],
+            fields: Vec::new(),
+        });
         let weak_id = type_definitions.len();
         types.insert("Weak".to_owned(), weak_id);
         type_definitions.push(HirTypeDefinition::Struct {

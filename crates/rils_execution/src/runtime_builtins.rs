@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use crate::{
     environment::AssignError,
     types::{IntegerType, Type},
-    value::{FieldSlot, SequenceIteratorValue, SequenceValue, Value, WeakValue},
+    value::{CellValue, FieldSlot, SequenceIteratorValue, SequenceValue, Value, WeakValue},
 };
 
 mod option_result;
@@ -73,6 +73,51 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             Value::Weak(value) => Ok(Value::Usize(value.value.weak_count())),
             value => Err(format!(
                 "Weak::weak_count expects Weak, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::CellNew => {
+            let value = arguments
+                .first()
+                .cloned()
+                .ok_or_else(|| "Cell::new expects one value".to_owned())?;
+            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+            Ok(Value::Cell(Rc::new(CellValue {
+                value: RefCell::new(value),
+                type_argument,
+            })))
+        }
+        BuiltinId::CellGet => match import_receiver(&arguments[0])? {
+            Value::Cell(cell) => cell.value.borrow().clone_owned(),
+            value => Err(format!(
+                "Cell::get expects Cell, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::CellSet => match import_receiver(&arguments[0])? {
+            Value::Cell(cell) => {
+                let value = arguments
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "Cell::set expects a value".to_owned())?;
+                *cell.value.borrow_mut() = value;
+                Ok(Value::Unit)
+            }
+            value => Err(format!(
+                "Cell::set expects Cell, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::CellReplace => match import_receiver(&arguments[0])? {
+            Value::Cell(cell) => {
+                let value = arguments
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "Cell::replace expects a value".to_owned())?;
+                Ok(std::mem::replace(&mut *cell.value.borrow_mut(), value))
+            }
+            value => Err(format!(
+                "Cell::replace expects Cell, found {}",
                 value.type_name()
             )),
         },

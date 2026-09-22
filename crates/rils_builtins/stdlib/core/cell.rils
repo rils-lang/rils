@@ -1,0 +1,16 @@
+/// A single-threaded interior-mutable value cell.
+pub struct Cell<T>;
+
+impl<T> Cell<T> {
+    #[runtime(core::cell::new)]
+    fn new(value: T) -> Self {}
+
+    #[runtime(core::cell::get)]
+    fn get(&self) -> T {}
+
+    #[runtime(core::cell::set)]
+    fn set(&self, value: T) {}
+
+    #[runtime(core::cell::replace)]
+    fn replace(&self, value: T) -> T {}
+}

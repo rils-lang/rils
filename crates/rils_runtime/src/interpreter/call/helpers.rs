@@ -101,6 +101,7 @@ pub(crate) fn builtin_runtime_member(
         Value::HashSet(_) => "HashSet",
         Value::Rc(_) => "Rc",
         Value::Weak(_) => "Weak",
+        Value::Cell(_) => "Cell",
         Value::Range(_) => "Range",
         Value::Option { .. } => "Option",
         Value::Result { .. } => "Result",

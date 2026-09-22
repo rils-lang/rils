@@ -174,6 +174,12 @@ pub struct WeakValue {
 }
 
 #[derive(Clone)]
+pub struct CellValue {
+    pub value: RefCell<Value>,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
 pub enum EnumPayload {
     Unit,
     Tuple(Vec<Value>),
@@ -224,6 +230,7 @@ pub enum BuiltinFunction {
     HashMapNew,
     HashSetNew,
     RcNew,
+    CellNew,
     IntegerIntrinsic {
         id: rils_builtins::BuiltinId,
         target: crate::IntegerType,
@@ -271,6 +278,7 @@ pub enum Value {
     HashSet(Rc<HashSetValue>),
     Rc(Rc<RcValue>),
     Weak(Rc<WeakValue>),
+    Cell(Rc<CellValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
@@ -374,6 +382,7 @@ impl Value {
             | Self::Range(_)
             | Self::Rc(_)
             | Self::Weak(_)
+            | Self::Cell(_)
             | Self::Vec(_)
             | Self::HashMap(_)
             | Self::HashSet(_)
@@ -650,6 +659,9 @@ impl Value {
             Self::Rc(_) => Type::of_value(self).map_or_else(|| "Rc".into(), |ty| ty.to_string()),
             Self::Weak(_) => {
                 Type::of_value(self).map_or_else(|| "Weak".into(), |ty| ty.to_string())
+            }
+            Self::Cell(_) => {
+                Type::of_value(self).map_or_else(|| "Cell".into(), |ty| ty.to_string())
             }
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())

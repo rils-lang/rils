@@ -59,6 +59,9 @@ pub(super) fn resolve_associated_path(
         Value::StructType(definition) if definition.name == "Rc" && member == "new" => {
             Ok(Value::BuiltinFunction(BuiltinFunction::RcNew))
         }
+        Value::StructType(definition) if definition.name == "Cell" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::CellNew))
+        }
         Value::StructType(definition) => definition
             .methods
             .borrow()

@@ -83,6 +83,15 @@ impl Interpreter {
                         type_argument,
                     })))
                 }
+                BuiltinFunction::CellNew => {
+                    check_arity("Cell::new", 1, 1, arguments.len(), span)?;
+                    let value = arguments[0].clone();
+                    let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+                    Ok(Value::Cell(Rc::new(crate::value::CellValue {
+                        value: RefCell::new(value),
+                        type_argument,
+                    })))
+                }
                 BuiltinFunction::IntegerIntrinsic { id, target } => {
                     check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
                     crate::numeric::execute_integer_intrinsic(id, Some(target), arguments)

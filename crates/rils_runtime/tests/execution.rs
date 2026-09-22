@@ -28,6 +28,19 @@ fn evaluates_rc_and_weak_handles() {
 }
 
 #[test]
+fn evaluates_cell_interior_mutability() {
+    let value = eval(
+        r#"
+        let cell: Cell<i32> = Cell::new(1);
+        cell.set(2);
+        cell.replace(3) + cell.get()
+        "#,
+    )
+    .expect("Cell should execute in the interpreter");
+    assert_eq!(value, Value::I32(5));
+}
+
+#[test]
 fn enforces_configured_execution_limits() {
     let mut engine = Engine::new();
     engine.set_execution_limits(ExecutionLimits::new(1_000, 8));

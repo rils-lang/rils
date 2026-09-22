@@ -569,6 +569,21 @@ fn upgrades_weak_handles_while_the_rc_is_alive() {
 }
 
 #[test]
+fn mutates_cell_values_in_bytecode() {
+    let module = compile(
+        r#"
+            pub fn main() -> i32 {
+                let cell: Cell<i32> = Cell::new(1);
+                cell.set(2);
+                cell.replace(3) + cell.get()
+            }
+        "#,
+    )
+    .expect("Cell source should compile");
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(5));
+}
+
+#[test]
 fn compiles_functions_recursion_and_early_return() {
     let source = r#"
             fn factorial(n: i32) -> i32 {
