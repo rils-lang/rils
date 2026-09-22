@@ -1,0 +1,16 @@
+/// A dynamically borrow-checked interior-mutable value.
+pub struct RefCell<T>;
+
+impl<T> RefCell<T> {
+    #[runtime(core::ref_cell::new)]
+    fn new(value: T) -> Self {}
+
+    #[runtime(core::ref_cell::borrow)]
+    fn borrow(&self) -> &T {}
+
+    #[runtime(core::ref_cell::borrow_mut)]
+    fn borrow_mut(&self) -> &mut T {}
+
+    #[runtime(core::ref_cell::replace)]
+    fn replace(&self, value: T) -> T {}
+}

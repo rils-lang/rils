@@ -8,6 +8,7 @@
 - Recursive structures now accept fixed-size heap-backed indirection such as `Box<T>`, `Vec<T>`, `HashMap<K, V>`, and `HashSet<T>`, instead of requiring `Box<T>` specifically. Inline recursive structs, tuples, arrays, and `Option<Node>` continue to produce an infinite-size diagnostic. Generic struct constructor arguments are retained in bytecode values so nested recursive fields validate and execute correctly.
 - Added safe `Rc<T>` and non-owning `Weak<T>` handles with `Rc::new`, `clone`, `strong_count`, `downgrade`, and weak upgrade/count operations in both the interpreter and bytecode VM.
 - Added `Cell<T>` interior mutability with `new`, `get`, `set`, and `replace` in both execution backends.
+- Added runtime-checked `RefCell<T>` with `new`, shared and mutable borrows, and `replace` in both execution backends.
 
 ### Breaking Changes
 

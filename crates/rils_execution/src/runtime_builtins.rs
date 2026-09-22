@@ -1,9 +1,12 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use crate::{
-    environment::AssignError,
+    environment::{AssignError, StorageSlot},
     types::{IntegerType, Type},
-    value::{CellValue, FieldSlot, SequenceIteratorValue, SequenceValue, Value, WeakValue},
+    value::{
+        CellValue, FieldSlot, RefCellValue, ReferenceValue, SequenceIteratorValue, SequenceValue,
+        Value, WeakValue,
+    },
 };
 
 mod option_result;
@@ -118,6 +121,53 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             }
             value => Err(format!(
                 "Cell::replace expects Cell, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::RefCellNew => {
+            let value = arguments
+                .first()
+                .cloned()
+                .ok_or_else(|| "RefCell::new expects one value".to_owned())?;
+            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+            let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+            storage.borrow_mut().initialize(value);
+            Ok(Value::RefCell(Rc::new(RefCellValue {
+                storage,
+                type_argument,
+            })))
+        }
+        BuiltinId::RefCellBorrow | BuiltinId::RefCellBorrowMut => {
+            match import_receiver(&arguments[0])? {
+                Value::RefCell(cell) => {
+                    let mutable = matches!(id, BuiltinId::RefCellBorrowMut);
+                    Ok(Value::Reference(Rc::new(ReferenceValue::new_storage(
+                        cell.storage.clone(),
+                        mutable,
+                    ))))
+                }
+                value => Err(format!(
+                    "RefCell borrow expects RefCell, found {}",
+                    value.type_name()
+                )),
+            }
+        }
+        BuiltinId::RefCellReplace => match import_receiver(&arguments[0])? {
+            Value::RefCell(cell) => {
+                let value = arguments
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "RefCell::replace expects a value".to_owned())?;
+                let old = cell
+                    .storage
+                    .borrow_mut()
+                    .take()
+                    .map_err(|e| format!("{e:?}"))?;
+                cell.storage.borrow_mut().initialize(value);
+                Ok(old)
+            }
+            value => Err(format!(
+                "RefCell::replace expects RefCell, found {}",
                 value.type_name()
             )),
         },

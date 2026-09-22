@@ -86,7 +86,7 @@ fn is_heap_indirected(name: &str) -> bool {
     let name = name.rsplit("::").next().unwrap_or(name);
     matches!(
         name,
-        "Box" | "Rc" | "Weak" | "Vec" | "HashMap" | "HashSet" | "SequenceIterator"
+        "Box" | "Rc" | "Weak" | "RefCell" | "Vec" | "HashMap" | "HashSet" | "SequenceIterator"
     )
 }
 

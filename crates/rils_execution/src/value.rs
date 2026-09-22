@@ -180,6 +180,12 @@ pub struct CellValue {
 }
 
 #[derive(Clone)]
+pub struct RefCellValue {
+    pub storage: StorageRef,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
 pub enum EnumPayload {
     Unit,
     Tuple(Vec<Value>),
@@ -231,6 +237,7 @@ pub enum BuiltinFunction {
     HashSetNew,
     RcNew,
     CellNew,
+    RefCellNew,
     IntegerIntrinsic {
         id: rils_builtins::BuiltinId,
         target: crate::IntegerType,
@@ -279,6 +286,7 @@ pub enum Value {
     Rc(Rc<RcValue>),
     Weak(Rc<WeakValue>),
     Cell(Rc<CellValue>),
+    RefCell(Rc<RefCellValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
@@ -383,6 +391,7 @@ impl Value {
             | Self::Rc(_)
             | Self::Weak(_)
             | Self::Cell(_)
+            | Self::RefCell(_)
             | Self::Vec(_)
             | Self::HashMap(_)
             | Self::HashSet(_)
@@ -662,6 +671,9 @@ impl Value {
             }
             Self::Cell(_) => {
                 Type::of_value(self).map_or_else(|| "Cell".into(), |ty| ty.to_string())
+            }
+            Self::RefCell(_) => {
+                Type::of_value(self).map_or_else(|| "RefCell".into(), |ty| ty.to_string())
             }
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())

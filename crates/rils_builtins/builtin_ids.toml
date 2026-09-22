@@ -234,3 +234,10 @@ new = 0x0E00
 get = 0x0E01
 set = 0x0E02
 replace = 0x0E03
+
+# Runtime-checked reference cell operations: 0x0F00-0x0FFF.
+[core.ref_cell]
+new = 0x0F00
+borrow = 0x0F01
+borrow_mut = 0x0F02
+replace = 0x0F03

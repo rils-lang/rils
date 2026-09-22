@@ -584,6 +584,20 @@ fn mutates_cell_values_in_bytecode() {
 }
 
 #[test]
+fn borrows_ref_cell_values_in_bytecode() {
+    let module = compile(
+        r#"
+            pub fn main() -> i32 {
+                let cell: RefCell<i32> = RefCell::new(4);
+                *cell.borrow() + cell.replace(5)
+            }
+        "#,
+    )
+    .expect("RefCell source should compile");
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(8));
+}
+
+#[test]
 fn compiles_functions_recursion_and_early_return() {
     let source = r#"
             fn factorial(n: i32) -> i32 {

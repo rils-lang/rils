@@ -261,7 +261,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         false,
         None,
     );
-    for name in ["Rc", "Weak", "Cell"] {
+    for name in ["Rc", "Weak", "Cell", "RefCell"] {
         environment.borrow_mut().define(
             name,
             Value::StructType(Rc::new(StructType {

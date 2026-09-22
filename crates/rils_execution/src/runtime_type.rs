@@ -85,6 +85,9 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (Type::Named { name, arguments }, Value::Cell(value)) if name == "Cell" => {
             arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
         }
+        (Type::Named { name, arguments }, Value::RefCell(value)) if name == "RefCell" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
+        }
         (Type::Named { name, arguments }, Value::HashSet(set)) if name == "HashSet" => {
             arguments.len() == 1 && merge_types(&arguments[0], &set.element_type.borrow()).is_some()
         }
@@ -405,6 +408,10 @@ fn type_of_value(value: &Value) -> Option<Type> {
         }),
         Value::Cell(value) => Some(Type::Named {
             name: "Cell".into(),
+            arguments: vec![value.type_argument.clone()],
+        }),
+        Value::RefCell(value) => Some(Type::Named {
+            name: "RefCell".into(),
             arguments: vec![value.type_argument.clone()],
         }),
         Value::HashMap(map) => Some(Type::Named {

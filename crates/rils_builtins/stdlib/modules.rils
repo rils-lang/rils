@@ -4,6 +4,7 @@ pub mod core {
     pub use Rc;
     pub use Weak;
     pub use Cell;
+    pub use RefCell;
     pub mod rc {
         pub use Rc;
         pub use Weak;
@@ -13,6 +14,9 @@ pub mod core {
     }
     pub mod cell {
         pub use Cell;
+    }
+    pub mod ref_cell {
+        pub use RefCell;
     }
     pub mod option {
         pub use Option;
@@ -87,6 +91,7 @@ pub mod prelude {
     pub use Rc;
     pub use Weak;
     pub use Cell;
+    pub use RefCell;
     pub use Option;
     pub use Result;
     pub use Vec;

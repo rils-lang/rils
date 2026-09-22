@@ -41,6 +41,18 @@ fn evaluates_cell_interior_mutability() {
 }
 
 #[test]
+fn evaluates_ref_cell_borrows() {
+    let value = eval(
+        r#"
+        let cell: RefCell<i32> = RefCell::new(4);
+        *cell.borrow() + cell.replace(5)
+        "#,
+    )
+    .expect("RefCell should execute in the interpreter");
+    assert_eq!(value, Value::I32(8));
+}
+
+#[test]
 fn enforces_configured_execution_limits() {
     let mut engine = Engine::new();
     engine.set_execution_limits(ExecutionLimits::new(1_000, 8));
