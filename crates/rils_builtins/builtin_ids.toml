@@ -241,3 +241,16 @@ new = 0x0F00
 borrow = 0x0F01
 borrow_mut = 0x0F02
 replace = 0x0F03
+
+# Double-ended queue operations: 0x1000-0x10FF.
+[core.vec_deque]
+new = 0x1000
+len = 0x1001
+is_empty = 0x1002
+push_front = 0x1003
+push_back = 0x1004
+pop_front = 0x1005
+pop_back = 0x1006
+front_cloned = 0x1007
+back_cloned = 0x1008
+clear = 0x1009

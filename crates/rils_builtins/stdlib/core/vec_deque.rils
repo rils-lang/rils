@@ -1,0 +1,25 @@
+/// A growable double-ended queue.
+pub struct VecDeque<T>;
+
+impl<T> VecDeque<T> {
+    #[runtime(core::vec_deque::new)]
+    fn new() -> Self {}
+    #[runtime(core::vec_deque::len)]
+    fn len(&self) -> usize {}
+    #[runtime(core::vec_deque::is_empty)]
+    fn is_empty(&self) -> bool {}
+    #[runtime(core::vec_deque::push_front)]
+    fn push_front(&mut self, value: T) {}
+    #[runtime(core::vec_deque::push_back)]
+    fn push_back(&mut self, value: T) {}
+    #[runtime(core::vec_deque::pop_front)]
+    fn pop_front(&mut self) -> Option<T> {}
+    #[runtime(core::vec_deque::pop_back)]
+    fn pop_back(&mut self) -> Option<T> {}
+    #[runtime(core::vec_deque::front_cloned)]
+    fn front_cloned(&self) -> Option<T> {}
+    #[runtime(core::vec_deque::back_cloned)]
+    fn back_cloned(&self) -> Option<T> {}
+    #[runtime(core::vec_deque::clear)]
+    fn clear(&mut self) {}
+}

@@ -88,6 +88,14 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (Type::Named { name, arguments }, Value::RefCell(value)) if name == "RefCell" => {
             arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
         }
+        (Type::Named { name, arguments }, Value::VecDeque(value)) if name == "VecDeque" => {
+            arguments.len() == 1
+                && merge_types(
+                    &arguments[0],
+                    &value.element_type.borrow().clone().unwrap_or(Type::Unknown),
+                )
+                .is_some()
+        }
         (Type::Named { name, arguments }, Value::HashSet(set)) if name == "HashSet" => {
             arguments.len() == 1 && merge_types(&arguments[0], &set.element_type.borrow()).is_some()
         }
@@ -182,6 +190,25 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
         return None;
     }
     match (expected, value) {
+        (Type::Named { name, arguments }, Value::VecDeque(queue))
+            if name == "VecDeque" && arguments.len() == 1 =>
+        {
+            let ty = merge_types(
+                &arguments[0],
+                &queue.element_type.borrow().clone().unwrap_or(Type::Unknown),
+            )?;
+            if !queue
+                .elements
+                .borrow()
+                .iter()
+                .all(|value| ty.accepts(value))
+            {
+                return None;
+            }
+            *queue.element_type.borrow_mut() = Some(ty);
+            Some(value.clone())
+        }
+
         (Type::Tuple(expected), Value::Tuple(sequence)) => {
             let source = sequence.elements.borrow();
             let elements = expected
@@ -413,6 +440,10 @@ fn type_of_value(value: &Value) -> Option<Type> {
         Value::RefCell(value) => Some(Type::Named {
             name: "RefCell".into(),
             arguments: vec![value.type_argument.clone()],
+        }),
+        Value::VecDeque(value) => Some(Type::Named {
+            name: "VecDeque".into(),
+            arguments: vec![value.element_type.borrow().clone().unwrap_or(Type::Unknown)],
         }),
         Value::HashMap(map) => Some(Type::Named {
             name: "HashMap".into(),

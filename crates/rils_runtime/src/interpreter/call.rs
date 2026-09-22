@@ -92,6 +92,11 @@ impl Interpreter {
                         type_argument,
                     })))
                 }
+                BuiltinFunction::VecDequeNew => {
+                    check_arity("VecDeque::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(rils_builtins::BuiltinId::VecDequeNew, arguments)
+                        .map_err(|message| RuntimeError::new(message, span))
+                }
                 BuiltinFunction::RefCellNew => {
                     check_arity("RefCell::new", 1, 1, arguments.len(), span)?;
                     let value = arguments[0].clone();

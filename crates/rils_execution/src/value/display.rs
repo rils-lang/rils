@@ -36,6 +36,7 @@ impl fmt::Display for Value {
             Self::Weak(_) => write!(f, "<Weak>"),
             Self::Cell(_) => write!(f, "<Cell>"),
             Self::RefCell(_) => write!(f, "<RefCell>"),
+            Self::VecDeque(_) => write!(f, "<VecDeque>"),
             Self::SequenceIterator(_) => write!(f, "<sequence iterator>"),
             Self::BytecodeIterator(_) => write!(f, "<bytecode iterator>"),
             Self::Reference(reference) => match reference.read() {

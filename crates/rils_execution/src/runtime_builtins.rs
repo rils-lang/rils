@@ -11,6 +11,7 @@ use crate::{
 
 mod option_result;
 mod string;
+mod vec_deque;
 
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
@@ -171,6 +172,16 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 value.type_name()
             )),
         },
+        BuiltinId::VecDequeNew
+        | BuiltinId::VecDequeLen
+        | BuiltinId::VecDequeIsEmpty
+        | BuiltinId::VecDequePushFront
+        | BuiltinId::VecDequePushBack
+        | BuiltinId::VecDequePopFront
+        | BuiltinId::VecDequePopBack
+        | BuiltinId::VecDequeFrontCloned
+        | BuiltinId::VecDequeBackCloned
+        | BuiltinId::VecDequeClear => vec_deque::call(id, arguments),
         BuiltinId::Clone => match &arguments[0] {
             Value::Reference(reference) => reference.read()?.clone_owned(),
             value => Err(format!(

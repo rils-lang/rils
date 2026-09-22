@@ -186,6 +186,12 @@ pub struct RefCellValue {
 }
 
 #[derive(Clone)]
+pub struct VecDequeValue {
+    pub elements: RefCell<VecDeque<Value>>,
+    pub element_type: RefCell<Option<Type>>,
+}
+
+#[derive(Clone)]
 pub enum EnumPayload {
     Unit,
     Tuple(Vec<Value>),
@@ -238,6 +244,7 @@ pub enum BuiltinFunction {
     RcNew,
     CellNew,
     RefCellNew,
+    VecDequeNew,
     IntegerIntrinsic {
         id: rils_builtins::BuiltinId,
         target: crate::IntegerType,
@@ -287,6 +294,7 @@ pub enum Value {
     Weak(Rc<WeakValue>),
     Cell(Rc<CellValue>),
     RefCell(Rc<RefCellValue>),
+    VecDeque(Rc<VecDequeValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
@@ -392,6 +400,7 @@ impl Value {
             | Self::Weak(_)
             | Self::Cell(_)
             | Self::RefCell(_)
+            | Self::VecDeque(_)
             | Self::Vec(_)
             | Self::HashMap(_)
             | Self::HashSet(_)
@@ -402,6 +411,11 @@ impl Value {
 
     pub fn contains_reference(&self) -> bool {
         match self {
+            Self::VecDeque(queue) => queue
+                .elements
+                .borrow()
+                .iter()
+                .any(|value| value.contains_reference()),
             Self::Reference(_) => true,
             Self::BytecodeFunction(function) => {
                 function.captures.iter().any(|slot| {
@@ -461,6 +475,11 @@ impl Value {
 
     pub fn contains_local_reference(&self, environment: &EnvironmentRef) -> bool {
         match self {
+            Self::VecDeque(queue) => queue
+                .elements
+                .borrow()
+                .iter()
+                .any(|value| value.contains_local_reference(environment)),
             Self::Reference(reference) => reference.is_local_to(environment),
             Self::Option {
                 value: Some(value), ..
@@ -495,6 +514,11 @@ impl Value {
 
     pub fn has_active_references(&self) -> bool {
         match self {
+            Self::VecDeque(queue) => queue
+                .elements
+                .borrow()
+                .iter()
+                .any(|value| value.has_active_references()),
             Self::Struct(instance) => instance.fields.borrow().values().any(|field| {
                 field.references > 0
                     || field
@@ -570,6 +594,17 @@ impl Value {
             },
             Self::Tuple(sequence) => Self::Tuple(Rc::new(clone_sequence(sequence)?)),
             Self::Array(sequence) => Self::Array(Rc::new(clone_sequence(sequence)?)),
+            Self::VecDeque(queue) => Self::VecDeque(Rc::new(VecDequeValue {
+                elements: RefCell::new(
+                    queue
+                        .elements
+                        .borrow()
+                        .iter()
+                        .map(Value::clone_owned)
+                        .collect::<Result<VecDeque<_>, _>>()?,
+                ),
+                element_type: RefCell::new(queue.element_type.borrow().clone()),
+            })),
             Self::Vec(sequence) => Self::Vec(Rc::new(clone_sequence(sequence)?)),
             Self::HashMap(map) => Self::HashMap(Rc::new(clone_hash_map(map)?)),
             Self::HashSet(set) => Self::HashSet(Rc::new(HashSetValue {
@@ -674,6 +709,9 @@ impl Value {
             }
             Self::RefCell(_) => {
                 Type::of_value(self).map_or_else(|| "RefCell".into(), |ty| ty.to_string())
+            }
+            Self::VecDeque(_) => {
+                Type::of_value(self).map_or_else(|| "VecDeque".into(), |ty| ty.to_string())
             }
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())

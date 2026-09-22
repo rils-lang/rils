@@ -598,6 +598,22 @@ fn borrows_ref_cell_values_in_bytecode() {
 }
 
 #[test]
+fn executes_vec_deque_operations_in_bytecode() {
+    let module = compile(
+        r#"
+            pub fn main() -> i32 {
+                let mut queue: VecDeque<i32> = VecDeque::new();
+                queue.push_back(2);
+                queue.push_front(1);
+                queue.pop_front().unwrap() + queue.pop_back().unwrap()
+            }
+        "#,
+    )
+    .expect("VecDeque source should compile");
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(3));
+}
+
+#[test]
 fn compiles_functions_recursion_and_early_return() {
     let source = r#"
             fn factorial(n: i32) -> i32 {

@@ -53,6 +53,20 @@ fn evaluates_ref_cell_borrows() {
 }
 
 #[test]
+fn evaluates_vec_deque_operations() {
+    let value = eval(
+        r#"
+        let mut queue: VecDeque<i32> = VecDeque::new();
+        queue.push_back(2);
+        queue.push_front(1);
+        queue.pop_front().unwrap() + queue.pop_back().unwrap()
+        "#,
+    )
+    .expect("VecDeque should execute in the interpreter");
+    assert_eq!(value, Value::I32(3));
+}
+
+#[test]
 fn enforces_configured_execution_limits() {
     let mut engine = Engine::new();
     engine.set_execution_limits(ExecutionLimits::new(1_000, 8));

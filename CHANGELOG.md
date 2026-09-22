@@ -9,6 +9,7 @@
 - Added safe `Rc<T>` and non-owning `Weak<T>` handles with `Rc::new`, `clone`, `strong_count`, `downgrade`, and weak upgrade/count operations in both the interpreter and bytecode VM.
 - Added `Cell<T>` interior mutability with `new`, `get`, `set`, and `replace` in both execution backends.
 - Added runtime-checked `RefCell<T>` with `new`, shared and mutable borrows, and `replace` in both execution backends.
+- Added `VecDeque<T>` with constant-time double-ended push/pop operations, endpoint reads, length checks, and clearing.
 
 ### Breaking Changes
 

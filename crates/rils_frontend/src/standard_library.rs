@@ -251,6 +251,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     | "Weak"
                     | "Cell"
                     | "RefCell"
+                    | "VecDeque"
             ) =>
         {
             match name.as_str() {
@@ -279,6 +280,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     "Weak" => "Weak",
                     "Cell" => "Cell",
                     "RefCell" => "RefCell",
+                    "VecDeque" => "VecDeque",
                     _ => unreachable!(),
                 },
                 object.clone(),

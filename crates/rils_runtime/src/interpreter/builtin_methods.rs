@@ -315,7 +315,16 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::RefCellBorrow
+                id @ (rils_builtins::BuiltinId::VecDequeLen
+                | rils_builtins::BuiltinId::VecDequeIsEmpty
+                | rils_builtins::BuiltinId::VecDequePushFront
+                | rils_builtins::BuiltinId::VecDequePushBack
+                | rils_builtins::BuiltinId::VecDequePopFront
+                | rils_builtins::BuiltinId::VecDequePopBack
+                | rils_builtins::BuiltinId::VecDequeFrontCloned
+                | rils_builtins::BuiltinId::VecDequeBackCloned
+                | rils_builtins::BuiltinId::VecDequeClear
+                | rils_builtins::BuiltinId::RefCellBorrow
                 | rils_builtins::BuiltinId::RefCellBorrowMut
                 | rils_builtins::BuiltinId::RefCellReplace),
             ) => {

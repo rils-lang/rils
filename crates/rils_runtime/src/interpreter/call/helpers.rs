@@ -103,6 +103,7 @@ pub(crate) fn builtin_runtime_member(
         Value::Weak(_) => "Weak",
         Value::Cell(_) => "Cell",
         Value::RefCell(_) => "RefCell",
+        Value::VecDeque(_) => "VecDeque",
         Value::Range(_) => "Range",
         Value::Option { .. } => "Option",
         Value::Result { .. } => "Result",

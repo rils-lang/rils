@@ -5,6 +5,7 @@ pub mod core {
     pub use Weak;
     pub use Cell;
     pub use RefCell;
+    pub use VecDeque;
     pub mod rc {
         pub use Rc;
         pub use Weak;
@@ -17,6 +18,9 @@ pub mod core {
     }
     pub mod ref_cell {
         pub use RefCell;
+    }
+    pub mod collections {
+        pub use VecDeque;
     }
     pub mod option {
         pub use Option;
@@ -73,6 +77,7 @@ pub mod core {
 /// Host and platform APIs.
 pub mod std {
     pub mod collections {
+        pub use VecDeque;
         pub use Vec;
         pub use HashMap;
         pub use HashSet;
@@ -92,6 +97,7 @@ pub mod prelude {
     pub use Weak;
     pub use Cell;
     pub use RefCell;
+    pub use VecDeque;
     pub use Option;
     pub use Result;
     pub use Vec;
