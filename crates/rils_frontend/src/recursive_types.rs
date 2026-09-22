@@ -86,7 +86,7 @@ fn is_heap_indirected(name: &str) -> bool {
     let name = name.rsplit("::").next().unwrap_or(name);
     matches!(
         name,
-        "Box" | "Vec" | "HashMap" | "HashSet" | "SequenceIterator"
+        "Box" | "Rc" | "Weak" | "Vec" | "HashMap" | "HashSet" | "SequenceIterator"
     )
 }
 
@@ -118,6 +118,17 @@ mod tests {
     fn accepts_vec_indirected_recursive_structs() {
         let result = analysis::analyze("struct Node { children: Vec<Node> }");
         assert!(result.unwrap().diagnostics.is_empty());
+    }
+
+    #[test]
+    fn accepts_reference_counted_indirected_recursive_structs() {
+        for source in [
+            "struct Node { next: Option<Rc<Node>> }",
+            "struct Node { next: Option<Weak<Node>> }",
+        ] {
+            let result = analysis::analyze(source);
+            assert!(result.unwrap().diagnostics.is_empty(), "{source}");
+        }
     }
 
     #[test]

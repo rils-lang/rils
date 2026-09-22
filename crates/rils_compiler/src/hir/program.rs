@@ -107,6 +107,17 @@ impl ProgramLowerer {
             }],
             fields: Vec::new(),
         });
+        let weak_id = type_definitions.len();
+        types.insert("Weak".to_owned(), weak_id);
+        type_definitions.push(HirTypeDefinition::Struct {
+            name: "Weak".to_owned(),
+            generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                name: "T".to_owned(),
+                bounds: Vec::new(),
+                span: Span::default(),
+            }],
+            fields: Vec::new(),
+        });
         for declaration in host.types() {
             let Some(host_enum) = declaration.enum_definition.as_ref() else {
                 continue;

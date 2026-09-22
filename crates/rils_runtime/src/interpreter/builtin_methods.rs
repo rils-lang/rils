@@ -289,6 +289,20 @@ impl Interpreter {
                 crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::RcClone
+                | rils_builtins::BuiltinId::RcStrongCount
+                | rils_builtins::BuiltinId::RcDowngrade
+                | rils_builtins::BuiltinId::WeakUpgrade
+                | rils_builtins::BuiltinId::WeakStrongCount
+                | rils_builtins::BuiltinId::WeakWeakCount),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
             BuiltinMethod::Runtime(id) => Err(RuntimeError::new(
                 format!("unknown runtime member ID {:#x}", id.as_raw()),
                 span,

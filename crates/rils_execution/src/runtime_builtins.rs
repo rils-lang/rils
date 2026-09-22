@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use crate::{
     environment::AssignError,
     types::{IntegerType, Type},
-    value::{FieldSlot, SequenceIteratorValue, SequenceValue, Value},
+    value::{FieldSlot, SequenceIteratorValue, SequenceValue, Value, WeakValue},
 };
 
 mod option_result;
@@ -36,6 +36,43 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             }
             value => Err(format!(
                 "Rc::strong_count expects Rc, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::RcDowngrade => match import_receiver(&arguments[0])? {
+            Value::Rc(value) => Ok(Value::Weak(Rc::new(WeakValue {
+                value: Rc::downgrade(&value),
+                type_argument: value.type_argument.clone(),
+            }))),
+            value => Err(format!(
+                "Rc::downgrade expects Rc, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::WeakUpgrade => match import_receiver(&arguments[0])? {
+            Value::Weak(value) => Ok(Value::Option {
+                value: value.value.upgrade().map(Value::Rc).map(Rc::new),
+                element_type: Some(Type::Named {
+                    name: "Rc".into(),
+                    arguments: vec![value.type_argument.clone()],
+                }),
+            }),
+            value => Err(format!(
+                "Weak::upgrade expects Weak, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::WeakStrongCount => match import_receiver(&arguments[0])? {
+            Value::Weak(value) => Ok(Value::Usize(value.value.strong_count())),
+            value => Err(format!(
+                "Weak::strong_count expects Weak, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::WeakWeakCount => match import_receiver(&arguments[0])? {
+            Value::Weak(value) => Ok(Value::Usize(value.value.weak_count())),
+            value => Err(format!(
+                "Weak::weak_count expects Weak, found {}",
                 value.type_name()
             )),
         },

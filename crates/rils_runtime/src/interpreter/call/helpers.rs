@@ -99,6 +99,8 @@ pub(crate) fn builtin_runtime_member(
         Value::Vec(_) => "Vec",
         Value::HashMap(_) => "HashMap",
         Value::HashSet(_) => "HashSet",
+        Value::Rc(_) => "Rc",
+        Value::Weak(_) => "Weak",
         Value::Range(_) => "Range",
         Value::Option { .. } => "Option",
         Value::Result { .. } => "Result",

@@ -242,7 +242,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
         Type::Named { name, arguments }
             if matches!(
                 name.as_str(),
-                "Vec" | "HashMap" | "HashSet" | "Range" | "SequenceIterator" | "Rc"
+                "Vec" | "HashMap" | "HashSet" | "Range" | "SequenceIterator" | "Rc" | "Weak"
             ) =>
         {
             match name.as_str() {
@@ -268,6 +268,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     "Range" => "Range",
                     "SequenceIterator" => "Iterator",
                     "Rc" => "Rc",
+                    "Weak" => "Weak",
                     _ => unreachable!(),
                 },
                 object.clone(),

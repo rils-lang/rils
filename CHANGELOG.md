@@ -6,6 +6,7 @@
 ## Unreleased
 
 - Recursive structures now accept fixed-size heap-backed indirection such as `Box<T>`, `Vec<T>`, `HashMap<K, V>`, and `HashSet<T>`, instead of requiring `Box<T>` specifically. Inline recursive structs, tuples, arrays, and `Option<Node>` continue to produce an infinite-size diagnostic. Generic struct constructor arguments are retained in bytecode values so nested recursive fields validate and execute correctly.
+- Added safe `Rc<T>` and non-owning `Weak<T>` handles with `Rc::new`, `clone`, `strong_count`, `downgrade`, and weak upgrade/count operations in both the interpreter and bytecode VM.
 
 ### Breaking Changes
 
@@ -423,4 +424,3 @@
 - Rust 风格的显式所有权、词法局部引用、函数与闭包、struct/enum、trait/impl、泛型、模式匹配、
   模块、宏、数组、Vec、Option、Result 和迭代器基础能力。
 - VS Code 语法高亮与语言服务器支持，以及用于验证解释器和字节码一致性的示例与测试。
-

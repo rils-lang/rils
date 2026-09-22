@@ -15,6 +15,19 @@ fn evaluates_owned_values_and_explicit_clones() {
 }
 
 #[test]
+fn evaluates_rc_and_weak_handles() {
+    let value = eval(
+        r#"
+        let handle: Rc<i32> = Rc::new(7);
+        let weak = handle.downgrade();
+        weak.upgrade().unwrap().strong_count()
+        "#,
+    )
+    .expect("Rc and Weak should execute in the interpreter");
+    assert!(matches!(value, Value::Usize(count) if count >= 1));
+}
+
+#[test]
 fn enforces_configured_execution_limits() {
     let mut engine = Engine::new();
     engine.set_execution_limits(ExecutionLimits::new(1_000, 8));

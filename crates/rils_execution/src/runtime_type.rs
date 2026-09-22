@@ -76,6 +76,12 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                 && merge_types(&arguments[0], &map.key_type.borrow()).is_some()
                 && merge_types(&arguments[1], &map.value_type.borrow()).is_some()
         }
+        (Type::Named { name, arguments }, Value::Rc(value)) if name == "Rc" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
+        }
+        (Type::Named { name, arguments }, Value::Weak(value)) if name == "Weak" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
+        }
         (Type::Named { name, arguments }, Value::HashSet(set)) if name == "HashSet" => {
             arguments.len() == 1 && merge_types(&arguments[0], &set.element_type.borrow()).is_some()
         }
@@ -388,6 +394,10 @@ fn type_of_value(value: &Value) -> Option<Type> {
         }),
         Value::Rc(value) => Some(Type::Named {
             name: "Rc".into(),
+            arguments: vec![value.type_argument.clone()],
+        }),
+        Value::Weak(value) => Some(Type::Named {
+            name: "Weak".into(),
             arguments: vec![value.type_argument.clone()],
         }),
         Value::HashMap(map) => Some(Type::Named {

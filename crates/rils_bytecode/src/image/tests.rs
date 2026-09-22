@@ -523,7 +523,7 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
     let module = compile(
         r#"
             struct Node { value: i32, next: Option<Box<Node>> }
-            pub fn main() -> i32 {
+            pub fn main() -> usize {
                 let tail: Node = Node { value: 42, next: None };
                 let head: Node = Node { value: 1, next: Some(Box { value: tail }) };
                 let boxed = head.next.unwrap();
@@ -551,6 +551,21 @@ fn constructs_and_clones_rc_handles_with_explicit_type_arguments() {
     .expect("Rc source should compile");
     let strong_count = module.call("main", Vec::new()).unwrap();
     assert!(matches!(strong_count, Value::Usize(count) if count >= 2));
+}
+
+#[test]
+fn upgrades_weak_handles_while_the_rc_is_alive() {
+    let module = compile(
+        r#"
+            pub fn main() -> usize {
+                let handle: Rc<i32> = Rc::new(7);
+                let weak = handle.downgrade();
+                weak.upgrade().unwrap().strong_count()
+            }
+        "#,
+    )
+    .expect("Weak source should compile");
+    assert!(matches!(module.call("main", Vec::new()).unwrap(), Value::Usize(count) if count >= 1));
 }
 
 #[test]

@@ -1,0 +1,14 @@
+/// A non-owning reference to an [`Rc<T>`] allocation.
+pub struct Weak<T>;
+
+impl<T> Weak<T> {
+    /// Attempts to upgrade this handle while the allocation is still alive.
+    #[runtime(core::weak::upgrade)]
+    fn upgrade(&self) -> Option<Rc<T>> {}
+
+    #[runtime(core::weak::strong_count)]
+    fn strong_count(&self) -> usize {}
+
+    #[runtime(core::weak::weak_count)]
+    fn weak_count(&self) -> usize {}
+}

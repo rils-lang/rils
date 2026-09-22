@@ -13,4 +13,8 @@ impl<T> Rc<T> {
     /// Returns the number of strong handles to the shared value.
     #[runtime(core::rc::strong_count)]
     fn strong_count(&self) -> usize {}
+
+    /// Creates a non-owning weak handle to this allocation.
+    #[runtime(core::rc::downgrade)]
+    fn downgrade(&self) -> Weak<T> {}
 }

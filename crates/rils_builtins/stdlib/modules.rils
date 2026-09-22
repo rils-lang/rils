@@ -2,8 +2,13 @@
 pub mod core {
     pub use Box;
     pub use Rc;
+    pub use Weak;
     pub mod rc {
         pub use Rc;
+        pub use Weak;
+    }
+    pub mod weak {
+        pub use Weak;
     }
     pub mod option {
         pub use Option;
@@ -76,6 +81,7 @@ pub mod std {
 pub mod prelude {
     pub use Box;
     pub use Rc;
+    pub use Weak;
     pub use Option;
     pub use Result;
     pub use Vec;

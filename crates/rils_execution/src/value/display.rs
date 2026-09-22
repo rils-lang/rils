@@ -33,6 +33,7 @@ impl fmt::Display for Value {
             Self::HashMap(map) => display_hash_map(f, map),
             Self::HashSet(set) => display_hash_set(f, set),
             Self::Rc(_) => write!(f, "<Rc>"),
+            Self::Weak(_) => write!(f, "<Weak>"),
             Self::SequenceIterator(_) => write!(f, "<sequence iterator>"),
             Self::BytecodeIterator(_) => write!(f, "<bytecode iterator>"),
             Self::Reference(reference) => match reference.read() {

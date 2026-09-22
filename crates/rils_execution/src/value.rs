@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    rc::Rc,
+    rc::{Rc, Weak as StdWeak},
 };
 
 use crate::{
@@ -168,6 +168,12 @@ pub struct RcValue {
 }
 
 #[derive(Clone)]
+pub struct WeakValue {
+    pub value: StdWeak<RcValue>,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
 pub enum EnumPayload {
     Unit,
     Tuple(Vec<Value>),
@@ -217,6 +223,7 @@ pub enum BuiltinFunction {
     VecFrom,
     HashMapNew,
     HashSetNew,
+    RcNew,
     IntegerIntrinsic {
         id: rils_builtins::BuiltinId,
         target: crate::IntegerType,
@@ -263,6 +270,7 @@ pub enum Value {
     HashMap(Rc<HashMapValue>),
     HashSet(Rc<HashSetValue>),
     Rc(Rc<RcValue>),
+    Weak(Rc<WeakValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
@@ -365,6 +373,7 @@ impl Value {
             Self::String(_)
             | Self::Range(_)
             | Self::Rc(_)
+            | Self::Weak(_)
             | Self::Vec(_)
             | Self::HashMap(_)
             | Self::HashSet(_)
@@ -639,6 +648,9 @@ impl Value {
                 Type::of_value(self).map_or_else(|| "HashSet".into(), |ty| ty.to_string())
             }
             Self::Rc(_) => Type::of_value(self).map_or_else(|| "Rc".into(), |ty| ty.to_string()),
+            Self::Weak(_) => {
+                Type::of_value(self).map_or_else(|| "Weak".into(), |ty| ty.to_string())
+            }
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())
             }

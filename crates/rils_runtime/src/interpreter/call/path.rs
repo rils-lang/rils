@@ -56,6 +56,9 @@ pub(super) fn resolve_associated_path(
             })?;
             Ok(crate::numeric::float_constant(target, constant.id))
         }
+        Value::StructType(definition) if definition.name == "Rc" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::RcNew))
+        }
         Value::StructType(definition) => definition
             .methods
             .borrow()
