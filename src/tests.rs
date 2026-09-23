@@ -8,6 +8,18 @@ fn integer(source: &str) -> i32 {
 }
 
 #[test]
+fn native_integer_method_matches_in_interpreter_and_vm() {
+    for (source, expected) in [
+        ("2147483647i32.wrapping_add(1i32)", Value::I32(i32::MIN)),
+        ("255u8.wrapping_add(1u8)", Value::U8(0)),
+        ("1usize.saturating_sub(2usize)", Value::Usize(0)),
+    ] {
+        assert_eq!(eval(source).unwrap(), expected);
+        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+    }
+}
+
+#[test]
 fn derives_default_from_field_defaults() {
     let source = r#"
         #[derive(Default)]

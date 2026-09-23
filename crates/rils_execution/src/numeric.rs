@@ -3,10 +3,12 @@
 use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
 mod float_methods;
-mod integer_methods;
+mod native;
 
 pub fn integer_constant(target: IntegerType, constant: rils_builtins::IntegerConstantId) -> Value {
-    integer_methods::constant(target, constant)
+    native::integer::constant(target, constant)
+        .expect("all integer constants have a native definition")
+        .expect("native integer constant has no failure path")
 }
 
 pub fn float_constant(target: crate::FloatType, constant: rils_builtins::FloatConstantId) -> Value {
@@ -93,40 +95,11 @@ pub fn execute_integer_intrinsic(
     values: &[Value],
 ) -> Result<Value, String> {
     use rils_builtins::builtin_ids::*;
-    if integer_methods::handles(id) {
-        return integer_methods::execute(id, values);
+    if id == IntegerTryFrom && target.is_none() {
+        return Err("integer try_from is missing its target type".into());
     }
-    if id == IntegerTryFrom {
-        let target =
-            target.ok_or_else(|| "integer try_from is missing its target type".to_string())?;
-        return try_cast_integer(values[0].clone(), target).map(|value| Value::Result {
-            value: value
-                .map(std::rc::Rc::new)
-                .map_err(|message| std::rc::Rc::new(Value::String(message.into()))),
-            ok_type: Some(Type::Integer(target)),
-            error_type: Some(Type::String),
-        });
-    }
-    match id {
-        IntegerToF32 => integer_to_float(values[0].clone(), true),
-        IntegerToF64 => integer_to_float(values[0].clone(), false),
-        IntegerCheckedAdd
-        | IntegerCheckedSub
-        | IntegerCheckedMul
-        | IntegerCheckedDiv
-        | IntegerCheckedRem
-        | IntegerWrappingAdd
-        | IntegerWrappingSub
-        | IntegerWrappingMul
-        | IntegerSaturatingAdd
-        | IntegerSaturatingSub
-        | IntegerSaturatingMul
-        | IntegerOverflowingAdd
-        | IntegerOverflowingSub
-        | IntegerOverflowingMul => integer_intrinsic_binary(id, &values[0], &values[1]),
-        IntegerTryFrom => unreachable!(),
-        _ => unreachable!("extended integer intrinsic was handled before dispatch"),
-    }
+    native::integer::call(id, target, values)
+        .unwrap_or_else(|| Err("unknown integer intrinsic or receiver type".into()))
 }
 
 pub fn execute_intrinsic(
@@ -141,164 +114,6 @@ pub fn execute_intrinsic(
         return float_methods::execute(id, values);
     }
     execute_integer_intrinsic(id, target, values)
-}
-
-fn integer_to_float(value: Value, f32_target: bool) -> Result<Value, String> {
-    macro_rules! convert {
-        ($value:expr) => {
-            if f32_target {
-                Value::F32($value as f32)
-            } else {
-                Value::F64($value as f64)
-            }
-        };
-    }
-    Ok(match value {
-        Value::I8(v) => convert!(v),
-        Value::I16(v) => convert!(v),
-        Value::I32(v) => convert!(v),
-        Value::I64(v) => convert!(v),
-        Value::I128(v) => convert!(v),
-        Value::Isize(v) => convert!(v),
-        Value::U8(v) => convert!(v),
-        Value::U16(v) => convert!(v),
-        Value::U32(v) => convert!(v),
-        Value::U64(v) => convert!(v),
-        Value::U128(v) => convert!(v),
-        Value::Usize(v) => convert!(v),
-        value => {
-            return Err(format!(
-                "integer conversion expects an integer, found {}",
-                value.type_name()
-            ));
-        }
-    })
-}
-
-fn try_cast_integer(value: Value, target: IntegerType) -> Result<Result<Value, String>, String> {
-    let source_name = value.type_name();
-    enum Number {
-        Signed(i128),
-        Unsigned(u128),
-    }
-    let number = match value {
-        Value::I8(v) => Number::Signed(v.into()),
-        Value::I16(v) => Number::Signed(v.into()),
-        Value::I32(v) => Number::Signed(v.into()),
-        Value::I64(v) => Number::Signed(v.into()),
-        Value::I128(v) => Number::Signed(v),
-        Value::Isize(v) => Number::Signed(v as i128),
-        Value::U8(v) => Number::Unsigned(v.into()),
-        Value::U16(v) => Number::Unsigned(v.into()),
-        Value::U32(v) => Number::Unsigned(v.into()),
-        Value::U64(v) => Number::Unsigned(v.into()),
-        Value::U128(v) => Number::Unsigned(v),
-        Value::Usize(v) => Number::Unsigned(v as u128),
-        value => {
-            return Err(format!(
-                "try_from expects an integer, found {}",
-                value.type_name()
-            ));
-        }
-    };
-    macro_rules! target_value {
-        ($ty:ty, $ctor:path) => {{
-            match number {
-                Number::Signed(v) => <$ty>::try_from(v).ok().map($ctor),
-                Number::Unsigned(v) => <$ty>::try_from(v).ok().map($ctor),
-            }
-        }};
-    }
-    let result = match target {
-        IntegerType::I8 => target_value!(i8, Value::I8),
-        IntegerType::I16 => target_value!(i16, Value::I16),
-        IntegerType::I32 => target_value!(i32, Value::I32),
-        IntegerType::I64 => target_value!(i64, Value::I64),
-        IntegerType::I128 => target_value!(i128, Value::I128),
-        IntegerType::Isize => target_value!(isize, Value::Isize),
-        IntegerType::U8 => target_value!(u8, Value::U8),
-        IntegerType::U16 => target_value!(u16, Value::U16),
-        IntegerType::U32 => target_value!(u32, Value::U32),
-        IntegerType::U64 => target_value!(u64, Value::U64),
-        IntegerType::U128 => target_value!(u128, Value::U128),
-        IntegerType::Usize => target_value!(usize, Value::Usize),
-    };
-    Ok(result
-        .ok_or_else(|| format!("value of type `{source_name}` is outside the `{target}` range")))
-}
-
-fn integer_intrinsic_binary(
-    id: rils_builtins::BuiltinId,
-    left: &Value,
-    right: &Value,
-) -> Result<Value, String> {
-    use rils_builtins::builtin_ids::*;
-    macro_rules! apply {
-        ($a:expr, $b:expr, $ctor:path) => {{
-            let checked = match id {
-                IntegerCheckedAdd => $a.checked_add($b),
-                IntegerCheckedSub => $a.checked_sub($b),
-                IntegerCheckedMul => $a.checked_mul($b),
-                IntegerCheckedDiv => $a.checked_div($b),
-                IntegerCheckedRem => $a.checked_rem($b),
-                _ => None,
-            };
-            if matches!(
-                id,
-                IntegerCheckedAdd
-                    | IntegerCheckedSub
-                    | IntegerCheckedMul
-                    | IntegerCheckedDiv
-                    | IntegerCheckedRem
-            ) {
-                return Ok(Value::Option {
-                    value: checked.map(|v| std::rc::Rc::new($ctor(v))),
-                    element_type: Some(Type::of_value(left).unwrap_or(Type::Unknown)),
-                });
-            }
-            let direct = match id {
-                IntegerWrappingAdd => $ctor($a.wrapping_add($b)),
-                IntegerWrappingSub => $ctor($a.wrapping_sub($b)),
-                IntegerWrappingMul => $ctor($a.wrapping_mul($b)),
-                IntegerSaturatingAdd => $ctor($a.saturating_add($b)),
-                IntegerSaturatingSub => $ctor($a.saturating_sub($b)),
-                IntegerSaturatingMul => $ctor($a.saturating_mul($b)),
-                IntegerOverflowingAdd => {
-                    let (v, o) = $a.overflowing_add($b);
-                    return tuple_value($ctor(v), o);
-                }
-                IntegerOverflowingSub => {
-                    let (v, o) = $a.overflowing_sub($b);
-                    return tuple_value($ctor(v), o);
-                }
-                IntegerOverflowingMul => {
-                    let (v, o) = $a.overflowing_mul($b);
-                    return tuple_value($ctor(v), o);
-                }
-                _ => unreachable!(),
-            };
-            Ok(direct)
-        }};
-    }
-    match (left, right) {
-        (Value::I8(a), Value::I8(b)) => apply!(*a, *b, Value::I8),
-        (Value::I16(a), Value::I16(b)) => apply!(*a, *b, Value::I16),
-        (Value::I32(a), Value::I32(b)) => apply!(*a, *b, Value::I32),
-        (Value::I64(a), Value::I64(b)) => apply!(*a, *b, Value::I64),
-        (Value::I128(a), Value::I128(b)) => apply!(*a, *b, Value::I128),
-        (Value::Isize(a), Value::Isize(b)) => apply!(*a, *b, Value::Isize),
-        (Value::U8(a), Value::U8(b)) => apply!(*a, *b, Value::U8),
-        (Value::U16(a), Value::U16(b)) => apply!(*a, *b, Value::U16),
-        (Value::U32(a), Value::U32(b)) => apply!(*a, *b, Value::U32),
-        (Value::U64(a), Value::U64(b)) => apply!(*a, *b, Value::U64),
-        (Value::U128(a), Value::U128(b)) => apply!(*a, *b, Value::U128),
-        (Value::Usize(a), Value::Usize(b)) => apply!(*a, *b, Value::Usize),
-        _ => Err(format!(
-            "integer intrinsic operands must have the same type, found {} and {}",
-            left.type_name(),
-            right.type_name()
-        )),
-    }
 }
 
 fn tuple_value(value: Value, overflowed: bool) -> Result<Value, String> {

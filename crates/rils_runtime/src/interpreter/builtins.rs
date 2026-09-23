@@ -93,8 +93,12 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 Type::Option(Box::new(Type::Unknown)),
             )),
             function: |arguments| {
+                let native = rils_stdlib::stdlib::prelude::some(Rc::new(arguments[0].clone()));
                 Ok(Value::Option {
-                    value: Some(Rc::new(arguments[0].clone())),
+                    value: match native {
+                        rils_stdlib::stdlib::option::Option::Some(value) => Some(value),
+                        rils_stdlib::stdlib::option::Option::None => None,
+                    },
                     element_type: Type::of_value(&arguments[0]),
                 })
             },
@@ -109,8 +113,13 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
             function: |arguments| {
+                let native =
+                    rils_stdlib::stdlib::prelude::ok::<_, Rc<Value>>(Rc::new(arguments[0].clone()));
                 Ok(Value::Result {
-                    value: Ok(Rc::new(arguments[0].clone())),
+                    value: match native {
+                        rils_stdlib::stdlib::result::Result::Ok(value) => Ok(value),
+                        rils_stdlib::stdlib::result::Result::Err(value) => Err(value),
+                    },
                     ok_type: Type::of_value(&arguments[0]),
                     error_type: None,
                 })
@@ -126,8 +135,14 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
             function: |arguments| {
+                let native = rils_stdlib::stdlib::prelude::err::<Rc<Value>, _>(Rc::new(
+                    arguments[0].clone(),
+                ));
                 Ok(Value::Result {
-                    value: Err(Rc::new(arguments[0].clone())),
+                    value: match native {
+                        rils_stdlib::stdlib::result::Result::Ok(value) => Ok(value),
+                        rils_stdlib::stdlib::result::Result::Err(value) => Err(value),
+                    },
                     ok_type: None,
                     error_type: Type::of_value(&arguments[0]),
                 })

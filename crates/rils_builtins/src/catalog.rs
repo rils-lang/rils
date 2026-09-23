@@ -1,6 +1,6 @@
 use crate::{
-    BuiltinSignature, FloatConstantDeclaration, FloatConstantId, IntegerConstantDeclaration,
-    IntegerConstantId, IntrinsicDeclaration, IntrinsicKind, TypePattern,
+    BuiltinSignature, FloatConstantDeclaration, FloatConstantId, IntrinsicDeclaration,
+    IntrinsicKind, TypePattern,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +162,10 @@ rils_builtins_macros::builtin_stdlib! {
     "stdlib";
     pub const BUILTINS, BUILTIN_MODULES, BUILTIN_SOURCES;
 }
+
+pub use crate::native_definitions::integer::{
+    CONSTANTS as INTEGER_CONSTANTS, INTRINSICS as INTEGER_INTRINSICS,
+};
 
 pub fn builtin(path: &str) -> Option<&'static BuiltinDeclaration> {
     BUILTINS.iter().find(|item| item.path == path)

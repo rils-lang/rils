@@ -5,25 +5,29 @@ use rils_execution::{Type, Value, runtime_builtins};
 
 #[test]
 fn native_option_is_some_handles_variants_and_invalid_receivers() {
-    for (input, expected) in [
+    for (input, is_some) in [
         (
             Value::Option {
                 value: Some(Rc::new(Value::I32(5))),
                 element_type: Some(Type::I32),
             },
-            Ok(Value::Bool(true)),
+            true,
         ),
         (
             Value::Option {
                 value: None,
                 element_type: Some(Type::I32),
             },
-            Ok(Value::Bool(false)),
+            false,
         ),
     ] {
         assert_eq!(
-            runtime_builtins::call(BuiltinId::OptionIsSome, &[input]),
-            expected
+            runtime_builtins::call(BuiltinId::OptionIsSome, std::slice::from_ref(&input)),
+            Ok(Value::Bool(is_some))
+        );
+        assert_eq!(
+            runtime_builtins::call(BuiltinId::OptionIsNone, &[input]),
+            Ok(Value::Bool(!is_some))
         );
     }
     let error = runtime_builtins::call(BuiltinId::OptionIsSome, &[Value::I32(5)]).unwrap_err();

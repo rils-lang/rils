@@ -11,6 +11,7 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
     assert_eq!(generated.kind, BuiltinKind::Enum);
     assert_eq!(generated.type_parameters, published.type_parameters);
     assert_eq!(generated.documentation, "An optional value.");
+    assert_eq!(generated.members.len(), published.members.len());
 
     for member in generated.members {
         let original = published
@@ -20,6 +21,7 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         assert_eq!(member.value_type, original.value_type);
         assert_eq!(member.receiver, original.receiver);
         assert_eq!(member.builtin_id, original.builtin_id);
+        assert_eq!(member.documentation, original.documentation);
         if let (Some(left), Some(right)) = (member.signature, original.signature) {
             assert_eq!(left.parameters, right.parameters);
             assert_eq!(left.result, right.result);
@@ -27,6 +29,7 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
     }
 
     let is_some = generated.member("is_some").unwrap();
+    assert!(generated.member("has_value").is_none());
     assert_eq!(is_some.kind, BuiltinMemberKind::Method);
     assert_eq!(is_some.receiver, Some(ReceiverMode::Shared));
     assert_eq!(is_some.builtin_id, Some(BuiltinId::OptionIsSome));
@@ -35,5 +38,68 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         is_some.documentation,
         "Returns true when a value is present."
     );
-    assert_eq!(native_definitions::DECLARATIONS.len(), 1);
+    assert_eq!(native_definitions::DECLARATIONS.len(), 2);
+}
+
+#[test]
+fn rust_result_definition_matches_the_existing_public_catalog() {
+    let generated = &native_definitions::result::DECLARATION;
+    let published = builtin("Result").expect("Result is in the public catalog");
+    assert_eq!(generated.path, published.path);
+    assert_eq!(generated.kind, BuiltinKind::Enum);
+    assert_eq!(generated.type_parameters, published.type_parameters);
+    assert_eq!(generated.documentation, published.documentation);
+    assert_eq!(generated.members.len(), published.members.len());
+
+    for member in generated.members {
+        let original = published
+            .member(member.name)
+            .expect("member exists in public catalog");
+        assert_eq!(member.kind, original.kind);
+        assert_eq!(member.value_type, original.value_type);
+        assert_eq!(member.receiver, original.receiver);
+        assert_eq!(member.builtin_id, original.builtin_id);
+        assert_eq!(member.documentation, original.documentation);
+        if let (Some(left), Some(right)) = (member.signature, original.signature) {
+            assert_eq!(left.parameters, right.parameters);
+            assert_eq!(left.result, right.result);
+        }
+    }
+    for name in ["is_ok", "is_err", "ok", "err"] {
+        assert!(generated.member(name).is_some());
+    }
+}
+
+#[test]
+fn integer_family_matches_the_existing_integer_api() {
+    let generated = &native_definitions::integer::INTRINSICS;
+    assert_eq!(generated.len(), rils_builtins::INTEGER_INTRINSICS.len());
+    for method in *generated {
+        let published = rils_builtins::intrinsic(method.id).unwrap();
+        assert_eq!(method.name, published.name);
+        assert_eq!(method.kind, published.kind);
+        assert_eq!(method.signature.parameters, published.signature.parameters);
+        assert_eq!(method.signature.result, published.signature.result);
+        assert_eq!(method.documentation, published.documentation);
+    }
+    let constants = native_definitions::integer::CONSTANTS;
+    assert_eq!(constants.len(), rils_builtins::INTEGER_CONSTANTS.len());
+    for constant in constants {
+        let published = rils_builtins::integer_constant(constant.name).unwrap();
+        assert_eq!(constant.id, published.id);
+        assert_eq!(constant.value_type, published.value_type);
+        assert_eq!(constant.documentation, published.documentation);
+    }
+    let source = include_str!("../stdlib/core/integer.rils");
+    assert!(source.contains("impl i32"));
+    assert!(!source.contains("struct Number"));
+    let tokens = rils_syntax::lex(source).unwrap();
+    let program = rils_syntax::parser::parse_builtin_declarations(tokens).unwrap();
+    assert_eq!(program.statements.len(), 12);
+    assert!(
+        program
+            .statements
+            .iter()
+            .all(|statement| matches!(statement, rils_syntax::ast::Stmt::Impl { .. }))
+    );
 }

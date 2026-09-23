@@ -708,6 +708,7 @@ dependencies = [
  "rils_frontend",
  "rils_host",
  "rils_project",
+ "rils_stdlib",
  "stacker",
 ]
 

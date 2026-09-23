@@ -40,14 +40,19 @@ pub fn type_pattern(input: TokenStream) -> TokenStream {
     type_patterns::expand(input)
 }
 
-#[proc_macro]
-pub fn decl_rils(input: TokenStream) -> TokenStream {
-    decl_rils::expand_definition(input)
+#[proc_macro_attribute]
+pub fn decl_rils(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    decl_rils::expand_definition(attribute, item)
 }
 
 #[proc_macro]
 pub fn decl_rils_metadata(input: TokenStream) -> TokenStream {
     decl_rils::expand_metadata(input)
+}
+
+#[proc_macro]
+pub fn decl_rils_source(input: TokenStream) -> TokenStream {
+    decl_rils::expand_source(input)
 }
 
 #[proc_macro]

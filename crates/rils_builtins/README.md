@@ -13,7 +13,8 @@
 Option/Result、tuple、函数和引用。`BuiltinBackend` 明确区分 runtime、intrinsic、host-backed 和纯
 metadata 项，因此“编译器认识一个符号”不等同于“runtime 自己实现该符号”。
 
-现有公开目录中的内建 API 由 `stdlib/**/*.rils` 源码声明，类型模式使用 `type_pattern!`，ID 使用
+未迁移的内建 API 由 `stdlib/**/*.rils` 源码声明；Option、Result 与整数 API 的元信息
+直接由 `rils_stdlib` 的 Rust 定义生成。类型模式使用 `type_pattern!`，ID 使用
 `builtin_id!("core::...")` 在编译期解析。执行逻辑留在对应的 runtime、intrinsic 或宿主层；稳定
 `BuiltinId` 不能复用。
 
@@ -21,7 +22,11 @@ metadata 项，因此“编译器认识一个符号”不等同于“runtime 自
 并把 enum variant、struct/primitive 成员、完整数值 primitive 矩阵、intrinsic、常量、receiver、泛型和文档转换为声明表；
 TOML 只保留稳定 ID，运行时仍按 ID 绑定实现。
 
-Rust 定义迁移已开始：`rils_stdlib/src/stdlib/option.rs` 使用 `decl_rils!` 同时定义
-`Option::is_some` 的签名和 `#rils` 原生实现。宏分别为本 crate 生成
+Rust 定义迁移已开始：`rils_stdlib/src/stdlib/option.rs` 和 `result.rs` 使用 `#[decl_rils]` 同时定义
+所有 Option/Result 成员方法的签名和 `#[export_rils]` 标记的普通 Rust 原生实现。宏分别为本 crate 生成
 `native_definitions::DECLARATIONS`，并为 `rils_execution` 生成共享运行时 handler。
-迁移期间，`BUILTINS` 及语言包仍从旧 `.rils` 声明生成；一致性测试核对两个目录的重叠成员。
+`BUILTINS` 中的 Option/Result 与整数 intrinsic 和常量直接采用 Rust 定义生成的元信息。
+Analyzer 仍从语言包中的 `.rils` 文件读取源码位置；按需导出的声明由
+`python tools/generate-stdlib-sources.py --check` 校验同步。
+整数类型由 `rils_stdlib/src/stdlib/integer.rs` 的 `Number<TNum>` 方法模板与整数类型族宏定义；
+静态声明、原生实现和 12 种宽度的运行时桥接使用同一组方法签名。

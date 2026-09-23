@@ -234,23 +234,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 value.type_name()
             )),
         },
-        BuiltinId::ResultIsOk
-        | BuiltinId::ResultIsErr
-        | BuiltinId::OptionIsNone
-        | BuiltinId::OptionUnwrap
-        | BuiltinId::ResultUnwrap
-        | BuiltinId::OptionUnwrapOr
-        | BuiltinId::ResultUnwrapOr
-        | BuiltinId::OptionExpect
-        | BuiltinId::ResultExpect
-        | BuiltinId::ResultOk
-        | BuiltinId::ResultErr
-        | BuiltinId::ResultUnwrapErr
-        | BuiltinId::ResultExpectErr
-        | BuiltinId::OptionTake
-        | BuiltinId::OptionOr
-        | BuiltinId::OptionXor
-        | BuiltinId::OptionReplace => option_result::call(id, arguments),
         BuiltinId::SequenceLen | BuiltinId::StringLen => {
             let value = import_receiver(&arguments[0])?;
             let length = match value {

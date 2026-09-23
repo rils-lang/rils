@@ -124,6 +124,18 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             .unwrap_or("");
         let relative_literal = LitStr::new(&file.relative, input.directory.span());
         let source_module = source_module(path);
+        if matches!(
+            file.relative.as_str(),
+            "stdlib/core/option.rils" | "stdlib/core/result.rils"
+        ) {
+            source_entries.push(source_entry(
+                &file.relative,
+                &source_module,
+                quote!(Type),
+                input.directory.span(),
+            ));
+            continue;
+        }
         if stem == "integer" || stem == "float" {
             source_entries.push(source_entry(
                 &file.relative,
@@ -131,6 +143,9 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
                 quote!(Numeric),
                 input.directory.span(),
             ));
+            if stem == "integer" {
+                continue;
+            }
             let family = if stem == "integer" {
                 format_ident!("Integer")
             } else {
@@ -253,6 +268,9 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             collect_type_exports(file, &mut module_members);
         }
     }
+
+    declaration_items.push(quote!(crate::native_definitions::option::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::result::DECLARATION));
 
     let module_entries = module_members.iter().map(|(path, members)| {
         let path = LitStr::new(path, input.directory.span());

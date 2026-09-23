@@ -1,125 +1,237 @@
 use proc_macro::TokenStream;
-use proc_macro2::{Group, Ident, TokenStream as Tokens, TokenTree};
-use quote::{format_ident, quote};
+use proc_macro2::TokenStream as Tokens;
+use quote::{ToTokens, format_ident, quote};
 use syn::{
-    Error, FnArg, ItemEnum, Path, ReturnType, Signature, Token, Type, braced,
+    Error, FnArg, ImplItem, ImplItemFn, Item, ItemEnum, ItemImpl, ItemMod, Path, ReturnType, Token,
+    Type,
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
 
 use crate::type_patterns;
 
-struct Method {
-    attributes: Vec<syn::Attribute>,
-    _visibility: syn::Visibility,
-    signature: Signature,
-    body: Tokens,
-}
-
-impl Parse for Method {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let attributes = input.call(syn::Attribute::parse_outer)?;
-        let visibility = input.parse()?;
-        let signature = input.parse()?;
-        let contents;
-        braced!(contents in input);
-        contents.parse::<Token![#]>()?;
-        let marker: Ident = contents.parse()?;
-        if marker != "rils" {
-            return Err(Error::new(marker.span(), "expected `#rils { ... }`"));
-        }
-        let body_contents;
-        braced!(body_contents in contents);
-        let body = body_contents.parse()?;
-        if !contents.is_empty() {
-            return Err(contents.error("unexpected tokens after `#rils` body"));
-        }
-        Ok(Self {
-            attributes,
-            _visibility: visibility,
-            signature,
-            body,
-        })
-    }
-}
+mod primitive;
 
 struct Definition {
     module: Path,
     item: ItemEnum,
-    methods: Vec<Method>,
+    methods: Vec<ImplItemFn>,
 }
 
-impl Parse for Definition {
+struct DefinitionInput {
+    path: Path,
+    item: ItemMod,
+}
+
+impl Parse for DefinitionInput {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        input.parse::<Token![pub]>()?;
-        input.parse::<Token![mod]>()?;
-        let module = input.parse()?;
+        let path = input.parse()?;
         input.parse::<Token![;]>()?;
-        let item: ItemEnum = input.parse()?;
-        input.parse::<Token![impl]>()?;
-        let generics: syn::Generics = input.parse()?;
-        let target: Type = input.parse()?;
-        let Type::Path(target) = &target else {
-            return Err(Error::new_spanned(target, "expected enum impl target"));
+        let item = input.parse()?;
+        if !input.is_empty() {
+            return Err(input.error("unexpected tokens after module"));
+        }
+        Ok(Self { path, item })
+    }
+}
+
+impl Definition {
+    fn parse(path: Path, module: &ItemMod) -> syn::Result<Self> {
+        let (_, items) = module
+            .content
+            .as_ref()
+            .ok_or_else(|| Error::new_spanned(module, "standard-library module must be inline"))?;
+        let mut enums = items.iter().filter_map(|item| match item {
+            Item::Enum(item) => Some(item.clone()),
+            _ => None,
+        });
+        let item = enums
+            .next()
+            .ok_or_else(|| Error::new_spanned(module, "expected an enum"))?;
+        if enums.next().is_some() {
+            return Err(Error::new_spanned(module, "expected exactly one enum"));
+        }
+        let mut methods = Vec::new();
+        for implementation in items.iter().filter_map(|item| match item {
+            Item::Impl(item) => Some(item),
+            _ => None,
+        }) {
+            Self::check_impl(&item, implementation)?;
+            for member in &implementation.items {
+                let ImplItem::Fn(method) = member else {
+                    continue;
+                };
+                if !method
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("export_rils"))
+                {
+                    continue;
+                }
+                if method.block.stmts.is_empty() {
+                    return Err(Error::new_spanned(
+                        method,
+                        "native method needs a Rust body",
+                    ));
+                }
+                methods.push(method.clone());
+            }
+        }
+        if methods.is_empty() {
+            return Err(Error::new_spanned(
+                module,
+                "definition needs a #[export_rils] method",
+            ));
+        }
+        Ok(Self {
+            module: path,
+            item,
+            methods,
+        })
+    }
+
+    fn check_impl(item: &ItemEnum, implementation: &ItemImpl) -> syn::Result<()> {
+        let Type::Path(target) = implementation.self_ty.as_ref() else {
+            return Err(Error::new_spanned(
+                &implementation.self_ty,
+                "expected enum impl target",
+            ));
         };
         if target
             .path
             .segments
             .last()
             .is_none_or(|part| part.ident != item.ident)
-            || generics.type_params().count() != item.generics.type_params().count()
+            || implementation.generics.type_params().count() != item.generics.type_params().count()
         {
             return Err(Error::new_spanned(
                 target,
                 "impl must target the declared enum",
             ));
         }
-        let contents;
-        braced!(contents in input);
-        let mut methods = Vec::new();
-        while !contents.is_empty() {
-            methods.push(contents.parse()?);
-        }
-        if methods.is_empty() {
-            return Err(Error::new_spanned(
-                item,
-                "definition needs an implemented method",
-            ));
-        }
-        if !input.is_empty() {
-            return Err(input.error("unexpected tokens after enum impl"));
-        }
-        Ok(Self {
-            module,
-            item,
-            methods,
-        })
+        Ok(())
     }
 }
 
-pub(crate) fn expand_definition(input: TokenStream) -> TokenStream {
-    let source: Tokens = input.into();
-    let definition = match syn::parse2::<Definition>(source.clone()) {
+pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let path = match syn::parse::<Path>(attribute) {
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
     };
+    let original = match syn::parse::<ItemMod>(item) {
+        Ok(value) => value,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    if primitive::contains_mapping(&original) {
+        return primitive::expand_definition(path, original);
+    }
+    let definition = match Definition::parse(path.clone(), &original) {
+        Ok(value) => value,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let mut emitted = original.clone();
+    if let Some((_, items)) = &mut emitted.content {
+        for item in items.iter_mut() {
+            if let Item::Impl(implementation) = item {
+                for member in &mut implementation.items {
+                    if let ImplItem::Fn(method) = member {
+                        method
+                            .attrs
+                            .retain(|attr| !attr.path().is_ident("export_rils"));
+                    }
+                }
+            }
+        }
+    }
     let macro_name = format_ident!(
         "{}_definition",
         definition.item.ident.to_string().to_lowercase()
     );
     quote! {
+        #emitted
         #[macro_export]
         macro_rules! #macro_name {
-            ($emit:ident) => { $emit! { #source } };
+            ($emit:ident) => { $emit! { #path; #original } };
         }
     }
     .into()
 }
 
+fn rils_source(definition: &Definition) -> String {
+    fn docs(attributes: &[syn::Attribute], indent: &str) -> String {
+        documentation(attributes)
+            .lines()
+            .map(|line| format!("{indent}/// {line}\n"))
+            .collect()
+    }
+
+    let item = &definition.item;
+    let generic_names = item
+        .generics
+        .type_params()
+        .map(|parameter| parameter.ident.to_string())
+        .collect::<Vec<_>>();
+    let generics = if generic_names.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", generic_names.join(", "))
+    };
+    let mut source = docs(&item.attrs, "");
+    source.push_str(&format!("pub enum {}{} {{\n", item.ident, generics));
+    for variant in &item.variants {
+        source.push_str(&docs(&variant.attrs, "    "));
+        source.push_str(&format!("    {}", variant.ident));
+        if let syn::Fields::Unnamed(fields) = &variant.fields {
+            let field_types = fields
+                .unnamed
+                .iter()
+                .map(|field| field.ty.to_token_stream().to_string())
+                .collect::<Vec<_>>();
+            source.push_str(&format!("({})", field_types.join(", ")));
+        }
+        source.push_str(",\n");
+    }
+    source.push_str("}\n\n");
+    source.push_str(&format!("impl{} {}{} {{\n", generics, item.ident, generics));
+    for method in &definition.methods {
+        source.push_str(&docs(&method.attrs, "    "));
+        let mut signature = method.sig.clone();
+        signature.generics.where_clause = None;
+        let signature = signature
+            .to_token_stream()
+            .to_string()
+            .replace("String", "string");
+        source.push_str(&format!("    {signature} {{}}\n\n"));
+    }
+    source.push_str("}\n");
+    source
+}
+
 pub(crate) fn expand_metadata(input: TokenStream) -> TokenStream {
-    let definition = parse_macro_input!(input as Definition);
+    let source = parse_macro_input!(input as DefinitionInput);
+    if primitive::contains_mapping(&source.item) {
+        return primitive::expand_metadata(source.path, source.item);
+    }
+    let definition = match Definition::parse(source.path, &source.item) {
+        Ok(value) => value,
+        Err(error) => return error.into_compile_error().into(),
+    };
     match metadata_tokens(&definition) {
         Ok(tokens) => tokens.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+pub(crate) fn expand_source(input: TokenStream) -> TokenStream {
+    let source = parse_macro_input!(input as DefinitionInput);
+    if primitive::contains_mapping(&source.item) {
+        return primitive::expand_source(source.path, source.item);
+    }
+    match Definition::parse(source.path, &source.item) {
+        Ok(definition) => {
+            let source = rils_source(&definition);
+            quote!(#source).into()
+        }
         Err(error) => error.into_compile_error().into(),
     }
 }
@@ -173,17 +285,17 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
         .methods
         .iter()
         .map(|method| {
-            if !matches!(method._visibility, syn::Visibility::Public(_)) {
+            if !matches!(method.vis, syn::Visibility::Public(_)) {
                 return Err(Error::new_spanned(
-                    &method.signature,
+                    &method.sig,
                     "standard-library methods must be public",
                 ));
             }
-            let name = method.signature.ident.to_string();
-            let documentation = documentation(&method.attributes);
+            let name = method.sig.ident.to_string();
+            let documentation = documentation(&method.attrs);
             let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-            let receiver = method.signature.receiver().ok_or_else(|| {
-                Error::new_spanned(&method.signature, "native methods require a receiver")
+            let receiver = method.sig.receiver().ok_or_else(|| {
+                Error::new_spanned(&method.sig, "native methods require a receiver")
             })?;
             let receiver_mode = if receiver.reference.is_some() {
                 if receiver.mutability.is_some() {
@@ -195,7 +307,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                 quote!(crate::ReceiverMode::Owned)
             };
             let parameters = method
-                .signature
+                .sig
                 .inputs
                 .iter()
                 .skip(1)
@@ -204,12 +316,12 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     _ => Err(Error::new_spanned(input, "unexpected receiver")),
                 })
                 .collect::<syn::Result<Vec<_>>>()?;
-            let result = match &method.signature.output {
+            let result = match &method.sig.output {
                 ReturnType::Default => quote!(TypePattern::Unit),
                 ReturnType::Type(_, ty) => type_patterns::tokens(ty)?,
             };
             let type_parameters = method
-                .signature
+                .sig
                 .generics
                 .type_params()
                 .map(|parameter| parameter.ident.to_string())
@@ -272,7 +384,14 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
 }
 
 pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
-    let definition = parse_macro_input!(input as Definition);
+    let source = parse_macro_input!(input as DefinitionInput);
+    if primitive::contains_mapping(&source.item) {
+        return primitive::expand_native(source.path, source.item);
+    }
+    let definition = match Definition::parse(source.path, &source.item) {
+        Ok(value) => value,
+        Err(error) => return error.into_compile_error().into(),
+    };
     match native_tokens(&definition) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.into_compile_error().into(),
@@ -280,43 +399,95 @@ pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
 }
 
 fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
-    if definition.item.ident != "Option" {
+    if definition.item.ident != "Option" && definition.item.ident != "Result" {
         return Err(Error::new_spanned(
             &definition.item.ident,
-            "the first native bridge supports Option",
+            "native bridge supports Option and Result",
         ));
     }
     let module = &definition.module;
-    let wrapper = format_ident!("{}Wrapper", definition.item.ident);
-    let arms = definition
-        .item
-        .variants
-        .iter()
-        .map(|variant| {
-            let name = &variant.ident;
-            match &variant.fields {
-                syn::Fields::Unit => Ok(quote!(#name)),
-                syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                    Ok(quote!(#name(std::rc::Rc<crate::Value>)))
-                }
-                _ => Err(Error::new_spanned(
-                    variant,
-                    "only unit and single-field tuple variants are supported",
-                )),
-            }
-        })
-        .collect::<syn::Result<Vec<_>>>()?;
-    let implementations = definition.methods.iter().map(|method| {
-        if !matches!(method.signature.output, ReturnType::Type(_, ref ty) if matches!(ty.as_ref(), Type::Path(path) if path.path.is_ident("bool"))) {
-            return Err(Error::new_spanned(&method.signature.output, "the first native bridge supports bool results"));
-        }
-        if method.signature.inputs.len() != 1 || method.signature.receiver().is_none_or(|receiver| receiver.reference.is_none() || receiver.mutability.is_some()) {
-            return Err(Error::new_spanned(&method.signature, "the first native bridge supports only &self methods without arguments"));
-        }
-        let name = &method.signature.ident;
+    let implementations = definition.methods.iter().filter(|method| {
+        !matches!(method.sig.ident.to_string().as_str(),
+            "map" | "map_err" | "and_then" | "or_else")
+    }).map(|method| {
+        let name = &method.sig.ident;
         let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-        let expression = replace_bindings(method.body.clone(), &definition.item.ident, &wrapper)?;
-        let _: syn::Expr = syn::parse2(expression.clone())?;
+        if !matches!(name.to_string().as_str(), "is_some" | "is_none" | "is_ok" | "is_err" | "ok" | "err") {
+            let arity = method.sig.inputs.len();
+            return Ok(quote! {
+                id if id == rils_builtins::builtin_id!(#id_path) => Some(
+                    if arguments.len() == #arity {
+                        super::super::option_result::call(id, arguments)
+                    } else {
+                        Err(format!("native method expects {} arguments, found {}", #arity, arguments.len()))
+                    }
+                )
+            });
+        }
+        if method.sig.inputs.len() != 1 {
+            return Err(Error::new_spanned(&method.sig, "native bridge supports methods without arguments"));
+        }
+        let receiver = method.sig.receiver().ok_or_else(|| Error::new_spanned(&method.sig, "native method needs a receiver"))?;
+        let is_shared = receiver.reference.is_some() && receiver.mutability.is_none();
+        let is_owned = receiver.reference.is_none();
+        let is_bool = matches!(method.sig.output, ReturnType::Type(_, ref ty) if matches!(ty.as_ref(), Type::Path(path) if path.path.is_ident("bool")));
+        let result_code = if is_bool && is_shared {
+            quote! {
+                let result: bool = native_self.#name();
+                Ok(crate::Value::Bool(result))
+            }
+        } else if definition.item.ident == "Result" && is_owned {
+            let ReturnType::Type(_, ty) = &method.sig.output else {
+                return Err(Error::new_spanned(&method.sig.output, "expected Option<T> or Option<E> result"));
+            };
+            let Type::Path(result_type) = ty.as_ref() else {
+                return Err(Error::new_spanned(ty, "expected Option<T> or Option<E> result"));
+            };
+            let Some(segment) = result_type.path.segments.last() else {
+                return Err(Error::new_spanned(ty, "expected Option<T> or Option<E> result"));
+            };
+            if segment.ident != "Option" {
+                return Err(Error::new_spanned(ty, "expected Option<T> or Option<E> result"));
+            }
+            let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+                return Err(Error::new_spanned(ty, "expected Option<T> or Option<E> result"));
+            };
+            let element_type = match arguments.args.first() {
+                Some(syn::GenericArgument::Type(Type::Path(path))) if path.path.is_ident("T") => quote!(ok_type),
+                Some(syn::GenericArgument::Type(Type::Path(path))) if path.path.is_ident("E") => quote!(error_type),
+                _ => return Err(Error::new_spanned(ty, "expected Option<T> or Option<E> result")),
+            };
+            quote! {
+                let result: rils_stdlib::stdlib::option::Option<_> = native_self.#name();
+                let value = match result {
+                    rils_stdlib::stdlib::option::Option::Some(value) => Some(value),
+                    rils_stdlib::stdlib::option::Option::None => None,
+                };
+                Ok(crate::Value::Option { value, element_type: #element_type })
+            }
+        } else {
+            return Err(Error::new_spanned(&method.sig, "native bridge supports shared bool methods and owned Result to Option methods"));
+        };
+        let conversion = if definition.item.ident == "Option" {
+            quote! {
+                let native_self = match receiver {
+                    crate::Value::Option { value: Some(value), .. } => rils_stdlib::stdlib::option::Option::Some(value),
+                    crate::Value::Option { value: None, .. } => rils_stdlib::stdlib::option::Option::None,
+                    value => return Err(format!("`{}` expects Option, found {}", stringify!(#name), value.type_name())),
+                };
+            }
+        } else {
+            quote! {
+                let (native_self, ok_type, error_type) = match receiver {
+                    crate::Value::Result { value: Ok(value), ok_type, error_type } =>
+                        (rils_stdlib::stdlib::result::Result::Ok(value), ok_type, error_type),
+                    crate::Value::Result { value: Err(value), ok_type, error_type } =>
+                        (rils_stdlib::stdlib::result::Result::Err(value), ok_type, error_type),
+                    value => return Err(format!("`{}` expects Result, found {}", stringify!(#name), value.type_name())),
+                };
+                let _ = (&ok_type, &error_type);
+            }
+        };
         Ok(quote! {
             id if id == rils_builtins::builtin_id!(#id_path) => Some((|| -> Result<crate::Value, String> {
                 if arguments.len() != 1 {
@@ -327,19 +498,12 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     crate::Value::Reference(reference) => reference.read()?,
                     value => value.clone(),
                 };
-                let __rils_self = match receiver {
-                    crate::Value::Option { value: Some(value), .. } => #wrapper::Some(value),
-                    crate::Value::Option { value: None, .. } => #wrapper::None,
-                    value => return Err(format!("`{}` expects Option, found {}", stringify!(#name), value.type_name())),
-                };
-                let result: bool = { #expression };
-                Ok(crate::Value::Bool(result))
+                #conversion
+                #result_code
             })())
         })
     }).collect::<syn::Result<Vec<_>>>()?;
     Ok(quote! {
-        #[allow(dead_code)]
-        enum #wrapper { #(#arms),* }
         pub fn call(
             id: rils_builtins::BuiltinId,
             arguments: &[crate::Value],
@@ -349,33 +513,6 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
     })
 }
 
-fn replace_bindings(source: Tokens, enum_name: &Ident, wrapper: &Ident) -> syn::Result<Tokens> {
-    let mut output = Tokens::new();
-    let mut tokens = source.into_iter();
-    while let Some(token) = tokens.next() {
-        match token {
-            TokenTree::Punct(punct) if punct.as_char() == '#' => {
-                let Some(TokenTree::Ident(name)) = tokens.next() else {
-                    return Err(Error::new(punct.span(), "expected name after `#`"));
-                };
-                if name == "self" {
-                    output.extend(quote!(__rils_self));
-                } else if name == *enum_name {
-                    output.extend(quote!(#wrapper));
-                } else {
-                    return Err(Error::new(name.span(), "unknown `#rils` binding"));
-                }
-            }
-            TokenTree::Group(group) => {
-                let body = replace_bindings(group.stream(), enum_name, wrapper)?;
-                output.extend([TokenTree::Group(Group::new(group.delimiter(), body))]);
-            }
-            token => output.extend([token]),
-        }
-    }
-    Ok(output)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,38 +520,54 @@ mod tests {
     #[test]
     fn parses_native_definition_and_rejects_placeholder_body() {
         let valid: Tokens = r#"
-            pub mod core::option;
-            pub enum Option<T> { Some(T), None }
-            impl<T> Option<T> {
-                pub fn is_some(&self) -> bool {
-                    #rils { matches!(#self, #Option::Some(_)) }
+            core::option;
+            pub mod option {
+                pub enum Option<T> { Some(T), None }
+                impl<T> Option<T> {
+                    #[export_rils]
+                    pub fn is_some(&self) -> bool {
+                        self.has_value()
+                    }
+                    fn has_value(&self) -> bool { matches!(self, Self::Some(_)) }
                 }
             }
         "#
         .parse()
         .unwrap();
-        let definition: Definition = syn::parse2(valid).unwrap();
-        assert_eq!(definition.methods[0].signature.ident, "is_some");
+        let input: DefinitionInput = syn::parse2(valid).unwrap();
+        let definition = Definition::parse(input.path, &input.item).unwrap();
+        assert_eq!(definition.methods.len(), 1);
+        assert_eq!(definition.methods[0].sig.ident, "is_some");
         assert!(metadata_tokens(&definition).is_ok());
         assert!(native_tokens(&definition).is_ok());
 
         let placeholder = quote! {
-            pub mod core::option;
-            pub enum Option<T> { Some(T), None }
-            impl<T> Option<T> { pub fn is_some(&self) -> bool {} }
+            core::option;
+            pub mod option {
+                pub enum Option<T> { Some(T), None }
+                impl<T> Option<T> { #[export_rils] pub fn is_some(&self) -> bool {} }
+            }
         };
-        assert!(syn::parse2::<Definition>(placeholder).is_err());
+        let input: DefinitionInput = syn::parse2(placeholder).unwrap();
+        assert!(Definition::parse(input.path, &input.item).is_err());
     }
 
     #[test]
-    fn unknown_native_binding_is_rejected() {
-        let body = "#missing".parse().unwrap();
-        let error = replace_bindings(
-            body,
-            &format_ident!("Option"),
-            &format_ident!("OptionWrapper"),
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("unknown"));
+    fn definition_without_exported_method_is_rejected() {
+        let source = quote! {
+            core::option;
+            pub mod option {
+                pub enum Option<T> { Some(T), None }
+                impl<T> Option<T> { pub fn is_some(&self) -> bool { true } }
+            }
+        };
+        let input: DefinitionInput = syn::parse2(source).unwrap();
+        assert!(
+            Definition::parse(input.path, &input.item)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("#[export_rils]")
+        );
     }
 }
