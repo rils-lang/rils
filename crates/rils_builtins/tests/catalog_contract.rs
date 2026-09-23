@@ -144,7 +144,12 @@ fn declarations_have_unique_stable_identity_and_complete_metadata() {
             declaration.path
         );
         for (member_index, member) in declaration.members.iter().enumerate() {
-            assert!(!member.documentation.is_empty());
+            assert!(
+                !member.documentation.is_empty(),
+                "{}::{} requires documentation",
+                declaration.path,
+                member.name
+            );
             assert!(
                 declaration.members[member_index + 1..]
                     .iter()

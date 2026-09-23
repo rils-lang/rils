@@ -2,15 +2,19 @@
 pub struct RefCell<T>;
 
 impl<T> RefCell<T> {
+    /// Creates a dynamically checked cell.
     #[runtime(core::ref_cell::new)]
     fn new(value: T) -> Self {}
 
+    /// Borrows the contained value for reading.
     #[runtime(core::ref_cell::borrow)]
     fn borrow(&self) -> &T {}
 
+    /// Borrows the contained value for writing.
     #[runtime(core::ref_cell::borrow_mut)]
     fn borrow_mut(&self) -> &mut T {}
 
+    /// Replaces and returns the previous value.
     #[runtime(core::ref_cell::replace)]
     fn replace(&self, value: T) -> T {}
 }

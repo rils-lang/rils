@@ -6,9 +6,11 @@ impl<T> Weak<T> {
     #[runtime(core::weak::upgrade)]
     fn upgrade(&self) -> Option<Rc<T>> {}
 
+    /// Returns the number of strong owners.
     #[runtime(core::weak::strong_count)]
     fn strong_count(&self) -> usize {}
 
+    /// Returns the number of weak handles.
     #[runtime(core::weak::weak_count)]
     fn weak_count(&self) -> usize {}
 }
