@@ -4,7 +4,7 @@ use rils_builtins_macros::decl_rils;
 
 #[decl_rils(core::float)]
 mod native {
-    #[rils_impl(Clone, Copy)]
+    #[rils_impl(Clone, Copy, Default)]
     primitive_float_family!(f32, f64);
 
     #[allow(non_snake_case)]

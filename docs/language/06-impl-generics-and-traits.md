@@ -220,6 +220,8 @@ struct Point { x: i32, y: i32 }
 字段目前支持 `()`、`bool`、整数、`char`、`string` 及由它们组成的 tuple、数组、`Option`、`Result`；
 浮点数、引用和其他命名类型不能派生。`Hash` 和 `Eq` 必须同时存在才能用作哈希键。
 `BitFlags` 只由宿主 manifest 中标记为 flags 的 enum 自动实现；脚本 enum 当前没有位值语义，不能派生或手写实现该 trait。
+整数类型实现 `Clone`、`Copy`、`Default`、`Eq`、`Hash`；浮点类型实现 `Clone`、`Copy`、`Default`，
+但不实现 `Eq`、`Hash`；`string` 实现 `Clone`、`Default`、`Eq`、`Hash`，不实现 `Copy`。
 
 使用 Rust 风格的 `impl Trait for Type`：
 

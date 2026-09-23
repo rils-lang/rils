@@ -33,8 +33,9 @@ Rust 定义生成这些语言包声明，不在 `rils_stdlib` 中保存 `RILS_SO
 例如 `#[rils_impl] impl<T: Clone> Clone for Option<T> { ... }`。
 `Copy` 的实现同理使用 `impl<T: Copy> Copy for Option<T> {}`，且必须同时登记 `Clone`。
 宏从 impl 的泛型 bound 生成条件元信息，Rust 编译器检查实际 trait 实现；
-未标记的辅助 trait impl 仍只在 Rust 内部使用。当前条件元信息仅支持泛型参数上的
-`Clone`/`Copy` bound，可写在参数或 `where` 子句中。
+未标记的辅助 trait impl 仍只在 Rust 内部使用。条件元信息支持泛型参数上的
+`Clone`、`Copy`、`Default`、`Eq`、`Hash` bound，可写在参数或 `where` 子句中；
+脚本侧条件 impl 的执行仍未开放。
 
 基础 trait 的 Rils 声明集中位于 `src/stdlib/traits.rs`，
 各自使用 `#[decl_rils(core::...)] mod` 定义。trait 的限定父 trait 路径绑定对应 Rust trait；

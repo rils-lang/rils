@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- 整数和 `string` 的原生定义现在登记 `Default`、`Eq`、`Hash`，浮点数登记 `Default`；泛型 trait bound 与哈希键检查读取这些登记信息。浮点数仍不能作为哈希键。
 - 非泛型 struct 和 enum 现可派生 `Eq`、`Hash`，用作 HashMap 键与 HashSet 元素；字段需是可递归哈希的基础类型或组合类型。`BitFlags` 保留给宿主 manifest 标记为 flags 的 enum。
 - `#[derive(Clone)]` 现可用于 struct 和 enum，覆盖 unit、tuple 与 record 变体，并按字段调用其 trait 实现；`#[derive(Copy)]` 也支持非泛型 struct 和 enum，并检查所有字段均为 Copy。实现由 Rust 标准库 trait 模块注册的生成器展开。
 - `Copy` 现在显式继承 `Clone`；实现 `Copy` 的类型也必须满足 `Clone`。

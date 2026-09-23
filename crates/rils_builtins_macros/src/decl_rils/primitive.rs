@@ -276,7 +276,7 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
                 && !matches!(item, Item::Macro(inner) if inner.mac.path.is_ident("primitive_integer_family") || inner.mac.path.is_ident("primitive_float_family"))
         });
         items.push(syn::parse_quote!(
-            #[derive(Clone, Copy)]
+            #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
             pub struct Number<T>(pub T);
         ));
         for mapping in &definition.family {

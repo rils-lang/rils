@@ -18,8 +18,8 @@ mod native {
     use super::{Iterator, Option, optional};
 
     /// An owned UTF-8 string.
-    #[derive(Clone)]
-    #[rils_impl(Clone)]
+    #[derive(Clone, Default, PartialEq, Eq, Hash)]
+    #[rils_impl(Clone, Default, Eq, Hash)]
     pub struct String(std::string::String);
 
     impl String {

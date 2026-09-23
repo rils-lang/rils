@@ -35,10 +35,10 @@ pub(super) fn parse_impl(
         ));
     };
     let trait_name = trait_path.to_token_stream().to_string().replace(' ', "");
-    if trait_name != "Clone" && trait_name != "Copy" {
+    if !supported_trait(&trait_name) {
         return Err(Error::new_spanned(
             trait_path,
-            "only Clone and Copy are supported",
+            "unsupported native trait binding",
         ));
     }
     let Type::Path(ty) = item.self_ty.as_ref() else {
@@ -150,11 +150,8 @@ fn add_bound(
         return Err(Error::new_spanned(bound, "expected trait bound"));
     };
     let name = bound.path.to_token_stream().to_string().replace(' ', "");
-    if name != "Clone" && name != "Copy" {
-        return Err(Error::new_spanned(
-            bound,
-            "only Clone and Copy bounds are supported",
-        ));
+    if !supported_trait(&name) {
+        return Err(Error::new_spanned(bound, "unsupported native trait bound"));
     }
     requirements.push((parameter.to_owned(), name));
     Ok(())
@@ -170,13 +167,16 @@ pub(super) fn parse(attributes: &[Attribute]) -> syn::Result<Vec<Path>> {
         let paths = attribute
             .parse_args_with(syn::punctuated::Punctuated::<Path, Token![,]>::parse_terminated)?;
         if paths.is_empty() {
-            return Err(Error::new_spanned(attribute, "expected Clone or Copy"));
+            return Err(Error::new_spanned(attribute, "expected a native trait"));
         }
         for path in paths {
-            if !path.is_ident("Clone") && !path.is_ident("Copy") {
+            if !path
+                .get_ident()
+                .is_some_and(|name| supported_trait(&name.to_string()))
+            {
                 return Err(Error::new_spanned(
                     &path,
-                    "only Clone and Copy are supported",
+                    "unsupported native trait binding",
                 ));
             }
             if !names.insert(path.segments[0].ident.to_string()) {
@@ -196,13 +196,21 @@ pub(super) fn parse(attributes: &[Attribute]) -> syn::Result<Vec<Path>> {
 
 pub(super) fn checks(ty: &syn::Type, traits: &[Path]) -> proc_macro2::TokenStream {
     let checks = traits.iter().map(|path| {
-        if path.is_ident("Copy") {
-            quote! { fn assert_trait<T: ::core::marker::Copy>() {} let _ = assert_trait::<#ty>; }
-        } else {
-            quote! { fn assert_trait<T: ::core::clone::Clone>() {} let _ = assert_trait::<#ty>; }
-        }
+        let bound = match path.segments[0].ident.to_string().as_str() {
+            "Clone" => quote!(::core::clone::Clone),
+            "Copy" => quote!(::core::marker::Copy),
+            "Default" => quote!(::core::default::Default),
+            "Eq" => quote!(::core::cmp::Eq),
+            "Hash" => quote!(::core::hash::Hash),
+            _ => unreachable!("validated native trait"),
+        };
+        quote! { fn assert_trait<T: #bound>() {} let _ = assert_trait::<#ty>; }
     });
     quote! { #(const _: () = { #checks };)* }
+}
+
+fn supported_trait(name: &str) -> bool {
+    matches!(name, "Clone" | "Copy" | "Default" | "Eq" | "Hash")
 }
 
 #[cfg(test)]
@@ -211,8 +219,8 @@ mod tests {
 
     #[test]
     fn validates_supported_trait_markers() {
-        let attrs = vec![syn::parse_quote!(#[rils_impl(Clone, Copy)])];
-        assert_eq!(parse(&attrs).unwrap().len(), 2);
+        let attrs = vec![syn::parse_quote!(#[rils_impl(Clone, Copy, Default, Eq, Hash)])];
+        assert_eq!(parse(&attrs).unwrap().len(), 5);
         for attr in [
             syn::parse_quote!(#[rils_impl(Copy)]),
             syn::parse_quote!(#[rils_impl(Debug)]),

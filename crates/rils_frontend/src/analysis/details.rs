@@ -307,11 +307,17 @@ pub(super) fn hash_key_type_supported(ty: &Type, derived: &HashSet<String>) -> b
         Type::Unit
         | Type::Bool
         | Type::Char
-        | Type::String
-        | Type::Integer(_)
         | Type::IntegerVariable(_)
         | Type::Variable(_)
         | Type::Unknown => true,
+        Type::String => {
+            rils_builtins::native_implements("string", "Eq")
+                && rils_builtins::native_implements("string", "Hash")
+        }
+        Type::Integer(integer) => {
+            rils_builtins::native_implements(integer.name(), "Eq")
+                && rils_builtins::native_implements(integer.name(), "Hash")
+        }
         Type::Tuple(elements) => elements
             .iter()
             .all(|element| hash_key_type_supported(element, derived)),

@@ -2,7 +2,7 @@ use rils_builtins::{BuiltinKind, builtin, native_implements, native_implements_w
 
 #[test]
 fn native_trait_markers_cover_only_supported_types() {
-    for trait_name in ["Clone", "Copy"] {
+    for trait_name in ["Clone", "Copy", "Default", "Eq", "Hash"] {
         assert_eq!(
             builtin(trait_name).map(|item| item.kind),
             Some(BuiltinKind::Trait)
@@ -10,12 +10,34 @@ fn native_trait_markers_cover_only_supported_types() {
     }
     for number in [
         "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
-        "f32", "f64",
     ] {
-        assert!(native_implements(number, "Clone"), "{number}");
-        assert!(native_implements(number, "Copy"), "{number}");
+        for trait_name in ["Clone", "Copy", "Default", "Eq", "Hash"] {
+            assert!(
+                native_implements(number, trait_name),
+                "{number}: {trait_name}"
+            );
+        }
     }
-    assert!(native_implements("string", "Clone"));
+    for number in ["f32", "f64"] {
+        for trait_name in ["Clone", "Copy", "Default"] {
+            assert!(
+                native_implements(number, trait_name),
+                "{number}: {trait_name}"
+            );
+        }
+        for trait_name in ["Eq", "Hash"] {
+            assert!(
+                !native_implements(number, trait_name),
+                "{number}: {trait_name}"
+            );
+        }
+    }
+    for trait_name in ["Clone", "Default", "Eq", "Hash"] {
+        assert!(
+            native_implements("string", trait_name),
+            "string: {trait_name}"
+        );
+    }
     assert!(!native_implements("string", "Copy"));
     assert!(!native_implements("Option", "Copy"));
     assert!(!native_implements("Result", "Copy"));

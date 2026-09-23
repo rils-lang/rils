@@ -351,7 +351,9 @@ fn type_is_structural_key_trait(
     environment: &EnvironmentRef,
 ) -> bool {
     match actual {
-        Type::Unit | Type::Bool | Type::Char | Type::String | Type::Integer(_) => true,
+        Type::Unit | Type::Bool | Type::Char => true,
+        Type::String => rils_builtins::native_implements("string", trait_name),
+        Type::Integer(integer) => rils_builtins::native_implements(integer.name(), trait_name),
         Type::Tuple(elements) => elements
             .iter()
             .all(|element| type_is_structural_key_trait(element, trait_name, environment)),
