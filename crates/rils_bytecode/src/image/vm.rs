@@ -274,9 +274,9 @@ impl<'a> VirtualMachine<'a> {
                     let source = self.take_register(source, instruction.span)?;
                     let iterator = match source {
                         Value::Range(range) => Value::Range(range),
-                        Value::SequenceIterator(iterator) => Value::SequenceIterator(iterator),
-                        Value::BorrowedSequenceIterator(iterator) => {
-                            Value::BorrowedSequenceIterator(iterator)
+                        Value::OwnedIterator(iterator) => Value::OwnedIterator(iterator),
+                        Value::BorrowedSequenceIter(iterator) => {
+                            Value::BorrowedSequenceIter(iterator)
                         }
                         Value::BorrowedMapIterator(iterator) => {
                             Value::BorrowedMapIterator(iterator)
@@ -285,28 +285,38 @@ impl<'a> VirtualMachine<'a> {
                             Value::BorrowedSetIterator(iterator)
                         }
                         Value::Array(sequence) | Value::Vec(sequence) => {
+                            if sequence.active_iterators.get() > 0
+                                || sequence
+                                    .elements
+                                    .borrow()
+                                    .iter()
+                                    .any(|slot| slot.references > 0)
+                            {
+                                return Err(BytecodeError::new(
+                                    "cannot iterate a collection while an element is referenced",
+                                    instruction.span,
+                                ));
+                            }
                             let element_type = sequence
                                 .element_type
                                 .borrow()
                                 .clone()
                                 .unwrap_or(Type::Unknown);
-                            let items = sequence
+                            if sequence
                                 .elements
-                                .borrow_mut()
-                                .iter_mut()
-                                .map(|slot| {
-                                    slot.value.take().ok_or_else(|| {
-                                        BytecodeError::new(
-                                            "cannot iterate a partially moved collection",
-                                            instruction.span,
-                                        )
-                                    })
-                                })
-                                .collect::<Result<VecDeque<_>, _>>()?;
-                            Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-                                items: RefCell::new(items),
+                                .borrow()
+                                .iter()
+                                .any(|slot| slot.value.is_none())
+                            {
+                                return Err(BytecodeError::new(
+                                    "cannot iterate a partially moved collection",
+                                    instruction.span,
+                                ));
+                            }
+                            Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_sequence(
+                                sequence,
                                 element_type,
-                            }))
+                            )))
                         }
                         Value::HashMap(map) => crate::hash_collections::call(
                             rils_builtins::BuiltinId::HashMapIntoIter,
@@ -924,10 +934,10 @@ impl<'a> VirtualMachine<'a> {
                             Value::Range(range) => range
                                 .next()
                                 .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                            Value::SequenceIterator(iterator) => {
-                                iterator.items.borrow_mut().pop_front()
-                            }
-                            Value::BorrowedSequenceIterator(iterator) => iterator
+                            Value::OwnedIterator(iterator) => iterator
+                                .next()
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                            Value::BorrowedSequenceIter(iterator) => iterator
                                 .next()
                                 .map_err(|message| BytecodeError::new(message, instruction.span))?,
                             Value::BorrowedMapIterator(iterator) => iterator

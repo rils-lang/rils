@@ -52,22 +52,22 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 element_type: Some(Type::String),
             })
         }
-        BuiltinId::StringChars => Ok(sequence_iterator_value(
+        BuiltinId::StringChars => Ok(owned_iterator_value(
             value.chars().map(Value::Char).collect(),
             Type::Char,
         )),
-        BuiltinId::StringBytes => Ok(sequence_iterator_value(
+        BuiltinId::StringBytes => Ok(owned_iterator_value(
             value.bytes().map(Value::U8).collect(),
             Type::Integer(IntegerType::U8),
         )),
-        BuiltinId::StringLines => Ok(sequence_iterator_value(
+        BuiltinId::StringLines => Ok(owned_iterator_value(
             value
                 .lines()
                 .map(|line| Value::String(Rc::from(line)))
                 .collect(),
             Type::String,
         )),
-        BuiltinId::StringSplit => Ok(sequence_iterator_value(
+        BuiltinId::StringSplit => Ok(owned_iterator_value(
             value
                 .split(argument(1)?)
                 .map(|part| Value::String(Rc::from(part)))

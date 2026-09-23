@@ -285,7 +285,7 @@ fn rils_standard_library_files_supply_type_member_and_variant_metadata() {
             .expect("split signature")
             .result,
         TypePattern::Named {
-            path: "SequenceIterator",
+            path: "OwnedIterator",
             arguments: &[TypePattern::String],
         }
     );

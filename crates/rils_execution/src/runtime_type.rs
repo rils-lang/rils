@@ -115,12 +115,12 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (Type::Named { name, arguments }, Value::BTreeSet(set)) if name == "BTreeSet" => {
             arguments.len() == 1 && merge_types(&arguments[0], &set.element_type.borrow()).is_some()
         }
-        (Type::Named { name, arguments }, Value::SequenceIterator(iterator))
-            if name == "SequenceIterator" =>
+        (Type::Named { name, arguments }, Value::OwnedIterator(iterator))
+            if name == "OwnedIterator" =>
         {
             arguments.len() == 1 && merge_types(&arguments[0], &iterator.element_type).is_some()
         }
-        (Type::Named { name, arguments }, Value::BorrowedSequenceIterator(iterator))
+        (Type::Named { name, arguments }, Value::BorrowedSequenceIter(iterator))
             if name == "Iter" =>
         {
             arguments.len() == 1
@@ -526,11 +526,11 @@ fn type_of_value(value: &Value) -> Option<Type> {
             name: "BTreeSet".into(),
             arguments: vec![set.element_type.borrow().clone()],
         }),
-        Value::SequenceIterator(iterator) => Some(Type::Named {
-            name: "SequenceIterator".into(),
+        Value::OwnedIterator(iterator) => Some(Type::Named {
+            name: "OwnedIterator".into(),
             arguments: vec![iterator.element_type.clone()],
         }),
-        Value::BorrowedSequenceIterator(iterator) => Some(Type::Named {
+        Value::BorrowedSequenceIter(iterator) => Some(Type::Named {
             name: "Iter".into(),
             arguments: vec![Type::Reference {
                 mutable: false,

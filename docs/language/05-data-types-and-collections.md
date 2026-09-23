@@ -111,7 +111,7 @@ let characters = "R世".chars().count(); // 2
 `collect_vec()` 收集为 `Vec<T>`。这些默认方法同样适用于脚本实现的自定义 `Iterator`；`any/all/find/position`
 会短路。`filter/find` 的谓词接收 `&T`，筛选拥有型非 Copy 元素时不需要 Clone。
 
-除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。当前转换适配器生成拥有型内建迭代器；
+除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。数组和 Vec 的拥有型 `into_iter()` 在调用 `next()` 时逐项移出元素；当前转换适配器和字符串迭代会先收集结果，再生成拥有型内建迭代器。
 数组、Vec、HashMap、HashSet、BTreeMap 和 BTreeSet 已提供共享借用迭代，`iter_mut()` 尚未实现。
 
 ## VecDeque 与 BinaryHeap

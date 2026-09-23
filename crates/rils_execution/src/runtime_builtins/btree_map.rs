@@ -4,7 +4,7 @@ use rils_builtins::BuiltinId;
 
 use crate::{
     types::{Type, merge_types},
-    value::{BTreeMapValue, FieldSlot, HashKey, SequenceIteratorValue, SequenceValue, Value},
+    value::{BTreeMapValue, FieldSlot, HashKey, OwnedIteratorValue, SequenceValue, Value},
 };
 
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
@@ -109,10 +109,9 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                     ])
                 })
                 .collect();
-            Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-                items: RefCell::new(values),
-                element_type: Type::Tuple(vec![key_type, value_type]),
-            })))
+            Ok(Value::OwnedIterator(Rc::new(
+                OwnedIteratorValue::from_items(values, Type::Tuple(vec![key_type, value_type])),
+            )))
         }
         _ => Err("unsupported BTreeMap operation".into()),
     }

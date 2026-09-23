@@ -84,7 +84,7 @@ fn builtin_members_replace_generics_nested_in_return_types() {
         Some(Type::function(
             Vec::new(),
             Type::Named {
-                name: "SequenceIterator".into(),
+                name: "OwnedIterator".into(),
                 arguments: vec![Type::named("Task")],
             }
         ))

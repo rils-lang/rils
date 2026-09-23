@@ -71,7 +71,7 @@ fn type_pattern_macro_covers_nested_rust_style_types() {
     assert_eq!(
         ITERATOR,
         TypePattern::Named {
-            path: "SequenceIterator",
+            path: "OwnedIterator",
             arguments: &[TypePattern::Tuple(&[
                 TypePattern::Usize,
                 TypePattern::Generic("T"),

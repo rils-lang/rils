@@ -750,7 +750,7 @@ pub(crate) fn type_tokens(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
         }
         Type::Named { name, arguments } => {
             let path = if name == "Iterator" {
-                "SequenceIterator"
+                "OwnedIterator"
             } else {
                 name
             };

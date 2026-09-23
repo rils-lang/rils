@@ -111,7 +111,7 @@ fn path_tokens(path: &syn::Path) -> syn::Result<proc_macro2::TokenStream> {
     }
 
     let path_name = if is_single_segment && name == "Iterator" {
-        "SequenceIterator".to_owned()
+        "OwnedIterator".to_owned()
     } else {
         path.segments
             .iter()

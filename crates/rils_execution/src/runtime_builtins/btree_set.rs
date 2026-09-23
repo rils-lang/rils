@@ -4,7 +4,7 @@ use rils_builtins::BuiltinId;
 
 use crate::{
     types::{Type, merge_types},
-    value::{BTreeSetValue, HashKey, SequenceIteratorValue, Value},
+    value::{BTreeSetValue, HashKey, OwnedIteratorValue, Value},
 };
 
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
@@ -108,10 +108,9 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             let element_type = set.element_type.borrow().clone();
             let entries = std::mem::take(&mut *set.entries.borrow_mut());
             let items = entries.into_iter().map(|key| key.to_value()).collect();
-            Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-                items: RefCell::new(items),
-                element_type,
-            })))
+            Ok(Value::OwnedIterator(Rc::new(
+                OwnedIteratorValue::from_items(items, element_type),
+            )))
         }
         _ => Err("unsupported BTreeSet operation".into()),
     }

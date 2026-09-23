@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     rc::Rc,
 };
 
@@ -13,7 +13,7 @@ use crate::{
     types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
-        FieldSlot, HashMapValue, HashSetValue, RangeValue, ReferenceValue, SequenceIteratorValue,
+        FieldSlot, HashMapValue, HashSetValue, OwnedIteratorValue, RangeValue, ReferenceValue,
         SequenceValue, StructInstance, StructType, Value,
     },
 };

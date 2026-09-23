@@ -246,7 +246,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     | "HashMap"
                     | "HashSet"
                     | "Range"
-                    | "SequenceIterator"
+                    | "OwnedIterator"
                     | "Iter"
                     | "Rc"
                     | "Weak"
@@ -279,7 +279,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     "HashMap" => "HashMap",
                     "HashSet" => "HashSet",
                     "Range" => "Range",
-                    "SequenceIterator" => "Iterator",
+                    "OwnedIterator" => "Iterator",
                     "Iter" => "Iter",
                     "Rc" => "Rc",
                     "Weak" => "Weak",
@@ -339,16 +339,30 @@ fn resolve_member_pattern(
             trait_name,
             name,
             arguments,
-        } => Type::Associated {
-            base: Box::new(resolve_member_pattern(*base, self_type, generics)),
-            trait_name: trait_name.map(str::to_owned),
-            name: name.into(),
-            arguments: arguments
-                .iter()
-                .copied()
-                .map(|argument| resolve_member_pattern(argument, self_type, generics))
-                .collect(),
-        },
+        } => {
+            let base = resolve_member_pattern(*base, self_type, generics);
+            if trait_name == Some("Iterator")
+                && name == "Item"
+                && arguments.is_empty()
+                && let Type::Named {
+                    name: owner,
+                    arguments: items,
+                } = &base
+                && matches!(owner.as_str(), "OwnedIterator" | "Iter" | "Range")
+            {
+                return items.first().cloned().unwrap_or(Type::Unknown);
+            }
+            Type::Associated {
+                base: Box::new(base),
+                trait_name: trait_name.map(str::to_owned),
+                name: name.into(),
+                arguments: arguments
+                    .iter()
+                    .copied()
+                    .map(|argument| resolve_member_pattern(argument, self_type, generics))
+                    .collect(),
+            }
+        }
         TypePattern::Named { path, arguments } => Type::Named {
             name: path.into(),
             arguments: arguments

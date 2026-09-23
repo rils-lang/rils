@@ -371,7 +371,7 @@ impl Interpreter {
                         ))
                     }
                     ("Iterator", "next", Type::Named { name, arguments })
-                        if name == "SequenceIterator" && arguments.len() == 1 =>
+                        if name == "OwnedIterator" && arguments.len() == 1 =>
                     {
                         Some(BuiltinMethod::Runtime(
                             rils_builtins::BuiltinId::IteratorNext,

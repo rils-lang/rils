@@ -315,7 +315,7 @@ pub(super) fn type_implements_trait(
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashSet" && arguments.len() == 1) => {
             true
         }
-        "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "SequenceIterator" && arguments.len() == 1) => {
+        "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "OwnedIterator" && arguments.len() == 1) => {
             true
         }
         "Iterator" if matches!(actual, Type::Named { name, arguments } if name == "Iter" && arguments.len() == 1) => {

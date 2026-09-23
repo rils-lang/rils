@@ -5,7 +5,7 @@ use rils_builtins::BuiltinId;
 use crate::{
     types::{Type, merge_types},
     value::{
-        FieldSlot, HashKey, HashMapValue, HashSetValue, SequenceIteratorValue, SequenceValue, Value,
+        FieldSlot, HashKey, HashMapValue, HashSetValue, OwnedIteratorValue, SequenceValue, Value,
     },
 };
 
@@ -309,10 +309,7 @@ fn option(value: Option<Value>, element_type: Type) -> Result<Value, String> {
 }
 
 fn iterator(items: VecDeque<Value>, element_type: Type) -> Value {
-    Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-        items: RefCell::new(items),
-        element_type,
-    }))
+    Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(items, element_type)))
 }
 
 fn tuple(values: Vec<Value>) -> Value {

@@ -2,8 +2,8 @@ use super::*;
 use crate::environment::{StorageRef, StorageSlot};
 
 enum IteratorCursor {
-    Sequence(Rc<SequenceIteratorValue>),
-    Borrowed(Rc<BorrowedSequenceIteratorValue>),
+    Sequence(Rc<OwnedIteratorValue>),
+    Borrowed(Rc<BorrowedSequenceIterValue>),
     BorrowedMap(Rc<BorrowedMapIteratorValue>),
     BorrowedSet(Rc<BorrowedSetIteratorValue>),
     Range(RangeValue),
@@ -22,8 +22,8 @@ impl IteratorCursor {
             value => value.clone(),
         };
         Ok(match value {
-            Value::SequenceIterator(iterator) => Self::Sequence(iterator),
-            Value::BorrowedSequenceIterator(iterator) => Self::Borrowed(iterator),
+            Value::OwnedIterator(iterator) => Self::Sequence(iterator),
+            Value::BorrowedSequenceIter(iterator) => Self::Borrowed(iterator),
             Value::BorrowedMapIterator(iterator) => Self::BorrowedMap(iterator),
             Value::BorrowedSetIterator(iterator) => Self::BorrowedSet(iterator),
             Value::Range(range) => Self::Range(range),
@@ -59,7 +59,9 @@ impl IteratorCursor {
         span: Span,
     ) -> Result<Option<Value>, RuntimeError> {
         match self {
-            Self::Sequence(iterator) => Ok(iterator.items.borrow_mut().pop_front()),
+            Self::Sequence(iterator) => iterator
+                .next()
+                .map_err(|message| RuntimeError::new(message, span)),
             Self::Borrowed(iterator) => iterator
                 .next()
                 .map_err(|message| RuntimeError::new(message, span)),
@@ -374,10 +376,7 @@ fn owned_rc(value: Rc<Value>, span: Span) -> Result<Value, RuntimeError> {
 }
 
 fn iterator_value(items: std::collections::VecDeque<Value>, element_type: Type) -> Value {
-    Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-        items: RefCell::new(items),
-        element_type,
-    }))
+    Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(items, element_type)))
 }
 
 fn tuple_value(values: Vec<Value>) -> Value {

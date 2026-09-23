@@ -36,13 +36,12 @@ use crate::{
     source::Span,
     types::{FunctionSignature, Type, merge_types},
     value::{
-        BorrowedMapIteratorValue, BorrowedSequenceIteratorValue, BorrowedSetIteratorValue,
-        BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance,
-        EnumPayload, EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod,
-        HostFunction, HostFunctionHandler, HostObject, HostType, ModuleValue, NativeFunction,
-        RangeValue, ReferenceValue, SequenceIteratorValue, SequenceValue, StructInstance,
-        StructType, TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value,
-        VariantConstructor, enum_variant_name,
+        BorrowedMapIteratorValue, BorrowedSequenceIterValue, BorrowedSetIteratorValue, BoundMethod,
+        BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance, EnumPayload,
+        EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod, HostFunction,
+        HostFunctionHandler, HostObject, HostType, ModuleValue, NativeFunction, OwnedIteratorValue,
+        RangeValue, ReferenceValue, SequenceValue, StructInstance, StructType, TraitMethodSelector,
+        TraitType, TypeAliasType, UserFunction, Value, VariantConstructor, enum_variant_name,
     },
 };
 

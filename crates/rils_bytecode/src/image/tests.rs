@@ -1132,6 +1132,17 @@ fn compiles_borrowed_sequence_iteration_with_interpreter_parity() {
 }
 
 #[test]
+fn compiles_owned_sequence_iteration_with_interpreter_parity() {
+    for source in [
+        "{ let values = [2, 3, 5]; let mut iter = values.into_iter(); let first = iter.next().unwrap(); let rest = iter.collect_vec(); first + rest[0] }",
+        "{ let mut values: Vec<i32> = Vec::new(); values.push(4); values.push(7); let mut iter = values.into_iter(); iter.nth(1usize).unwrap() }",
+        "{ let values = [2, 3, 5]; let mut sum = 0; for item in values { sum = sum + item; } sum }",
+    ] {
+        assert_matches_interpreter(source);
+    }
+}
+
+#[test]
 fn compiles_borrowed_map_and_set_iteration_with_interpreter_parity() {
     for source in [
         "{ let mut map: HashMap<i32, i32> = HashMap::new(); map.insert(1, 10); map.insert(2, 20); let mut sum = 0; for entry in map.iter() { sum = sum + *entry.0 + *entry.1; } if map.len() == 2usize { sum } else { 0 } }",

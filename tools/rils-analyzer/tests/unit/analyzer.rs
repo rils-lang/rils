@@ -2140,7 +2140,7 @@ fn task_board_fields_keep_types_and_definitions_in_members_and_literals() {
         .unwrap();
     assert_eq!(
         hover["contents"]["value"].as_str(),
-        Some("```rils\nfn into_iter() -> SequenceIterator<Task>\n```")
+        Some("```rils\nfn into_iter() -> OwnedIterator<Task>\n```")
     );
 }
 

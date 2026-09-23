@@ -4,7 +4,7 @@ use rils_builtins::BuiltinId;
 
 use crate::{
     types::Type,
-    value::{BorrowedSequenceIteratorValue, SequenceValue, Value},
+    value::{BorrowedSequenceIterValue, SequenceValue, Value},
 };
 
 pub(super) fn reject_mutation(sequence: &SequenceValue) -> Result<(), String> {
@@ -42,8 +42,8 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             sequence
                 .active_iterators
                 .set(sequence.active_iterators.get() + 1);
-            Ok(Value::BorrowedSequenceIterator(Rc::new(
-                BorrowedSequenceIteratorValue {
+            Ok(Value::BorrowedSequenceIter(Rc::new(
+                BorrowedSequenceIterValue {
                     source: receiver.clone(),
                     sequence: sequence.clone(),
                     index: Cell::new(0),
@@ -61,7 +61,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 return Err("Iter::next requires `&mut self`".into());
             }
             let (value, item_type) = match receiver.read()? {
-                Value::BorrowedSequenceIterator(iterator) => (
+                Value::BorrowedSequenceIter(iterator) => (
                     iterator.next()?,
                     Type::Reference {
                         mutable: false,

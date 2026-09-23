@@ -4,7 +4,7 @@ use crate::{
     environment::{AssignError, StorageSlot},
     types::{IntegerType, Type},
     value::{
-        CellValue, FieldSlot, RefCellValue, ReferenceValue, SequenceIteratorValue, SequenceValue,
+        CellValue, FieldSlot, OwnedIteratorValue, RefCellValue, ReferenceValue, SequenceValue,
         Value, WeakValue,
     },
 };
@@ -493,16 +493,9 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 .borrow()
                 .clone()
                 .unwrap_or(Type::Unknown);
-            let items = sequence
-                .elements
-                .borrow_mut()
-                .drain(..)
-                .filter_map(|slot| slot.value)
-                .collect();
-            Ok(Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-                items: RefCell::new(items),
-                element_type,
-            })))
+            Ok(Value::OwnedIterator(Rc::new(
+                OwnedIteratorValue::from_sequence(sequence.clone(), element_type),
+            )))
         }
         BuiltinId::SequenceIter | BuiltinId::SequenceIterNext => sequence_iter::call(id, arguments),
         BuiltinId::HashMapIter
@@ -540,11 +533,11 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             if !reference.mutable {
                 return Err("Iterator::next requires `&mut self`".into());
             }
-            let Value::SequenceIterator(iterator) = reference.read()? else {
+            let Value::OwnedIterator(iterator) = reference.read()? else {
                 return Err("next receiver is not an iterator".into());
             };
             Ok(Value::Option {
-                value: iterator.items.borrow_mut().pop_front().map(Rc::new),
+                value: iterator.next()?.map(Rc::new),
                 element_type: Some(iterator.element_type.clone()),
             })
         }
@@ -576,10 +569,11 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::IteratorSkip
         | BuiltinId::IteratorRev
         | BuiltinId::IteratorEnumerate => {
-            let Value::SequenceIterator(iterator) = import_receiver(&arguments[0])? else {
+            let Value::OwnedIterator(iterator) = import_receiver(&arguments[0])? else {
                 return Err("iterator method receiver is not a built-in iterator".into());
             };
             let element_type = iterator.element_type.clone();
+            iterator.materialize()?;
             let mut items = iterator.items.borrow_mut();
             let count = || match arguments.get(1) {
                 Some(Value::Usize(value)) => Ok(*value),
@@ -641,13 +635,13 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                         items.drain(..count);
                         items.drain(..).collect()
                     };
-                    Ok(sequence_iterator_value(selected, element_type))
+                    Ok(owned_iterator_value(selected, element_type))
                 }
-                BuiltinId::IteratorRev => Ok(sequence_iterator_value(
+                BuiltinId::IteratorRev => Ok(owned_iterator_value(
                     items.drain(..).rev().collect(),
                     element_type,
                 )),
-                BuiltinId::IteratorEnumerate => Ok(sequence_iterator_value(
+                BuiltinId::IteratorEnumerate => Ok(owned_iterator_value(
                     items
                         .drain(..)
                         .enumerate()
@@ -681,11 +675,8 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     }
 }
 
-fn sequence_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value {
-    Value::SequenceIterator(Rc::new(SequenceIteratorValue {
-        items: RefCell::new(items),
-        element_type,
-    }))
+fn owned_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value {
+    Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(items, element_type)))
 }
 
 fn tuple_value(values: Vec<Value>) -> Value {
@@ -833,7 +824,7 @@ mod tests {
             Value::Option { value: None, .. }
         ));
 
-        let iterator = mutable_receiver(sequence_iterator_value(
+        let iterator = mutable_receiver(owned_iterator_value(
             VecDeque::from([Value::I32(11)]),
             Type::I32,
         ));
@@ -878,7 +869,7 @@ mod tests {
         assert!(
             call(
                 BuiltinId::IteratorNext,
-                &[sequence_iterator_value(VecDeque::new(), Type::I32)]
+                &[owned_iterator_value(VecDeque::new(), Type::I32)]
             )
             .unwrap_err()
             .contains("mutable binding")
@@ -891,13 +882,13 @@ mod tests {
 
         let enumerated = call(
             BuiltinId::IteratorEnumerate,
-            &[sequence_iterator_value(
+            &[owned_iterator_value(
                 VecDeque::from([Value::I32(9)]),
                 Type::I32,
             )],
         )
         .unwrap();
-        let Value::SequenceIterator(iterator) = enumerated else {
+        let Value::OwnedIterator(iterator) = enumerated else {
             panic!("enumerate must return a built-in iterator");
         };
         let Value::Tuple(tuple) = iterator.items.borrow_mut().pop_front().unwrap() else {

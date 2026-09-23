@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- Replaced the internal `SequenceIterator` type with `OwnedIterator`. Owned array and Vec iteration now moves each element when advanced; `into_iter()` and `for` retain their ownership behavior.
 - Added borrowed `iter()` for arrays and `Vec<T>`. It yields `&T` through `Iter<&T>` without consuming the collection and works in both the interpreter and bytecode VM. Borrowed iterators cannot outlive their source, and structural Vec mutation during iteration is rejected.
 - Added borrowed `iter()` for HashMap/BTreeMap and HashSet/BTreeSet, yielding `(&K, &V)` and `&T`. Ordered collections retain key order; mutation is rejected while iterator items still reference the source.
 
@@ -20,6 +21,8 @@
 - Added `BTreeSet<T>` ordered sets with membership, set algebra, cloned endpoint queries, and owned ascending iteration.
 
 ### Breaking Changes
+
+- Rust embedders matching `Value::SequenceIterator` or using `SequenceIteratorValue` must migrate to `Value::OwnedIterator` and `OwnedIteratorValue`. The borrowed sequence runtime variant is now `BorrowedSequenceIter`; Rils `Iterator<T>` source signatures remain available.
 
 - Rust consumers constructing `ExternalModuleExport` now supply `target_module`:
   `None` for value/type declarations, or the canonical target path for module

@@ -193,7 +193,7 @@ impl Interpreter {
                         .map_err(|message| RuntimeError::new(message, span))?,
                     value => value.clone(),
                 };
-                if matches!(receiver, Value::SequenceIterator(_)) {
+                if matches!(receiver, Value::OwnedIterator(_)) {
                     let mut values = Vec::with_capacity(arguments.len() + 1);
                     values.push((*method.receiver).clone());
                     values.extend_from_slice(arguments);
