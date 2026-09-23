@@ -35,4 +35,7 @@ impl<K, V> BTreeMap<K, V> {
     /// Consumes the map and iterates over owned entries in key order.
     #[runtime(core::btree_map::into_iter)]
     fn into_iter(self) -> Iterator<(K, V)> {}
+    /// Borrows each key-value pair in key order.
+    #[runtime(core::btree_map::iter)]
+    fn iter(&self) -> Iter<(&K, &V)> {}
 }

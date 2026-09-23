@@ -10,6 +10,7 @@ use crate::{
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     if id == BuiltinId::BtreeSetNew {
         return Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
+            borrowed: std::cell::Cell::new(0),
             entries: RefCell::new(Default::default()),
             element_type: RefCell::new(Type::Unknown),
         })));
@@ -25,6 +26,9 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
     let Value::BTreeSet(set) = super::import_receiver(receiver)? else {
         return Err("expected BTreeSet receiver".into());
     };
+    if (mutating || id == BuiltinId::BtreeSetIntoIter) && set.borrowed.get() > 0 {
+        return Err("cannot mutate BTreeSet while it is borrowed by an iterator".into());
+    }
     match id {
         BuiltinId::BtreeSetLen => Ok(Value::Usize(set.entries.borrow().len())),
         BuiltinId::BtreeSetIsEmpty => Ok(Value::Bool(set.entries.borrow().is_empty())),
@@ -93,6 +97,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                         _ => unreachable!(),
                     };
                     Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
+                        borrowed: std::cell::Cell::new(0),
                         entries: RefCell::new(entries),
                         element_type: RefCell::new(element_type),
                     })))

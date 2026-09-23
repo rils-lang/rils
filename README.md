@@ -34,7 +34,7 @@ VS Code 和 CLI 工具链发行包均携带同源的 `rils_stdlib` 声明包，�
 `HashMap<K, V>` 和 `HashSet<T>`。`BinaryHeap` 是最大优先队列，使用
 `push/pop/peek_cloned` 处理整数、字符或字符串优先级；`BTreeMap` 按键排序。完整用法见
 [集合章节](docs/language/05-data-types-and-collections.md)。
-数组和 `Vec<T>` 还提供 `iter()` 借用遍历，逐项产生 `&T`，遍历后可继续使用原集合。
+数组、`Vec<T>`、Map 和 Set 还提供 `iter()` 借用遍历，遍历后可继续使用原集合。
 
 ```rust
 let value = rils::eval("1 + 2 * 3")?;

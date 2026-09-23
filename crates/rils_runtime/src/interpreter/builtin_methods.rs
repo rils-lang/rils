@@ -163,7 +163,11 @@ impl Interpreter {
             }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::SequenceIter
-                | rils_builtins::BuiltinId::SequenceIterNext),
+                | rils_builtins::BuiltinId::SequenceIterNext
+                | rils_builtins::BuiltinId::HashMapIter
+                | rils_builtins::BuiltinId::BtreeMapIter
+                | rils_builtins::BuiltinId::HashSetIter
+                | rils_builtins::BuiltinId::BtreeSetIter),
             ) => crate::runtime_builtins::call(id, &[(*method.receiver).clone()])
                 .map_err(|message| RuntimeError::new(message, span)),
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorNext) => {

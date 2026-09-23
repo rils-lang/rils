@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
-use super::{SequenceValue, StructInstance, Value};
+use super::{HashKey, MapCollection, SequenceValue, SetCollection, StructInstance, Value};
 
 pub struct ReferenceValue {
     pub mutable: bool,
@@ -20,14 +20,33 @@ enum ReferenceTarget {
         sequence: Rc<SequenceValue>,
         index: usize,
     },
+    MapKey {
+        map: MapCollection,
+        key: HashKey,
+    },
+    MapValue {
+        map: MapCollection,
+        key: HashKey,
+    },
+    SetItem {
+        set: SetCollection,
+        key: HashKey,
+    },
 }
 
 impl ReferenceValue {
     pub fn is_local_to(&self, environment: &EnvironmentRef) -> bool {
-        match &self.target {
-            ReferenceTarget::Storage(target) => environment.borrow().owns_storage(target),
-            ReferenceTarget::StructField { .. } | ReferenceTarget::SequenceElement { .. } => false,
-        }
+        self._guard
+            .as_ref()
+            .is_some_and(|guard| guard.is_local_to(environment))
+            || match &self.target {
+                ReferenceTarget::Storage(target) => environment.borrow().owns_storage(target),
+                ReferenceTarget::StructField { .. }
+                | ReferenceTarget::SequenceElement { .. }
+                | ReferenceTarget::MapKey { .. }
+                | ReferenceTarget::MapValue { .. }
+                | ReferenceTarget::SetItem { .. } => false,
+            }
     }
 
     pub fn new_storage(target: StorageRef, mutable: bool) -> Self {
@@ -99,6 +118,54 @@ impl ReferenceValue {
         })
     }
 
+    pub fn new_map_key(
+        map: MapCollection,
+        key: HashKey,
+        guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<Self, String> {
+        if !map.contains_key(&key) {
+            return Err("iterator map key no longer exists".into());
+        }
+        map.borrowed().set(map.borrowed().get() + 1);
+        Ok(Self {
+            mutable: false,
+            target: ReferenceTarget::MapKey { map, key },
+            _guard: guard,
+        })
+    }
+
+    pub fn new_map_value(
+        map: MapCollection,
+        key: HashKey,
+        guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<Self, String> {
+        if map.value(&key).is_none() {
+            return Err("iterator map value no longer exists".into());
+        }
+        map.borrowed().set(map.borrowed().get() + 1);
+        Ok(Self {
+            mutable: false,
+            target: ReferenceTarget::MapValue { map, key },
+            _guard: guard,
+        })
+    }
+
+    pub fn new_set_item(
+        set: SetCollection,
+        key: HashKey,
+        guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<Self, String> {
+        if !set.contains(&key) {
+            return Err("iterator set item no longer exists".into());
+        }
+        set.borrowed().set(set.borrowed().get() + 1);
+        Ok(Self {
+            mutable: false,
+            target: ReferenceTarget::SetItem { set, key },
+            _guard: guard,
+        })
+    }
+
     pub fn reborrow(&self, mutable: bool) -> Result<Self, String> {
         if mutable && !self.mutable {
             return Err("cannot mutably borrow through an immutable reference".into());
@@ -118,6 +185,15 @@ impl ReferenceValue {
                     mutable,
                     self._guard.clone(),
                 )
+            }
+            ReferenceTarget::MapKey { map, key } => {
+                Self::new_map_key(map.clone(), key.clone(), self._guard.clone())
+            }
+            ReferenceTarget::MapValue { map, key } => {
+                Self::new_map_value(map.clone(), key.clone(), self._guard.clone())
+            }
+            ReferenceTarget::SetItem { set, key } => {
+                Self::new_set_item(set.clone(), key.clone(), self._guard.clone())
             }
         }
     }
@@ -140,6 +216,17 @@ impl ReferenceValue {
                 .get(*index)
                 .and_then(|slot| slot.value.clone())
                 .ok_or_else(|| format!("reference target element {index} has been moved")),
+            ReferenceTarget::MapKey { map, key } => map
+                .contains_key(key)
+                .then(|| key.to_value())
+                .ok_or_else(|| "iterator map key no longer exists".into()),
+            ReferenceTarget::MapValue { map, key } => map
+                .value(key)
+                .ok_or_else(|| "iterator map value no longer exists".into()),
+            ReferenceTarget::SetItem { set, key } => set
+                .contains(key)
+                .then(|| key.to_value())
+                .ok_or_else(|| "iterator set item no longer exists".into()),
         }
     }
 
@@ -173,6 +260,9 @@ impl ReferenceValue {
                 );
                 Ok(())
             }
+            ReferenceTarget::MapKey { .. }
+            | ReferenceTarget::MapValue { .. }
+            | ReferenceTarget::SetItem { .. } => Err(AssignError::Immutable),
         }
     }
 }
@@ -190,6 +280,12 @@ impl Drop for ReferenceValue {
                 if let Some(slot) = sequence.elements.borrow_mut().get_mut(*index) {
                     slot.references = slot.references.saturating_sub(1);
                 }
+            }
+            ReferenceTarget::MapKey { map, .. } | ReferenceTarget::MapValue { map, .. } => {
+                map.borrowed().set(map.borrowed().get().saturating_sub(1));
+            }
+            ReferenceTarget::SetItem { set, .. } => {
+                set.borrowed().set(set.borrowed().get().saturating_sub(1));
             }
         }
     }

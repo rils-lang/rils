@@ -112,7 +112,7 @@ let characters = "R世".chars().count(); // 2
 会短路。`filter/find` 的谓词接收 `&T`，筛选拥有型非 Copy 元素时不需要 Clone。
 
 除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。当前转换适配器生成拥有型内建迭代器；
-共享引用和可写引用的容器迭代器仍未实现。
+数组、Vec、HashMap、HashSet、BTreeMap 和 BTreeSet 已提供共享借用迭代，`iter_mut()` 尚未实现。
 
 ## VecDeque 与 BinaryHeap
 
@@ -133,7 +133,8 @@ let highest = priorities.pop(); // Some(5)
 `BTreeMap<K, V>` 是按键排序的拥有型 Map，可从 prelude 或 `std::collections` 访问。
 支持 `new/len/is_empty/clear/contains_key/insert/get_cloned/remove`，
 `first_key_cloned/last_key_cloned` 返回两端键的显式克隆；`into_iter()` 或直接用于 `for` 会消费 Map，
-按键从小到大产生 `(K, V)`。当前键类型限于 `bool`、整数、`char` 和 `string`；
+按键从小到大产生 `(K, V)`。`iter()` 则按键顺序借用并产生 `(&K, &V)`，不会消费 Map。
+当前键类型限于 `bool`、整数、`char` 和 `string`；
 浮点键等不支持的类型会在操作时返回错误。Rils 尚未提供通用 `Ord` trait，
 因此自定义类型暂不能作为有序 Map 的键。
 
@@ -151,6 +152,7 @@ for entry in scores {
 `new/len/is_empty/clear/contains/insert/remove`、`first_cloned/last_cloned`，
 以及 `is_subset/is_superset/is_disjoint/union/intersection/difference/symmetric_difference`。
 集合运算返回新的拥有型 Set；`into_iter()` 或直接用于 `for` 会消费 Set 并按升序遍历。
+`iter()` 产生按升序排列的 `&T`，且保留原 Set。
 
 ```rust
 let mut values: BTreeSet<i32> = BTreeSet::new();
@@ -166,6 +168,8 @@ for value in values {
 `HashMap<K, V>` 和 `HashSet<T>` 位于 prelude，也可通过 `std::collections` 访问。当前可作为键或
 集合元素的类型是实现内建 `Eq + Hash` 的 `bool`、整数、`char` 和 `string`；浮点数会在静态分析
 阶段拒绝。
+两种容器都提供 `iter()`：Map 产生 `(&K, &V)`，Set 产生 `&T`；哈希容器的遍历顺序不保证固定。
+借用迭代器或其产出的引用仍存活时，不能结构修改原集合。
 
 ```rust
 let mut scores: HashMap<string, i32> = HashMap::new();

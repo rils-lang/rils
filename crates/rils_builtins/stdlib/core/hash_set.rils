@@ -47,4 +47,7 @@ impl<T> HashSet<T> {
 
     /// Consumes the set and iterates over its values.
     fn into_iter(self) -> Iterator<T> {}
+    /// Borrows each element without consuming the set.
+    #[runtime(core::hash_set::iter)]
+    fn iter(&self) -> Iter<&T> {}
 }

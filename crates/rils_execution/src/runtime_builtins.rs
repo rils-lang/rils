@@ -12,6 +12,7 @@ use crate::{
 mod binary_heap;
 mod btree_map;
 mod btree_set;
+mod collection_iter;
 mod option_result;
 mod sequence_iter;
 mod string;
@@ -504,6 +505,10 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             })))
         }
         BuiltinId::SequenceIter | BuiltinId::SequenceIterNext => sequence_iter::call(id, arguments),
+        BuiltinId::HashMapIter
+        | BuiltinId::BtreeMapIter
+        | BuiltinId::HashSetIter
+        | BuiltinId::BtreeSetIter => collection_iter::call(id, arguments),
         BuiltinId::HashMapLen
         | BuiltinId::HashMapIsEmpty
         | BuiltinId::HashMapClear

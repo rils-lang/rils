@@ -278,6 +278,12 @@ impl<'a> VirtualMachine<'a> {
                         Value::BorrowedSequenceIterator(iterator) => {
                             Value::BorrowedSequenceIterator(iterator)
                         }
+                        Value::BorrowedMapIterator(iterator) => {
+                            Value::BorrowedMapIterator(iterator)
+                        }
+                        Value::BorrowedSetIterator(iterator) => {
+                            Value::BorrowedSetIterator(iterator)
+                        }
                         Value::Array(sequence) | Value::Vec(sequence) => {
                             let element_type = sequence
                                 .element_type
@@ -922,6 +928,12 @@ impl<'a> VirtualMachine<'a> {
                                 iterator.items.borrow_mut().pop_front()
                             }
                             Value::BorrowedSequenceIterator(iterator) => iterator
+                                .next()
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                            Value::BorrowedMapIterator(iterator) => iterator
+                                .next()
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                            Value::BorrowedSetIterator(iterator) => iterator
                                 .next()
                                 .map_err(|message| BytecodeError::new(message, instruction.span))?,
                             value => {

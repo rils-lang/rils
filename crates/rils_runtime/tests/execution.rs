@@ -190,6 +190,54 @@ fn borrowed_sequence_iterator_rejects_escape_and_mutation() {
 }
 
 #[test]
+fn borrowed_map_and_set_iterators_preserve_collections() {
+    for (source, expected) in [
+        (
+            "{ let mut map: HashMap<i32, i32> = HashMap::new(); map.insert(1, 10); map.insert(2, 20); let mut sum = 0; for entry in map.iter() { sum = sum + *entry.0 + *entry.1; } if map.len() == 2usize { sum } else { 0 } }",
+            33,
+        ),
+        (
+            "{ let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(2, 20); map.insert(1, 10); let mut iter = map.iter(); let first = iter.next().unwrap(); if map.len() == 2usize { *first.0 + *first.1 } else { 0 } }",
+            11,
+        ),
+        (
+            "{ let mut set: HashSet<i32> = HashSet::new(); set.insert(2); set.insert(3); let mut sum = 0; for item in set.iter() { sum = sum + *item; } if set.len() == 2usize { sum } else { 0 } }",
+            5,
+        ),
+        (
+            "{ let mut set: BTreeSet<i32> = BTreeSet::new(); set.insert(3); set.insert(2); let mut iter = set.iter(); let first = iter.next().unwrap(); if set.len() == 2usize { *first } else { 0 } }",
+            2,
+        ),
+    ] {
+        assert_eq!(eval(source).unwrap(), Value::I32(expected));
+    }
+}
+
+#[test]
+fn borrowed_map_and_set_items_block_structural_mutation() {
+    for source in [
+        "{ let mut map: HashMap<i32, i32> = HashMap::new(); map.insert(1, 10); let iter = map.iter(); map.insert(2, 20); iter.count() }",
+        "{ let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(1, 10); let item = { let mut iter = map.iter(); iter.next().unwrap() }; let key = 1; map.remove(&key); *item.1 }",
+        "{ let mut set: HashSet<i32> = HashSet::new(); set.insert(1); let iter = set.iter(); set.insert(2); iter.count() }",
+        "{ let mut set: BTreeSet<i32> = BTreeSet::new(); set.insert(1); let item = { let mut iter = set.iter(); iter.next().unwrap() }; let key = 1; set.remove(&key); *item }",
+    ] {
+        let error = eval(source).expect_err("mutation must be rejected while borrowed");
+        assert!(
+            error.to_string().contains("cannot mutate"),
+            "{source}: {error}"
+        );
+    }
+    assert_eq!(
+        eval("{ let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(1, 10); { let iter = map.iter(); iter.count() }; map.insert(2, 20); map.len() }").unwrap(),
+        Value::Usize(2),
+    );
+    assert_eq!(
+        eval("{ let mut set: HashSet<i32> = HashSet::new(); set.insert(1); { let iter = set.iter(); iter.count() }; set.insert(2); set.len() }").unwrap(),
+        Value::Usize(2),
+    );
+}
+
+#[test]
 fn btree_map_handles_replacement_removal_and_invalid_keys() {
     let source = r#"
         let mut map: BTreeMap<char, i32> = BTreeMap::new();

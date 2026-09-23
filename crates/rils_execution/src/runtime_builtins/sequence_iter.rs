@@ -60,16 +60,21 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             if !receiver.mutable {
                 return Err("Iter::next requires `&mut self`".into());
             }
-            let Value::BorrowedSequenceIterator(iterator) = receiver.read()? else {
-                return Err("next receiver is not Iter".into());
+            let (value, item_type) = match receiver.read()? {
+                Value::BorrowedSequenceIterator(iterator) => (
+                    iterator.next()?,
+                    Type::Reference {
+                        mutable: false,
+                        inner: Box::new(iterator.element_type.clone()),
+                    },
+                ),
+                Value::BorrowedMapIterator(iterator) => (iterator.next()?, iterator.item_type()),
+                Value::BorrowedSetIterator(iterator) => (iterator.next()?, iterator.item_type()),
+                _ => return Err("next receiver is not Iter".into()),
             };
-            let value = iterator.next()?.map(Rc::new);
             Ok(Value::Option {
-                value,
-                element_type: Some(Type::Reference {
-                    mutable: false,
-                    inner: Box::new(iterator.element_type.clone()),
-                }),
+                value: value.map(Rc::new),
+                element_type: Some(item_type),
             })
         }
         _ => Err("unsupported sequence iterator operation".into()),

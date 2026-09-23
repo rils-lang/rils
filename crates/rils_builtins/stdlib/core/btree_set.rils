@@ -53,4 +53,7 @@ impl<T> BTreeSet<T> {
     /// Consumes the set and iterates over owned elements in order.
     #[runtime(core::btree_set::into_iter)]
     fn into_iter(self) -> Iterator<T> {}
+    /// Borrows each element in ascending order.
+    #[runtime(core::btree_set::iter)]
+    fn iter(&self) -> Iter<&T> {}
 }

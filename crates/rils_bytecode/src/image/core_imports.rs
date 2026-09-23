@@ -87,11 +87,13 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             element_type: RefCell::new(Some(Type::Unknown)),
         }))),
         CoreImport::HashMapNew => Ok(Value::HashMap(Rc::new(HashMapValue {
+            borrowed: std::cell::Cell::new(0),
             entries: RefCell::new(HashMap::new()),
             key_type: RefCell::new(Type::Unknown),
             value_type: RefCell::new(Type::Unknown),
         }))),
         CoreImport::HashSetNew => Ok(Value::HashSet(Rc::new(HashSetValue {
+            borrowed: std::cell::Cell::new(0),
             entries: RefCell::new(HashSet::new()),
             element_type: RefCell::new(Type::Unknown),
         }))),

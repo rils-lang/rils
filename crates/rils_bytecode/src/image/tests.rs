@@ -1132,6 +1132,18 @@ fn compiles_borrowed_sequence_iteration_with_interpreter_parity() {
 }
 
 #[test]
+fn compiles_borrowed_map_and_set_iteration_with_interpreter_parity() {
+    for source in [
+        "{ let mut map: HashMap<i32, i32> = HashMap::new(); map.insert(1, 10); map.insert(2, 20); let mut sum = 0; for entry in map.iter() { sum = sum + *entry.0 + *entry.1; } if map.len() == 2usize { sum } else { 0 } }",
+        "{ let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(2, 20); map.insert(1, 10); let mut iter = map.iter(); let first = iter.next().unwrap(); if map.len() == 2usize { *first.0 + *first.1 } else { 0 } }",
+        "{ let mut set: HashSet<i32> = HashSet::new(); set.insert(2); set.insert(3); let mut sum = 0; for item in set.iter() { sum = sum + *item; } if set.len() == 2usize { sum } else { 0 } }",
+        "{ let mut set: BTreeSet<i32> = BTreeSet::new(); set.insert(3); set.insert(2); let mut iter = set.iter(); let first = iter.next().unwrap(); if set.len() == 2usize { *first } else { 0 } }",
+    ] {
+        assert_matches_interpreter(source);
+    }
+}
+
+#[test]
 fn rejects_unlinked_unauthorized_and_incompatible_imports() {
     let module = compile("type_of(42)").unwrap();
 

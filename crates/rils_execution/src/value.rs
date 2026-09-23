@@ -18,7 +18,9 @@ mod display;
 
 #[path = "value/hash.rs"]
 mod hash;
-pub use hash::{BTreeMapValue, BTreeSetValue, HashKey, HashMapValue, HashSetValue};
+pub use hash::{
+    BTreeMapValue, BTreeSetValue, HashKey, HashMapValue, HashSetValue, MapCollection, SetCollection,
+};
 use hash::{btree_maps_equal, clone_hash_map, hash_maps_equal};
 
 #[path = "value/range.rs"]
@@ -28,6 +30,12 @@ pub use range::RangeValue;
 #[path = "value/reference.rs"]
 mod reference;
 pub use reference::ReferenceValue;
+
+#[path = "value/iterator.rs"]
+mod iterator;
+pub use iterator::{
+    BorrowedMapIteratorValue, BorrowedSequenceIteratorValue, BorrowedSetIteratorValue,
+};
 
 pub type HostFunctionHandler = dyn Fn(&[Value]) -> Result<Value, String>;
 
@@ -154,45 +162,6 @@ pub struct SequenceValue {
     pub elements: RefCell<Vec<FieldSlot>>,
     pub element_type: RefCell<Option<Type>>,
     pub active_iterators: std::cell::Cell<usize>,
-}
-
-pub struct BorrowedSequenceIteratorValue {
-    pub source: Rc<ReferenceValue>,
-    pub sequence: Rc<SequenceValue>,
-    pub index: std::cell::Cell<usize>,
-    pub length: usize,
-    pub element_type: Type,
-}
-
-impl BorrowedSequenceIteratorValue {
-    pub fn next(&self) -> Result<Option<Value>, String> {
-        let (Value::Array(source) | Value::Vec(source)) = self.source.read()? else {
-            return Err("iterator source is no longer a sequence".into());
-        };
-        if !Rc::ptr_eq(&source, &self.sequence) {
-            return Err("iterator source has been replaced".into());
-        }
-        let index = self.index.get();
-        if index >= self.length {
-            return Ok(None);
-        }
-        let reference = ReferenceValue::new_guarded_sequence_element(
-            self.sequence.clone(),
-            index,
-            false,
-            Some(self.source.clone()),
-        )?;
-        self.index.set(index + 1);
-        Ok(Some(Value::Reference(Rc::new(reference))))
-    }
-}
-
-impl Drop for BorrowedSequenceIteratorValue {
-    fn drop(&mut self) {
-        self.sequence
-            .active_iterators
-            .set(self.sequence.active_iterators.get().saturating_sub(1));
-    }
 }
 
 #[derive(Clone)]
@@ -349,6 +318,8 @@ pub enum Value {
     BinaryHeap(Rc<BinaryHeapValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BorrowedSequenceIterator(Rc<BorrowedSequenceIteratorValue>),
+    BorrowedMapIterator(Rc<BorrowedMapIteratorValue>),
+    BorrowedSetIterator(Rc<BorrowedSetIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
     Option {
@@ -462,6 +433,8 @@ impl Value {
             | Self::HashSet(_)
             | Self::SequenceIterator(_)
             | Self::BorrowedSequenceIterator(_)
+            | Self::BorrowedMapIterator(_)
+            | Self::BorrowedSetIterator(_)
             | Self::BytecodeIterator(_) => false,
         }
     }
@@ -534,6 +507,7 @@ impl Value {
                 .iter()
                 .any(Value::contains_reference),
             Self::BorrowedSequenceIterator(_) => true,
+            Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => true,
             _ => false,
         }
     }
@@ -558,6 +532,8 @@ impl Value {
                 .any(|value| value.contains_local_reference(environment)),
             Self::Reference(reference) => reference.is_local_to(environment),
             Self::BorrowedSequenceIterator(iterator) => iterator.source.is_local_to(environment),
+            Self::BorrowedMapIterator(iterator) => iterator.source.is_local_to(environment),
+            Self::BorrowedSetIterator(iterator) => iterator.source.is_local_to(environment),
             Self::Option {
                 value: Some(value), ..
             } => value.contains_local_reference(environment),
@@ -618,20 +594,28 @@ impl Value {
                                 .is_some_and(Value::has_active_references)
                     })
             }
-            Self::HashMap(map) => map.entries.borrow().values().any(|slot| {
-                slot.references > 0
-                    || slot
-                        .value
-                        .as_ref()
-                        .is_some_and(Value::has_active_references)
-            }),
-            Self::BTreeMap(map) => map.entries.borrow().values().any(|slot| {
-                slot.references > 0
-                    || slot
-                        .value
-                        .as_ref()
-                        .is_some_and(Value::has_active_references)
-            }),
+            Self::HashMap(map) => {
+                map.borrowed.get() > 0
+                    || map.entries.borrow().values().any(|slot| {
+                        slot.references > 0
+                            || slot
+                                .value
+                                .as_ref()
+                                .is_some_and(Value::has_active_references)
+                    })
+            }
+            Self::BTreeMap(map) => {
+                map.borrowed.get() > 0
+                    || map.entries.borrow().values().any(|slot| {
+                        slot.references > 0
+                            || slot
+                                .value
+                                .as_ref()
+                                .is_some_and(Value::has_active_references)
+                    })
+            }
+            Self::HashSet(set) => set.borrowed.get() > 0,
+            Self::BTreeSet(set) => set.borrowed.get() > 0,
             _ => false,
         }
     }
@@ -714,15 +698,20 @@ impl Value {
             Self::HashMap(map) => Self::HashMap(Rc::new(clone_hash_map(map)?)),
             Self::BTreeMap(map) => Self::BTreeMap(Rc::new(hash::clone_btree_map(map)?)),
             Self::BTreeSet(set) => Self::BTreeSet(Rc::new(BTreeSetValue {
+                borrowed: std::cell::Cell::new(0),
                 entries: RefCell::new(set.entries.borrow().clone()),
                 element_type: RefCell::new(set.element_type.borrow().clone()),
             })),
             Self::HashSet(set) => Self::HashSet(Rc::new(HashSetValue {
+                borrowed: std::cell::Cell::new(0),
                 entries: RefCell::new(set.entries.borrow().clone()),
                 element_type: RefCell::new(set.element_type.borrow().clone()),
             })),
             Self::SequenceIterator(_) => return Err("iterators cannot be cloned".into()),
             Self::BorrowedSequenceIterator(_) => return Err("iterators cannot be cloned".into()),
+            Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => {
+                return Err("iterators cannot be cloned".into());
+            }
             Self::BytecodeIterator(_) => return Err("iterators cannot be cloned".into()),
             Self::Struct(instance) => {
                 let source = instance.fields.borrow();
@@ -837,6 +826,9 @@ impl Value {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())
             }
             Self::BorrowedSequenceIterator(_) => {
+                Type::of_value(self).map_or_else(|| "Iter".into(), |ty| ty.to_string())
+            }
+            Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => {
                 Type::of_value(self).map_or_else(|| "Iter".into(), |ty| ty.to_string())
             }
             Self::BytecodeIterator(_) => "iterator".into(),

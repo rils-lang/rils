@@ -65,6 +65,7 @@ remove = 0x0506
 keys_cloned = 0x0507
 values_cloned = 0x0508
 into_iter = 0x0509
+iter = 0x050A
 
 # HashSet operations: 0x0600-0x06FF.
 [core.hash_set]
@@ -82,6 +83,7 @@ intersection = 0x060A
 difference = 0x060B
 symmetric_difference = 0x060C
 into_iter = 0x060D
+iter = 0x060E
 
 # Formatting operations: 0x0700-0x07FF.
 [core.fmt]
@@ -282,6 +284,7 @@ remove = 0x1207
 first_key_cloned = 0x1208
 last_key_cloned = 0x1209
 into_iter = 0x120A
+iter = 0x120B
 
 # Ordered set operations: 0x1300-0x13FF.
 [core.btree_set]
@@ -302,3 +305,4 @@ intersection = 0x130D
 difference = 0x130E
 symmetric_difference = 0x130F
 into_iter = 0x1310
+iter = 0x1311

@@ -348,6 +348,21 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
             Some(BuiltinId::SequenceIter)
         );
     }
+    for (owner, id) in [
+        ("HashMap", BuiltinId::HashMapIter),
+        ("BTreeMap", BuiltinId::BtreeMapIter),
+        ("HashSet", BuiltinId::HashSetIter),
+        ("BTreeSet", BuiltinId::BtreeSetIter),
+    ] {
+        assert_eq!(
+            builtin(owner)
+                .expect("map or set declaration")
+                .member("iter")
+                .expect("borrowed iteration method")
+                .builtin_id,
+            Some(id)
+        );
+    }
 
     let array = builtin("Array").expect("Array declaration");
     assert_eq!(array.kind, BuiltinKind::Primitive);

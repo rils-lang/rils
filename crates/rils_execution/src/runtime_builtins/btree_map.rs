@@ -10,6 +10,7 @@ use crate::{
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     if id == BuiltinId::BtreeMapNew {
         return Ok(Value::BTreeMap(Rc::new(BTreeMapValue {
+            borrowed: std::cell::Cell::new(0),
             entries: RefCell::new(Default::default()),
             key_type: RefCell::new(Type::Unknown),
             value_type: RefCell::new(Type::Unknown),
@@ -123,13 +124,15 @@ fn key(arguments: &[Value], index: usize) -> Result<HashKey, String> {
 }
 
 fn reject_referenced(map: &BTreeMapValue) -> Result<(), String> {
-    if map.entries.borrow().values().any(|slot| {
-        slot.references > 0
-            || slot
-                .value
-                .as_ref()
-                .is_some_and(Value::has_active_references)
-    }) {
+    if map.borrowed.get() > 0
+        || map.entries.borrow().values().any(|slot| {
+            slot.references > 0
+                || slot
+                    .value
+                    .as_ref()
+                    .is_some_and(Value::has_active_references)
+        })
+    {
         Err("cannot mutate BTreeMap while a value is referenced".into())
     } else {
         Ok(())

@@ -74,6 +74,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
             }
             DefaultPlan::EmptyCollection { name, arguments } if name == "HashMap" => {
                 Value::HashMap(Rc::new(HashMapValue {
+                    borrowed: std::cell::Cell::new(0),
                     entries: RefCell::new(std::collections::HashMap::new()),
                     key_type: RefCell::new(arguments[0].clone()),
                     value_type: RefCell::new(arguments[1].clone()),
@@ -81,6 +82,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
             }
             DefaultPlan::EmptyCollection { name, arguments } if name == "HashSet" => {
                 Value::HashSet(Rc::new(HashSetValue {
+                    borrowed: std::cell::Cell::new(0),
                     entries: RefCell::new(std::collections::HashSet::new()),
                     element_type: RefCell::new(arguments[0].clone()),
                 }))
@@ -114,6 +116,7 @@ pub(crate) fn builtin_runtime_member(
         Value::Result { .. } => "Result",
         Value::SequenceIterator(_) => "Iterator",
         Value::BorrowedSequenceIterator(_) => "Iter",
+        Value::BorrowedMapIterator(_) | Value::BorrowedSetIterator(_) => "Iter",
         Value::HostObject(object) if object.type_definition.name == "Formatter" => "Formatter",
         _ => return None,
     };

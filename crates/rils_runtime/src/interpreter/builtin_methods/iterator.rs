@@ -4,6 +4,8 @@ use crate::environment::{StorageRef, StorageSlot};
 enum IteratorCursor {
     Sequence(Rc<SequenceIteratorValue>),
     Borrowed(Rc<BorrowedSequenceIteratorValue>),
+    BorrowedMap(Rc<BorrowedMapIteratorValue>),
+    BorrowedSet(Rc<BorrowedSetIteratorValue>),
     Range(RangeValue),
     Dynamic {
         storage: StorageRef,
@@ -22,6 +24,8 @@ impl IteratorCursor {
         Ok(match value {
             Value::SequenceIterator(iterator) => Self::Sequence(iterator),
             Value::BorrowedSequenceIterator(iterator) => Self::Borrowed(iterator),
+            Value::BorrowedMapIterator(iterator) => Self::BorrowedMap(iterator),
+            Value::BorrowedSetIterator(iterator) => Self::BorrowedSet(iterator),
             Value::Range(range) => Self::Range(range),
             value => {
                 let element_type = Type::of_value(&value).unwrap_or(Type::Unknown);
@@ -42,6 +46,8 @@ impl IteratorCursor {
                 mutable: false,
                 inner: Box::new(iterator.element_type.clone()),
             },
+            Self::BorrowedMap(iterator) => iterator.item_type(),
+            Self::BorrowedSet(iterator) => iterator.item_type(),
             Self::Range(range) => range.element_type(),
             Self::Dynamic { element_type, .. } => element_type.clone(),
         }
@@ -55,6 +61,12 @@ impl IteratorCursor {
         match self {
             Self::Sequence(iterator) => Ok(iterator.items.borrow_mut().pop_front()),
             Self::Borrowed(iterator) => iterator
+                .next()
+                .map_err(|message| RuntimeError::new(message, span)),
+            Self::BorrowedMap(iterator) => iterator
+                .next()
+                .map_err(|message| RuntimeError::new(message, span)),
+            Self::BorrowedSet(iterator) => iterator
                 .next()
                 .map_err(|message| RuntimeError::new(message, span)),
             Self::Range(range) => range

@@ -64,6 +64,7 @@ impl Interpreter {
                 BuiltinFunction::HashMapNew => {
                     check_arity("HashMap::new", 0, 0, arguments.len(), span)?;
                     Ok(Value::HashMap(Rc::new(HashMapValue {
+                        borrowed: std::cell::Cell::new(0),
                         entries: RefCell::new(HashMap::new()),
                         key_type: RefCell::new(Type::Unknown),
                         value_type: RefCell::new(Type::Unknown),
@@ -72,6 +73,7 @@ impl Interpreter {
                 BuiltinFunction::HashSetNew => {
                     check_arity("HashSet::new", 0, 0, arguments.len(), span)?;
                     Ok(Value::HashSet(Rc::new(HashSetValue {
+                        borrowed: std::cell::Cell::new(0),
                         entries: RefCell::new(HashSet::new()),
                         element_type: RefCell::new(Type::Unknown),
                     })))

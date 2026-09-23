@@ -6,6 +6,7 @@
 ## Unreleased
 
 - Added borrowed `iter()` for arrays and `Vec<T>`. It yields `&T` through `Iter<&T>` without consuming the collection and works in both the interpreter and bytecode VM. Borrowed iterators cannot outlive their source, and structural Vec mutation during iteration is rejected.
+- Added borrowed `iter()` for HashMap/BTreeMap and HashSet/BTreeSet, yielding `(&K, &V)` and `&T`. Ordered collections retain key order; mutation is rejected while iterator items still reference the source.
 
 - Fixed bytecode compilation of `Clone::clone` method calls on types such as `string`; method resolution now selects the shared Clone builtin when no inherent method applies.
 

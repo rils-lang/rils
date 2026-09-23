@@ -150,6 +150,16 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             .first()
             .ok_or_else(|| "missing HashSet receiver".to_string())?,
     )?;
+    if matches!(
+        id,
+        BuiltinId::HashSetClear
+            | BuiltinId::HashSetInsert
+            | BuiltinId::HashSetRemove
+            | BuiltinId::HashSetIntoIter
+    ) && set.borrowed.get() > 0
+    {
+        return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
+    }
     match id {
         BuiltinId::HashSetLen => Ok(Value::Usize(set.entries.borrow().len())),
         BuiltinId::HashSetIsEmpty => Ok(Value::Bool(set.entries.borrow().is_empty())),
@@ -214,6 +224,7 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 merge_types(&set.element_type.borrow(), &other.element_type.borrow())
                     .ok_or_else(|| "HashSet element types do not match".to_string())?;
             Ok(Value::HashSet(Rc::new(HashSetValue {
+                borrowed: std::cell::Cell::new(0),
                 entries: RefCell::new(entries),
                 element_type: RefCell::new(element_type),
             })))
@@ -262,13 +273,15 @@ fn read(value: &Value) -> Result<Value, String> {
 }
 
 fn reject_referenced_map(map: &HashMapValue) -> Result<(), String> {
-    if map.entries.borrow().values().any(|slot| {
-        slot.references > 0
-            || slot
-                .value
-                .as_ref()
-                .is_some_and(Value::has_active_references)
-    }) {
+    if map.borrowed.get() > 0
+        || map.entries.borrow().values().any(|slot| {
+            slot.references > 0
+                || slot
+                    .value
+                    .as_ref()
+                    .is_some_and(Value::has_active_references)
+        })
+    {
         Err("cannot mutate a HashMap while a value is referenced".into())
     } else {
         Ok(())

@@ -133,6 +133,16 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                 )
                 .is_some()
         }
+        (Type::Named { name, arguments }, Value::BorrowedMapIterator(iterator))
+            if name == "Iter" =>
+        {
+            arguments.len() == 1 && merge_types(&arguments[0], &iterator.item_type()).is_some()
+        }
+        (Type::Named { name, arguments }, Value::BorrowedSetIterator(iterator))
+            if name == "Iter" =>
+        {
+            arguments.len() == 1 && merge_types(&arguments[0], &iterator.item_type()).is_some()
+        }
         (
             Type::Reference {
                 mutable: expected_mutable,
@@ -526,6 +536,14 @@ fn type_of_value(value: &Value) -> Option<Type> {
                 mutable: false,
                 inner: Box::new(iterator.element_type.clone()),
             }],
+        }),
+        Value::BorrowedMapIterator(iterator) => Some(Type::Named {
+            name: "Iter".into(),
+            arguments: vec![iterator.item_type()],
+        }),
+        Value::BorrowedSetIterator(iterator) => Some(Type::Named {
+            name: "Iter".into(),
+            arguments: vec![iterator.item_type()],
         }),
         Value::BytecodeIterator(_) => Some(Type::Named {
             name: "Iterator".into(),
