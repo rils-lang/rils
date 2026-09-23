@@ -161,6 +161,9 @@ impl ReferenceValue {
                 Ok(())
             }
             ReferenceTarget::SequenceElement { sequence, index } => {
+                if sequence.active_iterators.get() > 0 {
+                    return Err(AssignError::BorrowedTarget);
+                }
                 let mut elements = sequence.elements.borrow_mut();
                 let slot = elements.get_mut(*index).ok_or(AssignError::Undefined)?;
                 slot.value = Some(

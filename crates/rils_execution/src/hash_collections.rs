@@ -304,6 +304,7 @@ fn iterator(items: VecDeque<Value>, element_type: Type) -> Value {
 
 fn tuple(values: Vec<Value>) -> Value {
     Value::Tuple(Rc::new(SequenceValue {
+        active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values
                 .into_iter()

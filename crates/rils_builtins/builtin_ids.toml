@@ -10,6 +10,10 @@ len = 0x0100
 into_iter = 0x0101
 is_empty = 0x0102
 contains = 0x0103
+iter = 0x0104
+
+[core.sequence_iter]
+next = 0x0105
 
 # Vec operations: 0x0200-0x02FF.
 [core.vec]

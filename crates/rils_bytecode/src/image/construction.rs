@@ -40,6 +40,7 @@ pub(super) fn sequence_value(
         })
         .collect();
     let sequence = Rc::new(SequenceValue {
+        active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(elements),
         element_type: RefCell::new(array.then_some(element_type)),
     });

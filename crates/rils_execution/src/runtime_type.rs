@@ -120,6 +120,19 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         {
             arguments.len() == 1 && merge_types(&arguments[0], &iterator.element_type).is_some()
         }
+        (Type::Named { name, arguments }, Value::BorrowedSequenceIterator(iterator))
+            if name == "Iter" =>
+        {
+            arguments.len() == 1
+                && merge_types(
+                    &arguments[0],
+                    &Type::Reference {
+                        mutable: false,
+                        inner: Box::new(iterator.element_type.clone()),
+                    },
+                )
+                .is_some()
+        }
         (
             Type::Reference {
                 mutable: expected_mutable,
@@ -252,6 +265,7 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(Value::Tuple(Rc::new(crate::value::SequenceValue {
+                active_iterators: std::cell::Cell::new(0),
                 elements: std::cell::RefCell::new(elements),
                 element_type: std::cell::RefCell::new(None),
             })))
@@ -269,6 +283,7 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(Value::Array(Rc::new(crate::value::SequenceValue {
+                active_iterators: std::cell::Cell::new(0),
                 elements: std::cell::RefCell::new(elements),
                 element_type: std::cell::RefCell::new(Some((**element).clone())),
             })))
@@ -289,6 +304,7 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(Value::Vec(Rc::new(crate::value::SequenceValue {
+                active_iterators: std::cell::Cell::new(0),
                 elements: std::cell::RefCell::new(elements),
                 element_type: std::cell::RefCell::new(Some(expected.clone())),
             })))
@@ -503,6 +519,13 @@ fn type_of_value(value: &Value) -> Option<Type> {
         Value::SequenceIterator(iterator) => Some(Type::Named {
             name: "SequenceIterator".into(),
             arguments: vec![iterator.element_type.clone()],
+        }),
+        Value::BorrowedSequenceIterator(iterator) => Some(Type::Named {
+            name: "Iter".into(),
+            arguments: vec![Type::Reference {
+                mutable: false,
+                inner: Box::new(iterator.element_type.clone()),
+            }],
         }),
         Value::BytecodeIterator(_) => Some(Type::Named {
             name: "Iterator".into(),

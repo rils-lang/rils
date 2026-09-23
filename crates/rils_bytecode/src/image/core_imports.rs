@@ -82,6 +82,7 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             None => Err("`assert` expects at least one argument".into()),
         },
         CoreImport::VecNew => Ok(Value::Vec(Rc::new(SequenceValue {
+            active_iterators: std::cell::Cell::new(0),
             elements: RefCell::new(Vec::new()),
             element_type: RefCell::new(Some(Type::Unknown)),
         }))),
@@ -119,6 +120,7 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             }
             let elements = array.elements.borrow_mut().drain(..).collect();
             Ok(Value::Vec(Rc::new(SequenceValue {
+                active_iterators: std::cell::Cell::new(0),
                 elements: RefCell::new(elements),
                 element_type: RefCell::new(array.element_type.borrow().clone()),
             })))

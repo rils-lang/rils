@@ -75,7 +75,22 @@ let copied = Vec::from([1, 2, 3]);
 ```
 
 `pop()` 返回 `Option<T>`。数组和 Vec 实现拥有型 `IntoIterator`，所以 `for value in values`
-会消费容器。共享引用和可写引用的迭代器尚未实现，相关类型空间已保留。
+会消费容器。`values.iter()` 返回借用型 `Iter<&T>`，可通过 `next()` 或 `for` 读取元素，
+不会消费容器：
+
+```rust
+{
+    let values = [2, 3, 5];
+    let mut sum = 0;
+    for value in values.iter() {
+        sum = sum + *value;
+    }
+    assert!(values.len() == 3usize);
+}
+```
+
+借用迭代器和它产出的引用不能超过源集合的词法作用域。借用迭代期间不能结构修改 Vec；
+`iter_mut()` 以及其他容器的借用迭代器尚未提供。
 
 ## String 与内建迭代器
 

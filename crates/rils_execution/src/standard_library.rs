@@ -440,6 +440,7 @@ fn io_error(
 
 fn string_vec(values: Vec<String>) -> Value {
     Value::Vec(Rc::new(SequenceValue {
+        active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values
                 .into_iter()

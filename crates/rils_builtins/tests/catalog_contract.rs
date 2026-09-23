@@ -331,6 +331,24 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
     assert_eq!(map.type_parameters, &["U"]);
     assert_eq!(map.builtin_id, Some(BuiltinId::IteratorMap));
 
+    let borrowed = builtin("Iter").expect("borrowed sequence iterator declaration");
+    assert_eq!(borrowed.type_parameters, &["T"]);
+    assert_eq!(
+        borrowed.member("next").expect("Iter::next").builtin_id,
+        Some(BuiltinId::SequenceIterNext)
+    );
+
+    for owner in ["Array", "Vec"] {
+        assert_eq!(
+            builtin(owner)
+                .expect("sequence declaration")
+                .member("iter")
+                .expect("borrowed iteration method")
+                .builtin_id,
+            Some(BuiltinId::SequenceIter)
+        );
+    }
+
     let array = builtin("Array").expect("Array declaration");
     assert_eq!(array.kind, BuiltinKind::Primitive);
     assert_eq!(

@@ -317,7 +317,7 @@ pub(crate) fn resolve_project_calls(
     results: &mut TypeckResults,
     host_type_resolutions: &crate::HostTypeResolutionResults,
 ) {
-    let mut iterator_types = HashSet::new();
+    let mut iterator_types = HashSet::from(["Iter".to_owned()]);
     let mut callables = CallableDefinitions::default();
     for (_, module_path, program) in units {
         collect_trait_implementations(

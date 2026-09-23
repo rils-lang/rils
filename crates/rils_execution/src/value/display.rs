@@ -41,6 +41,7 @@ impl fmt::Display for Value {
             Self::VecDeque(_) => write!(f, "<VecDeque>"),
             Self::BinaryHeap(_) => write!(f, "<BinaryHeap>"),
             Self::SequenceIterator(_) => write!(f, "<sequence iterator>"),
+            Self::BorrowedSequenceIterator(_) => write!(f, "<borrowed sequence iterator>"),
             Self::BytecodeIterator(_) => write!(f, "<bytecode iterator>"),
             Self::Reference(reference) => match reference.read() {
                 Ok(value) => write!(f, "{value}"),

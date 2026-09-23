@@ -19,6 +19,7 @@ impl Interpreter {
                     });
                 }
                 Ok(Value::Tuple(Rc::new(SequenceValue {
+                    active_iterators: std::cell::Cell::new(0),
                     elements: RefCell::new(slots),
                     element_type: RefCell::new(None),
                 })))
@@ -75,6 +76,7 @@ impl Interpreter {
                     })
                     .collect();
                 Ok(Value::Array(Rc::new(SequenceValue {
+                    active_iterators: std::cell::Cell::new(0),
                     elements: RefCell::new(slots),
                     element_type: RefCell::new(Some(element_type)),
                 })))

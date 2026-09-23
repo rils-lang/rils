@@ -289,6 +289,7 @@ fn option(value: Option<Value>, element_type: Option<Type>) -> Value {
 fn overflowing(value: Value, overflowed: bool) -> Value {
     let value_type = Type::of_value(&value).unwrap_or(Type::Unknown);
     Value::Tuple(std::rc::Rc::new(crate::value::SequenceValue {
+        active_iterators: std::cell::Cell::new(0),
         elements: std::cell::RefCell::new(vec![
             crate::value::FieldSlot {
                 value: Some(value),

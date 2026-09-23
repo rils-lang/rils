@@ -275,6 +275,9 @@ impl<'a> VirtualMachine<'a> {
                     let iterator = match source {
                         Value::Range(range) => Value::Range(range),
                         Value::SequenceIterator(iterator) => Value::SequenceIterator(iterator),
+                        Value::BorrowedSequenceIterator(iterator) => {
+                            Value::BorrowedSequenceIterator(iterator)
+                        }
                         Value::Array(sequence) | Value::Vec(sequence) => {
                             let element_type = sequence
                                 .element_type
@@ -918,6 +921,9 @@ impl<'a> VirtualMachine<'a> {
                             Value::SequenceIterator(iterator) => {
                                 iterator.items.borrow_mut().pop_front()
                             }
+                            Value::BorrowedSequenceIterator(iterator) => iterator
+                                .next()
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
                             value => {
                                 return Err(BytecodeError::new(
                                     format!("{} is not an iterator", value.type_name()),

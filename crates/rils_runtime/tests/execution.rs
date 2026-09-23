@@ -137,6 +137,59 @@ fn evaluates_btree_map_ordered_operations() {
 }
 
 #[test]
+fn borrowed_sequence_iterator_preserves_the_source() {
+    for (source, expected) in [
+        (
+            "{ let values = [2, 3, 5]; let mut iter = values.iter(); let first = iter.next().unwrap(); if values.len() == 3 { *first } else { 0 } }",
+            2,
+        ),
+        (
+            "{ let mut values: Vec<i32> = Vec::new(); values.push(4); values.push(7); let mut sum = 0; for value in values.iter() { sum = sum + *value; } if values.len() == 2 { sum } else { 0 } }",
+            11,
+        ),
+        (
+            "{ let values = [2, 3, 5]; let count = values.iter().count(); if count == 3usize && values.len() == 3usize { 3 } else { 0 } }",
+            3,
+        ),
+    ] {
+        assert_eq!(eval(source).unwrap(), Value::I32(expected));
+    }
+}
+
+#[test]
+fn borrowed_sequence_iterator_rejects_escape_and_mutation() {
+    let escaped =
+        eval("fn escaped() -> Iter<&i32> { let values = [1, 2]; values.iter() } escaped()")
+            .expect_err("borrowed iterator must not outlive its source");
+    assert!(
+        escaped
+            .to_string()
+            .contains("references cannot be returned"),
+        "{escaped}"
+    );
+
+    let error = eval(
+        "{ let mut values: Vec<i32> = Vec::new(); values.push(1); let iter = values.iter(); values.push(2); iter.count() }",
+    )
+    .expect_err("Vec mutation must be rejected during borrowed iteration");
+    assert!(
+        error.to_string().contains("cannot structurally mutate"),
+        "{error}"
+    );
+
+    let replaced = eval(
+        "{ let mut values = Vec::from([1]); let iter = values.iter(); values = Vec::from([2]); iter.count() }",
+    )
+    .expect_err("source replacement must be rejected during borrowed iteration");
+    assert!(replaced.to_string().contains("referenced"), "{replaced}");
+
+    assert_eq!(
+        eval("{ let mut values = Vec::from([1]); { let iter = values.iter(); iter.count() }; values.push(2); values.len() }").unwrap(),
+        Value::Usize(2),
+    );
+}
+
+#[test]
 fn btree_map_handles_replacement_removal_and_invalid_keys() {
     let source = r#"
         let mut map: BTreeMap<char, i32> = BTreeMap::new();

@@ -38,6 +38,7 @@
 
 - 增加结构化数值转换错误类型和更完整的浮点转换入口。
 - 评估 HashMap/HashSet 的借用查询、索引 place 和借用迭代器，遵守 Rils 引用不能逃逸的规则。
+- 将 BTreeMap/BTreeSet、VecDeque 和 BinaryHeap 接入借用迭代器，补齐 `iter_mut()`；逐步让迭代器适配器使用通用惰性实现，并弃用内部的 `SequenceIterator` 队列。
 - 补充常用字符串解析、格式化和 Unicode 操作，但不引入隐式深拷贝。
 
 ## 新特性

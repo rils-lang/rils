@@ -6,6 +6,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
     fn materialize(plan: &DefaultPlan) -> Option<Value> {
         let sequence = |values: Vec<(Value, Type)>| {
             Rc::new(SequenceValue {
+                active_iterators: std::cell::Cell::new(0),
                 elements: RefCell::new(
                     values
                         .into_iter()
@@ -66,6 +67,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
             },
             DefaultPlan::EmptyCollection { name, arguments } if name == "Vec" => {
                 Value::Vec(Rc::new(SequenceValue {
+                    active_iterators: std::cell::Cell::new(0),
                     elements: RefCell::new(Vec::new()),
                     element_type: RefCell::new(Some(arguments[0].clone())),
                 }))
@@ -111,10 +113,15 @@ pub(crate) fn builtin_runtime_member(
         Value::Option { .. } => "Option",
         Value::Result { .. } => "Result",
         Value::SequenceIterator(_) => "Iterator",
+        Value::BorrowedSequenceIterator(_) => "Iter",
         Value::HostObject(object) if object.type_definition.name == "Formatter" => "Formatter",
         _ => return None,
     };
-    let member = rils_builtins::builtin_member(owner, name)?;
+    let member = rils_builtins::builtin_member(owner, name).or_else(|| {
+        (owner == "Iter" && rils_builtins::is_iterator_default_method(name))
+            .then(|| rils_builtins::builtin_member("Iterator", name))
+            .flatten()
+    })?;
     Some((member.builtin_id?, member.receiver?))
 }
 

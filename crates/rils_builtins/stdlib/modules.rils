@@ -51,6 +51,7 @@ pub mod core {
     pub mod iter {
         pub use Iterator;
         pub use IntoIterator;
+        pub use Iter;
         pub use Range;
     }
 

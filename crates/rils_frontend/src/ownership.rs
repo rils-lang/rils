@@ -689,18 +689,27 @@ impl<'a> Checker<'a> {
                             values
                                 .iter()
                                 .filter_map(|value| value.reference_region)
+                                .chain(receiver.as_ref().and_then(|value| value.reference_region))
                                 .reduce(|a, b| self.shorter_region(a, b))
                         });
                 let result_borrows = values
                     .iter()
                     .flat_map(|value| value.borrows.clone())
+                    .chain(
+                        receiver
+                            .as_ref()
+                            .into_iter()
+                            .flat_map(|value| value.borrows.clone()),
+                    )
                     .collect::<Vec<_>>();
                 if result_region.is_none() {
                     for value in values {
                         self.discard(value);
                     }
                 }
-                if let Some(receiver) = receiver {
+                if result_region.is_none()
+                    && let Some(receiver) = receiver
+                {
                     self.discard(receiver);
                 }
                 let mut result = self.typed_value(expression);

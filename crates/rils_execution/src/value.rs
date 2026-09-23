@@ -153,6 +153,46 @@ pub struct FieldSlot {
 pub struct SequenceValue {
     pub elements: RefCell<Vec<FieldSlot>>,
     pub element_type: RefCell<Option<Type>>,
+    pub active_iterators: std::cell::Cell<usize>,
+}
+
+pub struct BorrowedSequenceIteratorValue {
+    pub source: Rc<ReferenceValue>,
+    pub sequence: Rc<SequenceValue>,
+    pub index: std::cell::Cell<usize>,
+    pub length: usize,
+    pub element_type: Type,
+}
+
+impl BorrowedSequenceIteratorValue {
+    pub fn next(&self) -> Result<Option<Value>, String> {
+        let (Value::Array(source) | Value::Vec(source)) = self.source.read()? else {
+            return Err("iterator source is no longer a sequence".into());
+        };
+        if !Rc::ptr_eq(&source, &self.sequence) {
+            return Err("iterator source has been replaced".into());
+        }
+        let index = self.index.get();
+        if index >= self.length {
+            return Ok(None);
+        }
+        let reference = ReferenceValue::new_guarded_sequence_element(
+            self.sequence.clone(),
+            index,
+            false,
+            Some(self.source.clone()),
+        )?;
+        self.index.set(index + 1);
+        Ok(Some(Value::Reference(Rc::new(reference))))
+    }
+}
+
+impl Drop for BorrowedSequenceIteratorValue {
+    fn drop(&mut self) {
+        self.sequence
+            .active_iterators
+            .set(self.sequence.active_iterators.get().saturating_sub(1));
+    }
 }
 
 #[derive(Clone)]
@@ -308,6 +348,7 @@ pub enum Value {
     VecDeque(Rc<VecDequeValue>),
     BinaryHeap(Rc<BinaryHeapValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
+    BorrowedSequenceIterator(Rc<BorrowedSequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
     Option {
@@ -420,6 +461,7 @@ impl Value {
             | Self::BTreeSet(_)
             | Self::HashSet(_)
             | Self::SequenceIterator(_)
+            | Self::BorrowedSequenceIterator(_)
             | Self::BytecodeIterator(_) => false,
         }
     }
@@ -491,6 +533,7 @@ impl Value {
                 .borrow()
                 .iter()
                 .any(Value::contains_reference),
+            Self::BorrowedSequenceIterator(_) => true,
             _ => false,
         }
     }
@@ -514,6 +557,7 @@ impl Value {
                 .iter()
                 .any(|value| value.contains_local_reference(environment)),
             Self::Reference(reference) => reference.is_local_to(environment),
+            Self::BorrowedSequenceIterator(iterator) => iterator.source.is_local_to(environment),
             Self::Option {
                 value: Some(value), ..
             } => value.contains_local_reference(environment),
@@ -565,13 +609,14 @@ impl Value {
                         .is_some_and(Value::has_active_references)
             }),
             Self::Tuple(sequence) | Self::Array(sequence) | Self::Vec(sequence) => {
-                sequence.elements.borrow().iter().any(|slot| {
-                    slot.references > 0
-                        || slot
-                            .value
-                            .as_ref()
-                            .is_some_and(Value::has_active_references)
-                })
+                sequence.active_iterators.get() > 0
+                    || sequence.elements.borrow().iter().any(|slot| {
+                        slot.references > 0
+                            || slot
+                                .value
+                                .as_ref()
+                                .is_some_and(Value::has_active_references)
+                    })
             }
             Self::HashMap(map) => map.entries.borrow().values().any(|slot| {
                 slot.references > 0
@@ -677,6 +722,7 @@ impl Value {
                 element_type: RefCell::new(set.element_type.borrow().clone()),
             })),
             Self::SequenceIterator(_) => return Err("iterators cannot be cloned".into()),
+            Self::BorrowedSequenceIterator(_) => return Err("iterators cannot be cloned".into()),
             Self::BytecodeIterator(_) => return Err("iterators cannot be cloned".into()),
             Self::Struct(instance) => {
                 let source = instance.fields.borrow();
@@ -789,6 +835,9 @@ impl Value {
             }
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())
+            }
+            Self::BorrowedSequenceIterator(_) => {
+                Type::of_value(self).map_or_else(|| "Iter".into(), |ty| ty.to_string())
             }
             Self::BytecodeIterator(_) => "iterator".into(),
             Self::Reference(reference) => reference.read().map_or_else(
@@ -944,6 +993,7 @@ fn clone_sequence(sequence: &SequenceValue) -> Result<SequenceValue, String> {
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(SequenceValue {
+        active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(elements),
         element_type: RefCell::new(sequence.element_type.borrow().clone()),
     })

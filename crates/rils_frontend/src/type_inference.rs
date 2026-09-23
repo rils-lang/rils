@@ -1398,7 +1398,7 @@ impl<'a> Inferencer<'a> {
                 .or_else(|| definition.methods.get(field))
                 .cloned()
                 .or_else(|| {
-                    (definition.implemented_traits.contains("Iterator")
+                    ((definition.implemented_traits.contains("Iterator") || name == "Iter")
                         && rils_builtins::is_iterator_default_method(field))
                     .then(|| {
                         crate::standard_library::builtin_trait_member_type(
@@ -1427,7 +1427,7 @@ impl<'a> Inferencer<'a> {
             Type::Reference { inner, .. } => self.iterable_item_type_inner(inner, depth + 1),
             Type::Array { element, .. } => (**element).clone(),
             Type::Named { name, arguments } => match name.as_str() {
-                "Vec" | "HashSet" | "BTreeSet" | "SequenceIterator" | "Range" => {
+                "Vec" | "HashSet" | "BTreeSet" | "SequenceIterator" | "Iter" | "Range" => {
                     arguments.first().cloned().unwrap_or(Type::Unknown)
                 }
                 "HashMap" | "BTreeMap" if arguments.len() == 2 => Type::Tuple(arguments.clone()),

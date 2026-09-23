@@ -13,6 +13,7 @@ mod binary_heap;
 mod btree_map;
 mod btree_set;
 mod option_result;
+mod sequence_iter;
 mod string;
 mod vec_deque;
 
@@ -300,6 +301,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("push receiver is not Vec".into());
             };
+            sequence_iter::reject_growth(&sequence)?;
             let value = &arguments[1];
             let current = sequence
                 .elements
@@ -329,6 +331,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("pop receiver is not Vec".into());
             };
+            sequence_iter::reject_mutation(&sequence)?;
             let element_type = sequence
                 .element_type
                 .borrow()
@@ -356,6 +359,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("receiver is not Vec".into());
             };
+            sequence_iter::reject_mutation(&sequence)?;
             let length = if id == BuiltinId::VecClear {
                 0
             } else {
@@ -384,6 +388,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("receiver is not Vec".into());
             };
+            sequence_iter::reject_mutation(&sequence)?;
             let Value::Usize(index) = arguments[1] else {
                 return Err("Vec index must be usize".into());
             };
@@ -436,12 +441,14 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(destination) = reference.read()? else {
                 return Err("extend receiver is not Vec".into());
             };
+            sequence_iter::reject_growth(&destination)?;
             let Value::Vec(source) = &arguments[1] else {
                 return Err("Vec::extend source must be Vec".into());
             };
             if Rc::ptr_eq(&destination, source) {
                 return Err("Vec cannot extend itself".into());
             }
+            sequence_iter::reject_mutation(source)?;
             let mut source_elements = source.elements.borrow_mut();
             if source_elements.iter().any(|slot| slot.references > 0) {
                 return Err("cannot move from a Vec while an element is referenced".into());
@@ -471,6 +478,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let (Value::Array(sequence) | Value::Vec(sequence)) = &arguments[0] else {
                 return Err("into_iter receiver is not a collection".into());
             };
+            sequence_iter::reject_mutation(sequence)?;
             if sequence
                 .elements
                 .borrow()
@@ -495,6 +503,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 element_type,
             })))
         }
+        BuiltinId::SequenceIter | BuiltinId::SequenceIterNext => sequence_iter::call(id, arguments),
         BuiltinId::HashMapLen
         | BuiltinId::HashMapIsEmpty
         | BuiltinId::HashMapClear
@@ -612,6 +621,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                         })
                         .collect();
                     Ok(Value::Vec(Rc::new(SequenceValue {
+                        active_iterators: std::cell::Cell::new(0),
                         elements: RefCell::new(elements),
                         element_type: RefCell::new(Some(element_type)),
                     })))
@@ -679,6 +689,7 @@ fn tuple_value(values: Vec<Value>) -> Value {
         .map(|value| Type::of_value(value).unwrap_or(Type::Unknown))
         .collect();
     Value::Tuple(Rc::new(SequenceValue {
+        active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values
                 .into_iter()
@@ -782,6 +793,7 @@ mod tests {
         use rils_builtins::BuiltinId;
 
         let vector = mutable_receiver(Value::Vec(Rc::new(SequenceValue {
+            active_iterators: std::cell::Cell::new(0),
             elements: RefCell::new(Vec::new()),
             element_type: RefCell::new(Some(Type::I32)),
         })));

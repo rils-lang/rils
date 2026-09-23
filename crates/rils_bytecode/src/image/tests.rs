@@ -1121,6 +1121,17 @@ fn compiles_custom_iterator_and_into_iterator_traits() {
 }
 
 #[test]
+fn compiles_borrowed_sequence_iteration_with_interpreter_parity() {
+    for source in [
+        "{ let values = [2, 3, 5]; let mut iter = values.iter(); let first = iter.next().unwrap(); if values.len() == 3 { *first } else { 0 } }",
+        "{ let mut values: Vec<i32> = Vec::new(); values.push(4); values.push(7); let mut sum = 0; for value in values.iter() { sum = sum + *value; } if values.len() == 2 { sum } else { 0 } }",
+        "{ let values = [2, 3, 5]; let count = values.iter().count(); if count == 3usize && values.len() == 3usize { 3 } else { 0 } }",
+    ] {
+        assert_matches_interpreter(source);
+    }
+}
+
+#[test]
 fn rejects_unlinked_unauthorized_and_incompatible_imports() {
     let module = compile("type_of(42)").unwrap();
 

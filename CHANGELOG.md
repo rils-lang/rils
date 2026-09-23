@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- Added borrowed `iter()` for arrays and `Vec<T>`. It yields `&T` through `Iter<&T>` without consuming the collection and works in both the interpreter and bytecode VM. Borrowed iterators cannot outlive their source, and structural Vec mutation during iteration is rejected.
+
 - Fixed bytecode compilation of `Clone::clone` method calls on types such as `string`; method resolution now selects the shared Clone builtin when no inherent method applies.
 
 - Recursive structures now accept fixed-size heap-backed indirection such as `Box<T>`, `Vec<T>`, `HashMap<K, V>`, and `HashSet<T>`, instead of requiring `Box<T>` specifically. Inline recursive structs, tuples, arrays, and `Option<Node>` continue to produce an infinite-size diagnostic. Generic struct constructor arguments are retained in bytecode values so nested recursive fields validate and execute correctly.

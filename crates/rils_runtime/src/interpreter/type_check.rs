@@ -318,6 +318,9 @@ pub(super) fn type_implements_trait(
         "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "SequenceIterator" && arguments.len() == 1) => {
             true
         }
+        "Iterator" if matches!(actual, Type::Named { name, arguments } if name == "Iter" && arguments.len() == 1) => {
+            true
+        }
         "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Range" && arguments.is_empty()) => {
             true
         }

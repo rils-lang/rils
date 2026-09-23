@@ -3,6 +3,7 @@ use crate::environment::{StorageRef, StorageSlot};
 
 enum IteratorCursor {
     Sequence(Rc<SequenceIteratorValue>),
+    Borrowed(Rc<BorrowedSequenceIteratorValue>),
     Range(RangeValue),
     Dynamic {
         storage: StorageRef,
@@ -20,6 +21,7 @@ impl IteratorCursor {
         };
         Ok(match value {
             Value::SequenceIterator(iterator) => Self::Sequence(iterator),
+            Value::BorrowedSequenceIterator(iterator) => Self::Borrowed(iterator),
             Value::Range(range) => Self::Range(range),
             value => {
                 let element_type = Type::of_value(&value).unwrap_or(Type::Unknown);
@@ -36,6 +38,10 @@ impl IteratorCursor {
     fn element_type(&self) -> Type {
         match self {
             Self::Sequence(iterator) => iterator.element_type.clone(),
+            Self::Borrowed(iterator) => Type::Reference {
+                mutable: false,
+                inner: Box::new(iterator.element_type.clone()),
+            },
             Self::Range(range) => range.element_type(),
             Self::Dynamic { element_type, .. } => element_type.clone(),
         }
@@ -48,6 +54,9 @@ impl IteratorCursor {
     ) -> Result<Option<Value>, RuntimeError> {
         match self {
             Self::Sequence(iterator) => Ok(iterator.items.borrow_mut().pop_front()),
+            Self::Borrowed(iterator) => iterator
+                .next()
+                .map_err(|message| RuntimeError::new(message, span)),
             Self::Range(range) => range
                 .next()
                 .map_err(|message| RuntimeError::new(message, span)),
@@ -128,6 +137,7 @@ impl Interpreter {
                     });
                 }
                 return Ok(Value::Vec(Rc::new(SequenceValue {
+                    active_iterators: std::cell::Cell::new(0),
                     elements: RefCell::new(elements),
                     element_type: RefCell::new(Some(source_type)),
                 })));
@@ -360,6 +370,7 @@ fn iterator_value(items: std::collections::VecDeque<Value>, element_type: Type) 
 
 fn tuple_value(values: Vec<Value>) -> Value {
     Value::Tuple(Rc::new(SequenceValue {
+        active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values
                 .into_iter()

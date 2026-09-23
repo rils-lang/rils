@@ -305,6 +305,7 @@ fn tuple_value(value: Value, overflowed: bool) -> Result<Value, String> {
     let types = [Type::of_value(&value).unwrap_or(Type::Unknown), Type::Bool];
     Ok(Value::Tuple(std::rc::Rc::new(
         crate::value::SequenceValue {
+            active_iterators: std::cell::Cell::new(0),
             elements: std::cell::RefCell::new(vec![
                 crate::value::FieldSlot {
                     value: Some(value),

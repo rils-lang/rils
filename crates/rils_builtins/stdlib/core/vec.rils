@@ -49,4 +49,7 @@ impl<T> Vec<T> {
     /// Consumes the Vec and creates an iterator.
     #[runtime(core::sequence::into_iter)]
     fn into_iter(self) -> Iterator<T> {}
+    /// Borrows each element without consuming the Vec.
+    #[runtime(core::sequence::iter)]
+    fn iter(&self) -> Iter<&T> {}
 }

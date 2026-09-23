@@ -247,6 +247,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     | "HashSet"
                     | "Range"
                     | "SequenceIterator"
+                    | "Iter"
                     | "Rc"
                     | "Weak"
                     | "Cell"
@@ -279,6 +280,7 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     "HashSet" => "HashSet",
                     "Range" => "Range",
                     "SequenceIterator" => "Iterator",
+                    "Iter" => "Iter",
                     "Rc" => "Rc",
                     "Weak" => "Weak",
                     "Cell" => "Cell",

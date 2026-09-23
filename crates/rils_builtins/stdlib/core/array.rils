@@ -14,4 +14,7 @@ impl<T> Array<T> {
     /// Consumes the array and creates an iterator.
     #[runtime(core::sequence::into_iter)]
     fn into_iter(self) -> Iterator<T> {}
+    /// Borrows each element without consuming the array.
+    #[runtime(core::sequence::iter)]
+    fn iter(&self) -> Iter<&T> {}
 }

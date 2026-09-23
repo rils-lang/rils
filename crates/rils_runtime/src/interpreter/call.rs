@@ -33,6 +33,7 @@ impl Interpreter {
                 BuiltinFunction::VecNew => {
                     check_arity("Vec::new", 0, 0, arguments.len(), span)?;
                     Ok(Value::Vec(Rc::new(SequenceValue {
+                        active_iterators: std::cell::Cell::new(0),
                         elements: RefCell::new(Vec::new()),
                         element_type: RefCell::new(Some(Type::Unknown)),
                     })))
@@ -55,6 +56,7 @@ impl Interpreter {
                     }
                     let elements = array.elements.borrow_mut().drain(..).collect();
                     Ok(Value::Vec(Rc::new(SequenceValue {
+                        active_iterators: std::cell::Cell::new(0),
                         elements: RefCell::new(elements),
                         element_type: RefCell::new(array.element_type.borrow().clone()),
                     })))
