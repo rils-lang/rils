@@ -31,6 +31,7 @@ members = [
     "crates/rils_host",
     "crates/rils_frontend",
     "crates/rils_syntax",
+    "crates/rils_syntax_macros",
     "crates/rils_builtins",
     "crates/rils_builtins_macros",
     "crates/rils_stdlib",
@@ -59,6 +60,7 @@ rils_compiler = { version = "0.4.0", path = "crates/rils_compiler" }
 rils_host = { version = "0.4.0", path = "crates/rils_host" }
 rils_frontend = { version = "0.4.0", path = "crates/rils_frontend" }
 rils_syntax = { version = "0.4.0", path = "crates/rils_syntax" }
+rils_syntax_macros = { version = "0.4.0", path = "crates/rils_syntax_macros" }
 rils_builtins = { version = "0.4.0", path = "crates/rils_builtins" }
 rils_builtins_macros = { version = "0.4.0", path = "crates/rils_builtins_macros" }
 rils_stdlib = { version = "0.4.0", path = "crates/rils_stdlib" }

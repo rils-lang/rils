@@ -10,3 +10,4 @@ repository.workspace = true
 include = ["/Cargo.toml", "/README.md", "/src/**"]
 
 [dependencies]
+rils_syntax_macros.workspace = true

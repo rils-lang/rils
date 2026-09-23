@@ -10,3 +10,4 @@ repository.workspace = true
 
 [dependencies]
 rils_builtins_macros.workspace = true
+rils_syntax.workspace = true
