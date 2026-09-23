@@ -34,7 +34,17 @@ fn stdlib_directory_generates_source_and_module_metadata() {
             && source.kind == BuiltinSourceKind::Numeric
     }));
     assert!(BUILTIN_MODULES.iter().any(|module| {
-        module.path == "std::collections" && module.members == ["HashMap", "HashSet", "Vec"]
+        module.path == "std::collections"
+            && module.members
+                == [
+                    "BTreeMap",
+                    "BTreeSet",
+                    "BinaryHeap",
+                    "HashMap",
+                    "HashSet",
+                    "Vec",
+                    "VecDeque",
+                ]
     }));
 }
 

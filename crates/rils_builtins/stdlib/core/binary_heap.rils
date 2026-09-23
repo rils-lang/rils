@@ -1,0 +1,26 @@
+/// An owned max-priority queue. Elements must be orderable integers, char, or string.
+pub struct BinaryHeap<T>;
+
+impl<T> BinaryHeap<T> {
+    /// Creates an empty max-priority queue.
+    #[runtime(core::binary_heap::new)]
+    fn new() -> Self {}
+    /// Returns the number of elements.
+    #[runtime(core::binary_heap::len)]
+    fn len(&self) -> usize {}
+    /// Returns whether the queue is empty.
+    #[runtime(core::binary_heap::is_empty)]
+    fn is_empty(&self) -> bool {}
+    /// Inserts an element, rejecting unsupported ordering types.
+    #[runtime(core::binary_heap::push)]
+    fn push(&mut self, value: T) {}
+    /// Removes and returns the greatest element.
+    #[runtime(core::binary_heap::pop)]
+    fn pop(&mut self) -> Option<T> {}
+    /// Explicitly clones the highest-priority element.
+    #[runtime(core::binary_heap::peek_cloned)]
+    fn peek_cloned(&self) -> Option<T> {}
+    /// Removes all elements.
+    #[runtime(core::binary_heap::clear)]
+    fn clear(&mut self) {}
+}

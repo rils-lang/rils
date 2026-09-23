@@ -254,3 +254,47 @@ pop_back = 0x1006
 front_cloned = 0x1007
 back_cloned = 0x1008
 clear = 0x1009
+
+# Max-priority queue operations: 0x1100-0x11FF.
+[core.binary_heap]
+new = 0x1100
+len = 0x1101
+is_empty = 0x1102
+push = 0x1103
+pop = 0x1104
+peek_cloned = 0x1105
+clear = 0x1106
+
+# Ordered map operations: 0x1200-0x12FF.
+[core.btree_map]
+new = 0x1200
+len = 0x1201
+is_empty = 0x1202
+clear = 0x1203
+contains_key = 0x1204
+insert = 0x1205
+get_cloned = 0x1206
+remove = 0x1207
+first_key_cloned = 0x1208
+last_key_cloned = 0x1209
+into_iter = 0x120A
+
+# Ordered set operations: 0x1300-0x13FF.
+[core.btree_set]
+new = 0x1300
+len = 0x1301
+is_empty = 0x1302
+clear = 0x1303
+contains = 0x1304
+insert = 0x1305
+remove = 0x1306
+first_cloned = 0x1307
+last_cloned = 0x1308
+is_subset = 0x1309
+is_superset = 0x130A
+is_disjoint = 0x130B
+union = 0x130C
+intersection = 0x130D
+difference = 0x130E
+symmetric_difference = 0x130F
+into_iter = 0x1310

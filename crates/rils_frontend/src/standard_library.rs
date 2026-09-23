@@ -252,10 +252,13 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     | "Cell"
                     | "RefCell"
                     | "VecDeque"
+                    | "BinaryHeap"
+                    | "BTreeMap"
+                    | "BTreeSet"
             ) =>
         {
             match name.as_str() {
-                "HashMap" => {
+                "HashMap" | "BTreeMap" => {
                     if let Some(key) = arguments.first() {
                         generics.insert("K", key.clone());
                     }
@@ -281,6 +284,9 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
                     "Cell" => "Cell",
                     "RefCell" => "RefCell",
                     "VecDeque" => "VecDeque",
+                    "BinaryHeap" => "BinaryHeap",
+                    "BTreeMap" => "BTreeMap",
+                    "BTreeSet" => "BTreeSet",
                     _ => unreachable!(),
                 },
                 object.clone(),

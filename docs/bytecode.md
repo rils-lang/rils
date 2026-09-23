@@ -32,6 +32,10 @@ source -> lexer/parser -> static analysis -> HIR -> MIR -> bytecode -> verifier 
 `if`、`while`、`loop`、`break value`、`continue`、函数、参数、直接命名调用、递归、函数值、
 间接调用、嵌套函数、词法闭包和 `return`。迭代控制流支持 Range、拥有型数组、`Vec`、`HashMap`、
 `HashSet` 及脚本自定义 `Iterator` / `IntoIterator` 的 `for`，包括 `break value` 与 `continue`。
+`BinaryHeap<T>` 的构造、插入、弹出、堆顶克隆和清空通过稳定 core builtin ID 调用共享运行时；
+它不引入新的字节码指令或磁盘格式版本。
+`BTreeMap<K, V>` 同样经共享 core builtin ID 执行；`for` 的有序迭代复用现有拥有型迭代器值。
+`BTreeSet<T>` 的集合运算和升序迭代也沿用共享 core builtin 与同一迭代器表示。
 复合值已覆盖 tuple、数组、重复数组、Range、Option 和 Result，以及局部 tuple/数组的索引读取
 与写入、tuple 数字字段读写。函数内的 `?` 会在 VM 调用帧上直接传播 Err。局部和参数读取沿用
 Rils 的显式所有权语义：Copy 值复制，其他值 move；索引读取也会对非 Copy 元素执行部分 move。

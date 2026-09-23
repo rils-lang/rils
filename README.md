@@ -29,6 +29,12 @@ VS Code 和 CLI 工具链发行包均携带同源的 `rils_stdlib` 声明包，�
 
 ## Rust 嵌入
 
+脚本中的常用拥有型容器包括 `Vec<T>`、`VecDeque<T>`、`BinaryHeap<T>`、`BTreeMap<K, V>`、
+`BTreeSet<T>`、
+`HashMap<K, V>` 和 `HashSet<T>`。`BinaryHeap` 是最大优先队列，使用
+`push/pop/peek_cloned` 处理整数、字符或字符串优先级；`BTreeMap` 按键排序。完整用法见
+[集合章节](docs/language/05-data-types-and-collections.md)。
+
 ```rust
 let value = rils::eval("1 + 2 * 3")?;
 let module = rils::compile("let value = 40; value + 2")?;

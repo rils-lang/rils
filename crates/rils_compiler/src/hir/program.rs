@@ -140,6 +140,42 @@ impl ProgramLowerer {
             }],
             fields: Vec::new(),
         });
+        let heap_id = type_definitions.len();
+        types.insert("BinaryHeap".to_owned(), heap_id);
+        type_definitions.push(HirTypeDefinition::Struct {
+            name: "BinaryHeap".to_owned(),
+            generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                name: "T".to_owned(),
+                bounds: Vec::new(),
+                span: Span::default(),
+            }],
+            fields: Vec::new(),
+        });
+        let tree_map_id = type_definitions.len();
+        types.insert("BTreeMap".to_owned(), tree_map_id);
+        type_definitions.push(HirTypeDefinition::Struct {
+            name: "BTreeMap".to_owned(),
+            generic_parameters: ["K", "V"]
+                .into_iter()
+                .map(|name| rils_frontend::ast::GenericParameter {
+                    name: name.to_owned(),
+                    bounds: Vec::new(),
+                    span: Span::default(),
+                })
+                .collect(),
+            fields: Vec::new(),
+        });
+        let tree_set_id = type_definitions.len();
+        types.insert("BTreeSet".to_owned(), tree_set_id);
+        type_definitions.push(HirTypeDefinition::Struct {
+            name: "BTreeSet".to_owned(),
+            generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                name: "T".to_owned(),
+                bounds: Vec::new(),
+                span: Span::default(),
+            }],
+            fields: Vec::new(),
+        });
         let weak_id = type_definitions.len();
         types.insert("Weak".to_owned(), weak_id);
         type_definitions.push(HirTypeDefinition::Struct {

@@ -614,6 +614,64 @@ fn executes_vec_deque_operations_in_bytecode() {
 }
 
 #[test]
+fn executes_binary_heap_max_order_in_bytecode() {
+    let source = r#"
+        let mut heap: BinaryHeap<i32> = BinaryHeap::new();
+        heap.push(2);
+        heap.push(5);
+        heap.push(1);
+        heap.peek_cloned().unwrap() + heap.pop().unwrap()
+            + heap.pop().unwrap() + heap.pop().unwrap()
+    "#;
+    assert_matches_interpreter(source);
+    let module = compile(source).expect("BinaryHeap source should compile");
+    assert_eq!(module.execute().unwrap(), Value::I32(13));
+}
+
+#[test]
+fn executes_btree_map_in_key_order_in_bytecode() {
+    let source = r#"
+        let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+        map.insert(3, 30);
+        map.insert(1, 10);
+        map.insert(2, 20);
+        let first = map.first_key_cloned().unwrap();
+        let last = map.last_key_cloned().unwrap();
+        let mut order = 0;
+        for entry in map {
+            order = order * 10 + entry.0;
+        }
+        order + first + last
+    "#;
+    assert_matches_interpreter(source);
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(127));
+}
+
+#[test]
+fn executes_btree_set_in_order_in_bytecode() {
+    let source = r#"
+        let mut left: BTreeSet<i32> = BTreeSet::new();
+        let mut right: BTreeSet<i32> = BTreeSet::new();
+        left.insert(3);
+        left.insert(1);
+        left.insert(2);
+        right.insert(2);
+        right.insert(4);
+        let combined = left.union(&right);
+        let mut order = 0;
+        for value in combined {
+            order = order * 10 + value;
+        }
+        order
+    "#;
+    assert_matches_interpreter(source);
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::I32(1234)
+    );
+}
+
+#[test]
 fn compiles_functions_recursion_and_early_return() {
     let source = r#"
             fn factorial(n: i32) -> i32 {

@@ -316,6 +316,38 @@ impl Interpreter {
             }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::VecDequeLen
+                | rils_builtins::BuiltinId::BtreeSetLen
+                | rils_builtins::BuiltinId::BtreeSetIsEmpty
+                | rils_builtins::BuiltinId::BtreeSetClear
+                | rils_builtins::BuiltinId::BtreeSetContains
+                | rils_builtins::BuiltinId::BtreeSetInsert
+                | rils_builtins::BuiltinId::BtreeSetRemove
+                | rils_builtins::BuiltinId::BtreeSetFirstCloned
+                | rils_builtins::BuiltinId::BtreeSetLastCloned
+                | rils_builtins::BuiltinId::BtreeSetIsSubset
+                | rils_builtins::BuiltinId::BtreeSetIsSuperset
+                | rils_builtins::BuiltinId::BtreeSetIsDisjoint
+                | rils_builtins::BuiltinId::BtreeSetUnion
+                | rils_builtins::BuiltinId::BtreeSetIntersection
+                | rils_builtins::BuiltinId::BtreeSetDifference
+                | rils_builtins::BuiltinId::BtreeSetSymmetricDifference
+                | rils_builtins::BuiltinId::BtreeSetIntoIter
+                | rils_builtins::BuiltinId::BtreeMapLen
+                | rils_builtins::BuiltinId::BtreeMapIsEmpty
+                | rils_builtins::BuiltinId::BtreeMapClear
+                | rils_builtins::BuiltinId::BtreeMapContainsKey
+                | rils_builtins::BuiltinId::BtreeMapInsert
+                | rils_builtins::BuiltinId::BtreeMapGetCloned
+                | rils_builtins::BuiltinId::BtreeMapRemove
+                | rils_builtins::BuiltinId::BtreeMapFirstKeyCloned
+                | rils_builtins::BuiltinId::BtreeMapLastKeyCloned
+                | rils_builtins::BuiltinId::BtreeMapIntoIter
+                | rils_builtins::BuiltinId::BinaryHeapLen
+                | rils_builtins::BuiltinId::BinaryHeapIsEmpty
+                | rils_builtins::BuiltinId::BinaryHeapPush
+                | rils_builtins::BuiltinId::BinaryHeapPop
+                | rils_builtins::BuiltinId::BinaryHeapPeekCloned
+                | rils_builtins::BuiltinId::BinaryHeapClear
                 | rils_builtins::BuiltinId::VecDequeIsEmpty
                 | rils_builtins::BuiltinId::VecDequePushFront
                 | rils_builtins::BuiltinId::VecDequePushBack

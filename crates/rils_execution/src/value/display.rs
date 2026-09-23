@@ -31,12 +31,15 @@ impl fmt::Display for Value {
                 display_sequence(f, sequence, "[", "]", false)
             }
             Self::HashMap(map) => display_hash_map(f, map),
+            Self::BTreeMap(map) => super::hash::display_btree_map(f, map),
+            Self::BTreeSet(set) => super::hash::display_btree_set(f, set),
             Self::HashSet(set) => display_hash_set(f, set),
             Self::Rc(_) => write!(f, "<Rc>"),
             Self::Weak(_) => write!(f, "<Weak>"),
             Self::Cell(_) => write!(f, "<Cell>"),
             Self::RefCell(_) => write!(f, "<RefCell>"),
             Self::VecDeque(_) => write!(f, "<VecDeque>"),
+            Self::BinaryHeap(_) => write!(f, "<BinaryHeap>"),
             Self::SequenceIterator(_) => write!(f, "<sequence iterator>"),
             Self::BytecodeIterator(_) => write!(f, "<bytecode iterator>"),
             Self::Reference(reference) => match reference.read() {

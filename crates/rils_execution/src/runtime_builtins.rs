@@ -9,6 +9,9 @@ use crate::{
     },
 };
 
+mod binary_heap;
+mod btree_map;
+mod btree_set;
 mod option_result;
 mod string;
 mod vec_deque;
@@ -172,6 +175,41 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 value.type_name()
             )),
         },
+        BuiltinId::BtreeSetNew
+        | BuiltinId::BtreeSetLen
+        | BuiltinId::BtreeSetIsEmpty
+        | BuiltinId::BtreeSetClear
+        | BuiltinId::BtreeSetContains
+        | BuiltinId::BtreeSetInsert
+        | BuiltinId::BtreeSetRemove
+        | BuiltinId::BtreeSetFirstCloned
+        | BuiltinId::BtreeSetLastCloned
+        | BuiltinId::BtreeSetIsSubset
+        | BuiltinId::BtreeSetIsSuperset
+        | BuiltinId::BtreeSetIsDisjoint
+        | BuiltinId::BtreeSetUnion
+        | BuiltinId::BtreeSetIntersection
+        | BuiltinId::BtreeSetDifference
+        | BuiltinId::BtreeSetSymmetricDifference
+        | BuiltinId::BtreeSetIntoIter => btree_set::call(id, arguments),
+        BuiltinId::BtreeMapNew
+        | BuiltinId::BtreeMapLen
+        | BuiltinId::BtreeMapIsEmpty
+        | BuiltinId::BtreeMapClear
+        | BuiltinId::BtreeMapContainsKey
+        | BuiltinId::BtreeMapInsert
+        | BuiltinId::BtreeMapGetCloned
+        | BuiltinId::BtreeMapRemove
+        | BuiltinId::BtreeMapFirstKeyCloned
+        | BuiltinId::BtreeMapLastKeyCloned
+        | BuiltinId::BtreeMapIntoIter => btree_map::call(id, arguments),
+        BuiltinId::BinaryHeapNew
+        | BuiltinId::BinaryHeapLen
+        | BuiltinId::BinaryHeapIsEmpty
+        | BuiltinId::BinaryHeapPush
+        | BuiltinId::BinaryHeapPop
+        | BuiltinId::BinaryHeapPeekCloned
+        | BuiltinId::BinaryHeapClear => binary_heap::call(id, arguments),
         BuiltinId::VecDequeNew
         | BuiltinId::VecDequeLen
         | BuiltinId::VecDequeIsEmpty

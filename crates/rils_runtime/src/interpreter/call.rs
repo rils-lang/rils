@@ -97,6 +97,24 @@ impl Interpreter {
                     crate::runtime_builtins::call(rils_builtins::BuiltinId::VecDequeNew, arguments)
                         .map_err(|message| RuntimeError::new(message, span))
                 }
+                BuiltinFunction::BinaryHeapNew => {
+                    check_arity("BinaryHeap::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(
+                        rils_builtins::BuiltinId::BinaryHeapNew,
+                        arguments,
+                    )
+                    .map_err(|message| RuntimeError::new(message, span))
+                }
+                BuiltinFunction::BTreeMapNew => {
+                    check_arity("BTreeMap::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(rils_builtins::BuiltinId::BtreeMapNew, arguments)
+                        .map_err(|message| RuntimeError::new(message, span))
+                }
+                BuiltinFunction::BTreeSetNew => {
+                    check_arity("BTreeSet::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(rils_builtins::BuiltinId::BtreeSetNew, arguments)
+                        .map_err(|message| RuntimeError::new(message, span))
+                }
                 BuiltinFunction::RefCellNew => {
                     check_arity("RefCell::new", 1, 1, arguments.len(), span)?;
                     let value = arguments[0].clone();

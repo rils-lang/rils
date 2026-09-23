@@ -306,6 +306,12 @@ pub(super) fn type_implements_trait(
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashMap" && arguments.len() == 2) => {
             true
         }
+        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "BTreeMap" && arguments.len() == 2) => {
+            true
+        }
+        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "BTreeSet" && arguments.len() == 1) => {
+            true
+        }
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashSet" && arguments.len() == 1) => {
             true
         }

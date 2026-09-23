@@ -12,6 +12,9 @@
 - Added `Cell<T>` interior mutability with `new`, `get`, `set`, and `replace` in both execution backends.
 - Added runtime-checked `RefCell<T>` with `new`, shared and mutable borrows, and `replace` in both execution backends.
 - Added `VecDeque<T>` with constant-time double-ended push/pop operations, endpoint reads, length checks, and clearing.
+- Added `BinaryHeap<T>` max-priority queues for integers, characters, and strings, with owned push/pop, cloned peek, length checks, and clearing.
+- Added `BTreeMap<K, V>` ordered maps with owned insertion, lookup, removal, ordered iteration, and cloned first/last key queries.
+- Added `BTreeSet<T>` ordered sets with membership, set algebra, cloned endpoint queries, and owned ascending iteration.
 
 ### Breaking Changes
 
