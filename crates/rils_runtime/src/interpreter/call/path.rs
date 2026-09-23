@@ -56,6 +56,27 @@ pub(super) fn resolve_associated_path(
             })?;
             Ok(crate::numeric::float_constant(target, constant.id))
         }
+        Value::StructType(definition) if definition.name == "Rc" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::RcNew))
+        }
+        Value::StructType(definition) if definition.name == "Cell" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::CellNew))
+        }
+        Value::StructType(definition) if definition.name == "RefCell" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::RefCellNew))
+        }
+        Value::StructType(definition) if definition.name == "VecDeque" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::VecDequeNew))
+        }
+        Value::StructType(definition) if definition.name == "BinaryHeap" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::BinaryHeapNew))
+        }
+        Value::StructType(definition) if definition.name == "BTreeMap" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::BTreeMapNew))
+        }
+        Value::StructType(definition) if definition.name == "BTreeSet" && member == "new" => {
+            Ok(Value::BuiltinFunction(BuiltinFunction::BTreeSetNew))
+        }
         Value::StructType(definition) => definition
             .methods
             .borrow()

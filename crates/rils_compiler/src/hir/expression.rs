@@ -32,7 +32,7 @@ impl<'a> FunctionLowerer<'a> {
                     ))
                 }
             }
-            Expr::Path { segments, span } => {
+            Expr::Path { segments, span } | Expr::GenericPath { segments, span, .. } => {
                 let segments = self.resolve_self_path(segments);
                 if let [type_name, member] = segments.as_slice()
                     && let Some(target) = crate::types::IntegerType::from_name(type_name)
@@ -275,8 +275,25 @@ impl<'a> FunctionLowerer<'a> {
                         *span,
                     ));
                 }
-                if let Expr::Path { segments, .. } = callee.as_ref() {
+                if let Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } =
+                    callee.as_ref()
+                {
                     let segments = self.resolve_self_path(segments);
+                    if let Some((
+                        builtin,
+                        rils_frontend::semantic::BuiltinCallKind::Runtime,
+                        None,
+                    )) = self.resolved_builtin(expression_id)
+                    {
+                        return Ok(HirExpression::CallRuntime {
+                            builtin,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
                     if let Some(callable) = self.resolved_definition(expression_id) {
                         return Ok(HirExpression::Call {
                             function: callable.function,

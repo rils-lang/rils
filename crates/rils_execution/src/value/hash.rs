@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt,
     rc::Rc,
 };
@@ -8,7 +8,7 @@ use std::{
 use super::{FieldSlot, Value};
 use crate::types::Type;
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HashKey {
     Bool(bool),
     I8(i8),
@@ -89,6 +89,17 @@ pub struct HashMapValue {
     pub value_type: RefCell<Type>,
 }
 
+pub struct BTreeMapValue {
+    pub entries: RefCell<BTreeMap<HashKey, FieldSlot>>,
+    pub key_type: RefCell<Type>,
+    pub value_type: RefCell<Type>,
+}
+
+pub struct BTreeSetValue {
+    pub entries: RefCell<BTreeSet<HashKey>>,
+    pub element_type: RefCell<Type>,
+}
+
 pub struct HashSetValue {
     pub entries: RefCell<HashSet<HashKey>>,
     pub element_type: RefCell<Type>,
@@ -119,6 +130,74 @@ pub(super) fn clone_hash_map(map: &HashMapValue) -> Result<HashMapValue, String>
         key_type: RefCell::new(map.key_type.borrow().clone()),
         value_type: RefCell::new(map.value_type.borrow().clone()),
     })
+}
+
+pub(super) fn clone_btree_map(map: &BTreeMapValue) -> Result<BTreeMapValue, String> {
+    let entries = map
+        .entries
+        .borrow()
+        .iter()
+        .map(|(key, slot)| {
+            let value = slot
+                .value
+                .as_ref()
+                .ok_or("cannot clone a partially moved BTreeMap")?;
+            Ok((
+                key.clone(),
+                FieldSlot {
+                    value: Some(value.clone_owned()?),
+                    type_annotation: slot.type_annotation.clone(),
+                    references: 0,
+                },
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, String>>()?;
+    Ok(BTreeMapValue {
+        entries: RefCell::new(entries),
+        key_type: RefCell::new(map.key_type.borrow().clone()),
+        value_type: RefCell::new(map.value_type.borrow().clone()),
+    })
+}
+
+pub(super) fn btree_maps_equal(left: &BTreeMapValue, right: &BTreeMapValue) -> bool {
+    let left = left.entries.borrow();
+    let right = right.entries.borrow();
+    left.len() == right.len()
+        && left.iter().all(|(key, slot)| {
+            right
+                .get(key)
+                .is_some_and(|other| slot.value == other.value)
+        })
+}
+
+pub(super) fn display_btree_map(f: &mut fmt::Formatter<'_>, map: &BTreeMapValue) -> fmt::Result {
+    let entries = map.entries.borrow();
+    write!(f, "{{")?;
+    for (index, (key, slot)) in entries.iter().enumerate() {
+        if index > 0 {
+            write!(f, ", ")?;
+        }
+        write!(
+            f,
+            "{}: {}",
+            key.to_value(),
+            slot.value
+                .as_ref()
+                .map_or_else(|| "<moved>".into(), ToString::to_string)
+        )?;
+    }
+    write!(f, "}}")
+}
+
+pub(super) fn display_btree_set(f: &mut fmt::Formatter<'_>, set: &BTreeSetValue) -> fmt::Result {
+    write!(f, "{{")?;
+    for (index, key) in set.entries.borrow().iter().enumerate() {
+        if index > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{}", key.to_value())?;
+    }
+    write!(f, "}}")
 }
 
 pub(super) fn hash_maps_equal(left: &HashMapValue, right: &HashMapValue) -> bool {

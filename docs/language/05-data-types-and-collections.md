@@ -99,6 +99,53 @@ let characters = "R世".chars().count(); // 2
 除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。当前转换适配器生成拥有型内建迭代器；
 共享引用和可写引用的容器迭代器仍未实现。
 
+## VecDeque 与 BinaryHeap
+
+`VecDeque<T>` 提供双端 `push_front/push_back`、`pop_front/pop_back`、`front_cloned/back_cloned`，
+适合队列。`BinaryHeap<T>` 是最大优先队列，提供 `new/len/is_empty/push/pop/peek_cloned/clear`；
+`pop` 每次取出最大元素，`peek_cloned` 显式克隆堆顶。它目前支持整数、`char` 和 `string` 元素；
+不支持的类型在 `push` 时返回明确错误。两个类型都可由 prelude 或 `std::collections` 访问。
+
+```rust
+let mut priorities: BinaryHeap<i32> = BinaryHeap::new();
+priorities.push(2);
+priorities.push(5);
+let highest = priorities.pop(); // Some(5)
+```
+
+## BTreeMap
+
+`BTreeMap<K, V>` 是按键排序的拥有型 Map，可从 prelude 或 `std::collections` 访问。
+支持 `new/len/is_empty/clear/contains_key/insert/get_cloned/remove`，
+`first_key_cloned/last_key_cloned` 返回两端键的显式克隆；`into_iter()` 或直接用于 `for` 会消费 Map，
+按键从小到大产生 `(K, V)`。当前键类型限于 `bool`、整数、`char` 和 `string`；
+浮点键等不支持的类型会在操作时返回错误。Rils 尚未提供通用 `Ord` trait，
+因此自定义类型暂不能作为有序 Map 的键。
+
+```rust
+let mut scores: BTreeMap<string, i32> = BTreeMap::new();
+scores.insert("b", 2);
+scores.insert("a", 1);
+let first = scores.first_key_cloned(); // Some("a")
+for entry in scores {
+    println!("{}: {}", entry.0, entry.1);
+}
+```
+
+`BTreeSet<T>` 使用相同的有序元素约束，提供
+`new/len/is_empty/clear/contains/insert/remove`、`first_cloned/last_cloned`，
+以及 `is_subset/is_superset/is_disjoint/union/intersection/difference/symmetric_difference`。
+集合运算返回新的拥有型 Set；`into_iter()` 或直接用于 `for` 会消费 Set 并按升序遍历。
+
+```rust
+let mut values: BTreeSet<i32> = BTreeSet::new();
+values.insert(3);
+values.insert(1);
+for value in values {
+    println!("{}", value); // 1, 3
+}
+```
+
 ## HashMap 与 HashSet
 
 `HashMap<K, V>` 和 `HashSet<T>` 位于 prelude，也可通过 `std::collections` 访问。当前可作为键或

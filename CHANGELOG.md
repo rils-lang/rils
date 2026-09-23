@@ -5,7 +5,16 @@
 
 ## Unreleased
 
+- Fixed bytecode compilation of `Clone::clone` method calls on types such as `string`; method resolution now selects the shared Clone builtin when no inherent method applies.
+
 - Recursive structures now accept fixed-size heap-backed indirection such as `Box<T>`, `Vec<T>`, `HashMap<K, V>`, and `HashSet<T>`, instead of requiring `Box<T>` specifically. Inline recursive structs, tuples, arrays, and `Option<Node>` continue to produce an infinite-size diagnostic. Generic struct constructor arguments are retained in bytecode values so nested recursive fields validate and execute correctly.
+- Added safe `Rc<T>` and non-owning `Weak<T>` handles with `Rc::new`, `clone`, `strong_count`, `downgrade`, and weak upgrade/count operations in both the interpreter and bytecode VM.
+- Added `Cell<T>` interior mutability with `new`, `get`, `set`, and `replace` in both execution backends.
+- Added runtime-checked `RefCell<T>` with `new`, shared and mutable borrows, and `replace` in both execution backends.
+- Added `VecDeque<T>` with constant-time double-ended push/pop operations, endpoint reads, length checks, and clearing.
+- Added `BinaryHeap<T>` max-priority queues for integers, characters, and strings, with owned push/pop, cloned peek, length checks, and clearing.
+- Added `BTreeMap<K, V>` ordered maps with owned insertion, lookup, removal, ordered iteration, and cloned first/last key queries.
+- Added `BTreeSet<T>` ordered sets with membership, set algebra, cloned endpoint queries, and owned ascending iteration.
 
 ### Breaking Changes
 
@@ -423,4 +432,3 @@
 - Rust 风格的显式所有权、词法局部引用、函数与闭包、struct/enum、trait/impl、泛型、模式匹配、
   模块、宏、数组、Vec、Option、Result 和迭代器基础能力。
 - VS Code 语法高亮与语言服务器支持，以及用于验证解释器和字节码一致性的示例与测试。
-

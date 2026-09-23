@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    rc::Rc,
+    rc::{Rc, Weak as StdWeak},
 };
 
 use crate::{
@@ -18,8 +18,8 @@ mod display;
 
 #[path = "value/hash.rs"]
 mod hash;
-pub use hash::{HashKey, HashMapValue, HashSetValue};
-use hash::{clone_hash_map, hash_maps_equal};
+pub use hash::{BTreeMapValue, BTreeSetValue, HashKey, HashMapValue, HashSetValue};
+use hash::{btree_maps_equal, clone_hash_map, hash_maps_equal};
 
 #[path = "value/range.rs"]
 mod range;
@@ -162,6 +162,42 @@ pub struct SequenceIteratorValue {
 }
 
 #[derive(Clone)]
+pub struct RcValue {
+    pub value: Value,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
+pub struct WeakValue {
+    pub value: StdWeak<RcValue>,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
+pub struct CellValue {
+    pub value: RefCell<Value>,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
+pub struct RefCellValue {
+    pub storage: StorageRef,
+    pub type_argument: Type,
+}
+
+#[derive(Clone)]
+pub struct VecDequeValue {
+    pub elements: RefCell<VecDeque<Value>>,
+    pub element_type: RefCell<Option<Type>>,
+}
+
+#[derive(Clone)]
+pub struct BinaryHeapValue {
+    pub elements: RefCell<Vec<Value>>,
+    pub element_type: RefCell<Option<Type>>,
+}
+
+#[derive(Clone)]
 pub enum EnumPayload {
     Unit,
     Tuple(Vec<Value>),
@@ -211,6 +247,13 @@ pub enum BuiltinFunction {
     VecFrom,
     HashMapNew,
     HashSetNew,
+    RcNew,
+    CellNew,
+    RefCellNew,
+    VecDequeNew,
+    BinaryHeapNew,
+    BTreeMapNew,
+    BTreeSetNew,
     IntegerIntrinsic {
         id: rils_builtins::BuiltinId,
         target: crate::IntegerType,
@@ -255,7 +298,15 @@ pub enum Value {
     Array(Rc<SequenceValue>),
     Vec(Rc<SequenceValue>),
     HashMap(Rc<HashMapValue>),
+    BTreeMap(Rc<BTreeMapValue>),
+    BTreeSet(Rc<BTreeSetValue>),
     HashSet(Rc<HashSetValue>),
+    Rc(Rc<RcValue>),
+    Weak(Rc<WeakValue>),
+    Cell(Rc<CellValue>),
+    RefCell(Rc<RefCellValue>),
+    VecDeque(Rc<VecDequeValue>),
+    BinaryHeap(Rc<BinaryHeapValue>),
     SequenceIterator(Rc<SequenceIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
     Reference(Rc<ReferenceValue>),
@@ -357,8 +408,16 @@ impl Value {
             Self::HostObject(object) => object.type_definition.copy,
             Self::String(_)
             | Self::Range(_)
+            | Self::Rc(_)
+            | Self::Weak(_)
+            | Self::Cell(_)
+            | Self::RefCell(_)
+            | Self::VecDeque(_)
+            | Self::BinaryHeap(_)
             | Self::Vec(_)
             | Self::HashMap(_)
+            | Self::BTreeMap(_)
+            | Self::BTreeSet(_)
             | Self::HashSet(_)
             | Self::SequenceIterator(_)
             | Self::BytecodeIterator(_) => false,
@@ -367,6 +426,12 @@ impl Value {
 
     pub fn contains_reference(&self) -> bool {
         match self {
+            Self::BinaryHeap(heap) => heap.elements.borrow().iter().any(Value::contains_reference),
+            Self::VecDeque(queue) => queue
+                .elements
+                .borrow()
+                .iter()
+                .any(|value| value.contains_reference()),
             Self::Reference(_) => true,
             Self::BytecodeFunction(function) => {
                 function.captures.iter().any(|slot| {
@@ -403,6 +468,12 @@ impl Value {
                 .values()
                 .filter_map(|slot| slot.value.as_ref())
                 .any(Value::contains_reference),
+            Self::BTreeMap(map) => map
+                .entries
+                .borrow()
+                .values()
+                .filter_map(|slot| slot.value.as_ref())
+                .any(Value::contains_reference),
             Self::Struct(instance) => instance
                 .fields
                 .borrow()
@@ -426,6 +497,22 @@ impl Value {
 
     pub fn contains_local_reference(&self, environment: &EnvironmentRef) -> bool {
         match self {
+            Self::BTreeMap(map) => map
+                .entries
+                .borrow()
+                .values()
+                .filter_map(|slot| slot.value.as_ref())
+                .any(|value| value.contains_local_reference(environment)),
+            Self::BinaryHeap(heap) => heap
+                .elements
+                .borrow()
+                .iter()
+                .any(|value| value.contains_local_reference(environment)),
+            Self::VecDeque(queue) => queue
+                .elements
+                .borrow()
+                .iter()
+                .any(|value| value.contains_local_reference(environment)),
             Self::Reference(reference) => reference.is_local_to(environment),
             Self::Option {
                 value: Some(value), ..
@@ -460,6 +547,16 @@ impl Value {
 
     pub fn has_active_references(&self) -> bool {
         match self {
+            Self::BinaryHeap(heap) => heap
+                .elements
+                .borrow()
+                .iter()
+                .any(Value::has_active_references),
+            Self::VecDeque(queue) => queue
+                .elements
+                .borrow()
+                .iter()
+                .any(|value| value.has_active_references()),
             Self::Struct(instance) => instance.fields.borrow().values().any(|field| {
                 field.references > 0
                     || field
@@ -483,6 +580,13 @@ impl Value {
                         .as_ref()
                         .is_some_and(Value::has_active_references)
             }),
+            Self::BTreeMap(map) => map.entries.borrow().values().any(|slot| {
+                slot.references > 0
+                    || slot
+                        .value
+                        .as_ref()
+                        .is_some_and(Value::has_active_references)
+            }),
             _ => false,
         }
     }
@@ -500,6 +604,11 @@ impl Value {
                 .iter()
                 .any(|slot| slot.value.is_none()),
             Self::HashMap(map) => map
+                .entries
+                .borrow()
+                .values()
+                .any(|slot| slot.value.is_none()),
+            Self::BTreeMap(map) => map
                 .entries
                 .borrow()
                 .values()
@@ -535,8 +644,34 @@ impl Value {
             },
             Self::Tuple(sequence) => Self::Tuple(Rc::new(clone_sequence(sequence)?)),
             Self::Array(sequence) => Self::Array(Rc::new(clone_sequence(sequence)?)),
+            Self::VecDeque(queue) => Self::VecDeque(Rc::new(VecDequeValue {
+                elements: RefCell::new(
+                    queue
+                        .elements
+                        .borrow()
+                        .iter()
+                        .map(Value::clone_owned)
+                        .collect::<Result<VecDeque<_>, _>>()?,
+                ),
+                element_type: RefCell::new(queue.element_type.borrow().clone()),
+            })),
+            Self::BinaryHeap(heap) => Self::BinaryHeap(Rc::new(BinaryHeapValue {
+                elements: RefCell::new(
+                    heap.elements
+                        .borrow()
+                        .iter()
+                        .map(Value::clone_owned)
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
+                element_type: RefCell::new(heap.element_type.borrow().clone()),
+            })),
             Self::Vec(sequence) => Self::Vec(Rc::new(clone_sequence(sequence)?)),
             Self::HashMap(map) => Self::HashMap(Rc::new(clone_hash_map(map)?)),
+            Self::BTreeMap(map) => Self::BTreeMap(Rc::new(hash::clone_btree_map(map)?)),
+            Self::BTreeSet(set) => Self::BTreeSet(Rc::new(BTreeSetValue {
+                entries: RefCell::new(set.entries.borrow().clone()),
+                element_type: RefCell::new(set.element_type.borrow().clone()),
+            })),
             Self::HashSet(set) => Self::HashSet(Rc::new(HashSetValue {
                 entries: RefCell::new(set.entries.borrow().clone()),
                 element_type: RefCell::new(set.element_type.borrow().clone()),
@@ -627,8 +762,30 @@ impl Value {
             Self::HashMap(_) => {
                 Type::of_value(self).map_or_else(|| "HashMap".into(), |ty| ty.to_string())
             }
+            Self::BTreeMap(_) => {
+                Type::of_value(self).map_or_else(|| "BTreeMap".into(), |ty| ty.to_string())
+            }
+            Self::BTreeSet(_) => {
+                Type::of_value(self).map_or_else(|| "BTreeSet".into(), |ty| ty.to_string())
+            }
             Self::HashSet(_) => {
                 Type::of_value(self).map_or_else(|| "HashSet".into(), |ty| ty.to_string())
+            }
+            Self::Rc(_) => Type::of_value(self).map_or_else(|| "Rc".into(), |ty| ty.to_string()),
+            Self::Weak(_) => {
+                Type::of_value(self).map_or_else(|| "Weak".into(), |ty| ty.to_string())
+            }
+            Self::Cell(_) => {
+                Type::of_value(self).map_or_else(|| "Cell".into(), |ty| ty.to_string())
+            }
+            Self::RefCell(_) => {
+                Type::of_value(self).map_or_else(|| "RefCell".into(), |ty| ty.to_string())
+            }
+            Self::VecDeque(_) => {
+                Type::of_value(self).map_or_else(|| "VecDeque".into(), |ty| ty.to_string())
+            }
+            Self::BinaryHeap(_) => {
+                Type::of_value(self).map_or_else(|| "BinaryHeap".into(), |ty| ty.to_string())
             }
             Self::SequenceIterator(_) => {
                 Type::of_value(self).map_or_else(|| "SequenceIterator".into(), |ty| ty.to_string())
@@ -731,6 +888,10 @@ impl PartialEq for Value {
                 }
             }
             (Self::HashMap(left), Self::HashMap(right)) => hash_maps_equal(left, right),
+            (Self::BTreeMap(left), Self::BTreeMap(right)) => btree_maps_equal(left, right),
+            (Self::BTreeSet(left), Self::BTreeSet(right)) => {
+                left.entries.borrow().eq(&right.entries.borrow())
+            }
             (Self::HashSet(left), Self::HashSet(right)) => {
                 *left.entries.borrow() == *right.entries.borrow()
             }

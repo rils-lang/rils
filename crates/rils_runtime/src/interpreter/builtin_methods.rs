@@ -289,6 +289,83 @@ impl Interpreter {
                 crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::RcClone
+                | rils_builtins::BuiltinId::RcStrongCount
+                | rils_builtins::BuiltinId::RcDowngrade
+                | rils_builtins::BuiltinId::WeakUpgrade
+                | rils_builtins::BuiltinId::WeakStrongCount
+                | rils_builtins::BuiltinId::WeakWeakCount),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::CellGet
+                | rils_builtins::BuiltinId::CellSet
+                | rils_builtins::BuiltinId::CellReplace),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
+            BuiltinMethod::Runtime(
+                id @ (rils_builtins::BuiltinId::VecDequeLen
+                | rils_builtins::BuiltinId::BtreeSetLen
+                | rils_builtins::BuiltinId::BtreeSetIsEmpty
+                | rils_builtins::BuiltinId::BtreeSetClear
+                | rils_builtins::BuiltinId::BtreeSetContains
+                | rils_builtins::BuiltinId::BtreeSetInsert
+                | rils_builtins::BuiltinId::BtreeSetRemove
+                | rils_builtins::BuiltinId::BtreeSetFirstCloned
+                | rils_builtins::BuiltinId::BtreeSetLastCloned
+                | rils_builtins::BuiltinId::BtreeSetIsSubset
+                | rils_builtins::BuiltinId::BtreeSetIsSuperset
+                | rils_builtins::BuiltinId::BtreeSetIsDisjoint
+                | rils_builtins::BuiltinId::BtreeSetUnion
+                | rils_builtins::BuiltinId::BtreeSetIntersection
+                | rils_builtins::BuiltinId::BtreeSetDifference
+                | rils_builtins::BuiltinId::BtreeSetSymmetricDifference
+                | rils_builtins::BuiltinId::BtreeSetIntoIter
+                | rils_builtins::BuiltinId::BtreeMapLen
+                | rils_builtins::BuiltinId::BtreeMapIsEmpty
+                | rils_builtins::BuiltinId::BtreeMapClear
+                | rils_builtins::BuiltinId::BtreeMapContainsKey
+                | rils_builtins::BuiltinId::BtreeMapInsert
+                | rils_builtins::BuiltinId::BtreeMapGetCloned
+                | rils_builtins::BuiltinId::BtreeMapRemove
+                | rils_builtins::BuiltinId::BtreeMapFirstKeyCloned
+                | rils_builtins::BuiltinId::BtreeMapLastKeyCloned
+                | rils_builtins::BuiltinId::BtreeMapIntoIter
+                | rils_builtins::BuiltinId::BinaryHeapLen
+                | rils_builtins::BuiltinId::BinaryHeapIsEmpty
+                | rils_builtins::BuiltinId::BinaryHeapPush
+                | rils_builtins::BuiltinId::BinaryHeapPop
+                | rils_builtins::BuiltinId::BinaryHeapPeekCloned
+                | rils_builtins::BuiltinId::BinaryHeapClear
+                | rils_builtins::BuiltinId::VecDequeIsEmpty
+                | rils_builtins::BuiltinId::VecDequePushFront
+                | rils_builtins::BuiltinId::VecDequePushBack
+                | rils_builtins::BuiltinId::VecDequePopFront
+                | rils_builtins::BuiltinId::VecDequePopBack
+                | rils_builtins::BuiltinId::VecDequeFrontCloned
+                | rils_builtins::BuiltinId::VecDequeBackCloned
+                | rils_builtins::BuiltinId::VecDequeClear
+                | rils_builtins::BuiltinId::RefCellBorrow
+                | rils_builtins::BuiltinId::RefCellBorrowMut
+                | rils_builtins::BuiltinId::RefCellReplace),
+            ) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::runtime_builtins::call(id, &values)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
             BuiltinMethod::Runtime(id) => Err(RuntimeError::new(
                 format!("unknown runtime member ID {:#x}", id.as_raw()),
                 span,

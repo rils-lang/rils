@@ -1,18 +1,225 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use crate::{
-    environment::AssignError,
+    environment::{AssignError, StorageSlot},
     types::{IntegerType, Type},
-    value::{FieldSlot, SequenceIteratorValue, SequenceValue, Value},
+    value::{
+        CellValue, FieldSlot, RefCellValue, ReferenceValue, SequenceIteratorValue, SequenceValue,
+        Value, WeakValue,
+    },
 };
 
+mod binary_heap;
+mod btree_map;
+mod btree_set;
 mod option_result;
 mod string;
+mod vec_deque;
 
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
 
     match id {
+        BuiltinId::RcNew => {
+            let value = arguments
+                .first()
+                .cloned()
+                .ok_or_else(|| "Rc::new expects one value".to_owned())?;
+            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+            Ok(Value::Rc(Rc::new(crate::value::RcValue {
+                value,
+                type_argument,
+            })))
+        }
+        BuiltinId::RcClone => match import_receiver(&arguments[0])? {
+            Value::Rc(value) => Ok(Value::Rc(value)),
+            Value::Struct(value) if value.type_definition.name == "Rc" => Ok(Value::Struct(value)),
+            value => Err(format!("Rc::clone expects Rc, found {}", value.type_name())),
+        },
+        BuiltinId::RcStrongCount => match import_receiver(&arguments[0])? {
+            Value::Rc(value) => Ok(Value::Usize(Rc::strong_count(&value))),
+            Value::Struct(value) if value.type_definition.name == "Rc" => {
+                Ok(Value::Usize(Rc::strong_count(&value)))
+            }
+            value => Err(format!(
+                "Rc::strong_count expects Rc, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::RcDowngrade => match import_receiver(&arguments[0])? {
+            Value::Rc(value) => Ok(Value::Weak(Rc::new(WeakValue {
+                value: Rc::downgrade(&value),
+                type_argument: value.type_argument.clone(),
+            }))),
+            value => Err(format!(
+                "Rc::downgrade expects Rc, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::WeakUpgrade => match import_receiver(&arguments[0])? {
+            Value::Weak(value) => Ok(Value::Option {
+                value: value.value.upgrade().map(Value::Rc).map(Rc::new),
+                element_type: Some(Type::Named {
+                    name: "Rc".into(),
+                    arguments: vec![value.type_argument.clone()],
+                }),
+            }),
+            value => Err(format!(
+                "Weak::upgrade expects Weak, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::WeakStrongCount => match import_receiver(&arguments[0])? {
+            Value::Weak(value) => Ok(Value::Usize(value.value.strong_count())),
+            value => Err(format!(
+                "Weak::strong_count expects Weak, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::WeakWeakCount => match import_receiver(&arguments[0])? {
+            Value::Weak(value) => Ok(Value::Usize(value.value.weak_count())),
+            value => Err(format!(
+                "Weak::weak_count expects Weak, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::CellNew => {
+            let value = arguments
+                .first()
+                .cloned()
+                .ok_or_else(|| "Cell::new expects one value".to_owned())?;
+            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+            Ok(Value::Cell(Rc::new(CellValue {
+                value: RefCell::new(value),
+                type_argument,
+            })))
+        }
+        BuiltinId::CellGet => match import_receiver(&arguments[0])? {
+            Value::Cell(cell) => cell.value.borrow().clone_owned(),
+            value => Err(format!(
+                "Cell::get expects Cell, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::CellSet => match import_receiver(&arguments[0])? {
+            Value::Cell(cell) => {
+                let value = arguments
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "Cell::set expects a value".to_owned())?;
+                *cell.value.borrow_mut() = value;
+                Ok(Value::Unit)
+            }
+            value => Err(format!(
+                "Cell::set expects Cell, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::CellReplace => match import_receiver(&arguments[0])? {
+            Value::Cell(cell) => {
+                let value = arguments
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "Cell::replace expects a value".to_owned())?;
+                Ok(std::mem::replace(&mut *cell.value.borrow_mut(), value))
+            }
+            value => Err(format!(
+                "Cell::replace expects Cell, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::RefCellNew => {
+            let value = arguments
+                .first()
+                .cloned()
+                .ok_or_else(|| "RefCell::new expects one value".to_owned())?;
+            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+            let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+            storage.borrow_mut().initialize(value);
+            Ok(Value::RefCell(Rc::new(RefCellValue {
+                storage,
+                type_argument,
+            })))
+        }
+        BuiltinId::RefCellBorrow | BuiltinId::RefCellBorrowMut => {
+            match import_receiver(&arguments[0])? {
+                Value::RefCell(cell) => {
+                    let mutable = matches!(id, BuiltinId::RefCellBorrowMut);
+                    Ok(Value::Reference(Rc::new(ReferenceValue::new_storage(
+                        cell.storage.clone(),
+                        mutable,
+                    ))))
+                }
+                value => Err(format!(
+                    "RefCell borrow expects RefCell, found {}",
+                    value.type_name()
+                )),
+            }
+        }
+        BuiltinId::RefCellReplace => match import_receiver(&arguments[0])? {
+            Value::RefCell(cell) => {
+                let value = arguments
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "RefCell::replace expects a value".to_owned())?;
+                let old = cell
+                    .storage
+                    .borrow_mut()
+                    .take()
+                    .map_err(|e| format!("{e:?}"))?;
+                cell.storage.borrow_mut().initialize(value);
+                Ok(old)
+            }
+            value => Err(format!(
+                "RefCell::replace expects RefCell, found {}",
+                value.type_name()
+            )),
+        },
+        BuiltinId::BtreeSetNew
+        | BuiltinId::BtreeSetLen
+        | BuiltinId::BtreeSetIsEmpty
+        | BuiltinId::BtreeSetClear
+        | BuiltinId::BtreeSetContains
+        | BuiltinId::BtreeSetInsert
+        | BuiltinId::BtreeSetRemove
+        | BuiltinId::BtreeSetFirstCloned
+        | BuiltinId::BtreeSetLastCloned
+        | BuiltinId::BtreeSetIsSubset
+        | BuiltinId::BtreeSetIsSuperset
+        | BuiltinId::BtreeSetIsDisjoint
+        | BuiltinId::BtreeSetUnion
+        | BuiltinId::BtreeSetIntersection
+        | BuiltinId::BtreeSetDifference
+        | BuiltinId::BtreeSetSymmetricDifference
+        | BuiltinId::BtreeSetIntoIter => btree_set::call(id, arguments),
+        BuiltinId::BtreeMapNew
+        | BuiltinId::BtreeMapLen
+        | BuiltinId::BtreeMapIsEmpty
+        | BuiltinId::BtreeMapClear
+        | BuiltinId::BtreeMapContainsKey
+        | BuiltinId::BtreeMapInsert
+        | BuiltinId::BtreeMapGetCloned
+        | BuiltinId::BtreeMapRemove
+        | BuiltinId::BtreeMapFirstKeyCloned
+        | BuiltinId::BtreeMapLastKeyCloned
+        | BuiltinId::BtreeMapIntoIter => btree_map::call(id, arguments),
+        BuiltinId::BinaryHeapNew
+        | BuiltinId::BinaryHeapLen
+        | BuiltinId::BinaryHeapIsEmpty
+        | BuiltinId::BinaryHeapPush
+        | BuiltinId::BinaryHeapPop
+        | BuiltinId::BinaryHeapPeekCloned
+        | BuiltinId::BinaryHeapClear => binary_heap::call(id, arguments),
+        BuiltinId::VecDequeNew
+        | BuiltinId::VecDequeLen
+        | BuiltinId::VecDequeIsEmpty
+        | BuiltinId::VecDequePushFront
+        | BuiltinId::VecDequePushBack
+        | BuiltinId::VecDequePopFront
+        | BuiltinId::VecDequePopBack
+        | BuiltinId::VecDequeFrontCloned
+        | BuiltinId::VecDequeBackCloned
+        | BuiltinId::VecDequeClear => vec_deque::call(id, arguments),
         BuiltinId::Clone => match &arguments[0] {
             Value::Reference(reference) => reference.read()?.clone_owned(),
             value => Err(format!(

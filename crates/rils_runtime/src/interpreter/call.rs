@@ -74,6 +74,60 @@ impl Interpreter {
                         element_type: RefCell::new(Type::Unknown),
                     })))
                 }
+                BuiltinFunction::RcNew => {
+                    check_arity("Rc::new", 1, 1, arguments.len(), span)?;
+                    let value = arguments[0].clone();
+                    let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+                    Ok(Value::Rc(Rc::new(crate::value::RcValue {
+                        value,
+                        type_argument,
+                    })))
+                }
+                BuiltinFunction::CellNew => {
+                    check_arity("Cell::new", 1, 1, arguments.len(), span)?;
+                    let value = arguments[0].clone();
+                    let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+                    Ok(Value::Cell(Rc::new(crate::value::CellValue {
+                        value: RefCell::new(value),
+                        type_argument,
+                    })))
+                }
+                BuiltinFunction::VecDequeNew => {
+                    check_arity("VecDeque::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(rils_builtins::BuiltinId::VecDequeNew, arguments)
+                        .map_err(|message| RuntimeError::new(message, span))
+                }
+                BuiltinFunction::BinaryHeapNew => {
+                    check_arity("BinaryHeap::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(
+                        rils_builtins::BuiltinId::BinaryHeapNew,
+                        arguments,
+                    )
+                    .map_err(|message| RuntimeError::new(message, span))
+                }
+                BuiltinFunction::BTreeMapNew => {
+                    check_arity("BTreeMap::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(rils_builtins::BuiltinId::BtreeMapNew, arguments)
+                        .map_err(|message| RuntimeError::new(message, span))
+                }
+                BuiltinFunction::BTreeSetNew => {
+                    check_arity("BTreeSet::new", 0, 0, arguments.len(), span)?;
+                    crate::runtime_builtins::call(rils_builtins::BuiltinId::BtreeSetNew, arguments)
+                        .map_err(|message| RuntimeError::new(message, span))
+                }
+                BuiltinFunction::RefCellNew => {
+                    check_arity("RefCell::new", 1, 1, arguments.len(), span)?;
+                    let value = arguments[0].clone();
+                    let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+                    let storage = Rc::new(RefCell::new(
+                        crate::environment::StorageSlot::uninitialized(true),
+                    ));
+                    storage.borrow_mut().initialize(value);
+                    Ok(Value::RefCell(Rc::new(crate::value::RefCellValue {
+                        storage,
+                        type_argument,
+                    })))
+                }
                 BuiltinFunction::IntegerIntrinsic { id, target } => {
                     check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
                     crate::numeric::execute_integer_intrinsic(id, Some(target), arguments)

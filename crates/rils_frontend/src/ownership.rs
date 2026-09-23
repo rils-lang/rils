@@ -491,9 +491,10 @@ impl<'a> Checker<'a> {
 
     fn expression(&mut self, expression: &Expr) -> ExpressionValue {
         match expression {
-            Expr::Literal { .. } | Expr::Path { .. } | Expr::QualifiedPath { .. } => {
-                self.typed_value(expression)
-            }
+            Expr::Literal { .. }
+            | Expr::Path { .. }
+            | Expr::GenericPath { .. }
+            | Expr::QualifiedPath { .. } => self.typed_value(expression),
             Expr::Variable { name, .. } => self.take_variable(name, expression),
             Expr::Member { object, name, span }
                 if matches!(
@@ -1225,7 +1226,9 @@ fn places_overlap(left: &str, right: &str) -> bool {
 fn callee_name(expression: &Expr) -> Option<&str> {
     match expression {
         Expr::Variable { name, .. } => Some(name),
-        Expr::Path { segments, .. } => segments.last().map(String::as_str),
+        Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } => {
+            segments.last().map(String::as_str)
+        }
         _ => None,
     }
 }

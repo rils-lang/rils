@@ -10,6 +10,7 @@ pub(super) enum CoreImport {
     VecFrom,
     HashMapNew,
     HashSetNew,
+    RcNew,
 }
 
 pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
@@ -59,6 +60,7 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
         "core::vec::from" => CoreImport::VecFrom,
         "core::hash_map::new" => CoreImport::HashMapNew,
         "core::hash_set::new" => CoreImport::HashSetNew,
+        "core::rc::new" => CoreImport::RcNew,
         _ => return None,
     })
 }
@@ -92,6 +94,17 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             entries: RefCell::new(HashSet::new()),
             element_type: RefCell::new(Type::Unknown),
         }))),
+        CoreImport::RcNew => {
+            let value = arguments
+                .first()
+                .cloned()
+                .ok_or_else(|| "Rc::new expects one value".to_owned())?;
+            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
+            Ok(Value::Rc(Rc::new(rils_execution::value::RcValue {
+                value,
+                type_argument,
+            })))
+        }
         CoreImport::VecFrom => {
             let Value::Array(array) = &arguments[0] else {
                 return Err("Vec::from expects an array".into());

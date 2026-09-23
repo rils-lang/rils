@@ -462,6 +462,12 @@ pub enum Expr {
         segments: Vec<String>,
         span: Span,
     },
+    /// A path with explicit type arguments, such as `Rc::<Node>::new`.
+    GenericPath {
+        segments: Vec<String>,
+        arguments: Vec<Type>,
+        span: Span,
+    },
     QualifiedPath {
         target: Type,
         trait_name: String,
@@ -558,6 +564,7 @@ impl Expr {
             Self::Literal { span, .. }
             | Self::Variable { span, .. }
             | Self::Path { span, .. }
+            | Self::GenericPath { span, .. }
             | Self::QualifiedPath { span, .. }
             | Self::Member { span, .. }
             | Self::Index { span, .. }

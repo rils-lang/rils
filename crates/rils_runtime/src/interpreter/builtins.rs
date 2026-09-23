@@ -261,6 +261,46 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         false,
         None,
     );
+    for name in [
+        "Rc",
+        "Weak",
+        "Cell",
+        "RefCell",
+        "VecDeque",
+        "BinaryHeap",
+        "BTreeMap",
+        "BTreeSet",
+    ] {
+        environment.borrow_mut().define(
+            name,
+            Value::StructType(Rc::new(StructType {
+                name: name.into(),
+                generic_parameters: if name == "BTreeMap" {
+                    ["K", "V"]
+                        .into_iter()
+                        .map(|name| GenericParameter {
+                            name: name.into(),
+                            bounds: Vec::new(),
+                            span: Span::default(),
+                        })
+                        .collect()
+                } else {
+                    vec![GenericParameter {
+                        name: "T".into(),
+                        bounds: Vec::new(),
+                        span: Span::default(),
+                    }]
+                },
+                fields: Vec::new(),
+                methods: Default::default(),
+                trait_methods: Default::default(),
+                implemented_traits: RefCell::new(HashSet::new()),
+                associated_types: RefCell::new(HashMap::new()),
+            })),
+            false,
+            None,
+        );
+    }
     for integer in crate::IntegerType::ALL {
         environment.borrow_mut().define(
             integer.name(),

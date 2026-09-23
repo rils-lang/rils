@@ -1,6 +1,33 @@
 /// Host-independent core APIs.
 pub mod core {
     pub use Box;
+    pub use Rc;
+    pub use Weak;
+    pub use Cell;
+    pub use RefCell;
+    pub use VecDeque;
+    pub use BinaryHeap;
+    pub use BTreeMap;
+    pub use BTreeSet;
+    pub mod rc {
+        pub use Rc;
+        pub use Weak;
+    }
+    pub mod weak {
+        pub use Weak;
+    }
+    pub mod cell {
+        pub use Cell;
+    }
+    pub mod ref_cell {
+        pub use RefCell;
+    }
+    pub mod collections {
+        pub use VecDeque;
+        pub use BinaryHeap;
+        pub use BTreeMap;
+        pub use BTreeSet;
+    }
     pub mod option {
         pub use Option;
         pub use Some;
@@ -56,6 +83,10 @@ pub mod core {
 /// Host and platform APIs.
 pub mod std {
     pub mod collections {
+        pub use VecDeque;
+        pub use BinaryHeap;
+        pub use BTreeMap;
+        pub use BTreeSet;
         pub use Vec;
         pub use HashMap;
         pub use HashSet;
@@ -71,6 +102,14 @@ pub mod std {
 /// Names imported into every script.
 pub mod prelude {
     pub use Box;
+    pub use Rc;
+    pub use Weak;
+    pub use Cell;
+    pub use RefCell;
+    pub use VecDeque;
+    pub use BinaryHeap;
+    pub use BTreeMap;
+    pub use BTreeSet;
     pub use Option;
     pub use Result;
     pub use Vec;

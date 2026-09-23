@@ -34,7 +34,17 @@ fn stdlib_directory_generates_source_and_module_metadata() {
             && source.kind == BuiltinSourceKind::Numeric
     }));
     assert!(BUILTIN_MODULES.iter().any(|module| {
-        module.path == "std::collections" && module.members == ["HashMap", "HashSet", "Vec"]
+        module.path == "std::collections"
+            && module.members
+                == [
+                    "BTreeMap",
+                    "BTreeSet",
+                    "BinaryHeap",
+                    "HashMap",
+                    "HashSet",
+                    "Vec",
+                    "VecDeque",
+                ]
     }));
 }
 
@@ -144,7 +154,12 @@ fn declarations_have_unique_stable_identity_and_complete_metadata() {
             declaration.path
         );
         for (member_index, member) in declaration.members.iter().enumerate() {
-            assert!(!member.documentation.is_empty());
+            assert!(
+                !member.documentation.is_empty(),
+                "{}::{} requires documentation",
+                declaration.path,
+                member.name
+            );
             assert!(
                 declaration.members[member_index + 1..]
                     .iter()

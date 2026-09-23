@@ -9,6 +9,25 @@ fn parses_function_and_if_expression() {
 }
 
 #[test]
+fn parses_explicit_generic_associated_paths() {
+    let program = parse(lex("fn main() { Rc::<i32>::new(1) }").unwrap()).unwrap();
+    let Stmt::Function { body, .. } = &program.statements[0] else {
+        panic!("expected function");
+    };
+    let Stmt::Expr { expression, .. } = &body.statements[0] else {
+        panic!("expected expression statement");
+    };
+    let Expr::Call { callee, .. } = expression else {
+        panic!("expected call");
+    };
+    assert!(matches!(
+        callee.as_ref(),
+        Expr::GenericPath { segments, arguments, .. }
+            if segments == &["Rc", "new"] && arguments.len() == 1
+    ));
+}
+
+#[test]
 fn signature_placeholders_require_trusted_parser_capabilities() {
     let tokens = lex("fn identity(value: _) -> _ {}").unwrap();
     let error = parse(tokens.clone()).unwrap_err();

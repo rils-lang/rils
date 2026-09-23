@@ -523,7 +523,7 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
     let module = compile(
         r#"
             struct Node { value: i32, next: Option<Box<Node>> }
-            pub fn main() -> i32 {
+            pub fn main() -> usize {
                 let tail: Node = Node { value: 42, next: None };
                 let head: Node = Node { value: 1, next: Some(Box { value: tail }) };
                 let boxed = head.next.unwrap();
@@ -534,6 +534,141 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
     )
     .expect("recursive generic source should compile");
     assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(42));
+}
+
+#[test]
+fn constructs_and_clones_rc_handles_with_explicit_type_arguments() {
+    let module = compile(
+        r#"
+            pub fn main() -> usize {
+                let value: i32 = 7;
+                let handle: Rc<i32> = Rc::<i32>::new(value);
+                let clone = handle.clone();
+                clone.strong_count()
+            }
+        "#,
+    )
+    .expect("Rc source should compile");
+    let strong_count = module.call("main", Vec::new()).unwrap();
+    assert!(matches!(strong_count, Value::Usize(count) if count >= 2));
+}
+
+#[test]
+fn upgrades_weak_handles_while_the_rc_is_alive() {
+    let module = compile(
+        r#"
+            pub fn main() -> usize {
+                let handle: Rc<i32> = Rc::new(7);
+                let weak = handle.downgrade();
+                weak.upgrade().unwrap().strong_count()
+            }
+        "#,
+    )
+    .expect("Weak source should compile");
+    assert!(matches!(module.call("main", Vec::new()).unwrap(), Value::Usize(count) if count >= 1));
+}
+
+#[test]
+fn mutates_cell_values_in_bytecode() {
+    let module = compile(
+        r#"
+            pub fn main() -> i32 {
+                let cell: Cell<i32> = Cell::new(1);
+                cell.set(2);
+                cell.replace(3) + cell.get()
+            }
+        "#,
+    )
+    .expect("Cell source should compile");
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(5));
+}
+
+#[test]
+fn borrows_ref_cell_values_in_bytecode() {
+    let module = compile(
+        r#"
+            pub fn main() -> i32 {
+                let cell: RefCell<i32> = RefCell::new(4);
+                *cell.borrow() + cell.replace(5)
+            }
+        "#,
+    )
+    .expect("RefCell source should compile");
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(8));
+}
+
+#[test]
+fn executes_vec_deque_operations_in_bytecode() {
+    let module = compile(
+        r#"
+            pub fn main() -> i32 {
+                let mut queue: VecDeque<i32> = VecDeque::new();
+                queue.push_back(2);
+                queue.push_front(1);
+                queue.pop_front().unwrap() + queue.pop_back().unwrap()
+            }
+        "#,
+    )
+    .expect("VecDeque source should compile");
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(3));
+}
+
+#[test]
+fn executes_binary_heap_max_order_in_bytecode() {
+    let source = r#"
+        let mut heap: BinaryHeap<i32> = BinaryHeap::new();
+        heap.push(2);
+        heap.push(5);
+        heap.push(1);
+        heap.peek_cloned().unwrap() + heap.pop().unwrap()
+            + heap.pop().unwrap() + heap.pop().unwrap()
+    "#;
+    assert_matches_interpreter(source);
+    let module = compile(source).expect("BinaryHeap source should compile");
+    assert_eq!(module.execute().unwrap(), Value::I32(13));
+}
+
+#[test]
+fn executes_btree_map_in_key_order_in_bytecode() {
+    let source = r#"
+        let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+        map.insert(3, 30);
+        map.insert(1, 10);
+        map.insert(2, 20);
+        let first = map.first_key_cloned().unwrap();
+        let last = map.last_key_cloned().unwrap();
+        let mut order = 0;
+        for entry in map {
+            order = order * 10 + entry.0;
+        }
+        order + first + last
+    "#;
+    assert_matches_interpreter(source);
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(127));
+}
+
+#[test]
+fn executes_btree_set_in_order_in_bytecode() {
+    let source = r#"
+        let mut left: BTreeSet<i32> = BTreeSet::new();
+        let mut right: BTreeSet<i32> = BTreeSet::new();
+        left.insert(3);
+        left.insert(1);
+        left.insert(2);
+        right.insert(2);
+        right.insert(4);
+        let combined = left.union(&right);
+        let mut order = 0;
+        for value in combined {
+            order = order * 10 + value;
+        }
+        order
+    "#;
+    assert_matches_interpreter(source);
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::I32(1234)
+    );
 }
 
 #[test]

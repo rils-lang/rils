@@ -451,7 +451,13 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
             let member = crate::standard_library::builtin_owner_name(receiver)
                 .and_then(|owner| rils_builtins::builtin_member(owner, name))
                 .or(iterator_member)
-                .or_else(|| unqualified_builtin_member(name));
+                .or_else(|| {
+                    if name == "clone" {
+                        rils_builtins::builtin_member("Clone", "clone")
+                    } else {
+                        unqualified_builtin_member(name)
+                    }
+                });
             if let Some(member) = member {
                 return Some(ResolvedCall::Builtin {
                     id: member.builtin_id?,
@@ -467,7 +473,7 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
                 .contains_key(&path)
                 .then_some(ResolvedCall::Host { path })
         }
-        Expr::Path { segments, .. } => {
+        Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } => {
             let segments = host_types
                 .resolved_expression_path(callee)
                 .unwrap_or(segments);
@@ -506,6 +512,15 @@ fn builtin_associated_import(path: &str) -> Option<ResolvedCall> {
     let (owner_path, member_name) = path.rsplit_once("::")?;
     let owner = owner_path.rsplit("::").next()?;
     let member = rils_builtins::builtin_member(owner, member_name)?;
+    if member.receiver.is_none()
+        && let Some(id) = member.builtin_id
+    {
+        return Some(ResolvedCall::Builtin {
+            id,
+            kind: BuiltinCallKind::Runtime,
+            receiver: None,
+        });
+    }
     let name = member.runtime_import?;
     let signature =
         crate::standard_library::builtin_associated_function_signature(owner, member_name)?;

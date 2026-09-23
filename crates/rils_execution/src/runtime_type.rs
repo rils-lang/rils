@@ -76,7 +76,43 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                 && merge_types(&arguments[0], &map.key_type.borrow()).is_some()
                 && merge_types(&arguments[1], &map.value_type.borrow()).is_some()
         }
+        (Type::Named { name, arguments }, Value::BTreeMap(map)) if name == "BTreeMap" => {
+            arguments.len() == 2
+                && merge_types(&arguments[0], &map.key_type.borrow()).is_some()
+                && merge_types(&arguments[1], &map.value_type.borrow()).is_some()
+        }
+        (Type::Named { name, arguments }, Value::Rc(value)) if name == "Rc" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
+        }
+        (Type::Named { name, arguments }, Value::Weak(value)) if name == "Weak" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
+        }
+        (Type::Named { name, arguments }, Value::Cell(value)) if name == "Cell" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
+        }
+        (Type::Named { name, arguments }, Value::RefCell(value)) if name == "RefCell" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
+        }
+        (Type::Named { name, arguments }, Value::VecDeque(value)) if name == "VecDeque" => {
+            arguments.len() == 1
+                && merge_types(
+                    &arguments[0],
+                    &value.element_type.borrow().clone().unwrap_or(Type::Unknown),
+                )
+                .is_some()
+        }
+        (Type::Named { name, arguments }, Value::BinaryHeap(value)) if name == "BinaryHeap" => {
+            arguments.len() == 1
+                && merge_types(
+                    &arguments[0],
+                    &value.element_type.borrow().clone().unwrap_or(Type::Unknown),
+                )
+                .is_some()
+        }
         (Type::Named { name, arguments }, Value::HashSet(set)) if name == "HashSet" => {
+            arguments.len() == 1 && merge_types(&arguments[0], &set.element_type.borrow()).is_some()
+        }
+        (Type::Named { name, arguments }, Value::BTreeSet(set)) if name == "BTreeSet" => {
             arguments.len() == 1 && merge_types(&arguments[0], &set.element_type.borrow()).is_some()
         }
         (Type::Named { name, arguments }, Value::SequenceIterator(iterator))
@@ -170,6 +206,38 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
         return None;
     }
     match (expected, value) {
+        (Type::Named { name, arguments }, Value::VecDeque(queue))
+            if name == "VecDeque" && arguments.len() == 1 =>
+        {
+            let ty = merge_types(
+                &arguments[0],
+                &queue.element_type.borrow().clone().unwrap_or(Type::Unknown),
+            )?;
+            if !queue
+                .elements
+                .borrow()
+                .iter()
+                .all(|value| ty.accepts(value))
+            {
+                return None;
+            }
+            *queue.element_type.borrow_mut() = Some(ty);
+            Some(value.clone())
+        }
+        (Type::Named { name, arguments }, Value::BinaryHeap(heap))
+            if name == "BinaryHeap" && arguments.len() == 1 =>
+        {
+            let ty = merge_types(
+                &arguments[0],
+                &heap.element_type.borrow().clone().unwrap_or(Type::Unknown),
+            )?;
+            if !heap.elements.borrow().iter().all(|value| ty.accepts(value)) {
+                return None;
+            }
+            *heap.element_type.borrow_mut() = Some(ty);
+            Some(value.clone())
+        }
+
         (Type::Tuple(expected), Value::Tuple(sequence)) => {
             let source = sequence.elements.borrow();
             let elements = expected
@@ -386,6 +454,30 @@ fn type_of_value(value: &Value) -> Option<Type> {
                     .unwrap_or(Type::Unknown),
             ],
         }),
+        Value::Rc(value) => Some(Type::Named {
+            name: "Rc".into(),
+            arguments: vec![value.type_argument.clone()],
+        }),
+        Value::Weak(value) => Some(Type::Named {
+            name: "Weak".into(),
+            arguments: vec![value.type_argument.clone()],
+        }),
+        Value::Cell(value) => Some(Type::Named {
+            name: "Cell".into(),
+            arguments: vec![value.type_argument.clone()],
+        }),
+        Value::RefCell(value) => Some(Type::Named {
+            name: "RefCell".into(),
+            arguments: vec![value.type_argument.clone()],
+        }),
+        Value::VecDeque(value) => Some(Type::Named {
+            name: "VecDeque".into(),
+            arguments: vec![value.element_type.borrow().clone().unwrap_or(Type::Unknown)],
+        }),
+        Value::BinaryHeap(value) => Some(Type::Named {
+            name: "BinaryHeap".into(),
+            arguments: vec![value.element_type.borrow().clone().unwrap_or(Type::Unknown)],
+        }),
         Value::HashMap(map) => Some(Type::Named {
             name: "HashMap".into(),
             arguments: vec![
@@ -393,8 +485,19 @@ fn type_of_value(value: &Value) -> Option<Type> {
                 map.value_type.borrow().clone(),
             ],
         }),
+        Value::BTreeMap(map) => Some(Type::Named {
+            name: "BTreeMap".into(),
+            arguments: vec![
+                map.key_type.borrow().clone(),
+                map.value_type.borrow().clone(),
+            ],
+        }),
         Value::HashSet(set) => Some(Type::Named {
             name: "HashSet".into(),
+            arguments: vec![set.element_type.borrow().clone()],
+        }),
+        Value::BTreeSet(set) => Some(Type::Named {
+            name: "BTreeSet".into(),
             arguments: vec![set.element_type.borrow().clone()],
         }),
         Value::SequenceIterator(iterator) => Some(Type::Named {

@@ -304,6 +304,16 @@ impl<'a> VirtualMachine<'a> {
                             &[Value::HashMap(map)],
                         )
                         .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                        Value::BTreeMap(map) => crate::runtime_builtins::call(
+                            rils_builtins::BuiltinId::BtreeMapIntoIter,
+                            &[Value::BTreeMap(map)],
+                        )
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                        Value::BTreeSet(set) => crate::runtime_builtins::call(
+                            rils_builtins::BuiltinId::BtreeSetIntoIter,
+                            &[Value::BTreeSet(set)],
+                        )
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
                         Value::HashSet(set) => crate::hash_collections::call(
                             rils_builtins::BuiltinId::HashSetIntoIter,
                             &[Value::HashSet(set)],

@@ -834,7 +834,7 @@ impl<'a> Inferencer<'a> {
             Expr::Variable { name, .. } => self
                 .lookup(name)
                 .map_or(Type::Unknown, |binding| binding.ty.clone()),
-            Expr::Path { segments, .. } => {
+            Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } => {
                 let segments = self
                     .host_types
                     .resolved_expression_path(expression)
@@ -1143,9 +1143,21 @@ impl<'a> Inferencer<'a> {
                                 arguments: vec![Type::Unknown, Type::Unknown],
                             };
                         }
+                        "BTreeMap::new" | "std::collections::BTreeMap::new" => {
+                            return Type::Named {
+                                name: "BTreeMap".into(),
+                                arguments: vec![Type::Unknown, Type::Unknown],
+                            };
+                        }
                         "HashSet::new" | "std::collections::HashSet::new" => {
                             return Type::Named {
                                 name: "HashSet".into(),
+                                arguments: vec![Type::Unknown],
+                            };
+                        }
+                        "BTreeSet::new" | "std::collections::BTreeSet::new" => {
+                            return Type::Named {
+                                name: "BTreeSet".into(),
                                 arguments: vec![Type::Unknown],
                             };
                         }
@@ -1415,10 +1427,10 @@ impl<'a> Inferencer<'a> {
             Type::Reference { inner, .. } => self.iterable_item_type_inner(inner, depth + 1),
             Type::Array { element, .. } => (**element).clone(),
             Type::Named { name, arguments } => match name.as_str() {
-                "Vec" | "HashSet" | "SequenceIterator" | "Range" => {
+                "Vec" | "HashSet" | "BTreeSet" | "SequenceIterator" | "Range" => {
                     arguments.first().cloned().unwrap_or(Type::Unknown)
                 }
-                "HashMap" if arguments.len() == 2 => Type::Tuple(arguments.clone()),
+                "HashMap" | "BTreeMap" if arguments.len() == 2 => Type::Tuple(arguments.clone()),
                 _ => {
                     let Some(definition) = self.types.get(name) else {
                         return Type::Unknown;

@@ -312,7 +312,7 @@ impl Analyzer {
                     self.reference(name, *span, SymbolKind::Variable);
                 }
             }
-            Expr::Path { segments, span } => {
+            Expr::Path { segments, span } | Expr::GenericPath { segments, span, .. } => {
                 let semantic_segments = self
                     .expression_ids
                     .get(expression)

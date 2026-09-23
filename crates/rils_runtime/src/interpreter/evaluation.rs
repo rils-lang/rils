@@ -92,7 +92,9 @@ impl Interpreter {
                     *span,
                 )
             }),
-            Expr::Path { segments, span } => self.resolve_path(segments, &environment, *span),
+            Expr::Path { segments, span } | Expr::GenericPath { segments, span, .. } => {
+                self.resolve_path(segments, &environment, *span)
+            }
             Expr::QualifiedPath {
                 target,
                 trait_name,
