@@ -13,6 +13,7 @@ mod binary_heap;
 mod btree_map;
 mod btree_set;
 mod collection_iter;
+mod native;
 mod option_result;
 mod sequence_iter;
 mod string;
@@ -20,6 +21,10 @@ mod vec_deque;
 
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
+
+    if let Some(result) = native::call(id, arguments) {
+        return result;
+    }
 
     match id {
         BuiltinId::RcNew => {
@@ -231,7 +236,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         },
         BuiltinId::ResultIsOk
         | BuiltinId::ResultIsErr
-        | BuiltinId::OptionIsSome
         | BuiltinId::OptionIsNone
         | BuiltinId::OptionUnwrap
         | BuiltinId::ResultUnwrap

@@ -23,7 +23,8 @@ rils
 各层当前主要职责如下：
 
 - `rils_syntax`：lexer、parser、AST、Span、基础类型表示和语义 ID 类型。
-- `rils_builtins`：标准库声明、文档、稳定 intrinsic/runtime ID 和后端类别的唯一事实来源。
+- `rils_builtins`：当前公开的标准库声明目录、文档、稳定 intrinsic/runtime ID 和后端类别；Rust 定义迁移期间与生成目录做一致性校验。
+- `rils_stdlib`：可信 Rust 标准库定义源；`decl_rils!` 把同一份定义交给元信息和原生实现生成器。
 - `rils_host`：Host Contract、Host 类型与函数声明、ABI 常量，以及 Manifest 编解码和验证。
 - `rils_frontend`：源码数据库、模块索引、静态分析、名称与调用解析、类型推断、所有权和引用逃逸检查。
 - `rils_compiler`：HIR lowering 和 MIR lowering，并为现有调用方兼容转发 Host API。

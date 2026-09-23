@@ -1,4 +1,6 @@
+#[macro_use]
 mod catalog;
+pub mod native_definitions;
 mod numeric;
 
 pub use catalog::*;

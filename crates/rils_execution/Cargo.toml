@@ -12,3 +12,5 @@ repository.workspace = true
 rils_host.workspace = true
 rils_frontend.workspace = true
 rils_builtins.workspace = true
+rils_builtins_macros.workspace = true
+rils_stdlib.workspace = true

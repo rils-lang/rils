@@ -11,4 +11,5 @@ include = ["/Cargo.toml", "/README.md", "/builtin_ids.toml", "/src/**", "/stdlib
 
 [dependencies]
 rils_builtins_macros.workspace = true
+rils_stdlib.workspace = true
 rils_syntax.workspace = true

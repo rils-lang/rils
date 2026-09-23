@@ -599,6 +599,7 @@ name = "rils_builtins"
 version = "0.4.0"
 dependencies = [
  "rils_builtins_macros",
+ "rils_stdlib",
  "rils_syntax",
 ]
 
@@ -666,8 +667,10 @@ name = "rils_execution"
 version = "0.4.0"
 dependencies = [
  "rils_builtins",
+ "rils_builtins_macros",
  "rils_frontend",
  "rils_host",
+ "rils_stdlib",
 ]
 
 [[package]]
@@ -706,6 +709,13 @@ dependencies = [
  "rils_host",
  "rils_project",
  "stacker",
+]
+
+[[package]]
+name = "rils_stdlib"
+version = "0.4.0"
+dependencies = [
+ "rils_builtins_macros",
 ]
 
 [[package]]

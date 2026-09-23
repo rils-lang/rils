@@ -18,13 +18,6 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 value.type_name()
             )),
         },
-        BuiltinId::OptionIsSome => match import_receiver(&arguments[0])? {
-            Value::Option { value, .. } => Ok(Value::Bool(value.is_some())),
-            value => Err(format!(
-                "`is_some` expects Option, found {}",
-                value.type_name()
-            )),
-        },
         BuiltinId::OptionIsNone => match import_receiver(&arguments[0])? {
             Value::Option { value, .. } => Ok(Value::Bool(value.is_none())),
             value => Err(format!(

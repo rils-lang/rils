@@ -3,6 +3,7 @@
 mod builtin_files;
 mod builtin_ids;
 mod catalog_files;
+mod decl_rils;
 mod numeric_files;
 mod stdlib;
 mod type_patterns;
@@ -37,4 +38,19 @@ pub fn builtin_stdlib(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn type_pattern(input: TokenStream) -> TokenStream {
     type_patterns::expand(input)
+}
+
+#[proc_macro]
+pub fn decl_rils(input: TokenStream) -> TokenStream {
+    decl_rils::expand_definition(input)
+}
+
+#[proc_macro]
+pub fn decl_rils_metadata(input: TokenStream) -> TokenStream {
+    decl_rils::expand_metadata(input)
+}
+
+#[proc_macro]
+pub fn decl_rils_native(input: TokenStream) -> TokenStream {
+    decl_rils::expand_native(input)
 }
