@@ -56,18 +56,6 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                 format!("cannot parse {}: {error}", path.display()),
             )
         })?;
-        let has_derive = file.items.iter().any(|item| {
-            let Item::Mod(module) = item else { return false };
-            if !module.attrs.iter().any(|attribute| attribute.path().is_ident("decl_rils")) {
-                return false;
-            }
-            module.content.as_ref().is_some_and(|(_, items)| items.iter().any(|item| {
-                matches!(item, Item::Fn(function) if function.attrs.iter().any(|attribute| attribute.path().is_ident("rils_derive")))
-            }))
-        });
-        if !has_derive {
-            continue;
-        }
         let stem = path
             .file_stem()
             .and_then(|stem| stem.to_str())
@@ -76,10 +64,32 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
             })?;
         let module = format_ident!("{stem}");
         let absolute = LitStr::new(&path.to_string_lossy(), directory.span());
-        dependencies.push(quote!(
-            const _: &str = include_str!(#absolute);
-        ));
-        handlers.push(quote!(crate::stdlib::#module::DERIVE));
+        let mut found = false;
+        for item in &file.items {
+            let Item::Mod(declaration) = item else {
+                continue;
+            };
+            if !declaration
+                .attrs
+                .iter()
+                .any(|attribute| attribute.path().is_ident("decl_rils"))
+            {
+                continue;
+            }
+            let has_derive = declaration.content.as_ref().is_some_and(|(_, items)| items.iter().any(|item| {
+                matches!(item, Item::Fn(function) if function.attrs.iter().any(|attribute| attribute.path().is_ident("rils_derive")))
+            }));
+            if has_derive {
+                found = true;
+                let declaration_name = &declaration.ident;
+                handlers.push(quote!(crate::stdlib::#module::#declaration_name::DERIVE));
+            }
+        }
+        if found {
+            dependencies.push(quote!(
+                const _: &str = include_str!(#absolute);
+            ));
+        }
     }
     Ok(quote!({ #(#dependencies)* &[#(#handlers),*] }))
 }

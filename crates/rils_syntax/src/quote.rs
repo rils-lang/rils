@@ -10,17 +10,25 @@ use crate::{
 
 /// Generated source whose location is supplied when a derive is expanded.
 #[derive(Clone, Debug)]
-pub struct QuotedStatement {
-    source: String,
+pub enum QuotedStatement {
+    Source(String),
+    Statement(Box<Stmt>),
 }
 
 impl QuotedStatement {
     pub fn new(source: String) -> Self {
-        Self { source }
+        Self::Source(source)
+    }
+
+    pub fn from_statement(statement: Stmt) -> Self {
+        Self::Statement(Box::new(statement))
     }
 
     pub fn parse(self, origin: Span) -> Result<Stmt, ParseError> {
-        statement(&self.source, origin)
+        match self {
+            Self::Source(source) => statement(&source, origin),
+            Self::Statement(statement) => Ok(*statement),
+        }
     }
 }
 

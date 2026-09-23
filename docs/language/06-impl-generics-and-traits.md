@@ -214,7 +214,7 @@ Struct 和 enum 可通过 `#[derive(Clone)]` 生成逐字段调用 `Clone` 的�
 struct Point { x: i32, y: i32 }
 ```
 
-目前这两种派生仅支持 struct；泛型 struct 可派生 `Clone`，泛型 `Copy` 派生需等待条件 trait impl 支持。
+这两种派生都支持 struct 和 enum 的 unit、tuple 与 record 变体；泛型 struct 和 enum 可派生 `Clone`，泛型 `Copy` 派生需等待条件 trait impl 支持。
 
 使用 Rust 风格的 `impl Trait for Type`：
 
@@ -261,7 +261,7 @@ struct Settings {
 let settings = <Settings as Default>::default();
 ```
 
-派生会在前端生成普通的 `impl Default`，因此解释器、字节码编译器和 Analyzer 使用同一模型。每个字段类型都必须实现 `Default`，否则诊断会指向对应字段。同一类型不能同时派生并显式实现 `Default`。内部派生模型会为泛型字段记录所需的 `Default` bound；泛型条件 impl 的执行仍受本章末尾所述的当前限制。
+派生生成器由 Rust 标准库的 `Default` 定义模块注册，在前端生成普通的 `impl Default`，因此解释器、字节码编译器和 Analyzer 使用同一模型。每个字段类型都必须实现 `Default`，否则诊断会指向对应字段。同一类型不能同时派生并显式实现 `Default`。内部派生模型会为泛型字段记录所需的 `Default` bound；泛型条件 impl 的执行仍受本章末尾所述的当前限制。
 
 Trait 方法保留其 trait 身份。同一类型可以实现多个带同名方法的 trait；普通方法调用只有在
 候选唯一时才会自动选择，否则必须使用 UFCS：

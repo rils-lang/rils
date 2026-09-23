@@ -1,9 +1,9 @@
 //! Shared Rust types for definitions inside `rils_stdlib`.
 
-pub use super::clone::Clone;
-pub use super::copy::Copy;
 pub use super::option::Option;
 pub use super::result::Result;
+pub use super::traits::{BitFlags, Default, Eq, Hash};
+pub use super::traits::{Clone, Copy};
 
 pub fn some<T>(value: T) -> Option<T> {
     Option::Some(value)

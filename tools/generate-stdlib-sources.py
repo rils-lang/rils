@@ -8,15 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUTS = (
-    ROOT / "crates/rils_builtins/stdlib/core/option.rils",
-    ROOT / "crates/rils_builtins/stdlib/core/result.rils",
-    ROOT / "crates/rils_builtins/stdlib/core/integer.rils",
-    ROOT / "crates/rils_builtins/stdlib/core/float.rils",
-    ROOT / "crates/rils_builtins/stdlib/core/string.rils",
-    ROOT / "crates/rils_builtins/stdlib/core/clone.rils",
-    ROOT / "crates/rils_builtins/stdlib/core/copy.rils",
-)
+OUTPUT_ROOT = ROOT / "crates/rils_builtins/stdlib"
 
 
 def main() -> int:
@@ -34,16 +26,34 @@ def main() -> int:
         sys.stderr.buffer.write(result.stderr)
         return result.returncode
     parts = result.stdout.split(b"\0")
-    if len(parts) != len(OUTPUTS):
-        print("unexpected Rust standard-library export count", file=sys.stderr)
+    if not parts or parts[-1] != b"" or len(parts) < 3 or len(parts) % 2 != 1:
+        print("invalid Rust standard-library export", file=sys.stderr)
         return 1
 
     stale = []
-    for target, content in zip(OUTPUTS, parts):
+    seen = set()
+    for raw_path, content in zip(parts[::2], parts[1::2]):
+        try:
+            relative = Path(raw_path.decode("utf-8"))
+        except UnicodeDecodeError:
+            print("invalid standard-library export path", file=sys.stderr)
+            return 1
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or relative.suffix != ".rils"
+            or relative.parts[0] not in ("core", "std")
+            or relative in seen
+        ):
+            print(f"invalid or duplicate standard-library export path: {relative}", file=sys.stderr)
+            return 1
+        seen.add(relative)
+        target = OUTPUT_ROOT / relative
         if args.check:
             if not target.exists() or target.read_bytes().replace(b"\r\n", b"\n") != content:
                 stale.append(target.relative_to(ROOT))
         else:
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
     if stale:
         for path in stale:

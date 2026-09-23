@@ -3,6 +3,7 @@
 
 mod quote;
 mod registry;
+mod stdlib_sources;
 
 use proc_macro::TokenStream;
 
@@ -19,4 +20,9 @@ pub fn rils_quote_tokens(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn rils_derive_registry(input: TokenStream) -> TokenStream {
     registry::expand(input)
+}
+
+#[proc_macro]
+pub fn rils_stdlib_sources(input: TokenStream) -> TokenStream {
+    stdlib_sources::expand(input)
 }

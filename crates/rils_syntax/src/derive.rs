@@ -186,7 +186,11 @@ fn derive_statements(
         _ => return Ok(Vec::new()),
     };
     validate_attributes(attributes, native_derives)?;
-    if matches!(statement, Stmt::Enum { .. })
+    let native_default = native_derives
+        .iter()
+        .any(|definition| definition.name == "Default");
+    if !native_default
+        && matches!(statement, Stmt::Enum { .. })
         && attributes
             .iter()
             .any(|attribute| has_derive(attribute, "Default"))
@@ -201,8 +205,10 @@ fn derive_statements(
         });
     }
     let mut derived = Vec::new();
-    if let Some(default) = derive_default_statement(statement, default_types)? {
-        derived.push(default);
+    if !native_default {
+        if let Some(default) = derive_default_statement(statement, default_types)? {
+            derived.push(default);
+        }
     }
     if let Some(debug) = derive_debug_statement(statement, debug_types, nominal_types)? {
         derived.push(debug);

@@ -140,3 +140,61 @@ fn derived_copy_rejects_non_copy_fields() {
     let error = eval(source).unwrap_err().to_string();
     assert!(error.contains("Copy"), "{error}");
 }
+
+#[test]
+fn derived_copy_supports_enum_variants_without_moving_the_original() {
+    let source = r#"
+        #[derive(Clone, Copy)]
+        enum Signal { Stop, Point(i32, i32), Named { value: i32 } }
+        let stop = Signal::Stop;
+        let point = Signal::Point(20, 21);
+        let named = Signal::Named { value: 1 };
+        let stop_again = stop;
+        let point_again = point;
+        let named_again = named;
+        let a = match stop { Signal::Stop => 1, _ => 0 };
+        let b = match point { Signal::Point(x, y) => x + y, _ => 0 };
+        let c = match named { Signal::Named { value } => value, _ => 0 };
+        let d = match stop_again { Signal::Stop => 1, _ => 0 };
+        let e = match point_again { Signal::Point(x, y) => x + y, _ => 0 };
+        let f = match named_again { Signal::Named { value } => value, _ => 0 };
+        a + b + c + d + e + f
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(86));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(86));
+}
+
+#[test]
+fn derived_copy_rejects_enum_with_non_copy_payload() {
+    let source = "#[derive(Clone, Copy)] enum Message { Text(string) }";
+    assert!(eval(source).unwrap_err().to_string().contains("Copy"));
+}
+
+#[test]
+fn native_default_derive_handles_fields_and_unit_structs() {
+    let source = r#"
+        #[derive(Default)]
+        struct Wrapper { value: i32 }
+        #[derive(Default)]
+        struct Marker;
+        let wrapped = <Wrapper as Default>::default();
+        let marker = <Marker as Default>::default();
+        if type_of(marker) == "Marker" { wrapped.value + 42 } else { 0 }
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+}
+
+#[test]
+fn native_default_derive_rejects_fields_without_a_default() {
+    let source = "#[derive(Default)] struct Bad { callback: fn() -> () }";
+    let error = eval(source).unwrap_err().to_string();
+    assert!(error.contains("field `callback`"), "{error}");
+}
+
+#[test]
+fn native_default_derive_rejects_user_fields_without_an_impl() {
+    let source = "struct Inner { value: i32 } #[derive(Default)] struct Outer { value: Inner } let value = <Outer as Default>::default();";
+    assert!(eval(source).is_err());
+    assert!(compile(source).is_err());
+}

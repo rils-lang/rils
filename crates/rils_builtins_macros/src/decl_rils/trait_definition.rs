@@ -55,12 +55,16 @@ impl Input {
         let valid = match name.as_str() {
             "Clone" => module == "core::clone" && rust == "::core::clone::Clone",
             "Copy" => module == "core::copy" && rust == "::core::marker::Copy",
+            "Default" => module == "core::default" && rust == "::core::default::Default",
+            "Eq" => module == "core::eq" && rust == "::core::cmp::Eq",
+            "Hash" => module == "core::hash" && rust == "::core::hash::Hash",
+            "BitFlags" => module == "core::bit_flags" && rust == "super::BitFlagsMarker",
             _ => false,
         };
         if !valid {
             return Err(Error::new_spanned(
                 &self.item,
-                "only core::clone::Clone and core::copy::Copy bindings are supported",
+                "unsupported built-in trait binding",
             ));
         }
         if !matches!(self.item.vis, syn::Visibility::Public(_)) {
@@ -76,23 +80,32 @@ impl Input {
             ));
         }
         let methods = self.methods()?;
-        if (name == "Clone" && methods.len() != 1) || (name == "Copy" && !methods.is_empty()) {
+        if (matches!(name.as_str(), "Clone" | "Default") && methods.len() != 1)
+            || (matches!(name.as_str(), "Copy" | "Eq" | "Hash" | "BitFlags") && !methods.is_empty())
+        {
             return Err(Error::new_spanned(
                 &self.item,
                 "unexpected built-in trait methods",
             ));
         }
         if let Some(method) = methods.first() {
-            if method.sig.ident != "clone"
+            let valid_signature = match name.as_str() {
+                "Clone" => {
+                    method.sig.ident == "clone"
+                        && method.sig.inputs.len() == 1
+                        && matches!(method.sig.inputs.first(), Some(FnArg::Receiver(receiver)) if receiver.reference.is_some() && receiver.mutability.is_none())
+                }
+                "Default" => method.sig.ident == "default" && method.sig.inputs.is_empty(),
+                _ => false,
+            };
+            if !valid_signature
                 || !method.sig.generics.params.is_empty()
                 || method.sig.generics.where_clause.is_some()
-                || method.sig.inputs.len() != 1
-                || !matches!(method.sig.inputs.first(), Some(FnArg::Receiver(receiver)) if receiver.reference.is_some() && receiver.mutability.is_none())
                 || !matches!(&method.sig.output, ReturnType::Type(_, ty) if matches!(ty.as_ref(), Type::Path(path) if path.path.is_ident("Self")))
             {
                 return Err(Error::new_spanned(
                     method,
-                    "expected `fn clone(&self) -> Self;`",
+                    "expected the bound Rust trait's required method signature",
                 ));
             }
         }
@@ -106,10 +119,10 @@ impl Input {
             };
             let path = &bound.path;
             (path.segments.len() > 1
-                && path
-                    .segments
-                    .last()
-                    .is_some_and(|part| part.ident == self.item.ident))
+                && path.segments.last().is_some_and(|part| {
+                    part.ident == self.item.ident
+                        || (self.item.ident == "BitFlags" && part.ident == "BitFlagsMarker")
+                }))
             .then_some(path)
         });
         let binding = matching.next().ok_or_else(|| {
@@ -218,7 +231,8 @@ impl Input {
         let methods = self.methods()?.into_iter().map(|method| {
             let name = method.sig.ident.to_string();
             let docs = super::documentation(&method.attrs);
-            let parameters = method.sig.inputs.iter().skip(1).map(|argument| {
+            let has_receiver = matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)));
+            let parameters = method.sig.inputs.iter().skip(usize::from(has_receiver)).map(|argument| {
                 let FnArg::Typed(argument) = argument else {
                     return Err(Error::new_spanned(argument, "unexpected receiver"));
                 };
@@ -228,14 +242,17 @@ impl Input {
                 ReturnType::Default => quote!(crate::TypePattern::Unit),
                 ReturnType::Type(_, ty) => type_patterns::tokens(ty)?,
             };
+            let kind = if has_receiver { quote!(crate::BuiltinMemberKind::Method) } else { quote!(crate::BuiltinMemberKind::AssociatedFunction) };
+            let receiver = if has_receiver { quote!(Some(crate::ReceiverMode::Shared)) } else { quote!(None) };
+            let builtin_id = if name == "clone" { quote!(Some(builtin_id!("core::clone"))) } else { quote!(None) };
             Ok(quote! {
                 crate::BuiltinMember {
                     name: #name,
-                    kind: crate::BuiltinMemberKind::Method,
+                    kind: #kind,
                     signature: Some(crate::BuiltinSignature { parameters: &[#(#parameters),*], result: #result, variadic: false }),
                     value_type: None,
-                    receiver: Some(crate::ReceiverMode::Shared),
-                    builtin_id: Some(builtin_id!("core::clone")),
+                    receiver: #receiver,
+                    builtin_id: #builtin_id,
                     runtime_import: None,
                     required: true,
                     type_parameters: &[],
@@ -243,10 +260,10 @@ impl Input {
                 }
             })
         }).collect::<syn::Result<Vec<_>>>()?;
-        let backend = if methods.is_empty() {
-            quote!(crate::BuiltinBackend::Metadata)
-        } else {
+        let backend = if name == "Clone" {
             quote!(crate::BuiltinBackend::Runtime)
+        } else {
+            quote!(crate::BuiltinBackend::Metadata)
         };
         let pattern_import = if methods.is_empty() {
             quote!()
@@ -422,5 +439,63 @@ mod tests {
             ),
         };
         assert!(input.validate().is_err());
+    }
+
+    #[test]
+    fn default_binding_generates_associated_constructor() {
+        let input = Input {
+            header: syn::parse_quote!(core::default),
+            item: syn::parse_quote! {
+                pub trait Default: ::core::default::Default {
+                    fn default() -> Self;
+                }
+            },
+        };
+        input.validate().unwrap();
+        assert!(input.source().contains("fn default() -> Self;"));
+        let metadata = input.metadata().unwrap().to_string();
+        assert!(metadata.contains("BuiltinMemberKind :: AssociatedFunction"));
+        assert!(metadata.contains("BuiltinBackend :: Metadata"));
+    }
+
+    #[test]
+    fn marker_traits_keep_rils_supertraits() {
+        for (module, item, expected) in [
+            (
+                syn::parse_quote!(core::copy),
+                syn::parse_quote!(
+                    pub trait Copy: Clone + ::core::marker::Copy {}
+                ),
+                "pub trait Copy: Clone {}",
+            ),
+            (
+                syn::parse_quote!(core::eq),
+                syn::parse_quote!(
+                    pub trait Eq: ::core::cmp::Eq {}
+                ),
+                "pub trait Eq {}",
+            ),
+            (
+                syn::parse_quote!(core::hash),
+                syn::parse_quote!(
+                    pub trait Hash: ::core::hash::Hash {}
+                ),
+                "pub trait Hash {}",
+            ),
+            (
+                syn::parse_quote!(core::bit_flags),
+                syn::parse_quote!(
+                    pub trait BitFlags: super::BitFlagsMarker {}
+                ),
+                "pub trait BitFlags {}",
+            ),
+        ] {
+            let input = Input {
+                header: Header { module },
+                item,
+            };
+            input.validate().unwrap();
+            assert_eq!(input.source(), format!("{expected}\n"));
+        }
     }
 }

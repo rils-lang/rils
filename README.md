@@ -35,7 +35,7 @@ VS Code 和 CLI 工具链发行包均携带同源的 `rils_stdlib` 声明包，�
 `push/pop/peek_cloned` 处理整数、字符或字符串优先级；`BTreeMap` 按键排序。完整用法见
 [集合章节](docs/language/05-data-types-and-collections.md)。
 数组、`Vec<T>`、Map 和 Set 还提供 `iter()` 借用遍历，遍历后可继续使用原集合。数组和 `Vec<T>` 的拥有型 `into_iter()` 按 `next()` 的调用逐项移出元素。
-Struct 支持 `#[derive(Clone)]` 和 `#[derive(Copy)]`，enum 支持 `#[derive(Clone)]`；`Clone` 逐字段调用对应 trait 实现，`Copy` 要求字段均为 Copy。
+Struct 和 enum 支持 `#[derive(Clone)]`、`#[derive(Copy)]`；struct 也支持 `#[derive(Default)]`。`Clone` 逐字段调用对应 trait 实现，`Copy` 要求字段均为 Copy。
 
 ```rust
 let value = rils::eval("1 + 2 * 3")?;

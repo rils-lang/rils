@@ -14,7 +14,9 @@ pub mod types;
 
 pub use lexer::{LexError, lex, lex_with_source_id};
 pub use parser::{ParseCapabilities, ParseError, parse, parse_with_capabilities};
-pub use rils_syntax_macros::{rils_derive_registry, rils_quote, rils_quote_tokens};
+pub use rils_syntax_macros::{
+    rils_derive_registry, rils_quote, rils_quote_tokens, rils_stdlib_sources,
+};
 pub use source::{
     BodyId, DefId, ExprId, ImplId, ModuleId, PatternId, SourceFile, SourceId, Span, SymbolId,
     TypeRefId,

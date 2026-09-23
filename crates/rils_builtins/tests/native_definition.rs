@@ -38,7 +38,7 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         is_some.documentation,
         "Returns true when a value is present."
     );
-    assert_eq!(native_definitions::DECLARATIONS.len(), 4);
+    assert_eq!(native_definitions::DECLARATIONS.len(), 8);
 }
 
 #[test]
@@ -67,6 +67,40 @@ fn rust_trait_definitions_supply_the_public_catalog() {
     );
     assert_eq!(native_definitions::clone::DECLARATION.path, clone.path);
     assert_eq!(native_definitions::copy::DECLARATION.path, copy.path);
+}
+
+#[test]
+fn grouped_native_traits_match_the_public_catalog() {
+    for (path, generated) in [
+        ("Default", &native_definitions::default::DECLARATION),
+        ("Eq", &native_definitions::eq::DECLARATION),
+        ("Hash", &native_definitions::hash::DECLARATION),
+        ("BitFlags", &native_definitions::bit_flags::DECLARATION),
+    ] {
+        let published = builtin(path).expect("trait is in the public catalog");
+        assert_eq!(generated.path, published.path);
+        assert_eq!(generated.kind, published.kind);
+        assert_eq!(generated.documentation, published.documentation);
+        assert_eq!(generated.backend, published.backend);
+        assert_eq!(generated.members.len(), published.members.len());
+        for member in generated.members {
+            let original = published
+                .member(member.name)
+                .expect("trait member is exported");
+            assert_eq!(member.kind, original.kind);
+            assert_eq!(member.receiver, original.receiver);
+            assert_eq!(member.builtin_id, original.builtin_id);
+            match (member.signature, original.signature) {
+                (Some(left), Some(right)) => {
+                    assert_eq!(left.parameters, right.parameters);
+                    assert_eq!(left.result, right.result);
+                    assert_eq!(left.variadic, right.variadic);
+                }
+                (None, None) => {}
+                _ => panic!("trait signature mismatch for {path}::{}", member.name),
+            }
+        }
+    }
 }
 
 #[test]
