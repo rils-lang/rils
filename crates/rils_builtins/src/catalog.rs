@@ -1,7 +1,4 @@
-use crate::{
-    BuiltinSignature, FloatConstantDeclaration, FloatConstantId, IntrinsicDeclaration,
-    IntrinsicKind, TypePattern,
-};
+use crate::{BuiltinSignature, TypePattern};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinKind {
@@ -163,6 +160,9 @@ rils_builtins_macros::builtin_stdlib! {
     pub const BUILTINS, BUILTIN_MODULES, BUILTIN_SOURCES;
 }
 
+pub use crate::native_definitions::float::{
+    CONSTANTS as FLOAT_CONSTANTS, INTRINSICS as FLOAT_INTRINSICS,
+};
 pub use crate::native_definitions::integer::{
     CONSTANTS as INTEGER_CONSTANTS, INTRINSICS as INTEGER_INTRINSICS,
 };

@@ -13,9 +13,9 @@
 内部定义可通过 `stdlib::prelude` 引用其他已定义的 Rust 标准库类型；这个模块只服务于 Rust 实现，不改变 Rils 侧的 prelude。
 运行时适配器把 Rils 值转换为该 Rust 类型，然后调用真实的方法；解释器的回调适配器使用同一方法的可失败辅助实现。
 `builtin_ids.toml` 仍是稳定 ID 的来源。`rils_builtins` 直接使用这些 Rust 定义生成
-Option、Result 和整数 API 的静态元信息，不再从对应的 `.rils` 文件重新解析元信息。
+Option、Result、整数、浮点数和 string API 的静态元信息，不再从对应的 `.rils` 文件重新解析元信息。
 Analyzer 目前仍加载 `.rils` 语言包以提供源码位置；运行生成脚本时，导出宏按需从
-Rust 定义生成这三份语言包声明，不在 `rils_stdlib` 中保存 `RILS_SOURCE` 常量。
+Rust 定义生成这些语言包声明，不在 `rils_stdlib` 中保存 `RILS_SOURCE` 常量。
 提交前用 `python tools/generate-stdlib-sources.py --check` 校验语言包资源同步。
 
 整数类型使用 `primitive_integer_family!(i8, i16, i32, ..., usize)`
@@ -24,3 +24,6 @@ Rust 定义生成这三份语言包声明，不在 `rils_stdlib` 中保存 `RILS
 `impl i8`、`impl i32` 等原有类型的方法声明，不新增包装类型。有符号与无符号数的
 `abs`、`saturating_neg` 等差异由内部适配 trait 处理。整数方法和常量的 `.rils`
 声明从这份 Rust 定义生成；稳定 ID 继续取自 `builtin_ids.toml`。
+
+`f32` 和 `f64` 复用数值族模板；`string` 使用普通 Rust 包装类型定义方法。
+`string` 的拥有型迭代器结果通过原生绑定映射到 Rils 的 `Iterator<T>`。

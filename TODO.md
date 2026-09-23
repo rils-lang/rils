@@ -75,7 +75,7 @@
 
 - 完善 CLI 的项目检查、模块图、Manifest 校验和诊断导出命令。
 - 提供标准库 API 目录和由 `rils_builtins` 生成的文档入口。
-- 继续把 Option/Result 成员之外的标准库 `.rils` 占位声明迁移到 `rils_stdlib` 的 Rust 定义，并让 `BUILTINS`、语言包源码和 Analyzer 均直接消费生成元信息；迁移完成后删除重复声明与旧的按 ID 手写实现。
+- 继续把未迁移的标准库 `.rils` 占位声明迁移到 `rils_stdlib` 的 Rust 定义，并让语言包源码和 Analyzer 直接消费生成元信息；迁移完成后删除重复声明与旧的按 ID 手写实现。
 - 已建立独立的 `tools/rils-bench` release 基准工具和 `python tools/benchmark.py` 稳定入口；继续扩展
   解释器、磁盘字节码和 Analyzer 场景，并在基线稳定后建立持续性能回归。
 - 增加跨平台原生构建与发布矩阵，并明确各宿主的 ABI/字节码兼容策略。

@@ -126,7 +126,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
         let source_module = source_module(path);
         if matches!(
             file.relative.as_str(),
-            "stdlib/core/option.rils" | "stdlib/core/result.rils"
+            "stdlib/core/option.rils" | "stdlib/core/result.rils" | "stdlib/core/string.rils"
         ) {
             source_entries.push(source_entry(
                 &file.relative,
@@ -143,26 +143,6 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
                 quote!(Numeric),
                 input.directory.span(),
             ));
-            if stem == "integer" {
-                continue;
-            }
-            let family = if stem == "integer" {
-                format_ident!("Integer")
-            } else {
-                format_ident!("Float")
-            };
-            let prefix = LitStr::new(&format!("core::{stem}"), input.directory.span());
-            let intrinsics = format_ident!("{}_INTRINSICS", stem.to_ascii_uppercase());
-            let constants = format_ident!("{}_CONSTANTS", stem.to_ascii_uppercase());
-            declarations.push(quote! {
-                rils_builtins_macros::builtin_numeric_file! {
-                    #config_path;
-                    #relative_literal;
-                    complete #prefix;
-                    family #family;
-                    pub const #intrinsics, #constants;
-                }
-            });
             continue;
         }
 
@@ -271,6 +251,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
 
     declaration_items.push(quote!(crate::native_definitions::option::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::result::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::string::DECLARATION));
 
     let module_entries = module_members.iter().map(|(path, members)| {
         let path = LitStr::new(path, input.directory.span());

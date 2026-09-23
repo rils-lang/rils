@@ -1,4 +1,4 @@
-//! Specializes a Rust integer method template for the existing Rils primitives.
+//! Specializes Rust numeric method templates for the existing Rils primitives.
 
 use proc_macro::TokenStream;
 use std::collections::BTreeSet;
@@ -39,6 +39,7 @@ impl Mapping {
 
 struct Definition {
     path: Path,
+    float: bool,
     family: Vec<Mapping>,
     module: ItemMod,
     methods: Vec<ImplItemFn>,
@@ -46,27 +47,47 @@ struct Definition {
 
 pub(super) fn contains_mapping(module: &ItemMod) -> bool {
     module.content.as_ref().is_some_and(|(_, items)| {
-        items.iter().any(|item| matches!(item, Item::Macro(item) if item.mac.path.is_ident("primitive_integer_family")))
+        items.iter().any(|item| matches!(item, Item::Macro(item) if item.mac.path.is_ident("primitive_integer_family") || item.mac.path.is_ident("primitive_float_family")))
     })
 }
 
 impl Definition {
     fn parse(path: Path, module: ItemMod) -> syn::Result<Self> {
-        if path.to_token_stream().to_string().replace(' ', "") != "core::integer" {
-            return Err(Error::new_spanned(
-                path,
-                "primitive_integer_family! requires core::integer",
-            ));
-        }
+        let float = match path.to_token_stream().to_string().replace(' ', "").as_str() {
+            "core::integer" => false,
+            "core::float" => true,
+            _ => {
+                return Err(Error::new_spanned(
+                    path,
+                    "numeric family requires core::integer or core::float",
+                ));
+            }
+        };
         let (_, items) = module
             .content
             .as_ref()
             .ok_or_else(|| Error::new_spanned(&module, "standard-library module must be inline"))?;
         let mut families = items.iter().filter_map(|item| match item {
-            Item::Macro(item) if item.mac.path.is_ident("primitive_integer_family") => Some(item),
+            Item::Macro(item)
+                if item.mac.path.is_ident("primitive_integer_family")
+                    || item.mac.path.is_ident("primitive_float_family") =>
+            {
+                Some(item)
+            }
             _ => None,
         });
         let item = families.next().expect("numeric family was detected");
+        let expected_family = if float {
+            "primitive_float_family"
+        } else {
+            "primitive_integer_family"
+        };
+        if !item.mac.path.is_ident(expected_family) {
+            return Err(Error::new_spanned(
+                item,
+                format!("expected {expected_family}!"),
+            ));
+        }
         if families.next().is_some() {
             return Err(Error::new_spanned(
                 &module,
@@ -83,23 +104,28 @@ impl Definition {
         let mut primitive_names = BTreeSet::new();
         for entry in &family {
             let primitive = entry.primitive.to_string();
-            if !matches!(
-                primitive.as_str(),
-                "i8" | "i16"
-                    | "i32"
-                    | "i64"
-                    | "i128"
-                    | "isize"
-                    | "u8"
-                    | "u16"
-                    | "u32"
-                    | "u64"
-                    | "u128"
-                    | "usize"
-            ) {
+            let valid = if float {
+                matches!(primitive.as_str(), "f32" | "f64")
+            } else {
+                matches!(
+                    primitive.as_str(),
+                    "i8" | "i16"
+                        | "i32"
+                        | "i64"
+                        | "i128"
+                        | "isize"
+                        | "u8"
+                        | "u16"
+                        | "u32"
+                        | "u64"
+                        | "u128"
+                        | "usize"
+                )
+            };
+            if !valid {
                 return Err(Error::new_spanned(
                     &entry.primitive,
-                    "expected an integer primitive",
+                    "unexpected numeric primitive",
                 ));
             }
             if !primitive_names.insert(primitive) {
@@ -153,6 +179,7 @@ impl Definition {
         }
         Ok(Self {
             path,
+            float,
             family,
             module,
             methods,
@@ -162,14 +189,19 @@ impl Definition {
     fn rils_source(&self) -> String {
         let mut source = String::new();
         let mut mappings = self.family.iter().collect::<Vec<_>>();
-        const ORDER: &[&str] = &[
+        const INTEGER_ORDER: &[&str] = &[
             "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
         ];
+        let order = if self.float {
+            &["f32", "f64"][..]
+        } else {
+            INTEGER_ORDER
+        };
         mappings.sort_by_key(|mapping| {
-            ORDER
+            order
                 .iter()
                 .position(|name| mapping.primitive == *name)
-                .expect("validated integer primitive")
+                .expect("validated numeric primitive")
         });
         for mapping in mappings {
             source.push_str(&format!("impl {} {{\n", mapping.primitive));
@@ -238,7 +270,7 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
             .expect("validated integer template");
         items.retain(|item| {
             !matches!(item, Item::Impl(_))
-                && !matches!(item, Item::Macro(inner) if inner.mac.path.is_ident("primitive_integer_family"))
+                && !matches!(item, Item::Macro(inner) if inner.mac.path.is_ident("primitive_integer_family") || inner.mac.path.is_ident("primitive_float_family"))
         });
         items.push(syn::parse_quote!(
             pub struct Number<T>(pub T);
@@ -266,7 +298,11 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
     }
     let original = &definition.module;
     let path = &definition.path;
-    let name = format_ident!("integer_definition");
+    let name = if definition.float {
+        format_ident!("float_definition")
+    } else {
+        format_ident!("integer_definition")
+    };
     quote! {
         #emitted
         #[macro_export]
@@ -304,7 +340,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
         .filter(|method| !method.attrs.iter().any(|attr| attr.path().is_ident("constant")))
         .map(|method| {
             let name = method.sig.ident.to_string();
-            let id_path = format!("core::integer::{name}");
+            let id_path = format!("{}::{name}", if definition.float { "core::float" } else { "core::integer" });
             let documentation = super::documentation(&method.attrs);
             let receiver = method.sig.receiver();
             let kind = if receiver.is_some() {
@@ -356,15 +392,18 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
         })
         .map(|method| {
             let name = method.sig.ident.to_string();
-            let variant = format_ident!(
-                "{}",
-                match name.as_str() {
-                    "MIN" => "Min",
-                    "MAX" => "Max",
-                    "BITS" => "Bits",
-                    _ => return Err(Error::new_spanned(method, "unsupported integer constant")),
-                }
-            );
+            let variant_name = match name.as_str() {
+                "MIN" => "Min",
+                "MAX" => "Max",
+                "BITS" if !definition.float => "Bits",
+                "EPSILON" if definition.float => "Epsilon",
+                "MIN_POSITIVE" if definition.float => "MinPositive",
+                "NAN" if definition.float => "Nan",
+                "INFINITY" if definition.float => "Infinity",
+                "NEG_INFINITY" if definition.float => "NegInfinity",
+                _ => return Err(Error::new_spanned(method, "unsupported numeric constant")),
+            };
+            let variant = format_ident!("{variant_name}");
             let documentation = super::documentation(&method.attrs);
             let ReturnType::Type(_, ty) = &method.sig.output else {
                 return Err(Error::new_spanned(
@@ -373,21 +412,42 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
                 ));
             };
             let value_type = type_patterns::tokens(ty)?;
+            let value_field = if definition.float {
+                quote!()
+            } else {
+                quote!(value_type: #value_type,)
+            };
+            let (declaration, id) = if definition.float {
+                (
+                    quote!(crate::FloatConstantDeclaration),
+                    quote!(crate::FloatConstantId),
+                )
+            } else {
+                (
+                    quote!(crate::IntegerConstantDeclaration),
+                    quote!(crate::IntegerConstantId),
+                )
+            };
             Ok(quote! {
-                crate::IntegerConstantDeclaration {
-                    id: crate::IntegerConstantId::#variant,
+                #declaration {
+                    id: #id::#variant,
                     name: #name,
-                    value_type: #value_type,
+                    #value_field
                     documentation: #documentation,
                 }
             })
         })
         .collect::<syn::Result<Vec<_>>>();
+    let constant_type = if definition.float {
+        quote!(crate::FloatConstantDeclaration)
+    } else {
+        quote!(crate::IntegerConstantDeclaration)
+    };
     match (methods, constants) {
         (Ok(methods), Ok(constants)) => quote! {
             use crate::TypePattern;
             pub const INTRINSICS: &[crate::IntrinsicDeclaration] = &[#(#methods),*];
-            pub const CONSTANTS: &[crate::IntegerConstantDeclaration] = &[#(#constants),*];
+            pub const CONSTANTS: &[#constant_type] = &[#(#constants),*];
         }
         .into(),
         (Err(error), _) | (_, Err(error)) => error.into_compile_error().into(),
@@ -409,18 +469,20 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
     };
+    let float = definition.float;
     let mappings = definition.family.iter().collect::<Vec<_>>();
     let bindings = mappings.iter().map(|mapping| {
     let primitive = &mapping.primitive;
     let call_name = format_ident!("call_{}", primitive);
     let constant_name = format_ident!("constant_{}", primitive);
-    let rust_type = quote!(rils_stdlib::stdlib::integer::Number<#primitive>);
-    let rust_path = quote!(rils_stdlib::stdlib::integer::Number::<#primitive>);
+    let numeric_module = if float { format_ident!("float") } else { format_ident!("integer") };
+    let rust_type = quote!(rils_stdlib::stdlib::#numeric_module::Number<#primitive>);
+    let rust_path = quote!(rils_stdlib::stdlib::#numeric_module::Number::<#primitive>);
     let methods = definition.methods.iter()
         .filter(|method| !method.attrs.iter().any(|attr| attr.path().is_ident("constant")))
         .map(|method| {
             let name = &method.sig.ident;
-            let id_path = format!("core::integer::{name}");
+            let id_path = format!("{}::{name}", if float { "core::float" } else { "core::integer" });
             let receiver = method.sig.receiver();
             if receiver.is_some_and(|receiver| receiver.reference.is_some()) {
                 return Err(Error::new_spanned(method, "primitive native bridge requires an owned receiver"));
@@ -446,17 +508,22 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
                 argument_names.push(argument);
             }
             let preflight = match name.to_string().as_str() {
-                "pow" => quote! {
+                "clamp" if float => quote! {
+                    if arg_1.0.is_nan() || arg_2.0.is_nan() || arg_1.0 > arg_2.0 {
+                        return Err("float clamp requires non-NaN bounds with min <= max".into());
+                    }
+                },
+                "pow" if !float => quote! {
                     if native_self.0.checked_pow(arg_1).is_none() { return Err("integer overflow".into()); }
                 },
                 "abs" if primitive.to_string().starts_with('i') => quote! {
                     if native_self.0.checked_abs().is_none() { return Err("integer overflow".into()); }
                 },
-                "div_euclid" => quote! {
+                "div_euclid" if !float => quote! {
                     if arg_1.0 == 0 { return Err("division by zero".into()); }
                     if native_self.0.checked_div_euclid(arg_1.0).is_none() { return Err("integer overflow".into()); }
                 },
-                "rem_euclid" => quote! {
+                "rem_euclid" if !float => quote! {
                     if arg_1.0 == 0 { return Err("division by zero".into()); }
                     if native_self.0.checked_rem_euclid(arg_1.0).is_none() { return Err("integer overflow".into()); }
                 },
@@ -490,21 +557,29 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         })
         .map(|method| {
             let name = &method.sig.ident;
-            let id = match name.to_string().as_str() {
-                "MIN" => quote!(rils_builtins::IntegerConstantId::Min),
-                "MAX" => quote!(rils_builtins::IntegerConstantId::Max),
-                "BITS" => quote!(rils_builtins::IntegerConstantId::Bits),
-                _ => return Err(Error::new_spanned(method, "unsupported integer constant")),
+            let variant = match name.to_string().as_str() {
+                "MIN" => format_ident!("Min"),
+                "MAX" => format_ident!("Max"),
+                "BITS" if !float => format_ident!("Bits"),
+                "EPSILON" if float => format_ident!("Epsilon"),
+                "MIN_POSITIVE" if float => format_ident!("MinPositive"),
+                "NAN" if float => format_ident!("Nan"),
+                "INFINITY" if float => format_ident!("Infinity"),
+                "NEG_INFINITY" if float => format_ident!("NegInfinity"),
+                _ => return Err(Error::new_spanned(method, "unsupported numeric constant")),
             };
+            let id_type = if float { quote!(rils_builtins::FloatConstantId) } else { quote!(rils_builtins::IntegerConstantId) };
+            let id = quote!(#id_type::#variant);
             Ok(quote!(#id => Some(super::NativeOutput::into_value(#rust_path::#name())),))
         })
         .collect::<syn::Result<Vec<_>>>();
+    let constant_id_type = if float { quote!(rils_builtins::FloatConstantId) } else { quote!(rils_builtins::IntegerConstantId) };
     match (methods, constants) {
         (Ok(methods), Ok(constants)) => Ok(quote! {
             fn #call_name(id: rils_builtins::BuiltinId, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
                 match id { #(#methods,)* _ => None }
             }
-            fn #constant_name(id: rils_builtins::IntegerConstantId) -> Option<Result<crate::Value, String>> {
+            fn #constant_name(id: #constant_id_type) -> Option<Result<crate::Value, String>> {
                 match id { #(#constants)* }
             }
         }),
@@ -528,8 +603,24 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     let constant_dispatch = mappings.iter().map(|mapping| {
         let wrapper = mapping.variant();
         let constant_name = format_ident!("constant_{}", mapping.primitive);
-        quote!(rils_builtins::IntegerType::#wrapper => #constant_name(id),)
+        let target_type = if float {
+            quote!(crate::FloatType)
+        } else {
+            quote!(rils_builtins::IntegerType)
+        };
+        quote!(#target_type::#wrapper => #constant_name(id),)
     });
+    if float {
+        return quote! {
+            #(#bindings)*
+            pub fn call(id: rils_builtins::BuiltinId, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
+                match arguments.first() { #(#receiver_dispatch)* _ => None }
+            }
+            pub fn constant(target: crate::FloatType, id: rils_builtins::FloatConstantId) -> Option<Result<crate::Value, String>> {
+                match target { #(#constant_dispatch)* }
+            }
+        }.into();
+    }
     quote! {
         #(#bindings)*
         pub fn call(

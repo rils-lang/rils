@@ -11,6 +11,7 @@ use syn::{
 use crate::type_patterns;
 
 mod primitive;
+mod string;
 
 struct Definition {
     module: Path,
@@ -122,6 +123,9 @@ pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> To
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
     };
+    if string::is_string(&path) {
+        return string::expand_definition(path, original);
+    }
     if primitive::contains_mapping(&original) {
         return primitive::expand_definition(path, original);
     }
@@ -209,6 +213,9 @@ fn rils_source(definition: &Definition) -> String {
 
 pub(crate) fn expand_metadata(input: TokenStream) -> TokenStream {
     let source = parse_macro_input!(input as DefinitionInput);
+    if string::is_string(&source.path) {
+        return string::expand_metadata(source.path, source.item);
+    }
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_metadata(source.path, source.item);
     }
@@ -224,6 +231,9 @@ pub(crate) fn expand_metadata(input: TokenStream) -> TokenStream {
 
 pub(crate) fn expand_source(input: TokenStream) -> TokenStream {
     let source = parse_macro_input!(input as DefinitionInput);
+    if string::is_string(&source.path) {
+        return string::expand_source(source.path, source.item);
+    }
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_source(source.path, source.item);
     }
@@ -385,6 +395,9 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
 
 pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
     let source = parse_macro_input!(input as DefinitionInput);
+    if string::is_string(&source.path) {
+        return string::expand_native(source.path, source.item);
+    }
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_native(source.path, source.item);
     }

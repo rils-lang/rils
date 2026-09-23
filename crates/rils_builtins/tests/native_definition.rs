@@ -103,3 +103,41 @@ fn integer_family_matches_the_existing_integer_api() {
             .all(|statement| matches!(statement, rils_syntax::ast::Stmt::Impl { .. }))
     );
 }
+
+#[test]
+fn float_family_and_string_match_the_public_catalog() {
+    assert_eq!(
+        native_definitions::float::INTRINSICS.len(),
+        rils_builtins::FLOAT_INTRINSICS.len()
+    );
+    for method in native_definitions::float::INTRINSICS {
+        let published = rils_builtins::intrinsic(method.id).unwrap();
+        assert_eq!(method.name, published.name);
+        assert_eq!(method.kind, published.kind);
+        assert_eq!(method.signature.parameters, published.signature.parameters);
+        assert_eq!(method.signature.result, published.signature.result);
+    }
+    assert_eq!(
+        native_definitions::float::CONSTANTS.len(),
+        rils_builtins::FLOAT_CONSTANTS.len()
+    );
+
+    let string = builtin("string").expect("string is in the public catalog");
+    let native = &native_definitions::string::DECLARATION;
+    assert_eq!(string.kind, BuiltinKind::Primitive);
+    assert_eq!(string.documentation, native.documentation);
+    assert_eq!(string.members.len(), native.members.len());
+    for member in native.members {
+        let published = string.member(member.name).unwrap();
+        assert_eq!(member.builtin_id, published.builtin_id);
+        assert_eq!(member.receiver, published.receiver);
+        assert_eq!(
+            member.signature.unwrap().parameters,
+            published.signature.unwrap().parameters
+        );
+        assert_eq!(
+            member.signature.unwrap().result,
+            published.signature.unwrap().result
+        );
+    }
+}

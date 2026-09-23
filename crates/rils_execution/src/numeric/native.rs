@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use crate::{Type, Value};
 use rils_stdlib::stdlib::{
+    float::Number as FloatNumber,
     integer::{Integer, Number},
     option::Option,
     result::Result,
@@ -16,6 +17,32 @@ pub(super) trait NativeInput: Sized {
 pub(super) trait NativeOutput {
     fn into_value(self) -> std::result::Result<Value, String>;
 }
+
+impl NativeOutput for bool {
+    fn into_value(self) -> std::result::Result<Value, String> {
+        Ok(Value::Bool(self))
+    }
+}
+
+macro_rules! float_bridge {
+    ($($primitive:ty => $variant:ident),* $(,)?) => {$ (
+        impl NativeInput for FloatNumber<$primitive> {
+            fn from_value(value: &Value) -> std::result::Result<Self, String> {
+                match value {
+                    Value::$variant(value) => Ok(Self(*value)),
+                    value => Err(format!("expected {}, found {}", stringify!($primitive), value.type_name())),
+                }
+            }
+        }
+        impl NativeOutput for FloatNumber<$primitive> {
+            fn into_value(self) -> std::result::Result<Value, String> {
+                Ok(Value::$variant(self.0))
+            }
+        }
+    )* };
+}
+
+float_bridge!(f32 => F32, f64 => F64);
 
 impl NativeInput for u32 {
     fn from_value(value: &Value) -> std::result::Result<Self, String> {
@@ -129,4 +156,10 @@ pub(super) mod integer {
     use rils_builtins_macros::decl_rils_native;
 
     rils_stdlib::integer_definition!(decl_rils_native);
+}
+
+pub(super) mod float {
+    use rils_builtins_macros::decl_rils_native;
+
+    rils_stdlib::float_definition!(decl_rils_native);
 }

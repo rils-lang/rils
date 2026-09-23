@@ -12,6 +12,8 @@ OUTPUTS = (
     ROOT / "crates/rils_builtins/stdlib/core/option.rils",
     ROOT / "crates/rils_builtins/stdlib/core/result.rils",
     ROOT / "crates/rils_builtins/stdlib/core/integer.rils",
+    ROOT / "crates/rils_builtins/stdlib/core/float.rils",
+    ROOT / "crates/rils_builtins/stdlib/core/string.rils",
 )
 
 

@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use crate::{
     environment::{AssignError, StorageSlot},
-    types::{IntegerType, Type},
+    types::Type,
     value::{
         CellValue, FieldSlot, OwnedIteratorValue, RefCellValue, ReferenceValue, SequenceValue,
         Value, WeakValue,
@@ -16,7 +16,6 @@ mod collection_iter;
 mod native;
 mod option_result;
 mod sequence_iter;
-mod string;
 mod vec_deque;
 
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
@@ -238,7 +237,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let value = import_receiver(&arguments[0])?;
             let length = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => sequence.elements.borrow().len(),
-                Value::String(value) => value.len(),
                 value => {
                     return Err(format!(
                         "len receiver is not a collection: {}",
@@ -254,7 +252,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 Value::Array(sequence) | Value::Vec(sequence) => {
                     sequence.elements.borrow().is_empty()
                 }
-                Value::String(value) => value.is_empty(),
                 value => return Err(format!("{} has no is_empty method", value.type_name())),
             };
             Ok(Value::Bool(empty))
@@ -269,12 +266,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                         .iter()
                         .any(|slot| slot.value.as_ref() == Some(&needle));
                     Ok(Value::Bool(contains))
-                }
-                Value::String(value) => {
-                    let Value::String(needle) = &arguments[1] else {
-                        return Err("string contains argument must be string".into());
-                    };
-                    Ok(Value::Bool(value.contains(needle.as_ref())))
                 }
                 _ => Err("contains receiver is not a collection".into()),
             }
@@ -655,7 +646,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::StringBytes
         | BuiltinId::StringLines
         | BuiltinId::StringSplit
-        | BuiltinId::StringReplace => string::call(id, arguments),
+        | BuiltinId::StringReplace => Err("missing native string binding".into()),
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),

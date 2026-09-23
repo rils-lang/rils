@@ -15,6 +15,14 @@ fn language_sources_match_the_rust_definitions() {
             rils_stdlib::integer_definition!(decl_rils_source),
             include_str!("../../rils_builtins/stdlib/core/integer.rils"),
         ),
+        (
+            rils_stdlib::float_definition!(decl_rils_source),
+            include_str!("../../rils_builtins/stdlib/core/float.rils"),
+        ),
+        (
+            rils_stdlib::string_definition!(decl_rils_source),
+            include_str!("../../rils_builtins/stdlib/core/string.rils"),
+        ),
     ] {
         assert_eq!(generated, checked_in.replace("\r\n", "\n"));
     }

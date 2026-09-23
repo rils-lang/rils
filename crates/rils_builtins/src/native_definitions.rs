@@ -18,6 +18,18 @@ pub mod integer {
     rils_stdlib::integer_definition!(decl_rils_metadata);
 }
 
+pub mod float {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::float_definition!(decl_rils_metadata);
+}
+
+pub mod string {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::string_definition!(decl_rils_metadata);
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[option::DECLARATION, result::DECLARATION];
