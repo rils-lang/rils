@@ -24,6 +24,11 @@ pub(super) fn pattern_locals_valid(pattern: &HirPattern, local_count: usize) -> 
 }
 
 pub(super) fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
+    let borrowed = match value {
+        Value::Reference(reference) => reference.read().ok(),
+        _ => None,
+    };
+    let value = borrowed.as_ref().unwrap_or(value);
     match pattern {
         HirPattern::Wildcard | HirPattern::Binding(_) => true,
         HirPattern::Literal(literal) => hir_literal_value(literal) == *value,
@@ -101,14 +106,45 @@ pub(super) fn collect_pattern_bindings(
     value: &Value,
     bindings: &mut Vec<(usize, Value)>,
 ) {
+    let borrowed_value = match value {
+        Value::Reference(reference) => reference.read().ok(),
+        _ => None,
+    };
+    collect_pattern_bindings_inner(
+        pattern,
+        borrowed_value.as_ref().unwrap_or(value),
+        bindings,
+        borrowed_value.is_some(),
+    );
+}
+
+fn collect_pattern_bindings_inner(
+    pattern: &HirPattern,
+    value: &Value,
+    bindings: &mut Vec<(usize, Value)>,
+    borrowed: bool,
+) {
     match pattern {
-        HirPattern::Binding(local) => bindings.push((*local, value.clone())),
+        HirPattern::Binding(local) => {
+            let bound = if borrowed {
+                let slot = Rc::new(std::cell::RefCell::new(
+                    crate::environment::StorageSlot::uninitialized(false),
+                ));
+                slot.borrow_mut().initialize(value.clone());
+                Value::Reference(Rc::new(crate::value::ReferenceValue::new_storage(
+                    slot, false,
+                )))
+            } else {
+                value.clone()
+            };
+            bindings.push((*local, bound));
+        }
         HirPattern::Some(inner) => {
             if let Value::Option {
                 value: Some(value), ..
             } = value
             {
-                collect_pattern_bindings(inner, value, bindings);
+                collect_pattern_bindings_inner(inner, value, bindings, borrowed);
             }
         }
         HirPattern::Ok(inner) => {
@@ -116,7 +152,7 @@ pub(super) fn collect_pattern_bindings(
                 value: Ok(value), ..
             } = value
             {
-                collect_pattern_bindings(inner, value, bindings);
+                collect_pattern_bindings_inner(inner, value, bindings, borrowed);
             }
         }
         HirPattern::Err(inner) => {
@@ -124,7 +160,7 @@ pub(super) fn collect_pattern_bindings(
                 value: Err(value), ..
             } = value
             {
-                collect_pattern_bindings(inner, value, bindings);
+                collect_pattern_bindings_inner(inner, value, bindings, borrowed);
             }
         }
         HirPattern::TupleVariant { fields, .. } => {
@@ -132,7 +168,7 @@ pub(super) fn collect_pattern_bindings(
                 && let EnumPayload::Tuple(values) = &instance.payload
             {
                 for (pattern, value) in fields.iter().zip(values) {
-                    collect_pattern_bindings(pattern, value, bindings);
+                    collect_pattern_bindings_inner(pattern, value, bindings, borrowed);
                 }
             }
         }
@@ -141,7 +177,7 @@ pub(super) fn collect_pattern_bindings(
                 let values = instance.fields.borrow();
                 for (name, pattern) in fields {
                     if let Some(value) = values.get(name).and_then(|field| field.value.as_ref()) {
-                        collect_pattern_bindings(pattern, value, bindings);
+                        collect_pattern_bindings_inner(pattern, value, bindings, borrowed);
                     }
                 }
             }
@@ -149,7 +185,7 @@ pub(super) fn collect_pattern_bindings(
                 if let EnumPayload::Record(values) = &instance.payload {
                     for (name, pattern) in fields {
                         if let Some(value) = values.get(name) {
-                            collect_pattern_bindings(pattern, value, bindings);
+                            collect_pattern_bindings_inner(pattern, value, bindings, borrowed);
                         }
                     }
                 }

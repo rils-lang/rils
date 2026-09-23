@@ -585,7 +585,11 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             .collect();
         let definition = TraitType {
             name: declaration.path.into(),
-            bounds: Vec::new(),
+            bounds: declaration
+                .supertraits
+                .iter()
+                .map(|bound| (*bound).into())
+                .collect(),
             associated_types,
             methods,
         };

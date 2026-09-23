@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- `#[derive(Clone)]` 现可用于 struct 和 enum，覆盖 unit、tuple 与 record 变体，并按字段调用其 trait 实现；`#[derive(Copy)]` 可用于 struct。实现由 Rust 标准库 trait 模块注册的生成器展开。当前 `Copy` 派生不支持泛型 struct。
+- `Copy` 现在显式继承 `Clone`；实现 `Copy` 的类型也必须满足 `Clone`。
+
 - Replaced the internal `SequenceIterator` type with `OwnedIterator`. Owned array and Vec iteration now moves each element when advanced; `into_iter()` and `for` retain their ownership behavior.
 - Added borrowed `iter()` for arrays and `Vec<T>`. It yields `&T` through `Iter<&T>` without consuming the collection and works in both the interpreter and bytecode VM. Borrowed iterators cannot outlive their source, and structural Vec mutation during iteration is rejected.
 - Added borrowed `iter()` for HashMap/BTreeMap and HashSet/BTreeSet, yielding `(&K, &V)` and `&T`. Ordered collections retain key order; mutation is rejected while iterator items still reference the source.

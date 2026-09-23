@@ -10,6 +10,7 @@ struct Definition {
     module: ItemMod,
     item: ItemStruct,
     methods: Vec<ImplItemFn>,
+    traits: Vec<Path>,
 }
 
 pub(super) fn is_string(path: &Path) -> bool {
@@ -32,6 +33,7 @@ impl Definition {
                 _ => None,
             })
             .ok_or_else(|| Error::new_spanned(&module, "expected String wrapper"))?;
+        let traits = super::trait_impls::parse(&item.attrs)?;
         let implementation = items.iter().find_map(|item| match item { Item::Impl(item) if matches!(item.self_ty.as_ref(), Type::Path(path) if path.path.is_ident("String")) => Some(item), _ => None })
             .ok_or_else(|| Error::new_spanned(&module, "expected impl String"))?;
         let methods = implementation
@@ -73,6 +75,7 @@ impl Definition {
             module,
             item,
             methods,
+            traits,
         })
     }
 
@@ -104,8 +107,14 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
         Err(error) => return error.into_compile_error().into(),
     };
     let mut emitted = definition.module;
+    let checks = super::trait_impls::checks(&syn::parse_quote!(native::String), &definition.traits);
     if let Some((_, items)) = &mut emitted.content {
         for item in items {
+            if let Item::Struct(structure) = item {
+                structure
+                    .attrs
+                    .retain(|attr| !attr.path().is_ident("rils_impl"));
+            }
             if let Item::Impl(implementation) = item {
                 for member in &mut implementation.items {
                     if let ImplItem::Fn(method) = member {
@@ -119,6 +128,7 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
     }
     quote! {
         #emitted
+        #checks
         #[macro_export]
         macro_rules! string_definition {
             ($emit:ident) => { $emit! { #path; #module } };
@@ -132,6 +142,19 @@ pub(super) fn expand_source(path: Path, module: ItemMod) -> TokenStream {
         Ok(definition) => {
             let source = definition.source();
             quote!(#source).into()
+        }
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+pub(super) fn expand_trait_impls(path: Path, module: ItemMod) -> TokenStream {
+    match Definition::parse(path, module) {
+        Ok(definition) => {
+            let traits = definition.traits.iter().map(|path| {
+                let name = path.segments[0].ident.to_string();
+                quote!(crate::BuiltinTraitImpl { type_name: "string", trait_name: #name, requirements: &[] })
+            });
+            quote!(pub const TRAIT_IMPLS: &[crate::BuiltinTraitImpl] = &[#(#traits),*];).into()
         }
         Err(error) => error.into_compile_error().into(),
     }
@@ -176,6 +199,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
             pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
                 path: "string",
                 kind: crate::BuiltinKind::Primitive,
+                supertraits: &[],
                 type_parameters: &[],
                 members: &[#(#methods),*],
                 signature: None,

@@ -152,7 +152,7 @@ Trait 方法当前没有默认实现，因此签名必须以分号结束。`Self
 以下 trait 由运行时预先声明，用户不能同名重定义：
 
 ```rust
-trait Copy {}
+trait Copy: Clone {}
 
 trait Clone {
     fn clone(&self) -> Self;
@@ -205,6 +205,16 @@ let right: <Both as Right>::Item = "right";
 基础标量、函数、引用以及仅包含 Copy 字段的 Option/struct/enum 自动满足 `Copy`。
 拥有型值自动满足 `Clone` bound；命名类型若要使用 `.clone()` 方法，需显式实现 `Clone`，
 也可以继续使用通用的 `clone(&value)` 函数。对含非 Copy 字段的类型声明 `impl Copy` 会报错。
+
+Struct 和 enum 可通过 `#[derive(Clone)]` 生成逐字段调用 `Clone` 的实现；enum 支持 unit、tuple 和 record 变体。
+`#[derive(Copy)]` 生成标记实现，并继续检查所有字段是否为 Copy。两种派生可以组合使用：
+
+```rils
+#[derive(Clone, Copy)]
+struct Point { x: i32, y: i32 }
+```
+
+目前这两种派生仅支持 struct；泛型 struct 可派生 `Clone`，泛型 `Copy` 派生需等待条件 trait impl 支持。
 
 使用 Rust 风格的 `impl Trait for Type`：
 

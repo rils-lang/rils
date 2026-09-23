@@ -644,9 +644,20 @@ fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
         | Type::Reference { .. } => true,
         Type::Function { .. } => true,
         Type::String | Type::Unknown | Type::Variable(_) | Type::Associated { .. } => false,
-        Type::Option(inner) => type_is_copy(inner, environment),
+        Type::Option(inner) => {
+            rils_builtins::native_implements_with("Option", "Copy", |parameter, bound| {
+                parameter == "T" && bound == "Copy" && type_is_copy(inner, environment)
+            })
+        }
         Type::Result(ok, error) => {
-            type_is_copy(ok, environment) && type_is_copy(error, environment)
+            rils_builtins::native_implements_with("Result", "Copy", |parameter, bound| {
+                bound == "Copy"
+                    && match parameter {
+                        "T" => type_is_copy(ok, environment),
+                        "E" => type_is_copy(error, environment),
+                        _ => false,
+                    }
+            })
         }
         Type::Tuple(elements) => elements.iter().all(|ty| type_is_copy(ty, environment)),
         Type::Array { element, .. } => type_is_copy(element, environment),
@@ -700,9 +711,20 @@ fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
 fn type_is_clone(actual: &Type, environment: &EnvironmentRef) -> bool {
     match actual {
         Type::Unknown | Type::Variable(_) | Type::Associated { .. } => false,
-        Type::Option(inner) => type_is_clone(inner, environment),
+        Type::Option(inner) => {
+            rils_builtins::native_implements_with("Option", "Clone", |parameter, bound| {
+                parameter == "T" && bound == "Clone" && type_is_clone(inner, environment)
+            })
+        }
         Type::Result(ok, error) => {
-            type_is_clone(ok, environment) && type_is_clone(error, environment)
+            rils_builtins::native_implements_with("Result", "Clone", |parameter, bound| {
+                bound == "Clone"
+                    && match parameter {
+                        "T" => type_is_clone(ok, environment),
+                        "E" => type_is_clone(error, environment),
+                        _ => false,
+                    }
+            })
         }
         Type::Tuple(elements) => elements.iter().all(|ty| type_is_clone(ty, environment)),
         Type::Array { element, .. } => type_is_clone(element, environment),

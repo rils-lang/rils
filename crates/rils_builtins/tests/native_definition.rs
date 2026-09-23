@@ -38,7 +38,35 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         is_some.documentation,
         "Returns true when a value is present."
     );
-    assert_eq!(native_definitions::DECLARATIONS.len(), 2);
+    assert_eq!(native_definitions::DECLARATIONS.len(), 4);
+}
+
+#[test]
+fn rust_trait_definitions_supply_the_public_catalog() {
+    let clone = builtin("Clone").expect("Clone is in the public catalog");
+    let copy = builtin("Copy").expect("Copy is in the public catalog");
+    assert_eq!(clone.kind, BuiltinKind::Trait);
+    assert_eq!(copy.kind, BuiltinKind::Trait);
+    assert_eq!(clone.documentation, "Explicit owned duplication.");
+    assert_eq!(copy.documentation, "Values duplicated by ordinary reads.");
+    assert_eq!(clone.members.len(), 1);
+    assert!(copy.members.is_empty());
+    assert!(clone.supertraits.is_empty());
+    assert_eq!(copy.supertraits, &["Clone"]);
+    let member = clone.member("clone").unwrap();
+    assert_eq!(member.kind, BuiltinMemberKind::Method);
+    assert_eq!(member.receiver, Some(ReceiverMode::Shared));
+    assert_eq!(
+        member.builtin_id,
+        Some(rils_builtins::builtin_id!("core::clone"))
+    );
+    assert_eq!(member.signature.unwrap().result, TypePattern::SelfType);
+    assert_eq!(
+        member.documentation,
+        "Explicitly duplicates an owned value."
+    );
+    assert_eq!(native_definitions::clone::DECLARATION.path, clone.path);
+    assert_eq!(native_definitions::copy::DECLARATION.path, copy.path);
 }
 
 #[test]

@@ -55,6 +55,7 @@ struct BuiltinMember {
 struct BuiltinDeclaration {
     path: &'static str,
     kind: BuiltinKind,
+    supertraits: &'static [&'static str],
     type_parameters: &'static [&'static str],
     members: &'static [BuiltinMember],
     signature: Option<BuiltinSignature>,
@@ -74,6 +75,7 @@ rils_builtins_macros::builtin_file! {
 fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
     assert_eq!(FIXTURE_BUILTIN.path, "Fixture");
     assert_eq!(FIXTURE_BUILTIN.kind, BuiltinKind::Enum);
+    assert!(FIXTURE_BUILTIN.supertraits.is_empty());
     assert_eq!(FIXTURE_BUILTIN.type_parameters, &["T"]);
     assert_eq!(FIXTURE_BUILTIN.backend, BuiltinBackend::Runtime);
     assert_eq!(FIXTURE_BUILTIN.documentation, "");

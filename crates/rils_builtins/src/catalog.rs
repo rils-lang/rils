@@ -110,6 +110,8 @@ pub struct BuiltinMember {
 pub struct BuiltinDeclaration {
     pub path: &'static str,
     pub kind: BuiltinKind,
+    /// Rils trait bounds; empty for other declaration kinds.
+    pub supertraits: &'static [&'static str],
     pub type_parameters: &'static [&'static str],
     pub members: &'static [BuiltinMember],
     pub signature: Option<BuiltinSignature>,
@@ -136,6 +138,45 @@ pub struct BuiltinSource {
     pub path: &'static str,
     pub module: &'static str,
     pub kind: BuiltinSourceKind,
+}
+
+/// A native standard-library type checked against its Rust trait binding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BuiltinTraitImpl {
+    pub type_name: &'static str,
+    pub trait_name: &'static str,
+    /// Generic parameter and trait pairs required for this implementation.
+    pub requirements: &'static [(&'static str, &'static str)],
+}
+
+#[inline]
+pub fn native_implements(type_name: &str, trait_name: &str) -> bool {
+    native_implements_with(type_name, trait_name, |_, _| false)
+}
+
+#[inline]
+pub fn native_implements_with(
+    type_name: &str,
+    trait_name: &str,
+    mut satisfies: impl FnMut(&str, &str) -> bool,
+) -> bool {
+    [
+        crate::native_definitions::option::TRAIT_IMPLS,
+        crate::native_definitions::result::TRAIT_IMPLS,
+        crate::native_definitions::integer::TRAIT_IMPLS,
+        crate::native_definitions::float::TRAIT_IMPLS,
+        crate::native_definitions::string::TRAIT_IMPLS,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|implementation| {
+        implementation.type_name == type_name
+            && implementation.trait_name == trait_name
+            && implementation
+                .requirements
+                .iter()
+                .all(|(parameter, required_trait)| satisfies(parameter, required_trait))
+    })
 }
 
 impl BuiltinDeclaration {

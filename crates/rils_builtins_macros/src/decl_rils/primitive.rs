@@ -43,6 +43,7 @@ struct Definition {
     family: Vec<Mapping>,
     module: ItemMod,
     methods: Vec<ImplItemFn>,
+    traits: Vec<Path>,
 }
 
 pub(super) fn contains_mapping(module: &ItemMod) -> bool {
@@ -77,6 +78,7 @@ impl Definition {
             _ => None,
         });
         let item = families.next().expect("numeric family was detected");
+        let traits = super::trait_impls::parse(&item.attrs)?;
         let expected_family = if float {
             "primitive_float_family"
         } else {
@@ -183,6 +185,7 @@ impl Definition {
             family,
             module,
             methods,
+            traits,
         })
     }
 
@@ -273,6 +276,7 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
                 && !matches!(item, Item::Macro(inner) if inner.mac.path.is_ident("primitive_integer_family") || inner.mac.path.is_ident("primitive_float_family"))
         });
         items.push(syn::parse_quote!(
+            #[derive(Clone, Copy)]
             pub struct Number<T>(pub T);
         ));
         for mapping in &definition.family {
@@ -298,6 +302,11 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
     }
     let original = &definition.module;
     let path = &definition.path;
+    let checks = definition.family.iter().map(|mapping| {
+        let primitive = &mapping.primitive;
+        let ty: Type = syn::parse_quote!(native::Number<#primitive>);
+        super::trait_impls::checks(&ty, &definition.traits)
+    });
     let name = if definition.float {
         format_ident!("float_definition")
     } else {
@@ -305,6 +314,7 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
     };
     quote! {
         #emitted
+        #(#checks)*
         #[macro_export]
         macro_rules! #name {
             ($emit:ident) => { $emit! { #path; #original } };
@@ -459,6 +469,22 @@ pub(super) fn expand_source(path: Path, module: ItemMod) -> TokenStream {
         Ok(definition) => {
             let source = definition.rils_source();
             quote!(#source).into()
+        }
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+pub(super) fn expand_trait_impls(path: Path, module: ItemMod) -> TokenStream {
+    match Definition::parse(path, module) {
+        Ok(definition) => {
+            let entries = definition.family.iter().flat_map(|mapping| {
+                definition.traits.iter().map(move |path| {
+                    let type_name = mapping.primitive.to_string();
+                    let trait_name = path.segments[0].ident.to_string();
+                    quote!(crate::BuiltinTraitImpl { type_name: #type_name, trait_name: #trait_name, requirements: &[] })
+                })
+            });
+            quote!(pub const TRAIT_IMPLS: &[crate::BuiltinTraitImpl] = &[#(#entries),*];).into()
         }
         Err(error) => error.into_compile_error().into(),
     }

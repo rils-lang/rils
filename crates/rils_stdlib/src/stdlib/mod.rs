@@ -1,3 +1,5 @@
+pub mod clone;
+pub mod copy;
 pub mod float;
 pub mod integer;
 pub mod option;

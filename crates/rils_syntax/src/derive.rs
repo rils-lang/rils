@@ -11,11 +11,24 @@ use crate::{
     types::Type,
 };
 
-pub(crate) fn expand(program: &mut Program) -> Result<(), ParseError> {
-    expand_scope(&mut program.statements)
+/// A derive expander supplied by a trusted language package.
+#[derive(Clone, Copy)]
+pub struct NativeDeriveDefinition {
+    pub name: &'static str,
+    pub expand: fn(&Stmt) -> Result<Option<crate::quote::QuotedStatement>, ParseError>,
 }
 
-fn expand_scope(statements: &mut Vec<Stmt>) -> Result<(), ParseError> {
+pub(crate) fn expand_with(
+    program: &mut Program,
+    native_derives: &[NativeDeriveDefinition],
+) -> Result<(), ParseError> {
+    expand_scope(&mut program.statements, native_derives)
+}
+
+fn expand_scope(
+    statements: &mut Vec<Stmt>,
+    native_derives: &[NativeDeriveDefinition],
+) -> Result<(), ParseError> {
     let mut default_types = HashSet::new();
     let mut debug_types = HashSet::new();
     let mut nominal_types = HashSet::new();
@@ -90,6 +103,44 @@ fn expand_scope(statements: &mut Vec<Stmt>) -> Result<(), ParseError> {
             });
         }
     }
+    for statement in statements.iter() {
+        let (name, attributes, span) = match statement {
+            Stmt::Struct {
+                name,
+                attributes,
+                span,
+                ..
+            }
+            | Stmt::Enum {
+                name,
+                attributes,
+                span,
+                ..
+            } => (name, attributes, *span),
+            _ => continue,
+        };
+        for definition in native_derives {
+            if attributes
+                .iter()
+                .any(|attribute| has_derive(attribute, definition.name))
+                && statements.iter().any(|candidate| {
+                    matches!(candidate, Stmt::Impl {
+                        trait_name: Some(trait_name),
+                        target: Type::Named { name: target, .. },
+                        ..
+                    } if target == name && trait_leaf(trait_name) == definition.name)
+                })
+            {
+                return Err(ParseError {
+                    message: format!(
+                        "type `{name}` cannot both derive {} and provide an explicit {} impl",
+                        definition.name, definition.name
+                    ),
+                    span,
+                });
+            }
+        }
+    }
 
     let mut expanded = Vec::with_capacity(statements.len());
     for mut statement in std::mem::take(statements) {
@@ -98,9 +149,15 @@ fn expand_scope(statements: &mut Vec<Stmt>) -> Result<(), ParseError> {
             ..
         } = &mut statement
         {
-            expand_scope(module_statements)?;
+            expand_scope(module_statements, native_derives)?;
         }
-        let derived = derive_statements(&statement, &default_types, &debug_types, &nominal_types)?;
+        let derived = derive_statements(
+            &statement,
+            &default_types,
+            &debug_types,
+            &nominal_types,
+            native_derives,
+        )?;
         expanded.push(statement);
         expanded.extend(derived);
     }
@@ -113,6 +170,7 @@ fn derive_statements(
     default_types: &HashSet<String>,
     debug_types: &HashSet<String>,
     nominal_types: &HashSet<String>,
+    native_derives: &[NativeDeriveDefinition],
 ) -> Result<Vec<Stmt>, ParseError> {
     if let Stmt::Function { attributes, .. } = statement {
         if let Some(attribute) = attributes.first() {
@@ -127,7 +185,7 @@ fn derive_statements(
         Stmt::Struct { attributes, .. } | Stmt::Enum { attributes, .. } => attributes,
         _ => return Ok(Vec::new()),
     };
-    validate_attributes(attributes)?;
+    validate_attributes(attributes, native_derives)?;
     if matches!(statement, Stmt::Enum { .. })
         && attributes
             .iter()
@@ -148,6 +206,20 @@ fn derive_statements(
     }
     if let Some(debug) = derive_debug_statement(statement, debug_types, nominal_types)? {
         derived.push(debug);
+    }
+    for definition in native_derives {
+        if attributes
+            .iter()
+            .any(|attribute| has_derive(attribute, definition.name))
+        {
+            if let Some(quoted) = (definition.expand)(statement)? {
+                let origin = match statement {
+                    Stmt::Struct { span, .. } | Stmt::Enum { span, .. } => *span,
+                    _ => unreachable!("derive attributes occur on types"),
+                };
+                derived.push(quoted.parse(origin)?);
+            }
+        }
     }
     Ok(derived)
 }
@@ -245,7 +317,10 @@ fn trait_leaf(name: &str) -> &str {
     name.rsplit("::").next().unwrap_or(name)
 }
 
-fn validate_attributes(attributes: &[crate::ast::Attribute]) -> Result<(), ParseError> {
+fn validate_attributes(
+    attributes: &[crate::ast::Attribute],
+    native_derives: &[NativeDeriveDefinition],
+) -> Result<(), ParseError> {
     let mut seen = HashSet::new();
     for attribute in attributes {
         if attribute.path != ["derive"] {
@@ -256,7 +331,11 @@ fn validate_attributes(attributes: &[crate::ast::Attribute]) -> Result<(), Parse
         }
         for argument in &attribute.arguments {
             let name = argument.join("::");
-            if !matches!(name.as_str(), "Default" | "Debug") {
+            if !matches!(name.as_str(), "Default" | "Debug")
+                && !native_derives
+                    .iter()
+                    .any(|definition| definition.name == name)
+            {
                 return Err(ParseError {
                     message: format!("unsupported derive `{name}`"),
                     span: attribute.span,

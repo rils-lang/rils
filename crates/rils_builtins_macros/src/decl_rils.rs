@@ -12,11 +12,15 @@ use crate::type_patterns;
 
 mod primitive;
 mod string;
+pub(crate) mod trait_definition;
+mod trait_impls;
 
 struct Definition {
     module: Path,
     item: ItemEnum,
     methods: Vec<ImplItemFn>,
+    traits: Vec<Path>,
+    trait_impls: Vec<trait_impls::ConditionalImpl>,
 }
 
 struct DefinitionInput {
@@ -52,11 +56,33 @@ impl Definition {
         if enums.next().is_some() {
             return Err(Error::new_spanned(module, "expected exactly one enum"));
         }
+        let traits = trait_impls::parse(&item.attrs)?;
+        if !traits.is_empty() && !item.generics.params.is_empty() {
+            return Err(Error::new_spanned(
+                &item,
+                "generic types need a marked trait impl",
+            ));
+        }
         let mut methods = Vec::new();
+        let mut trait_impls = Vec::new();
         for implementation in items.iter().filter_map(|item| match item {
             Item::Impl(item) => Some(item),
             _ => None,
         }) {
+            if implementation.trait_.is_some() {
+                if let Some(parsed) = trait_impls::parse_impl(implementation, &item)? {
+                    trait_impls.push(parsed);
+                }
+                if implementation.items.iter().any(|item| {
+                    matches!(item, ImplItem::Fn(method) if method.attrs.iter().any(|attr| attr.path().is_ident("export_rils")))
+                }) {
+                    return Err(Error::new_spanned(
+                        implementation,
+                        "#[export_rils] requires an inherent implementation",
+                    ));
+                }
+                continue;
+            }
             Self::check_impl(&item, implementation)?;
             for member in &implementation.items {
                 let ImplItem::Fn(method) = member else {
@@ -84,10 +110,31 @@ impl Definition {
                 "definition needs a #[export_rils] method",
             ));
         }
+        let mut seen = std::collections::BTreeSet::new();
+        for name in traits
+            .iter()
+            .map(|path| path.segments[0].ident.to_string())
+            .chain(trait_impls.iter().map(|item| item.trait_name.clone()))
+        {
+            if !seen.insert(name.clone()) {
+                return Err(Error::new_spanned(
+                    module,
+                    format!("duplicate {name} trait marker"),
+                ));
+            }
+        }
+        if seen.contains("Copy") && !seen.contains("Clone") {
+            return Err(Error::new_spanned(
+                module,
+                "Copy requires a marked Clone implementation",
+            ));
+        }
         Ok(Self {
             module: path,
             item,
             methods,
+            traits,
+            trait_impls,
         })
     }
 
@@ -129,6 +176,9 @@ pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> To
     if primitive::contains_mapping(&original) {
         return primitive::expand_definition(path, original);
     }
+    if trait_definition::contains_trait(&original) {
+        return trait_definition::expand_module(path, original);
+    }
     let definition = match Definition::parse(path.clone(), &original) {
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
@@ -136,7 +186,15 @@ pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> To
     let mut emitted = original.clone();
     if let Some((_, items)) = &mut emitted.content {
         for item in items.iter_mut() {
+            if let Item::Enum(enumeration) = item {
+                enumeration
+                    .attrs
+                    .retain(|attr| !attr.path().is_ident("rils_impl"));
+            }
             if let Item::Impl(implementation) = item {
+                implementation
+                    .attrs
+                    .retain(|attr| !attr.path().is_ident("rils_impl"));
                 for member in &mut implementation.items {
                     if let ImplItem::Fn(method) = member {
                         method
@@ -147,12 +205,17 @@ pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> To
             }
         }
     }
+    let module_ident = &original.ident;
+    let type_ident = &definition.item.ident;
+    let item_type: Type = syn::parse_quote!(#module_ident::#type_ident);
+    let checks = trait_impls::checks(&item_type, &definition.traits);
     let macro_name = format_ident!(
         "{}_definition",
         definition.item.ident.to_string().to_lowercase()
     );
     quote! {
         #emitted
+        #checks
         #[macro_export]
         macro_rules! #macro_name {
             ($emit:ident) => { $emit! { #path; #original } };
@@ -244,6 +307,32 @@ pub(crate) fn expand_source(input: TokenStream) -> TokenStream {
         }
         Err(error) => error.into_compile_error().into(),
     }
+}
+
+pub(crate) fn expand_trait_impls(input: TokenStream) -> TokenStream {
+    let source = parse_macro_input!(input as DefinitionInput);
+    if string::is_string(&source.path) {
+        return string::expand_trait_impls(source.path, source.item);
+    }
+    if primitive::contains_mapping(&source.item) {
+        return primitive::expand_trait_impls(source.path, source.item);
+    }
+    let definition = match Definition::parse(source.path, &source.item) {
+        Ok(definition) => definition,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let type_name = definition.item.ident.to_string();
+    let direct = definition.traits.iter().map(|path| {
+        let trait_name = path.segments[0].ident.to_string();
+        quote!(crate::BuiltinTraitImpl { type_name: #type_name, trait_name: #trait_name, requirements: &[] })
+    });
+    let conditional = definition.trait_impls.iter().map(|implementation| {
+        let trait_name = &implementation.trait_name;
+        let requirements = implementation.requirements.iter().map(|(parameter, bound)| quote!((#parameter, #bound)));
+        quote!(crate::BuiltinTraitImpl { type_name: #type_name, trait_name: #trait_name, requirements: &[#(#requirements),*] })
+    });
+    quote!(pub const TRAIT_IMPLS: &[crate::BuiltinTraitImpl] = &[#(#direct,)* #(#conditional),*];)
+        .into()
 }
 
 fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
@@ -361,6 +450,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
         pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
             path: #path,
             kind: crate::BuiltinKind::Enum,
+            supertraits: &[],
             type_parameters: &[#(#type_generics),*],
             members: &[#(#variants,)* #(#methods),*],
             signature: None,
@@ -563,6 +653,25 @@ mod tests {
         };
         let input: DefinitionInput = syn::parse2(placeholder).unwrap();
         assert!(Definition::parse(input.path, &input.item).is_err());
+    }
+
+    #[test]
+    fn helper_trait_impl_does_not_become_an_inherent_rils_method() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                pub enum Option<T> { Some(T), None }
+                impl<T> Option<T> {
+                    #[export_rils]
+                    pub fn is_some(&self) -> bool { true }
+                }
+                impl<T> Clone for Option<T> {
+                    fn clone(&self) -> Self { Self::None }
+                }
+            }
+        };
+        let definition = Definition::parse(syn::parse_quote!(core::option), &module).unwrap();
+        assert_eq!(definition.methods.len(), 1);
+        assert!(!rils_source(&definition).contains("fn clone"));
     }
 
     #[test]

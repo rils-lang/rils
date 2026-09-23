@@ -1130,6 +1130,37 @@ impl<'a> Inferencer<'a> {
                     }
                 }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
+                    if let Some(variant) = segments.last()
+                        && let Some(owner) = self.variant_owners.get(variant)
+                        && segments.first().is_some_and(|segment| segment == owner)
+                    {
+                        let definition = self.types.get(owner);
+                        let mut inferred = HashMap::new();
+                        if let Some(VariantDefinition::Tuple(fields)) =
+                            definition.and_then(|definition| definition.variants.get(variant))
+                        {
+                            for (field, actual) in fields.iter().zip(&argument_types) {
+                                if let Type::Named { name, arguments } = field
+                                    && arguments.is_empty()
+                                    && definition.is_some_and(|definition| {
+                                        definition.generic_parameters.contains(name)
+                                    })
+                                {
+                                    inferred.insert(name.clone(), actual.clone());
+                                }
+                            }
+                        }
+                        return Type::Named {
+                            name: owner.clone(),
+                            arguments: definition.map_or_else(Vec::new, |definition| {
+                                definition
+                                    .generic_parameters
+                                    .iter()
+                                    .map(|name| inferred.remove(name).unwrap_or(Type::Unknown))
+                                    .collect()
+                            }),
+                        };
+                    }
                     match segments.join("::").as_str() {
                         "Vec::new" | "std::collections::Vec::new" => {
                             return Type::Named {
@@ -1221,7 +1252,11 @@ impl<'a> Inferencer<'a> {
                 let mut arm_types = Vec::new();
                 for arm in arms {
                     arm_types.push(self.with_scope_value(|inferencer| {
-                        inferencer.pattern(&arm.pattern, &value_type);
+                        inferencer.pattern(
+                            &arm.pattern,
+                            &value_type,
+                            matches!(value_type, Type::Reference { .. }),
+                        );
                         inferencer.expression(&arm.expression, returns)
                     }));
                 }
@@ -1231,34 +1266,41 @@ impl<'a> Inferencer<'a> {
         }
     }
 
-    fn pattern(&mut self, pattern: &Pattern, expected: &Type) {
+    fn pattern(&mut self, pattern: &Pattern, expected: &Type, borrowed: bool) {
         match pattern {
             Pattern::Binding { name, span } => {
                 self.define_binding(
                     name,
                     *span,
                     Binding {
-                        ty: expected.clone(),
+                        ty: if borrowed {
+                            Type::Reference {
+                                mutable: false,
+                                inner: Box::new(expected.clone()),
+                            }
+                        } else {
+                            expected.clone()
+                        },
                     },
                 );
                 self.type_hint(*span, expected.clone(), ": ");
             }
             Pattern::Some { inner, .. } => {
-                self.pattern(inner, &option_inner(Some(expected.clone())));
+                self.pattern(inner, &option_inner(Some(expected.clone())), borrowed);
             }
             Pattern::Ok { inner, .. } => {
                 let ty = match expected {
                     Type::Result(ok, _) => (**ok).clone(),
                     _ => Type::Unknown,
                 };
-                self.pattern(inner, &ty);
+                self.pattern(inner, &ty, borrowed);
             }
             Pattern::Err { inner, .. } => {
                 let ty = match expected {
                     Type::Result(_, error) => (**error).clone(),
                     _ => Type::Unknown,
                 };
-                self.pattern(inner, &ty);
+                self.pattern(inner, &ty, borrowed);
             }
             Pattern::TupleVariant { path, fields, .. } => {
                 let payload = path
@@ -1275,7 +1317,7 @@ impl<'a> Inferencer<'a> {
                     })
                     .unwrap_or_default();
                 for (field, ty) in fields.iter().zip(payload.iter()) {
-                    self.pattern(field, ty);
+                    self.pattern(field, ty, borrowed);
                 }
             }
             Pattern::Record { path, fields, .. } => {
@@ -1302,7 +1344,7 @@ impl<'a> Inferencer<'a> {
                         .and_then(|fields| fields.get(name))
                         .cloned()
                         .unwrap_or(Type::Unknown);
-                    self.pattern(pattern, &field_type);
+                    self.pattern(pattern, &field_type, borrowed);
                 }
             }
             Pattern::Wildcard { .. }

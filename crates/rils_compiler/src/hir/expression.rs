@@ -268,6 +268,16 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
+                    if trait_name == "Clone" && member == "clone" && arguments.len() == 1 {
+                        return Ok(HirExpression::CallRuntime {
+                            builtin: rils_frontend::BuiltinId::Clone,
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
                     return Err(CompileError::unsupported(
                         format!(
                             "semantic analysis did not resolve UFCS call `<{target} as {trait_name}>::{member}`"

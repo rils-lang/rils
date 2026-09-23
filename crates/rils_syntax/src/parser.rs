@@ -63,6 +63,15 @@ pub fn parse_with_native_macros(
     parse_with_capabilities(tokens, native_macros, ParseCapabilities::USER)
 }
 
+pub fn parse_with_native_macros_and_derives(
+    tokens: Vec<Token>,
+    native_macros: &[crate::macros::NativeMacroDefinition],
+    native_derives: &[crate::derive::NativeDeriveDefinition],
+    capabilities: ParseCapabilities,
+) -> Result<Program, ParseError> {
+    parse_internal(tokens, native_macros, native_derives, capabilities)
+}
+
 /// Parses trusted standard-library declarations, whose callback signatures may
 /// contain lexical reference parameters without constructing an owned reference value.
 pub fn parse_builtin_declarations(tokens: Vec<Token>) -> Result<Program, ParseError> {
@@ -78,6 +87,15 @@ pub fn parse_with_capabilities(
     native_macros: &[crate::macros::NativeMacroDefinition],
     capabilities: ParseCapabilities,
 ) -> Result<Program, ParseError> {
+    parse_internal(tokens, native_macros, &[], capabilities)
+}
+
+fn parse_internal(
+    tokens: Vec<Token>,
+    native_macros: &[crate::macros::NativeMacroDefinition],
+    native_derives: &[crate::derive::NativeDeriveDefinition],
+    capabilities: ParseCapabilities,
+) -> Result<Program, ParseError> {
     let expansion = crate::macros::expand(tokens, native_macros)?;
     let stream = TokenStream::new(expansion.tokens).map_err(|span| ParseError {
         message: "unterminated delimited token tree".into(),
@@ -91,7 +109,7 @@ pub fn parse_with_capabilities(
         trusted::mark_bodies(&mut program.statements);
     }
     if !capabilities.allow_builtin_attributes {
-        crate::derive::expand(&mut program)?;
+        crate::derive::expand_with(&mut program, native_derives)?;
     }
     Ok(program)
 }

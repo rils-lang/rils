@@ -1,5 +1,7 @@
 //! Shared Rust types for definitions inside `rils_stdlib`.
 
+pub use super::clone::Clone;
+pub use super::copy::Copy;
 pub use super::option::Option;
 pub use super::result::Result;
 

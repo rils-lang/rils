@@ -152,6 +152,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     let mut members = Vec::new();
     let mut declared = BTreeSet::new();
     let mut declaration = None;
+    let mut supertraits = Vec::new();
     let mut primitive_declaration: Option<(String, Vec<String>, String, proc_macro2::TokenStream)> =
         None;
     for statement in &program.statements {
@@ -214,6 +215,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             }
             Stmt::Trait {
                 name,
+                bounds,
                 associated_types,
                 methods: trait_methods,
                 ..
@@ -230,6 +232,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
                     documentation(source.as_str(), statement_span(statement)),
                     quote!(BuiltinKind::Trait),
                 ));
+                supertraits = bounds.clone();
                 members.extend(
                     associated_types
                         .iter()
@@ -340,6 +343,10 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
         .iter()
         .map(|parameter| LitStr::new(parameter, input.source_path.span()))
         .collect::<Vec<_>>();
+    let supertraits = supertraits
+        .iter()
+        .map(|bound| LitStr::new(bound, input.source_path.span()))
+        .collect::<Vec<_>>();
     let type_documentation = LitStr::new(&type_documentation, input.source_path.span());
     let backend = input.backend;
     let kind = input
@@ -352,6 +359,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
         #visibility const #name: BuiltinDeclaration = BuiltinDeclaration {
             path: #path,
             kind: #kind,
+            supertraits: &[#(#supertraits),*],
             type_parameters: &[#(#type_parameters),*],
             members: #members_name,
             signature: None,

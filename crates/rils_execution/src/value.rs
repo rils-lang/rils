@@ -352,23 +352,21 @@ pub enum Value {
 impl Value {
     pub fn is_copy(&self) -> bool {
         match self {
-            Self::Unit
-            | Self::Bool(_)
-            | Self::I8(_)
-            | Self::I16(_)
-            | Self::I32(_)
-            | Self::I64(_)
-            | Self::I128(_)
-            | Self::Isize(_)
-            | Self::U8(_)
-            | Self::U16(_)
-            | Self::U32(_)
-            | Self::U64(_)
-            | Self::U128(_)
-            | Self::Usize(_)
-            | Self::F32(_)
-            | Self::F64(_)
-            | Self::Char(_) => true,
+            Self::Unit | Self::Bool(_) | Self::Char(_) => true,
+            Self::I8(_) => rils_builtins::native_implements("i8", "Copy"),
+            Self::I16(_) => rils_builtins::native_implements("i16", "Copy"),
+            Self::I32(_) => rils_builtins::native_implements("i32", "Copy"),
+            Self::I64(_) => rils_builtins::native_implements("i64", "Copy"),
+            Self::I128(_) => rils_builtins::native_implements("i128", "Copy"),
+            Self::Isize(_) => rils_builtins::native_implements("isize", "Copy"),
+            Self::U8(_) => rils_builtins::native_implements("u8", "Copy"),
+            Self::U16(_) => rils_builtins::native_implements("u16", "Copy"),
+            Self::U32(_) => rils_builtins::native_implements("u32", "Copy"),
+            Self::U64(_) => rils_builtins::native_implements("u64", "Copy"),
+            Self::U128(_) => rils_builtins::native_implements("u128", "Copy"),
+            Self::Usize(_) => rils_builtins::native_implements("usize", "Copy"),
+            Self::F32(_) => rils_builtins::native_implements("f32", "Copy"),
+            Self::F64(_) => rils_builtins::native_implements("f64", "Copy"),
             Self::Reference(_) => true,
             Self::Option { value: None, .. } => true,
             Self::Option {
@@ -413,8 +411,8 @@ impl Value {
             // reference-counted internally, but copying the token must not copy
             // or transfer ownership of the host object itself.
             Self::HostObject(object) => object.type_definition.copy,
-            Self::String(_)
-            | Self::Range(_)
+            Self::String(_) => rils_builtins::native_implements("string", "Copy"),
+            Self::Range(_)
             | Self::Rc(_)
             | Self::Weak(_)
             | Self::Cell(_)

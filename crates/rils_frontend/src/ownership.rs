@@ -1147,8 +1147,6 @@ impl<'a> Checker<'a> {
         match ty {
             Type::Unit
             | Type::Bool
-            | Type::Integer(_)
-            | Type::Float(_)
             | Type::IntegerVariable(_)
             | Type::IntegerInference(_)
             | Type::FloatVariable(_)
@@ -1156,9 +1154,22 @@ impl<'a> Checker<'a> {
             | Type::Char
             | Type::Reference { .. }
             | Type::Function { .. } => true,
-            Type::Option(inner) => self.is_copy_inner(inner, visiting),
+            Type::Integer(integer) => rils_builtins::native_implements(integer.name(), "Copy"),
+            Type::Float(float) => rils_builtins::native_implements(float.name(), "Copy"),
+            Type::Option(inner) => {
+                rils_builtins::native_implements_with("Option", "Copy", |parameter, bound| {
+                    parameter == "T" && bound == "Copy" && self.is_copy_inner(inner, visiting)
+                })
+            }
             Type::Result(ok, error) => {
-                self.is_copy_inner(ok, visiting) && self.is_copy_inner(error, visiting)
+                rils_builtins::native_implements_with("Result", "Copy", |parameter, bound| {
+                    bound == "Copy"
+                        && match parameter {
+                            "T" => self.is_copy_inner(ok, visiting),
+                            "E" => self.is_copy_inner(error, visiting),
+                            _ => false,
+                        }
+                })
             }
             Type::Tuple(elements) => elements.iter().all(|ty| self.is_copy_inner(ty, visiting)),
             Type::Array { element, .. } => self.is_copy_inner(element, visiting),
@@ -1187,7 +1198,7 @@ impl<'a> Checker<'a> {
                 copy
             }
             Type::Unknown | Type::Variable(_) | Type::Associated { .. } => true,
-            Type::String => false,
+            Type::String => rils_builtins::native_implements("string", "Copy"),
         }
     }
 }

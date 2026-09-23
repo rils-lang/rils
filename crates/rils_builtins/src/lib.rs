@@ -5,6 +5,7 @@ mod numeric;
 
 pub use catalog::*;
 pub use numeric::*;
+pub use rils_stdlib::NATIVE_DERIVES;
 
 #[doc(hidden)]
 pub use rils_builtins_macros::type_pattern as __type_pattern;

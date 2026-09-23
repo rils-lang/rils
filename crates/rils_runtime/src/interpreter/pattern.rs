@@ -1,4 +1,5 @@
 use super::*;
+use crate::environment::StorageSlot;
 
 pub(super) fn pattern_matches(
     pattern: &Pattern,
@@ -6,30 +7,57 @@ pub(super) fn pattern_matches(
     bindings: &mut Vec<(String, Value)>,
     environment: &EnvironmentRef,
 ) -> bool {
+    let borrowed_value = match value {
+        Value::Reference(reference) => reference.read().ok(),
+        _ => None,
+    };
+    pattern_matches_inner(
+        pattern,
+        borrowed_value.as_ref().unwrap_or(value),
+        bindings,
+        environment,
+        borrowed_value.is_some(),
+    )
+}
+
+fn pattern_matches_inner(
+    pattern: &Pattern,
+    value: &Value,
+    bindings: &mut Vec<(String, Value)>,
+    environment: &EnvironmentRef,
+    borrowed: bool,
+) -> bool {
     match pattern {
         Pattern::Wildcard { .. } => true,
         Pattern::Binding { name, .. } => {
-            bindings.push((name.clone(), value.clone()));
+            let bound = if borrowed {
+                let slot = Rc::new(RefCell::new(StorageSlot::uninitialized(false)));
+                slot.borrow_mut().initialize(value.clone());
+                Value::Reference(Rc::new(ReferenceValue::new_storage(slot, false)))
+            } else {
+                value.clone()
+            };
+            bindings.push((name.clone(), bound));
             true
         }
         Pattern::Literal { value: literal, .. } => literal_value(literal) == *value,
         Pattern::Some { inner, .. } => match value {
             Value::Option {
                 value: Some(value), ..
-            } => pattern_matches(inner, value, bindings, environment),
+            } => pattern_matches_inner(inner, value, bindings, environment, borrowed),
             _ => false,
         },
         Pattern::None { .. } => matches!(value, Value::Option { value: None, .. }),
         Pattern::Ok { inner, .. } => match value {
             Value::Result {
                 value: Ok(value), ..
-            } => pattern_matches(inner, value, bindings, environment),
+            } => pattern_matches_inner(inner, value, bindings, environment, borrowed),
             _ => false,
         },
         Pattern::Err { inner, .. } => match value {
             Value::Result {
                 value: Err(value), ..
-            } => pattern_matches(inner, value, bindings, environment),
+            } => pattern_matches_inner(inner, value, bindings, environment, borrowed),
             _ => false,
         },
         Pattern::TupleVariant { path, fields, .. } => {
@@ -46,10 +74,9 @@ pub(super) fn pattern_matches(
             nominal_type_matches(path, &instance.type_definition, environment)
                 && instance.variant == *variant_name
                 && fields.len() == values.len()
-                && fields
-                    .iter()
-                    .zip(values)
-                    .all(|(pattern, value)| pattern_matches(pattern, value, bindings, environment))
+                && fields.iter().zip(values).all(|(pattern, value)| {
+                    pattern_matches_inner(pattern, value, bindings, environment, borrowed)
+                })
         }
         Pattern::Record { path, fields, .. } => {
             if let Value::Struct(instance) = value
@@ -62,7 +89,13 @@ pub(super) fn pattern_matches(
                             .get(name)
                             .and_then(|field| field.value.as_ref())
                             .is_some_and(|value| {
-                                pattern_matches(pattern, value, bindings, environment)
+                                pattern_matches_inner(
+                                    pattern,
+                                    value,
+                                    bindings,
+                                    environment,
+                                    borrowed,
+                                )
                             })
                     });
             }
@@ -81,9 +114,9 @@ pub(super) fn pattern_matches(
             };
             fields.len() == values.len()
                 && fields.iter().all(|(name, pattern)| {
-                    values
-                        .get(name)
-                        .is_some_and(|value| pattern_matches(pattern, value, bindings, environment))
+                    values.get(name).is_some_and(|value| {
+                        pattern_matches_inner(pattern, value, bindings, environment, borrowed)
+                    })
                 })
         }
         Pattern::Path { path, .. } => {

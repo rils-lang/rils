@@ -27,3 +27,24 @@ Rust 定义生成这些语言包声明，不在 `rils_stdlib` 中保存 `RILS_SO
 
 `f32` 和 `f64` 复用数值族模板；`string` 使用普通 Rust 包装类型定义方法。
 `string` 的拥有型迭代器结果通过原生绑定映射到 Rils 的 `Iterator<T>`。
+
+原生类型的 trait 映射目前支持 `Clone` 和 `Copy`。无条件实现标在类型或数值族声明上，
+例如 `#[rils_impl(Clone)]`；带约束的实现标在对应的 Rust trait `impl` 上，
+例如 `#[rils_impl] impl<T: Clone> Clone for Option<T> { ... }`。
+`Copy` 的实现同理使用 `impl<T: Copy> Copy for Option<T> {}`，且必须同时登记 `Clone`。
+宏从 impl 的泛型 bound 生成条件元信息，Rust 编译器检查实际 trait 实现；
+未标记的辅助 trait impl 仍只在 Rust 内部使用。当前条件元信息仅支持泛型参数上的
+`Clone`/`Copy` bound，可写在参数或 `where` 子句中。
+
+`Clone` 和 `Copy` 的 Rils trait 声明分别位于 `src/stdlib/clone.rs`、`copy.rs`，
+使用 `#[decl_rils(core::...)] mod native` 定义。trait 的限定父 trait 路径绑定对应 Rust trait；
+其他父 trait 写入 Rils 的继承关系。模块内未标记的辅助函数保留为普通 Rust 函数。
+可选的 `#[rils_derive]` 函数也定义在该模块内，接收类型声明 AST 并返回生成的 impl。
+生成器可使用 `rils_syntax::rils_quote! { ... }` 写 Rils 语法，使用
+`rils_quote_tokens!` 组装片段，支持 `#name` 插值与 `#(#items),*` 列表展开；
+派生展开时自动将解析错误定位到被派生的声明。当前 `Clone` 支持泛型 struct 和 enum，
+`Copy` 支持非泛型 struct；`Copy` 的泛型条件 impl 尚待支持。
+`rils_syntax_macros` 在构建时从标准库定义模块收集带 `#[rils_derive]` 的函数，生成静态注册表；
+新增 trait 派生不需要再维护一份独立的名称列表。
+同一声明生成内建 trait 元信息和 `core/clone.rils`、`core/copy.rils` 语言包源码；
+后两者只作为可用 `--check` 验证的生成资源。

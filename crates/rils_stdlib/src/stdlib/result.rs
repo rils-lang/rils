@@ -177,6 +177,19 @@ mod native {
             }
         }
     }
+
+    #[rils_impl]
+    impl<T: Clone, E: Clone> Clone for Result<T, E> {
+        fn clone(&self) -> Self {
+            match self {
+                Self::Ok(value) => Self::Ok(value.clone()),
+                Self::Err(error) => Self::Err(error.clone()),
+            }
+        }
+    }
+
+    #[rils_impl]
+    impl<T: Copy, E: Copy> Copy for Result<T, E> {}
 }
 
 pub use native::Result;

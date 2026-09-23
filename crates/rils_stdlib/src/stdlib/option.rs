@@ -133,6 +133,19 @@ mod native {
             }
         }
     }
+
+    #[rils_impl]
+    impl<T: Clone> Clone for Option<T> {
+        fn clone(&self) -> Self {
+            match self {
+                Self::Some(value) => Self::Some(value.clone()),
+                Self::None => Self::None,
+            }
+        }
+    }
+
+    #[rils_impl]
+    impl<T: Copy> Copy for Option<T> {}
 }
 
 pub use native::Option;
