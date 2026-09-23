@@ -451,7 +451,13 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
             let member = crate::standard_library::builtin_owner_name(receiver)
                 .and_then(|owner| rils_builtins::builtin_member(owner, name))
                 .or(iterator_member)
-                .or_else(|| unqualified_builtin_member(name));
+                .or_else(|| {
+                    if name == "clone" {
+                        rils_builtins::builtin_member("Clone", "clone")
+                    } else {
+                        unqualified_builtin_member(name)
+                    }
+                });
             if let Some(member) = member {
                 return Some(ResolvedCall::Builtin {
                     id: member.builtin_id?,
