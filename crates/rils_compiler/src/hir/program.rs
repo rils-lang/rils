@@ -464,12 +464,21 @@ impl ProgramLowerer {
         let mut generated_functions = generated.functions.borrow_mut();
         generated_functions.sort_by_key(|(id, _)| *id);
         lowered.extend(generated_functions.drain(..).map(|(_, function)| function));
+        let mut trait_implementations = trait_implementations(&self.methods);
+        for unit in units {
+            collect_marker_trait_implementations(
+                &unit.program.statements,
+                &mut unit.module_path.clone(),
+                unit.source,
+                &mut trait_implementations,
+            );
+        }
         Ok(HirProgram {
             sources,
             functions: lowered,
             types: self.type_definitions,
             iterators: iterator_methods(&self.methods),
-            trait_implementations: trait_implementations(&self.methods),
+            trait_implementations,
             entry: 0,
         })
     }

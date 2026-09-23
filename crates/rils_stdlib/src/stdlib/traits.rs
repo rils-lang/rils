@@ -158,14 +158,28 @@ pub(crate) mod default_native {
 
 #[decl_rils(core::eq)]
 pub(crate) mod eq_native {
+    use rils_syntax::{ast::Stmt, parser::ParseError, quote::QuotedStatement};
+
     /// Values with reflexive equality suitable for hashed collections.
     pub trait Eq: ::core::cmp::Eq {}
+
+    #[rils_derive]
+    fn derive_eq(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
+        super::derive_key_marker(statement, "Eq")
+    }
 }
 
 #[decl_rils(core::hash)]
 pub(crate) mod hash_native {
+    use rils_syntax::{ast::Stmt, parser::ParseError, quote::QuotedStatement};
+
     /// Values that can be used as hash collection keys.
     pub trait Hash: ::core::hash::Hash {}
+
+    #[rils_derive]
+    fn derive_hash(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
+        super::derive_key_marker(statement, "Hash")
+    }
 }
 
 #[decl_rils(core::bit_flags)]
@@ -174,11 +188,93 @@ pub(crate) mod bit_flags_native {
     pub trait BitFlags: super::BitFlagsMarker {}
 }
 
-pub use bit_flags_native::BitFlags;
-pub use default_native::DERIVE;
-pub use default_native::Default;
-pub use eq_native::Eq;
-pub use hash_native::Hash;
+fn derive_key_marker(
+    statement: &rils_syntax::ast::Stmt,
+    trait_name: &str,
+) -> Result<Option<rils_syntax::quote::QuotedStatement>, rils_syntax::parser::ParseError> {
+    use rils_syntax::{
+        ast::{EnumVariant, Stmt},
+        parser::ParseError,
+        rils_quote,
+        types::Type,
+    };
+
+    let (name, generics, fields, span) = match statement {
+        Stmt::Struct {
+            name,
+            generic_parameters,
+            fields,
+            span,
+            ..
+        } => (
+            name,
+            generic_parameters,
+            fields
+                .iter()
+                .map(|field| (&field.type_annotation, field.span))
+                .collect::<Vec<_>>(),
+            *span,
+        ),
+        Stmt::Enum {
+            name,
+            generic_parameters,
+            variants,
+            span,
+            ..
+        } => {
+            let mut fields = Vec::new();
+            for variant in variants {
+                match variant {
+                    EnumVariant::Unit { .. } => {}
+                    EnumVariant::Tuple {
+                        fields: values,
+                        span,
+                        ..
+                    } => {
+                        fields.extend(values.iter().map(|ty| (ty, *span)));
+                    }
+                    EnumVariant::Record { fields: values, .. } => {
+                        fields.extend(
+                            values
+                                .iter()
+                                .map(|field| (&field.type_annotation, field.span)),
+                        );
+                    }
+                }
+            }
+            (name, generic_parameters, fields, *span)
+        }
+        _ => unreachable!("derive attributes occur on types"),
+    };
+    if !generics.is_empty() {
+        return Err(ParseError {
+            message: format!(
+                "deriving {trait_name} for generic types requires conditional trait impls"
+            ),
+            span,
+        });
+    }
+    fn supported(ty: &Type) -> bool {
+        match ty {
+            Type::Unit | Type::Bool | Type::Char | Type::String | Type::Integer(_) => true,
+            Type::Tuple(elements) => elements.iter().all(supported),
+            Type::Array { element, .. } | Type::Option(element) => supported(element),
+            Type::Result(ok, error) => supported(ok) && supported(error),
+            _ => false,
+        }
+    }
+    for (ty, field_span) in fields {
+        if !supported(ty) {
+            return Err(ParseError {
+                message: format!(
+                    "cannot derive {trait_name} for `{name}`: field type `{ty}` is not a supported structural key"
+                ),
+                span: field_span,
+            });
+        }
+    }
+    Ok(Some(rils_quote! { impl #trait_name for #name {} }))
+}
 
 #[decl_rils(core::clone)]
 pub(crate) mod clone_native {
@@ -328,5 +424,9 @@ pub(crate) mod copy_native {
     }
 }
 
+pub use bit_flags_native::BitFlags;
 pub use clone_native::Clone;
 pub use copy_native::Copy;
+pub use default_native::Default;
+pub use eq_native::Eq;
+pub use hash_native::Hash;

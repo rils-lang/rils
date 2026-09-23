@@ -216,6 +216,11 @@ struct Point { x: i32, y: i32 }
 
 这两种派生都支持 struct 和 enum 的 unit、tuple 与 record 变体；泛型 struct 和 enum 可派生 `Clone`，泛型 `Copy` 派生需等待条件 trait impl 支持。
 
+非泛型 struct 和 enum 还可使用 `#[derive(Eq, Hash)]` 作为 `HashMap` 的键或 `HashSet` 的元素。
+字段目前支持 `()`、`bool`、整数、`char`、`string` 及由它们组成的 tuple、数组、`Option`、`Result`；
+浮点数、引用和其他命名类型不能派生。`Hash` 和 `Eq` 必须同时存在才能用作哈希键。
+`BitFlags` 只由宿主 manifest 中标记为 flags 的 enum 自动实现；脚本 enum 当前没有位值语义，不能派生或手写实现该 trait。
+
 使用 Rust 风格的 `impl Trait for Type`：
 
 ```rust

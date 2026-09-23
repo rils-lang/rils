@@ -7,6 +7,7 @@ impl<'a> VirtualMachine<'a> {
         host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
         limits: crate::ExecutionLimits,
     ) -> Self {
+        register_structural_key_traits(module);
         let entry = &module.functions[module.entry];
         Self {
             module,
@@ -34,6 +35,7 @@ impl<'a> VirtualMachine<'a> {
         function: usize,
         arguments: Vec<Value>,
     ) -> Result<Self, BytecodeError> {
+        register_structural_key_traits(module);
         let callee = &module.functions[function];
         if callee.capture_count != 0 {
             return Err(BytecodeError::new(
@@ -72,5 +74,30 @@ impl<'a> VirtualMachine<'a> {
             max_call_depth: limits.max_call_depth,
             root_is_module_entry: false,
         })
+    }
+}
+
+fn register_structural_key_traits(module: &BytecodeModule) {
+    for implementation in &module.trait_implementations {
+        if !matches!(implementation.trait_name.as_str(), "Eq" | "Hash") {
+            continue;
+        }
+        for ty in &module.types {
+            match ty {
+                RuntimeType::Struct(definition) if definition.name == implementation.target => {
+                    definition
+                        .implemented_traits
+                        .borrow_mut()
+                        .insert(implementation.trait_name.clone());
+                }
+                RuntimeType::Enum(definition) if definition.name == implementation.target => {
+                    definition
+                        .implemented_traits
+                        .borrow_mut()
+                        .insert(implementation.trait_name.clone());
+                }
+                _ => {}
+            }
+        }
     }
 }

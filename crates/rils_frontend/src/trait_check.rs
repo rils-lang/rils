@@ -436,6 +436,13 @@ fn check_impls(
                 span,
                 ..
             } => {
+                if trait_name.rsplit("::").next() == Some("BitFlags") {
+                    result.diagnostics.push(AnalysisDiagnostic::error(
+                        "BitFlags is reserved for host enums marked as flags",
+                        *span,
+                    ));
+                    continue;
+                }
                 let supported =
                     check_impl_generic_bounds(generic_parameters, &mut result.diagnostics);
                 let Some(requirement) = traits.get(trait_name) else {

@@ -267,15 +267,61 @@ pub(super) fn collect_self_type_references(program: &Program) -> HashMap<Span, S
     output
 }
 
-pub(super) fn hash_key_type_supported(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::Bool
-            | Type::Char
-            | Type::String
-            | Type::Integer(_)
-            | Type::IntegerVariable(_)
-            | Type::Variable(_)
-            | Type::Unknown
-    )
+pub(super) fn collect_hash_key_types(statements: &[Stmt]) -> HashSet<String> {
+    fn visit(statements: &[Stmt], traits: &mut HashMap<String, HashSet<String>>) {
+        for statement in statements {
+            match statement {
+                Stmt::Impl {
+                    trait_name: Some(trait_name),
+                    target: Type::Named { name, .. },
+                    ..
+                } => {
+                    let trait_name = trait_name.rsplit("::").next().unwrap_or(trait_name);
+                    if matches!(trait_name, "Eq" | "Hash") {
+                        traits
+                            .entry(name.clone())
+                            .or_default()
+                            .insert(trait_name.into());
+                    }
+                }
+                Stmt::Module {
+                    statements: Some(statements),
+                    ..
+                } => visit(statements, traits),
+                _ => {}
+            }
+        }
+    }
+    let mut traits = HashMap::new();
+    visit(statements, &mut traits);
+    traits
+        .into_iter()
+        .filter_map(|(name, traits)| {
+            (traits.contains("Eq") && traits.contains("Hash")).then_some(name)
+        })
+        .collect()
+}
+
+pub(super) fn hash_key_type_supported(ty: &Type, derived: &HashSet<String>) -> bool {
+    match ty {
+        Type::Unit
+        | Type::Bool
+        | Type::Char
+        | Type::String
+        | Type::Integer(_)
+        | Type::IntegerVariable(_)
+        | Type::Variable(_)
+        | Type::Unknown => true,
+        Type::Tuple(elements) => elements
+            .iter()
+            .all(|element| hash_key_type_supported(element, derived)),
+        Type::Array { element, .. } | Type::Option(element) => {
+            hash_key_type_supported(element, derived)
+        }
+        Type::Result(ok, error) => {
+            hash_key_type_supported(ok, derived) && hash_key_type_supported(error, derived)
+        }
+        Type::Named { name, .. } => derived.contains(name),
+        _ => false,
+    }
 }

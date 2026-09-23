@@ -327,10 +327,7 @@ pub(super) fn type_implements_trait(
         "Copy" => type_is_copy(actual, environment),
         "Clone" => type_is_clone(actual, environment),
         "Default" => type_is_default(actual, environment),
-        "Eq" | "Hash" => matches!(
-            actual,
-            Type::Bool | Type::Char | Type::String | Type::Integer(_)
-        ),
+        "Eq" | "Hash" => type_is_structural_key_trait(actual, trait_name, environment),
         _ => {
             let Type::Named { name, .. } = actual else {
                 return false;
@@ -345,6 +342,36 @@ pub(super) fn type_implements_trait(
                 _ => false,
             }
         }
+    }
+}
+
+fn type_is_structural_key_trait(
+    actual: &Type,
+    trait_name: &str,
+    environment: &EnvironmentRef,
+) -> bool {
+    match actual {
+        Type::Unit | Type::Bool | Type::Char | Type::String | Type::Integer(_) => true,
+        Type::Tuple(elements) => elements
+            .iter()
+            .all(|element| type_is_structural_key_trait(element, trait_name, environment)),
+        Type::Array { element, .. } | Type::Option(element) => {
+            type_is_structural_key_trait(element, trait_name, environment)
+        }
+        Type::Result(ok, error) => {
+            type_is_structural_key_trait(ok, trait_name, environment)
+                && type_is_structural_key_trait(error, trait_name, environment)
+        }
+        Type::Named { name, .. } => match environment.borrow().get(name) {
+            Some(Value::StructType(definition)) => {
+                definition.implemented_traits.borrow().contains(trait_name)
+            }
+            Some(Value::EnumType(definition)) => {
+                definition.implemented_traits.borrow().contains(trait_name)
+            }
+            _ => false,
+        },
+        _ => false,
     }
 }
 

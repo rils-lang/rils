@@ -2,6 +2,7 @@ use super::*;
 
 impl Analyzer {
     pub(super) fn type_references(&mut self, program: &Program) {
+        let hash_key_types = collect_hash_key_types(&program.statements);
         for reference in &program.type_references {
             let resolved_name = self
                 .self_type_references
@@ -60,7 +61,10 @@ impl Analyzer {
                 _ => None,
             };
             if let Some(key_type) = key_type
-                && !hash_key_type_supported(&self.expand_type(key_type, &mut HashSet::new()))
+                && !hash_key_type_supported(
+                    &self.expand_type(key_type, &mut HashSet::new()),
+                    &hash_key_types,
+                )
             {
                 self.result.diagnostics.push(AnalysisDiagnostic::error(
                     format!("type `{key_type}` does not implement Eq + Hash"),

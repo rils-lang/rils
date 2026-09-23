@@ -150,7 +150,8 @@ magic | format version | language version | host ABI | pointer width | flags | s
 
 v7 包含 module、imports、types、iterators、functions、sources 和 trait implementations 七个必需
 section。trait implementations 表以受 verifier 校验的类型名、trait 名、声明 SourceId、方法名和函数索引保留实现身份，
-宿主无需扫描源码或猜测函数名即可发现入口并精确分发 trait 方法。sources 表只
+宿主无需扫描源码或猜测函数名即可发现入口并精确分发 trait 方法。`Eq`、`Hash` 的 marker 实现沿用此表，
+方法列表为空；VM 加载后据此恢复类型的哈希键资格，不增加磁盘格式字段。sources 表只
 保存确定性 `SourceId -> 来源名称` 映射，不嵌入源码正文；常量、指令和源码 Span 使用各自的显式
 tag/字段编码，每个 Span 都携带 SourceId。加载器限制文件为 64 MiB、单个字符串为 1 MiB、通用集合为一百万项、
 函数/类型/导入表各 65,536 项、总指令两百万条、单函数寄存器和局部槽位各 262,144 个、类型/模式

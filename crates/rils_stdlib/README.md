@@ -43,7 +43,8 @@ Rust 定义生成这些语言包声明，不在 `rils_stdlib` 中保存 `RILS_SO
 生成器可使用 `rils_syntax::rils_quote! { ... }` 写 Rils 语法，使用
 `rils_quote_tokens!` 组装片段，支持 `#name` 插值与 `#(#items),*` 列表展开；
 派生展开时自动将解析错误定位到被派生的声明。当前 `Clone` 支持泛型 struct 和 enum，
-`Copy` 支持非泛型 struct 和 enum，`Default` 支持 struct；`Copy` 的泛型条件 impl 尚待支持。
+`Copy`、`Eq`、`Hash` 支持非泛型 struct 和 enum，`Default` 支持 struct；泛型条件 impl 尚待支持。
+`BitFlags` 只由宿主 flags enum 自动实现，不提供脚本侧 derive。
 `rils_syntax_macros` 在构建时从标准库定义模块收集带 `#[rils_derive]` 的函数，生成静态注册表；
 新增 trait 派生不需要再维护一份独立的名称列表。
 同一声明生成内建 trait 元信息和对应 `core/*.rils` 语言包源码；

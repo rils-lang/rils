@@ -1,4 +1,4 @@
-use rils::{Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval};
 
 #[test]
 fn rust_registered_clone_derive_runs_in_both_backends() {
@@ -197,4 +197,75 @@ fn native_default_derive_rejects_user_fields_without_an_impl() {
     let source = "struct Inner { value: i32 } #[derive(Default)] struct Outer { value: Inner } let value = <Outer as Default>::default();";
     assert!(eval(source).is_err());
     assert!(compile(source).is_err());
+}
+
+#[test]
+fn derived_eq_and_hash_support_struct_and_enum_collection_keys() {
+    let source = r#"
+        #[derive(Eq, Hash)]
+        struct Key { code: i32, label: string }
+        #[derive(Eq, Hash)]
+        enum Signal { Stop, Number(i32), Named { label: string } }
+        let mut map: HashMap<Key, i32> = HashMap::new();
+        map.insert(Key { code: 7, label: "seven" }, 40);
+        let matching = Key { code: 7, label: "seven" };
+        let mut set: HashSet<Signal> = HashSet::new();
+        set.insert(Signal::Stop);
+        set.insert(Signal::Number(2));
+        set.insert(Signal::Named { label: "ok" });
+        let stop = Signal::Stop;
+        let number = Signal::Number(2);
+        let named = Signal::Named { label: "ok" };
+        if set.contains(&stop) && set.contains(&number) && set.contains(&named) && set.len() == 3usize {
+            map.get_cloned(&matching).unwrap() + 2
+        } else { 0 }
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    let module = compile(source).unwrap();
+    assert_eq!(module.execute().unwrap(), Value::I32(42));
+    let restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(restored.execute().unwrap(), Value::I32(42));
+}
+
+#[test]
+fn hash_and_eq_derive_reject_floats_and_script_bitflags() {
+    for source in [
+        "#[derive(Eq)] struct Bad { value: f32 }",
+        "#[derive(Hash)] enum Bad { Value(f64) }",
+        "#[derive(BitFlags)] enum Flags { Read, Write }",
+        "enum Flags { Read, Write } impl BitFlags for Flags {}",
+    ] {
+        assert!(eval(source).is_err(), "{source}");
+        assert!(compile(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn derived_structural_key_handles_composite_fields_and_replacement() {
+    let source = r#"
+        #[derive(Eq, Hash)]
+        struct Key { parts: (i32, string), optional: Option<i32> }
+        let mut map: HashMap<Key, i32> = HashMap::new();
+        let first = Key { parts: (1, "one"), optional: Some(2) };
+        let same = Key { parts: (1, "one"), optional: Some(2) };
+        let different = Key { parts: (1, "one"), optional: None };
+        let lookup = Key { parts: (1, "one"), optional: Some(2) };
+        map.insert(first, 20);
+        let prior = map.insert(same, 22).unwrap();
+        if map.len() == 1usize && !map.contains_key(&different) {
+            prior + map.get_cloned(&lookup).unwrap()
+        } else { 0 }
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+}
+
+#[test]
+fn hash_collections_require_both_markers() {
+    for source in [
+        "#[derive(Eq)] struct Key { value: i32 } let values: HashSet<Key> = HashSet::new();",
+        "#[derive(Hash)] struct Key { value: i32 } let values: HashSet<Key> = HashSet::new();",
+    ] {
+        assert!(compile(source).is_err(), "{source}");
+    }
 }

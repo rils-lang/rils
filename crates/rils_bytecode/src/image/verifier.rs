@@ -77,7 +77,8 @@ impl BytecodeModule {
                     implementation.target.as_str(),
                     implementation.trait_name.as_str(),
                 ))
-                || implementation.methods.is_empty()
+                || (implementation.methods.is_empty()
+                    && !matches!(implementation.trait_name.as_str(), "Eq" | "Hash"))
                 || implementation.methods.iter().any(|(name, function)| {
                     name.is_empty()
                         || *function >= self.functions.len()

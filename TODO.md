@@ -50,7 +50,7 @@
 ### 语言
 
 - 为 `#[decl_rils(...)] mod native` 中的 trait 增加默认方法：从模块内的 Rust 实现注册可调用入口，生成 Rils 可见签名与默认性，并在解释器与 VM 均可执行后开放声明语法。继续扩展 trait 定义中的派生生成器，覆盖泛型 `Copy` 的条件 impl。
-- 将现有 `Debug` 的派生逻辑从 `rils_syntax` 的固定名称分支迁入对应 trait 的注册生成器，使所有内建 derive 使用同一入口。为 `Eq`、`Hash` 补齐用户类型的运行时语义后，再提供相应派生。
+- 将现有 `Debug` 的派生逻辑从 `rils_syntax` 的固定名称分支迁入对应 trait 的注册生成器，使所有内建 derive 使用同一入口。扩展 `Eq`、`Hash` 派生的字段检查，支持已实现相应 trait 的命名字段和泛型条件 impl。
 
 - 模式守卫、或模式、`@` 绑定和更完整的 `..` 模式。
 - tuple struct、默认 trait 方法、trait object、条件 impl、`where` 和显式类型实参。

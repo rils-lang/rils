@@ -166,8 +166,8 @@ for value in values {
 ## HashMap 与 HashSet
 
 `HashMap<K, V>` 和 `HashSet<T>` 位于 prelude，也可通过 `std::collections` 访问。当前可作为键或
-集合元素的类型是实现内建 `Eq + Hash` 的 `bool`、整数、`char` 和 `string`；浮点数会在静态分析
-阶段拒绝。
+集合元素的类型是实现内建 `Eq + Hash` 的 `bool`、整数、`char`、`string`，以及字段可递归作为键的
+非泛型 struct 和 enum。后两者可用 `#[derive(Eq, Hash)]`；浮点数会在静态分析阶段拒绝。
 两种容器都提供 `iter()`：Map 产生 `(&K, &V)`，Set 产生 `&T`；哈希容器的遍历顺序不保证固定。
 借用迭代器或其产出的引用仍存活时，不能结构修改原集合。
 

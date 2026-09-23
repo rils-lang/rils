@@ -597,6 +597,41 @@ pub(super) fn trait_implementations(
     implementations
 }
 
+pub(super) fn collect_marker_trait_implementations(
+    statements: &[Stmt],
+    prefix: &mut Vec<String>,
+    source: crate::source::SourceId,
+    output: &mut Vec<HirTraitImplementation>,
+) {
+    for statement in statements {
+        match statement {
+            Stmt::Impl {
+                trait_name: Some(trait_name),
+                target: Type::Named { name, .. },
+                methods,
+                ..
+            } if methods.is_empty() && matches!(trait_name.as_str(), "Eq" | "Hash") => {
+                output.push(HirTraitImplementation {
+                    target: qualified_name(prefix, name),
+                    trait_name: trait_name.clone(),
+                    source,
+                    methods: HashMap::new(),
+                });
+            }
+            Stmt::Module {
+                name,
+                statements: Some(statements),
+                ..
+            } => {
+                prefix.push(name.clone());
+                collect_marker_trait_implementations(statements, prefix, source, output);
+                prefix.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(super) fn is_compile_time_declaration(statement: &Stmt) -> bool {
     matches!(
         statement,

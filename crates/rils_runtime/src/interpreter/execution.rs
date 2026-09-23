@@ -556,6 +556,12 @@ impl Interpreter {
                     HashMap::new()
                 };
                 if let Some(definition) = &trait_definition {
+                    if definition.name == "BitFlags" {
+                        return Err(RuntimeError::new(
+                            "BitFlags is reserved for host enums marked as flags",
+                            *span,
+                        ));
+                    }
                     if !self.frontend_semantics_verified
                         && generic_parameters
                             .iter()

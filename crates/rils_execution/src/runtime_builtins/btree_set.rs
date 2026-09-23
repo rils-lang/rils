@@ -1,3 +1,6 @@
+// HashKey orders its immutable identity; stored values only reconstruct keys.
+#![allow(clippy::mutable_key_type)]
+
 use std::{cell::RefCell, rc::Rc};
 
 use rils_builtins::BuiltinId;
@@ -117,6 +120,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
 }
 
 fn key(arguments: &[Value], index: usize) -> Result<HashKey, String> {
-    HashKey::from_value(arguments.get(index).ok_or("missing BTreeSet element")?)
+    HashKey::from_ordered_value(arguments.get(index).ok_or("missing BTreeSet element")?)
         .map_err(|_| "BTreeSet elements must be bool, integer, char, or string".into())
 }

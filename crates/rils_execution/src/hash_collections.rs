@@ -1,3 +1,6 @@
+// HashKey compares and hashes its immutable identity; stored values only reconstruct keys.
+#![allow(clippy::mutable_key_type)]
+
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use rils_builtins::BuiltinId;
