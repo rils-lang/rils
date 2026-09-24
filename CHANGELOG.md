@@ -50,6 +50,8 @@
 - `Rc`/`Weak` 的内部成员路径改为 `core::rc::rc::*` / `core::rc::weak::*`；其余成员的数字 ID 不变，
   `RcClone` ID 改由 `Clone` trait 实现替代。按旧路径匹配 `BuiltinId::canonical_path()` 或引用
   `BuiltinId::RcClone` 的 Rust 代码须更新，并重新编译引用旧路径的实验性 v8 字节码。
+- `Cell` 的内部成员路径改为 `core::cell::cell::*`，数字 ID 不变；依赖旧内部路径的 Rust 代码
+  须更新，并重新编译引用旧路径的实验性 v8 字节码。
 
 - Rust embedders matching `Value::SequenceIterator` or using `SequenceIteratorValue` must migrate to `Value::OwnedIterator` and `OwnedIteratorValue`. The borrowed sequence runtime variant is now `BorrowedSequenceIter`; Rils `Iterator<T>` source signatures remain available.
 

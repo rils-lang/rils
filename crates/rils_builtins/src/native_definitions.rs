@@ -129,6 +129,12 @@ pub mod weak {
     rils_stdlib::weak_definition!(decl_rils_metadata);
 }
 
+pub mod cell {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::cell_definition!(decl_rils_metadata);
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
@@ -149,4 +155,5 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     io_error_kind::DECLARATION,
     rc::DECLARATION,
     weak::DECLARATION,
+    cell::DECLARATION,
 ];

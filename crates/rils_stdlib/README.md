@@ -58,6 +58,7 @@ Analyzer 目前仍加载未迁移的 `.rils` 语言包；已迁移的类型不�
 `string` 的拥有型迭代器结果通过原生绑定映射到 Rils 的 `Iterator<T>`。
 `Rc<T>` 和 `Weak<T>` 的声明及 Rust 方法体集中在 `src/stdlib/rc.rs`，Rils 公开路径为
 `core::rc::Rc` 和 `core::rc::Weak`；当前执行链仍使用对应的稳定 ID 适配器。
+`Cell<T>` 的声明与 Rust 方法体在 `src/stdlib/cell.rs`，Rils 公开路径为 `core::cell::Cell`。
 Rust 包装类型通过 `Deref` / `DerefMut` 访问底层容器或句柄；拥有型转换使用 `From` / `Into`。
 
 原生类型的 trait 映射目前支持 `Clone`、`Copy`、`Default`、`Eq`、`Hash` 和 `BitFlags`。无条件实现标在类型或数值族声明上，

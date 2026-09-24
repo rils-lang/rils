@@ -63,6 +63,17 @@ fn shared_handle_methods_use_the_existing_runtime_ids() {
 }
 
 #[test]
+fn cell_methods_use_the_existing_runtime_ids() {
+    let published = builtin("Cell").expect("Cell is in the public catalog");
+    assert_eq!(published.path, native_definitions::cell::DECLARATION.path);
+    for method in ["new", "get", "set", "replace"] {
+        let member = published.member(method).expect("Cell method");
+        assert!(member.builtin_id.is_some());
+        assert!(member.native_symbol.is_none());
+    }
+}
+
+#[test]
 fn rust_option_definition_matches_the_existing_public_catalog() {
     let generated = &native_definitions::DECLARATION;
     let published = builtin("Option").expect("Option is in the public catalog");

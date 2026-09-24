@@ -205,7 +205,7 @@ strong_count = 0x0D11
 weak_count = 0x0D12
 
 # Interior-mutable value cell operations: 0x0E00-0x0EFF.
-[core.cell]
+[core.cell.cell]
 new = 0x0E00
 get = 0x0E01
 set = 0x0E02
