@@ -19,6 +19,8 @@ fn exported_definitions_have_parseable_language_sources() {
         rils_stdlib::binaryheap_definition!(decl_rils_source),
         rils_stdlib::vecdeque_definition!(decl_rils_source),
         rils_stdlib::std_fs_read_to_string_definition!(decl_rils_function_source),
+        rils_stdlib::std_io_print_definition!(decl_rils_function_source),
+        rils_stdlib::std_io_write_definition!(decl_rils_function_source),
     ] {
         let tokens = rils_syntax::lex(source).expect("generated source lexes");
         rils_syntax::parser::parse_builtin_declarations(tokens).expect("generated source parses");
@@ -44,6 +46,10 @@ fn grouped_collections_keep_module_source_paths() {
         (
             "std/fs/read_to_string.rils",
             rils_stdlib::std_fs_read_to_string_definition!(decl_rils_function_source),
+        ),
+        (
+            "std/io/print.rils",
+            rils_stdlib::std_io_print_definition!(decl_rils_function_source),
         ),
     ] {
         let generated = sources

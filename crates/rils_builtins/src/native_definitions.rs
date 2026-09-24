@@ -207,6 +207,44 @@ pub mod fs {
     ];
 }
 
+pub mod io_functions {
+    use rils_builtins_macros::decl_rils_function_metadata;
+
+    pub mod read_line {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_io_read_line_definition!(decl_rils_function_metadata);
+    }
+    pub mod print {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_io_print_definition!(decl_rils_function_metadata);
+    }
+    pub mod println {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_io_println_definition!(decl_rils_function_metadata);
+    }
+    pub mod write {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_io_write_definition!(decl_rils_function_metadata);
+    }
+    pub mod write_line {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_io_write_line_definition!(decl_rils_function_metadata);
+    }
+    pub mod flush {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_io_flush_definition!(decl_rils_function_metadata);
+    }
+
+    pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
+        read_line::DECLARATION,
+        print::DECLARATION,
+        println::DECLARATION,
+        write::DECLARATION,
+        write_line::DECLARATION,
+        flush::DECLARATION,
+    ];
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[

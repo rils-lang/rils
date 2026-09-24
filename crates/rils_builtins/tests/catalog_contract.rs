@@ -548,6 +548,15 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
         println.backend,
         rils_builtins::BuiltinBackend::Host("std::io")
     );
+    assert!(builtin_module_members("std::io").contains(&"write_line"));
+    assert_eq!(
+        builtin("std::io::write")
+            .expect("native std::io::write")
+            .signature
+            .expect("write signature")
+            .parameters,
+        &[TypePattern::Unknown]
+    );
     let some = builtin("Some").expect("Some function");
     assert_eq!(some.type_parameters, &["T"]);
     assert_eq!(

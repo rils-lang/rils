@@ -4,6 +4,9 @@ use rils_builtins_macros::decl_rils;
 
 #[decl_rils(std::io)]
 mod native {
+    use super::super::{prelude::Result, string::String};
+    use std::io::Write;
+
     /// Portable categories for standard IO and filesystem failures.
     #[rils_enum]
     pub enum ErrorKind {
@@ -39,6 +42,83 @@ mod native {
         /// The related filesystem path, when one is available.
         pub path: std::option::Option<std::string::String>,
     }
+
+    fn error(source: std::io::Error) -> Error {
+        Error {
+            kind: source.kind(),
+            message: source.to_string(),
+            path: None,
+        }
+    }
+
+    fn write_text(text: &str) -> Result<(), Error> {
+        match std::io::stdout().lock().write_all(text.as_bytes()) {
+            Ok(()) => Result::Ok(()),
+            Err(source) => Result::Err(error(source)),
+        }
+    }
+
+    /// Reads one line from standard input.
+    #[rils_fn]
+    pub fn read_line() -> Result<rils_stdlib::stdlib::string::String, rils_stdlib::stdlib::io::Error>
+    {
+        let mut line = std::string::String::new();
+        match std::io::stdin().read_line(&mut line) {
+            Ok(_) => Result::Ok(line.into()),
+            Err(source) => Result::Err(error(source)),
+        }
+    }
+
+    /// Prints values without a trailing newline.
+    #[rils_fn]
+    #[rils_variadic]
+    pub fn print(values: &[String]) {
+        let text = values
+            .iter()
+            .cloned()
+            .map(std::string::String::from)
+            .collect::<std::string::String>();
+        let _ = std::io::stdout().lock().write_all(text.as_bytes());
+    }
+
+    /// Prints values followed by a newline.
+    #[rils_fn]
+    #[rils_variadic]
+    pub fn println(values: &[String]) {
+        let mut text = values
+            .iter()
+            .cloned()
+            .map(std::string::String::from)
+            .collect::<std::string::String>();
+        text.push('\n');
+        let _ = std::io::stdout().lock().write_all(text.as_bytes());
+    }
+
+    /// Writes a value to standard output.
+    #[rils_fn]
+    #[rils_any(value)]
+    pub fn write(value: String) -> Result<(), rils_stdlib::stdlib::io::Error> {
+        let text: std::string::String = value.into();
+        write_text(&text)
+    }
+
+    /// Writes a value and a newline.
+    #[rils_fn]
+    #[rils_any(value)]
+    pub fn write_line(value: String) -> Result<(), rils_stdlib::stdlib::io::Error> {
+        let mut text: std::string::String = value.into();
+        text.push('\n');
+        write_text(&text)
+    }
+
+    /// Flushes standard output.
+    #[rils_fn]
+    pub fn flush() -> Result<(), rils_stdlib::stdlib::io::Error> {
+        match std::io::stdout().lock().flush() {
+            Ok(()) => Result::Ok(()),
+            Err(source) => Result::Err(error(source)),
+        }
+    }
 }
 
-pub use native::{Error, ErrorKind};
+pub use native::{Error, ErrorKind, flush, print, println, read_line, write, write_line};

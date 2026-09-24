@@ -255,6 +255,10 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.extend(
         (0usize..8).map(|index| quote!(crate::native_definitions::fs::DECLARATIONS[#index])),
     );
+    declaration_items.extend(
+        (0usize..6)
+            .map(|index| quote!(crate::native_definitions::io_functions::DECLARATIONS[#index])),
+    );
 
     let module_entries = module_members.iter().map(|(path, members)| {
         let path = LitStr::new(path, input.directory.span());

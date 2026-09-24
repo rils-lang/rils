@@ -29,6 +29,22 @@ impl Parse for Input {
 }
 
 impl Input {
+    fn variadic(&self) -> bool {
+        self.function
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("rils_variadic"))
+    }
+
+    fn any_parameters(&self) -> syn::Result<Vec<syn::Ident>> {
+        self.function
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("rils_any"))
+            .map(|attr| attr.parse_args())
+            .collect()
+    }
+
     fn validate(&self) -> syn::Result<()> {
         let name = &self.function.sig.ident;
         if self
@@ -70,6 +86,19 @@ impl Input {
                 ));
             }
         }
+        if self.variadic() && self.function.sig.inputs.len() != 1 {
+            return Err(Error::new_spanned(
+                &self.function.sig,
+                "variadic Rust implementation expects one slice parameter",
+            ));
+        }
+        let parameters = self.parameters()?;
+        for any in self.any_parameters()? {
+            let name = any.to_string();
+            if !parameters.iter().any(|(parameter, _)| parameter == &name) {
+                return Err(Error::new_spanned(any, "unknown exported parameter"));
+            }
+        }
         Ok(())
     }
 
@@ -99,7 +128,14 @@ impl Input {
                     .is_some_and(|segment| segment.ident == "stdlib")
                 {
                     segments.drain(0..2);
-                    segments.insert(0, syn::parse_quote!(std));
+                    if segments.len() == 2
+                        && segments[0].ident == "string"
+                        && segments[1].ident == "String"
+                    {
+                        segments.remove(0);
+                    } else {
+                        segments.insert(0, syn::parse_quote!(std));
+                    }
                     path.path.leading_colon = None;
                     path.path.segments =
                         segments.into_iter().collect::<Punctuated<_, Token![::]>>();
@@ -177,22 +213,36 @@ impl Input {
         for line in super::documentation(&self.function.attrs).lines() {
             source.push_str(&format!("/// {line}\n"));
         }
-        let parameters = self
-            .parameters()?
+        let any = self
+            .any_parameters()?
             .into_iter()
-            .map(|(name, ty)| {
-                format!(
-                    "{name}: {}",
-                    ty.to_token_stream().to_string().replace("String", "string")
-                )
-            })
+            .map(|name| name.to_string())
             .collect::<Vec<_>>();
+        let parameters = if self.variadic() {
+            Vec::new()
+        } else {
+            self.parameters()?
+                .into_iter()
+                .map(|(name, ty)| {
+                    if any.contains(&name) {
+                        return format!("{name}: _");
+                    }
+                    format!(
+                        "{name}: {}",
+                        ty.to_token_stream().to_string().replace("String", "string")
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
         let result = self
             .result()?
             .to_token_stream()
             .to_string()
             .replace("String", "string");
         let name = &self.function.sig.ident;
+        if self.variadic() {
+            source.push_str("#[variadic]\n");
+        }
         source.push_str(&format!(
             "pub fn {name}({}) -> {result} {{}}\n",
             parameters.join(", ")
@@ -214,11 +264,26 @@ impl Input {
             quote!(crate::BuiltinBackend::Runtime)
         };
         let docs = super::documentation(&self.function.attrs);
-        let parameters = self
-            .parameters()?
-            .iter()
-            .map(|(_, ty)| type_patterns::tokens(ty))
-            .collect::<syn::Result<Vec<_>>>()?;
+        let any = self
+            .any_parameters()?
+            .into_iter()
+            .map(|name| name.to_string())
+            .collect::<Vec<_>>();
+        let parameters = if self.variadic() {
+            Vec::new()
+        } else {
+            self.parameters()?
+                .iter()
+                .map(|(name, ty)| {
+                    if any.contains(name) {
+                        Ok(quote!(TypePattern::Unknown))
+                    } else {
+                        type_patterns::tokens(ty)
+                    }
+                })
+                .collect::<syn::Result<Vec<_>>>()?
+        };
+        let variadic = self.variadic();
         let result = type_patterns::tokens(&self.result()?)?;
         Ok(quote! {
             use crate::TypePattern;
@@ -231,7 +296,7 @@ impl Input {
                 signature: Some(crate::BuiltinSignature {
                     parameters: &[#(#parameters),*],
                     result: #result,
-                    variadic: false,
+                    variadic: #variadic,
                 }),
                 native_symbol: None,
                 backend: #backend,
@@ -289,5 +354,47 @@ mod tests {
             ),
         };
         assert!(input.validate().is_err());
+    }
+
+    #[test]
+    fn explicit_any_and_variadic_markers_change_only_rils_signatures() {
+        let write = Input {
+            path: syn::parse_quote!(std::io::write),
+            function: syn::parse_quote! {
+                #[rils_any(value)]
+                pub fn write(value: String) -> Result<(), crate::stdlib::io::Error> { loop {} }
+            },
+        };
+        write.validate().unwrap();
+        assert!(write.source().unwrap().contains("value: _"));
+        assert!(
+            write
+                .metadata()
+                .unwrap()
+                .to_string()
+                .contains("TypePattern :: Unknown")
+        );
+
+        let print = Input {
+            path: syn::parse_quote!(std::io::print),
+            function: syn::parse_quote! {
+                #[rils_variadic]
+                pub fn print(values: &[String]) { loop {} }
+            },
+        };
+        print.validate().unwrap();
+        assert!(
+            print
+                .source()
+                .unwrap()
+                .contains("#[variadic]\npub fn print()")
+        );
+        assert!(
+            print
+                .metadata()
+                .unwrap()
+                .to_string()
+                .contains("variadic : true")
+        );
     }
 }

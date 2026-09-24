@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    io::Write,
     rc::Rc,
 };
 
@@ -78,24 +77,26 @@ pub fn install(
 }
 
 fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_kind: Rc<EnumType>) {
+    use rils_stdlib::stdlib::io as native;
+
     publish(
         module,
         "read_line",
         host_function("std::io::read_line", 0, 0, {
             let error = error.clone();
             let error_kind = error_kind.clone();
-            move |_| {
-                let mut line = String::new();
-                match std::io::stdin().read_line(&mut line) {
-                    Ok(_) => Ok(result_ok(Value::String(Rc::from(line)), Type::String)),
-                    Err(source) => Ok(result_error(
-                        &error,
-                        &error_kind,
-                        source,
-                        None,
-                        Type::String,
-                    )),
-                }
+            move |_| match native_result(native::read_line()) {
+                Ok(line) => Ok(result_ok(
+                    Value::String(Rc::from(std::string::String::from(line))),
+                    Type::String,
+                )),
+                Err(source) => Ok(result_error(
+                    &error,
+                    &error_kind,
+                    source,
+                    None,
+                    Type::String,
+                )),
             }
         }),
     );
@@ -105,13 +106,9 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
         host_function("std::io::write", 1, 1, {
             let error = error.clone();
             let error_kind = error_kind.clone();
-            move |arguments| {
-                let text = arguments[0].to_string();
-                let mut stdout = std::io::stdout().lock();
-                match stdout.write_all(text.as_bytes()) {
-                    Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
-                    Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
-                }
+            move |arguments| match native_result(native::write(arguments[0].to_string().into())) {
+                Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
+                Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
     );
@@ -121,13 +118,11 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
         host_function("std::io::write_line", 1, 1, {
             let error = error.clone();
             let error_kind = error_kind.clone();
-            move |arguments| {
-                let text = format!("{}\n", arguments[0]);
-                let mut stdout = std::io::stdout().lock();
-                match stdout.write_all(text.as_bytes()) {
-                    Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
-                    Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
-                }
+            move |arguments| match native_result(native::write_line(
+                arguments[0].to_string().into(),
+            )) {
+                Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
+                Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
     );
@@ -135,7 +130,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
         module,
         "flush",
         host_function("std::io::flush", 0, 0, move |_| {
-            match std::io::stdout().lock().flush() {
+            match native_result(native::flush()) {
                 Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }

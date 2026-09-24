@@ -6,6 +6,8 @@ Mark public Rust functions inside `#[decl_rils(std::fs)]` with `#[rils_fn]` to e
 signatures and documentation to Rils. Unmarked functions remain Rust helpers. The Rust body is
 kept as the implementation; the execution adapter converts Rils values at the boundary. For
 example, `src/stdlib/fs.rs` defines the filesystem functions and their native bodies together.
+Use `#[rils_any(parameter)]` for a Rust string parameter exposed as Rils `_`, and
+`#[rils_variadic]` for a Rust slice parameter exposed as a variadic Rils function.
 
 ## 显式导出声明
 

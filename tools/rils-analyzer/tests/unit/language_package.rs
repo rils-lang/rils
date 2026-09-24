@@ -46,7 +46,7 @@ fn standard_library_discovery_covers_distribution_layouts_and_explicit_overrides
 }
 
 #[test]
-fn loads_reserved_standard_library_modules_as_a_language_package() {
+fn loads_remaining_source_modules_and_native_catalog_exports() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -59,7 +59,9 @@ fn loads_reserved_standard_library_modules_as_a_language_package() {
     )
     .unwrap();
     assert!(package.module("core::array").is_none());
-    assert!(package.module("std::io").is_some());
+    assert!(package.module("std::io").is_none());
+    assert!(rils_builtins::builtin_module_members("std::io").contains(&"read_line"));
+    assert!(rils_builtins::builtin_module_members("std::io").contains(&"write_line"));
 }
 
 #[test]

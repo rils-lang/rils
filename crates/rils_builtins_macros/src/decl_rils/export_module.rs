@@ -367,9 +367,11 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                     .retain(|attr| !attr.path().is_ident("rils_derive"));
             }
             Item::Fn(function) => {
-                function
-                    .attrs
-                    .retain(|attr| !attr.path().is_ident("rils_fn"));
+                function.attrs.retain(|attr| {
+                    !attr.path().is_ident("rils_fn")
+                        && !attr.path().is_ident("rils_any")
+                        && !attr.path().is_ident("rils_variadic")
+                });
             }
             _ => {}
         }
