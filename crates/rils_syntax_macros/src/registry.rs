@@ -86,12 +86,11 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                     {
                         found = true;
                         let declaration_name = &declaration.ident;
-                        let constant = if matches!(attribute.meta, syn::Meta::Path(_)) {
-                            format_ident!("DERIVE")
-                        } else {
-                            let target: syn::Ident = attribute.parse_args()?;
-                            format_ident!("DERIVE_{}", target.to_string().to_uppercase())
-                        };
+                        let target: syn::Ident = attribute.parse_args().map_err(|_| {
+                            Error::new_spanned(attribute, "expected #[rils_derive(TraitName)]")
+                        })?;
+                        let constant =
+                            format_ident!("DERIVE_{}", target.to_string().to_uppercase());
                         handlers.push(quote!(crate::stdlib::#module::#declaration_name::#constant));
                     }
                 }

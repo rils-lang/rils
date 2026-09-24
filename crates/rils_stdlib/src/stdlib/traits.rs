@@ -24,7 +24,7 @@ pub(crate) mod default_native {
     }
 
     /// Generates a fieldwise default constructor.
-    #[rils_derive]
+    #[rils_derive(Default)]
     fn derive_default(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
         let Stmt::Struct {
             name,
@@ -163,7 +163,7 @@ pub(crate) mod eq_native {
     /// Values with reflexive equality suitable for hashed collections.
     pub trait Eq: ::core::cmp::Eq {}
 
-    #[rils_derive]
+    #[rils_derive(Eq)]
     fn derive_eq(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
         super::derive_key_marker(statement, "Eq")
     }
@@ -176,7 +176,7 @@ pub(crate) mod hash_native {
     /// Values that can be used as hash collection keys.
     pub trait Hash: ::core::hash::Hash {}
 
-    #[rils_derive]
+    #[rils_derive(Hash)]
     fn derive_hash(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
         super::derive_key_marker(statement, "Hash")
     }
@@ -292,7 +292,7 @@ pub(crate) mod clone_native {
     }
 
     /// Generates a fieldwise `Clone` implementation for a struct or enum.
-    #[rils_derive]
+    #[rils_derive(Clone)]
     fn derive_clone(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
         let (name, generic_parameters, body) = match statement {
             Stmt::Struct {
@@ -397,7 +397,7 @@ pub(crate) mod copy_native {
     pub trait Copy: super::Clone + ::core::marker::Copy {}
 
     /// Generates the marker implementation; field eligibility is checked by Rils.
-    #[rils_derive]
+    #[rils_derive(Copy)]
     fn derive_copy(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
         let (name, generic_parameters, span) = match statement {
             Stmt::Struct {

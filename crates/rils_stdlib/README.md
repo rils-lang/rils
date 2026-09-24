@@ -24,7 +24,7 @@ mod native {
 默认方法 ID 前缀及生成的 `.rils` 资源路径是模块路径加类型的 snake_case 名称；
 `id_prefix` 可在移动已有定义时同时保留 `builtin_ids.toml` 中的稳定路径与资源路径。
 混合模块中的 derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内
-标记导出的 trait。原有单定义模块及其 `#[rils_derive]` 写法继续有效。
+标记导出的 trait。单定义模块同样必须写出目标 trait，例如 `#[rils_derive(Clone)]`。
 
 此 crate 存放可信的 Rust 标准库定义源。`src/stdlib/option.rs` 和
 `src/stdlib/result.rs` 使用 `#[decl_rils(core::...)]` 标注普通 Rust 模块，以类型、方法签名和 `#[export_rils]`
@@ -66,13 +66,13 @@ Rust 定义生成这些语言包声明，不在 `rils_stdlib` 中保存 `RILS_SO
 基础 trait 的 Rils 声明集中位于 `src/stdlib/traits.rs`，
 各自使用 `#[decl_rils(core::...)] mod` 定义。trait 的限定父 trait 路径绑定对应 Rust trait；
 其他父 trait 写入 Rils 的继承关系。模块内未标记的辅助函数保留为普通 Rust 函数。
-可选的 `#[rils_derive]` 函数也定义在该模块内，接收类型声明 AST 并返回生成的 impl。
+可选的 `#[rils_derive(TraitName)]` 函数也定义在该模块内，接收类型声明 AST 并返回生成的 impl。
 生成器可使用 `rils_syntax::rils_quote! { ... }` 写 Rils 语法，使用
 `rils_quote_tokens!` 组装片段，支持 `#name` 插值与 `#(#items),*` 列表展开；
 派生展开时自动将解析错误定位到被派生的声明。当前 `Clone` 支持泛型 struct 和 enum，
 `Copy`、`Eq`、`Hash` 支持非泛型 struct 和 enum，`Default` 支持 struct；泛型条件 impl 尚待支持。
 `BitFlags` 只由宿主 flags enum 自动实现，不提供脚本侧 derive。
-`rils_syntax_macros` 在构建时从标准库定义模块收集带 `#[rils_derive]` 的函数，生成静态注册表；
+`rils_syntax_macros` 在构建时从标准库定义模块收集带 `#[rils_derive(TraitName)]` 的函数，生成静态注册表；
 新增 trait 派生不需要再维护一份独立的名称列表。
 同一声明生成内建 trait 元信息和对应 `core/*.rils` 语言包源码；
 这些源码只作为可用 `--check` 验证的生成资源。导出器自动发现带 `#[decl_rils]` 的定义模块。

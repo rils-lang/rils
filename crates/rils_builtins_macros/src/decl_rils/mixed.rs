@@ -339,4 +339,18 @@ mod tests {
         let error = expand(syn::parse_quote!(core::fixture), module).unwrap_err();
         assert!(error.to_string().contains("exported type"));
     }
+
+    #[test]
+    fn mixed_trait_derive_requires_an_explicit_target() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_trait]
+                pub trait Marker: super::Marker {}
+
+                #[rils_derive]
+                fn derive_marker() {}
+            }
+        };
+        assert!(expand(syn::parse_quote!(core::fixture), module).is_err());
+    }
 }

@@ -309,6 +309,24 @@ pub(crate) fn contains_trait(module: &ItemMod) -> bool {
         .is_some_and(|(_, items)| items.iter().any(|item| matches!(item, Item::Trait(_))))
 }
 
+fn derive_target(function: &syn::ItemFn, trait_name: &syn::Ident) -> syn::Result<syn::Ident> {
+    let attribute = function
+        .attrs
+        .iter()
+        .find(|attribute| attribute.path().is_ident("rils_derive"))
+        .expect("derive function has marker");
+    let target: syn::Ident = attribute
+        .parse_args()
+        .map_err(|_| Error::new_spanned(attribute, "expected #[rils_derive(TraitName)]"))?;
+    if target != *trait_name {
+        return Err(Error::new_spanned(
+            attribute,
+            format!("derive target must be {trait_name}"),
+        ));
+    }
+    Ok(target)
+}
+
 pub(crate) fn expand_module(path: Path, module: ItemMod) -> TokenStream {
     let Some((_, items)) = &module.content else {
         return Error::new_spanned(&module, "standard-library module must be inline")
@@ -355,17 +373,23 @@ pub(crate) fn expand_module(path: Path, module: ItemMod) -> TokenStream {
             .into_compile_error()
             .into();
     }
-    let derive = derive_functions.first().map(|function| {
+    let derive = derive_functions.first().map(|function| -> syn::Result<_> {
+        let target = derive_target(function, &input.item.ident)?;
         let function_name = &function.sig.ident;
         let trait_name = input.item.ident.to_string();
-        quote! {
-            pub const DERIVE: rils_syntax::derive::NativeDeriveDefinition =
+        let constant = format_ident!("DERIVE_{}", target.to_string().to_uppercase());
+        Ok(quote! {
+            pub const #constant: rils_syntax::derive::NativeDeriveDefinition =
                 rils_syntax::derive::NativeDeriveDefinition {
                     name: #trait_name,
                     expand: #function_name,
                 };
-        }
+        })
     });
+    let derive = match derive.transpose() {
+        Ok(derive) => derive,
+        Err(error) => return error.into_compile_error().into(),
+    };
     let rust = input.rust_binding().expect("validated trait binding");
     let name = &input.item.ident;
     let callback = format_ident!("{}_definition", name.to_string().to_lowercase());
@@ -417,6 +441,38 @@ pub(crate) fn expand_metadata(input: TokenStream) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn single_trait_derive_requires_its_explicit_target() {
+        let trait_name: syn::Ident = syn::parse_quote!(Clone);
+        let explicit: syn::ItemFn = syn::parse_quote! {
+            #[rils_derive(Clone)]
+            fn derive_clone() {}
+        };
+        assert_eq!(derive_target(&explicit, &trait_name).unwrap(), trait_name);
+
+        let implicit: syn::ItemFn = syn::parse_quote! {
+            #[rils_derive]
+            fn derive_clone() {}
+        };
+        assert!(
+            derive_target(&implicit, &trait_name)
+                .unwrap_err()
+                .to_string()
+                .contains("expected #[rils_derive(TraitName)]")
+        );
+
+        let wrong: syn::ItemFn = syn::parse_quote! {
+            #[rils_derive(Copy)]
+            fn derive_clone() {}
+        };
+        assert!(
+            derive_target(&wrong, &trait_name)
+                .unwrap_err()
+                .to_string()
+                .contains("derive target must be Clone")
+        );
+    }
 
     #[test]
     fn clone_binding_generates_the_existing_rils_contract() {
