@@ -78,6 +78,13 @@ pub mod range {
     rils_stdlib::range_definition!(decl_rils_trait_impls);
 }
 
+pub mod vec_deque {
+    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::vecdeque_definition!(decl_rils_metadata);
+    rils_stdlib::vecdeque_definition!(decl_rils_trait_impls);
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
@@ -90,4 +97,5 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     option::DECLARATION,
     result::DECLARATION,
     range::DECLARATION,
+    vec_deque::DECLARATION,
 ];

@@ -76,11 +76,10 @@ impl Definition {
                 }
                 if !matches!(method.vis, syn::Visibility::Public(_))
                     || method.block.stmts.is_empty()
-                    || method.sig.receiver().is_none()
                 {
                     return Err(Error::new_spanned(
                         method,
-                        "exported struct method requires a public Rust body and receiver",
+                        "exported struct member requires a public Rust body",
                     ));
                 }
                 methods.push(method.clone());
@@ -231,21 +230,34 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                 "{}::{method_name}",
                 quote!(#module).to_string().replace(' ', "")
             );
-            let receiver = method.sig.receiver().expect("validated receiver");
-            let receiver_mode = if receiver.reference.is_some() {
-                if receiver.mutability.is_some() {
-                    quote!(crate::ReceiverMode::Mutable)
+            let (kind, receiver_mode, parameter_start) =
+                if let Some(receiver) = method.sig.receiver() {
+                    let mode = if receiver.reference.is_some() {
+                        if receiver.mutability.is_some() {
+                            quote!(crate::ReceiverMode::Mutable)
+                        } else {
+                            quote!(crate::ReceiverMode::Shared)
+                        }
+                    } else {
+                        quote!(crate::ReceiverMode::Owned)
+                    };
+                    (
+                        quote!(crate::BuiltinMemberKind::Method),
+                        quote!(Some(#mode)),
+                        1,
+                    )
                 } else {
-                    quote!(crate::ReceiverMode::Shared)
-                }
-            } else {
-                quote!(crate::ReceiverMode::Owned)
-            };
+                    (
+                        quote!(crate::BuiltinMemberKind::AssociatedFunction),
+                        quote!(None),
+                        0,
+                    )
+                };
             let parameters = method
                 .sig
                 .inputs
                 .iter()
-                .skip(1)
+                .skip(parameter_start)
                 .map(|input| match input {
                     FnArg::Typed(parameter) => type_patterns::tokens(&parameter.ty),
                     _ => Err(Error::new_spanned(input, "unexpected receiver")),
@@ -264,14 +276,14 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             Ok(quote! {
                 crate::BuiltinMember {
                     name: #method_name,
-                    kind: crate::BuiltinMemberKind::Method,
+                    kind: #kind,
                     signature: Some(crate::BuiltinSignature {
                         parameters: &[#(#parameters),*],
                         result: #result,
                         variadic: false,
                     }),
                     value_type: None,
-                    receiver: Some(#receiver_mode),
+                    receiver: #receiver_mode,
                     builtin_id: Some(builtin_id!(#id_path)),
                     runtime_import: None,
                     required: true,
@@ -335,6 +347,8 @@ mod tests {
                 pub struct Range<T> { current: T, end: T }
                 impl<T> Range<T> {
                     #[export_rils]
+                    pub fn new() -> Self { loop {} }
+                    #[export_rils]
                     pub fn next(&mut self) -> Option<T> { loop {} }
                 }
             }
@@ -342,6 +356,7 @@ mod tests {
         let definition = Definition::parse(syn::parse_quote!(core::range), module).unwrap();
         let source = definition.source();
         assert!(source.contains("pub struct Range<T>;"));
+        assert!(source.contains("fn new() -> Self"));
         assert!(source.contains("fn next(&mut self) -> Option<T>"));
         assert!(!source.contains("current"));
         assert!(metadata_tokens(&definition).is_ok());

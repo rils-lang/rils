@@ -136,6 +136,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
                 | "stdlib/core/hash.rils"
                 | "stdlib/core/bit_flags.rils"
                 | "stdlib/core/range.rils"
+                | "stdlib/core/vec_deque.rils"
         ) {
             source_entries.push(source_entry(
                 &file.relative,
@@ -268,6 +269,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(crate::native_definitions::hash::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::bit_flags::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::range::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::vec_deque::DECLARATION));
 
     let module_entries = module_members.iter().map(|(path, members)| {
         let path = LitStr::new(path, input.directory.span());

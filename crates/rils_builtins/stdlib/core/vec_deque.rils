@@ -3,33 +3,23 @@ pub struct VecDeque<T>;
 
 impl<T> VecDeque<T> {
     /// Creates an empty queue.
-    #[runtime(core::vec_deque::new)]
     fn new() -> Self {}
     /// Returns the number of elements.
-    #[runtime(core::vec_deque::len)]
     fn len(&self) -> usize {}
     /// Returns whether the queue is empty.
-    #[runtime(core::vec_deque::is_empty)]
     fn is_empty(&self) -> bool {}
     /// Adds an element at the front.
-    #[runtime(core::vec_deque::push_front)]
-    fn push_front(&mut self, value: T) {}
+    fn push_front(&mut self, value : T) {}
     /// Adds an element at the back.
-    #[runtime(core::vec_deque::push_back)]
-    fn push_back(&mut self, value: T) {}
+    fn push_back(&mut self, value : T) {}
     /// Removes the front element.
-    #[runtime(core::vec_deque::pop_front)]
     fn pop_front(&mut self) -> Option<T> {}
     /// Removes the back element.
-    #[runtime(core::vec_deque::pop_back)]
     fn pop_back(&mut self) -> Option<T> {}
     /// Clones the front element.
-    #[runtime(core::vec_deque::front_cloned)]
     fn front_cloned(&self) -> Option<T> {}
     /// Clones the back element.
-    #[runtime(core::vec_deque::back_cloned)]
     fn back_cloned(&self) -> Option<T> {}
     /// Removes all elements.
-    #[runtime(core::vec_deque::clear)]
     fn clear(&mut self) {}
 }
