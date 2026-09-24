@@ -48,19 +48,26 @@ mod native {
             self.current
         }
 
-        /// Advances the range.
-        #[allow(clippy::should_implement_trait)] // Rils uses its own Option wrapper.
-        #[export_rils]
-        pub fn next(&mut self) -> Option<T> {
+        fn step(&mut self) -> std::option::Option<T> {
             if self.current >= self.end {
-                return Option::None;
+                return None;
             }
             let value = self.current;
             self.current = match self.current.next_value() {
                 Option::Some(next) => next,
                 Option::None => unreachable!("a value below the exclusive end can advance"),
             };
-            Option::Some(value)
+            Some(value)
+        }
+
+        /// Advances the range.
+        #[allow(clippy::should_implement_trait)] // Rils uses its own Option wrapper.
+        #[export_rils]
+        pub fn next(&mut self) -> Option<T> {
+            match self.step() {
+                Some(value) => Option::Some(value),
+                None => Option::None,
+            }
         }
 
         /// Consumes the range and creates its iterator.
@@ -68,6 +75,14 @@ mod native {
         #[export_rils]
         pub fn into_iter(self) -> Self {
             self
+        }
+    }
+
+    impl<T: RangeStep> std::iter::Iterator for Range<T> {
+        type Item = T;
+
+        fn next(&mut self) -> std::option::Option<Self::Item> {
+            self.step()
         }
     }
 }

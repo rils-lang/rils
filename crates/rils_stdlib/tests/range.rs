@@ -32,3 +32,9 @@ fn every_integer_range_advances_to_its_exclusive_end() {
         i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
     );
 }
+
+#[test]
+fn range_also_implements_the_bound_rust_iterator() {
+    let values: Vec<_> = Range::from_bounds(1i32, 4i32).collect();
+    assert_eq!(values, [1, 2, 3]);
+}
