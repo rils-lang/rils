@@ -56,6 +56,16 @@ pub fn decl_rils_trait_metadata(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
+pub fn decl_rils_function_source(input: TokenStream) -> TokenStream {
+    decl_rils::function_definition::expand_source(input)
+}
+
+#[proc_macro]
+pub fn decl_rils_function_metadata(input: TokenStream) -> TokenStream {
+    decl_rils::function_definition::expand_metadata(input)
+}
+
+#[proc_macro]
 pub fn decl_rils_metadata(input: TokenStream) -> TokenStream {
     decl_rils::expand_metadata(input)
 }

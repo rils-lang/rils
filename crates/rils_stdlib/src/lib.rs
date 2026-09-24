@@ -1,5 +1,7 @@
 //! Shared Rust source definitions for Rils standard-library APIs.
 
+extern crate self as rils_stdlib;
+
 pub mod stdlib;
 
 /// Marks a field type for Rils declarations while preserving its Rust type.

@@ -159,6 +159,54 @@ pub mod cell {
     rils_stdlib::cell_definition!(decl_rils_metadata);
 }
 
+pub mod fs {
+    use rils_builtins_macros::decl_rils_function_metadata;
+
+    pub mod read_to_string {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_read_to_string_definition!(decl_rils_function_metadata);
+    }
+    pub mod write {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_write_definition!(decl_rils_function_metadata);
+    }
+    pub mod append {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_append_definition!(decl_rils_function_metadata);
+    }
+    pub mod try_exists {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_try_exists_definition!(decl_rils_function_metadata);
+    }
+    pub mod create_dir_all {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_create_dir_all_definition!(decl_rils_function_metadata);
+    }
+    pub mod remove_file {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_remove_file_definition!(decl_rils_function_metadata);
+    }
+    pub mod remove_dir {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_remove_dir_definition!(decl_rils_function_metadata);
+    }
+    pub mod read_dir {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::std_fs_read_dir_definition!(decl_rils_function_metadata);
+    }
+
+    pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
+        read_to_string::DECLARATION,
+        write::DECLARATION,
+        append::DECLARATION,
+        try_exists::DECLARATION,
+        create_dir_all::DECLARATION,
+        remove_file::DECLARATION,
+        remove_dir::DECLARATION,
+        read_dir::DECLARATION,
+    ];
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[

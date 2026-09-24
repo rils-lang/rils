@@ -1,5 +1,12 @@
 # rils_stdlib
 
+## Free functions
+
+Mark public Rust functions inside `#[decl_rils(std::fs)]` with `#[rils_fn]` to export their
+signatures and documentation to Rils. Unmarked functions remain Rust helpers. The Rust body is
+kept as the implementation; the execution adapter converts Rils values at the boundary. For
+example, `src/stdlib/fs.rs` defines the filesystem functions and their native bodies together.
+
 ## 显式导出声明
 
 一个 `#[decl_rils(core::collections)]` 模块可以定义一个或多个导出项。类型和 trait

@@ -228,10 +228,30 @@ pub fn builtin_member(owner: &str, name: &str) -> Option<&'static BuiltinMember>
 }
 
 pub fn builtin_module_members(path: &str) -> &'static [&'static str] {
-    BUILTIN_MODULES
-        .iter()
-        .find(|module| module.path == path)
-        .map_or(&[], |module| module.members)
+    static MEMBERS: std::sync::OnceLock<
+        std::collections::HashMap<&'static str, Vec<&'static str>>,
+    > = std::sync::OnceLock::new();
+    MEMBERS
+        .get_or_init(|| {
+            let mut members = BUILTIN_MODULES
+                .iter()
+                .map(|module| (module.path, module.members.to_vec()))
+                .collect::<std::collections::HashMap<_, _>>();
+            for declaration in BUILTINS {
+                if declaration.kind == BuiltinKind::Function
+                    && let Some((module, name)) = declaration.path.rsplit_once("::")
+                {
+                    members.entry(module).or_default().push(name);
+                }
+            }
+            for names in members.values_mut() {
+                names.sort_unstable();
+                names.dedup();
+            }
+            members
+        })
+        .get(path)
+        .map_or(&[], Vec::as_slice)
 }
 
 pub const fn is_iterator_default_builtin(id: BuiltinId) -> bool {

@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    fs::OpenOptions,
     io::Write,
     rc::Rc,
 };
@@ -145,6 +144,8 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
 }
 
 fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_kind: Rc<EnumType>) {
+    use rils_stdlib::stdlib::fs as native;
+
     publish(
         module,
         "read_to_string",
@@ -153,25 +154,24 @@ fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             Type::String,
             error.clone(),
             error_kind.clone(),
-            |path| std::fs::read_to_string(path).map(|text| Value::String(Rc::from(text))),
+            |path| {
+                native_result(native::read_to_string(path_text(path)))
+                    .map(|text| Value::String(Rc::from(std::string::String::from(text))))
+            },
         ),
     );
     publish(
         module,
         "write",
         fs_text_function("write", error.clone(), error_kind.clone(), |path, text| {
-            std::fs::write(path, text)
+            native_result(native::write(path_text(path), text.to_owned().into()))
         }),
     );
     publish(
         module,
         "append",
         fs_text_function("append", error.clone(), error_kind.clone(), |path, text| {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)?
-                .write_all(text.as_bytes())
+            native_result(native::append(path_text(path), text.to_owned().into()))
         }),
     );
     publish(
@@ -182,7 +182,7 @@ fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             Type::Bool,
             error.clone(),
             error_kind.clone(),
-            |path| path.try_exists().map(Value::Bool),
+            |path| native_result(native::try_exists(path_text(path))).map(Value::Bool),
         ),
     );
     publish(
@@ -192,21 +192,21 @@ fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             "create_dir_all",
             error.clone(),
             error_kind.clone(),
-            |path| std::fs::create_dir_all(path),
+            |path| native_result(native::create_dir_all(path_text(path))),
         ),
     );
     publish(
         module,
         "remove_file",
         fs_unit_function("remove_file", error.clone(), error_kind.clone(), |path| {
-            std::fs::remove_file(path)
+            native_result(native::remove_file(path_text(path)))
         }),
     );
     publish(
         module,
         "remove_dir",
         fs_unit_function("remove_dir", error.clone(), error_kind.clone(), |path| {
-            std::fs::remove_dir(path)
+            native_result(native::remove_dir(path_text(path)))
         }),
     );
     publish(
@@ -221,14 +221,27 @@ fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             error,
             error_kind,
             |path| {
-                let mut paths = std::fs::read_dir(path)?
-                    .map(|entry| entry.map(|entry| entry.path().to_string_lossy().into_owned()))
-                    .collect::<Result<Vec<_>, _>>()?;
-                paths.sort();
-                Ok(string_vec(paths))
+                native_result(native::read_dir(path_text(path))).map(|paths| {
+                    string_vec(paths.into_iter().map(std::string::String::from).collect())
+                })
             },
         ),
     );
+}
+
+fn path_text(path: &std::path::Path) -> rils_stdlib::stdlib::string::String {
+    path.to_string_lossy().into_owned().into()
+}
+
+fn native_result<T>(
+    result: rils_stdlib::stdlib::result::Result<T, rils_stdlib::stdlib::io::Error>,
+) -> std::io::Result<T> {
+    match result {
+        rils_stdlib::stdlib::result::Result::Ok(value) => Ok(value),
+        rils_stdlib::stdlib::result::Result::Err(error) => {
+            Err(std::io::Error::new(error.kind, error.message))
+        }
+    }
 }
 
 fn fs_function<F>(

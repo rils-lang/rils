@@ -11,6 +11,7 @@ use syn::{
 use crate::type_patterns;
 
 mod export_module;
+pub(crate) mod function_definition;
 mod primitive;
 mod string;
 mod structure;

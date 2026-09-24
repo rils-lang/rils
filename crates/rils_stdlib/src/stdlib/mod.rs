@@ -2,6 +2,7 @@ pub mod basic;
 pub mod cell;
 pub mod collections;
 pub mod float;
+pub mod fs;
 pub mod integer;
 pub mod io;
 pub mod option;

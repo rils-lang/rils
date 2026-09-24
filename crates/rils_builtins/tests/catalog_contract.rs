@@ -1,8 +1,8 @@
 use rils_builtins::{
-    BUILTIN_MODULES, BUILTIN_SOURCES, BUILTINS, BuiltinId, BuiltinKind, BuiltinMemberKind,
-    BuiltinSourceKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS, INTEGER_CONSTANTS, INTEGER_INTRINSICS,
-    IntrinsicKind, TypePattern, builtin, builtin_member, builtin_module_members, intrinsic,
-    native_member, runtime_member,
+    BUILTIN_MODULES, BUILTIN_SOURCES, BUILTINS, BuiltinBackend, BuiltinId, BuiltinKind,
+    BuiltinMemberKind, BuiltinSourceKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS, INTEGER_CONSTANTS,
+    INTEGER_INTRINSICS, IntrinsicKind, TypePattern, builtin, builtin_member,
+    builtin_module_members, intrinsic, native_member, runtime_member,
 };
 use rils_builtins_macros::decl_rils_source;
 
@@ -292,6 +292,26 @@ fn migrated_hash_constructors_keep_imports_and_iterator_ids() {
             declaration.member("iter").unwrap().builtin_id,
             Some(iterator)
         );
+    }
+}
+
+#[test]
+fn filesystem_functions_come_from_native_declarations() {
+    for name in [
+        "read_to_string",
+        "write",
+        "append",
+        "try_exists",
+        "create_dir_all",
+        "remove_file",
+        "remove_dir",
+        "read_dir",
+    ] {
+        let path = format!("std::fs::{name}");
+        let function = builtin(&path).expect("native filesystem declaration");
+        assert_eq!(function.kind, BuiltinKind::Function);
+        assert_eq!(function.backend, BuiltinBackend::Host("std::fs"));
+        assert!(builtin_module_members("std::fs").contains(&name));
     }
 }
 

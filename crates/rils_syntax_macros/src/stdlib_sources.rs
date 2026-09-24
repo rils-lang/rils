@@ -20,7 +20,11 @@ fn snake_case(name: &str) -> String {
         }
         result.extend(ch.to_lowercase());
     }
-    result
+    if let Some(rest) = result.strip_prefix("b_tree_") {
+        format!("btree_{rest}")
+    } else {
+        result
+    }
 }
 
 fn marked_path(attribute: &Attribute, module: &Path, name: &str) -> syn::Result<String> {
@@ -55,21 +59,13 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
         )
     })?);
     let folder = root.join(directory.value());
-    let mut paths = fs::read_dir(&folder)
-        .map_err(|error| {
-            Error::new(
-                directory.span(),
-                format!("cannot read source directory: {error}"),
-            )
-        })?
-        .map(|entry| entry.map(|entry| entry.path()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| {
-            Error::new(
-                directory.span(),
-                format!("cannot list source directory: {error}"),
-            )
-        })?;
+    let mut paths = Vec::new();
+    collect_paths(&folder, &mut paths).map_err(|error| {
+        Error::new(
+            directory.span(),
+            format!("cannot list source directory: {error}"),
+        )
+    })?;
     paths.sort();
 
     let mut exports = Vec::new();
@@ -120,17 +116,22 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                         .attrs
                         .iter()
                         .find(|attr| attr.path().is_ident("rils_trait"))
-                        .map(|attr| (&item.ident, true, attr)),
+                        .map(|attr| (&item.ident, 1u8, attr)),
                     Item::Enum(item) => item
                         .attrs
                         .iter()
                         .find(|attr| attr.path().is_ident("rils_enum"))
-                        .map(|attr| (&item.ident, false, attr)),
+                        .map(|attr| (&item.ident, 0u8, attr)),
                     Item::Struct(item) => item
                         .attrs
                         .iter()
                         .find(|attr| attr.path().is_ident("rils_struct"))
-                        .map(|attr| (&item.ident, false, attr)),
+                        .map(|attr| (&item.ident, 0u8, attr)),
+                    Item::Fn(item) => item
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path().is_ident("rils_fn"))
+                        .map(|attr| (&item.sig.ident, 2u8, attr)),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -146,27 +147,31 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                 vec![(
                     relative,
                     segments.last().cloned().unwrap_or_default(),
-                    false,
+                    0u8,
                 )]
             } else {
                 if marked.is_empty() {
                     return Err(Error::new_spanned(
                         module,
-                        "expected a #[rils_struct], #[rils_enum], or #[rils_trait] declaration",
+                        "expected a #[rils_struct], #[rils_enum], #[rils_trait], or #[rils_fn] declaration",
                     ));
                 }
                 marked
                     .into_iter()
-                    .map(|(name, is_trait, attr)| {
+                    .map(|(name, kind, attr)| {
                         Ok((
                             marked_path(attr, &declaration_path, &name.to_string())?,
-                            name.to_string().to_lowercase(),
-                            is_trait,
+                            if kind == 2 {
+                                format!("{}_{}", segments.join("_"), name)
+                            } else {
+                                name.to_string().to_lowercase()
+                            },
+                            kind,
                         ))
                     })
                     .collect::<syn::Result<Vec<_>>>()?
             };
-            for (relative, name, is_trait) in selected {
+            for (relative, name, kind) in selected {
                 if !seen.insert(relative.clone()) {
                     return Err(Error::new_spanned(
                         module,
@@ -175,8 +180,10 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                 }
                 let relative = LitStr::new(&relative, directory.span());
                 let callback = format_ident!("{name}_definition");
-                let source = if is_trait {
+                let source = if kind == 1 {
                     quote!(rils_stdlib::#callback!(decl_rils_trait_source))
+                } else if kind == 2 {
+                    quote!(rils_stdlib::#callback!(decl_rils_function_source))
                 } else {
                     quote!(rils_stdlib::#callback!(decl_rils_source))
                 };
@@ -189,6 +196,18 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
         ));
     }
     Ok(quote!({ #(#dependencies)* &[#(#exports),*] }))
+}
+
+fn collect_paths(folder: &std::path::Path, output: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    for entry in fs::read_dir(folder)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_paths(&path, output)?;
+        } else {
+            output.push(path);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

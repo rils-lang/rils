@@ -8,7 +8,7 @@ use syn::{Attribute, Error, ImplItem, Item, ItemImpl, ItemMod, Path, Type};
 
 use super::{trait_definition, trait_impls};
 
-const MARKERS: [&str; 3] = ["rils_struct", "rils_enum", "rils_trait"];
+const MARKERS: [&str; 4] = ["rils_struct", "rils_enum", "rils_trait", "rils_fn"];
 
 pub(super) fn has_export_markers(module: &ItemMod) -> bool {
     module.content.as_ref().is_some_and(|(_, items)| {
@@ -135,10 +135,11 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
             continue;
         };
         let marker = **marker;
-        let (name, is_trait) = match (marker, item) {
-            ("rils_struct", Item::Struct(value)) => (&value.ident, false),
-            ("rils_enum", Item::Enum(value)) => (&value.ident, false),
-            ("rils_trait", Item::Trait(value)) => (&value.ident, true),
+        let (name, is_trait, is_function) = match (marker, item) {
+            ("rils_struct", Item::Struct(value)) => (&value.ident, false, false),
+            ("rils_enum", Item::Enum(value)) => (&value.ident, false, false),
+            ("rils_trait", Item::Trait(value)) => (&value.ident, true, false),
+            ("rils_fn", Item::Fn(value)) => (&value.sig.ident, false, true),
             _ => {
                 return Err(Error::new_spanned(
                     item,
@@ -150,6 +151,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
             Item::Struct(value) => matches!(value.vis, syn::Visibility::Public(_)),
             Item::Enum(value) => matches!(value.vis, syn::Visibility::Public(_)),
             Item::Trait(value) => matches!(value.vis, syn::Visibility::Public(_)),
+            Item::Fn(value) => matches!(value.vis, syn::Visibility::Public(_)),
             _ => unreachable!(),
         };
         if !public {
@@ -162,7 +164,16 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
             return Err(Error::new_spanned(item, "duplicate exported Rils name"));
         }
         let id_path = marker_path(attrs, marker, &path, name)?;
-        let callback = format_ident!("{}_definition", name.to_string().to_lowercase());
+        let callback = if is_function {
+            let parts = id_path
+                .segments
+                .iter()
+                .map(|part| part.ident.to_string())
+                .collect::<Vec<_>>();
+            format_ident!("{}_definition", parts.join("_"))
+        } else {
+            format_ident!("{}_definition", name.to_string().to_lowercase())
+        };
         if is_trait {
             let Item::Trait(trait_item) = item else {
                 unreachable!()
@@ -173,6 +184,22 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                 #[macro_export]
                 macro_rules! #callback {
                     ($emit:ident) => { $emit! { #id_path; #trait_item } };
+                }
+            });
+        } else if is_function {
+            let Item::Fn(function) = item else {
+                unreachable!()
+            };
+            if function.block.stmts.is_empty() {
+                return Err(Error::new_spanned(
+                    function,
+                    "exported Rils function requires a Rust body",
+                ));
+            }
+            callbacks.push(quote! {
+                #[macro_export]
+                macro_rules! #callback {
+                    ($emit:ident) => { $emit! { #id_path; #function } };
                 }
             });
         } else {
@@ -338,6 +365,11 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                 function
                     .attrs
                     .retain(|attr| !attr.path().is_ident("rils_derive"));
+            }
+            Item::Fn(function) => {
+                function
+                    .attrs
+                    .retain(|attr| !attr.path().is_ident("rils_fn"));
             }
             _ => {}
         }
