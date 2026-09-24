@@ -84,6 +84,7 @@ impl Input {
             ));
         }
         let methods = self.methods()?;
+        self.associated_types()?;
         if (matches!(name.as_str(), "Clone" | "Default") && methods.len() != 1)
             || (matches!(name.as_str(), "Copy" | "Eq" | "Hash" | "BitFlags") && !methods.is_empty())
         {
@@ -103,8 +104,9 @@ impl Input {
                 _ => true,
             };
             if !valid_signature
-                || !method.sig.generics.params.is_empty()
-                || method.sig.generics.where_clause.is_some()
+                || (matches!(name.as_str(), "Clone" | "Default")
+                    && (!method.sig.generics.params.is_empty()
+                        || method.sig.generics.where_clause.is_some()))
                 || (matches!(name.as_str(), "Clone" | "Default")
                     && !matches!(&method.sig.output, ReturnType::Type(_, ty) if matches!(ty.as_ref(), Type::Path(path) if path.path.is_ident("Self"))))
             {
@@ -149,12 +151,32 @@ impl Input {
         self.item
             .items
             .iter()
-            .map(|item| match item {
-                TraitItem::Fn(method) if method.default.is_none() => Ok(method),
-                _ => Err(Error::new_spanned(
-                    item,
-                    "only required trait methods are supported until native defaults are registered",
-                )),
+            .filter_map(|item| match item {
+                TraitItem::Fn(method) => Some(Ok(method)),
+                TraitItem::Type(_) => None,
+                _ => Some(Err(Error::new_spanned(item, "unsupported trait item"))),
+            })
+            .collect()
+    }
+
+    fn associated_types(&self) -> syn::Result<Vec<&syn::TraitItemType>> {
+        self.item
+            .items
+            .iter()
+            .filter_map(|item| {
+                let TraitItem::Type(associated) = item else {
+                    return None;
+                };
+                Some(
+                    if associated.generics.params.is_empty() && associated.default.is_none() {
+                        Ok(associated)
+                    } else {
+                        Err(Error::new_spanned(
+                            associated,
+                            "associated type cannot have generics or a default",
+                        ))
+                    },
+                )
             })
             .collect()
     }
@@ -165,6 +187,7 @@ impl Input {
             source.push_str(&format!("/// {line}\n"));
         }
         let methods = self.methods().expect("validated trait");
+        let associated = self.associated_types().expect("validated trait");
         let rust = self.rust_binding().expect("validated binding");
         let bounds = self
             .item
@@ -178,7 +201,7 @@ impl Input {
                     .then(|| bound.path.segments.last().unwrap().ident.to_string())
             })
             .collect::<Vec<_>>();
-        if methods.is_empty() {
+        if methods.is_empty() && associated.is_empty() {
             if bounds.is_empty() {
                 source.push_str(&format!("pub trait {} {{}}\n", self.item.ident));
             } else {
@@ -199,9 +222,23 @@ impl Input {
                 bounds.join(" + ")
             ));
         }
+        for associated in associated {
+            for line in super::documentation(&associated.attrs).lines() {
+                source.push_str(&format!("    /// {line}\n"));
+            }
+            source.push_str(&format!("    type {};\n", associated.ident));
+        }
         for method in methods {
             for line in super::documentation(&method.attrs).lines() {
                 source.push_str(&format!("    /// {line}\n"));
+            }
+            if method.default.is_some()
+                || method
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("rils_provided"))
+            {
+                source.push_str("    #[provided]\n");
             }
             source.push_str(&format!(
                 "    {};\n",
@@ -233,6 +270,27 @@ impl Input {
                     .then(|| bound.path.segments.last().unwrap().ident.to_string())
             })
             .collect::<Vec<_>>();
+        let associated = self
+            .associated_types()?
+            .into_iter()
+            .map(|item| {
+                let name = item.ident.to_string();
+                let docs = super::documentation(&item.attrs);
+                quote!(crate::BuiltinMember {
+                    name: #name,
+                    kind: crate::BuiltinMemberKind::AssociatedType,
+                    signature: None,
+                    value_type: Some(TypePattern::Unknown),
+                    receiver: None,
+                    builtin_id: None,
+                    runtime_import: None,
+                    native_symbol: None,
+                    required: false,
+                    type_parameters: &[],
+                    documentation: #docs,
+                })
+            })
+            .collect::<Vec<_>>();
         let methods = self.methods()?.into_iter().map(|method| {
             let name = method.sig.ident.to_string();
             let docs = super::documentation(&method.attrs);
@@ -248,8 +306,20 @@ impl Input {
                 ReturnType::Type(_, ty) => type_patterns::tokens(ty)?,
             };
             let kind = if has_receiver { quote!(crate::BuiltinMemberKind::Method) } else { quote!(crate::BuiltinMemberKind::AssociatedFunction) };
-            let receiver = if has_receiver { quote!(Some(crate::ReceiverMode::Shared)) } else { quote!(None) };
-            let builtin_id = if name == "clone" { quote!(Some(builtin_id!("core::clone"))) } else { quote!(None) };
+            let receiver = match method.sig.receiver() {
+                Some(receiver) if receiver.reference.is_none() => quote!(Some(crate::ReceiverMode::Owned)),
+                Some(receiver) if receiver.mutability.is_some() => quote!(Some(crate::ReceiverMode::Mutable)),
+                Some(_) => quote!(Some(crate::ReceiverMode::Shared)),
+                None => quote!(None),
+            };
+            let legacy = method.attrs.iter().find(|attr| attr.path().is_ident("rils_legacy_id"));
+            let builtin_id = if let Some(attribute) = legacy {
+                let path: Path = attribute.parse_args()?;
+                let path = path.to_token_stream().to_string().replace(' ', "");
+                quote!(Some(builtin_id!(#path)))
+            } else if name == "clone" { quote!(Some(builtin_id!("core::clone"))) } else { quote!(None) };
+            let required = method.default.is_none() && !method.attrs.iter().any(|attr| attr.path().is_ident("rils_provided"));
+            let type_parameters = method.sig.generics.type_params().map(|parameter| parameter.ident.to_string()).collect::<Vec<_>>();
             Ok(quote! {
                 crate::BuiltinMember {
                     name: #name,
@@ -260,13 +330,19 @@ impl Input {
                     builtin_id: #builtin_id,
                     runtime_import: None,
                     native_symbol: None,
-                    required: true,
-                    type_parameters: &[],
+                    required: #required,
+                    type_parameters: &[#(#type_parameters),*],
                     documentation: #docs,
                 }
             })
         }).collect::<syn::Result<Vec<_>>>()?;
-        let backend = if name == "Clone" {
+        let backend = if name == "Clone"
+            || self.methods()?.iter().any(|method| {
+                method
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("rils_legacy_id"))
+            }) {
             quote!(crate::BuiltinBackend::Runtime)
         } else {
             quote!(crate::BuiltinBackend::Metadata)
@@ -285,7 +361,7 @@ impl Input {
                 kind: crate::BuiltinKind::Trait,
                 supertraits: &[#(#supertraits),*],
                 type_parameters: &[],
-                members: &[#(#methods),*],
+                members: &[#(#associated,)* #(#methods),*],
                 signature: None,
                 native_symbol: None,
                 backend: #backend,

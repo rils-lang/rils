@@ -245,6 +245,10 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(crate::native_definitions::hash_set::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::vec::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::iter::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::iterator::DECLARATION));
+    declaration_items.push(quote!(
+        crate::native_definitions::into_iterator::DECLARATION
+    ));
     declaration_items.push(quote!(crate::native_definitions::format_error::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::boxed::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::io_error::DECLARATION));

@@ -13,6 +13,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 pub(crate) fn tokens(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
     match ty {
         Type::Path(path) if path.qself.is_none() => path_tokens(&path.path),
+        Type::Path(path) if path.qself.is_some() => associated_tokens(path),
         Type::Reference(reference) => {
             let inner = tokens(&reference.elem)?;
             let mutable = reference.mutability.is_some();
@@ -36,6 +37,33 @@ pub(crate) fn tokens(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
             "unsupported type in built-in type pattern",
         )),
     }
+}
+
+fn associated_tokens(path: &syn::TypePath) -> syn::Result<proc_macro2::TokenStream> {
+    let qself = path.qself.as_ref().expect("associated path");
+    let base = tokens(&qself.ty)?;
+    let segments = path.path.segments.iter().collect::<Vec<_>>();
+    let member = segments
+        .last()
+        .ok_or_else(|| Error::new_spanned(path, "missing associated member"))?;
+    let name = LitStr::new(&member.ident.to_string(), member.ident.span());
+    let arguments = type_arguments(&member.arguments)?;
+    let trait_name = if qself.position == 0 {
+        quote!(None)
+    } else {
+        let name = segments[..qself.position]
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::");
+        quote!(Some(#name))
+    };
+    Ok(quote!(TypePattern::Associated {
+        base: &#base,
+        trait_name: #trait_name,
+        name: #name,
+        arguments: &[#(#arguments),*],
+    }))
 }
 
 fn function_tokens(function: &syn::TypeBareFn) -> syn::Result<proc_macro2::TokenStream> {

@@ -128,6 +128,18 @@ pub mod iter {
     rils_stdlib::iter_definition!(decl_rils_metadata);
 }
 
+pub mod iterator {
+    use rils_builtins_macros::decl_rils_trait_metadata;
+
+    rils_stdlib::iterator_definition!(decl_rils_trait_metadata);
+}
+
+pub mod into_iterator {
+    use rils_builtins_macros::decl_rils_trait_metadata;
+
+    rils_stdlib::intoiterator_definition!(decl_rils_trait_metadata);
+}
+
 pub mod format_error {
     use rils_builtins_macros::decl_rils_metadata;
 
@@ -283,6 +295,8 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     hash_set::DECLARATION,
     vec::DECLARATION,
     iter::DECLARATION,
+    iterator::DECLARATION,
+    into_iterator::DECLARATION,
     format_error::DECLARATION,
     boxed::DECLARATION,
     io_error::DECLARATION,

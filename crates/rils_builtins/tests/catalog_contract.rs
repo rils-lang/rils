@@ -539,6 +539,21 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
     let map = iterator.member("map").expect("Iterator::map");
     assert_eq!(map.type_parameters, &["U"]);
     assert_eq!(map.builtin_id, Some(BuiltinId::IteratorMap));
+    assert!(!map.required);
+    assert_eq!(
+        iterator.member("next").unwrap().receiver,
+        Some(rils_builtins::ReceiverMode::Mutable)
+    );
+
+    let into_iterator = builtin("IntoIterator").expect("conversion trait");
+    assert_eq!(
+        into_iterator.member("IntoIter").unwrap().kind,
+        BuiltinMemberKind::AssociatedType
+    );
+    assert_eq!(
+        into_iterator.member("into_iter").unwrap().builtin_id,
+        Some(BuiltinId::SequenceIntoIter)
+    );
 
     let borrowed = builtin("Iter").expect("borrowed sequence iterator declaration");
     assert_eq!(borrowed.type_parameters, &["T"]);
