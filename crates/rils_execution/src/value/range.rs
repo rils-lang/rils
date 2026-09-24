@@ -39,57 +39,31 @@ impl RangeValue {
 
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<Option<Value>, String> {
-        fn advance<T: Copy + Ord>(
+        fn advance<T: rils_stdlib::stdlib::range::RangeStep>(
             current: &mut T,
             end: &T,
-            add_one: impl FnOnce(T) -> Option<T>,
-        ) -> Result<Option<T>, String> {
-            if *current >= *end {
-                Ok(None)
-            } else {
-                let value = *current;
-                *current =
-                    add_one(value).ok_or_else(|| "range iteration overflowed".to_string())?;
-                Ok(Some(value))
+        ) -> Option<T> {
+            let mut range = rils_stdlib::stdlib::range::Range::from_bounds(*current, *end);
+            let item = range.next();
+            *current = range.current();
+            match item {
+                rils_stdlib::stdlib::prelude::Option::Some(value) => Some(value),
+                rils_stdlib::stdlib::prelude::Option::None => None,
             }
         }
         match (self.current.as_mut(), self.end.as_ref()) {
-            (Value::I8(a), Value::I8(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I8))
-            }
-            (Value::I16(a), Value::I16(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I16))
-            }
-            (Value::I32(a), Value::I32(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I32))
-            }
-            (Value::I64(a), Value::I64(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I64))
-            }
-            (Value::I128(a), Value::I128(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::I128))
-            }
-            (Value::Isize(a), Value::Isize(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::Isize))
-            }
-            (Value::U8(a), Value::U8(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U8))
-            }
-            (Value::U16(a), Value::U16(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U16))
-            }
-            (Value::U32(a), Value::U32(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U32))
-            }
-            (Value::U64(a), Value::U64(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U64))
-            }
-            (Value::U128(a), Value::U128(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::U128))
-            }
-            (Value::Usize(a), Value::Usize(b)) => {
-                advance(a, b, |v| v.checked_add(1)).map(|v| v.map(Value::Usize))
-            }
+            (Value::I8(a), Value::I8(b)) => Ok(advance(a, b).map(Value::I8)),
+            (Value::I16(a), Value::I16(b)) => Ok(advance(a, b).map(Value::I16)),
+            (Value::I32(a), Value::I32(b)) => Ok(advance(a, b).map(Value::I32)),
+            (Value::I64(a), Value::I64(b)) => Ok(advance(a, b).map(Value::I64)),
+            (Value::I128(a), Value::I128(b)) => Ok(advance(a, b).map(Value::I128)),
+            (Value::Isize(a), Value::Isize(b)) => Ok(advance(a, b).map(Value::Isize)),
+            (Value::U8(a), Value::U8(b)) => Ok(advance(a, b).map(Value::U8)),
+            (Value::U16(a), Value::U16(b)) => Ok(advance(a, b).map(Value::U16)),
+            (Value::U32(a), Value::U32(b)) => Ok(advance(a, b).map(Value::U32)),
+            (Value::U64(a), Value::U64(b)) => Ok(advance(a, b).map(Value::U64)),
+            (Value::U128(a), Value::U128(b)) => Ok(advance(a, b).map(Value::U128)),
+            (Value::Usize(a), Value::Usize(b)) => Ok(advance(a, b).map(Value::Usize)),
             _ => Err("range bounds have incompatible types".into()),
         }
     }

@@ -42,7 +42,6 @@ impl BuiltinId {
                     | Self::IteratorFind
                     | Self::IteratorPosition
                     | Self::IteratorEnumerate
-                    | Self::RangeNext
                     | Self::RangeIntoIter
                     | Self::ResultMap
                     | Self::ResultMapErr

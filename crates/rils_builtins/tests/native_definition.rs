@@ -38,7 +38,27 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         is_some.documentation,
         "Returns true when a value is present."
     );
-    assert_eq!(native_definitions::DECLARATIONS.len(), 8);
+    assert_eq!(native_definitions::DECLARATIONS.len(), 9);
+}
+
+#[test]
+fn rust_range_definition_matches_the_public_catalog() {
+    let generated = &native_definitions::range::DECLARATION;
+    let published = builtin("Range").expect("Range is in the public catalog");
+    assert_eq!(generated.path, published.path);
+    assert_eq!(generated.kind, BuiltinKind::Struct);
+    assert_eq!(generated.type_parameters, &["T"]);
+    assert_eq!(generated.documentation, "A half-open integer range.");
+    for name in ["next", "into_iter"] {
+        let method = generated.member(name).expect("generated method");
+        let public = published.member(name).expect("published method");
+        assert_eq!(method.builtin_id, public.builtin_id);
+        assert_eq!(method.receiver, public.receiver);
+        let generated_signature = method.signature.expect("generated signature");
+        let public_signature = public.signature.expect("published signature");
+        assert_eq!(generated_signature.parameters, public_signature.parameters);
+        assert_eq!(generated_signature.result, public_signature.result);
+    }
 }
 
 #[test]

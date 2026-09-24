@@ -12,6 +12,7 @@ use crate::type_patterns;
 
 mod primitive;
 mod string;
+mod structure;
 pub(crate) mod trait_definition;
 mod trait_impls;
 
@@ -179,6 +180,9 @@ pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> To
     if trait_definition::contains_trait(&original) {
         return trait_definition::expand_module(path, original);
     }
+    if structure::contains_struct(&original) {
+        return structure::expand_definition(path, original);
+    }
     let definition = match Definition::parse(path.clone(), &original) {
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
@@ -282,6 +286,9 @@ pub(crate) fn expand_metadata(input: TokenStream) -> TokenStream {
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_metadata(source.path, source.item);
     }
+    if structure::contains_struct(&source.item) {
+        return structure::expand_metadata(source.path, source.item);
+    }
     let definition = match Definition::parse(source.path, &source.item) {
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
@@ -300,6 +307,9 @@ pub(crate) fn expand_source(input: TokenStream) -> TokenStream {
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_source(source.path, source.item);
     }
+    if structure::contains_struct(&source.item) {
+        return structure::expand_source(source.path, source.item);
+    }
     match Definition::parse(source.path, &source.item) {
         Ok(definition) => {
             let source = rils_source(&definition);
@@ -316,6 +326,9 @@ pub(crate) fn expand_trait_impls(input: TokenStream) -> TokenStream {
     }
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_trait_impls(source.path, source.item);
+    }
+    if structure::contains_struct(&source.item) {
+        return structure::expand_trait_impls(source.path, source.item);
     }
     let definition = match Definition::parse(source.path, &source.item) {
         Ok(definition) => definition,
@@ -490,6 +503,9 @@ pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
     }
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_native(source.path, source.item);
+    }
+    if structure::contains_struct(&source.item) {
+        return structure::expand_native(source.path, source.item);
     }
     let definition = match Definition::parse(source.path, &source.item) {
         Ok(value) => value,
