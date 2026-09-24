@@ -520,6 +520,26 @@ impl Builder {
                 );
                 Ok(destination)
             }
+            HirExpression::CallNative {
+                symbol,
+                arguments,
+                span,
+            } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.expression(argument))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let destination = self.register();
+                self.emit(
+                    MirInstruction::CallNative {
+                        destination,
+                        symbol: symbol.clone(),
+                        arguments,
+                    },
+                    *span,
+                );
+                Ok(destination)
+            }
             HirExpression::CallIntrinsic {
                 intrinsic,
                 target,

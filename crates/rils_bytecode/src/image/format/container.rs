@@ -137,6 +137,7 @@ pub(super) fn decode_container(bytes: &[u8]) -> Result<HashMap<u16, &[u8]>> {
                 | SECTION_FUNCTIONS
                 | SECTION_SOURCES
                 | SECTION_TRAIT_IMPLEMENTATIONS
+                | SECTION_NATIVE_IMPORTS
         );
         if !known && flags & REQUIRED_SECTION != 0 {
             return Err(BytecodeFormatError::new(format!(
@@ -179,6 +180,7 @@ pub(super) fn decode_container(bytes: &[u8]) -> Result<HashMap<u16, &[u8]>> {
         SECTION_FUNCTIONS,
         SECTION_SOURCES,
         SECTION_TRAIT_IMPLEMENTATIONS,
+        SECTION_NATIVE_IMPORTS,
     ] {
         if !sections.contains_key(&id) {
             return Err(BytecodeFormatError::new(format!(

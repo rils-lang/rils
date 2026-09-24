@@ -149,6 +149,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
                 receiver: Some(crate::ReceiverMode::Shared),
                 builtin_id: Some(builtin_id!(#id_path)),
                 runtime_import: None,
+                native_symbol: None,
                 required: true,
                 type_parameters: &[],
                 documentation: #docs,

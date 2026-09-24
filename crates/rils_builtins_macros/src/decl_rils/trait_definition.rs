@@ -259,6 +259,7 @@ impl Input {
                     receiver: #receiver,
                     builtin_id: #builtin_id,
                     runtime_import: None,
+                    native_symbol: None,
                     required: true,
                     type_parameters: &[],
                     documentation: #docs,

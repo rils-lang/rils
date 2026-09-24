@@ -33,12 +33,12 @@ use crate::{
 
 use super::{
     BYTECODE_HOST_ABI_VERSION, BytecodeFunction, BytecodeImport, BytecodeIteratorMethods,
-    BytecodeModule, BytecodePlace, BytecodeProjection, BytecodeTraitImplementation, Constant,
-    Instruction, RuntimeType, SpannedInstruction,
+    BytecodeModule, BytecodeNativeImport, BytecodePlace, BytecodeProjection,
+    BytecodeTraitImplementation, Constant, Instruction, RuntimeType, SpannedInstruction,
 };
 
 const MAGIC: &[u8; 8] = b"RILBC\0\0\0";
-pub const BYTECODE_FORMAT_VERSION: u16 = 7;
+pub const BYTECODE_FORMAT_VERSION: u16 = 8;
 pub const BYTECODE_LANGUAGE_VERSION: (u16, u16, u16) = (0, 1, 0);
 
 const HEADER_LEN: usize = 32;
@@ -50,6 +50,7 @@ const SECTION_ITERATORS: u16 = 4;
 const SECTION_FUNCTIONS: u16 = 5;
 const SECTION_SOURCES: u16 = 6;
 const SECTION_TRAIT_IMPLEMENTATIONS: u16 = 7;
+const SECTION_NATIVE_IMPORTS: u16 = 8;
 const REQUIRED_SECTION: u16 = 1;
 const MAX_FILE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_STRING_BYTES: usize = 1024 * 1024;
@@ -81,6 +82,11 @@ impl BytecodeModule {
 
         ensure_limit(self.functions.len(), MAX_FUNCTIONS, "function table")?;
         ensure_limit(self.imports.len(), MAX_IMPORTS, "import table")?;
+        ensure_limit(
+            self.native_imports.len(),
+            MAX_IMPORTS,
+            "native import table",
+        )?;
         ensure_limit(self.types.len(), MAX_TYPES, "type table")?;
         ensure_limit(self.sources.len(), MAX_COLLECTION_ITEMS, "source table")?;
         ensure_limit(
@@ -105,6 +111,8 @@ impl BytecodeModule {
         module.index(self.entry, "entry function")?;
         let mut imports = Writer::default();
         imports.collection(&self.imports, write_import)?;
+        let mut native_imports = Writer::default();
+        native_imports.collection(&self.native_imports, write_native_import)?;
         let mut types = Writer::default();
         types.collection(&self.types, write_runtime_type)?;
         let mut iterators = Writer::default();
@@ -127,6 +135,7 @@ impl BytecodeModule {
         encode_container([
             (SECTION_MODULE, module.finish()),
             (SECTION_IMPORTS, imports.finish()),
+            (SECTION_NATIVE_IMPORTS, native_imports.finish()),
             (SECTION_TYPES, types.finish()),
             (SECTION_ITERATORS, iterators.finish()),
             (SECTION_FUNCTIONS, functions.finish()),
@@ -148,6 +157,14 @@ impl BytecodeModule {
         let imports =
             imports_reader.collection_limited(read_import, MAX_IMPORTS, "import table")?;
         imports_reader.finish()?;
+        let mut native_imports_reader =
+            section_reader(&sections, SECTION_NATIVE_IMPORTS, "native imports")?;
+        let native_imports = native_imports_reader.collection_limited(
+            read_native_import,
+            MAX_IMPORTS,
+            "native import table",
+        )?;
+        native_imports_reader.finish()?;
         let mut types_reader = section_reader(&sections, SECTION_TYPES, "types")?;
         let types = types_reader.collection_limited(read_runtime_type, MAX_TYPES, "type table")?;
         types_reader.finish()?;
@@ -208,6 +225,7 @@ impl BytecodeModule {
             functions,
             types,
             imports,
+            native_imports,
             iterators,
             trait_implementations,
             entry,
@@ -285,6 +303,18 @@ fn read_import(reader: &mut Reader<'_>) -> Result<BytecodeImport> {
         signature: read_signature(reader)?,
         abi_version: reader.u32()?,
         capability: reader.string()?,
+    })
+}
+
+fn write_native_import(writer: &mut Writer, import: &BytecodeNativeImport) -> Result<()> {
+    writer.string(&import.symbol)?;
+    write_signature(writer, &import.signature)
+}
+
+fn read_native_import(reader: &mut Reader<'_>) -> Result<BytecodeNativeImport> {
+    Ok(BytecodeNativeImport {
+        symbol: reader.string()?,
+        signature: read_signature(reader)?,
     })
 }
 

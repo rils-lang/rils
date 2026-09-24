@@ -329,6 +329,16 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
             writer.u32(builtin.as_raw());
             writer.indices(arguments)?;
         }
+        Instruction::CallNative {
+            destination,
+            import,
+            arguments,
+        } => {
+            writer.u8(46);
+            writer.index(*destination, "destination")?;
+            writer.index(*import, "native import")?;
+            writer.indices(arguments)?;
+        }
         Instruction::CallIntrinsic {
             destination,
             intrinsic,
@@ -746,6 +756,11 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
                 arguments: reader.indices()?,
             }
         }
+        46 => Instruction::CallNative {
+            destination: reader.index()?,
+            import: reader.index()?,
+            arguments: reader.indices()?,
+        },
         value => {
             return Err(BytecodeFormatError::new(format!(
                 "invalid instruction opcode {value}"

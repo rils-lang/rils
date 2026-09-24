@@ -71,6 +71,26 @@ fn runtime_import_bindings_come_from_stdlib_members() {
     }
 }
 
+#[test]
+fn native_symbols_are_unique_and_resolve_to_their_declarations() {
+    let mut symbols = std::collections::HashSet::new();
+    for declaration in BUILTINS {
+        for member in declaration.members {
+            if let Some(symbol) = member.native_symbol {
+                assert!(symbols.insert(symbol), "duplicate native symbol `{symbol}`");
+                assert!(symbol.ends_with(&format!("::{}", member.name)));
+                assert!(member.signature.is_some());
+                assert!(member.runtime_import.is_none());
+                assert_eq!(
+                    rils_builtins::native_member(symbol).unwrap().name,
+                    member.name
+                );
+            }
+        }
+    }
+    assert!(!symbols.is_empty());
+}
+
 fn collect_rils_files(directory: &std::path::Path, files: &mut Vec<String>) {
     for entry in std::fs::read_dir(directory).unwrap() {
         let path = entry.unwrap().path();

@@ -118,23 +118,27 @@ fn hir_lowering_distinguishes_calls_with_the_same_span() {
     let hir =
         crate::hir::lower_with_host(&program, &HostContract::new(), &analysis, Vec::new(), None)
             .expect("lower calls by expression identity");
-    let builtins = hir.functions[0]
+    let targets = hir.functions[0]
         .statements
         .iter()
         .filter_map(|statement| match statement {
             crate::hir::HirStatement::Expression {
+                expression: crate::hir::HirExpression::CallNative { symbol, .. },
+                ..
+            } => Some(symbol.as_str()),
+            crate::hir::HirStatement::Expression {
                 expression: crate::hir::HirExpression::CallRuntime { builtin, .. },
                 ..
-            } => Some(*builtin),
+            } => builtin.canonical_path(),
             _ => None,
         })
         .collect::<Vec<_>>();
 
     assert_eq!(
-        builtins,
+        targets,
         [
-            rils_builtins::BuiltinId::OptionIsSome,
-            rils_builtins::BuiltinId::OptionUnwrap,
+            "core::option::option::is_some",
+            "core::option::option::unwrap"
         ]
     );
 }

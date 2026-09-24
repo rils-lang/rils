@@ -18,15 +18,24 @@ pub(super) fn encode(program: MirProgram) -> Result<BytecodeModule, CompileError
     let types = program.types.into_iter().map(runtime_type).collect();
     let mut imports = Vec::new();
     let mut import_ids = HashMap::new();
+    let mut native_imports = Vec::new();
+    let mut native_import_ids = HashMap::new();
     let mut functions = Vec::with_capacity(program.functions.len());
     for function in program.functions {
-        functions.push(encode_function(function, &mut imports, &mut import_ids)?);
+        functions.push(encode_function(
+            function,
+            &mut imports,
+            &mut import_ids,
+            &mut native_imports,
+            &mut native_import_ids,
+        )?);
     }
     let module = BytecodeModule {
         sources: program.sources,
         functions,
         types,
         imports,
+        native_imports,
         iterators: program
             .iterators
             .into_iter()
@@ -93,6 +102,8 @@ fn encode_function(
     program: MirFunction,
     imports: &mut Vec<BytecodeImport>,
     import_ids: &mut HashMap<String, usize>,
+    native_imports: &mut Vec<BytecodeNativeImport>,
+    native_import_ids: &mut HashMap<String, usize>,
 ) -> Result<BytecodeFunction, CompileError> {
     let mut offsets = Vec::with_capacity(program.blocks.len());
     let mut offset = 0;
@@ -316,6 +327,45 @@ fn encode_function(
                         builtin,
                         arguments,
                     },
+                    MirInstruction::CallNative {
+                        destination,
+                        symbol,
+                        arguments,
+                    } => {
+                        let import = if let Some(index) = native_import_ids.get(&symbol).copied() {
+                            index
+                        } else {
+                            let member =
+                                rils_builtins::native_member(&symbol).ok_or_else(|| {
+                                    CompileError::unsupported(
+                                        format!("native method `{symbol}` is unavailable"),
+                                        instruction.span,
+                                    )
+                                })?;
+                            let signature =
+                                rils_frontend::standard_library::erased_builtin_member_signature(
+                                    member,
+                                )
+                                .ok_or_else(|| {
+                                    CompileError::unsupported(
+                                        format!("native method `{symbol}` has no signature"),
+                                        instruction.span,
+                                    )
+                                })?;
+                            let index = native_imports.len();
+                            native_imports.push(BytecodeNativeImport {
+                                symbol: symbol.clone(),
+                                signature,
+                            });
+                            native_import_ids.insert(symbol, index);
+                            index
+                        };
+                        Instruction::CallNative {
+                            destination,
+                            import,
+                            arguments,
+                        }
+                    }
                     MirInstruction::CallIntrinsic {
                         destination,
                         intrinsic,

@@ -99,6 +99,8 @@ pub struct BuiltinMember {
     pub receiver: Option<ReceiverMode>,
     pub builtin_id: Option<BuiltinId>,
     pub runtime_import: Option<&'static str>,
+    /// Generated native implementation path, when this method has a direct bridge.
+    pub native_symbol: Option<&'static str>,
     /// Whether a trait member must be supplied by user implementations.
     pub required: bool,
     pub type_parameters: &'static [&'static str],
@@ -274,4 +276,11 @@ pub fn runtime_member(id: BuiltinId) -> Option<(&'static str, &'static BuiltinMe
             .find(|member| member.builtin_id == Some(id))
             .map(|member| (owner.path, member))
     })
+}
+
+pub fn native_member(symbol: &str) -> Option<&'static BuiltinMember> {
+    BUILTINS
+        .iter()
+        .flat_map(|owner| owner.members)
+        .find(|member| member.native_symbol == Some(symbol))
 }

@@ -199,6 +199,13 @@ fn semantic_signature_at_call(
                 }
             }
         }
+        rils_frontend::ResolvedCall::Native { symbol, .. } => {
+            let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
+            let member = rils_builtins::native_member(symbol)?;
+            let member_type =
+                rils_frontend::standard_library::builtin_member_type(receiver_type, member.name)?;
+            function_signature(member.name.into(), member_type)
+        }
         rils_frontend::ResolvedCall::Host { .. } => None,
         rils_frontend::ResolvedCall::Import {
             name, signature, ..

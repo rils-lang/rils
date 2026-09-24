@@ -379,6 +379,40 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
+                    if let Some(rils_frontend::semantic::ResolvedCall::Native {
+                        symbol,
+                        receiver,
+                    }) = self.typeck_results.resolved_call(expression_id)
+                    {
+                        let receiver = receiver.ok_or_else(|| {
+                            CompileError::unsupported("native method requires a receiver", *span)
+                        })?;
+                        let receiver = self.method_receiver(
+                            object,
+                            match receiver {
+                                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
+                                rils_builtins::ReceiverMode::Shared => {
+                                    ReceiverMode::Reference { mutable: false }
+                                }
+                                rils_builtins::ReceiverMode::Mutable => {
+                                    ReceiverMode::Reference { mutable: true }
+                                }
+                            },
+                        )?;
+                        let mut lowered = Vec::with_capacity(arguments.len() + 1);
+                        lowered.push(receiver);
+                        lowered.extend(
+                            arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        );
+                        return Ok(HirExpression::CallNative {
+                            symbol: (*symbol).to_owned(),
+                            arguments: lowered,
+                            span: *span,
+                        });
+                    }
                     let semantic_builtin = self
                         .typeck_results
                         .resolved_call(expression_id)

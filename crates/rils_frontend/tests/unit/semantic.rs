@@ -227,8 +227,8 @@ fn calls_with_the_same_span_resolve_by_expression_identity() {
     for id in ids {
         assert!(matches!(
             analysis.typeck_results.resolved_call(*id),
-            Some(ResolvedCall::Builtin {
-                id: rils_builtins::BuiltinId::OptionIsSome,
+            Some(ResolvedCall::Native {
+                symbol: "core::option::option::is_some",
                 ..
             })
         ));
@@ -274,9 +274,8 @@ fn builtin_method_calls_resolve_to_semantic_ids() {
         .collect::<Vec<_>>();
     assert!(calls.iter().any(|call| matches!(
         call,
-        ResolvedCall::Builtin {
-            id: rils_builtins::BuiltinId::OptionIsSome,
-            kind: BuiltinCallKind::Runtime,
+        ResolvedCall::Native {
+            symbol: "core::option::option::is_some",
             ..
         }
     )));
@@ -295,8 +294,8 @@ fn builtin_method_calls_resolve_to_semantic_ids() {
             .resolved_call_containing(SourceId::UNKNOWN, open),
         Some((
             _,
-            ResolvedCall::Builtin {
-                id: rils_builtins::BuiltinId::OptionIsSome,
+            ResolvedCall::Native {
+                symbol: "core::option::option::is_some",
                 ..
             }
         ))

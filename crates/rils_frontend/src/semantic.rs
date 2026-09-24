@@ -184,6 +184,10 @@ pub enum BuiltinCallKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedCall {
     Definition(DefId),
+    Native {
+        symbol: &'static str,
+        receiver: Option<rils_builtins::ReceiverMode>,
+    },
     Builtin {
         id: rils_builtins::BuiltinId,
         kind: BuiltinCallKind,
@@ -459,6 +463,12 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
                     }
                 });
             if let Some(member) = member {
+                if let Some(symbol) = member.native_symbol {
+                    return Some(ResolvedCall::Native {
+                        symbol,
+                        receiver: member.receiver,
+                    });
+                }
                 return Some(ResolvedCall::Builtin {
                     id: member.builtin_id?,
                     kind: BuiltinCallKind::Runtime,

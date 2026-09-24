@@ -46,6 +46,7 @@ struct BuiltinMember {
     receiver: Option<ReceiverMode>,
     builtin_id: Option<BuiltinId>,
     runtime_import: Option<&'static str>,
+    native_symbol: Option<&'static str>,
     required: bool,
     type_parameters: &'static [&'static str],
     documentation: &'static str,
@@ -89,6 +90,12 @@ fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
             .members
             .iter()
             .all(|member| member.runtime_import.is_none())
+    );
+    assert!(
+        FIXTURE_BUILTIN
+            .members
+            .iter()
+            .all(|member| member.native_symbol.is_none())
     );
 
     assert_eq!(empty.kind, BuiltinMemberKind::Variant);

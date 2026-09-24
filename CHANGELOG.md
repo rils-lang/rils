@@ -27,6 +27,11 @@
 
 ### Breaking Changes
 
+- `.rilbc` 格式提升到 v8，新增标准库原生符号导入表和 `CallNative` 指令；v8 loader 拒绝 v7 字节码。
+  从源码重新生成 `.rilbc`、Unity `.bytes` 及嵌入 `.rilslib` 的字节码模块。宿主 ABI 版本不变。
+- Rust 代码若自行构造 `BuiltinMember`，需为新字段 `native_symbol` 填写 `None` 或对应的规范原生路径；
+  穷举匹配 `ResolvedCall` 时需处理新增的 `Native` 分支。
+
 - Rust 标准库定义的符号路径现在按模块组织，例如 `core::option::option::is_some`、
   `core::iter::range::next` 和 `core::collections::binary_heap::push`。使用旧路径调用
   `builtin_id!` 或匹配 `BuiltinId::canonical_path()` 的宿主代码须改用新路径；

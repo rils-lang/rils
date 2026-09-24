@@ -172,6 +172,11 @@ pub enum MirInstruction {
         builtin: BuiltinId,
         arguments: Vec<Register>,
     },
+    CallNative {
+        destination: Register,
+        symbol: String,
+        arguments: Vec<Register>,
+    },
     CallIntrinsic {
         destination: Register,
         intrinsic: BuiltinId,

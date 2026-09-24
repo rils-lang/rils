@@ -59,9 +59,16 @@ pub struct BytecodeModule {
     functions: Vec<BytecodeFunction>,
     types: Vec<RuntimeType>,
     imports: Vec<BytecodeImport>,
+    native_imports: Vec<BytecodeNativeImport>,
     iterators: HashMap<String, BytecodeIteratorMethods>,
     trait_implementations: Vec<BytecodeTraitImplementation>,
     entry: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BytecodeNativeImport {
+    symbol: String,
+    signature: FunctionSignature,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -727,6 +734,11 @@ enum Instruction {
     CallRuntime {
         destination: usize,
         builtin: rils_builtins::BuiltinId,
+        arguments: Vec<usize>,
+    },
+    CallNative {
+        destination: usize,
+        import: usize,
         arguments: Vec<usize>,
     },
     CallIntrinsic {

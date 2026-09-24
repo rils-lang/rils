@@ -94,7 +94,7 @@ receiver 和引用 receiver 只允许立即调用，不能进入可复制的绑�
 | 模块 | 已支持 | 内联模块、use/as、多段路径及 `compile_file` 外部模块链接 |
 | 迭代器 | 部分支持 | Range、数组、Vec 和自定义 Iterator/IntoIterator；借用迭代器待实现 |
 | 标准库/宿主 | 部分支持 | core/Vec、内置宏、显式授权的 std::io/std::fs，以及编译期自定义 HostContract 已链接；解释器 Engine 与同一契约的整合待完成 |
-| 磁盘预编译 | 实验可用 | `.rilbc` v7、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
+| 磁盘预编译 | 实验可用 | `.rilbc` v8、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
 
 Rust 宿主入口如下：
 
@@ -141,14 +141,14 @@ game.validate_host(&game_host)?;
 
 ## 磁盘格式
 
-当前已实现实验性 `.rilbc` v7。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
+当前已实现实验性 `.rilbc` v8。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
 内存布局：
 
 ```text
 magic | format version | language version | host ABI | pointer width | flags | section directory | CRC32
 ```
 
-v7 包含 module、imports、types、iterators、functions、sources 和 trait implementations 七个必需
+v8 包含 module、imports、native imports、types、iterators、functions、sources 和 trait implementations 八个必需
 section。trait implementations 表以受 verifier 校验的类型名、trait 名、声明 SourceId、方法名和函数索引保留实现身份，
 宿主无需扫描源码或猜测函数名即可发现入口并精确分发 trait 方法。`Eq`、`Hash` 的 marker 实现沿用此表，
 方法列表为空；VM 加载后据此恢复类型的哈希键资格，不增加磁盘格式字段。sources 表只
@@ -164,10 +164,10 @@ section 拒绝加载，未知可选 section 在完成边界验证后跳过。
 发生静默截断。`format version`、`language version` 和 `host ABI` 分别检查。当前格式仍处于 0.4.0
 实验期，后续不兼容调整会提升格式版本；尚未承诺长期跨版本兼容。
 
-格式 v7 使用统一的 32 位稳定 `BuiltinId` 编码 `CallRuntime` 和 `CallIntrinsic`。普通 runtime 成员
-不再伪装成字符串 host import；只有 `std`、宿主 Manifest 和其他真正需要动态链接的函数进入 import 表。
-runtime member 与编译器/VM intrinsic 共用同一 ID 空间，loader 会拒绝未在内建声明表中登记或不支持
-对应调用方式的 ID。
+格式 v8 为已迁移的标准库原生方法使用独立的 native imports 表，表项保存规范符号路径和签名；
+`CallNative` 按表索引调用生成的 Rust 桥接实现。verifier 检查符号、签名、实参数和索引。
+尚未迁移的 runtime 成员和数值 intrinsic 继续以 32 位 `BuiltinId` 编码 `CallRuntime` / `CallIntrinsic`；
+loader 仍拒绝未知或不支持对应调用方式的 ID。`std` 和宿主 Manifest 导入使用独立的 host imports 表。
 
 格式 v6 在 v5 的 trait implementation 表之外增加带显式 `IntegerType` 的 `IntegerBinary` 指令。
 静态分析无法证明类型的运算、浮点运算和字符串拼接仍使用通用 `Binary` 指令。旧 loader 不会误读

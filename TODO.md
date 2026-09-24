@@ -27,7 +27,8 @@
   impl associated type 声明契约、暂不支持的条件 trait impl 诊断、孤儿规则与项目内重复 impl 检查。
   后续仍应每次只迁移一类检查，以解释器/VM 对照测试证明行为不变，不把这项开放式清理作为其他
   feature 分支的退出条件。
-- 标准 bytecode core import 已在链接时解析为稳定 ID；后续新增内建或外部 import 也应沿用该模式。
+- 标准 bytecode core import 目前仍使用旧稳定 ID；逐步改用由标准库声明生成的原生符号导入，
+  并在加载时链接为进程内调用槽位。宿主 import 继续使用独立的 ABI 契约。
   `rils_runtime` 与 `rils_bytecode` 已形成单向依赖，根 `rils` 只保留兼容转发层。后续应继续收窄
   `rils_runtime::support`，把 bytecode/VM 所需的共享值、环境槽位、格式化和 builtin 操作整理成稳定
   的最小接口，不允许重新形成跨 crate 的双向依赖。
@@ -83,6 +84,7 @@
 - 完善 CLI 的项目检查、模块图、Manifest 校验和诊断导出命令。
 - 提供标准库 API 目录和由 `rils_builtins` 生成的文档入口。
 - 继续把未迁移的标准库 `.rils` 占位声明迁移到 `rils_stdlib` 的 Rust 定义。迁移期间保留旧语言包供构建和 Analyzer 使用；全部迁移完成后，再统一移除重复声明、设计 Analyzer 对新定义的支持，并清理旧的按 ID 手写实现。
+- 扩展 `decl_rils` 原生桥接以覆盖 Option/Result 的剩余方法、string、数值与集合；每迁移一个方法就改由 `native_symbol` 走原生调用。全部迁移后删除 `BuiltinId`、`builtin_ids.toml`、旧字节码调用指令和运行时回退，并对仍缺少实现的导出方法报错。
 - 已建立独立的 `tools/rils-bench` release 基准工具和 `python tools/benchmark.py` 稳定入口；继续扩展
   解释器、磁盘字节码和 Analyzer 场景，并在基线稳定后建立持续性能回归。
 - 增加跨平台原生构建与发布矩阵，并明确各宿主的 ABI/字节码兼容策略。

@@ -910,6 +910,109 @@ fn runtime_members_use_stable_ids_without_host_imports() {
 }
 
 #[test]
+fn native_calls_precede_legacy_builtin_calls_and_survive_round_trip() {
+    let source = "let present = Some(5); present.is_some() && Some(6).unwrap() == 6";
+    let module = compile(source).unwrap();
+    assert_eq!(module.native_imports.len(), 1);
+    assert_eq!(
+        module.native_imports[0].symbol,
+        "core::option::option::is_some"
+    );
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .any(|instruction| matches!(instruction.instruction, Instruction::CallNative { .. }))
+    );
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .any(|instruction| matches!(
+                instruction.instruction,
+                Instruction::CallRuntime {
+                    builtin: rils_builtins::BuiltinId::OptionUnwrap,
+                    ..
+                }
+            ))
+    );
+    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.native_imports, module.native_imports);
+    assert_eq!(loaded.execute().unwrap(), Value::Bool(true));
+
+    let mut missing = loaded.clone();
+    missing.native_imports[0].symbol = "core::option::option::missing".into();
+    assert!(
+        missing
+            .verify()
+            .unwrap_err()
+            .message
+            .contains("invalid native import")
+    );
+    let mut mismatched = loaded;
+    mismatched.native_imports[0].signature.return_type = Type::I32;
+    assert!(
+        mismatched
+            .verify()
+            .unwrap_err()
+            .message
+            .contains("invalid native import")
+    );
+
+    let mut invalid_index = module.clone();
+    let native_call = invalid_index
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.instructions)
+        .find(|instruction| matches!(instruction.instruction, Instruction::CallNative { .. }))
+        .unwrap();
+    if let Instruction::CallNative { import, .. } = &mut native_call.instruction {
+        *import = usize::MAX;
+    }
+    assert!(
+        invalid_index
+            .verify()
+            .unwrap_err()
+            .message
+            .contains("invalid native call operands")
+    );
+
+    let mut invalid_arity = module;
+    let native_call = invalid_arity
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.instructions)
+        .find(|instruction| matches!(instruction.instruction, Instruction::CallNative { .. }))
+        .unwrap();
+    if let Instruction::CallNative { arguments, .. } = &mut native_call.instruction {
+        arguments.clear();
+    }
+    assert!(
+        invalid_arity
+            .verify()
+            .unwrap_err()
+            .message
+            .contains("invalid native call operands")
+    );
+}
+
+#[test]
+fn result_native_methods_use_the_symbol_import() {
+    let source = "let value: Result<i32, string> = Ok(5); value.is_ok()";
+    let module = compile(source).unwrap();
+    assert_eq!(module.native_imports.len(), 1);
+    assert_eq!(
+        module.native_imports[0].symbol,
+        "core::result::result::is_ok"
+    );
+    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+}
+
+#[test]
 fn generated_runtime_imports_are_registered_without_a_second_catalog() {
     let registered = super::core_imports::core_imports()
         .into_iter()

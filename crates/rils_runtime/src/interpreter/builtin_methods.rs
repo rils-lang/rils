@@ -16,6 +16,19 @@ impl Interpreter {
                 .map_or(0, |signature| signature.parameters.len()),
         };
         check_arity("builtin method", arity, arity, arguments.len(), span)?;
+        if let BuiltinMethod::Runtime(id) = method.method
+            && let Some(symbol) =
+                rils_builtins::runtime_member(id).and_then(|(_, member)| member.native_symbol)
+        {
+            let mut values = Vec::with_capacity(arguments.len() + 1);
+            values.push((*method.receiver).clone());
+            values.extend_from_slice(arguments);
+            return crate::runtime_builtins::call_native_symbol(symbol, &values)
+                .ok_or_else(|| {
+                    RuntimeError::new(format!("native method `{symbol}` is unavailable"), span)
+                })?
+                .map_err(|message| RuntimeError::new(message, span));
+        }
         match method.method {
             BuiltinMethod::IntegerIntrinsic(id) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);

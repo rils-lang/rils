@@ -219,6 +219,11 @@ pub enum HirExpression {
         arguments: Vec<HirExpression>,
         span: Span,
     },
+    CallNative {
+        symbol: String,
+        arguments: Vec<HirExpression>,
+        span: Span,
+    },
     CallIntrinsic {
         intrinsic: BuiltinId,
         target: Option<IntegerType>,

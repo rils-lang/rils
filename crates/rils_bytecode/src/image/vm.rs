@@ -600,6 +600,26 @@ impl<'a> VirtualMachine<'a> {
                     };
                     self.frame_mut().registers[destination] = Some(value);
                 }
+                Instruction::CallNative {
+                    destination,
+                    import,
+                    arguments,
+                } => {
+                    let arguments = arguments
+                        .into_iter()
+                        .map(|register| self.take_register(register, instruction.span))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let symbol = &self.module.native_imports[import].symbol;
+                    let value = crate::runtime_builtins::call_native_symbol(symbol, &arguments)
+                        .ok_or_else(|| {
+                            BytecodeError::new(
+                                format!("native method `{symbol}` is unavailable"),
+                                instruction.span,
+                            )
+                        })?
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    self.frame_mut().registers[destination] = Some(value);
+                }
                 Instruction::CallIntrinsic {
                     destination,
                     intrinsic,

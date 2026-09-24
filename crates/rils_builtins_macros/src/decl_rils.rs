@@ -356,6 +356,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     receiver: None,
                     builtin_id: None,
                     runtime_import: None,
+                    native_symbol: None,
                     required: false,
                     type_parameters: &[],
                     documentation: #documentation,
@@ -376,6 +377,11 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             let name = method.sig.ident.to_string();
             let documentation = documentation(&method.attrs);
             let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
+            let native_symbol = if direct_native_method(&name) {
+                quote!(Some(#id_path))
+            } else {
+                quote!(None)
+            };
             let receiver = method.sig.receiver().ok_or_else(|| {
                 Error::new_spanned(&method.sig, "native methods require a receiver")
             })?;
@@ -421,6 +427,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     receiver: Some(#receiver_mode),
                     builtin_id: Some(builtin_id!(#id_path)),
                     runtime_import: None,
+                    native_symbol: #native_symbol,
                     required: true,
                     type_parameters: &[#(#type_parameters),*],
                     documentation: #documentation,
@@ -466,6 +473,13 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
         .join("\n")
 }
 
+fn direct_native_method(name: &str) -> bool {
+    matches!(
+        name,
+        "is_some" | "is_none" | "is_ok" | "is_err" | "ok" | "err"
+    )
+}
+
 pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
     let source = parse_macro_input!(input as DefinitionInput);
     if string::is_string(&source.path) {
@@ -501,7 +515,7 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
     }).map(|method| {
         let name = &method.sig.ident;
         let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-        if !matches!(name.to_string().as_str(), "is_some" | "is_none" | "is_ok" | "is_err" | "ok" | "err") {
+        if !direct_native_method(&name.to_string()) {
             let arity = method.sig.inputs.len();
             return Ok(quote! {
                 #id_path => Some(

@@ -30,6 +30,20 @@ impl BytecodeModule {
                 Span::default(),
             ));
         }
+        let mut native_symbols = HashSet::new();
+        for import in &self.native_imports {
+            let expected = rils_builtins::native_member(&import.symbol)
+                .and_then(rils_frontend::standard_library::erased_builtin_member_signature);
+            if !native_symbols.insert(import.symbol.as_str())
+                || !self.valid_signature(&import.signature)
+                || expected.as_ref() != Some(&import.signature)
+            {
+                return Err(BytecodeError::new(
+                    format!("invalid native import `{}`", import.symbol),
+                    Span::default(),
+                ));
+            }
+        }
         if self.functions.is_empty() || self.entry >= self.functions.len() {
             return Err(BytecodeError::new(
                 "bytecode module has no valid entry function",
@@ -419,6 +433,27 @@ impl BytecodeModule {
                     {
                         return Err(BytecodeError::new(
                             "invalid runtime built-in call operands",
+                            instruction.span,
+                        ));
+                    }
+                }
+                Instruction::CallNative {
+                    destination,
+                    import,
+                    arguments,
+                } => {
+                    if invalid_register(*destination)
+                        || arguments.iter().any(|register| invalid_register(*register))
+                        || self.native_imports.get(*import).is_none_or(|import| {
+                            import
+                                .signature
+                                .parameters
+                                .as_ref()
+                                .is_none_or(|parameters| parameters.len() != arguments.len())
+                        })
+                    {
+                        return Err(BytecodeError::new(
+                            "invalid native call operands",
                             instruction.span,
                         ));
                     }
