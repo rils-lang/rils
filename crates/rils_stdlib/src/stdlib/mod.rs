@@ -5,6 +5,7 @@ pub mod float;
 pub mod fs;
 pub mod integer;
 pub mod io;
+pub mod iterator;
 pub mod option;
 pub mod prelude;
 pub mod range;

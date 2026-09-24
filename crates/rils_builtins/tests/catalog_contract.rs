@@ -546,6 +546,10 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
         borrowed.member("next").expect("Iter::next").builtin_id,
         Some(BuiltinId::SequenceIterNext)
     );
+    assert_eq!(
+        borrowed.member("next").unwrap().signature.unwrap().result,
+        TypePattern::Option(&TypePattern::Generic("T"))
+    );
 
     assert_eq!(
         builtin("Vec")

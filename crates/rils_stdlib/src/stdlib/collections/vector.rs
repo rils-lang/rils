@@ -140,7 +140,7 @@ mod native {
         #[export_rils]
         #[rils_legacy_id(core::sequence::iter)]
         pub fn iter(&self) -> Iter<&T> {
-            Iter(self.0.iter().collect())
+            Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
     }
 

@@ -20,6 +20,7 @@ fn exported_definitions_have_parseable_language_sources() {
         rils_stdlib::binaryheap_definition!(decl_rils_source),
         rils_stdlib::vecdeque_definition!(decl_rils_source),
         rils_stdlib::vec_definition!(decl_rils_source),
+        rils_stdlib::iter_definition!(decl_rils_source),
         rils_stdlib::std_fs_read_to_string_definition!(decl_rils_function_source),
         rils_stdlib::std_io_print_definition!(decl_rils_function_source),
         rils_stdlib::std_io_write_definition!(decl_rils_function_source),

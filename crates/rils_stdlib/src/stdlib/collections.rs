@@ -2,13 +2,10 @@
 
 use rils_builtins_macros::decl_rils;
 
-use super::{prelude::Option, string::Iterator};
+use super::{iterator::Iter, prelude::Option, string::Iterator};
 
 mod hash;
 pub mod vector;
-
-/// Borrowed iterator returned by collection views while the Rils iterator API is migrated.
-pub struct Iter<T>(pub Vec<T>);
 
 /// Values accepted by the Rils max-priority queue.
 pub trait HeapElement: Ord + Clone {}
@@ -327,7 +324,7 @@ mod native {
         /// Borrows each element in ascending order.
         #[export_rils]
         pub fn iter(&self) -> Iter<&T> {
-            Iter(self.0.iter().collect())
+            Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
     }
 
@@ -440,7 +437,7 @@ mod native {
         /// Borrows each key-value pair in key order.
         #[export_rils]
         pub fn iter(&self) -> Iter<(&K, &V)> {
-            Iter(self.0.iter().collect())
+            Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
     }
 

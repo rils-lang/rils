@@ -1,8 +1,0 @@
-/// An iterator borrowing elements from a sequence.
-pub struct Iter<T>;
-
-impl<T> Iter<T> {
-    /// Advances the iterator and borrows its next item.
-    #[runtime(core::sequence_iter::next)]
-    fn next(&mut self) -> Option<T> {}
-}

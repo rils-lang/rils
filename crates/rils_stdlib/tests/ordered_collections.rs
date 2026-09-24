@@ -17,10 +17,7 @@ fn ordered_set_preserves_order_and_set_operations() {
     assert_eq!(values.len(), 2);
     assert_eq!(value(values.first_cloned()), Some(1));
     assert_eq!(value(values.last_cloned()), Some(3));
-    assert_eq!(
-        values.iter().0.into_iter().copied().collect::<Vec<_>>(),
-        [1, 3]
-    );
+    assert_eq!(values.iter().copied().collect::<Vec<_>>(), [1, 3]);
 
     let mut other = BTreeSet::new();
     other.insert(3);
@@ -42,7 +39,10 @@ fn ordered_map_preserves_keys_and_replaces_values() {
     assert_eq!(value(values.get_cloned(&2)), Some("second"));
     assert_eq!(value(values.first_key_cloned()), Some(1));
     assert_eq!(value(values.last_key_cloned()), Some(2));
-    assert_eq!(values.iter().0, [(&1, &"one"), (&2, &"second")]);
+    assert_eq!(
+        values.iter().collect::<Vec<_>>(),
+        [(&1, &"one"), (&2, &"second")]
+    );
     assert_eq!(value(values.remove(&1)), Some("one"));
     assert_eq!(values.into_iter().0, [(2, "second")]);
 }

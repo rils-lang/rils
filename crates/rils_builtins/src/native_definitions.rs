@@ -122,6 +122,12 @@ pub mod vec {
     rils_stdlib::vec_definition!(decl_rils_metadata);
 }
 
+pub mod iter {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::iter_definition!(decl_rils_metadata);
+}
+
 pub mod format_error {
     use rils_builtins_macros::decl_rils_metadata;
 
@@ -276,6 +282,7 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     hash_map::DECLARATION,
     hash_set::DECLARATION,
     vec::DECLARATION,
+    iter::DECLARATION,
     format_error::DECLARATION,
     boxed::DECLARATION,
     io_error::DECLARATION,

@@ -99,7 +99,7 @@ mod native {
         /// Borrows each element without consuming the set.
         #[export_rils]
         pub fn iter(&self) -> Iter<&T> {
-            Iter(self.0.iter().collect())
+            Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
     }
 
@@ -203,7 +203,7 @@ mod native {
         /// Borrows each key-value pair without consuming the map.
         #[export_rils]
         pub fn iter(&self) -> Iter<(&K, &V)> {
-            Iter(self.0.iter().collect())
+            Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
     }
 
