@@ -174,6 +174,7 @@ impl Definition {
                 source.push_str(&format!("    /// {line}\n"));
             }
             let mut signature = method.sig.clone();
+            signature.inputs.pop_punct();
             signature.generics.where_clause = None;
             signature.generics.params = signature
                 .generics
@@ -203,6 +204,20 @@ impl Definition {
                     return Err(Error::new_spanned(any, "unknown exported parameter"));
                 }
             }
+            for any in any_reference_parameters(method)? {
+                let mut found = false;
+                for argument in &mut signature.inputs {
+                    if let FnArg::Typed(argument) = argument
+                        && matches!(argument.pat.as_ref(), syn::Pat::Ident(name) if name.ident == any)
+                    {
+                        *argument.ty = syn::parse_quote!(&_);
+                        found = true;
+                    }
+                }
+                if !found {
+                    return Err(Error::new_spanned(any, "unknown exported parameter"));
+                }
+            }
             let signature = signature
                 .to_token_stream()
                 .to_string()
@@ -224,6 +239,15 @@ fn any_parameters(method: &ImplItemFn) -> syn::Result<Vec<syn::Ident>> {
         .attrs
         .iter()
         .filter(|attr| attr.path().is_ident("rils_any"))
+        .map(|attr| attr.parse_args())
+        .collect()
+}
+
+fn any_reference_parameters(method: &ImplItemFn) -> syn::Result<Vec<syn::Ident>> {
+    method
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("rils_ref_any"))
         .map(|attr| attr.parse_args())
         .collect()
 }
@@ -443,6 +467,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     )
                 };
             let any = any_parameters(method)?.into_iter().map(|name| name.to_string()).collect::<Vec<_>>();
+            let any_references = any_reference_parameters(method)?.into_iter().map(|name| name.to_string()).collect::<Vec<_>>();
             let parameters = method
                 .sig
                 .inputs
@@ -452,6 +477,8 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     FnArg::Typed(parameter) => {
                         if matches!(parameter.pat.as_ref(), syn::Pat::Ident(name) if any.contains(&name.ident.to_string())) {
                             Ok(quote!(TypePattern::Unknown))
+                        } else if matches!(parameter.pat.as_ref(), syn::Pat::Ident(name) if any_references.contains(&name.ident.to_string())) {
+                            Ok(quote!(TypePattern::Reference { mutable: false, inner: &TypePattern::Unknown }))
                         } else {
                             type_patterns::tokens(&parameter.ty)
                         }

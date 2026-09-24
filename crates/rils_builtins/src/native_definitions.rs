@@ -146,6 +146,24 @@ pub mod format_error {
     rils_stdlib::formaterror_definition!(decl_rils_metadata);
 }
 
+pub mod debug {
+    use rils_builtins_macros::decl_rils_trait_metadata;
+
+    rils_stdlib::debug_definition!(decl_rils_trait_metadata);
+}
+
+pub mod display {
+    use rils_builtins_macros::decl_rils_trait_metadata;
+
+    rils_stdlib::display_definition!(decl_rils_trait_metadata);
+}
+
+pub mod formatter {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::formatter_definition!(decl_rils_metadata);
+}
+
 pub mod boxed {
     use rils_builtins_macros::decl_rils_metadata;
 
@@ -298,6 +316,9 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     iterator::DECLARATION,
     into_iterator::DECLARATION,
     format_error::DECLARATION,
+    debug::DECLARATION,
+    display::DECLARATION,
+    formatter::DECLARATION,
     boxed::DECLARATION,
     io_error::DECLARATION,
     io_error_kind::DECLARATION,

@@ -6,6 +6,9 @@ fn exported_definitions_have_parseable_language_sources() {
     for source in [
         rils_stdlib::box_definition!(decl_rils_source),
         rils_stdlib::formaterror_definition!(decl_rils_source),
+        rils_stdlib::debug_definition!(decl_rils_trait_source),
+        rils_stdlib::display_definition!(decl_rils_trait_source),
+        rils_stdlib::formatter_definition!(decl_rils_source),
         rils_stdlib::error_definition!(decl_rils_source),
         rils_stdlib::errorkind_definition!(decl_rils_source),
         rils_stdlib::rc_definition!(decl_rils_source),
@@ -28,7 +31,8 @@ fn exported_definitions_have_parseable_language_sources() {
         rils_stdlib::std_io_write_definition!(decl_rils_function_source),
     ] {
         let tokens = rils_syntax::lex(source).expect("generated source lexes");
-        rils_syntax::parser::parse_builtin_declarations(tokens).expect("generated source parses");
+        rils_syntax::parser::parse_builtin_declarations(tokens)
+            .unwrap_or_else(|error| panic!("generated source does not parse: {error:?}\n{source}"));
     }
 }
 
