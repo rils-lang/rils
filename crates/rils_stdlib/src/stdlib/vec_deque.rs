@@ -9,7 +9,6 @@ mod native {
     use super::Option;
 
     /// A growable double-ended queue.
-    #[rils_opaque]
     pub struct VecDeque<T>(std::collections::VecDeque<T>);
 
     impl<T> VecDeque<T> {

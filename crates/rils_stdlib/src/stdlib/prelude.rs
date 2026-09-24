@@ -4,6 +4,7 @@ pub use super::option::Option;
 pub use super::result::Result;
 pub use super::traits::{BitFlags, Default, Eq, Hash};
 pub use super::traits::{Clone, Copy};
+pub use crate::rils_type;
 
 pub fn some<T>(value: T) -> Option<T> {
     Option::Some(value)

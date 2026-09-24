@@ -1,8 +1,11 @@
-//! Shared declaration generation for opaque Rust-backed Rils structs.
+//! Shared declaration generation for Rust-backed Rils structs.
 
 use proc_macro::TokenStream;
 use quote::{ToTokens, format_ident, quote};
-use syn::{Error, FnArg, ImplItem, ImplItemFn, Item, ItemMod, ItemStruct, Path, ReturnType, Type};
+use syn::{
+    Error, Fields, FnArg, GenericArgument, ImplItem, ImplItemFn, Item, ItemMod, ItemStruct, Path,
+    PathArguments, ReturnType, Type,
+};
 
 use crate::type_patterns;
 
@@ -36,14 +39,15 @@ impl Definition {
         if structs.next().is_some() {
             return Err(Error::new_spanned(&module, "expected exactly one struct"));
         }
-        if !item
-            .attrs
-            .iter()
-            .any(|attr| attr.path().is_ident("rils_opaque"))
+        if let Fields::Unnamed(fields) = &item.fields
+            && fields
+                .unnamed
+                .iter()
+                .any(|field| matches!(field.vis, syn::Visibility::Public(_)))
         {
             return Err(Error::new_spanned(
                 &item,
-                "native struct must use #[rils_opaque] until field projection is supported",
+                "public tuple fields are not supported in Rils structs; use named fields",
             ));
         }
         let traits = super::trait_impls::parse(&item.attrs)?;
@@ -105,7 +109,7 @@ impl Definition {
         })
     }
 
-    fn source(&self) -> String {
+    fn source(&self) -> syn::Result<String> {
         let name = &self.item.ident;
         let type_parameters = self
             .item
@@ -122,9 +126,22 @@ impl Definition {
         for line in super::documentation(&self.item.attrs).lines() {
             source.push_str(&format!("/// {line}\n"));
         }
-        source.push_str(&format!(
-            "pub struct {name}{generics};\n\nimpl{generics} {name}{generics} {{\n"
-        ));
+        let public_fields = public_fields(&self.item);
+        if public_fields.is_empty() {
+            source.push_str(&format!("pub struct {name}{generics};\n"));
+        } else {
+            source.push_str(&format!("pub struct {name}{generics} {{\n"));
+            for field in public_fields {
+                for line in super::documentation(&field.attrs).lines() {
+                    source.push_str(&format!("    /// {line}\n"));
+                }
+                let field_name = field.ident.as_ref().expect("named public field");
+                let ty = rils_field_type(&field.ty)?;
+                source.push_str(&format!("    {field_name}: {ty},\n"));
+            }
+            source.push_str("}\n");
+        }
+        source.push_str(&format!("\nimpl{generics} {name}{generics} {{\n"));
         for method in &self.methods {
             for line in super::documentation(&method.attrs).lines() {
                 source.push_str(&format!("    /// {line}\n"));
@@ -143,7 +160,99 @@ impl Definition {
             source.push_str(&format!("    {signature} {{}}\n"));
         }
         source.push_str("}\n");
-        source
+        Ok(source)
+    }
+}
+
+fn public_fields(item: &ItemStruct) -> Vec<&syn::Field> {
+    match &item.fields {
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .filter(|field| matches!(field.vis, syn::Visibility::Public(_)))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn rils_field_type(ty: &Type) -> syn::Result<String> {
+    match ty {
+        Type::Macro(value) if value.mac.path.is_ident("rils_type") => {
+            let inner: Type = syn::parse2(value.mac.tokens.clone())?;
+            rils_field_type(&inner)
+        }
+        Type::Path(value) if value.qself.is_none() => {
+            let segments = &value.path.segments;
+            let last = segments
+                .last()
+                .ok_or_else(|| Error::new_spanned(ty, "empty field type"))?;
+            if segments
+                .iter()
+                .take(segments.len() - 1)
+                .any(|segment| !matches!(segment.arguments, PathArguments::None))
+            {
+                return Err(Error::new_spanned(
+                    ty,
+                    "only the final field type segment may have type arguments",
+                ));
+            }
+            let full = segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
+            let name = match full.as_str() {
+                "String" | "std::string::String" | "alloc::string::String" => "string",
+                "std::option::Option" => "Option",
+                "std::result::Result" => "Result",
+                "std::vec::Vec" => "Vec",
+                "std::collections::VecDeque" => "VecDeque",
+                "std::collections::HashMap" => "HashMap",
+                "std::collections::HashSet" => "HashSet",
+                "std::collections::BTreeMap" => "BTreeMap",
+                "std::collections::BTreeSet" => "BTreeSet",
+                _ => full.as_str(),
+            };
+            let arguments = match &last.arguments {
+                PathArguments::None => Vec::new(),
+                PathArguments::AngleBracketed(args) => args
+                    .args
+                    .iter()
+                    .map(|arg| match arg {
+                        GenericArgument::Type(ty) => rils_field_type(ty),
+                        _ => Err(Error::new_spanned(
+                            arg,
+                            "Rils fields only support type arguments",
+                        )),
+                    })
+                    .collect::<syn::Result<Vec<_>>>()?,
+                _ => return Err(Error::new_spanned(ty, "unsupported field type arguments")),
+            };
+            if arguments.is_empty() {
+                Ok(name.to_owned())
+            } else {
+                Ok(format!("{name}<{}>", arguments.join(", ")))
+            }
+        }
+        Type::Tuple(tuple) => Ok(format!(
+            "({})",
+            tuple
+                .elems
+                .iter()
+                .map(rils_field_type)
+                .collect::<syn::Result<Vec<_>>>()?
+                .join(", ")
+        )),
+        Type::Paren(value) => rils_field_type(&value.elem),
+        Type::Group(value) => rils_field_type(&value.elem),
+        Type::Reference(_) => Err(Error::new_spanned(
+            ty,
+            "Rils struct fields cannot directly contain references",
+        )),
+        _ => Err(Error::new_spanned(
+            ty,
+            "unsupported public Rils struct field type",
+        )),
     }
 }
 
@@ -156,10 +265,9 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
     if let Some((_, items)) = &mut emitted.content {
         for item in items {
             match item {
-                Item::Struct(structure) => structure.attrs.retain(|attribute| {
-                    !attribute.path().is_ident("rils_opaque")
-                        && !attribute.path().is_ident("rils_impl")
-                }),
+                Item::Struct(structure) => structure
+                    .attrs
+                    .retain(|attribute| !attribute.path().is_ident("rils_impl")),
                 Item::Impl(implementation) => {
                     for member in &mut implementation.items {
                         if let ImplItem::Fn(method) = member {
@@ -191,10 +299,10 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
 
 pub(super) fn expand_source(path: Path, module: ItemMod) -> TokenStream {
     match Definition::parse(path, module) {
-        Ok(definition) => {
-            let source = definition.source();
-            quote!(#source).into()
-        }
+        Ok(definition) => match definition.source() {
+            Ok(source) => quote!(#source).into(),
+            Err(error) => error.into_compile_error().into(),
+        },
         Err(error) => error.into_compile_error().into(),
     }
 }
@@ -220,6 +328,34 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
         .type_params()
         .map(|parameter| parameter.ident.to_string())
         .collect::<Vec<_>>();
+    let fields = public_fields(&definition.item)
+        .into_iter()
+        .map(|field| {
+            let name = field
+                .ident
+                .as_ref()
+                .expect("named public field")
+                .to_string();
+            let docs = super::documentation(&field.attrs);
+            let rils_ty = rils_field_type(&field.ty)?;
+            let parsed_ty: Type = syn::parse_str(&rils_ty)?;
+            let value_type = type_patterns::tokens(&parsed_ty)?;
+            Ok(quote! {
+                crate::BuiltinMember {
+                    name: #name,
+                    kind: crate::BuiltinMemberKind::Field,
+                    signature: None,
+                    value_type: Some(#value_type),
+                    receiver: None,
+                    builtin_id: None,
+                    runtime_import: None,
+                    required: false,
+                    type_parameters: &[],
+                    documentation: #docs,
+                }
+            })
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
     let methods = definition
         .methods
         .iter()
@@ -300,7 +436,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             kind: crate::BuiltinKind::Struct,
             supertraits: &[],
             type_parameters: &[#(#type_parameters),*],
-            members: &[#(#methods),*],
+            members: &[#(#fields,)* #(#methods),*],
             signature: None,
             backend: crate::BuiltinBackend::Runtime,
             documentation: #docs,
@@ -329,7 +465,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     };
     Error::new_spanned(
         definition.item,
-        "opaque struct native bridge must provide an explicit runtime value adapter",
+        "native struct bridge must provide an explicit runtime value adapter",
     )
     .into_compile_error()
     .into()
@@ -340,10 +476,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn opaque_struct_source_hides_rust_storage_and_keeps_methods() {
+    fn private_struct_storage_stays_hidden_and_methods_export() {
         let module: ItemMod = syn::parse_quote! {
             mod native {
-                #[rils_opaque]
                 pub struct Range<T> { current: T, end: T }
                 impl<T> Range<T> {
                     #[export_rils]
@@ -354,11 +489,58 @@ mod tests {
             }
         };
         let definition = Definition::parse(syn::parse_quote!(core::range), module).unwrap();
-        let source = definition.source();
+        let source = definition.source().unwrap();
         assert!(source.contains("pub struct Range<T>;"));
         assert!(source.contains("fn new() -> Self"));
         assert!(source.contains("fn next(&mut self) -> Option<T>"));
         assert!(!source.contains("current"));
         assert!(metadata_tokens(&definition).is_ok());
+    }
+
+    #[test]
+    fn public_fields_are_exported_with_rils_types() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                pub struct Record<T> {
+                    /// An integer value.
+                    pub value: rils_type![i32],
+                    pub text: std::string::String,
+                    pub optional: std::option::Option<T>,
+                    hidden: T,
+                }
+                impl<T> Record<T> {
+                    #[export_rils]
+                    pub fn new(value: i32, text: String) -> Self { loop {} }
+                }
+            }
+        };
+        let definition = Definition::parse(syn::parse_quote!(core::record), module).unwrap();
+        let source = definition.source().unwrap();
+        assert!(source.contains("value: i32,"));
+        assert!(source.contains("text: string,"));
+        assert!(source.contains("optional: Option<T>,"));
+        assert!(!source.contains("hidden:"));
+        assert!(source.contains("/// An integer value."));
+        let tokens = rils_syntax::lex(&source).unwrap();
+        rils_syntax::parser::parse_builtin_declarations(tokens).unwrap();
+        let metadata = metadata_tokens(&definition).unwrap().to_string();
+        assert!(metadata.contains("name : \"value\""));
+        assert!(metadata.contains("name : \"text\""));
+        assert!(metadata.contains("name : \"optional\""));
+        assert!(!metadata.contains("name : \"hidden\""));
+    }
+
+    #[test]
+    fn public_tuple_fields_are_rejected() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                pub struct Record(pub i32);
+                impl Record {
+                    #[export_rils]
+                    pub fn new(value: i32) -> Self { Self(value) }
+                }
+            }
+        };
+        assert!(Definition::parse(syn::parse_quote!(core::record), module).is_err());
     }
 }

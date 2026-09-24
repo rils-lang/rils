@@ -33,7 +33,6 @@ mod native {
     use super::{Option, RangeStep};
 
     /// A half-open integer range.
-    #[rils_opaque]
     pub struct Range<T> {
         current: T,
         end: T,
