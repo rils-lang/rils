@@ -3,7 +3,7 @@ mod native {
     #[rils_struct]
     pub struct Buffer;
 
-    #[rils_enum]
+    #[rils_enum(id_prefix = core::old_state)]
     pub enum State {
         Idle,
     }

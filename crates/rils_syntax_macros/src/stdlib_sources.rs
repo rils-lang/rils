@@ -4,7 +4,60 @@ use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Error, Item, LitStr, Path, parse_macro_input};
+use syn::{Attribute, Error, Item, LitStr, Path, Token, parse_macro_input};
+
+fn snake_case(name: &str) -> String {
+    let chars = name.chars().collect::<Vec<_>>();
+    let mut result = String::new();
+    for (index, ch) in chars.iter().copied().enumerate() {
+        if ch.is_uppercase()
+            && index > 0
+            && (chars[index - 1].is_lowercase()
+                || chars[index - 1].is_ascii_digit()
+                || chars.get(index + 1).is_some_and(|next| next.is_lowercase()))
+        {
+            result.push('_');
+        }
+        result.extend(ch.to_lowercase());
+    }
+    result
+}
+
+fn marked_path(attribute: &Attribute, module: &Path, name: &str) -> syn::Result<String> {
+    let prefix = match &attribute.meta {
+        syn::Meta::Path(_) => {
+            let mut parts = module
+                .segments
+                .iter()
+                .map(|part| part.ident.to_string())
+                .collect::<Vec<_>>();
+            parts.push(snake_case(name));
+            return Ok(format!("{}.rils", parts.join("/")));
+        }
+        syn::Meta::List(_) => attribute.parse_args_with(|input: syn::parse::ParseStream<'_>| {
+            let key: syn::Ident = input.parse()?;
+            if key != "id_prefix" {
+                return Err(Error::new_spanned(key, "expected id_prefix"));
+            }
+            input.parse::<Token![=]>()?;
+            let value: Path = input.parse()?;
+            if !input.is_empty() {
+                return Err(input.error("unexpected Rils export marker arguments"));
+            }
+            Ok(value)
+        })?,
+        _ => return Err(Error::new_spanned(attribute, "invalid Rils export marker")),
+    };
+    Ok(format!(
+        "{}.rils",
+        prefix
+            .segments
+            .iter()
+            .map(|part| part.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("/")
+    ))
+}
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let directory = parse_macro_input!(input as LitStr);
@@ -74,12 +127,6 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                 .map(|part| part.ident.to_string())
                 .collect::<Vec<_>>();
             let relative = format!("{}.rils", segments.join("/"));
-            if !seen.insert(relative.clone()) {
-                return Err(Error::new_spanned(
-                    module,
-                    format!("duplicate standard-library source `{relative}`"),
-                ));
-            }
             let Some((_, contents)) = &module.content else {
                 return Err(Error::new_spanned(
                     module,
@@ -89,30 +136,21 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
             let marked = contents
                 .iter()
                 .filter_map(|item| match item {
-                    Item::Trait(item)
-                        if item
-                            .attrs
-                            .iter()
-                            .any(|attr| attr.path().is_ident("rils_trait")) =>
-                    {
-                        Some((item.ident.to_string().to_lowercase(), true))
-                    }
-                    Item::Enum(item)
-                        if item
-                            .attrs
-                            .iter()
-                            .any(|attr| attr.path().is_ident("rils_enum")) =>
-                    {
-                        Some((item.ident.to_string().to_lowercase(), false))
-                    }
-                    Item::Struct(item)
-                        if item
-                            .attrs
-                            .iter()
-                            .any(|attr| attr.path().is_ident("rils_struct")) =>
-                    {
-                        Some((item.ident.to_string().to_lowercase(), false))
-                    }
+                    Item::Trait(item) => item
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path().is_ident("rils_trait"))
+                        .map(|attr| (&item.ident, true, attr)),
+                    Item::Enum(item) => item
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path().is_ident("rils_enum"))
+                        .map(|attr| (&item.ident, false, attr)),
+                    Item::Struct(item) => item
+                        .attrs
+                        .iter()
+                        .find(|attr| attr.path().is_ident("rils_struct"))
+                        .map(|attr| (&item.ident, false, attr)),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -127,11 +165,24 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                 .collect::<Vec<_>>();
             let selected = if !marked.is_empty() {
                 marked
+                    .into_iter()
+                    .map(|(name, is_trait, attr)| {
+                        Ok((
+                            marked_path(attr, &declaration_path, &name.to_string())?,
+                            name.to_string().to_lowercase(),
+                            is_trait,
+                        ))
+                    })
+                    .collect::<syn::Result<Vec<_>>>()?
             } else {
                 match declarations.as_slice() {
-                    [(name, is_trait)] => vec![(name.clone(), *is_trait)],
+                    [(name, is_trait)] => vec![(relative.clone(), name.clone(), *is_trait)],
                     [] if contents.iter().any(|item| matches!(item, Item::Macro(_))) => {
-                        vec![(segments.last().cloned().unwrap_or_default(), false)]
+                        vec![(
+                            relative.clone(),
+                            segments.last().cloned().unwrap_or_default(),
+                            false,
+                        )]
                     }
                     _ => {
                         return Err(Error::new_spanned(
@@ -141,16 +192,22 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                     }
                 }
             };
-            let relative = LitStr::new(&relative, directory.span());
-            let sources = selected.iter().map(|(name, is_trait)| {
+            for (relative, name, is_trait) in selected {
+                if !seen.insert(relative.clone()) {
+                    return Err(Error::new_spanned(
+                        module,
+                        format!("duplicate standard-library source `{relative}`"),
+                    ));
+                }
+                let relative = LitStr::new(&relative, directory.span());
                 let callback = format_ident!("{name}_definition");
-                if *is_trait {
+                let source = if is_trait {
                     quote!(rils_stdlib::#callback!(decl_rils_trait_source))
                 } else {
                     quote!(rils_stdlib::#callback!(decl_rils_source))
-                }
-            });
-            exports.push(quote!((#relative, concat!(#(#sources),*))));
+                };
+                exports.push(quote!((#relative, #source)));
+            }
         }
         let absolute = LitStr::new(&path.to_string_lossy(), directory.span());
         dependencies.push(quote!(
@@ -165,13 +222,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mixed_module_exports_each_marked_declaration_in_one_source() {
+    fn mixed_module_exports_each_marked_declaration_at_its_own_path() {
         let directory = LitStr::new(
             "tests/fixtures/mixed_stdlib",
             proc_macro2::Span::call_site(),
         );
         let tokens = collect(&directory).unwrap().to_string();
-        assert!(tokens.contains("core/collections.rils"));
+        assert!(tokens.contains("core/collections/buffer.rils"));
+        assert!(tokens.contains("core/old_state.rils"));
+        assert!(tokens.contains("core/collections/marker.rils"));
         assert!(tokens.contains("buffer_definition"));
         assert!(tokens.contains("state_definition"));
         assert!(tokens.contains("marker_definition"));

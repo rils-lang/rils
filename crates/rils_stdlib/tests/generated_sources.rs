@@ -1,4 +1,5 @@
-use rils_builtins_macros::decl_rils_source;
+use rils_builtins_macros::{decl_rils_source, decl_rils_trait_source};
+use rils_syntax::rils_stdlib_sources;
 
 #[test]
 fn language_sources_match_the_rust_definitions() {
@@ -27,7 +28,38 @@ fn language_sources_match_the_rust_definitions() {
             rils_stdlib::binaryheap_definition!(decl_rils_source),
             include_str!("../../rils_builtins/stdlib/core/binary_heap.rils"),
         ),
+        (
+            rils_stdlib::vecdeque_definition!(decl_rils_source),
+            include_str!("../../rils_builtins/stdlib/core/vec_deque.rils"),
+        ),
     ] {
         assert_eq!(generated, checked_in.replace("\r\n", "\n"));
     }
+}
+
+#[test]
+fn grouped_rust_collections_keep_their_language_source_paths() {
+    let sources = rils_stdlib_sources!("src/stdlib");
+    for (path, checked_in) in [
+        (
+            "core/binary_heap.rils",
+            include_str!("../../rils_builtins/stdlib/core/binary_heap.rils"),
+        ),
+        (
+            "core/vec_deque.rils",
+            include_str!("../../rils_builtins/stdlib/core/vec_deque.rils"),
+        ),
+    ] {
+        let generated = sources
+            .iter()
+            .find(|(source_path, _)| *source_path == path)
+            .expect("grouped type keeps its existing source path")
+            .1;
+        assert_eq!(generated, checked_in.replace("\r\n", "\n"));
+    }
+    assert!(
+        !sources
+            .iter()
+            .any(|(path, _)| *path == "core/collections.rils")
+    );
 }

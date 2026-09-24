@@ -21,8 +21,8 @@ mod native {
 }
 ```
 
-默认方法 ID 前缀是模块路径加类型的 snake_case 名称；`id_prefix` 可在移动已有
-定义时保留 `builtin_ids.toml` 中的稳定路径。
+默认方法 ID 前缀及生成的 `.rils` 资源路径是模块路径加类型的 snake_case 名称；
+`id_prefix` 可在移动已有定义时同时保留 `builtin_ids.toml` 中的稳定路径与资源路径。
 混合模块中的 derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内
 标记导出的 trait。原有单定义模块及其 `#[rils_derive]` 写法继续有效。
 
