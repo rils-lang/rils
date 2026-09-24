@@ -76,13 +76,25 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
             {
                 continue;
             }
-            let has_derive = declaration.content.as_ref().is_some_and(|(_, items)| items.iter().any(|item| {
-                matches!(item, Item::Fn(function) if function.attrs.iter().any(|attribute| attribute.path().is_ident("rils_derive")))
-            }));
-            if has_derive {
-                found = true;
-                let declaration_name = &declaration.ident;
-                handlers.push(quote!(crate::stdlib::#module::#declaration_name::DERIVE));
+            if let Some((_, items)) = &declaration.content {
+                for item in items {
+                    let Item::Fn(function) = item else { continue };
+                    for attribute in function
+                        .attrs
+                        .iter()
+                        .filter(|attribute| attribute.path().is_ident("rils_derive"))
+                    {
+                        found = true;
+                        let declaration_name = &declaration.ident;
+                        let constant = if matches!(attribute.meta, syn::Meta::Path(_)) {
+                            format_ident!("DERIVE")
+                        } else {
+                            let target: syn::Ident = attribute.parse_args()?;
+                            format_ident!("DERIVE_{}", target.to_string().to_uppercase())
+                        };
+                        handlers.push(quote!(crate::stdlib::#module::#declaration_name::#constant));
+                    }
+                }
             }
         }
         if found {
@@ -92,4 +104,20 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
         }
     }
     Ok(quote!({ #(#dependencies)* &[#(#handlers),*] }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mixed_module_registers_derive_for_its_explicit_trait() {
+        let directory = LitStr::new(
+            "tests/fixtures/mixed_stdlib",
+            proc_macro2::Span::call_site(),
+        );
+        let tokens = collect(&directory).unwrap().to_string();
+        assert!(tokens.contains("DERIVE_MARKER"));
+        assert!(!tokens.contains(":: DERIVE ,"));
+    }
 }

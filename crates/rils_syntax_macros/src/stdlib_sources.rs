@@ -86,6 +86,36 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                     "standard-library declaration module must be inline",
                 ));
             };
+            let marked = contents
+                .iter()
+                .filter_map(|item| match item {
+                    Item::Trait(item)
+                        if item
+                            .attrs
+                            .iter()
+                            .any(|attr| attr.path().is_ident("rils_trait")) =>
+                    {
+                        Some((item.ident.to_string().to_lowercase(), true))
+                    }
+                    Item::Enum(item)
+                        if item
+                            .attrs
+                            .iter()
+                            .any(|attr| attr.path().is_ident("rils_enum")) =>
+                    {
+                        Some((item.ident.to_string().to_lowercase(), false))
+                    }
+                    Item::Struct(item)
+                        if item
+                            .attrs
+                            .iter()
+                            .any(|attr| attr.path().is_ident("rils_struct")) =>
+                    {
+                        Some((item.ident.to_string().to_lowercase(), false))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
             let declarations = contents
                 .iter()
                 .filter_map(|item| match item {
@@ -95,26 +125,32 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            let (name, is_trait) = match declarations.as_slice() {
-                [(name, is_trait)] => (name.clone(), *is_trait),
-                [] if contents.iter().any(|item| matches!(item, Item::Macro(_))) => {
-                    (segments.last().cloned().unwrap_or_default(), false)
-                }
-                _ => {
-                    return Err(Error::new_spanned(
-                        module,
-                        "expected one type or trait declaration",
-                    ));
-                }
-            };
-            let callback = format_ident!("{name}_definition");
-            let relative = LitStr::new(&relative, directory.span());
-            let source = if is_trait {
-                quote!(rils_stdlib::#callback!(decl_rils_trait_source))
+            let selected = if !marked.is_empty() {
+                marked
             } else {
-                quote!(rils_stdlib::#callback!(decl_rils_source))
+                match declarations.as_slice() {
+                    [(name, is_trait)] => vec![(name.clone(), *is_trait)],
+                    [] if contents.iter().any(|item| matches!(item, Item::Macro(_))) => {
+                        vec![(segments.last().cloned().unwrap_or_default(), false)]
+                    }
+                    _ => {
+                        return Err(Error::new_spanned(
+                            module,
+                            "expected one type or trait declaration",
+                        ));
+                    }
+                }
             };
-            exports.push(quote!((#relative, #source)));
+            let relative = LitStr::new(&relative, directory.span());
+            let sources = selected.iter().map(|(name, is_trait)| {
+                let callback = format_ident!("{name}_definition");
+                if *is_trait {
+                    quote!(rils_stdlib::#callback!(decl_rils_trait_source))
+                } else {
+                    quote!(rils_stdlib::#callback!(decl_rils_source))
+                }
+            });
+            exports.push(quote!((#relative, concat!(#(#sources),*))));
         }
         let absolute = LitStr::new(&path.to_string_lossy(), directory.span());
         dependencies.push(quote!(
@@ -122,4 +158,23 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
         ));
     }
     Ok(quote!({ #(#dependencies)* &[#(#exports),*] }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mixed_module_exports_each_marked_declaration_in_one_source() {
+        let directory = LitStr::new(
+            "tests/fixtures/mixed_stdlib",
+            proc_macro2::Span::call_site(),
+        );
+        let tokens = collect(&directory).unwrap().to_string();
+        assert!(tokens.contains("core/collections.rils"));
+        assert!(tokens.contains("buffer_definition"));
+        assert!(tokens.contains("state_definition"));
+        assert!(tokens.contains("marker_definition"));
+        assert!(!tokens.contains("helper_definition"));
+    }
 }

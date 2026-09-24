@@ -3,7 +3,9 @@
 use std::collections::BTreeSet;
 
 use quote::{ToTokens, quote};
-use syn::{Attribute, Error, GenericParam, ItemEnum, ItemImpl, Path, Token, Type, TypeParamBound};
+use syn::{
+    Attribute, Error, GenericParam, Generics, Ident, ItemImpl, Path, Token, Type, TypeParamBound,
+};
 
 pub(super) struct ConditionalImpl {
     pub trait_name: String,
@@ -12,7 +14,9 @@ pub(super) struct ConditionalImpl {
 
 pub(super) fn parse_impl(
     item: &ItemImpl,
-    target: &ItemEnum,
+    target_name: &Ident,
+    target_generics: &Generics,
+    allow_custom: bool,
 ) -> syn::Result<Option<ConditionalImpl>> {
     let markers = item
         .attrs
@@ -35,10 +39,10 @@ pub(super) fn parse_impl(
         ));
     };
     let trait_name = trait_path.to_token_stream().to_string().replace(' ', "");
-    if !supported_trait(&trait_name) {
+    if trait_path.get_ident().is_none() || (!allow_custom && !supported_trait(&trait_name)) {
         return Err(Error::new_spanned(
             trait_path,
-            "unsupported native trait binding",
+            "#[rils_impl] requires a simple Rils trait name",
         ));
     }
     let Type::Path(ty) = item.self_ty.as_ref() else {
@@ -51,15 +55,14 @@ pub(super) fn parse_impl(
         .path
         .segments
         .last()
-        .is_none_or(|segment| segment.ident != target.ident)
+        .is_none_or(|segment| segment.ident != *target_name)
     {
         return Err(Error::new_spanned(
             &item.self_ty,
             "trait impl must target the declared enum",
         ));
     }
-    let expected = target
-        .generics
+    let expected = target_generics
         .type_params()
         .map(|param| param.ident.to_string())
         .collect::<Vec<_>>();
@@ -101,7 +104,12 @@ pub(super) fn parse_impl(
             ));
         };
         for bound in &parameter.bounds {
-            add_bound(&mut requirements, &parameter.ident.to_string(), bound)?;
+            add_bound(
+                &mut requirements,
+                &parameter.ident.to_string(),
+                bound,
+                allow_custom,
+            )?;
         }
     }
     if let Some(where_clause) = &item.generics.where_clause {
@@ -122,7 +130,12 @@ pub(super) fn parse_impl(
                 return Err(Error::new_spanned(path, "expected type parameter"));
             };
             for bound in &predicate.bounds {
-                add_bound(&mut requirements, &parameter.to_string(), bound)?;
+                add_bound(
+                    &mut requirements,
+                    &parameter.to_string(),
+                    bound,
+                    allow_custom,
+                )?;
             }
         }
     }
@@ -145,15 +158,18 @@ fn add_bound(
     requirements: &mut Vec<(String, String)>,
     parameter: &str,
     bound: &TypeParamBound,
+    allow_custom: bool,
 ) -> syn::Result<()> {
     let TypeParamBound::Trait(bound) = bound else {
         return Err(Error::new_spanned(bound, "expected trait bound"));
     };
-    let name = bound.path.to_token_stream().to_string().replace(' ', "");
-    if !supported_trait(&name) {
+    let name = bound.path.get_ident().ok_or_else(|| {
+        Error::new_spanned(bound, "native trait bounds need a simple Rils trait name")
+    })?;
+    if !allow_custom && !supported_trait(&name.to_string()) {
         return Err(Error::new_spanned(bound, "unsupported native trait bound"));
     }
-    requirements.push((parameter.to_owned(), name));
+    requirements.push((parameter.to_owned(), name.to_string()));
     Ok(())
 }
 
@@ -232,7 +248,7 @@ mod tests {
 
     #[test]
     fn marked_impl_captures_generic_bounds() {
-        let target = syn::parse_quote!(
+        let target: syn::ItemEnum = syn::parse_quote!(
             pub enum Result<T, E> {
                 Ok(T),
                 Err(E),
@@ -249,7 +265,9 @@ mod tests {
                 }
             }
         );
-        let parsed = parse_impl(&item, &target).unwrap().unwrap();
+        let parsed = parse_impl(&item, &target.ident, &target.generics, false)
+            .unwrap()
+            .unwrap();
         assert_eq!(parsed.trait_name, "Clone");
         assert_eq!(
             parsed.requirements,
@@ -264,6 +282,6 @@ mod tests {
                 }
             }
         );
-        assert!(parse_impl(&wrong_target, &target).is_err());
+        assert!(parse_impl(&wrong_target, &target.ident, &target.generics, false).is_err());
     }
 }

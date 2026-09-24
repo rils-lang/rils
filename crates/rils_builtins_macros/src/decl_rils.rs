@@ -10,6 +10,7 @@ use syn::{
 
 use crate::type_patterns;
 
+mod mixed;
 mod primitive;
 mod string;
 mod structure;
@@ -71,7 +72,14 @@ impl Definition {
             _ => None,
         }) {
             if implementation.trait_.is_some() {
-                if let Some(parsed) = trait_impls::parse_impl(implementation, &item)? {
+                if let Some(parsed) = trait_impls::parse_impl(
+                    implementation,
+                    &item.ident,
+                    &item.generics,
+                    item.attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("rils_enum")),
+                )? {
                     trait_impls.push(parsed);
                 }
                 if implementation.items.iter().any(|item| {
@@ -105,7 +113,12 @@ impl Definition {
                 methods.push(method.clone());
             }
         }
-        if methods.is_empty() {
+        if methods.is_empty()
+            && !item
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("rils_enum"))
+        {
             return Err(Error::new_spanned(
                 module,
                 "definition needs a #[export_rils] method",
@@ -171,6 +184,9 @@ pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> To
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
     };
+    if mixed::has_markers(&original) {
+        return mixed::expand_definition(path, original);
+    }
     if string::is_string(&path) {
         return string::expand_definition(path, original);
     }

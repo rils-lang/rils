@@ -1,5 +1,31 @@
 # rils_stdlib
 
+## 按模块组合声明
+
+一个 `#[decl_rils(core::collections)]` 模块可以同时定义多个导出项。类型和 trait
+必须分别标记 `#[rils_struct]`、`#[rils_enum]`、`#[rils_trait]`；未标记的项仅供
+Rust 实现使用。公开结构体字段进入 Rils 声明，固有方法仍需 `#[export_rils]`。
+即使 trait 与类型都在同一模块，trait 实现也只有在 impl 块上标记
+`#[rils_impl]` 后才登记到 Rils。
+
+```rust
+#[decl_rils(core::collections)]
+mod native {
+    #[rils_struct(id_prefix = core::binary_heap)]
+    pub struct BinaryHeap<T>(std::collections::BinaryHeap<T>);
+
+    impl<T: Ord> BinaryHeap<T> {
+        #[export_rils]
+        pub fn new() -> Self { Self(std::collections::BinaryHeap::new()) }
+    }
+}
+```
+
+默认方法 ID 前缀是模块路径加类型的 snake_case 名称；`id_prefix` 可在移动已有
+定义时保留 `builtin_ids.toml` 中的稳定路径。
+混合模块中的 derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内
+标记导出的 trait。原有单定义模块及其 `#[rils_derive]` 写法继续有效。
+
 此 crate 存放可信的 Rust 标准库定义源。`src/stdlib/option.rs` 和
 `src/stdlib/result.rs` 使用 `#[decl_rils(core::...)]` 标注普通 Rust 模块，以类型、方法签名和 `#[export_rils]`
 方法体定义原生实现。定义宏把同一份声明交给：

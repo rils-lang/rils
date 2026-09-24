@@ -59,7 +59,11 @@ impl Input {
             "Eq" => module == "core::eq" && rust == "::core::cmp::Eq",
             "Hash" => module == "core::hash" && rust == "::core::hash::Hash",
             "BitFlags" => module == "core::bit_flags" && rust == "super::BitFlagsMarker",
-            _ => false,
+            _ => self
+                .item
+                .attrs
+                .iter()
+                .any(|attribute| attribute.path().is_ident("rils_trait")),
         };
         if !valid {
             return Err(Error::new_spanned(
@@ -96,12 +100,13 @@ impl Input {
                         && matches!(method.sig.inputs.first(), Some(FnArg::Receiver(receiver)) if receiver.reference.is_some() && receiver.mutability.is_none())
                 }
                 "Default" => method.sig.ident == "default" && method.sig.inputs.is_empty(),
-                _ => false,
+                _ => true,
             };
             if !valid_signature
                 || !method.sig.generics.params.is_empty()
                 || method.sig.generics.where_clause.is_some()
-                || !matches!(&method.sig.output, ReturnType::Type(_, ty) if matches!(ty.as_ref(), Type::Path(path) if path.path.is_ident("Self")))
+                || (matches!(name.as_str(), "Clone" | "Default")
+                    && !matches!(&method.sig.output, ReturnType::Type(_, ty) if matches!(ty.as_ref(), Type::Path(path) if path.path.is_ident("Self"))))
             {
                 return Err(Error::new_spanned(
                     method,
@@ -286,6 +291,15 @@ impl Input {
             };
         })
     }
+}
+
+pub(super) fn mixed_trait_binding(module: Path, item: ItemTrait) -> syn::Result<Path> {
+    let input = Input {
+        header: Header { module },
+        item,
+    };
+    input.validate()?;
+    Ok(input.rust_binding()?.clone())
 }
 
 pub(crate) fn contains_trait(module: &ItemMod) -> bool {

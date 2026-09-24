@@ -14,6 +14,7 @@ struct Definition {
     item: ItemStruct,
     methods: Vec<ImplItemFn>,
     traits: Vec<Path>,
+    trait_impls: Vec<super::trait_impls::ConditionalImpl>,
 }
 
 pub(super) fn contains_struct(module: &ItemMod) -> bool {
@@ -51,9 +52,16 @@ impl Definition {
             ));
         }
         let traits = super::trait_impls::parse(&item.attrs)?;
+        if !traits.is_empty() && !item.generics.params.is_empty() {
+            return Err(Error::new_spanned(
+                &item,
+                "generic types need a marked trait impl",
+            ));
+        }
         let mut methods = Vec::new();
+        let mut trait_impls = Vec::new();
         for implementation in items.iter().filter_map(|item| match item {
-            Item::Impl(item) if item.trait_.is_none() => Some(item),
+            Item::Impl(item) => Some(item),
             _ => None,
         }) {
             let Type::Path(target) = implementation.self_ty.as_ref() else {
@@ -65,6 +73,19 @@ impl Definition {
                 .last()
                 .is_none_or(|part| part.ident != item.ident)
             {
+                continue;
+            }
+            if implementation.trait_.is_some() {
+                if let Some(parsed) = super::trait_impls::parse_impl(
+                    implementation,
+                    &item.ident,
+                    &item.generics,
+                    item.attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("rils_struct")),
+                )? {
+                    trait_impls.push(parsed);
+                }
                 continue;
             }
             for member in &implementation.items {
@@ -89,7 +110,12 @@ impl Definition {
                 methods.push(method.clone());
             }
         }
-        if methods.is_empty() {
+        if methods.is_empty()
+            && !item
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("rils_struct"))
+        {
             return Err(Error::new_spanned(
                 &module,
                 "definition needs a #[export_rils] method",
@@ -106,6 +132,7 @@ impl Definition {
             item,
             methods,
             traits,
+            trait_impls,
         })
     }
 
@@ -269,6 +296,9 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
                     .attrs
                     .retain(|attribute| !attribute.path().is_ident("rils_impl")),
                 Item::Impl(implementation) => {
+                    implementation
+                        .attrs
+                        .retain(|attribute| !attribute.path().is_ident("rils_impl"));
                     for member in &mut implementation.items {
                         if let ImplItem::Fn(method) = member {
                             method
@@ -452,7 +482,12 @@ pub(super) fn expand_trait_impls(path: Path, module: ItemMod) -> TokenStream {
                 let trait_name = path.segments[0].ident.to_string();
                 quote!(crate::BuiltinTraitImpl { type_name: #type_name, trait_name: #trait_name, requirements: &[] })
             });
-            quote!(pub const TRAIT_IMPLS: &[crate::BuiltinTraitImpl] = &[#(#traits),*];).into()
+            let conditional = definition.trait_impls.iter().map(|implementation| {
+                let trait_name = &implementation.trait_name;
+                let requirements = implementation.requirements.iter().map(|(parameter, bound)| quote!((#parameter, #bound)));
+                quote!(crate::BuiltinTraitImpl { type_name: #type_name, trait_name: #trait_name, requirements: &[#(#requirements),*] })
+            });
+            quote!(pub const TRAIT_IMPLS: &[crate::BuiltinTraitImpl] = &[#(#traits,)* #(#conditional),*];).into()
         }
         Err(error) => error.into_compile_error().into(),
     }
