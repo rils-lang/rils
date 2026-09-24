@@ -7,7 +7,6 @@ use syn::{Error, FnArg, ImplItem, ImplItemFn, Item, ItemMod, ItemStruct, Path, R
 use crate::type_patterns;
 
 struct Definition {
-    module: ItemMod,
     item: ItemStruct,
     methods: Vec<ImplItemFn>,
     traits: Vec<Path>,
@@ -72,7 +71,6 @@ impl Definition {
             }
         }
         Ok(Self {
-            module,
             item,
             methods,
             traits,
@@ -99,42 +97,6 @@ impl Definition {
         source.push_str("}\n");
         source
     }
-}
-
-pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
-    let definition = match Definition::parse(path.clone(), module.clone()) {
-        Ok(value) => value,
-        Err(error) => return error.into_compile_error().into(),
-    };
-    let mut emitted = definition.module;
-    let checks = super::trait_impls::checks(&syn::parse_quote!(native::String), &definition.traits);
-    if let Some((_, items)) = &mut emitted.content {
-        for item in items {
-            if let Item::Struct(structure) = item {
-                structure
-                    .attrs
-                    .retain(|attr| !attr.path().is_ident("rils_impl"));
-            }
-            if let Item::Impl(implementation) = item {
-                for member in &mut implementation.items {
-                    if let ImplItem::Fn(method) = member {
-                        method
-                            .attrs
-                            .retain(|attr| !attr.path().is_ident("export_rils"));
-                    }
-                }
-            }
-        }
-    }
-    quote! {
-        #emitted
-        #checks
-        #[macro_export]
-        macro_rules! string_definition {
-            ($emit:ident) => { $emit! { #path; #module } };
-        }
-    }
-    .into()
 }
 
 pub(super) fn expand_source(path: Path, module: ItemMod) -> TokenStream {

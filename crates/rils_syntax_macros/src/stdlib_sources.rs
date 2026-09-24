@@ -154,16 +154,27 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            let declarations = contents
-                .iter()
-                .filter_map(|item| match item {
-                    Item::Trait(item) => Some((item.ident.to_string().to_lowercase(), true)),
-                    Item::Enum(item) => Some((item.ident.to_string().to_lowercase(), false)),
-                    Item::Struct(item) => Some((item.ident.to_string().to_lowercase(), false)),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            let selected = if !marked.is_empty() {
+            let selected = if contents.iter().any(|item| {
+                matches!(item, Item::Macro(item) if item.mac.path.is_ident("primitive_integer_family") || item.mac.path.is_ident("primitive_float_family"))
+            }) {
+                if !marked.is_empty() {
+                    return Err(Error::new_spanned(
+                        module,
+                        "primitive family cannot share a Rils declaration module",
+                    ));
+                }
+                vec![(
+                    relative,
+                    segments.last().cloned().unwrap_or_default(),
+                    false,
+                )]
+            } else {
+                if marked.is_empty() {
+                    return Err(Error::new_spanned(
+                        module,
+                        "expected a #[rils_struct], #[rils_enum], or #[rils_trait] declaration",
+                    ));
+                }
                 marked
                     .into_iter()
                     .map(|(name, is_trait, attr)| {
@@ -174,23 +185,6 @@ fn collect(directory: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                         ))
                     })
                     .collect::<syn::Result<Vec<_>>>()?
-            } else {
-                match declarations.as_slice() {
-                    [(name, is_trait)] => vec![(relative.clone(), name.clone(), *is_trait)],
-                    [] if contents.iter().any(|item| matches!(item, Item::Macro(_))) => {
-                        vec![(
-                            relative.clone(),
-                            segments.last().cloned().unwrap_or_default(),
-                            false,
-                        )]
-                    }
-                    _ => {
-                        return Err(Error::new_spanned(
-                            module,
-                            "expected one type or trait declaration",
-                        ));
-                    }
-                }
             };
             for (relative, name, is_trait) in selected {
                 if !seen.insert(relative.clone()) {
@@ -235,5 +229,15 @@ mod tests {
         assert!(tokens.contains("state_definition"));
         assert!(tokens.contains("marker_definition"));
         assert!(!tokens.contains("helper_definition"));
+    }
+
+    #[test]
+    fn single_declaration_without_marker_is_not_exported() {
+        let directory = LitStr::new(
+            "tests/fixtures/unmarked_stdlib",
+            proc_macro2::Span::call_site(),
+        );
+        let error = collect(&directory).unwrap_err();
+        assert!(error.to_string().contains("expected a #[rils_struct]"));
     }
 }

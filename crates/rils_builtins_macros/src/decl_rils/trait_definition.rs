@@ -1,9 +1,9 @@
 //! Rust-backed declarations for Rils built-in traits.
 
 use proc_macro::TokenStream;
-use quote::{ToTokens, format_ident, quote};
+use quote::{ToTokens, quote};
 use syn::{
-    Error, FnArg, Item, ItemMod, ItemTrait, Path, ReturnType, Token, TraitItem, TraitItemFn, Type,
+    Error, FnArg, ItemTrait, Path, ReturnType, Token, TraitItem, TraitItemFn, Type,
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
@@ -302,123 +302,6 @@ pub(super) fn mixed_trait_binding(module: Path, item: ItemTrait) -> syn::Result<
     Ok(input.rust_binding()?.clone())
 }
 
-pub(crate) fn contains_trait(module: &ItemMod) -> bool {
-    module
-        .content
-        .as_ref()
-        .is_some_and(|(_, items)| items.iter().any(|item| matches!(item, Item::Trait(_))))
-}
-
-fn derive_target(function: &syn::ItemFn, trait_name: &syn::Ident) -> syn::Result<syn::Ident> {
-    let attribute = function
-        .attrs
-        .iter()
-        .find(|attribute| attribute.path().is_ident("rils_derive"))
-        .expect("derive function has marker");
-    let target: syn::Ident = attribute
-        .parse_args()
-        .map_err(|_| Error::new_spanned(attribute, "expected #[rils_derive(TraitName)]"))?;
-    if target != *trait_name {
-        return Err(Error::new_spanned(
-            attribute,
-            format!("derive target must be {trait_name}"),
-        ));
-    }
-    Ok(target)
-}
-
-pub(crate) fn expand_module(path: Path, module: ItemMod) -> TokenStream {
-    let Some((_, items)) = &module.content else {
-        return Error::new_spanned(&module, "standard-library module must be inline")
-            .into_compile_error()
-            .into();
-    };
-    let traits = items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Trait(item) => Some(item),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if traits.len() != 1 {
-        return Error::new_spanned(&module, "expected exactly one trait")
-            .into_compile_error()
-            .into();
-    }
-    let input = Input {
-        header: Header {
-            module: path.clone(),
-        },
-        item: traits[0].clone(),
-    };
-    if let Err(error) = input.validate() {
-        return error.into_compile_error().into();
-    }
-    let derive_functions = items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Fn(function)
-                if function
-                    .attrs
-                    .iter()
-                    .any(|attribute| attribute.path().is_ident("rils_derive")) =>
-            {
-                Some(function)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if derive_functions.len() > 1 {
-        return Error::new_spanned(&module, "only one #[rils_derive] function is allowed")
-            .into_compile_error()
-            .into();
-    }
-    let derive = derive_functions.first().map(|function| -> syn::Result<_> {
-        let target = derive_target(function, &input.item.ident)?;
-        let function_name = &function.sig.ident;
-        let trait_name = input.item.ident.to_string();
-        let constant = format_ident!("DERIVE_{}", target.to_string().to_uppercase());
-        Ok(quote! {
-            pub const #constant: rils_syntax::derive::NativeDeriveDefinition =
-                rils_syntax::derive::NativeDeriveDefinition {
-                    name: #trait_name,
-                    expand: #function_name,
-                };
-        })
-    });
-    let derive = match derive.transpose() {
-        Ok(derive) => derive,
-        Err(error) => return error.into_compile_error().into(),
-    };
-    let rust = input.rust_binding().expect("validated trait binding");
-    let name = &input.item.ident;
-    let callback = format_ident!("{}_definition", name.to_string().to_lowercase());
-    let mut emitted = module.clone();
-    if let Some((_, items)) = &mut emitted.content {
-        for item in items.iter_mut() {
-            if matches!(item, Item::Trait(_)) {
-                *item = syn::parse_quote!(pub use #rust as #name;);
-            } else if let Item::Fn(function) = item {
-                function
-                    .attrs
-                    .retain(|attribute| !attribute.path().is_ident("rils_derive"));
-            }
-        }
-        if let Some(derive) = derive {
-            items.push(syn::parse_quote!(#derive));
-        }
-    }
-    let item = &input.item;
-    quote! {
-        #emitted
-        #[macro_export]
-        macro_rules! #callback {
-            ($emit:ident) => { $emit! { #path; #item } };
-        }
-    }
-    .into()
-}
-
 pub(crate) fn expand_source(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as Input);
     match input.validate() {
@@ -441,38 +324,6 @@ pub(crate) fn expand_metadata(input: TokenStream) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn single_trait_derive_requires_its_explicit_target() {
-        let trait_name: syn::Ident = syn::parse_quote!(Clone);
-        let explicit: syn::ItemFn = syn::parse_quote! {
-            #[rils_derive(Clone)]
-            fn derive_clone() {}
-        };
-        assert_eq!(derive_target(&explicit, &trait_name).unwrap(), trait_name);
-
-        let implicit: syn::ItemFn = syn::parse_quote! {
-            #[rils_derive]
-            fn derive_clone() {}
-        };
-        assert!(
-            derive_target(&implicit, &trait_name)
-                .unwrap_err()
-                .to_string()
-                .contains("expected #[rils_derive(TraitName)]")
-        );
-
-        let wrong: syn::ItemFn = syn::parse_quote! {
-            #[rils_derive(Copy)]
-            fn derive_clone() {}
-        };
-        assert!(
-            derive_target(&wrong, &trait_name)
-                .unwrap_err()
-                .to_string()
-                .contains("derive target must be Clone")
-        );
-    }
 
     #[test]
     fn clone_binding_generates_the_existing_rils_contract() {

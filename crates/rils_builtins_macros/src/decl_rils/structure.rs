@@ -1,7 +1,7 @@
 //! Shared declaration generation for Rust-backed Rils structs.
 
 use proc_macro::TokenStream;
-use quote::{ToTokens, format_ident, quote};
+use quote::{ToTokens, quote};
 use syn::{
     Error, Fields, FnArg, GenericArgument, ImplItem, ImplItemFn, Item, ItemMod, ItemStruct, Path,
     PathArguments, ReturnType, Type,
@@ -281,50 +281,6 @@ fn rils_field_type(ty: &Type) -> syn::Result<String> {
             "unsupported public Rils struct field type",
         )),
     }
-}
-
-pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
-    let definition = match Definition::parse(path.clone(), module.clone()) {
-        Ok(value) => value,
-        Err(error) => return error.into_compile_error().into(),
-    };
-    let mut emitted = module.clone();
-    if let Some((_, items)) = &mut emitted.content {
-        for item in items {
-            match item {
-                Item::Struct(structure) => structure
-                    .attrs
-                    .retain(|attribute| !attribute.path().is_ident("rils_impl")),
-                Item::Impl(implementation) => {
-                    implementation
-                        .attrs
-                        .retain(|attribute| !attribute.path().is_ident("rils_impl"));
-                    for member in &mut implementation.items {
-                        if let ImplItem::Fn(method) = member {
-                            method
-                                .attrs
-                                .retain(|attribute| !attribute.path().is_ident("export_rils"));
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    let name = &definition.item.ident;
-    let macro_name = format_ident!("{}_definition", name.to_string().to_lowercase());
-    let module_name = &module.ident;
-    let item_type: Type = syn::parse_quote!(#module_name::#name);
-    let checks = super::trait_impls::checks(&item_type, &definition.traits);
-    quote! {
-        #emitted
-        #checks
-        #[macro_export]
-        macro_rules! #macro_name {
-            ($emit:ident) => { $emit! { #path; #module } };
-        }
-    }
-    .into()
 }
 
 pub(super) fn expand_source(path: Path, module: ItemMod) -> TokenStream {

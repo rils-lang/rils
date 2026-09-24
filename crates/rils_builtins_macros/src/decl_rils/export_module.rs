@@ -1,4 +1,4 @@
-//! Explicitly exported declarations sharing one Rust module.
+//! Explicitly exported declarations in a Rust module.
 
 use std::collections::BTreeSet;
 
@@ -6,16 +6,15 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Attribute, Error, ImplItem, Item, ItemImpl, ItemMod, Path, Type};
 
-use super::trait_definition;
+use super::{trait_definition, trait_impls};
 
 const MARKERS: [&str; 3] = ["rils_struct", "rils_enum", "rils_trait"];
 
-pub(super) fn has_markers(module: &ItemMod) -> bool {
+pub(super) fn has_export_markers(module: &ItemMod) -> bool {
     module.content.as_ref().is_some_and(|(_, items)| {
         items.iter().any(|item| {
-            MARKERS
-                .iter()
-                .any(|marker| item_attrs(item).is_some_and(|attrs| has_attr(attrs, marker)))
+            item_attrs(item)
+                .is_some_and(|attrs| MARKERS.iter().any(|marker| has_attr(attrs, marker)))
         })
     })
 }
@@ -118,6 +117,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
     let mut trait_aliases = Vec::new();
     let mut derived = BTreeSet::new();
     let mut derive_constants = Vec::new();
+    let mut trait_checks = Vec::new();
 
     for item in items {
         let Some(attrs) = item_attrs(item) else {
@@ -180,6 +180,12 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                 }
             });
         } else {
+            let traits = trait_impls::parse(attrs)?;
+            if !traits.is_empty() {
+                let module_name = &module.ident;
+                let item_type: Type = syn::parse_quote!(#module_name::#name);
+                trait_checks.push(trait_impls::checks(&item_type, &traits));
+            }
             let selected = items
                 .iter()
                 .filter(|candidate| match candidate {
@@ -205,6 +211,22 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
         ));
     }
     for item in items {
+        if let Item::Struct(value) = item {
+            if has_attr(&value.attrs, "rils_impl") && !has_attr(&value.attrs, "rils_struct") {
+                return Err(Error::new_spanned(
+                    value,
+                    "#[rils_impl] type must be marked #[rils_struct]",
+                ));
+            }
+        }
+        if let Item::Enum(value) = item {
+            if has_attr(&value.attrs, "rils_impl") && !has_attr(&value.attrs, "rils_enum") {
+                return Err(Error::new_spanned(
+                    value,
+                    "#[rils_impl] type must be marked #[rils_enum]",
+                ));
+            }
+        }
         let Item::Impl(implementation) = item else {
             continue;
         };
@@ -233,6 +255,16 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                     "expected a simple Rils trait name",
                 ));
             }
+        }
+        if implementation.trait_.is_some()
+            && implementation.items.iter().any(|member| {
+                matches!(member, ImplItem::Fn(method) if has_attr(&method.attrs, "export_rils"))
+            })
+        {
+            return Err(Error::new_spanned(
+                implementation,
+                "#[export_rils] requires an inherent implementation",
+            ));
         }
         if implementation.trait_.is_none()
             && !exported.contains(&target.to_string())
@@ -272,11 +304,18 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                 }
             }
             Item::Fn(function) if has_attr(&function.attrs, "rils_derive") => {
-                let attr = function
+                let markers = function
                     .attrs
                     .iter()
-                    .find(|attr| attr.path().is_ident("rils_derive"))
-                    .expect("derive marker");
+                    .filter(|attr| attr.path().is_ident("rils_derive"))
+                    .collect::<Vec<_>>();
+                let attr = markers[0];
+                if markers.len() != 1 {
+                    return Err(Error::new_spanned(
+                        attr,
+                        "one #[rils_derive] marker is allowed per function",
+                    ));
+                }
                 let trait_name: syn::Ident = attr.parse_args()?;
                 if !exported.contains(&trait_name.to_string())
                     || !trait_aliases.iter().any(|(name, _)| name == &trait_name)
@@ -309,7 +348,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
     for derived in derive_constants {
         emitted_items.push(syn::parse2(derived)?);
     }
-    Ok(quote! { #emitted #(#callbacks)* })
+    Ok(quote! { #emitted #(#trait_checks)* #(#callbacks)* })
 }
 
 #[cfg(test)]
@@ -352,5 +391,84 @@ mod tests {
             }
         };
         assert!(expand(syn::parse_quote!(core::fixture), module).is_err());
+    }
+
+    #[test]
+    fn single_declarations_require_export_markers_too() {
+        for module in [
+            syn::parse_quote! {
+                mod native { pub struct Buffer; }
+            },
+            syn::parse_quote! {
+                mod native { pub enum State { Ready } }
+            },
+            syn::parse_quote! {
+                mod native { pub trait Marker: super::Marker {} }
+            },
+        ] {
+            let error = expand(syn::parse_quote!(core::fixture), module).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("expected a marked Rils declaration")
+            );
+        }
+    }
+
+    #[test]
+    fn derive_target_must_be_a_marked_trait_even_in_a_single_declaration_module() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_trait(id_prefix = core::clone)]
+                pub trait Clone: ::core::clone::Clone {
+                    fn clone(&self) -> Self;
+                }
+
+                #[rils_derive(Copy)]
+                fn derive_copy() {}
+            }
+        };
+        let error = expand(syn::parse_quote!(core::clone), module).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("derive target must be an exported trait")
+        );
+    }
+
+    #[test]
+    fn helper_type_cannot_claim_a_rils_trait_implementation() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_struct]
+                pub struct Exported;
+
+                #[rils_impl(Clone)]
+                pub struct Helper;
+            }
+        };
+        let error = expand(syn::parse_quote!(core::fixture), module).unwrap_err();
+        assert!(error.to_string().contains("must be marked #[rils_struct]"));
+    }
+
+    #[test]
+    fn trait_impl_methods_cannot_be_exported_as_inherent_methods() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_struct]
+                pub struct Exported;
+
+                impl Clone for Exported {
+                    #[export_rils]
+                    fn clone(&self) -> Self { Self }
+                }
+            }
+        };
+        let error = expand(syn::parse_quote!(core::fixture), module).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires an inherent implementation")
+        );
     }
 }

@@ -1,8 +1,8 @@
 # rils_stdlib
 
-## 按模块组合声明
+## 显式导出声明
 
-一个 `#[decl_rils(core::collections)]` 模块可以同时定义多个导出项。类型和 trait
+一个 `#[decl_rils(core::collections)]` 模块可以定义一个或多个导出项。类型和 trait
 必须分别标记 `#[rils_struct]`、`#[rils_enum]`、`#[rils_trait]`；未标记的项仅供
 Rust 实现使用。公开结构体字段进入 Rils 声明，固有方法仍需 `#[export_rils]`。
 即使 trait 与类型都在同一模块，trait 实现也只有在 impl 块上标记
@@ -23,8 +23,10 @@ mod native {
 
 默认方法 ID 前缀及生成的 `.rils` 资源路径是模块路径加类型的 snake_case 名称；
 `id_prefix` 可在移动已有定义时同时保留 `builtin_ids.toml` 中的稳定路径与资源路径。
-混合模块中的 derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内
-标记导出的 trait。单定义模块同样必须写出目标 trait，例如 `#[rils_derive(Clone)]`。
+derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内标记导出的 trait。
+无论模块中有多少定义，都必须显式标记导出的类型和 trait；旧定义可通过
+`id_prefix` 保持稳定 ID 和 `.rils` 资源路径。数值家族使用
+`primitive_integer_family!` / `primitive_float_family!` 预留宏声明内建原始类型。
 
 此 crate 存放可信的 Rust 标准库定义源。`src/stdlib/option.rs` 和
 `src/stdlib/result.rs` 使用 `#[decl_rils(core::...)]` 标注普通 Rust 模块，以类型、方法签名和 `#[export_rils]`

@@ -20,6 +20,7 @@ mod native {
     /// An owned UTF-8 string.
     #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[rils_impl(Clone, Default, Eq, Hash)]
+    #[rils_struct(id_prefix = core::string)]
     pub struct String(std::string::String);
 
     impl String {

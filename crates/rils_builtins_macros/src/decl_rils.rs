@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as Tokens;
-use quote::{ToTokens, format_ident, quote};
+use quote::{ToTokens, quote};
 use syn::{
     Error, FnArg, ImplItem, ImplItemFn, Item, ItemEnum, ItemImpl, ItemMod, Path, ReturnType, Token,
     Type,
@@ -10,7 +10,7 @@ use syn::{
 
 use crate::type_patterns;
 
-mod mixed;
+mod export_module;
 mod primitive;
 mod string;
 mod structure;
@@ -184,64 +184,18 @@ pub(crate) fn expand_definition(attribute: TokenStream, item: TokenStream) -> To
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
     };
-    if mixed::has_markers(&original) {
-        return mixed::expand_definition(path, original);
-    }
-    if string::is_string(&path) {
-        return string::expand_definition(path, original);
-    }
     if primitive::contains_mapping(&original) {
+        if export_module::has_export_markers(&original) {
+            return Error::new_spanned(
+                &original,
+                "primitive family cannot share a Rils declaration module",
+            )
+            .into_compile_error()
+            .into();
+        }
         return primitive::expand_definition(path, original);
     }
-    if trait_definition::contains_trait(&original) {
-        return trait_definition::expand_module(path, original);
-    }
-    if structure::contains_struct(&original) {
-        return structure::expand_definition(path, original);
-    }
-    let definition = match Definition::parse(path.clone(), &original) {
-        Ok(value) => value,
-        Err(error) => return error.into_compile_error().into(),
-    };
-    let mut emitted = original.clone();
-    if let Some((_, items)) = &mut emitted.content {
-        for item in items.iter_mut() {
-            if let Item::Enum(enumeration) = item {
-                enumeration
-                    .attrs
-                    .retain(|attr| !attr.path().is_ident("rils_impl"));
-            }
-            if let Item::Impl(implementation) = item {
-                implementation
-                    .attrs
-                    .retain(|attr| !attr.path().is_ident("rils_impl"));
-                for member in &mut implementation.items {
-                    if let ImplItem::Fn(method) = member {
-                        method
-                            .attrs
-                            .retain(|attr| !attr.path().is_ident("export_rils"));
-                    }
-                }
-            }
-        }
-    }
-    let module_ident = &original.ident;
-    let type_ident = &definition.item.ident;
-    let item_type: Type = syn::parse_quote!(#module_ident::#type_ident);
-    let checks = trait_impls::checks(&item_type, &definition.traits);
-    let macro_name = format_ident!(
-        "{}_definition",
-        definition.item.ident.to_string().to_lowercase()
-    );
-    quote! {
-        #emitted
-        #checks
-        #[macro_export]
-        macro_rules! #macro_name {
-            ($emit:ident) => { $emit! { #path; #original } };
-        }
-    }
-    .into()
+    export_module::expand_definition(path, original)
 }
 
 fn rils_source(definition: &Definition) -> String {

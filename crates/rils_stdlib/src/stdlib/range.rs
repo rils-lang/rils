@@ -33,6 +33,7 @@ mod native {
     use super::{Option, RangeStep};
 
     /// A half-open integer range.
+    #[rils_struct(id_prefix = core::range)]
     pub struct Range<T> {
         current: T,
         end: T,
