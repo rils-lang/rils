@@ -2,8 +2,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as Tokens;
 use quote::{ToTokens, quote};
 use syn::{
-    Error, FnArg, ImplItem, ImplItemFn, Item, ItemEnum, ItemImpl, ItemMod, Path, ReturnType, Token,
-    Type,
+    Error, FnArg, ImplItem, ImplItemFn, Item, ItemEnum, ItemImpl, ItemMod, Meta, Path, ReturnType,
+    Token, Type,
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
@@ -110,6 +110,7 @@ impl Definition {
                         "native method needs a Rust body",
                     ));
                 }
+                direct_native_method(method)?;
                 methods.push(method.clone());
             }
         }
@@ -377,12 +378,13 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             let name = method.sig.ident.to_string();
             let documentation = documentation(&method.attrs);
             let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-            let native_symbol = if direct_native_method(&name) {
+            let direct_native = direct_native_method(method)?;
+            let native_symbol = if direct_native {
                 quote!(Some(#id_path))
             } else {
                 quote!(None)
             };
-            let builtin_id = if direct_native_method(&name) {
+            let builtin_id = if direct_native {
                 quote!(None)
             } else {
                 quote!(Some(builtin_id!(#id_path)))
@@ -479,11 +481,30 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
         .join("\n")
 }
 
-fn direct_native_method(name: &str) -> bool {
-    matches!(
-        name,
-        "is_some" | "is_none" | "is_ok" | "is_err" | "ok" | "err"
-    )
+fn direct_native_method(method: &ImplItemFn) -> syn::Result<bool> {
+    let attribute = method
+        .attrs
+        .iter()
+        .find(|attribute| attribute.path().is_ident("export_rils"))
+        .ok_or_else(|| Error::new_spanned(method, "native method needs #[export_rils]"))?;
+    match &attribute.meta {
+        Meta::Path(_) => Ok(false),
+        Meta::List(_) => {
+            let option: syn::Ident = attribute.parse_args()?;
+            if option == "native" {
+                Ok(true)
+            } else {
+                Err(Error::new_spanned(
+                    attribute,
+                    "expected #[export_rils(native)]",
+                ))
+            }
+        }
+        Meta::NameValue(_) => Err(Error::new_spanned(
+            attribute,
+            "expected #[export_rils(native)]",
+        )),
+    }
 }
 
 pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
@@ -515,13 +536,10 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         ));
     }
     let module = &definition.module;
-    let implementations = definition.methods.iter().filter(|method| {
-        !matches!(method.sig.ident.to_string().as_str(),
-            "map" | "map_err" | "and_then" | "or_else")
-    }).map(|method| {
+    let implementations = definition.methods.iter().map(|method| {
         let name = &method.sig.ident;
         let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-        if !direct_native_method(&name.to_string()) {
+        if !direct_native_method(method)? {
             let arity = method.sig.inputs.len();
             return Ok(quote! {
                 #id_path => Some(
@@ -628,6 +646,31 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_bridge_requires_an_explicit_export_marker() {
+        let ordinary: ImplItemFn = syn::parse_quote!(
+            #[export_rils]
+            pub fn is_some(&self) -> bool {
+                true
+            }
+        );
+        let native: ImplItemFn = syn::parse_quote!(
+            #[export_rils(native)]
+            pub fn ready(&self) -> bool {
+                true
+            }
+        );
+        let invalid: ImplItemFn = syn::parse_quote!(
+            #[export_rils(other)]
+            pub fn invalid(&self) -> bool {
+                true
+            }
+        );
+        assert!(!direct_native_method(&ordinary).unwrap());
+        assert!(direct_native_method(&native).unwrap());
+        assert!(direct_native_method(&invalid).is_err());
+    }
 
     #[test]
     fn parses_native_definition_and_rejects_placeholder_body() {

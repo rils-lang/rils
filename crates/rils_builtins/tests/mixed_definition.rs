@@ -31,7 +31,7 @@ mod native {
     }
 
     impl Choice {
-        #[export_rils]
+        #[export_rils(native)]
         pub fn is_some(&self) -> bool {
             matches!(self, Self::Some(value) if *value >= 0)
         }
