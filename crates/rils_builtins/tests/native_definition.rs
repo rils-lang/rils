@@ -1,6 +1,5 @@
 use rils_builtins::{
-    BuiltinId, BuiltinKind, BuiltinMemberKind, ReceiverMode, TypePattern, builtin,
-    native_definitions,
+    BuiltinKind, BuiltinMemberKind, ReceiverMode, TypePattern, builtin, native_definitions,
 };
 
 #[test]
@@ -32,7 +31,8 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
     assert!(generated.member("has_value").is_none());
     assert_eq!(is_some.kind, BuiltinMemberKind::Method);
     assert_eq!(is_some.receiver, Some(ReceiverMode::Shared));
-    assert_eq!(is_some.builtin_id, Some(BuiltinId::OptionIsSome));
+    assert_eq!(is_some.builtin_id, None);
+    assert_eq!(is_some.native_symbol, Some("core::option::option::is_some"));
     assert_eq!(is_some.signature.unwrap().result, TypePattern::Bool);
     assert_eq!(
         is_some.documentation,

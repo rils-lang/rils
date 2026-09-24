@@ -1013,6 +1013,44 @@ fn result_native_methods_use_the_symbol_import() {
 }
 
 #[test]
+fn option_result_native_methods_and_global_helpers_match_interpreter() {
+    let source = r#"
+        let present = Some(1);
+        let missing: Option<i32> = None;
+        let success: Result<i32, string> = Ok(2);
+        let failure: Result<i32, string> = Err("failed");
+        let global_success: Result<i32, string> = Ok(3);
+        let global_failure: Result<i32, string> = Err("failed");
+        present.is_some() && missing.is_none()
+            && success.is_ok() && failure.is_err()
+            && Ok(4).ok().unwrap() == 4
+            && Err("error").err().unwrap() == "error"
+            && is_some(Some(5)) && is_none(None)
+            && is_ok(global_success) && is_err(global_failure)
+    "#;
+    let module = compile(source).unwrap();
+    let symbols = module
+        .native_imports
+        .iter()
+        .map(|import| import.symbol.as_str())
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        symbols,
+        HashSet::from([
+            "core::option::option::is_some",
+            "core::option::option::is_none",
+            "core::result::result::is_ok",
+            "core::result::result::is_err",
+            "core::result::result::ok",
+            "core::result::result::err",
+        ])
+    );
+    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute().unwrap(), Value::Bool(true));
+}
+
+#[test]
 fn string_methods_use_native_imports_without_legacy_ids() {
     let source = "let text = \"é\"; text.contains(\"é\") && text.len() == 2";
     let module = compile(source).unwrap();

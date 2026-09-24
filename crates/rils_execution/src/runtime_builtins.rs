@@ -701,9 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn option_and_result_state_members_use_their_stable_ids() {
-        use rils_builtins::BuiltinId;
-
+    fn option_and_result_state_members_use_native_symbols() {
         let option = Value::Option {
             value: Some(Rc::new(Value::I32(7))),
             element_type: Some(Type::I32),
@@ -714,14 +712,22 @@ mod tests {
             error_type: Some(Type::String),
         };
         let cases = [
-            (BuiltinId::OptionIsSome, option.clone(), Value::Bool(true)),
-            (BuiltinId::OptionIsNone, option, Value::Bool(false)),
-            (BuiltinId::ResultIsOk, result.clone(), Value::Bool(false)),
-            (BuiltinId::ResultIsErr, result, Value::Bool(true)),
+            (
+                "core::option::option::is_some",
+                option.clone(),
+                Value::Bool(true),
+            ),
+            ("core::option::option::is_none", option, Value::Bool(false)),
+            (
+                "core::result::result::is_ok",
+                result.clone(),
+                Value::Bool(false),
+            ),
+            ("core::result::result::is_err", result, Value::Bool(true)),
         ];
 
-        for (id, receiver, expected) in cases {
-            assert_eq!(call(id, &[receiver]).unwrap(), expected, "{id:?}");
+        for (symbol, receiver, expected) in cases {
+            assert_eq!(call_native_symbol(symbol, &[receiver]), Some(Ok(expected)));
         }
     }
 

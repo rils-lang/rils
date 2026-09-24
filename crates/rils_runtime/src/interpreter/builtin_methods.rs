@@ -241,13 +241,6 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::IteratorPosition),
             ) => self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span),
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::ResultIsOk
-                | rils_builtins::BuiltinId::ResultIsErr
-                | rils_builtins::BuiltinId::OptionIsSome
-                | rils_builtins::BuiltinId::OptionIsNone),
-            ) => crate::runtime_builtins::call(id, &[(*method.receiver).clone()])
-                .map_err(|message| RuntimeError::new(message, span)),
-            BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::ResultUnwrap
                 | rils_builtins::BuiltinId::ResultUnwrapOr
                 | rils_builtins::BuiltinId::ResultExpect
@@ -262,9 +255,7 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::ResultOk
-                | rils_builtins::BuiltinId::ResultErr
-                | rils_builtins::BuiltinId::ResultUnwrapErr
+                id @ (rils_builtins::BuiltinId::ResultUnwrapErr
                 | rils_builtins::BuiltinId::ResultExpectErr),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);

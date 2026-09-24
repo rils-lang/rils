@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use rils_builtins::BuiltinId;
 use rils_execution::{Type, Value, runtime_builtins};
 
 #[test]
@@ -22,17 +21,25 @@ fn native_option_is_some_handles_variants_and_invalid_receivers() {
         ),
     ] {
         assert_eq!(
-            runtime_builtins::call(BuiltinId::OptionIsSome, std::slice::from_ref(&input)),
-            Ok(Value::Bool(is_some))
+            runtime_builtins::call_native_symbol(
+                "core::option::option::is_some",
+                std::slice::from_ref(&input)
+            ),
+            Some(Ok(Value::Bool(is_some)))
         );
         assert_eq!(
-            runtime_builtins::call(BuiltinId::OptionIsNone, &[input]),
-            Ok(Value::Bool(!is_some))
+            runtime_builtins::call_native_symbol("core::option::option::is_none", &[input]),
+            Some(Ok(Value::Bool(!is_some)))
         );
     }
-    let error = runtime_builtins::call(BuiltinId::OptionIsSome, &[Value::I32(5)]).unwrap_err();
+    let error =
+        runtime_builtins::call_native_symbol("core::option::option::is_some", &[Value::I32(5)])
+            .unwrap()
+            .unwrap_err();
     assert!(error.contains("expects Option"));
-    let error = runtime_builtins::call(BuiltinId::OptionIsSome, &[]).unwrap_err();
+    let error = runtime_builtins::call_native_symbol("core::option::option::is_some", &[])
+        .unwrap()
+        .unwrap_err();
     assert!(error.contains("one receiver"));
 }
 

@@ -92,13 +92,9 @@ write_derived_debug = 0x0701
 
 # Result operations: 0x0800-0x08FF.
 [core.result.result]
-is_ok = 0x0800
-is_err = 0x0801
 unwrap = 0x0802
 unwrap_or = 0x0803
 expect = 0x0804
-ok = 0x0805
-err = 0x0806
 unwrap_err = 0x0807
 expect_err = 0x0808
 map = 0x0809
@@ -108,8 +104,6 @@ or_else = 0x080C
 
 # Option operations: 0x0900-0x09FF.
 [core.option.option]
-is_some = 0x0900
-is_none = 0x0901
 unwrap = 0x0902
 unwrap_or = 0x0903
 expect = 0x0904

@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use rils_builtins::BuiltinId;
 use rils_execution::{Type, Value, runtime_builtins};
 
 #[test]
@@ -23,45 +22,56 @@ fn native_result_methods_cover_both_variants_and_preserve_option_types() {
             error_type: Some(Type::String),
         };
         assert_eq!(
-            runtime_builtins::call(BuiltinId::ResultIsOk, std::slice::from_ref(&input)),
-            Ok(Value::Bool(expected_ok.is_some()))
+            runtime_builtins::call_native_symbol(
+                "core::result::result::is_ok",
+                std::slice::from_ref(&input)
+            ),
+            Some(Ok(Value::Bool(expected_ok.is_some())))
         );
         assert_eq!(
-            runtime_builtins::call(BuiltinId::ResultIsErr, std::slice::from_ref(&input)),
-            Ok(Value::Bool(expected_err.is_some()))
+            runtime_builtins::call_native_symbol(
+                "core::result::result::is_err",
+                std::slice::from_ref(&input)
+            ),
+            Some(Ok(Value::Bool(expected_err.is_some())))
         );
         assert_eq!(
-            runtime_builtins::call(BuiltinId::ResultOk, std::slice::from_ref(&input)),
-            Ok(Value::Option {
+            runtime_builtins::call_native_symbol(
+                "core::result::result::ok",
+                std::slice::from_ref(&input)
+            ),
+            Some(Ok(Value::Option {
                 value: expected_ok,
                 element_type: Some(Type::I32),
-            })
+            }))
         );
         assert_eq!(
-            runtime_builtins::call(BuiltinId::ResultErr, &[input]),
-            Ok(Value::Option {
+            runtime_builtins::call_native_symbol("core::result::result::err", &[input]),
+            Some(Ok(Value::Option {
                 value: expected_err,
                 element_type: Some(Type::String),
-            })
+            }))
         );
     }
 }
 
 #[test]
 fn native_result_methods_reject_invalid_receivers_and_arities() {
-    for id in [
-        BuiltinId::ResultIsOk,
-        BuiltinId::ResultIsErr,
-        BuiltinId::ResultOk,
-        BuiltinId::ResultErr,
+    for symbol in [
+        "core::result::result::is_ok",
+        "core::result::result::is_err",
+        "core::result::result::ok",
+        "core::result::result::err",
     ] {
         assert!(
-            runtime_builtins::call(id, &[Value::I32(5)])
+            runtime_builtins::call_native_symbol(symbol, &[Value::I32(5)])
+                .unwrap()
                 .unwrap_err()
                 .contains("expects Result")
         );
         assert!(
-            runtime_builtins::call(id, &[])
+            runtime_builtins::call_native_symbol(symbol, &[])
+                .unwrap()
                 .unwrap_err()
                 .contains("one receiver")
         );

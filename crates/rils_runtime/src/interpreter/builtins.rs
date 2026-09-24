@@ -388,19 +388,27 @@ fn runtime_clone(arguments: &[Value]) -> Result<Value, String> {
 }
 
 fn runtime_result_is_ok(arguments: &[Value]) -> Result<Value, String> {
-    crate::runtime_builtins::call(rils_builtins::BuiltinId::ResultIsOk, arguments)
+    call_native_method("Result", "is_ok", arguments)
 }
 
 fn runtime_result_is_err(arguments: &[Value]) -> Result<Value, String> {
-    crate::runtime_builtins::call(rils_builtins::BuiltinId::ResultIsErr, arguments)
+    call_native_method("Result", "is_err", arguments)
 }
 
 fn runtime_option_is_some(arguments: &[Value]) -> Result<Value, String> {
-    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionIsSome, arguments)
+    call_native_method("Option", "is_some", arguments)
 }
 
 fn runtime_option_is_none(arguments: &[Value]) -> Result<Value, String> {
-    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionIsNone, arguments)
+    call_native_method("Option", "is_none", arguments)
+}
+
+fn call_native_method(owner: &str, method: &str, arguments: &[Value]) -> Result<Value, String> {
+    let symbol = rils_builtins::builtin_member(owner, method)
+        .and_then(|member| member.native_symbol)
+        .ok_or_else(|| format!("native method `{owner}::{method}` is unavailable"))?;
+    crate::runtime_builtins::call_native_symbol(symbol, arguments)
+        .ok_or_else(|| format!("native method `{symbol}` is unavailable"))?
 }
 
 fn runtime_unwrap(arguments: &[Value]) -> Result<Value, String> {

@@ -4,6 +4,7 @@ use crate::runtime_builtins::call as call_runtime_builtin;
 #[derive(Clone, Copy)]
 pub(super) enum CoreImport {
     Builtin(rils_builtins::BuiltinId),
+    Native(&'static str),
     TypeOf,
     Assert,
     VecNew,
@@ -49,10 +50,18 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
     Some(match name {
         "type_of" => CoreImport::TypeOf,
         "clone" => CoreImport::Builtin(BuiltinId::Clone),
-        "is_ok" => CoreImport::Builtin(BuiltinId::ResultIsOk),
-        "is_err" => CoreImport::Builtin(BuiltinId::ResultIsErr),
-        "is_some" => CoreImport::Builtin(BuiltinId::OptionIsSome),
-        "is_none" => CoreImport::Builtin(BuiltinId::OptionIsNone),
+        "is_ok" => {
+            CoreImport::Native(rils_builtins::builtin_member("Result", "is_ok")?.native_symbol?)
+        }
+        "is_err" => {
+            CoreImport::Native(rils_builtins::builtin_member("Result", "is_err")?.native_symbol?)
+        }
+        "is_some" => {
+            CoreImport::Native(rils_builtins::builtin_member("Option", "is_some")?.native_symbol?)
+        }
+        "is_none" => {
+            CoreImport::Native(rils_builtins::builtin_member("Option", "is_none")?.native_symbol?)
+        }
         "unwrap" => CoreImport::Builtin(BuiltinId::OptionUnwrap),
         "unwrap_or" => CoreImport::Builtin(BuiltinId::OptionUnwrapOr),
         "core::assert" => CoreImport::Assert,
@@ -68,6 +77,10 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
 pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Result<Value, String> {
     match import {
         CoreImport::Builtin(id) => call_runtime_builtin(id, arguments),
+        CoreImport::Native(symbol) => {
+            crate::runtime_builtins::call_native_symbol(symbol, arguments)
+                .ok_or_else(|| format!("native method `{symbol}` is unavailable"))?
+        }
         CoreImport::TypeOf => Ok(Value::String(Rc::from(arguments[0].type_name()))),
         CoreImport::Assert => match arguments.first() {
             Some(Value::Bool(true)) => Ok(Value::Unit),

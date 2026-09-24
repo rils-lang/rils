@@ -194,10 +194,10 @@ mod tests {
                 "core".into(),
                 "option".into(),
                 "option".into(),
-                "is_some".into(),
+                "unwrap".into(),
             ])
             .unwrap(),
-            "OptionIsSome"
+            "OptionUnwrap"
         );
     }
 }

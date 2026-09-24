@@ -234,12 +234,6 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
 #[test]
 fn regrouped_native_paths_keep_their_numeric_ids() {
     for (id, path, raw) in [
-        (
-            BuiltinId::OptionIsSome,
-            "core::option::option::is_some",
-            0x0900,
-        ),
-        (BuiltinId::ResultIsOk, "core::result::result::is_ok", 0x0800),
         (BuiltinId::RangeNext, "core::iter::range::next", 0x0400),
         (
             BuiltinId::VecDequeNew,
@@ -264,6 +258,24 @@ fn string_methods_no_longer_reserve_builtin_ids() {
         assert!(member.native_symbol.is_some(), "string::{}", member.name);
     }
     for raw in 0x0A00..=0x0A13 {
+        assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
+    }
+}
+
+#[test]
+fn direct_option_result_methods_no_longer_reserve_builtin_ids() {
+    for (type_name, methods) in [
+        ("Option", &["is_some", "is_none"][..]),
+        ("Result", &["is_ok", "is_err", "ok", "err"][..]),
+    ] {
+        let declaration = builtin(type_name).unwrap();
+        for &name in methods {
+            let member = declaration.member(name).unwrap();
+            assert!(member.builtin_id.is_none(), "{type_name}::{name}");
+            assert!(member.native_symbol.is_some(), "{type_name}::{name}");
+        }
+    }
+    for raw in [0x0800, 0x0801, 0x0805, 0x0806, 0x0900, 0x0901] {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
 }

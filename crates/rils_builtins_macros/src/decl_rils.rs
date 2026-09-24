@@ -382,6 +382,11 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             } else {
                 quote!(None)
             };
+            let builtin_id = if direct_native_method(&name) {
+                quote!(None)
+            } else {
+                quote!(Some(builtin_id!(#id_path)))
+            };
             let receiver = method.sig.receiver().ok_or_else(|| {
                 Error::new_spanned(&method.sig, "native methods require a receiver")
             })?;
@@ -425,7 +430,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     }),
                     value_type: None,
                     receiver: Some(#receiver_mode),
-                    builtin_id: Some(builtin_id!(#id_path)),
+                    builtin_id: #builtin_id,
                     runtime_import: None,
                     native_symbol: #native_symbol,
                     required: true,
