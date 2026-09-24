@@ -279,6 +279,23 @@ fn regrouped_native_paths_keep_their_numeric_ids() {
 }
 
 #[test]
+fn migrated_hash_constructors_keep_imports_and_iterator_ids() {
+    for (name, constructor, iterator) in [
+        ("HashMap", "core::hash_map::new", BuiltinId::HashMapIter),
+        ("HashSet", "core::hash_set::new", BuiltinId::HashSetIter),
+    ] {
+        let declaration = builtin(name).expect("migrated hash collection");
+        let new = declaration.member("new").expect("constructor");
+        assert_eq!(new.runtime_import, Some(constructor));
+        assert!(new.builtin_id.is_none());
+        assert_eq!(
+            declaration.member("iter").unwrap().builtin_id,
+            Some(iterator)
+        );
+    }
+}
+
+#[test]
 fn string_methods_no_longer_reserve_builtin_ids() {
     for member in builtin("string").unwrap().members {
         assert!(member.builtin_id.is_none(), "string::{}", member.name);

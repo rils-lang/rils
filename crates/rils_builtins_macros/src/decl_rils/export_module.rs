@@ -293,9 +293,10 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                     .retain(|attr| !attr.path().is_ident("rils_impl"));
                 for member in &mut value.items {
                     if let ImplItem::Fn(method) = member {
-                        method
-                            .attrs
-                            .retain(|attr| !attr.path().is_ident("export_rils"));
+                        method.attrs.retain(|attr| {
+                            !attr.path().is_ident("export_rils")
+                                && !attr.path().is_ident("rils_import")
+                        });
                     }
                 }
             }

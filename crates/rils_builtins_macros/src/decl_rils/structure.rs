@@ -354,6 +354,26 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                 "{}::{method_name}",
                 quote!(#module).to_string().replace(' ', "")
             );
+            let imports = method
+                .attrs
+                .iter()
+                .filter(|attr| attr.path().is_ident("rils_import"))
+                .collect::<Vec<_>>();
+            if imports.len() > 1 {
+                return Err(Error::new_spanned(method, "duplicate #[rils_import]"));
+            }
+            let runtime_import = if let Some(attribute) = imports.first() {
+                let path: Path = attribute.parse_args()?;
+                let path = quote!(#path).to_string().replace(' ', "");
+                quote!(Some(#path))
+            } else {
+                quote!(None)
+            };
+            let builtin_id = if imports.is_empty() {
+                quote!(Some(legacy_builtin_id!(#id_path)))
+            } else {
+                quote!(None)
+            };
             let (kind, receiver_mode, parameter_start) =
                 if let Some(receiver) = method.sig.receiver() {
                     let mode = if receiver.reference.is_some() {
@@ -408,8 +428,8 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     }),
                     value_type: None,
                     receiver: #receiver_mode,
-                    builtin_id: Some(legacy_builtin_id!(#id_path)),
-                    runtime_import: None,
+                    builtin_id: #builtin_id,
+                    runtime_import: #runtime_import,
                     native_symbol: None,
                     required: true,
                     type_parameters: &[#(#generics),*],

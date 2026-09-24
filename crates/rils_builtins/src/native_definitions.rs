@@ -104,6 +104,18 @@ pub mod btree_set {
     rils_stdlib::btreeset_definition!(decl_rils_metadata);
 }
 
+pub mod hash_map {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::hashmap_definition!(decl_rils_metadata);
+}
+
+pub mod hash_set {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::hashset_definition!(decl_rils_metadata);
+}
+
 pub mod format_error {
     use rils_builtins_macros::decl_rils_metadata;
 
@@ -163,6 +175,8 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     binary_heap::DECLARATION,
     btree_map::DECLARATION,
     btree_set::DECLARATION,
+    hash_map::DECLARATION,
+    hash_set::DECLARATION,
     format_error::DECLARATION,
     boxed::DECLARATION,
     io_error::DECLARATION,

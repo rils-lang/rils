@@ -4,6 +4,8 @@ use rils_builtins_macros::decl_rils;
 
 use super::{prelude::Option, string::Iterator};
 
+mod hash;
+
 /// Borrowed iterator returned by collection views while the Rils iterator API is migrated.
 pub struct Iter<T>(pub Vec<T>);
 
@@ -469,4 +471,5 @@ mod native {
     }
 }
 
+pub use hash::{HashMap, HashSet};
 pub use native::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
