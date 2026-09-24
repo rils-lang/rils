@@ -239,6 +239,8 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(crate::native_definitions::range::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::vec_deque::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::binary_heap::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::btree_map::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::btree_set::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::format_error::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::boxed::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::io_error::DECLARATION));

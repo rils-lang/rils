@@ -92,6 +92,18 @@ pub mod binary_heap {
     rils_stdlib::binaryheap_definition!(decl_rils_trait_impls);
 }
 
+pub mod btree_map {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::btreemap_definition!(decl_rils_metadata);
+}
+
+pub mod btree_set {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::btreeset_definition!(decl_rils_metadata);
+}
+
 pub mod format_error {
     use rils_builtins_macros::decl_rils_metadata;
 
@@ -149,6 +161,8 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     range::DECLARATION,
     vec_deque::DECLARATION,
     binary_heap::DECLARATION,
+    btree_map::DECLARATION,
+    btree_set::DECLARATION,
     format_error::DECLARATION,
     boxed::DECLARATION,
     io_error::DECLARATION,

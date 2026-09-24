@@ -36,6 +36,19 @@ fn declarations(config_path: &Path, members: &BTreeMap<String, (u32, String)>) -
         .iter()
         .map(|(key, (id, _))| format!("({key:?}) => {{ $crate::BuiltinId::from_raw({id}u32) }};"))
         .collect::<String>();
+    let collection_alias_arms = members
+        .iter()
+        .filter_map(|(key, (id, _))| {
+            let rest = key.strip_prefix("core::")?;
+            let (owner, _) = rest.split_once("::")?;
+            if owner == "collections" || rest.matches("::").count() != 1 {
+                return None;
+            }
+            let alias = format!("core::collections::{rest}");
+            (!members.contains_key(&alias))
+                .then(|| format!("({alias:?}) => {{ $crate::BuiltinId::from_raw({id}u32) }};"))
+        })
+        .collect::<String>();
     let all_ids = members
         .values()
         .map(|(_, name)| format!("Self::{name},"))
@@ -88,6 +101,7 @@ fn declarations(config_path: &Path, members: &BTreeMap<String, (u32, String)>) -
          #[macro_export]
          macro_rules! legacy_builtin_id {{
              {builtin_id_arms}
+             {collection_alias_arms}
              ($key:literal) => {{
                  compile_error!(concat!(
                      "`#[export_rils]` method `", $key,

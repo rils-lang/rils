@@ -50,7 +50,11 @@ fn snake_case(name: &str) -> String {
         }
         result.extend(character.to_lowercase());
     }
-    result
+    if let Some(rest) = result.strip_prefix("b_tree_") {
+        format!("btree_{rest}")
+    } else {
+        result
+    }
 }
 
 fn target_name(item: &ItemImpl) -> Option<&syn::Ident> {
@@ -352,6 +356,7 @@ mod tests {
         assert_eq!(snake_case("BinaryHeap"), "binary_heap");
         assert_eq!(snake_case("VecDeque"), "vec_deque");
         assert_eq!(snake_case("I32"), "i32");
+        assert_eq!(snake_case("BTreeMap"), "btree_map");
     }
 
     #[test]
