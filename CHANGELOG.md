@@ -27,8 +27,9 @@
 
 ### Breaking Changes
 
-- `.rilbc` 格式提升到 v9；标准库原生符号导入表和 `CallNative` 指令承接已迁移的方法，
-  `string` 方法不再占用 `BuiltinId`。v9 loader 拒绝 v7/v8 字节码；从源码重新生成 `.rilbc`、
+- `.rilbc` v8 增加标准库原生符号导入表和 `CallNative` 指令，
+  `string` 方法不再占用 `BuiltinId`。v8 loader 拒绝 v7 字节码；迁移期间 v8 尚未冻结，
+  旧 v8 文件若引用已移除的 ID，也需从源码重新生成 `.rilbc`、
   Unity `.bytes` 及嵌入 `.rilslib` 的字节码模块。宿主 ABI 版本不变。
 - Rust 代码应将 `BuiltinId::String*` 改为声明中的 `native_symbol` 和原生符号调用入口；
   字符串方法的稳定数字 ID 已删除；穷举匹配 `BuiltinMethod` 时需处理新增的 `Native` 分支。

@@ -38,7 +38,7 @@ use super::{
 };
 
 const MAGIC: &[u8; 8] = b"RILBC\0\0\0";
-pub const BYTECODE_FORMAT_VERSION: u16 = 9;
+pub const BYTECODE_FORMAT_VERSION: u16 = 8;
 pub const BYTECODE_LANGUAGE_VERSION: (u16, u16, u16) = (0, 1, 0);
 
 const HEADER_LEN: usize = 32;

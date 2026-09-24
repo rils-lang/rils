@@ -94,7 +94,7 @@ receiver 和引用 receiver 只允许立即调用，不能进入可复制的绑�
 | 模块 | 已支持 | 内联模块、use/as、多段路径及 `compile_file` 外部模块链接 |
 | 迭代器 | 部分支持 | Range、数组、Vec 和自定义 Iterator/IntoIterator；借用迭代器待实现 |
 | 标准库/宿主 | 部分支持 | core/Vec、内置宏、显式授权的 std::io/std::fs，以及编译期自定义 HostContract 已链接；解释器 Engine 与同一契约的整合待完成 |
-| 磁盘预编译 | 实验可用 | `.rilbc` v9、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
+| 磁盘预编译 | 实验可用 | `.rilbc` v8、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
 
 Rust 宿主入口如下：
 
@@ -141,14 +141,14 @@ game.validate_host(&game_host)?;
 
 ## 磁盘格式
 
-当前已实现实验性 `.rilbc` v9。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
+当前已实现实验性 `.rilbc` v8。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
 内存布局：
 
 ```text
 magic | format version | language version | host ABI | pointer width | flags | section directory | CRC32
 ```
 
-v9 包含 module、imports、native imports、types、iterators、functions、sources 和 trait implementations 八个必需
+v8 包含 module、imports、native imports、types、iterators、functions、sources 和 trait implementations 八个必需
 section。trait implementations 表以受 verifier 校验的类型名、trait 名、声明 SourceId、方法名和函数索引保留实现身份，
 宿主无需扫描源码或猜测函数名即可发现入口并精确分发 trait 方法。`Eq`、`Hash` 的 marker 实现沿用此表，
 方法列表为空；VM 加载后据此恢复类型的哈希键资格，不增加磁盘格式字段。sources 表只
@@ -162,9 +162,9 @@ section 拒绝加载，未知可选 section 在完成边界验证后跳过。
 
 由于语言当前存在 `usize`/`isize`，格式会记录目标指针宽度，32 位和 64 位产物不允许交叉加载，避免
 发生静默截断。`format version`、`language version` 和 `host ABI` 分别检查。当前格式仍处于 0.4.0
-实验期，后续不兼容调整会提升格式版本；尚未承诺长期跨版本兼容。
+实验期，标准库迁移期间的内部布局仍会调整并沿用 v8；待迁移完成后再固定 v8 布局，当前尚未承诺长期跨版本兼容。
 
-格式 v9 为已迁移的标准库原生方法使用独立的 native imports 表，表项保存规范符号路径和签名；
+格式 v8 为已迁移的标准库原生方法使用独立的 native imports 表，表项保存规范符号路径和签名；
 `CallNative` 按表索引调用生成的 Rust 桥接实现。verifier 检查符号、签名、实参数和索引。
 尚未迁移的 runtime 成员和数值 intrinsic 继续以 32 位 `BuiltinId` 编码 `CallRuntime` / `CallIntrinsic`；
 loader 仍拒绝未知或不支持对应调用方式的 ID。`std` 和宿主 Manifest 导入使用独立的 host imports 表。

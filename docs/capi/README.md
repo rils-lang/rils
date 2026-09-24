@@ -77,7 +77,7 @@ C/C# 通过 generation handle 管理其生命周期。普通宿主调用
 调用方不得释放。所有可失败入口都捕获 Rust panic，panic 不会穿过 C ABI。
 
 通过 `compile_file` 编译的项目或兼容模块树会保留每个脚本的 SourceId；编译错误和 VM 运行错误
-返回实际出错依赖文件的名称，而不是始终使用入口路径。从 `.rilbc` v9 bytes/file 加载后该映射仍然保留。
+返回实际出错依赖文件的名称，而不是始终使用入口路径。从 `.rilbc` v8 bytes/file 加载后该映射仍然保留。
 
 输入 `RilsSlice` 仅在调用期间借用；输出句柄由创建者负责释放。`RilsValue.reserved` 必须为零，方便
 后续在不复用现有字段含义的前提下扩展协议。完整声明见

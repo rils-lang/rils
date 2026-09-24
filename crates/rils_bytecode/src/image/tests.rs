@@ -1041,13 +1041,13 @@ fn string_methods_use_native_imports_without_legacy_ids() {
     let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
     assert_eq!(loaded.execute().unwrap(), Value::Bool(true));
     let mut previous_format = bytes;
-    previous_format[8..10].copy_from_slice(&8u16.to_le_bytes());
+    previous_format[8..10].copy_from_slice(&7u16.to_le_bytes());
     assert!(
         BytecodeModule::from_bytes(&previous_format)
             .err()
             .unwrap()
             .message
-            .contains("unsupported bytecode format version 8")
+            .contains("unsupported bytecode format version 7")
     );
 }
 
