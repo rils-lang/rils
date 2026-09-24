@@ -193,6 +193,12 @@ Set 还提供 `is_subset/is_superset/is_disjoint` 与
 都可直接用于 `for`，并会在进入循环时被消费。借用查询回调、借用迭代器以及 Map 索引 place
 留待后续实现。
 
+## Cell
+
+`Cell<T>` 使用内部可变性，提供 `new`、`get`、`set` 和 `replace`。
+`get()` 仅适用于实现 `Copy` 的值；非 `Copy` 值可用 `replace()` 取出旧值。
+当前方法的泛型约束由运行时检查，前端提前报告此类错误仍待实现。
+
 ## Enum
 
 Enum 支持 unit、tuple 和 record 三类 variant：

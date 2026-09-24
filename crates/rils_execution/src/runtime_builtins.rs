@@ -102,7 +102,13 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             })))
         }
         BuiltinId::CellGet => match import_receiver(&arguments[0])? {
-            Value::Cell(cell) => cell.value.borrow().clone_owned(),
+            Value::Cell(cell) => {
+                let value = cell.value.borrow();
+                if !value.is_copy() {
+                    return Err("Cell::get requires a Copy value".into());
+                }
+                value.clone_owned()
+            }
             value => Err(format!(
                 "Cell::get expects Cell, found {}",
                 value.type_name()

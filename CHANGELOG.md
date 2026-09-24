@@ -52,6 +52,7 @@
   `BuiltinId::RcClone` 的 Rust 代码须更新，并重新编译引用旧路径的实验性 v8 字节码。
 - `Cell` 的内部成员路径改为 `core::cell::cell::*`，数字 ID 不变；依赖旧内部路径的 Rust 代码
   须更新，并重新编译引用旧路径的实验性 v8 字节码。
+- `Cell<T>::get()` 现在要求 `T: Copy`，不再克隆非 `Copy` 值；这类值可用 `replace()` 取回。
 
 - Rust embedders matching `Value::SequenceIterator` or using `SequenceIteratorValue` must migrate to `Value::OwnedIterator` and `OwnedIteratorValue`. The borrowed sequence runtime variant is now `BorrowedSequenceIter`; Rils `Iterator<T>` source signatures remain available.
 
