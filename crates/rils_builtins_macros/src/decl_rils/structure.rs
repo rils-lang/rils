@@ -175,6 +175,26 @@ impl Definition {
             }
             let mut signature = method.sig.clone();
             signature.generics.where_clause = None;
+            signature.generics.params = signature
+                .generics
+                .params
+                .into_iter()
+                .filter(|parameter| !matches!(parameter, syn::GenericParam::Const(_)))
+                .collect();
+            for any in any_parameters(method)? {
+                let mut found = false;
+                for argument in &mut signature.inputs {
+                    if let FnArg::Typed(argument) = argument
+                        && matches!(argument.pat.as_ref(), syn::Pat::Ident(name) if name.ident == any)
+                    {
+                        *argument.ty = syn::parse_quote!(_);
+                        found = true;
+                    }
+                }
+                if !found {
+                    return Err(Error::new_spanned(any, "unknown exported parameter"));
+                }
+            }
             let signature = signature
                 .to_token_stream()
                 .to_string()
@@ -189,6 +209,15 @@ impl Definition {
         source.push_str("}\n");
         Ok(source)
     }
+}
+
+fn any_parameters(method: &ImplItemFn) -> syn::Result<Vec<syn::Ident>> {
+    method
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("rils_any"))
+        .map(|attr| attr.parse_args())
+        .collect()
 }
 
 fn public_fields(item: &ItemStruct) -> Vec<&syn::Field> {
@@ -362,6 +391,10 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             if imports.len() > 1 {
                 return Err(Error::new_spanned(method, "duplicate #[rils_import]"));
             }
+            let legacy_ids = method.attrs.iter().filter(|attr| attr.path().is_ident("rils_legacy_id")).collect::<Vec<_>>();
+            if legacy_ids.len() > 1 || (!legacy_ids.is_empty() && !imports.is_empty()) {
+                return Err(Error::new_spanned(method, "one legacy ID or runtime import is allowed"));
+            }
             let runtime_import = if let Some(attribute) = imports.first() {
                 let path: Path = attribute.parse_args()?;
                 let path = quote!(#path).to_string().replace(' ', "");
@@ -369,7 +402,11 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             } else {
                 quote!(None)
             };
-            let builtin_id = if imports.is_empty() {
+            let builtin_id = if let Some(attribute) = legacy_ids.first() {
+                let path: Path = attribute.parse_args()?;
+                let path = quote!(#path).to_string().replace(' ', "");
+                quote!(Some(builtin_id!(#path)))
+            } else if imports.is_empty() {
                 quote!(Some(legacy_builtin_id!(#id_path)))
             } else {
                 quote!(None)
@@ -397,13 +434,20 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                         0,
                     )
                 };
+            let any = any_parameters(method)?.into_iter().map(|name| name.to_string()).collect::<Vec<_>>();
             let parameters = method
                 .sig
                 .inputs
                 .iter()
                 .skip(parameter_start)
                 .map(|input| match input {
-                    FnArg::Typed(parameter) => type_patterns::tokens(&parameter.ty),
+                    FnArg::Typed(parameter) => {
+                        if matches!(parameter.pat.as_ref(), syn::Pat::Ident(name) if any.contains(&name.ident.to_string())) {
+                            Ok(quote!(TypePattern::Unknown))
+                        } else {
+                            type_patterns::tokens(&parameter.ty)
+                        }
+                    }
                     _ => Err(Error::new_spanned(input, "unexpected receiver")),
                 })
                 .collect::<syn::Result<Vec<_>>>()?;

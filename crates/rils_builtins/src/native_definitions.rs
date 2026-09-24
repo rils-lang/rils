@@ -116,6 +116,12 @@ pub mod hash_set {
     rils_stdlib::hashset_definition!(decl_rils_metadata);
 }
 
+pub mod vec {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::vec_definition!(decl_rils_metadata);
+}
+
 pub mod format_error {
     use rils_builtins_macros::decl_rils_metadata;
 
@@ -263,6 +269,7 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     btree_set::DECLARATION,
     hash_map::DECLARATION,
     hash_set::DECLARATION,
+    vec::DECLARATION,
     format_error::DECLARATION,
     boxed::DECLARATION,
     io_error::DECLARATION,

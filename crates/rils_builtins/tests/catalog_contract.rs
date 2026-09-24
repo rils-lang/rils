@@ -296,6 +296,22 @@ fn migrated_hash_constructors_keep_imports_and_iterator_ids() {
 }
 
 #[test]
+fn migrated_vec_preserves_array_constructor_and_sequence_ids() {
+    let vector = builtin("Vec").expect("native Vec declaration");
+    let from = vector.member("from").expect("array constructor");
+    assert_eq!(from.runtime_import, Some("core::vec::from"));
+    assert_eq!(from.signature.unwrap().parameters, &[TypePattern::Unknown]);
+    assert_eq!(
+        vector.member("len").unwrap().builtin_id,
+        Some(BuiltinId::SequenceLen)
+    );
+    assert_eq!(
+        vector.member("iter").unwrap().builtin_id,
+        Some(BuiltinId::SequenceIter)
+    );
+}
+
+#[test]
 fn filesystem_functions_come_from_native_declarations() {
     for name in [
         "read_to_string",

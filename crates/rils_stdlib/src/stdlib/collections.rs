@@ -5,6 +5,7 @@ use rils_builtins_macros::decl_rils;
 use super::{prelude::Option, string::Iterator};
 
 mod hash;
+pub mod vector;
 
 /// Borrowed iterator returned by collection views while the Rils iterator API is migrated.
 pub struct Iter<T>(pub Vec<T>);
