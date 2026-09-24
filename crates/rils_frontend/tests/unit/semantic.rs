@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn native_default_derive_adds_generic_bounds() {
+    let source = "#[derive(Default)] struct Wrapper<T> { value: T }";
+    let program = crate::parser::parse(crate::lexer::lex(source).unwrap()).unwrap();
+    let crate::ast::Stmt::Impl {
+        generic_parameters, ..
+    } = &program.statements[1]
+    else {
+        panic!("expected generated Default impl");
+    };
+    assert_eq!(generic_parameters[0].bounds, ["Default"]);
+}
+
+#[test]
 fn type_and_pattern_ids_cover_nested_expression_syntax() {
     let source = SourceId::new(11);
     let tokens = crate::lexer::lex_with_source_id(

@@ -60,22 +60,10 @@ fn parses_unit_and_empty_braced_structs() {
 }
 
 #[test]
-fn parses_and_expands_default_derive() {
-    let program =
-        parse(lex("#[derive(Default)] pub struct Settings { enabled: bool, count: i32 }").unwrap())
-            .unwrap();
-    assert!(matches!(
-        program.statements[0],
-        Stmt::Struct {
-            visibility: Visibility::Public,
-            ..
-        }
-    ));
-    assert!(matches!(
-        &program.statements[1],
-        Stmt::Impl { trait_name: Some(name), methods, .. }
-            if name == "Default" && methods.len() == 1 && methods[0].name == "default"
-    ));
+fn unregistered_default_derive_is_rejected() {
+    let error =
+        parse(lex("#[derive(Default)] struct Settings { enabled: bool }").unwrap()).unwrap_err();
+    assert_eq!(error.message, "unsupported derive `Default`");
 }
 
 #[test]
@@ -113,41 +101,6 @@ fn rejects_visibility_on_non_declarations_and_duplicate_visibility() {
         duplicate.message.contains("already specified"),
         "{duplicate:?}"
     );
-}
-
-#[test]
-fn default_derive_rejects_non_default_fields() {
-    let error =
-        parse(lex("#[derive(Default)] struct Bad { callback: fn() -> () }").unwrap()).unwrap_err();
-    assert!(error.message.contains("field `callback`"), "{error:?}");
-    assert!(
-        error.message.contains("does not implement Default"),
-        "{error:?}"
-    );
-}
-
-#[test]
-fn default_derive_adds_required_generic_bounds() {
-    let program = parse(lex("#[derive(Default)] struct Wrapper<T> { value: T }").unwrap()).unwrap();
-    let Stmt::Impl {
-        generic_parameters, ..
-    } = &program.statements[1]
-    else {
-        panic!("expected generated impl");
-    };
-    assert_eq!(generic_parameters[0].bounds, ["Default"]);
-}
-
-#[test]
-fn default_derive_rejects_an_explicit_impl_for_the_same_type() {
-    let error = parse(
-        lex(
-            "#[derive(Default)] struct Value; impl Default for Value { fn default() -> Self { loop {} } }",
-        )
-        .unwrap(),
-    )
-    .unwrap_err();
-    assert!(error.message.contains("both derive Default"), "{error:?}");
 }
 
 #[test]

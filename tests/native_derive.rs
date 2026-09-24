@@ -200,6 +200,14 @@ fn native_default_derive_rejects_user_fields_without_an_impl() {
 }
 
 #[test]
+fn native_default_derive_rejects_explicit_impl() {
+    let source = "#[derive(Default)] struct Value; impl Default for Value { fn default() -> Self { Value } }";
+    let error = eval(source).unwrap_err().to_string();
+    assert!(error.contains("both derive Default"), "{error}");
+    assert!(compile(source).is_err());
+}
+
+#[test]
 fn derived_eq_and_hash_support_struct_and_enum_collection_keys() {
     let source = r#"
         #[derive(Eq, Hash)]
