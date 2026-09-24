@@ -31,6 +31,7 @@ fn stdlib_directory_generates_source_and_module_metadata() {
     }));
     for migrated in [
         "core/bit_flags/bit_flags.rils",
+        "core/box.rils",
         "core/clone/clone.rils",
         "core/clone/copy.rils",
         "core/cmp/eq.rils",
@@ -38,6 +39,7 @@ fn stdlib_directory_generates_source_and_module_metadata() {
         "core/collections/vec_deque.rils",
         "core/default/default.rils",
         "core/float.rils",
+        "core/format_error.rils",
         "core/hash/hash.rils",
         "core/integer.rils",
         "core/iter/range.rils",

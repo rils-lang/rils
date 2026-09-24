@@ -1,5 +1,0 @@
-/// An owned heap indirection for recursive data structures.
-pub struct Box<T> {
-    /// The owned value stored behind the heap indirection.
-    value: T,
-}

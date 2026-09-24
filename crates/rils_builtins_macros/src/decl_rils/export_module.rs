@@ -86,7 +86,9 @@ fn marker_path(
             "Rils export marker does not accept arguments",
         ));
     }
-    let segment = format_ident!("{}", snake_case(&name.to_string()));
+    let segment_name = snake_case(&name.to_string());
+    let segment = syn::parse_str::<syn::Ident>(&segment_name)
+        .unwrap_or_else(|_| format_ident!("r#{segment_name}"));
     Ok(syn::parse_quote!(#module::#segment))
 }
 

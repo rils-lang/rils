@@ -4,6 +4,8 @@ use rils_syntax::rils_stdlib_sources;
 #[test]
 fn exported_definitions_have_parseable_language_sources() {
     for source in [
+        rils_stdlib::box_definition!(decl_rils_source),
+        rils_stdlib::formaterror_definition!(decl_rils_source),
         rils_stdlib::option_definition!(decl_rils_source),
         rils_stdlib::result_definition!(decl_rils_source),
         rils_stdlib::integer_definition!(decl_rils_source),

@@ -4,6 +4,22 @@ use rils_builtins::{
 use rils_builtins_macros::decl_rils_source;
 
 #[test]
+fn basic_metadata_types_come_from_rust_definitions() {
+    for (name, definition) in [
+        ("Box", &native_definitions::boxed::DECLARATION),
+        (
+            "FormatError",
+            &native_definitions::format_error::DECLARATION,
+        ),
+    ] {
+        let published = builtin(name).expect("basic type is in the public catalog");
+        assert_eq!(published.path, definition.path);
+        assert_eq!(published.kind, BuiltinKind::Struct);
+        assert!(published.members.is_empty());
+    }
+}
+
+#[test]
 fn rust_option_definition_matches_the_existing_public_catalog() {
     let generated = &native_definitions::DECLARATION;
     let published = builtin("Option").expect("Option is in the public catalog");

@@ -92,6 +92,18 @@ pub mod binary_heap {
     rils_stdlib::binaryheap_definition!(decl_rils_trait_impls);
 }
 
+pub mod format_error {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::formaterror_definition!(decl_rils_metadata);
+}
+
+pub mod boxed {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::box_definition!(decl_rils_metadata);
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
@@ -106,4 +118,6 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     range::DECLARATION,
     vec_deque::DECLARATION,
     binary_heap::DECLARATION,
+    format_error::DECLARATION,
+    boxed::DECLARATION,
 ];
