@@ -13,7 +13,7 @@
 Option/Result、tuple、函数和引用。`BuiltinBackend` 明确区分 runtime、intrinsic、host-backed 和纯
 metadata 项，因此“编译器认识一个符号”不等同于“runtime 自己实现该符号”。
 
-未迁移的内建 API 由 `stdlib/**/*.rils` 源码声明；Option、Result、整数、浮点数和 string API 的元信息
+未迁移的内建 API 由 `stdlib/**/*.rils` 源码声明；Option、Result、Rc、Weak、整数、浮点数和 string API 的元信息
 直接由 `rils_stdlib` 的 Rust 定义生成。类型模式使用 `type_pattern!`，ID 使用
 `builtin_id!("core::...")` 在编译期解析。执行逻辑留在对应的 runtime、intrinsic 或宿主层；稳定
 `BuiltinId` 不能复用。

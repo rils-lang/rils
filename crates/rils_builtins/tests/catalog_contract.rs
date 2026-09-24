@@ -45,6 +45,8 @@ fn stdlib_directory_generates_source_and_module_metadata() {
         "core/iter/range.rils",
         "core/option/option.rils",
         "core/result/result.rils",
+        "core/rc.rils",
+        "core/weak.rils",
         "core/string/string.rils",
         "std/io/error.rils",
         "std/io/error_kind.rils",

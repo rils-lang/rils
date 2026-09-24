@@ -61,7 +61,7 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
         "core::vec::from" => CoreImport::VecFrom,
         "core::hash_map::new" => CoreImport::HashMapNew,
         "core::hash_set::new" => CoreImport::HashSetNew,
-        "core::rc::new" => CoreImport::RcNew,
+        "core::rc::rc::new" => CoreImport::RcNew,
         _ => return None,
     })
 }

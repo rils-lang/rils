@@ -47,6 +47,9 @@
   原始数值 ID 保持不变。生成的 `.rils` 资源也从 `core/option.rils` 等平铺路径迁至
   `core/option/option.rils`、`core/collections/binary_heap.rils` 等模块目录；直接引用
   资源文件路径的工具须同步更新。Rils 的 `core::option::Some` 等公开入口仍由模块声明提供。
+- `Rc`/`Weak` 的内部成员路径改为 `core::rc::rc::*` / `core::rc::weak::*`；其余成员的数字 ID 不变，
+  `RcClone` ID 改由 `Clone` trait 实现替代。按旧路径匹配 `BuiltinId::canonical_path()` 或引用
+  `BuiltinId::RcClone` 的 Rust 代码须更新，并重新编译引用旧路径的实验性 v8 字节码。
 
 - Rust embedders matching `Value::SequenceIterator` or using `SequenceIteratorValue` must migrate to `Value::OwnedIterator` and `OwnedIteratorValue`. The borrowed sequence runtime variant is now `BorrowedSequenceIter`; Rils `Iterator<T>` source signatures remain available.
 

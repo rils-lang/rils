@@ -39,6 +39,30 @@ fn io_error_metadata_comes_from_rust_definitions() {
 }
 
 #[test]
+fn shared_handle_methods_use_the_existing_runtime_ids() {
+    for (name, definition, methods) in [
+        (
+            "Rc",
+            &native_definitions::rc::DECLARATION,
+            &["new", "strong_count", "downgrade"][..],
+        ),
+        (
+            "Weak",
+            &native_definitions::weak::DECLARATION,
+            &["upgrade", "strong_count", "weak_count"][..],
+        ),
+    ] {
+        let published = builtin(name).expect("shared handle is in the public catalog");
+        assert_eq!(published.path, definition.path);
+        for method in methods {
+            let member = published.member(method).expect("shared handle method");
+            assert!(member.builtin_id.is_some());
+            assert!(member.native_symbol.is_none());
+        }
+    }
+}
+
+#[test]
 fn rust_option_definition_matches_the_existing_public_catalog() {
     let generated = &native_definitions::DECLARATION;
     let published = builtin("Option").expect("Option is in the public catalog");

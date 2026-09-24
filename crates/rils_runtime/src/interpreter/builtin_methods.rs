@@ -288,8 +288,7 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::RcClone
-                | rils_builtins::BuiltinId::RcStrongCount
+                id @ (rils_builtins::BuiltinId::RcStrongCount
                 | rils_builtins::BuiltinId::RcDowngrade
                 | rils_builtins::BuiltinId::WeakUpgrade
                 | rils_builtins::BuiltinId::WeakStrongCount

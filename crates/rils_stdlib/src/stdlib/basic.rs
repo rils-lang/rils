@@ -8,13 +8,23 @@ mod boxed {
     #[rils_struct]
     pub struct Box<T>(std::boxed::Box<T>);
 
-    impl<T> Box<T> {
-        pub fn from_std(value: std::boxed::Box<T>) -> Self {
-            Self(value)
-        }
+    impl<T> std::ops::Deref for Box<T> {
+        type Target = std::boxed::Box<T>;
 
-        pub fn into_std(self) -> std::boxed::Box<T> {
-            self.0
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl<T> std::ops::DerefMut for Box<T> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+
+    impl<T> From<std::boxed::Box<T>> for Box<T> {
+        fn from(value: std::boxed::Box<T>) -> Self {
+            Self(value)
         }
     }
 }

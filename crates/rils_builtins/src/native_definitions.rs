@@ -116,6 +116,19 @@ pub mod io_error_kind {
     rils_stdlib::errorkind_definition!(decl_rils_metadata);
 }
 
+pub mod rc {
+    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::rc_definition!(decl_rils_metadata);
+    rils_stdlib::rc_definition!(decl_rils_trait_impls);
+}
+
+pub mod weak {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::weak_definition!(decl_rils_metadata);
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
@@ -134,4 +147,6 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     boxed::DECLARATION,
     io_error::DECLARATION,
     io_error_kind::DECLARATION,
+    rc::DECLARATION,
+    weak::DECLARATION,
 ];

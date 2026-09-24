@@ -6,6 +6,7 @@ pub mod io;
 pub mod option;
 pub mod prelude;
 pub mod range;
+pub mod rc;
 pub mod result;
 pub mod string;
 pub mod traits;

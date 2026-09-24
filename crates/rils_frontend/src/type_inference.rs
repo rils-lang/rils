@@ -1387,6 +1387,14 @@ impl<'a> Inferencer<'a> {
         if let Some(member) = crate::standard_library::builtin_member_type(object_type, field) {
             return member;
         }
+        if field == "clone"
+            && crate::standard_library::builtin_owner_name(object_type)
+                .is_some_and(|owner| rils_builtins::native_implements(owner, "Clone"))
+            && let Some(member) =
+                crate::standard_library::builtin_trait_member_type("Clone", object_type, field)
+        {
+            return member;
+        }
         if let Type::Named { name, arguments } = object_type
             && arguments.is_empty()
             && let Some(signature) = self.host_functions.get(&format!("{name}::{field}"))

@@ -11,7 +11,7 @@ use crate::{
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     if id == BuiltinId::VecDequeNew {
         return Ok(Value::VecDeque(Rc::new(VecDequeValue {
-            elements: RefCell::new(NativeVecDeque::<Value>::new().into_std()),
+            elements: RefCell::new(NativeVecDeque::<Value>::new().into()),
             element_type: RefCell::new(Some(Type::Unknown)),
         })));
     }
@@ -114,8 +114,8 @@ fn with_native<R>(
     operation: impl FnOnce(&mut NativeVecDeque<Value>) -> R,
 ) -> R {
     let mut elements = queue.elements.borrow_mut();
-    let mut native = NativeVecDeque::from_std(std::mem::take(&mut *elements));
+    let mut native = NativeVecDeque::from(std::mem::take(&mut *elements));
     let result = operation(&mut native);
-    *elements = native.into_std();
+    *elements = native.into();
     result
 }

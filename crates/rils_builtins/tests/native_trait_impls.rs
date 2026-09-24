@@ -1,6 +1,11 @@
 use rils_builtins::{BuiltinKind, builtin, native_implements, native_implements_with};
 
 #[test]
+fn rc_is_clone_without_requiring_clone_for_its_value() {
+    assert!(native_implements("Rc", "Clone"));
+}
+
+#[test]
 fn native_trait_markers_cover_only_supported_types() {
     for trait_name in ["Clone", "Copy", "Default", "Eq", "Hash"] {
         assert_eq!(

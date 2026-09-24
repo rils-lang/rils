@@ -193,14 +193,13 @@ clamp = 0x0C12
 mul_add = 0x0C13
 
 # Shared ownership operations: 0x0D00-0x0DFF.
-[core.rc]
+[core.rc.rc]
 new = 0x0D00
-clone = 0x0D01
 strong_count = 0x0D02
 downgrade = 0x0D03
 
 # Weak reference operations share the Rc allocation without owning it.
-[core.weak]
+[core.rc.weak]
 upgrade = 0x0D10
 strong_count = 0x0D11
 weak_count = 0x0D12

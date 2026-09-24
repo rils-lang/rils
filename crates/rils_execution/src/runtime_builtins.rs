@@ -43,11 +43,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 type_argument,
             })))
         }
-        BuiltinId::RcClone => match import_receiver(&arguments[0])? {
-            Value::Rc(value) => Ok(Value::Rc(value)),
-            Value::Struct(value) if value.type_definition.name == "Rc" => Ok(Value::Struct(value)),
-            value => Err(format!("Rc::clone expects Rc, found {}", value.type_name())),
-        },
         BuiltinId::RcStrongCount => match import_receiver(&arguments[0])? {
             Value::Rc(value) => Ok(Value::Usize(Rc::strong_count(&value))),
             Value::Struct(value) if value.type_definition.name == "Rc" => {

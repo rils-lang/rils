@@ -245,6 +245,8 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(
         crate::native_definitions::io_error_kind::DECLARATION
     ));
+    declaration_items.push(quote!(crate::native_definitions::rc::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::weak::DECLARATION));
 
     let module_entries = module_members.iter().map(|(path, members)| {
         let path = LitStr::new(path, input.directory.span());

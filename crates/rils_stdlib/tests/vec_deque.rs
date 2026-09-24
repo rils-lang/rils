@@ -27,3 +27,12 @@ fn native_deque_preserves_both_ends_and_empty_cases() {
     queue.clear();
     assert!(queue.is_empty());
 }
+
+#[test]
+fn deque_wrapper_exposes_the_std_queue() {
+    let mut queue = VecDeque::from(std::collections::VecDeque::from([1]));
+    queue.reserve(4);
+    assert_eq!(queue.front(), Some(&1));
+    let standard: std::collections::VecDeque<_> = queue.into();
+    assert_eq!(standard.into_iter().collect::<Vec<_>>(), vec![1]);
+}

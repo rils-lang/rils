@@ -38,15 +38,33 @@ mod native {
     #[rils_struct]
     pub struct VecDeque<T>(std::collections::VecDeque<T>);
 
-    impl<T> VecDeque<T> {
-        pub fn from_std(values: std::collections::VecDeque<T>) -> Self {
+    impl<T> std::ops::Deref for VecDeque<T> {
+        type Target = std::collections::VecDeque<T>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl<T> std::ops::DerefMut for VecDeque<T> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+
+    impl<T> From<std::collections::VecDeque<T>> for VecDeque<T> {
+        fn from(values: std::collections::VecDeque<T>) -> Self {
             Self(values)
         }
+    }
 
-        pub fn into_std(self) -> std::collections::VecDeque<T> {
-            self.0
+    impl<T> From<VecDeque<T>> for std::collections::VecDeque<T> {
+        fn from(values: VecDeque<T>) -> Self {
+            values.0
         }
+    }
 
+    impl<T> VecDeque<T> {
         pub fn clone_front_with<E>(
             values: &std::collections::VecDeque<T>,
             clone: impl FnOnce(&T) -> std::result::Result<T, E>,

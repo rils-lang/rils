@@ -160,6 +160,7 @@ pub fn native_implements_with(
         crate::native_definitions::integer::TRAIT_IMPLS,
         crate::native_definitions::float::TRAIT_IMPLS,
         crate::native_definitions::string::TRAIT_IMPLS,
+        crate::native_definitions::rc::TRAIT_IMPLS,
     ]
     .into_iter()
     .flatten()

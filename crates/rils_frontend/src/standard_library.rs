@@ -221,6 +221,26 @@ pub fn builtin_owner_name(object: &Type) -> Option<&'static str> {
     builtin_owner(object).map(|(owner, _, _)| owner)
 }
 
+pub fn builtin_type_name(name: &str) -> Option<&'static str> {
+    let declaration = builtin_named_declaration(name)?;
+    matches!(
+        declaration.kind,
+        rils_builtins::BuiltinKind::Struct | rils_builtins::BuiltinKind::Enum
+    )
+    .then_some(declaration.path)
+}
+
+fn builtin_named_declaration(name: &str) -> Option<&'static rils_builtins::BuiltinDeclaration> {
+    rils_builtins::builtin(name).or_else(|| {
+        let (module, exported_name) = name.rsplit_once("::")?;
+        if rils_builtins::builtin_module_members(module).contains(&exported_name) {
+            rils_builtins::builtin(exported_name)
+        } else {
+            None
+        }
+    })
+}
+
 fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static str, Type>)> {
     let mut generics = HashMap::new();
     match object {
@@ -239,61 +259,22 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
             generics.insert("E", (**error).clone());
             Some(("Result", object.clone(), generics))
         }
-        Type::Named { name, arguments }
-            if matches!(
-                name.as_str(),
-                "Vec"
-                    | "HashMap"
-                    | "HashSet"
-                    | "Range"
-                    | "OwnedIterator"
-                    | "Iter"
-                    | "Rc"
-                    | "Weak"
-                    | "Cell"
-                    | "RefCell"
-                    | "VecDeque"
-                    | "BinaryHeap"
-                    | "BTreeMap"
-                    | "BTreeSet"
-            ) =>
-        {
-            match name.as_str() {
-                "HashMap" | "BTreeMap" => {
-                    if let Some(key) = arguments.first() {
-                        generics.insert("K", key.clone());
-                    }
-                    if let Some(value) = arguments.get(1) {
-                        generics.insert("V", value.clone());
-                    }
-                }
-                _ => {
-                    if let Some(item) = arguments.first() {
-                        generics.insert("T", item.clone());
-                    }
-                }
+        Type::Named { name, arguments } if name == "OwnedIterator" => {
+            generics.insert("T", arguments.first().cloned().unwrap_or(Type::Unknown));
+            Some(("Iterator", object.clone(), generics))
+        }
+        Type::Named { name, arguments } => {
+            let declaration = builtin_named_declaration(name)?;
+            if !matches!(
+                declaration.kind,
+                rils_builtins::BuiltinKind::Struct | rils_builtins::BuiltinKind::Enum
+            ) {
+                return None;
             }
-            Some((
-                match name.as_str() {
-                    "Vec" => "Vec",
-                    "HashMap" => "HashMap",
-                    "HashSet" => "HashSet",
-                    "Range" => "Range",
-                    "OwnedIterator" => "Iterator",
-                    "Iter" => "Iter",
-                    "Rc" => "Rc",
-                    "Weak" => "Weak",
-                    "Cell" => "Cell",
-                    "RefCell" => "RefCell",
-                    "VecDeque" => "VecDeque",
-                    "BinaryHeap" => "BinaryHeap",
-                    "BTreeMap" => "BTreeMap",
-                    "BTreeSet" => "BTreeSet",
-                    _ => unreachable!(),
-                },
-                object.clone(),
-                generics,
-            ))
+            for (parameter, argument) in declaration.type_parameters.iter().zip(arguments) {
+                generics.insert(*parameter, argument.clone());
+            }
+            Some((declaration.path, object.clone(), generics))
         }
         _ => None,
     }

@@ -572,8 +572,36 @@ impl<'a> Checker<'a> {
     }
 
     fn expand(&self, ty: &Type, visiting: &mut HashSet<String>) -> Type {
-        let Type::Named { name, arguments } = ty else {
-            return ty.clone();
+        let (name, arguments) = match ty {
+            Type::Option(inner) => return Type::Option(Box::new(self.expand(inner, visiting))),
+            Type::Result(ok, error) => {
+                return Type::Result(
+                    Box::new(self.expand(ok, visiting)),
+                    Box::new(self.expand(error, visiting)),
+                );
+            }
+            Type::Tuple(elements) => {
+                return Type::Tuple(
+                    elements
+                        .iter()
+                        .map(|element| self.expand(element, visiting))
+                        .collect(),
+                );
+            }
+            Type::Array { element, length } => {
+                return Type::Array {
+                    element: Box::new(self.expand(element, visiting)),
+                    length: *length,
+                };
+            }
+            Type::Reference { mutable, inner } => {
+                return Type::Reference {
+                    mutable: *mutable,
+                    inner: Box::new(self.expand(inner, visiting)),
+                };
+            }
+            Type::Named { name, arguments } => (name, arguments),
+            _ => return ty.clone(),
         };
         if name == "Self"
             && arguments.is_empty()
@@ -582,7 +610,15 @@ impl<'a> Checker<'a> {
             return self_type.clone();
         }
         let Some(alias) = self.aliases.get(name) else {
-            return ty.clone();
+            return Type::Named {
+                name: crate::standard_library::builtin_type_name(name)
+                    .unwrap_or(name)
+                    .into(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.expand(argument, visiting))
+                    .collect(),
+            };
         };
         if !visiting.insert(name.clone()) {
             return ty.clone();
