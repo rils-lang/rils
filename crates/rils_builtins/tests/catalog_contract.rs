@@ -312,6 +312,25 @@ fn migrated_vec_preserves_array_constructor_and_sequence_ids() {
 }
 
 #[test]
+fn migrated_ref_cell_exposes_lexical_reference_signatures() {
+    let cell = builtin("RefCell").expect("native RefCell declaration");
+    for (name, mutable, id) in [
+        ("borrow", false, BuiltinId::RefCellBorrow),
+        ("borrow_mut", true, BuiltinId::RefCellBorrowMut),
+    ] {
+        let method = cell.member(name).expect("borrow method");
+        assert_eq!(method.builtin_id, Some(id));
+        assert_eq!(
+            method.signature.unwrap().result,
+            TypePattern::Reference {
+                mutable,
+                inner: &TypePattern::Generic("T")
+            }
+        );
+    }
+}
+
+#[test]
 fn filesystem_functions_come_from_native_declarations() {
     for name in [
         "read_to_string",

@@ -165,6 +165,12 @@ pub mod cell {
     rils_stdlib::cell_definition!(decl_rils_metadata);
 }
 
+pub mod ref_cell {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::refcell_definition!(decl_rils_metadata);
+}
+
 pub mod fs {
     use rils_builtins_macros::decl_rils_function_metadata;
 
@@ -277,4 +283,5 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     rc::DECLARATION,
     weak::DECLARATION,
     cell::DECLARATION,
+    ref_cell::DECLARATION,
 ];

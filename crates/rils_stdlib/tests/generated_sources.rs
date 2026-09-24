@@ -11,6 +11,7 @@ fn exported_definitions_have_parseable_language_sources() {
         rils_stdlib::rc_definition!(decl_rils_source),
         rils_stdlib::weak_definition!(decl_rils_source),
         rils_stdlib::cell_definition!(decl_rils_source),
+        rils_stdlib::refcell_definition!(decl_rils_source),
         rils_stdlib::option_definition!(decl_rils_source),
         rils_stdlib::result_definition!(decl_rils_source),
         rils_stdlib::integer_definition!(decl_rils_source),

@@ -325,6 +325,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                                 && !attr.path().is_ident("rils_import")
                                 && !attr.path().is_ident("rils_legacy_id")
                                 && !attr.path().is_ident("rils_any")
+                                && !attr.path().is_ident("rils_return")
                         });
                     }
                 }

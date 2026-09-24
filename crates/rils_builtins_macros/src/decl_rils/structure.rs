@@ -181,6 +181,14 @@ impl Definition {
                 .into_iter()
                 .filter(|parameter| !matches!(parameter, syn::GenericParam::Const(_)))
                 .collect();
+            if let Some(attribute) = method
+                .attrs
+                .iter()
+                .find(|attr| attr.path().is_ident("rils_return"))
+            {
+                let ty: Type = attribute.parse_args()?;
+                signature.output = syn::parse_quote!(-> #ty);
+            }
             for any in any_parameters(method)? {
                 let mut found = false;
                 for argument in &mut signature.inputs {
@@ -451,9 +459,15 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     _ => Err(Error::new_spanned(input, "unexpected receiver")),
                 })
                 .collect::<syn::Result<Vec<_>>>()?;
-            let result = match &method.sig.output {
-                ReturnType::Default => quote!(TypePattern::Unit),
-                ReturnType::Type(_, ty) => type_patterns::tokens(ty)?,
+            let result_type = method.attrs.iter().find(|attr| attr.path().is_ident("rils_return"))
+                .map(|attr| attr.parse_args::<Type>()).transpose()?;
+            let result = if let Some(ty) = result_type.as_ref() {
+                type_patterns::tokens(ty)?
+            } else {
+                match &method.sig.output {
+                    ReturnType::Default => quote!(TypePattern::Unit),
+                    ReturnType::Type(_, ty) => type_patterns::tokens(ty)?,
+                }
             };
             let generics = method
                 .sig
