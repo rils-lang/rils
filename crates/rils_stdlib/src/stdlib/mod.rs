@@ -1,3 +1,4 @@
+pub mod binary_heap;
 pub mod float;
 pub mod integer;
 pub mod option;

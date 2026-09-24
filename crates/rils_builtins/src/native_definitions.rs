@@ -85,6 +85,13 @@ pub mod vec_deque {
     rils_stdlib::vecdeque_definition!(decl_rils_trait_impls);
 }
 
+pub mod binary_heap {
+    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::binaryheap_definition!(decl_rils_metadata);
+    rils_stdlib::binaryheap_definition!(decl_rils_trait_impls);
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
@@ -98,4 +105,5 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     result::DECLARATION,
     range::DECLARATION,
     vec_deque::DECLARATION,
+    binary_heap::DECLARATION,
 ];

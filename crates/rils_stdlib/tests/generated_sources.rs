@@ -23,6 +23,10 @@ fn language_sources_match_the_rust_definitions() {
             rils_stdlib::string_definition!(decl_rils_source),
             include_str!("../../rils_builtins/stdlib/core/string.rils"),
         ),
+        (
+            rils_stdlib::binaryheap_definition!(decl_rils_source),
+            include_str!("../../rils_builtins/stdlib/core/binary_heap.rils"),
+        ),
     ] {
         assert_eq!(generated, checked_in.replace("\r\n", "\n"));
     }

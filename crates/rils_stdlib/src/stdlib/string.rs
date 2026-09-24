@@ -18,7 +18,7 @@ mod native {
     use super::{Iterator, Option, optional};
 
     /// An owned UTF-8 string.
-    #[derive(Clone, Default, PartialEq, Eq, Hash)]
+    #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[rils_impl(Clone, Default, Eq, Hash)]
     pub struct String(std::string::String);
 

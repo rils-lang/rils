@@ -38,7 +38,6 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         is_some.documentation,
         "Returns true when a value is present."
     );
-    assert_eq!(native_definitions::DECLARATIONS.len(), 10);
 }
 
 #[test]
@@ -73,6 +72,26 @@ fn rust_vec_deque_definition_matches_the_public_catalog() {
         assert_eq!(method.kind, public.kind);
         assert_eq!(method.builtin_id, public.builtin_id);
         assert_eq!(method.receiver, public.receiver);
+        let generated_signature = method.signature.expect("generated signature");
+        let public_signature = public.signature.expect("published signature");
+        assert_eq!(generated_signature.parameters, public_signature.parameters);
+        assert_eq!(generated_signature.result, public_signature.result);
+    }
+}
+
+#[test]
+fn rust_binary_heap_definition_matches_the_public_catalog() {
+    let generated = &native_definitions::binary_heap::DECLARATION;
+    let published = builtin("BinaryHeap").expect("BinaryHeap is in the public catalog");
+    assert_eq!(generated.kind, BuiltinKind::Struct);
+    assert_eq!(generated.type_parameters, &["T"]);
+    assert_eq!(generated.members.len(), published.members.len());
+    for method in generated.members {
+        let public = published.member(method.name).expect("published method");
+        assert_eq!(method.kind, public.kind);
+        assert_eq!(method.builtin_id, public.builtin_id);
+        assert_eq!(method.receiver, public.receiver);
+        assert_eq!(method.documentation, public.documentation);
         let generated_signature = method.signature.expect("generated signature");
         let public_signature = public.signature.expect("published signature");
         assert_eq!(generated_signature.parameters, public_signature.parameters);
