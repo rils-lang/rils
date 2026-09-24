@@ -392,7 +392,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             let builtin_id = if direct_native {
                 quote!(None)
             } else {
-                quote!(Some(builtin_id!(#id_path)))
+                quote!(Some(legacy_builtin_id!(#id_path)))
             };
             let receiver = method.sig.receiver().ok_or_else(|| {
                 Error::new_spanned(&method.sig, "native methods require a receiver")
@@ -558,7 +558,7 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
                 #id_path => Some(
                     if arguments.len() == #arity {
                         super::super::option_result::call(
-                            rils_builtins::builtin_id!(#id_path),
+                            rils_builtins::legacy_builtin_id!(#id_path),
                             arguments,
                         )
                     } else {
@@ -703,6 +703,23 @@ mod tests {
         assert!(supports_direct_bridge(&result, &extraction));
         assert!(!supports_direct_bridge(&option, &mutable));
         assert!(!supports_direct_bridge(&result, &generic));
+
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                pub enum Option<T> { Some(T), None }
+                impl<T> Option<T> {
+                    #[export_rils]
+                    pub fn take(&mut self) -> Self { loop {} }
+                }
+            }
+        };
+        let definition = Definition::parse(syn::parse_quote!(core::option), &module).unwrap();
+        assert!(
+            metadata_tokens(&definition)
+                .unwrap()
+                .to_string()
+                .contains("legacy_builtin_id")
+        );
     }
 
     #[test]

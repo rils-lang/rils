@@ -83,6 +83,17 @@ fn declarations(config_path: &Path, members: &BTreeMap<String, (u32, String)>) -
              ($key:literal) => {{
                  compile_error!(concat!("unknown built-in `", $key, "`"))
              }};
+         }}
+         #[doc = "Resolves a transitional adapter for an exported native method."]
+         #[macro_export]
+         macro_rules! legacy_builtin_id {{
+             {builtin_id_arms}
+             ($key:literal) => {{
+                 compile_error!(concat!(
+                     "`#[export_rils]` method `", $key,
+                     "` has no generated native bridge for its signature and no legacy adapter ID"
+                 ))
+             }};
          }}"#
     )
     .parse()

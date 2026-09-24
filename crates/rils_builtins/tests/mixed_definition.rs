@@ -64,7 +64,7 @@ mod native {
 
 mod sample_metadata {
     use super::*;
-    macro_rules! builtin_id {
+    macro_rules! legacy_builtin_id {
         ("core::fixture::sample::new") => {
             BuiltinId::BinaryHeapNew
         };
@@ -75,7 +75,7 @@ mod sample_metadata {
 
 mod choice_metadata {
     use super::*;
-    macro_rules! builtin_id {
+    macro_rules! legacy_builtin_id {
         ("core::fixture::choice::is_some") => {
             BuiltinId::SequenceIsEmpty
         };

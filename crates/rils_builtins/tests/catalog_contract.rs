@@ -298,6 +298,30 @@ fn native_function_aliases_resolve_to_exported_methods() {
 }
 
 #[test]
+fn runtime_members_have_a_native_or_legacy_binding() {
+    for declaration in BUILTINS {
+        if declaration.backend != rils_builtins::BuiltinBackend::Runtime {
+            continue;
+        }
+        for member in declaration.members {
+            if matches!(
+                member.kind,
+                BuiltinMemberKind::Method | BuiltinMemberKind::AssociatedFunction
+            ) {
+                assert!(
+                    member.native_symbol.is_some()
+                        || member.builtin_id.is_some()
+                        || member.runtime_import.is_some(),
+                    "{}::{} has no runtime binding",
+                    declaration.path,
+                    member.name
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn numeric_intrinsics_use_their_reserved_builtin_id_blocks() {
     assert_eq!(
         rils_builtins::builtin_id!("core::integer::try_from").as_raw(),

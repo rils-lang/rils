@@ -407,7 +407,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     }),
                     value_type: None,
                     receiver: #receiver_mode,
-                    builtin_id: Some(builtin_id!(#id_path)),
+                    builtin_id: Some(legacy_builtin_id!(#id_path)),
                     runtime_import: None,
                     native_symbol: None,
                     required: true,
