@@ -66,6 +66,10 @@ pub(super) fn write_type(writer: &mut Writer, value: &Type, depth: usize) -> Res
             write_type(writer, element, next)?;
             writer.index(*length, "array length")?;
         }
+        Type::Slice(element) => {
+            writer.u8(18);
+            write_type(writer, element, next)?;
+        }
         Type::Reference { mutable, inner } => {
             writer.u8(10);
             writer.bool(*mutable);
@@ -152,6 +156,7 @@ pub(super) fn read_type(reader: &mut Reader<'_>) -> Result<Type> {
             element: Box::new(read_type(reader)?),
             length: reader.index()?,
         }),
+        18 => Ok(Type::Slice(Box::new(read_type(reader)?))),
         10 => Ok(Type::Reference {
             mutable: reader.bool()?,
             inner: Box::new(read_type(reader)?),

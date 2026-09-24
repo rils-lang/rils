@@ -122,6 +122,12 @@ impl Server {
                             .filter(|member| {
                                 member.kind == rils_builtins::BuiltinMemberKind::Method
                                     && member.name.starts_with(&member_prefix)
+                                    && (owner != "Vec"
+                                        || rils_frontend::standard_library::builtin_member_for_type(
+                                            receiver_type,
+                                            member.name,
+                                        )
+                                        .is_some())
                                     && (owner != "Iterator"
                                         || rils_frontend::standard_library::builtin_owner_name(
                                             receiver_type,

@@ -452,8 +452,7 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
                 }
                 _ => None,
             };
-            let member = crate::standard_library::builtin_owner_name(receiver)
-                .and_then(|owner| rils_builtins::builtin_member(owner, name))
+            let member = crate::standard_library::builtin_member_for_type(receiver, name)
                 .or(iterator_member)
                 .or_else(|| {
                     if name == "clone" {

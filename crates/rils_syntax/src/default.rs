@@ -54,6 +54,7 @@ pub fn default_plan(ty: &Type) -> Option<DefaultPlan> {
         }
         Type::Named { .. } | Type::Variable(_) => DefaultPlan::TraitCall(ty.clone()),
         Type::Reference { .. }
+        | Type::Slice(_)
         | Type::Function { .. }
         | Type::Result(_, _)
         | Type::Associated { .. }

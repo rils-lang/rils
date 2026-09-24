@@ -63,6 +63,13 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                         .is_some_and(|value| element.accepts(value))
                 })
         }
+        (Type::Slice(element), Value::Array(sequence) | Value::Vec(sequence)) => {
+            sequence.elements.borrow().iter().all(|slot| {
+                slot.value
+                    .as_ref()
+                    .is_some_and(|value| element.accepts(value))
+            })
+        }
         (Type::Named { name, arguments }, Value::Vec(sequence)) if name == "Vec" => {
             arguments.len() == 1
                 && sequence.elements.borrow().iter().all(|slot| {

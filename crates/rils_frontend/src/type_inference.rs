@@ -936,8 +936,12 @@ impl<'a> Inferencer<'a> {
                 let object = self.expression(object, returns);
                 let index_type = self.expression(index, returns);
                 self.unify(&index_type, &Type::USIZE);
+                let object = match object {
+                    Type::Reference { inner, .. } => *inner,
+                    object => object,
+                };
                 match object {
-                    Type::Array { element, .. } => *element,
+                    Type::Array { element, .. } | Type::Slice(element) => *element,
                     Type::Named { name, arguments } if name == "Vec" => {
                         arguments.into_iter().next().unwrap_or(Type::Unknown)
                     }

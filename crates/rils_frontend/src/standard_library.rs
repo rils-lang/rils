@@ -74,8 +74,8 @@ fn erase_type_variables(ty: Type) -> Type {
 }
 
 pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
-    let (owner, self_type, mut generics) = builtin_owner(object)?;
-    let member = rils_builtins::builtin_member(owner, name)?;
+    let (_, self_type, mut generics) = builtin_owner(object)?;
+    let member = builtin_member_for_type(object, name)?;
     let signature = member.signature?;
     for parameter in member.type_parameters {
         generics.insert(parameter, Type::Variable((*parameter).into()));
@@ -146,8 +146,32 @@ pub fn builtin_trait_member_type(trait_name: &str, object: &Type, name: &str) ->
 }
 
 pub fn builtin_receiver_mode(object: &Type, name: &str) -> Option<rils_builtins::ReceiverMode> {
+    builtin_member_for_type(object, name)?.receiver
+}
+
+pub fn builtin_member_for_type(
+    object: &Type,
+    name: &str,
+) -> Option<&'static rils_builtins::BuiltinMember> {
     let (owner, _, _) = builtin_owner(object)?;
-    rils_builtins::builtin_member(owner, name)?.receiver
+    let member = rils_builtins::builtin_member(owner, name)?;
+    if is_sequence_view(object)
+        && !member
+            .builtin_id
+            .and_then(rils_builtins::BuiltinId::canonical_path)
+            .is_some_and(|path| path.starts_with("core::sequence::"))
+    {
+        return None;
+    }
+    Some(member)
+}
+
+fn is_sequence_view(ty: &Type) -> bool {
+    match ty {
+        Type::Reference { inner, .. } => is_sequence_view(inner),
+        Type::Array { .. } | Type::Slice(_) => true,
+        _ => false,
+    }
 }
 
 /// Builds the type-erased ABI signature used when a built-in member is
@@ -248,7 +272,11 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
         Type::String => Some(("string", object.clone(), generics)),
         Type::Array { element, .. } => {
             generics.insert("T", (**element).clone());
-            Some(("Array", object.clone(), generics))
+            Some(("Vec", object.clone(), generics))
+        }
+        Type::Slice(element) => {
+            generics.insert("T", (**element).clone());
+            Some(("Vec", object.clone(), generics))
         }
         Type::Option(inner) => {
             generics.insert("T", (**inner).clone());

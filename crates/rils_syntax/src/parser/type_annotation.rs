@@ -2,6 +2,10 @@ use super::*;
 
 impl Parser<'_> {
     pub(super) fn type_annotation(&mut self) -> Result<Type, ParseError> {
+        self.type_annotation_inner(false)
+    }
+
+    fn type_annotation_inner(&mut self, allow_slice: bool) -> Result<Type, ParseError> {
         if self.take(&TokenKind::Less).is_some() {
             let base = self.type_annotation()?;
             self.expect(&TokenKind::As, "expected `as` in qualified associated type")?;
@@ -43,7 +47,7 @@ impl Parser<'_> {
             let mutable = self.take(&TokenKind::Mut).is_some();
             return Ok(Type::Reference {
                 mutable,
-                inner: Box::new(self.type_annotation()?),
+                inner: Box::new(self.type_annotation_inner(true)?),
             });
         }
 
@@ -67,6 +71,12 @@ impl Parser<'_> {
 
         if self.take(&TokenKind::LeftBracket).is_some() {
             let element = self.type_annotation()?;
+            if self.take(&TokenKind::RightBracket).is_some() {
+                if !allow_slice {
+                    return Err(self.error_here("slice types must be borrowed as `&[T]`"));
+                }
+                return Ok(Type::Slice(Box::new(element)));
+            }
             self.expect(&TokenKind::Semicolon, "expected `;` before array length")?;
             let token = self.advance().clone();
             let length = match token.kind {

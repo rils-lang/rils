@@ -98,7 +98,7 @@ pub(crate) fn builtin_runtime_member(
     name: &str,
 ) -> Option<(BuiltinMethod, rils_builtins::ReceiverMode)> {
     let owner = match value {
-        Value::Array(_) => "Array",
+        Value::Array(_) => "Vec",
         Value::String(_) => "string",
         Value::Vec(_) => "Vec",
         Value::HashMap(_) => "HashMap",
@@ -125,6 +125,14 @@ pub(crate) fn builtin_runtime_member(
             .then(|| rils_builtins::builtin_member("Iterator", name))
             .flatten()
     })?;
+    if matches!(value, Value::Array(_))
+        && !member
+            .builtin_id
+            .and_then(rils_builtins::BuiltinId::canonical_path)
+            .is_some_and(|path| path.starts_with("core::sequence::"))
+    {
+        return None;
+    }
     let method = if let Some(symbol) = member.native_symbol {
         BuiltinMethod::Native(symbol)
     } else {

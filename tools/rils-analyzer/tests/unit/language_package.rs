@@ -58,7 +58,7 @@ fn loads_reserved_standard_library_modules_as_a_language_package() {
         LanguagePackageKind::StandardLibrary,
     )
     .unwrap();
-    assert!(package.module("core::array").is_some());
+    assert!(package.module("core::array").is_none());
     assert!(package.module("std::io").is_some());
 }
 

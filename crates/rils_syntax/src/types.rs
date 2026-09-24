@@ -167,6 +167,7 @@ pub enum Type {
         element: Box<Type>,
         length: usize,
     },
+    Slice(Box<Type>),
     Reference {
         mutable: bool,
         inner: Box<Type>,
@@ -234,7 +235,7 @@ impl Type {
             Self::Option(inner) => inner.contains_reference(),
             Self::Result(ok, error) => ok.contains_reference() || error.contains_reference(),
             Self::Tuple(elements) => elements.iter().any(Self::contains_reference),
-            Self::Array { element, .. } => element.contains_reference(),
+            Self::Array { element, .. } | Self::Slice(element) => element.contains_reference(),
             Self::Function {
                 parameters,
                 return_type,
@@ -303,6 +304,7 @@ impl Type {
                 element: Box::new(element.substitute(substitutions)),
                 length: *length,
             },
+            Self::Slice(element) => Self::Slice(Box::new(element.substitute(substitutions))),
             Self::Reference { mutable, inner } => Self::Reference {
                 mutable: *mutable,
                 inner: Box::new(inner.substitute(substitutions)),
@@ -392,6 +394,20 @@ pub fn merge_types(expected: &Type, actual: &Type) -> Option<Type> {
             element: Box::new(merge_types(expected, actual)?),
             length: *expected_length,
         }),
+        (Type::Slice(expected), Type::Slice(actual)) => {
+            Some(Type::Slice(Box::new(merge_types(expected, actual)?)))
+        }
+        (
+            Type::Slice(expected),
+            Type::Array {
+                element: actual, ..
+            },
+        ) => Some(Type::Slice(Box::new(merge_types(expected, actual)?))),
+        (Type::Slice(expected), Type::Named { name, arguments })
+            if name == "Vec" && arguments.len() == 1 =>
+        {
+            Some(Type::Slice(Box::new(merge_types(expected, &arguments[0])?)))
+        }
         (
             Type::Reference {
                 mutable: expected_mutable,
@@ -477,6 +493,7 @@ impl fmt::Display for Type {
                 write!(f, ")")
             }
             Self::Array { element, length } => write!(f, "[{element}; {length}]"),
+            Self::Slice(element) => write!(f, "[{element}]"),
             Self::Reference { mutable, inner } => {
                 if *mutable {
                     write!(f, "&mut {inner}")

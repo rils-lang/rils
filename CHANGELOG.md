@@ -53,6 +53,10 @@
 - `Cell` 的内部成员路径改为 `core::cell::cell::*`，数字 ID 不变；依赖旧内部路径的 Rust 代码
   须更新，并重新编译引用旧路径的实验性 v8 字节码。
 - `Cell<T>::get()` 现在要求 `T: Copy`，不再克隆非 `Copy` 值；这类值可用 `replace()` 取回。
+- 移除标准库名义类型 `Array<T>`；固定数组统一写作 `[T; N]`。已有的数组 `len`、`is_empty`、
+  `contains`、`iter` 和 `into_iter` 操作仍可使用。
+- 支持 `&[T]` 借用固定数组和 `Vec<T>` 的元素视图，避免传参时复制或移动整个容器；实验性 v8
+  字节码增加切片类型标签，旧 v8 文件应重新编译。
 
 - Rust embedders matching `Value::SequenceIterator` or using `SequenceIteratorValue` must migrate to `Value::OwnedIterator` and `OwnedIteratorValue`. The borrowed sequence runtime variant is now `BorrowedSequenceIter`; Rils `Iterator<T>` source signatures remain available.
 

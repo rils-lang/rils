@@ -50,6 +50,7 @@ let text = pair.1;
 ```
 
 固定数组类型写作 `[T; N]`。数组字面量既支持元素列表，也支持要求元素为 `Copy` 的重复形式：
+旧的 `Array<T>` 名称已移除；原有类型标注应改为包含长度的 `[T; N]`。
 
 ```rust
 let mut values: [i32; 3] = [10, 20, 30];
@@ -58,6 +59,15 @@ let item = &mut values[2];
 *item = 31;
 
 let zeroes = [0; 8];
+```
+
+函数可用 `&[T]` 借用固定数组或 `Vec<T>` 的元素视图，调用时传入 `&values`；
+切片不包含固定长度，也不会移动或复制整个容器。切片类型只能出现在引用内。
+
+```rust
+fn first(values: &[i32]) -> i32 { values[0] }
+let values: [i32; 3] = [7, 8, 9];
+let result = first(&values);
 ```
 
 数组元素必须同型，索引必须是 `usize`。无后缀整数字面量及由它初始化的绑定可从索引用法推导为 `usize`。索引表达式只复制 `Copy` 元素；非 Copy 元素不能

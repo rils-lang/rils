@@ -475,16 +475,14 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
         Some(BuiltinId::SequenceIterNext)
     );
 
-    for owner in ["Array", "Vec"] {
-        assert_eq!(
-            builtin(owner)
-                .expect("sequence declaration")
-                .member("iter")
-                .expect("borrowed iteration method")
-                .builtin_id,
-            Some(BuiltinId::SequenceIter)
-        );
-    }
+    assert_eq!(
+        builtin("Vec")
+            .expect("sequence declaration")
+            .member("iter")
+            .expect("borrowed iteration method")
+            .builtin_id,
+        Some(BuiltinId::SequenceIter)
+    );
     for (owner, id) in [
         ("HashMap", BuiltinId::HashMapIter),
         ("BTreeMap", BuiltinId::BtreeMapIter),
@@ -501,12 +499,7 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
         );
     }
 
-    let array = builtin("Array").expect("Array declaration");
-    assert_eq!(array.kind, BuiltinKind::Primitive);
-    assert_eq!(
-        array.member("len").expect("Array::len").builtin_id,
-        Some(BuiltinId::SequenceLen)
-    );
+    assert!(builtin("Array").is_none());
 
     assert_eq!(
         builtin("core").expect("core module").documentation,

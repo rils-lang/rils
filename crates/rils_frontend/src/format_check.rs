@@ -298,7 +298,7 @@ impl Checker<'_> {
             Type::Tuple(elements) => {
                 required == "Debug" && elements.iter().all(|ty| self.implements(ty, required))
             }
-            Type::Array { element, .. } | Type::Option(element) => {
+            Type::Array { element, .. } | Type::Slice(element) | Type::Option(element) => {
                 required == "Debug" && self.implements(element, required)
             }
             Type::Result(ok, error) => {
