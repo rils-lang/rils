@@ -18,6 +18,12 @@ mod option_result;
 mod sequence_iter;
 mod vec_deque;
 
+/// Calls a native standard-library method by the path generated from its declaration.
+/// Returns `None` when no native bridge has been generated for the symbol yet.
+pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    native::call_symbol(symbol, arguments)
+}
+
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
 

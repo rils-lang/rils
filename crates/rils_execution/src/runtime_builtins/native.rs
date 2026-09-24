@@ -121,7 +121,14 @@ pub fn call(
     id: rils_builtins::BuiltinId,
     arguments: &[crate::Value],
 ) -> Option<Result<crate::Value, String>> {
-    option::call(id, arguments)
-        .or_else(|| result::call(id, arguments))
+    id.canonical_path()
+        .and_then(|symbol| call_symbol(symbol, arguments))
         .or_else(|| string::call(id, arguments))
+}
+
+pub fn call_symbol(
+    symbol: &str,
+    arguments: &[crate::Value],
+) -> Option<Result<crate::Value, String>> {
+    option::call_symbol(symbol, arguments).or_else(|| result::call_symbol(symbol, arguments))
 }

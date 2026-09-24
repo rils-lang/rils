@@ -35,3 +35,19 @@ fn native_option_is_some_handles_variants_and_invalid_receivers() {
     let error = runtime_builtins::call(BuiltinId::OptionIsSome, &[]).unwrap_err();
     assert!(error.contains("one receiver"));
 }
+
+#[test]
+fn native_option_symbol_dispatch_uses_the_exported_declaration() {
+    let input = Value::Option {
+        value: Some(Rc::new(Value::I32(5))),
+        element_type: Some(Type::I32),
+    };
+    assert_eq!(
+        runtime_builtins::call_native_symbol("core::option::option::is_some", &[input]),
+        Some(Ok(Value::Bool(true)))
+    );
+    assert_eq!(
+        runtime_builtins::call_native_symbol("core::option::missing", &[]),
+        None
+    );
+}

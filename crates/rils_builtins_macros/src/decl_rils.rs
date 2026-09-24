@@ -504,9 +504,12 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         if !matches!(name.to_string().as_str(), "is_some" | "is_none" | "is_ok" | "is_err" | "ok" | "err") {
             let arity = method.sig.inputs.len();
             return Ok(quote! {
-                id if id == rils_builtins::builtin_id!(#id_path) => Some(
+                #id_path => Some(
                     if arguments.len() == #arity {
-                        super::super::option_result::call(id, arguments)
+                        super::super::option_result::call(
+                            rils_builtins::builtin_id!(#id_path),
+                            arguments,
+                        )
                     } else {
                         Err(format!("native method expects {} arguments, found {}", #arity, arguments.len()))
                     }
@@ -578,7 +581,7 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
             }
         };
         Ok(quote! {
-            id if id == rils_builtins::builtin_id!(#id_path) => Some((|| -> Result<crate::Value, String> {
+            #id_path => Some((|| -> Result<crate::Value, String> {
                 if arguments.len() != 1 {
                     return Err(format!("native method expects one receiver, found {} arguments", arguments.len()));
                 }
@@ -593,11 +596,11 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         })
     }).collect::<syn::Result<Vec<_>>>()?;
     Ok(quote! {
-        pub fn call(
-            id: rils_builtins::BuiltinId,
+        pub fn call_symbol(
+            symbol: &str,
             arguments: &[crate::Value],
         ) -> Option<Result<crate::Value, String>> {
-            match id { #(#implementations,)* _ => None }
+            match symbol { #(#implementations,)* _ => None }
         }
     })
 }
