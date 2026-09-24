@@ -49,7 +49,7 @@ position = 0x0311
 enumerate = 0x0312
 
 # Range operations: 0x0400-0x04FF.
-[core.range]
+[core.iter.range]
 next = 0x0400
 into_iter = 0x0401
 
@@ -91,7 +91,7 @@ write_str = 0x0700
 write_derived_debug = 0x0701
 
 # Result operations: 0x0800-0x08FF.
-[core.result]
+[core.result.result]
 is_ok = 0x0800
 is_err = 0x0801
 unwrap = 0x0802
@@ -107,7 +107,7 @@ and_then = 0x080B
 or_else = 0x080C
 
 # Option operations: 0x0900-0x09FF.
-[core.option]
+[core.option.option]
 is_some = 0x0900
 is_none = 0x0901
 unwrap = 0x0902
@@ -122,7 +122,7 @@ and_then = 0x090A
 or_else = 0x090B
 
 # String operations: 0x0A00-0x0AFF.
-[core.string]
+[core.string.string]
 len = 0x0A00
 is_empty = 0x0A01
 contains = 0x0A02
@@ -249,7 +249,7 @@ borrow_mut = 0x0F02
 replace = 0x0F03
 
 # Double-ended queue operations: 0x1000-0x10FF.
-[core.vec_deque]
+[core.collections.vec_deque]
 new = 0x1000
 len = 0x1001
 is_empty = 0x1002
@@ -262,7 +262,7 @@ back_cloned = 0x1008
 clear = 0x1009
 
 # Max-priority queue operations: 0x1100-0x11FF.
-[core.binary_heap]
+[core.collections.binary_heap]
 new = 0x1100
 len = 0x1101
 is_empty = 0x1102

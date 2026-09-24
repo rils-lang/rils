@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, Error, Item, LitStr, Path, Token, parse_macro_input};
+use syn::{Attribute, Error, Item, LitStr, Path, parse_macro_input};
 
 fn snake_case(name: &str) -> String {
     let chars = name.chars().collect::<Vec<_>>();
@@ -24,39 +24,19 @@ fn snake_case(name: &str) -> String {
 }
 
 fn marked_path(attribute: &Attribute, module: &Path, name: &str) -> syn::Result<String> {
-    let prefix = match &attribute.meta {
-        syn::Meta::Path(_) => {
-            let mut parts = module
-                .segments
-                .iter()
-                .map(|part| part.ident.to_string())
-                .collect::<Vec<_>>();
-            parts.push(snake_case(name));
-            return Ok(format!("{}.rils", parts.join("/")));
-        }
-        syn::Meta::List(_) => attribute.parse_args_with(|input: syn::parse::ParseStream<'_>| {
-            let key: syn::Ident = input.parse()?;
-            if key != "id_prefix" {
-                return Err(Error::new_spanned(key, "expected id_prefix"));
-            }
-            input.parse::<Token![=]>()?;
-            let value: Path = input.parse()?;
-            if !input.is_empty() {
-                return Err(input.error("unexpected Rils export marker arguments"));
-            }
-            Ok(value)
-        })?,
-        _ => return Err(Error::new_spanned(attribute, "invalid Rils export marker")),
-    };
-    Ok(format!(
-        "{}.rils",
-        prefix
-            .segments
-            .iter()
-            .map(|part| part.ident.to_string())
-            .collect::<Vec<_>>()
-            .join("/")
-    ))
+    if !matches!(attribute.meta, syn::Meta::Path(_)) {
+        return Err(Error::new_spanned(
+            attribute,
+            "Rils export marker does not accept arguments",
+        ));
+    }
+    let mut parts = module
+        .segments
+        .iter()
+        .map(|part| part.ident.to_string())
+        .collect::<Vec<_>>();
+    parts.push(snake_case(name));
+    Ok(format!("{}.rils", parts.join("/")))
 }
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
@@ -223,7 +203,7 @@ mod tests {
         );
         let tokens = collect(&directory).unwrap().to_string();
         assert!(tokens.contains("core/collections/buffer.rils"));
-        assert!(tokens.contains("core/old_state.rils"));
+        assert!(tokens.contains("core/collections/state.rils"));
         assert!(tokens.contains("core/collections/marker.rils"));
         assert!(tokens.contains("buffer_definition"));
         assert!(tokens.contains("state_definition"));

@@ -11,7 +11,7 @@ Rust 实现使用。公开结构体字段进入 Rils 声明，固有方法仍需
 ```rust
 #[decl_rils(core::collections)]
 mod native {
-    #[rils_struct(id_prefix = core::binary_heap)]
+    #[rils_struct]
     pub struct BinaryHeap<T>(std::collections::BinaryHeap<T>);
 
     impl<T: Ord> BinaryHeap<T> {
@@ -21,11 +21,11 @@ mod native {
 }
 ```
 
-默认方法 ID 前缀及生成的 `.rils` 资源路径是模块路径加类型的 snake_case 名称；
-`id_prefix` 可在移动已有定义时同时保留 `builtin_ids.toml` 中的稳定路径与资源路径。
+方法 ID 前缀及生成的 `.rils` 资源路径由 `decl_rils` 的模块路径和类型的
+snake_case 名称组成，例如 `core::collections::binary_heap` 与
+`core/collections/binary_heap.rils`。
 derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内标记导出的 trait。
-无论模块中有多少定义，都必须显式标记导出的类型和 trait；旧定义可通过
-`id_prefix` 保持稳定 ID 和 `.rils` 资源路径。数值家族使用
+无论模块中有多少定义，都必须显式标记导出的类型和 trait。数值家族使用
 `primitive_integer_family!` / `primitive_float_family!` 预留宏声明内建原始类型。
 
 此 crate 存放可信的 Rust 标准库定义源。`src/stdlib/option.rs` 和

@@ -28,12 +28,12 @@ integer_steps!(
     i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
 );
 
-#[decl_rils(core::range)]
+#[decl_rils(core::iter)]
 mod native {
     use super::{Option, RangeStep};
 
     /// A half-open integer range.
-    #[rils_struct(id_prefix = core::range)]
+    #[rils_struct]
     pub struct Range<T> {
         current: T,
         end: T,

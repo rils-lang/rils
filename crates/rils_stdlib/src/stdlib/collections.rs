@@ -35,7 +35,7 @@ mod native {
     use super::{HeapElement, Option};
 
     /// A growable double-ended queue.
-    #[rils_struct(id_prefix = core::vec_deque)]
+    #[rils_struct]
     pub struct VecDeque<T>(std::collections::VecDeque<T>);
 
     impl<T> VecDeque<T> {
@@ -153,7 +153,7 @@ mod native {
     }
 
     /// An owned max-priority queue. Elements must be orderable integers, char, or string.
-    #[rils_struct(id_prefix = core::binary_heap)]
+    #[rils_struct]
     pub struct BinaryHeap<T>(std::collections::BinaryHeap<T>);
 
     impl<T: HeapElement> BinaryHeap<T> {

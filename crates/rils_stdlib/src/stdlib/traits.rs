@@ -18,7 +18,7 @@ pub(crate) mod default_native {
     };
 
     /// Types with a canonical default value.
-    #[rils_trait(id_prefix = core::default)]
+    #[rils_trait]
     pub trait Default: ::core::default::Default {
         /// Constructs the default value for this type.
         fn default() -> Self;
@@ -157,12 +157,12 @@ pub(crate) mod default_native {
     }
 }
 
-#[decl_rils(core::eq)]
+#[decl_rils(core::cmp)]
 pub(crate) mod eq_native {
     use rils_syntax::{ast::Stmt, parser::ParseError, quote::QuotedStatement};
 
     /// Values with reflexive equality suitable for hashed collections.
-    #[rils_trait(id_prefix = core::eq)]
+    #[rils_trait]
     pub trait Eq: ::core::cmp::Eq {}
 
     #[rils_derive(Eq)]
@@ -176,7 +176,7 @@ pub(crate) mod hash_native {
     use rils_syntax::{ast::Stmt, parser::ParseError, quote::QuotedStatement};
 
     /// Values that can be used as hash collection keys.
-    #[rils_trait(id_prefix = core::hash)]
+    #[rils_trait]
     pub trait Hash: ::core::hash::Hash {}
 
     #[rils_derive(Hash)]
@@ -188,7 +188,7 @@ pub(crate) mod hash_native {
 #[decl_rils(core::bit_flags)]
 pub(crate) mod bit_flags_native {
     /// Enum values whose discriminants may be combined as a bit set.
-    #[rils_trait(id_prefix = core::bit_flags)]
+    #[rils_trait]
     pub trait BitFlags: super::BitFlagsMarker {}
 }
 
@@ -290,7 +290,7 @@ pub(crate) mod clone_native {
     };
 
     /// Explicit owned duplication.
-    #[rils_trait(id_prefix = core::clone)]
+    #[rils_trait]
     pub trait Clone: ::core::clone::Clone {
         /// Explicitly duplicates an owned value.
         fn clone(&self) -> Self;
@@ -394,12 +394,12 @@ pub(crate) mod clone_native {
     }
 }
 
-#[decl_rils(core::copy)]
+#[decl_rils(core::clone)]
 pub(crate) mod copy_native {
     use rils_syntax::{ast::Stmt, parser::ParseError, quote::QuotedStatement, rils_quote};
 
     /// Values duplicated by ordinary reads.
-    #[rils_trait(id_prefix = core::copy)]
+    #[rils_trait]
     pub trait Copy: super::Clone + ::core::marker::Copy {}
 
     /// Generates the marker implementation; field eligibility is checked by Rils.

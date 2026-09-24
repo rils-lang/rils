@@ -27,6 +27,13 @@
 
 ### Breaking Changes
 
+- Rust 标准库定义的符号路径现在按模块组织，例如 `core::option::option::is_some`、
+  `core::iter::range::next` 和 `core::collections::binary_heap::push`。使用旧路径调用
+  `builtin_id!` 或匹配 `BuiltinId::canonical_path()` 的宿主代码须改用新路径；
+  原始数值 ID 保持不变。生成的 `.rils` 资源也从 `core/option.rils` 等平铺路径迁至
+  `core/option/option.rils`、`core/collections/binary_heap.rils` 等模块目录；直接引用
+  资源文件路径的工具须同步更新。Rils 的 `core::option::Some` 等公开入口仍由模块声明提供。
+
 - Rust embedders matching `Value::SequenceIterator` or using `SequenceIteratorValue` must migrate to `Value::OwnedIterator` and `OwnedIteratorValue`. The borrowed sequence runtime variant is now `BorrowedSequenceIter`; Rils `Iterator<T>` source signatures remain available.
 
 - Rust consumers constructing `ExternalModuleExport` now supply `target_module`:

@@ -63,39 +63,31 @@ fn target_name(item: &ItemImpl) -> Option<&syn::Ident> {
     target.path.segments.last().map(|segment| &segment.ident)
 }
 
-fn marker_path(attrs: &[Attribute], marker: &str, default: &Path) -> syn::Result<Option<Path>> {
+fn marker_path(
+    attrs: &[Attribute],
+    marker: &str,
+    module: &Path,
+    name: &syn::Ident,
+) -> syn::Result<Path> {
     let matching = attrs
         .iter()
         .filter(|attribute| attribute.path().is_ident(marker))
         .collect::<Vec<_>>();
-    let Some(attribute) = matching.first() else {
-        return Ok(None);
-    };
+    let attribute = matching.first().expect("export marker is present");
     if matching.len() != 1 {
         return Err(Error::new_spanned(
             attribute,
             "duplicate Rils export marker",
         ));
     }
-    match &attribute.meta {
-        syn::Meta::Path(_) => Ok(Some(default.clone())),
-        syn::Meta::List(_) => {
-            let prefix = attribute.parse_args_with(|input: syn::parse::ParseStream<'_>| {
-                let key: syn::Ident = input.parse()?;
-                if key != "id_prefix" {
-                    return Err(Error::new_spanned(key, "expected id_prefix"));
-                }
-                input.parse::<syn::Token![=]>()?;
-                let value: Path = input.parse()?;
-                if !input.is_empty() {
-                    return Err(input.error("unexpected Rils export marker arguments"));
-                }
-                Ok(value)
-            })?;
-            Ok(Some(prefix))
-        }
-        _ => Err(Error::new_spanned(attribute, "invalid Rils export marker")),
+    if !matches!(attribute.meta, syn::Meta::Path(_)) {
+        return Err(Error::new_spanned(
+            attribute,
+            "Rils export marker does not accept arguments",
+        ));
     }
+    let segment = format_ident!("{}", snake_case(&name.to_string()));
+    Ok(syn::parse_quote!(#module::#segment))
 }
 
 pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
@@ -163,9 +155,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
         if !exported.insert(name.to_string()) {
             return Err(Error::new_spanned(item, "duplicate exported Rils name"));
         }
-        let segment = format_ident!("{}", snake_case(&name.to_string()));
-        let default: Path = syn::parse_quote!(#path::#segment);
-        let id_path = marker_path(attrs, marker, &default)?.expect("present marker");
+        let id_path = marker_path(attrs, marker, &path, name)?;
         let callback = format_ident!("{}_definition", name.to_string().to_lowercase());
         if is_trait {
             let Item::Trait(trait_item) = item else {
@@ -356,7 +346,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stable_id_prefix_defaults_to_snake_case_type_name() {
+    fn exported_path_uses_snake_case_type_name() {
         assert_eq!(snake_case("BinaryHeap"), "binary_heap");
         assert_eq!(snake_case("VecDeque"), "vec_deque");
         assert_eq!(snake_case("I32"), "i32");
@@ -419,7 +409,7 @@ mod tests {
     fn derive_target_must_be_a_marked_trait_even_in_a_single_declaration_module() {
         let module: ItemMod = syn::parse_quote! {
             mod native {
-                #[rils_trait(id_prefix = core::clone)]
+                #[rils_trait]
                 pub trait Clone: ::core::clone::Clone {
                     fn clone(&self) -> Self;
                 }

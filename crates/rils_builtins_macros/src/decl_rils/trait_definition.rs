@@ -53,12 +53,12 @@ impl Input {
         let rust = self.rust_binding()?;
         let rust = rust.to_token_stream().to_string().replace(' ', "");
         let valid = match name.as_str() {
-            "Clone" => module == "core::clone" && rust == "::core::clone::Clone",
-            "Copy" => module == "core::copy" && rust == "::core::marker::Copy",
-            "Default" => module == "core::default" && rust == "::core::default::Default",
-            "Eq" => module == "core::eq" && rust == "::core::cmp::Eq",
-            "Hash" => module == "core::hash" && rust == "::core::hash::Hash",
-            "BitFlags" => module == "core::bit_flags" && rust == "super::BitFlagsMarker",
+            "Clone" => module == "core::clone::clone" && rust == "::core::clone::Clone",
+            "Copy" => module == "core::clone::copy" && rust == "::core::marker::Copy",
+            "Default" => module == "core::default::default" && rust == "::core::default::Default",
+            "Eq" => module == "core::cmp::eq" && rust == "::core::cmp::Eq",
+            "Hash" => module == "core::hash::hash" && rust == "::core::hash::Hash",
+            "BitFlags" => module == "core::bit_flags::bit_flags" && rust == "super::BitFlagsMarker",
             _ => self
                 .item
                 .attrs
@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn clone_binding_generates_the_existing_rils_contract() {
         let input = Input {
-            header: syn::parse_quote!(core::clone),
+            header: syn::parse_quote!(core::clone::clone),
             item: syn::parse_quote! {
                 /// Explicit owned duplication.
                 pub trait Clone: ::core::clone::Clone {
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn rejects_a_trait_binding_with_a_different_rust_contract() {
         let input = Input {
-            header: syn::parse_quote!(core::copy),
+            header: syn::parse_quote!(core::clone::copy),
             item: syn::parse_quote!(
                 pub trait Copy: ::core::clone::Clone {}
             ),
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn default_binding_generates_associated_constructor() {
         let input = Input {
-            header: syn::parse_quote!(core::default),
+            header: syn::parse_quote!(core::default::default),
             item: syn::parse_quote! {
                 pub trait Default: ::core::default::Default {
                     fn default() -> Self;
@@ -383,28 +383,28 @@ mod tests {
     fn marker_traits_keep_rils_supertraits() {
         for (module, item, expected) in [
             (
-                syn::parse_quote!(core::copy),
+                syn::parse_quote!(core::clone::copy),
                 syn::parse_quote!(
                     pub trait Copy: Clone + ::core::marker::Copy {}
                 ),
                 "pub trait Copy: Clone {}",
             ),
             (
-                syn::parse_quote!(core::eq),
+                syn::parse_quote!(core::cmp::eq),
                 syn::parse_quote!(
                     pub trait Eq: ::core::cmp::Eq {}
                 ),
                 "pub trait Eq {}",
             ),
             (
-                syn::parse_quote!(core::hash),
+                syn::parse_quote!(core::hash::hash),
                 syn::parse_quote!(
                     pub trait Hash: ::core::hash::Hash {}
                 ),
                 "pub trait Hash {}",
             ),
             (
-                syn::parse_quote!(core::bit_flags),
+                syn::parse_quote!(core::bit_flags::bit_flags),
                 syn::parse_quote!(
                     pub trait BitFlags: super::BitFlagsMarker {}
                 ),

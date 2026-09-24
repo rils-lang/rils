@@ -3,7 +3,7 @@ use rils_builtins_macros::decl_rils;
 #[decl_rils(core::option)]
 mod native {
     /// An optional value.
-    #[rils_enum(id_prefix = core::option)]
+    #[rils_enum]
     pub enum Option<T> {
         /// An absent optional value.
         None,

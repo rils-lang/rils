@@ -13,13 +13,13 @@ struct Definition {
 }
 
 pub(super) fn is_string(path: &Path) -> bool {
-    path.to_token_stream().to_string().replace(' ', "") == "core::string"
+    path.to_token_stream().to_string().replace(' ', "") == "core::string::string"
 }
 
 impl Definition {
     fn parse(path: Path, module: ItemMod) -> syn::Result<Self> {
         if !is_string(&path) {
-            return Err(Error::new_spanned(path, "expected core::string"));
+            return Err(Error::new_spanned(path, "expected core::string::string"));
         }
         let (_, items) = module
             .content
@@ -130,7 +130,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
     let documentation = super::documentation(&definition.item.attrs);
     let methods = definition.methods.iter().map(|method| {
         let name = method.sig.ident.to_string();
-        let id_path = format!("core::string::{name}");
+        let id_path = format!("core::string::string::{name}");
         let docs = super::documentation(&method.attrs);
         let parameters = method.sig.inputs.iter().skip(1).map(|input| {
             let FnArg::Typed(parameter) = input else { return Err(Error::new_spanned(input, "unexpected receiver")); };
@@ -181,7 +181,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     };
     let methods = definition.methods.iter().map(|method| {
         let name = &method.sig.ident;
-        let id_path = format!("core::string::{name}");
+        let id_path = format!("core::string::string::{name}");
         let arity = method.sig.inputs.len();
         let arguments = method.sig.inputs.iter().enumerate().skip(1).map(|(index, input)| {
             let FnArg::Typed(parameter) = input else { return Err(Error::new_spanned(input, "unexpected receiver")); };

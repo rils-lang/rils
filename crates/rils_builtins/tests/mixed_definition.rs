@@ -1,6 +1,6 @@
 use rils_builtins::{
     BuiltinBackend, BuiltinDeclaration, BuiltinId, BuiltinKind, BuiltinMember, BuiltinMemberKind,
-    BuiltinSignature, BuiltinTraitImpl, ReceiverMode, TypePattern, builtin_id,
+    BuiltinSignature, BuiltinTraitImpl, ReceiverMode, TypePattern,
 };
 use rils_builtins_macros::{
     decl_rils, decl_rils_metadata, decl_rils_trait_impls, decl_rils_trait_metadata,
@@ -12,7 +12,7 @@ pub trait Tagged {
 
 #[decl_rils(core::fixture)]
 mod native {
-    #[rils_struct(id_prefix = core::binary_heap)]
+    #[rils_struct]
     pub struct Sample {
         pub value: i32,
     }
@@ -24,7 +24,7 @@ mod native {
         }
     }
 
-    #[rils_enum(id_prefix = core::option)]
+    #[rils_enum]
     pub enum Choice {
         None,
         Some(i32),
@@ -64,12 +64,22 @@ mod native {
 
 mod sample_metadata {
     use super::*;
+    macro_rules! builtin_id {
+        ("core::fixture::sample::new") => {
+            BuiltinId::BinaryHeapNew
+        };
+    }
     sample_definition!(decl_rils_metadata);
     sample_definition!(decl_rils_trait_impls);
 }
 
 mod choice_metadata {
     use super::*;
+    macro_rules! builtin_id {
+        ("core::fixture::choice::is_some") => {
+            BuiltinId::OptionIsSome
+        };
+    }
     choice_definition!(decl_rils_metadata);
 }
 

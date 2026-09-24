@@ -146,7 +146,12 @@ fn rust_name(path: &[String]) -> Result<String, String> {
         return Err(format!("invalid built-in path `{}`", path.join(".")));
     }
     let mut name = String::new();
-    for part in parts {
+    let member_parts = if parts.len() > 2 {
+        &parts[parts.len() - 2..]
+    } else {
+        parts
+    };
+    for part in member_parts {
         let part = match part.as_str() {
             "fmt" => "formatter",
             other => other,
@@ -166,4 +171,33 @@ fn compile_error(message: impl AsRef<str>) -> TokenStream {
     format!("compile_error!({:?});", message.as_ref())
         .parse()
         .expect("valid compile_error")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn module_path_does_not_rename_existing_rust_id_constants() {
+        assert_eq!(
+            rust_name(&[
+                "core".into(),
+                "collections".into(),
+                "binary_heap".into(),
+                "new".into(),
+            ])
+            .unwrap(),
+            "BinaryHeapNew"
+        );
+        assert_eq!(
+            rust_name(&[
+                "core".into(),
+                "option".into(),
+                "option".into(),
+                "is_some".into(),
+            ])
+            .unwrap(),
+            "OptionIsSome"
+        );
+    }
 }

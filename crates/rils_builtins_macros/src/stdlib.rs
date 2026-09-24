@@ -126,17 +126,18 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
         let source_module = source_module(path);
         if matches!(
             file.relative.as_str(),
-            "stdlib/core/option.rils"
-                | "stdlib/core/result.rils"
-                | "stdlib/core/string.rils"
-                | "stdlib/core/clone.rils"
-                | "stdlib/core/copy.rils"
-                | "stdlib/core/default.rils"
-                | "stdlib/core/eq.rils"
-                | "stdlib/core/hash.rils"
-                | "stdlib/core/bit_flags.rils"
-                | "stdlib/core/range.rils"
-                | "stdlib/core/vec_deque.rils"
+            "stdlib/core/option/option.rils"
+                | "stdlib/core/result/result.rils"
+                | "stdlib/core/string/string.rils"
+                | "stdlib/core/clone/clone.rils"
+                | "stdlib/core/clone/copy.rils"
+                | "stdlib/core/default/default.rils"
+                | "stdlib/core/cmp/eq.rils"
+                | "stdlib/core/hash/hash.rils"
+                | "stdlib/core/bit_flags/bit_flags.rils"
+                | "stdlib/core/iter/range.rils"
+                | "stdlib/core/collections/vec_deque.rils"
+                | "stdlib/core/collections/binary_heap.rils"
         ) {
             source_entries.push(source_entry(
                 &file.relative,
@@ -270,6 +271,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(crate::native_definitions::bit_flags::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::range::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::vec_deque::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::binary_heap::DECLARATION));
 
     let module_entries = module_members.iter().map(|(path, members)| {
         let path = LitStr::new(path, input.directory.span());

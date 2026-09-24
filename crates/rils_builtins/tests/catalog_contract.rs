@@ -212,6 +212,33 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
 }
 
 #[test]
+fn regrouped_native_paths_keep_their_numeric_ids() {
+    for (id, path, raw) in [
+        (
+            BuiltinId::OptionIsSome,
+            "core::option::option::is_some",
+            0x0900,
+        ),
+        (BuiltinId::ResultIsOk, "core::result::result::is_ok", 0x0800),
+        (BuiltinId::StringLen, "core::string::string::len", 0x0A00),
+        (BuiltinId::RangeNext, "core::iter::range::next", 0x0400),
+        (
+            BuiltinId::VecDequeNew,
+            "core::collections::vec_deque::new",
+            0x1000,
+        ),
+        (
+            BuiltinId::BinaryHeapNew,
+            "core::collections::binary_heap::new",
+            0x1100,
+        ),
+    ] {
+        assert_eq!(id.canonical_path(), Some(path));
+        assert_eq!(id.as_raw(), raw);
+    }
+}
+
+#[test]
 fn numeric_intrinsics_use_their_reserved_builtin_id_blocks() {
     assert_eq!(
         rils_builtins::builtin_id!("core::integer::try_from").as_raw(),

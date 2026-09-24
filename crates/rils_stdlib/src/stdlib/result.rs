@@ -5,7 +5,7 @@ mod native {
     use super::super::prelude::*;
 
     /// A successful value or a structured error.
-    #[rils_enum(id_prefix = core::result)]
+    #[rils_enum]
     pub enum Result<T, E> {
         /// A successful result.
         Ok(T),
