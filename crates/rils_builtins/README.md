@@ -26,7 +26,7 @@ Rust 定义迁移已开始：`rils_stdlib/src/stdlib/option.rs` 和 `result.rs` 
 所有 Option/Result 成员方法的签名和 `#[export_rils]` 标记的普通 Rust 原生实现。宏分别为本 crate 生成
 `native_definitions::DECLARATIONS`，并为 `rils_execution` 生成共享运行时 handler。
 `BUILTINS` 中的 Option/Result/string 与整数、浮点数 intrinsic 和常量直接采用 Rust 定义生成的元信息。
-Analyzer 仍从语言包中的 `.rils` 文件读取源码位置；按需导出的声明由
-`python tools/generate-stdlib-sources.py --check` 校验同步。
+Analyzer 的语言包仍包含尚未迁移的 `.rils` 声明；已迁移的声明不再写回该目录。
+这些类型的静态元信息直接来自 `rils_stdlib`，Analyzer 的完整源码导航待语言包迁移时接入同一元信息。
 整数类型由 `rils_stdlib/src/stdlib/integer.rs` 的 `Number<TNum>` 方法模板与整数类型族宏定义；
 静态声明、原生实现和 12 种宽度的运行时桥接使用同一组方法签名。

@@ -42,9 +42,8 @@ derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内标记导
 运行时适配器把 Rils 值转换为该 Rust 类型，然后调用真实的方法；解释器的回调适配器使用同一方法的可失败辅助实现。
 `builtin_ids.toml` 仍是稳定 ID 的来源。`rils_builtins` 直接使用这些 Rust 定义生成
 Option、Result、整数、浮点数和 string API 的静态元信息，不再从对应的 `.rils` 文件重新解析元信息。
-Analyzer 目前仍加载 `.rils` 语言包以提供源码位置；运行生成脚本时，导出宏按需从
-Rust 定义生成这些语言包声明，不在 `rils_stdlib` 中保存 `RILS_SOURCE` 常量。
-提交前用 `python tools/generate-stdlib-sources.py --check` 校验语言包资源同步。
+Analyzer 目前仍加载未迁移的 `.rils` 语言包；已迁移的类型不再生成并提交重复源码。
+导出宏可按需从 Rust 定义生成声明文本供解析测试使用，但不保存 `RILS_SOURCE` 常量。
 
 整数类型使用 `primitive_integer_family!(i8, i16, i32, ..., usize)`
 声明全部内建类型，并在 `impl<TNum> Number<TNum>` 中编写 `#[export_rils]` 方法。
@@ -76,5 +75,4 @@ Rust 定义生成这些语言包声明，不在 `rils_stdlib` 中保存 `RILS_SO
 `BitFlags` 只由宿主 flags enum 自动实现，不提供脚本侧 derive。
 `rils_syntax_macros` 在构建时从标准库定义模块收集带 `#[rils_derive(TraitName)]` 的函数，生成静态注册表；
 新增 trait 派生不需要再维护一份独立的名称列表。
-同一声明生成内建 trait 元信息和对应 `core/*.rils` 语言包源码；
-这些源码只作为可用 `--check` 验证的生成资源。导出器自动发现带 `#[decl_rils]` 的定义模块。
+同一声明生成内建 trait 元信息；已迁移的 trait 不再保留对应的 `core/*.rils` 文件。

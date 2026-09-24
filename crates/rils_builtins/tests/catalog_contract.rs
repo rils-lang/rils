@@ -4,6 +4,7 @@ use rils_builtins::{
     IntrinsicKind, TypePattern, builtin, builtin_member, builtin_module_members, intrinsic,
     native_member, runtime_member,
 };
+use rils_builtins_macros::decl_rils_source;
 
 #[test]
 fn stdlib_directory_generates_source_and_module_metadata() {
@@ -28,11 +29,30 @@ fn stdlib_directory_generates_source_and_module_metadata() {
     assert!(BUILTIN_SOURCES.iter().any(|source| {
         source.path == "stdlib/modules.rils" && source.kind == BuiltinSourceKind::ModuleTree
     }));
-    assert!(BUILTIN_SOURCES.iter().any(|source| {
-        source.path == "stdlib/core/integer.rils"
-            && source.module == "core::integer"
-            && source.kind == BuiltinSourceKind::Numeric
-    }));
+    for migrated in [
+        "core/bit_flags/bit_flags.rils",
+        "core/clone/clone.rils",
+        "core/clone/copy.rils",
+        "core/cmp/eq.rils",
+        "core/collections/binary_heap.rils",
+        "core/collections/vec_deque.rils",
+        "core/default/default.rils",
+        "core/float.rils",
+        "core/hash/hash.rils",
+        "core/integer.rils",
+        "core/iter/range.rils",
+        "core/option/option.rils",
+        "core/result/result.rils",
+        "core/string/string.rils",
+    ] {
+        let legacy_path = format!("stdlib/{migrated}");
+        assert!(
+            BUILTIN_SOURCES
+                .iter()
+                .all(|source| source.path != legacy_path),
+            "migrated source should not remain in the legacy catalog: {migrated}"
+        );
+    }
     assert!(BUILTIN_MODULES.iter().any(|module| {
         module.path == "std::collections"
             && module.members
@@ -567,7 +587,7 @@ fn rils_numeric_files_supply_intrinsics_constants_and_docs() {
 }
 
 #[test]
-fn rils_numeric_files_cover_every_concrete_primitive() {
+fn rust_numeric_definitions_cover_every_concrete_primitive() {
     fn primitive_impls(source: &str) -> Vec<String> {
         parse(lex(source).expect("numeric source lexes"))
             .expect("numeric source parses")
@@ -588,14 +608,14 @@ fn rils_numeric_files_cover_every_concrete_primitive() {
     }
 
     assert_eq!(
-        primitive_impls(include_str!("../stdlib/core/integer.rils")),
+        primitive_impls(rils_stdlib::integer_definition!(decl_rils_source)),
         IntegerType::ALL
             .iter()
             .map(|kind| kind.name().to_owned())
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        primitive_impls(include_str!("../stdlib/core/float.rils")),
+        primitive_impls(rils_stdlib::float_definition!(decl_rils_source)),
         [FloatType::F32, FloatType::F64]
             .iter()
             .map(|kind| kind.name().to_owned())

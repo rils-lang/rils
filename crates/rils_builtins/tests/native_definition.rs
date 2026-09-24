@@ -1,6 +1,7 @@
 use rils_builtins::{
     BuiltinKind, BuiltinMemberKind, ReceiverMode, TypePattern, builtin, native_definitions,
 };
+use rils_builtins_macros::decl_rils_source;
 
 #[test]
 fn rust_option_definition_matches_the_existing_public_catalog() {
@@ -210,7 +211,7 @@ fn integer_family_matches_the_existing_integer_api() {
         assert_eq!(constant.value_type, published.value_type);
         assert_eq!(constant.documentation, published.documentation);
     }
-    let source = include_str!("../stdlib/core/integer.rils");
+    let source = rils_stdlib::integer_definition!(decl_rils_source);
     assert!(source.contains("impl i32"));
     assert!(!source.contains("struct Number"));
     let tokens = rils_syntax::lex(source).unwrap();

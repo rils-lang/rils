@@ -125,7 +125,6 @@ pub enum BuiltinSourceKind {
     ModuleTree,
     Catalog,
     Type,
-    Numeric,
 }
 
 #[derive(Clone, Copy, Debug)]

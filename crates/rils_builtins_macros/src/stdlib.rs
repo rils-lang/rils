@@ -124,39 +124,6 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             .unwrap_or("");
         let relative_literal = LitStr::new(&file.relative, input.directory.span());
         let source_module = source_module(path);
-        if matches!(
-            file.relative.as_str(),
-            "stdlib/core/option/option.rils"
-                | "stdlib/core/result/result.rils"
-                | "stdlib/core/string/string.rils"
-                | "stdlib/core/clone/clone.rils"
-                | "stdlib/core/clone/copy.rils"
-                | "stdlib/core/default/default.rils"
-                | "stdlib/core/cmp/eq.rils"
-                | "stdlib/core/hash/hash.rils"
-                | "stdlib/core/bit_flags/bit_flags.rils"
-                | "stdlib/core/iter/range.rils"
-                | "stdlib/core/collections/vec_deque.rils"
-                | "stdlib/core/collections/binary_heap.rils"
-        ) {
-            source_entries.push(source_entry(
-                &file.relative,
-                &source_module,
-                quote!(Type),
-                input.directory.span(),
-            ));
-            continue;
-        }
-        if stem == "integer" || stem == "float" {
-            source_entries.push(source_entry(
-                &file.relative,
-                &source_module,
-                quote!(Numeric),
-                input.directory.span(),
-            ));
-            continue;
-        }
-
         if stem == "modules" {
             collect_module_tree(&file.program.statements, "", &mut module_members);
             source_entries.push(source_entry(
