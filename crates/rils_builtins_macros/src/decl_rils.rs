@@ -326,7 +326,7 @@ pub(crate) fn expand_trait_impls(input: TokenStream) -> TokenStream {
 
 fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
     let module = &definition.module;
-    let path = definition.item.ident.to_string();
+    let (path, backend) = declaration_identity(module, &definition.item.ident.to_string());
     let type_documentation = documentation(&definition.item.attrs);
     let type_generics = definition
         .item
@@ -457,11 +457,28 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             members: &[#(#variants,)* #(#methods),*],
             signature: None,
             native_symbol: None,
-            backend: crate::BuiltinBackend::Runtime,
+            backend: #backend,
             documentation: #type_documentation,
         };
         pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[DECLARATION];
     })
+}
+
+fn declaration_identity(module: &Path, name: &str) -> (String, Tokens) {
+    let segments = module
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    if segments.first().is_some_and(|segment| segment == "std") {
+        let capability = segments[..segments.len() - 1].join("::");
+        (
+            format!("{capability}::{name}"),
+            quote!(crate::BuiltinBackend::Host(#capability)),
+        )
+    } else {
+        (name.to_owned(), quote!(crate::BuiltinBackend::Runtime))
+    }
 }
 
 fn documentation(attributes: &[syn::Attribute]) -> String {

@@ -2,6 +2,7 @@ pub mod basic;
 pub mod collections;
 pub mod float;
 pub mod integer;
+pub mod io;
 pub mod option;
 pub mod prelude;
 pub mod range;

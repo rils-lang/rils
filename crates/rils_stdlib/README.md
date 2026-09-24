@@ -27,6 +27,8 @@ snake_case 名称组成，例如 `core::collections::binary_heap` 与
 derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内标记导出的 trait。
 无论模块中有多少定义，都必须显式标记导出的类型和 trait。数值家族使用
 `primitive_integer_family!` / `primitive_float_family!` 预留宏声明内建原始类型。
+`std` 模块下导出的宿主类型使用完整的 `std::...::Type` 路径登记，并以所属模块作为宿主能力；
+`src/stdlib/io.rs` 的 `Error` 与 `ErrorKind` 因而继续由宿主提供运行时值。
 
 此 crate 存放可信的 Rust 标准库定义源。`src/stdlib/option.rs` 和
 `src/stdlib/result.rs` 使用 `#[decl_rils(core::...)]` 标注普通 Rust 模块，以类型、方法签名和 `#[export_rils]`

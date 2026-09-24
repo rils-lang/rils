@@ -20,6 +20,25 @@ fn basic_metadata_types_come_from_rust_definitions() {
 }
 
 #[test]
+fn io_error_metadata_comes_from_rust_definitions() {
+    for (path, definition) in [
+        ("std::io::Error", &native_definitions::io_error::DECLARATION),
+        (
+            "std::io::ErrorKind",
+            &native_definitions::io_error_kind::DECLARATION,
+        ),
+    ] {
+        let published = builtin(path).expect("host IO error type is in the public catalog");
+        assert_eq!(published.path, definition.path);
+        assert_eq!(published.members.len(), definition.members.len());
+        assert!(matches!(
+            published.backend,
+            rils_builtins::BuiltinBackend::Host("std::io")
+        ));
+    }
+}
+
+#[test]
 fn rust_option_definition_matches_the_existing_public_catalog() {
     let generated = &native_definitions::DECLARATION;
     let published = builtin("Option").expect("Option is in the public catalog");

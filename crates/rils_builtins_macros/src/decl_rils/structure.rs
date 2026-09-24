@@ -306,6 +306,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
 
 fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
     let name = definition.item.ident.to_string();
+    let (path, backend) = super::declaration_identity(&definition.path, &name);
     let docs = super::documentation(&definition.item.attrs);
     let module = &definition.path;
     let type_parameters = definition
@@ -420,14 +421,14 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
     Ok(quote! {
         use crate::TypePattern;
         pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
-            path: #name,
+            path: #path,
             kind: crate::BuiltinKind::Struct,
             supertraits: &[],
             type_parameters: &[#(#type_parameters),*],
             members: &[#(#fields,)* #(#methods),*],
             signature: None,
             native_symbol: None,
-            backend: crate::BuiltinBackend::Runtime,
+            backend: #backend,
             documentation: #docs,
         };
     })

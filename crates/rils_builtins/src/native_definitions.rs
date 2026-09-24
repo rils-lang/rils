@@ -104,6 +104,18 @@ pub mod boxed {
     rils_stdlib::box_definition!(decl_rils_metadata);
 }
 
+pub mod io_error {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::error_definition!(decl_rils_metadata);
+}
+
+pub mod io_error_kind {
+    use rils_builtins_macros::decl_rils_metadata;
+
+    rils_stdlib::errorkind_definition!(decl_rils_metadata);
+}
+
 pub use option::DECLARATION;
 
 pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
@@ -120,4 +132,6 @@ pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
     binary_heap::DECLARATION,
     format_error::DECLARATION,
     boxed::DECLARATION,
+    io_error::DECLARATION,
+    io_error_kind::DECLARATION,
 ];
