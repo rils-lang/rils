@@ -126,17 +126,47 @@ impl Parser<'_> {
     }
 
     pub(super) fn looks_like_record_literal(&self) -> bool {
-        self.check(&TokenKind::LeftBrace)
-            && self
-                .stream
-                .cursor_at(self.position + 1)
-                .peek()
-                .is_some_and(|token| matches!(token.kind, TokenKind::Identifier(_)))
+        if !self.check(&TokenKind::LeftBrace) {
+            return false;
+        }
+        let next = self.stream.cursor_at(self.position + 1).peek();
+        if next.is_some_and(|token| matches!(token.kind, TokenKind::RightBrace)) {
+            return self.allow_empty_record_literal;
+        }
+        next.is_some_and(|token| matches!(token.kind, TokenKind::Identifier(_)))
             && self
                 .stream
                 .cursor_at(self.position + 2)
                 .peek()
                 .is_some_and(|token| matches!(token.kind, TokenKind::Colon))
+    }
+
+    pub(super) fn parenthesized_empty_record_ahead(&self) -> bool {
+        matches!(
+            self.stream
+                .cursor_at(self.position)
+                .peek()
+                .map(|token| &token.kind),
+            Some(TokenKind::Identifier(_))
+        ) && matches!(
+            self.stream
+                .cursor_at(self.position + 1)
+                .peek()
+                .map(|token| &token.kind),
+            Some(TokenKind::LeftBrace)
+        ) && matches!(
+            self.stream
+                .cursor_at(self.position + 2)
+                .peek()
+                .map(|token| &token.kind),
+            Some(TokenKind::RightBrace)
+        ) && matches!(
+            self.stream
+                .cursor_at(self.position + 3)
+                .peek()
+                .map(|token| &token.kind),
+            Some(TokenKind::RightParen)
+        )
     }
 
     pub(super) fn generic_parameters(&mut self) -> Result<Vec<GenericParameter>, ParseError> {

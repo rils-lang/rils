@@ -9,7 +9,7 @@ pub trait BitFlagsMarker {}
 #[decl_rils(core::default)]
 pub(crate) mod default_native {
     use rils_syntax::{
-        ast::{Block, Expr, ImplMethod, Stmt},
+        ast::Stmt,
         default::{DefaultPlan, default_plan},
         parser::ParseError,
         quote::QuotedStatement,
@@ -29,10 +29,8 @@ pub(crate) mod default_native {
     fn derive_default(statement: &Stmt) -> Result<Option<QuotedStatement>, ParseError> {
         let Stmt::Struct {
             name,
-            name_span,
             generic_parameters,
             fields,
-            span,
             ..
         } = statement
         else {
@@ -44,42 +42,6 @@ pub(crate) mod default_native {
                 },
             });
         };
-        if fields.is_empty() {
-            let target = Type::Named {
-                name: name.clone(),
-                arguments: generic_parameters
-                    .iter()
-                    .map(|parameter| Type::Variable(parameter.name.clone()))
-                    .collect(),
-            };
-            return Ok(Some(QuotedStatement::from_statement(Stmt::Impl {
-                generic_parameters: generic_parameters.clone(),
-                trait_name: Some("Default".into()),
-                target: target.clone(),
-                associated_types: Vec::new(),
-                methods: vec![ImplMethod {
-                    attributes: Vec::new(),
-                    name: "default".into(),
-                    name_span: *name_span,
-                    generic_parameters: Vec::new(),
-                    parameters: Vec::new(),
-                    return_type: Some(target),
-                    body: Block {
-                        statements: vec![Stmt::Expr {
-                            expression: Expr::RecordLiteral {
-                                path: vec![name.clone()],
-                                fields: Vec::new(),
-                                span: *span,
-                            },
-                            terminated: false,
-                        }],
-                        span: *span,
-                    },
-                    span: *span,
-                }],
-                span: *span,
-            })));
-        }
         let mut required = std::collections::HashSet::new();
         let field_defaults = fields
             .iter()
@@ -131,7 +93,7 @@ pub(crate) mod default_native {
         let quoted = rils_quote! {
             impl #impl_generics Default for #name #type_arguments {
                 fn default() -> Self {
-                    #body
+                    (#body)
                 }
             }
         };

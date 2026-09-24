@@ -281,7 +281,7 @@ impl Parser<'_> {
                 };
                 self.take(&TokenKind::LeftBrace);
                 let mut fields = Vec::new();
-                loop {
+                while !self.check(&TokenKind::RightBrace) {
                     let (name, name_span) =
                         self.expect_identifier("expected field name in constructor")?;
                     if fields
@@ -434,8 +434,10 @@ impl Parser<'_> {
                         span: token.span.merge(right.span),
                     });
                 }
+                let previous = self.allow_empty_record_literal;
+                self.allow_empty_record_literal = self.parenthesized_empty_record_ahead();
                 let first = self.expression()?;
-                if self.take(&TokenKind::Comma).is_none() {
+                let expression = if self.take(&TokenKind::Comma).is_none() {
                     self.expect(&TokenKind::RightParen, "expected `)` after expression")?;
                     first
                 } else {
@@ -451,7 +453,9 @@ impl Parser<'_> {
                         elements,
                         span: token.span.merge(right.span),
                     }
-                }
+                };
+                self.allow_empty_record_literal = previous;
+                expression
             }
             TokenKind::LeftBracket => {
                 if let Some(right) = self.take(&TokenKind::RightBracket) {

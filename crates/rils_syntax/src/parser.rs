@@ -219,6 +219,7 @@ struct Parser<'a> {
     macros: Vec<MacroSymbol>,
     loop_depth: usize,
     block_depth: usize,
+    allow_empty_record_literal: bool,
     fallback_token: Token,
     capabilities: ParseCapabilities,
 }
@@ -241,6 +242,7 @@ impl<'a> Parser<'a> {
             macros,
             loop_depth: 0,
             block_depth: 0,
+            allow_empty_record_literal: false,
             fallback_token: Token::new(TokenKind::Identifier(String::new()), Span::new(0, 0)),
             capabilities,
         }

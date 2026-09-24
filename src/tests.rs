@@ -49,9 +49,23 @@ fn derives_default_for_unit_structs() {
     let source = r#"
         #[derive(Default)]
         struct Marker;
+        #[derive(Default)]
+        struct Empty {}
+        let empty = <Empty as Default>::default();
+        assert!(type_of(empty) == "Empty");
         let marker = <Marker as Default>::default();
         type_of(marker)
     "#;
+    assert_eq!(eval(source).unwrap(), Value::String("Marker".into()));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::String("Marker".into())
+    );
+}
+
+#[test]
+fn empty_record_constructors_work_in_interpreter_and_bytecode() {
+    let source = "struct Marker; let marker = (Marker {}); type_of(marker)";
     assert_eq!(eval(source).unwrap(), Value::String("Marker".into()));
     assert_eq!(
         compile(source).unwrap().execute().unwrap(),
