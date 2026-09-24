@@ -610,6 +610,18 @@ fn type_of_value(value: &Value) -> Option<Type> {
             Some(signature)
         }
         Value::BuiltinBoundMethod(method) => Some(match method.method {
+            crate::value::BuiltinMethod::Native(symbol) => {
+                let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
+                let receiver = match receiver {
+                    Type::Reference { inner, .. } => *inner,
+                    receiver => receiver,
+                };
+                rils_frontend::standard_library::builtin_member_type(
+                    &receiver,
+                    rils_builtins::native_member(symbol)?.name,
+                )
+                .unwrap_or_else(Type::opaque_function)
+            }
             crate::value::BuiltinMethod::Runtime(id) => {
                 let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
                 let receiver = match receiver {

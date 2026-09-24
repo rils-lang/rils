@@ -56,20 +56,12 @@ impl BuiltinId {
     /// Returns whether two member IDs use the same type-erased runtime implementation.
     pub fn shares_direct_runtime_implementation(self, other: Self) -> bool {
         self == other
-            || (matches!(self, Self::SequenceLen | Self::StringLen)
-                && matches!(other, Self::SequenceLen | Self::StringLen))
-            || (matches!(self, Self::SequenceIsEmpty | Self::StringIsEmpty)
-                && matches!(other, Self::SequenceIsEmpty | Self::StringIsEmpty))
-            || (matches!(self, Self::SequenceContains | Self::StringContains)
-                && matches!(other, Self::SequenceContains | Self::StringContains))
             || (matches!(self, Self::OptionUnwrap | Self::ResultUnwrap)
                 && matches!(other, Self::OptionUnwrap | Self::ResultUnwrap))
             || (matches!(self, Self::OptionUnwrapOr | Self::ResultUnwrapOr)
                 && matches!(other, Self::OptionUnwrapOr | Self::ResultUnwrapOr))
             || (matches!(self, Self::OptionExpect | Self::ResultExpect)
                 && matches!(other, Self::OptionExpect | Self::ResultExpect))
-            || (matches!(self, Self::OptionReplace | Self::StringReplace)
-                && matches!(other, Self::OptionReplace | Self::StringReplace))
     }
 }
 

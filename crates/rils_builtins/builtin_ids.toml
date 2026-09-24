@@ -121,29 +121,6 @@ map = 0x0909
 and_then = 0x090A
 or_else = 0x090B
 
-# String operations: 0x0A00-0x0AFF.
-[core.string.string]
-len = 0x0A00
-is_empty = 0x0A01
-contains = 0x0A02
-starts_with = 0x0A03
-ends_with = 0x0A04
-find = 0x0A05
-trim = 0x0A06
-replace = 0x0A07
-trim_start = 0x0A08
-trim_end = 0x0A09
-to_lowercase = 0x0A0A
-to_uppercase = 0x0A0B
-repeat = 0x0A0C
-rfind = 0x0A0D
-strip_prefix = 0x0A0E
-strip_suffix = 0x0A0F
-chars = 0x0A10
-bytes = 0x0A11
-lines = 0x0A12
-split = 0x0A13
-
 # Integer intrinsic operations: 0x0B00-0x0BFF.
 [core.integer]
 try_from = 0x0B00

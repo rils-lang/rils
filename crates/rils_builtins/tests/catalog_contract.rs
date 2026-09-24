@@ -240,7 +240,6 @@ fn regrouped_native_paths_keep_their_numeric_ids() {
             0x0900,
         ),
         (BuiltinId::ResultIsOk, "core::result::result::is_ok", 0x0800),
-        (BuiltinId::StringLen, "core::string::string::len", 0x0A00),
         (BuiltinId::RangeNext, "core::iter::range::next", 0x0400),
         (
             BuiltinId::VecDequeNew,
@@ -255,6 +254,17 @@ fn regrouped_native_paths_keep_their_numeric_ids() {
     ] {
         assert_eq!(id.canonical_path(), Some(path));
         assert_eq!(id.as_raw(), raw);
+    }
+}
+
+#[test]
+fn string_methods_no_longer_reserve_builtin_ids() {
+    for member in builtin("string").unwrap().members {
+        assert!(member.builtin_id.is_none(), "string::{}", member.name);
+        assert!(member.native_symbol.is_some(), "string::{}", member.name);
+    }
+    for raw in 0x0A00..=0x0A13 {
+        assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
 }
 
@@ -321,8 +331,8 @@ fn rils_standard_library_files_supply_type_member_and_variant_metadata() {
     assert_eq!(string.kind, BuiltinKind::Primitive);
     assert_eq!(string.documentation, "An owned UTF-8 string.");
     assert_eq!(
-        string.member("split").expect("string::split").builtin_id,
-        Some(BuiltinId::StringSplit)
+        string.member("split").expect("string::split").native_symbol,
+        Some("core::string::string::split")
     );
     assert_eq!(
         string

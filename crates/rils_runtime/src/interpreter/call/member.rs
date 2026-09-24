@@ -44,11 +44,11 @@ pub(super) fn resolve_host_or_builtin_member(
     name: &str,
     span: Span,
 ) -> Result<Option<Value>, RuntimeError> {
-    if let Some((id, _)) = builtin_runtime_member(value, name) {
+    if let Some((method, _)) = builtin_runtime_member(value, name) {
         return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
             BuiltinBoundMethod {
                 receiver: Rc::new(value.clone()),
-                method: BuiltinMethod::Runtime(id),
+                method,
             },
         ))));
     }
@@ -203,7 +203,7 @@ pub(super) fn resolve_borrowed_host_or_builtin_member(
     name: &str,
     span: Span,
 ) -> Result<Option<Value>, RuntimeError> {
-    if let Some((id, mode)) = builtin_runtime_member(borrowed, name) {
+    if let Some((method, mode)) = builtin_runtime_member(borrowed, name) {
         if mode == rils_builtins::ReceiverMode::Mutable && !receiver_mutable {
             return Err(RuntimeError::new(
                 format!("{}::{name} requires `&mut self`", borrowed.type_name()),
@@ -213,7 +213,7 @@ pub(super) fn resolve_borrowed_host_or_builtin_member(
         return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
             BuiltinBoundMethod {
                 receiver: Rc::new(receiver),
-                method: BuiltinMethod::Runtime(id),
+                method,
             },
         ))));
     }

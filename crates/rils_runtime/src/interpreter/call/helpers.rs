@@ -96,7 +96,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
 pub(crate) fn builtin_runtime_member(
     value: &Value,
     name: &str,
-) -> Option<(rils_builtins::BuiltinId, rils_builtins::ReceiverMode)> {
+) -> Option<(BuiltinMethod, rils_builtins::ReceiverMode)> {
     let owner = match value {
         Value::Array(_) => "Array",
         Value::String(_) => "string",
@@ -125,7 +125,12 @@ pub(crate) fn builtin_runtime_member(
             .then(|| rils_builtins::builtin_member("Iterator", name))
             .flatten()
     })?;
-    Some((member.builtin_id?, member.receiver?))
+    let method = if let Some(symbol) = member.native_symbol {
+        BuiltinMethod::Native(symbol)
+    } else {
+        BuiltinMethod::Runtime(member.builtin_id?)
+    };
+    Some((method, member.receiver?))
 }
 
 pub(super) fn validate_native_arguments(

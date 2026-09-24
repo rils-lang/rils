@@ -1013,6 +1013,45 @@ fn result_native_methods_use_the_symbol_import() {
 }
 
 #[test]
+fn string_methods_use_native_imports_without_legacy_ids() {
+    let source = "let text = \"é\"; text.contains(\"é\") && text.len() == 2";
+    let module = compile(source).unwrap();
+    let symbols = module
+        .native_imports
+        .iter()
+        .map(|import| import.symbol.as_str())
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        symbols,
+        HashSet::from([
+            "core::string::string::contains",
+            "core::string::string::len"
+        ])
+    );
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .all(|instruction| !matches!(instruction.instruction, Instruction::CallRuntime { .. }))
+    );
+    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+
+    let bytes = module.to_bytes().unwrap();
+    let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
+    assert_eq!(loaded.execute().unwrap(), Value::Bool(true));
+    let mut previous_format = bytes;
+    previous_format[8..10].copy_from_slice(&8u16.to_le_bytes());
+    assert!(
+        BytecodeModule::from_bytes(&previous_format)
+            .err()
+            .unwrap()
+            .message
+            .contains("unsupported bytecode format version 8")
+    );
+}
+
+#[test]
 fn generated_runtime_imports_are_registered_without_a_second_catalog() {
     let registered = super::core_imports::core_imports()
         .into_iter()

@@ -231,6 +231,7 @@ pub struct BoundMethod {
 
 #[derive(Clone, Copy)]
 pub enum BuiltinMethod {
+    Native(&'static str),
     Runtime(rils_builtins::BuiltinId),
     IntegerIntrinsic(rils_builtins::BuiltinId),
     FloatIntrinsic(rils_builtins::BuiltinId),

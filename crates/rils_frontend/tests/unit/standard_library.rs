@@ -20,9 +20,12 @@ fn float_intrinsic_types_preserve_concrete_float_type() {
 }
 
 #[test]
-fn runtime_signatures_are_resolved_by_stable_id() {
+fn runtime_and_native_signatures_keep_their_distinct_results() {
     let option = erased_runtime_signature(rils_builtins::BuiltinId::OptionReplace).unwrap();
-    let string = erased_runtime_signature(rils_builtins::BuiltinId::StringReplace).unwrap();
+    let string = erased_builtin_member_signature(
+        rils_builtins::native_member("core::string::string::replace").unwrap(),
+    )
+    .unwrap();
 
     assert_ne!(option, string);
     assert_eq!(option.return_type, Type::Unknown);

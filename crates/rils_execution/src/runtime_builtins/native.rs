@@ -123,12 +123,13 @@ pub fn call(
 ) -> Option<Result<crate::Value, String>> {
     id.canonical_path()
         .and_then(|symbol| call_symbol(symbol, arguments))
-        .or_else(|| string::call(id, arguments))
 }
 
 pub fn call_symbol(
     symbol: &str,
     arguments: &[crate::Value],
 ) -> Option<Result<crate::Value, String>> {
-    option::call_symbol(symbol, arguments).or_else(|| result::call_symbol(symbol, arguments))
+    option::call_symbol(symbol, arguments)
+        .or_else(|| result::call_symbol(symbol, arguments))
+        .or_else(|| string::call_symbol(symbol, arguments))
 }

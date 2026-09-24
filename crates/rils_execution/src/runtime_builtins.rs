@@ -239,7 +239,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 value.type_name()
             )),
         },
-        BuiltinId::SequenceLen | BuiltinId::StringLen => {
+        BuiltinId::SequenceLen => {
             let value = import_receiver(&arguments[0])?;
             let length = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => sequence.elements.borrow().len(),
@@ -252,7 +252,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             };
             Ok(Value::Usize(length))
         }
-        BuiltinId::SequenceIsEmpty | BuiltinId::StringIsEmpty => {
+        BuiltinId::SequenceIsEmpty => {
             let value = import_receiver(&arguments[0])?;
             let empty = match value {
                 Value::Array(sequence) | Value::Vec(sequence) => {
@@ -262,20 +262,18 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             };
             Ok(Value::Bool(empty))
         }
-        BuiltinId::SequenceContains | BuiltinId::StringContains => {
-            match import_receiver(&arguments[0])? {
-                Value::Array(sequence) | Value::Vec(sequence) => {
-                    let needle = import_receiver(&arguments[1])?;
-                    let contains = sequence
-                        .elements
-                        .borrow()
-                        .iter()
-                        .any(|slot| slot.value.as_ref() == Some(&needle));
-                    Ok(Value::Bool(contains))
-                }
-                _ => Err("contains receiver is not a collection".into()),
+        BuiltinId::SequenceContains => match import_receiver(&arguments[0])? {
+            Value::Array(sequence) | Value::Vec(sequence) => {
+                let needle = import_receiver(&arguments[1])?;
+                let contains = sequence
+                    .elements
+                    .borrow()
+                    .iter()
+                    .any(|slot| slot.value.as_ref() == Some(&needle));
+                Ok(Value::Bool(contains))
             }
-        }
+            _ => Err("contains receiver is not a collection".into()),
+        },
         BuiltinId::VecPush => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("Vec::push requires a mutable binding".into());
@@ -636,23 +634,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 _ => unreachable!("iterator built-in was matched above"),
             }
         }
-        BuiltinId::StringStartsWith
-        | BuiltinId::StringEndsWith
-        | BuiltinId::StringFind
-        | BuiltinId::StringTrim
-        | BuiltinId::StringTrimStart
-        | BuiltinId::StringTrimEnd
-        | BuiltinId::StringToLowercase
-        | BuiltinId::StringToUppercase
-        | BuiltinId::StringRepeat
-        | BuiltinId::StringRfind
-        | BuiltinId::StringStripPrefix
-        | BuiltinId::StringStripSuffix
-        | BuiltinId::StringChars
-        | BuiltinId::StringBytes
-        | BuiltinId::StringLines
-        | BuiltinId::StringSplit
-        | BuiltinId::StringReplace => Err("missing native string binding".into()),
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),

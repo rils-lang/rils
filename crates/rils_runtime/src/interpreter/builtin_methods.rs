@@ -14,6 +14,9 @@ impl Interpreter {
             BuiltinMethod::Runtime(id) => rils_builtins::runtime_member(id)
                 .and_then(|(_, member)| member.signature)
                 .map_or(0, |signature| signature.parameters.len()),
+            BuiltinMethod::Native(symbol) => rils_builtins::native_member(symbol)
+                .and_then(|member| member.signature)
+                .map_or(0, |signature| signature.parameters.len()),
         };
         check_arity("builtin method", arity, arity, arguments.len(), span)?;
         if let BuiltinMethod::Runtime(id) = method.method
@@ -30,6 +33,16 @@ impl Interpreter {
                 .map_err(|message| RuntimeError::new(message, span));
         }
         match method.method {
+            BuiltinMethod::Native(symbol) => {
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                crate::runtime_builtins::call_native_symbol(symbol, &values)
+                    .ok_or_else(|| {
+                        RuntimeError::new(format!("native method `{symbol}` is unavailable"), span)
+                    })?
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
             BuiltinMethod::IntegerIntrinsic(id) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
@@ -276,34 +289,6 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::OptionOr
                 | rils_builtins::BuiltinId::OptionXor
                 | rils_builtins::BuiltinId::OptionReplace),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::StringLen
-                | rils_builtins::BuiltinId::StringIsEmpty
-                | rils_builtins::BuiltinId::StringContains
-                | rils_builtins::BuiltinId::StringStartsWith
-                | rils_builtins::BuiltinId::StringEndsWith
-                | rils_builtins::BuiltinId::StringFind
-                | rils_builtins::BuiltinId::StringTrim
-                | rils_builtins::BuiltinId::StringReplace
-                | rils_builtins::BuiltinId::StringTrimStart
-                | rils_builtins::BuiltinId::StringTrimEnd
-                | rils_builtins::BuiltinId::StringToLowercase
-                | rils_builtins::BuiltinId::StringToUppercase
-                | rils_builtins::BuiltinId::StringRepeat
-                | rils_builtins::BuiltinId::StringRfind
-                | rils_builtins::BuiltinId::StringStripPrefix
-                | rils_builtins::BuiltinId::StringStripSuffix
-                | rils_builtins::BuiltinId::StringChars
-                | rils_builtins::BuiltinId::StringBytes
-                | rils_builtins::BuiltinId::StringLines
-                | rils_builtins::BuiltinId::StringSplit),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());

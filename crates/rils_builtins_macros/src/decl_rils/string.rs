@@ -147,9 +147,9 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
                 signature: Some(crate::BuiltinSignature { parameters: &[#(#parameters),*], result: #result, variadic: false }),
                 value_type: None,
                 receiver: Some(crate::ReceiverMode::Shared),
-                builtin_id: Some(builtin_id!(#id_path)),
+                builtin_id: None,
                 runtime_import: None,
-                native_symbol: None,
+                native_symbol: Some(#id_path),
                 required: true,
                 type_parameters: &[],
                 documentation: #docs,
@@ -194,7 +194,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
             Ok(value)
         }).collect::<syn::Result<Vec<_>>>()?;
         Ok(quote! {
-            id if id == rils_builtins::builtin_id!(#id_path) => Some((|| -> Result<crate::Value, String> {
+            #id_path => Some((|| -> Result<crate::Value, String> {
                 if arguments.len() != #arity {
                     return Err(format!("{} expects {} arguments, found {}", stringify!(#name), #arity, arguments.len()));
                 }
@@ -205,8 +205,8 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     }).collect::<syn::Result<Vec<_>>>();
     match methods {
         Ok(methods) => quote! {
-            pub fn call(id: rils_builtins::BuiltinId, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
-                match id { #(#methods)* _ => None }
+            pub fn call_symbol(symbol: &str, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
+                match symbol { #(#methods)* _ => None }
             }
         }.into(),
         Err(error) => error.into_compile_error().into(),
