@@ -97,12 +97,18 @@ impl Definition {
                 let ImplItem::Fn(method) = member else {
                     continue;
                 };
-                if !method
+                let Some(export_attribute) = method
                     .attrs
                     .iter()
-                    .any(|attr| attr.path().is_ident("export_rils"))
-                {
+                    .find(|attr| attr.path().is_ident("export_rils"))
+                else {
                     continue;
+                };
+                if !matches!(export_attribute.meta, Meta::Path(_)) {
+                    return Err(Error::new_spanned(
+                        export_attribute,
+                        "#[export_rils] does not take arguments",
+                    ));
                 }
                 if method.block.stmts.is_empty() {
                     return Err(Error::new_spanned(
@@ -110,7 +116,6 @@ impl Definition {
                         "native method needs a Rust body",
                     ));
                 }
-                direct_native_method(method)?;
                 methods.push(method.clone());
             }
         }
@@ -378,7 +383,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             let name = method.sig.ident.to_string();
             let documentation = documentation(&method.attrs);
             let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-            let direct_native = direct_native_method(method)?;
+            let direct_native = supports_direct_bridge(&definition.item, method);
             let native_symbol = if direct_native {
                 quote!(Some(#id_path))
             } else {
@@ -481,30 +486,38 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
         .join("\n")
 }
 
-fn direct_native_method(method: &ImplItemFn) -> syn::Result<bool> {
-    let attribute = method
-        .attrs
-        .iter()
-        .find(|attribute| attribute.path().is_ident("export_rils"))
-        .ok_or_else(|| Error::new_spanned(method, "native method needs #[export_rils]"))?;
-    match &attribute.meta {
-        Meta::Path(_) => Ok(false),
-        Meta::List(_) => {
-            let option: syn::Ident = attribute.parse_args()?;
-            if option == "native" {
-                Ok(true)
-            } else {
-                Err(Error::new_spanned(
-                    attribute,
-                    "expected #[export_rils(native)]",
-                ))
-            }
-        }
-        Meta::NameValue(_) => Err(Error::new_spanned(
-            attribute,
-            "expected #[export_rils(native)]",
-        )),
+fn supports_direct_bridge(item: &ItemEnum, method: &ImplItemFn) -> bool {
+    if !matches!(item.ident.to_string().as_str(), "Option" | "Result")
+        || method.sig.inputs.len() != 1
+    {
+        return false;
     }
+    let Some(receiver) = method.sig.receiver() else {
+        return false;
+    };
+    let ReturnType::Type(_, result) = &method.sig.output else {
+        return false;
+    };
+    if receiver.reference.is_some() {
+        return receiver.mutability.is_none()
+            && matches!(result.as_ref(), Type::Path(path) if path.path.is_ident("bool"));
+    }
+    if item.ident != "Result" {
+        return false;
+    }
+    let Type::Path(path) = result.as_ref() else {
+        return false;
+    };
+    let Some(segment) = path.path.segments.last() else {
+        return false;
+    };
+    if segment.ident != "Option" {
+        return false;
+    }
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return false;
+    };
+    matches!(arguments.args.first(), Some(syn::GenericArgument::Type(Type::Path(path))) if path.path.is_ident("T") || path.path.is_ident("E"))
 }
 
 pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
@@ -539,7 +552,7 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
     let implementations = definition.methods.iter().map(|method| {
         let name = &method.sig.ident;
         let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-        if !direct_native_method(method)? {
+        if !supports_direct_bridge(&definition.item, method) {
             let arity = method.sig.inputs.len();
             return Ok(quote! {
                 #id_path => Some(
@@ -648,28 +661,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_bridge_requires_an_explicit_export_marker() {
-        let ordinary: ImplItemFn = syn::parse_quote!(
+    fn native_bridge_eligibility_follows_the_method_signature() {
+        let option: ItemEnum = syn::parse_quote!(
+            pub enum Option<T> {
+                Some(T),
+                None,
+            }
+        );
+        let result: ItemEnum = syn::parse_quote!(
+            pub enum Result<T, E> {
+                Ok(T),
+                Err(E),
+            }
+        );
+        let state_query: ImplItemFn = syn::parse_quote!(
             #[export_rils]
             pub fn is_some(&self) -> bool {
                 true
             }
         );
-        let native: ImplItemFn = syn::parse_quote!(
-            #[export_rils(native)]
-            pub fn ready(&self) -> bool {
-                true
+        let extraction: ImplItemFn = syn::parse_quote!(
+            #[export_rils]
+            pub fn ok(self) -> Option<T> {
+                loop {}
             }
         );
-        let invalid: ImplItemFn = syn::parse_quote!(
-            #[export_rils(other)]
-            pub fn invalid(&self) -> bool {
-                true
+        let mutable: ImplItemFn = syn::parse_quote!(
+            #[export_rils]
+            pub fn take(&mut self) -> Self {
+                loop {}
             }
         );
-        assert!(!direct_native_method(&ordinary).unwrap());
-        assert!(direct_native_method(&native).unwrap());
-        assert!(direct_native_method(&invalid).is_err());
+        let generic: ImplItemFn = syn::parse_quote!(
+            #[export_rils]
+            pub fn unwrap(self) -> T {
+                loop {}
+            }
+        );
+        assert!(supports_direct_bridge(&option, &state_query));
+        assert!(supports_direct_bridge(&result, &state_query));
+        assert!(supports_direct_bridge(&result, &extraction));
+        assert!(!supports_direct_bridge(&option, &mutable));
+        assert!(!supports_direct_bridge(&result, &generic));
     }
 
     #[test]

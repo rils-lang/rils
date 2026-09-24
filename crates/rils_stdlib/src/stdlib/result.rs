@@ -15,19 +15,19 @@ mod native {
 
     impl<T, E> Result<T, E> {
         /// Returns true for Ok.
-        #[export_rils(native)]
+        #[export_rils]
         pub fn is_ok(&self) -> bool {
             matches!(self, Self::Ok(_))
         }
 
         /// Returns true for Err.
-        #[export_rils(native)]
+        #[export_rils]
         pub fn is_err(&self) -> bool {
             matches!(self, Self::Err(_))
         }
 
         /// Converts Result<T, E> to Option<T>.
-        #[export_rils(native)]
+        #[export_rils]
         pub fn ok(self) -> Option<T> {
             match self {
                 Self::Ok(value) => Option::Some(value),
@@ -36,7 +36,7 @@ mod native {
         }
 
         /// Converts Result<T, E> to Option<E>.
-        #[export_rils(native)]
+        #[export_rils]
         pub fn err(self) -> Option<E> {
             match self {
                 Self::Ok(_) => Option::None,

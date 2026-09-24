@@ -13,13 +13,13 @@ mod native {
 
     impl<T> Option<T> {
         /// Returns true when a value is present.
-        #[export_rils(native)]
+        #[export_rils]
         pub fn is_some(&self) -> bool {
             matches!(self, Self::Some(_))
         }
 
         /// Returns true when no value is present.
-        #[export_rils(native)]
+        #[export_rils]
         pub fn is_none(&self) -> bool {
             matches!(self, Self::None)
         }

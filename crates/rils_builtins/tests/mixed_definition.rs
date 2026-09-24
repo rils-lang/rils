@@ -31,7 +31,7 @@ mod native {
     }
 
     impl Choice {
-        #[export_rils(native)]
+        #[export_rils]
         pub fn is_some(&self) -> bool {
             matches!(self, Self::Some(value) if *value >= 0)
         }
@@ -75,6 +75,11 @@ mod sample_metadata {
 
 mod choice_metadata {
     use super::*;
+    macro_rules! builtin_id {
+        ("core::fixture::choice::is_some") => {
+            BuiltinId::SequenceIsEmpty
+        };
+    }
     choice_definition!(decl_rils_metadata);
 }
 
@@ -104,11 +109,11 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
         sample.member("new").unwrap().builtin_id,
         Some(BuiltinId::BinaryHeapNew)
     );
-    assert_eq!(choice.member("is_some").unwrap().builtin_id, None);
     assert_eq!(
-        choice.member("is_some").unwrap().native_symbol,
-        Some("core::fixture::choice::is_some")
+        choice.member("is_some").unwrap().builtin_id,
+        Some(BuiltinId::SequenceIsEmpty)
     );
+    assert_eq!(choice.member("is_some").unwrap().native_symbol, None);
     assert_eq!(
         tagged.member("tag").unwrap().kind,
         BuiltinMemberKind::Method
