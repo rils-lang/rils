@@ -287,6 +287,7 @@ impl Input {
                 type_parameters: &[],
                 members: &[#(#methods),*],
                 signature: None,
+                native_symbol: None,
                 backend: #backend,
                 documentation: #docs,
             };

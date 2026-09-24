@@ -60,6 +60,7 @@ struct BuiltinDeclaration {
     type_parameters: &'static [&'static str],
     members: &'static [BuiltinMember],
     signature: Option<BuiltinSignature>,
+    native_symbol: Option<&'static str>,
     backend: BuiltinBackend,
     documentation: &'static str,
 }
@@ -81,6 +82,7 @@ fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
     assert_eq!(FIXTURE_BUILTIN.backend, BuiltinBackend::Runtime);
     assert_eq!(FIXTURE_BUILTIN.documentation, "");
     assert!(FIXTURE_BUILTIN.signature.is_none());
+    assert!(FIXTURE_BUILTIN.native_symbol.is_none());
 
     let [empty, value, owned, shared, mutable] = FIXTURE_BUILTIN.members else {
         panic!("expected all fixture members");

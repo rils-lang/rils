@@ -73,7 +73,13 @@ pub struct NativeFunction {
     pub min_arity: usize,
     pub max_arity: usize,
     pub signature: Option<FunctionSignature>,
-    pub function: fn(&[Value]) -> Result<Value, String>,
+    pub body: NativeFunctionBody,
+}
+
+#[derive(Clone, Copy)]
+pub enum NativeFunctionBody {
+    Rust(fn(&[Value]) -> Result<Value, String>),
+    Symbol(&'static str),
 }
 
 #[derive(Clone)]

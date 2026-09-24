@@ -14,15 +14,19 @@ pub fn Err<T, E>(error: E) -> Result<T, E> {}
 pub fn type_of(value: _) -> string {}
 
 /// Tests whether an Option contains a value.
+#[native_method(core::option::option::is_some)]
 pub fn is_some<T>(value: Option<T>) -> bool {}
 
 /// Tests whether an Option is empty.
+#[native_method(core::option::option::is_none)]
 pub fn is_none<T>(value: Option<T>) -> bool {}
 
 /// Tests whether a Result is Ok.
+#[native_method(core::result::result::is_ok)]
 pub fn is_ok<T, E>(value: Result<T, E>) -> bool {}
 
 /// Tests whether a Result is Err.
+#[native_method(core::result::result::is_err)]
 pub fn is_err<T, E>(value: Result<T, E>) -> bool {}
 
 /// Extracts an Option or Result success value.

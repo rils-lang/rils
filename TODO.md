@@ -27,7 +27,7 @@
   impl associated type 声明契约、暂不支持的条件 trait impl 诊断、孤儿规则与项目内重复 impl 检查。
   后续仍应每次只迁移一类检查，以解释器/VM 对照测试证明行为不变，不把这项开放式清理作为其他
   feature 分支的退出条件。
-- 标准 bytecode core import 已将 Option/Result 状态查询改用原生符号，其余仍使用旧稳定 ID；逐步改用由标准库声明生成的原生符号导入，
+- 标准 bytecode core import 已从声明中解析 Option/Result 状态查询的原生符号，其余仍使用旧稳定 ID；逐步改用由标准库声明生成的原生符号导入，
   并在加载时链接为进程内调用槽位。宿主 import 继续使用独立的 ABI 契约。
   `rils_runtime` 与 `rils_bytecode` 已形成单向依赖，根 `rils` 只保留兼容转发层。后续应继续收窄
   `rils_runtime::support`，把 bytecode/VM 所需的共享值、环境槽位、格式化和 builtin 操作整理成稳定

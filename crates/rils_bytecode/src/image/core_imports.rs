@@ -47,21 +47,13 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
 pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
     use rils_builtins::BuiltinId;
 
+    if let Some(symbol) = rils_builtins::builtin_function(name).and_then(|item| item.native_symbol)
+    {
+        return Some(CoreImport::Native(symbol));
+    }
     Some(match name {
         "type_of" => CoreImport::TypeOf,
         "clone" => CoreImport::Builtin(BuiltinId::Clone),
-        "is_ok" => {
-            CoreImport::Native(rils_builtins::builtin_member("Result", "is_ok")?.native_symbol?)
-        }
-        "is_err" => {
-            CoreImport::Native(rils_builtins::builtin_member("Result", "is_err")?.native_symbol?)
-        }
-        "is_some" => {
-            CoreImport::Native(rils_builtins::builtin_member("Option", "is_some")?.native_symbol?)
-        }
-        "is_none" => {
-            CoreImport::Native(rils_builtins::builtin_member("Option", "is_none")?.native_symbol?)
-        }
         "unwrap" => CoreImport::Builtin(BuiltinId::OptionUnwrap),
         "unwrap_or" => CoreImport::Builtin(BuiltinId::OptionUnwrapOr),
         "core::assert" => CoreImport::Assert,

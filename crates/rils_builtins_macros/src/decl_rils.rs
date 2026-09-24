@@ -449,6 +449,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             type_parameters: &[#(#type_generics),*],
             members: &[#(#variants,)* #(#methods),*],
             signature: None,
+            native_symbol: None,
             backend: crate::BuiltinBackend::Runtime,
             documentation: #type_documentation,
         };

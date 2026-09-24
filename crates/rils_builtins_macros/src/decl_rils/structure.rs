@@ -426,6 +426,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             type_parameters: &[#(#type_parameters),*],
             members: &[#(#fields,)* #(#methods),*],
             signature: None,
+            native_symbol: None,
             backend: crate::BuiltinBackend::Runtime,
             documentation: #docs,
         };

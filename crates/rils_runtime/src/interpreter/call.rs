@@ -167,8 +167,16 @@ impl Interpreter {
                         .map_err(|message| RuntimeError::new(message, span))?;
                     return Ok(Value::Unit);
                 }
-                let value = (function.function)(arguments)
-                    .map_err(|message| RuntimeError::new(message, span))?;
+                let value = match function.body {
+                    NativeFunctionBody::Rust(callback) => callback(arguments),
+                    NativeFunctionBody::Symbol(symbol) => {
+                        crate::runtime_builtins::call_native_symbol(symbol, arguments)
+                            .unwrap_or_else(|| {
+                                Err(format!("native method `{symbol}` is unavailable"))
+                            })
+                    }
+                }
+                .map_err(|message| RuntimeError::new(message, span))?;
                 validate_native_return(function.signature.as_ref(), value, span, function.name)
             }
             Value::HostFunction(function) => {

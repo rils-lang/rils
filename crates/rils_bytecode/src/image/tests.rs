@@ -1111,6 +1111,14 @@ fn generated_runtime_imports_are_registered_without_a_second_catalog() {
             }
         }
     }
+    for declaration in rils_builtins::BUILTINS {
+        if let Some(symbol) = declaration.native_symbol {
+            assert!(matches!(
+                super::core_imports::resolve_core_import(declaration.path),
+                Some(super::core_imports::CoreImport::Native(resolved)) if resolved == symbol
+            ));
+        }
+    }
 }
 
 #[test]

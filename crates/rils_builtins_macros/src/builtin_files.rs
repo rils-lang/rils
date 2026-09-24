@@ -363,6 +363,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             type_parameters: &[#(#type_parameters),*],
             members: #members_name,
             signature: None,
+            native_symbol: None,
             backend: BuiltinBackend::#backend,
             documentation: #type_documentation,
         };

@@ -166,6 +166,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
                 type_parameters: &[],
                 members: &[#(#methods),*],
                 signature: None,
+                native_symbol: None,
                 backend: crate::BuiltinBackend::Runtime,
                 documentation: #documentation,
             };

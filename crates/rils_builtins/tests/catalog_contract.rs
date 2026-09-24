@@ -2,7 +2,7 @@ use rils_builtins::{
     BUILTIN_MODULES, BUILTIN_SOURCES, BUILTINS, BuiltinId, BuiltinKind, BuiltinMemberKind,
     BuiltinSourceKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS, INTEGER_CONSTANTS, INTEGER_INTRINSICS,
     IntrinsicKind, TypePattern, builtin, builtin_member, builtin_module_members, intrinsic,
-    runtime_member,
+    native_member, runtime_member,
 };
 
 #[test]
@@ -277,6 +277,23 @@ fn direct_option_result_methods_no_longer_reserve_builtin_ids() {
     }
     for raw in [0x0800, 0x0801, 0x0805, 0x0806, 0x0900, 0x0901] {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
+    }
+}
+
+#[test]
+fn native_function_aliases_resolve_to_exported_methods() {
+    let aliases = BUILTINS
+        .iter()
+        .filter_map(|function| function.native_symbol.map(|symbol| (function, symbol)))
+        .collect::<Vec<_>>();
+    assert_eq!(aliases.len(), 4);
+    for (function, symbol) in aliases {
+        assert_eq!(function.kind, BuiltinKind::Function);
+        let method = native_member(symbol).expect("native alias targets an exported method");
+        let function_arity = function.signature.unwrap().parameters.len();
+        let method_arity = method.signature.unwrap().parameters.len();
+        assert!(method.receiver.is_some());
+        assert_eq!(function_arity, method_arity + 1, "{}", function.path);
     }
 }
 

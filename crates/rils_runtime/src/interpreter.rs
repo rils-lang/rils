@@ -39,9 +39,10 @@ use crate::{
         BorrowedMapIteratorValue, BorrowedSequenceIterValue, BorrowedSetIteratorValue, BoundMethod,
         BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance, EnumPayload,
         EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod, HostFunction,
-        HostFunctionHandler, HostObject, HostType, ModuleValue, NativeFunction, OwnedIteratorValue,
-        RangeValue, ReferenceValue, SequenceValue, StructInstance, StructType, TraitMethodSelector,
-        TraitType, TypeAliasType, UserFunction, Value, VariantConstructor, enum_variant_name,
+        HostFunctionHandler, HostObject, HostType, ModuleValue, NativeFunction, NativeFunctionBody,
+        OwnedIteratorValue, RangeValue, ReferenceValue, SequenceValue, StructInstance, StructType,
+        TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value, VariantConstructor,
+        enum_variant_name,
     },
 };
 
@@ -159,7 +160,7 @@ impl Interpreter {
                 min_arity,
                 max_arity,
                 signature: None,
-                function,
+                body: NativeFunctionBody::Rust(function),
             }),
             false,
             None,

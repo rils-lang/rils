@@ -140,6 +140,7 @@ fn declaration_tokens(
                     type_parameters: &[],
                     members: &[],
                     signature: None,
+                    native_symbol: None,
                     backend: #backend,
                     documentation: #documentation,
                 }
@@ -156,6 +157,7 @@ fn declaration_tokens(
         } => {
             let mut variadic = false;
             let mut metadata = false;
+            let mut native_symbol = None;
             for attribute in attributes {
                 if attribute.path.as_slice() == ["compiler_internal"]
                     && attribute.arguments.is_empty()
@@ -169,6 +171,12 @@ fn declaration_tokens(
                     && attribute.arguments.is_empty()
                 {
                     metadata = true;
+                } else if attribute.path.as_slice() == ["native_method"]
+                    && attribute.arguments.len() == 1
+                    && attribute.arguments[0].len() >= 2
+                    && native_symbol.is_none()
+                {
+                    native_symbol = Some(attribute.arguments[0].join("::"));
                 } else {
                     return Err(Error::new(
                         proc_macro2::Span::call_site(),
@@ -223,6 +231,8 @@ fn declaration_tokens(
             } else {
                 backend.clone()
             };
+            let native_symbol =
+                native_symbol.map_or_else(|| quote!(None), |symbol| quote!(Some(#symbol)));
             Ok(quote! {
                 BuiltinDeclaration {
                     path: #path,
@@ -235,6 +245,7 @@ fn declaration_tokens(
                         result: #result,
                         variadic: #variadic,
                     }),
+                    native_symbol: #native_symbol,
                     backend: #backend,
                     documentation: #documentation,
                 }

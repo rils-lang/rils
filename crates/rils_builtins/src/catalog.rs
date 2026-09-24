@@ -108,6 +108,8 @@ pub struct BuiltinDeclaration {
     pub type_parameters: &'static [&'static str],
     pub members: &'static [BuiltinMember],
     pub signature: Option<BuiltinSignature>,
+    /// Native method target for an exported free-function alias.
+    pub native_symbol: Option<&'static str>,
     pub backend: BuiltinBackend,
     pub documentation: &'static str,
 }

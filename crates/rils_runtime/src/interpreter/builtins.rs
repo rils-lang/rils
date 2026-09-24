@@ -8,7 +8,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             min_arity: 1,
             max_arity: usize::MAX,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
-            function: |arguments| {
+            body: NativeFunctionBody::Rust(|arguments| {
                 let Some(Value::String(format)) = arguments.first() else {
                     return Err("print! requires a format string".into());
                 };
@@ -17,7 +17,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     crate::formatting::format_arguments(format, &arguments[1..])?
                 );
                 Ok(Value::Unit)
-            },
+            }),
         },
         NativeFunction {
             binding_name: "#rils_native_println",
@@ -25,7 +25,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             min_arity: 0,
             max_arity: usize::MAX,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
-            function: |arguments| {
+            body: NativeFunctionBody::Rust(|arguments| {
                 if arguments.is_empty() {
                     println!();
                     return Ok(Value::Unit);
@@ -38,7 +38,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     crate::formatting::format_arguments(format, &arguments[1..])?
                 );
                 Ok(Value::Unit)
-            },
+            }),
         },
         NativeFunction {
             binding_name: "type_of",
@@ -46,7 +46,9 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             min_arity: 1,
             max_arity: 1,
             signature: Some(FunctionSignature::fixed(vec![Type::Unknown], Type::String)),
-            function: |arguments| Ok(Value::String(Rc::from(arguments[0].type_name()))),
+            body: NativeFunctionBody::Rust(|arguments| {
+                Ok(Value::String(Rc::from(arguments[0].type_name())))
+            }),
         },
         NativeFunction {
             binding_name: "clone",
@@ -60,7 +62,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 }],
                 Type::Unknown,
             )),
-            function: runtime_clone,
+            body: NativeFunctionBody::Rust(runtime_clone),
         },
         NativeFunction {
             binding_name: "#rils_native_assert",
@@ -68,7 +70,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             min_arity: 1,
             max_arity: 2,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
-            function: |arguments| match arguments[0] {
+            body: NativeFunctionBody::Rust(|arguments| match arguments[0] {
                 Value::Bool(true) => Ok(Value::Unit),
                 Value::Bool(false) => {
                     let message = arguments
@@ -81,7 +83,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     "`assert` expects bool, found {}",
                     value.type_name()
                 )),
-            },
+            }),
         },
         NativeFunction {
             binding_name: "Some",
@@ -92,7 +94,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Option(Box::new(Type::Unknown)),
             )),
-            function: |arguments| {
+            body: NativeFunctionBody::Rust(|arguments| {
                 let native = rils_stdlib::stdlib::prelude::some(Rc::new(arguments[0].clone()));
                 Ok(Value::Option {
                     value: match native {
@@ -101,7 +103,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     },
                     element_type: Type::of_value(&arguments[0]),
                 })
-            },
+            }),
         },
         NativeFunction {
             binding_name: "Ok",
@@ -112,7 +114,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
-            function: |arguments| {
+            body: NativeFunctionBody::Rust(|arguments| {
                 let native =
                     rils_stdlib::stdlib::prelude::ok::<_, Rc<Value>>(Rc::new(arguments[0].clone()));
                 Ok(Value::Result {
@@ -123,7 +125,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     ok_type: Type::of_value(&arguments[0]),
                     error_type: None,
                 })
-            },
+            }),
         },
         NativeFunction {
             binding_name: "Err",
@@ -134,7 +136,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
-            function: |arguments| {
+            body: NativeFunctionBody::Rust(|arguments| {
                 let native = rils_stdlib::stdlib::prelude::err::<Rc<Value>, _>(Rc::new(
                     arguments[0].clone(),
                 ));
@@ -146,57 +148,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     ok_type: None,
                     error_type: Type::of_value(&arguments[0]),
                 })
-            },
-        },
-        NativeFunction {
-            binding_name: "is_ok",
-            name: "is_ok",
-            min_arity: 1,
-            max_arity: 1,
-            signature: Some(FunctionSignature::fixed(
-                vec![Type::Result(
-                    Box::new(Type::Unknown),
-                    Box::new(Type::Unknown),
-                )],
-                Type::Bool,
-            )),
-            function: runtime_result_is_ok,
-        },
-        NativeFunction {
-            binding_name: "is_err",
-            name: "is_err",
-            min_arity: 1,
-            max_arity: 1,
-            signature: Some(FunctionSignature::fixed(
-                vec![Type::Result(
-                    Box::new(Type::Unknown),
-                    Box::new(Type::Unknown),
-                )],
-                Type::Bool,
-            )),
-            function: runtime_result_is_err,
-        },
-        NativeFunction {
-            binding_name: "is_some",
-            name: "is_some",
-            min_arity: 1,
-            max_arity: 1,
-            signature: Some(FunctionSignature::fixed(
-                vec![Type::Option(Box::new(Type::Unknown))],
-                Type::Bool,
-            )),
-            function: runtime_option_is_some,
-        },
-        NativeFunction {
-            binding_name: "is_none",
-            name: "is_none",
-            min_arity: 1,
-            max_arity: 1,
-            signature: Some(FunctionSignature::fixed(
-                vec![Type::Option(Box::new(Type::Unknown))],
-                Type::Bool,
-            )),
-            function: runtime_option_is_none,
+            }),
         },
         NativeFunction {
             binding_name: "unwrap",
@@ -204,7 +156,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             min_arity: 1,
             max_arity: 1,
             signature: Some(FunctionSignature::fixed(vec![Type::Unknown], Type::Unknown)),
-            function: runtime_unwrap,
+            body: NativeFunctionBody::Rust(runtime_unwrap),
         },
         NativeFunction {
             binding_name: "unwrap_or",
@@ -215,7 +167,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown, Type::Unknown],
                 Type::Unknown,
             )),
-            function: runtime_unwrap_or,
+            body: NativeFunctionBody::Rust(runtime_unwrap_or),
         },
     ];
 
@@ -254,6 +206,34 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         environment.borrow_mut().define(
             function.binding_name,
             Value::NativeFunction(function),
+            false,
+            None,
+        );
+    }
+
+    for declaration in rils_builtins::BUILTINS.iter().filter(|declaration| {
+        declaration.kind == rils_builtins::BuiltinKind::Function
+            && declaration.native_symbol.is_some()
+    }) {
+        let signature =
+            rils_frontend::standard_library::erased_standard_function_signature(declaration.path)
+                .expect("native standard function has a signature");
+        let arity = signature
+            .parameters
+            .as_ref()
+            .expect("native method aliases have fixed parameters")
+            .len();
+        let symbol = declaration.native_symbol.expect("filtered native symbol");
+        environment.borrow_mut().define(
+            declaration.path,
+            Value::NativeFunction(NativeFunction {
+                binding_name: declaration.path,
+                name: declaration.path,
+                min_arity: arity,
+                max_arity: arity,
+                signature: Some(signature),
+                body: NativeFunctionBody::Symbol(symbol),
+            }),
             false,
             None,
         );
@@ -385,30 +365,6 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
 
 fn runtime_clone(arguments: &[Value]) -> Result<Value, String> {
     crate::runtime_builtins::call(rils_builtins::BuiltinId::Clone, arguments)
-}
-
-fn runtime_result_is_ok(arguments: &[Value]) -> Result<Value, String> {
-    call_native_method("Result", "is_ok", arguments)
-}
-
-fn runtime_result_is_err(arguments: &[Value]) -> Result<Value, String> {
-    call_native_method("Result", "is_err", arguments)
-}
-
-fn runtime_option_is_some(arguments: &[Value]) -> Result<Value, String> {
-    call_native_method("Option", "is_some", arguments)
-}
-
-fn runtime_option_is_none(arguments: &[Value]) -> Result<Value, String> {
-    call_native_method("Option", "is_none", arguments)
-}
-
-fn call_native_method(owner: &str, method: &str, arguments: &[Value]) -> Result<Value, String> {
-    let symbol = rils_builtins::builtin_member(owner, method)
-        .and_then(|member| member.native_symbol)
-        .ok_or_else(|| format!("native method `{owner}::{method}` is unavailable"))?;
-    crate::runtime_builtins::call_native_symbol(symbol, arguments)
-        .ok_or_else(|| format!("native method `{symbol}` is unavailable"))?
 }
 
 fn runtime_unwrap(arguments: &[Value]) -> Result<Value, String> {
