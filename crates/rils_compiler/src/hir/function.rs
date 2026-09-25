@@ -172,11 +172,13 @@ impl<'a> FunctionLowerer<'a> {
             }),
             Stmt::Function {
                 name,
+                generic_parameters,
                 parameters,
                 body,
                 span,
                 ..
             } => {
+                super::program::reject_callable_parameters(generic_parameters)?;
                 let local = self.mutable.len();
                 self.mutable.push(false);
                 self.scopes.last_mut().unwrap().insert(name.clone(), local);

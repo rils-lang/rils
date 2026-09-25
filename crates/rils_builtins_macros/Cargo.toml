@@ -16,5 +16,5 @@ proc-macro = true
 proc-macro2 = "1.0"
 quote = "1.0"
 rils_syntax.workspace = true
-syn = { version = "2.0", features = ["full"] }
+syn = { version = "2.0", features = ["full", "fold"] }
 toml.workspace = true

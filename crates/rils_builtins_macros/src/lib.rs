@@ -66,6 +66,11 @@ pub fn decl_rils_function_metadata(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
+pub fn decl_rils_function_native(input: TokenStream) -> TokenStream {
+    decl_rils::function_definition::expand_native(input)
+}
+
+#[proc_macro]
 pub fn decl_rils_metadata(input: TokenStream) -> TokenStream {
     decl_rils::expand_metadata(input)
 }

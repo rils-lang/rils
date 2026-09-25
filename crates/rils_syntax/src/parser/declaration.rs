@@ -338,22 +338,16 @@ impl Parser<'_> {
         let generic_parameters = self.generic_parameters()?;
         self.generic_scopes.push(generic_parameters.clone());
         let first_type = self.type_annotation()?;
-        let (trait_name, target) = if self.take(&TokenKind::For).is_some() {
+        let (trait_name, trait_arguments, target) = if self.take(&TokenKind::For).is_some() {
             let Type::Named { name, arguments } = first_type else {
                 return Err(ParseError {
                     message: "expected trait name before `for`".into(),
                     span: start,
                 });
             };
-            if !arguments.is_empty() {
-                return Err(ParseError {
-                    message: "generic traits are not supported yet".into(),
-                    span: start,
-                });
-            }
-            (Some(name), self.type_annotation()?)
+            (Some(name), arguments, self.type_annotation()?)
         } else {
-            (None, first_type)
+            (None, Vec::new(), first_type)
         };
         if !matches!(
             target,
@@ -422,6 +416,7 @@ impl Parser<'_> {
         Ok(Stmt::Impl {
             generic_parameters,
             trait_name,
+            trait_arguments,
             target,
             associated_types,
             methods,
@@ -431,6 +426,8 @@ impl Parser<'_> {
 
     pub(super) fn trait_statement(&mut self, start: Span) -> Result<Stmt, ParseError> {
         let (name, name_span) = self.expect_identifier("expected trait name")?;
+        let generic_parameters = self.generic_parameters()?;
+        self.generic_scopes.push(generic_parameters.clone());
         let mut bounds = Vec::new();
         if self.take(&TokenKind::Colon).is_some() {
             loop {
@@ -508,10 +505,12 @@ impl Parser<'_> {
             methods.push(method);
         }
         let right = self.expect(&TokenKind::RightBrace, "expected `}` after trait")?;
+        self.generic_scopes.pop();
         Ok(Stmt::Trait {
             visibility: Visibility::Private,
             name,
             name_span,
+            generic_parameters,
             bounds,
             associated_types,
             methods,

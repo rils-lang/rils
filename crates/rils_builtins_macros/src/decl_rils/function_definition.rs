@@ -11,9 +11,14 @@ use syn::{
 
 use crate::type_patterns;
 
+pub(crate) mod callback_signature;
+mod native;
+
 struct Input {
     path: Path,
     function: ItemFn,
+    native_callback: bool,
+    shadow_callback: bool,
 }
 
 impl Parse for Input {
@@ -21,10 +26,16 @@ impl Parse for Input {
         let path = input.parse()?;
         input.parse::<Token![;]>()?;
         let function = input.parse()?;
+        let (function, native_callback, shadow_callback) = callback_signature::expose(function)?;
         if !input.is_empty() {
             return Err(input.error("unexpected tokens after exported function"));
         }
-        Ok(Self { path, function })
+        Ok(Self {
+            path,
+            function,
+            native_callback,
+            shadow_callback,
+        })
     }
 }
 
@@ -66,7 +77,14 @@ impl Input {
                 "exported function requires a public Rust body",
             ));
         }
-        if !self.function.sig.generics.params.is_empty()
+        if self
+            .function
+            .sig
+            .generics
+            .params
+            .iter()
+            .any(|parameter| !matches!(parameter, syn::GenericParam::Type(_)))
+            || (!self.native_callback && !self.function.sig.generics.params.is_empty())
             || self.function.sig.generics.where_clause.is_some()
             || self.function.sig.asyncness.is_some()
             || self.function.sig.unsafety.is_some()
@@ -240,11 +258,23 @@ impl Input {
             .to_string()
             .replace("String", "string");
         let name = &self.function.sig.ident;
+        let generic_names = self
+            .function
+            .sig
+            .generics
+            .type_params()
+            .map(|parameter| parameter.ident.to_string())
+            .collect::<Vec<_>>();
+        let generics = if generic_names.is_empty() {
+            String::new()
+        } else {
+            format!("<{}>", generic_names.join(", "))
+        };
         if self.variadic() {
             source.push_str("#[variadic]\n");
         }
         source.push_str(&format!(
-            "pub fn {name}({}) -> {result} {{}}\n",
+            "pub fn {name}{generics}({}) -> {result} {{}}\n",
             parameters.join(", ")
         ));
         Ok(source)
@@ -285,24 +315,44 @@ impl Input {
         };
         let variadic = self.variadic();
         let result = type_patterns::tokens(&self.result()?)?;
+        let type_parameters = self
+            .function
+            .sig
+            .generics
+            .type_params()
+            .map(|parameter| parameter.ident.to_string())
+            .collect::<Vec<_>>();
+        let native_symbol = if self.native_callback {
+            quote!(Some(#path))
+        } else {
+            quote!(None)
+        };
         Ok(quote! {
             use crate::TypePattern;
             pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
                 path: #path,
                 kind: crate::BuiltinKind::Function,
                 supertraits: &[],
-                type_parameters: &[],
+                type_parameters: &[#(#type_parameters),*],
                 members: &[],
                 signature: Some(crate::BuiltinSignature {
                     parameters: &[#(#parameters),*],
                     result: #result,
                     variadic: #variadic,
                 }),
-                native_symbol: None,
+                native_symbol: #native_symbol,
                 backend: #backend,
                 documentation: #docs,
             };
         })
+    }
+}
+
+pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as Input);
+    match input.validate().and_then(|()| native::tokens(&input)) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.into_compile_error().into(),
     }
 }
 
@@ -330,6 +380,8 @@ mod tests {
     fn exported_function_resolves_proxy_paths() {
         let input = Input {
             path: syn::parse_quote!(std::fs::read_to_string),
+            native_callback: false,
+            shadow_callback: false,
             function: syn::parse_quote! {
                 /// Reads a file.
                 pub fn read_to_string(path: String) -> Result<String, crate::stdlib::io::Error> {
@@ -349,6 +401,8 @@ mod tests {
     fn exported_function_needs_a_public_body() {
         let input = Input {
             path: syn::parse_quote!(std::fs::write),
+            native_callback: false,
+            shadow_callback: false,
             function: syn::parse_quote!(
                 pub fn write() {}
             ),
@@ -360,6 +414,8 @@ mod tests {
     fn explicit_any_and_variadic_markers_change_only_rils_signatures() {
         let write = Input {
             path: syn::parse_quote!(std::io::write),
+            native_callback: false,
+            shadow_callback: false,
             function: syn::parse_quote! {
                 #[rils_any(value)]
                 pub fn write(value: String) -> Result<(), crate::stdlib::io::Error> { loop {} }
@@ -377,6 +433,8 @@ mod tests {
 
         let print = Input {
             path: syn::parse_quote!(std::io::print),
+            native_callback: false,
+            shadow_callback: false,
             function: syn::parse_quote! {
                 #[rils_variadic]
                 pub fn print(values: &[String]) { loop {} }
@@ -396,5 +454,140 @@ mod tests {
                 .to_string()
                 .contains("variadic : true")
         );
+    }
+
+    #[test]
+    fn fallible_rust_callbacks_generate_one_rils_signature() {
+        let input: Input = syn::parse_quote! {
+            core::ops::chain;
+            pub fn chain<T, U, V, E, F, G>(first: F, value: T, second: G) -> std::result::Result<V, E>
+            where
+                F: FnOnce(T) -> std::result::Result<U, E>,
+                G: FnMut(U) -> std::result::Result<V, E>,
+            {
+                second(first(value)?)
+            }
+        };
+        input.validate().unwrap();
+        assert!(input.native_callback);
+        let source = input.source().unwrap();
+        assert!(source.contains("pub fn chain<T, U, V>"));
+        assert!(source.contains("first: fn (T) -> U"));
+        assert!(source.contains("second: fn (U) -> V"));
+        assert!(source.contains("-> V"));
+        let metadata = input.metadata().unwrap().to_string();
+        assert!(metadata.contains("native_symbol : Some"));
+        assert!(
+            native::tokens(&input)
+                .unwrap()
+                .to_string()
+                .contains("stdlib :: ops :: chain")
+        );
+    }
+
+    #[test]
+    fn callback_exports_reject_unrepresented_rust_bounds() {
+        let error = syn::parse2::<Input>(quote! {
+            core::ops::run;
+            pub fn run<T, E, F>(value: T, callback: F) -> std::result::Result<T, E>
+            where
+                T: Clone,
+                F: FnOnce(T) -> std::result::Result<T, E>,
+            {
+                callback(value)
+            }
+        })
+        .err()
+        .expect("Rust-only bound must not disappear from the Rils signature");
+        assert!(error.to_string().contains("callback exports only support"));
+    }
+
+    #[test]
+    fn method_callback_bound_exports_without_a_wrapper() {
+        let method: syn::ImplItemFn = syn::parse_quote! {
+            #[export_rils]
+            pub fn map<U, E, F>(self, callback: F) -> std::result::Result<Option<U>, E>
+            where
+                F: FnOnce(T) -> std::result::Result<U, E>,
+            {
+                match self { Self::Some(value) => callback(value).map(Option::Some), Self::None => Ok(Option::None) }
+            }
+        };
+        let exposed = callback_signature::expose_method(&method).unwrap();
+        assert_eq!(exposed.sig.generics.type_params().count(), 1);
+        assert!(exposed.sig.generics.where_clause.is_none());
+        assert!(
+            exposed
+                .sig
+                .to_token_stream()
+                .to_string()
+                .contains("callback : fn (T) -> U")
+        );
+        assert!(
+            exposed
+                .sig
+                .to_token_stream()
+                .to_string()
+                .contains("-> Option < U >")
+        );
+        assert!(
+            method
+                .sig
+                .to_token_stream()
+                .to_string()
+                .contains("Result < Option < U > , E >")
+        );
+    }
+
+    #[test]
+    fn plain_callback_body_generates_hidden_error_path() {
+        let function: ItemFn = syn::parse_quote! {
+            pub fn apply_twice<T, F>(value: T, mut callback: F) -> T
+            where F: FnMut(T) -> T
+            {
+                let next = callback(value);
+                callback(next)
+            }
+        };
+        let (exposed, native_callback, shadow_callback) =
+            callback_signature::expose(function.clone()).unwrap();
+        assert!(native_callback && shadow_callback);
+        assert!(
+            exposed
+                .sig
+                .to_token_stream()
+                .to_string()
+                .contains("callback : fn (T) -> T")
+        );
+        let shadow = callback_signature::shadow_function(&function)
+            .unwrap()
+            .unwrap();
+        assert_eq!(shadow.sig.ident, "__rils_try_apply_twice");
+        let generated = shadow.to_token_stream().to_string();
+        assert!(generated.contains("std :: result :: Result"));
+        assert!(generated.contains("callback (value)) ?"));
+
+        let unsupported: ItemFn = syn::parse_quote! {
+            pub fn escape<T, F>(value: T, callback: F) -> T
+            where F: FnOnce(T) -> T
+            {
+                return callback(value);
+            }
+        };
+        assert!(callback_signature::shadow_function(&unsupported).is_err());
+
+        let indirect: ItemFn = syn::parse_quote! {
+            pub fn alias<T, F>(value: T, callback: F) -> T
+            where F: FnOnce(T) -> T
+            {
+                let renamed = callback;
+                renamed(value)
+            }
+        };
+        let error = match callback_signature::shadow_function(&indirect) {
+            Err(error) => error,
+            Ok(_) => panic!("indirect callback calls must fail"),
+        };
+        assert!(error.to_string().contains("called directly"));
     }
 }

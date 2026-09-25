@@ -299,6 +299,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
 
     let mut emitted = module.clone();
     let (_, emitted_items) = emitted.content.as_mut().expect("inline module");
+    let mut shadow_functions = Vec::new();
     for item in emitted_items.iter_mut() {
         match item {
             Item::Struct(value) => value.attrs.retain(|attr| {
@@ -308,6 +309,12 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                 !attr.path().is_ident("rils_enum") && !attr.path().is_ident("rils_impl")
             }),
             Item::Trait(value) if has_attr(&value.attrs, "rils_trait") => {
+                if !value.generics.params.is_empty() {
+                    value
+                        .attrs
+                        .retain(|attr| !attr.path().is_ident("rils_trait"));
+                    continue;
+                }
                 let (name, rust) = trait_aliases
                     .iter()
                     .find(|(name, _)| name == &value.ident)
@@ -318,8 +325,17 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                 value
                     .attrs
                     .retain(|attr| !attr.path().is_ident("rils_impl"));
+                let mut shadow_methods = Vec::new();
                 for member in &mut value.items {
                     if let ImplItem::Fn(method) = member {
+                        if has_attr(&method.attrs, "export_rils")
+                            && let Some(shadow) =
+                                super::function_definition::callback_signature::shadow_method(
+                                    method,
+                                )?
+                        {
+                            shadow_methods.push(ImplItem::Fn(shadow));
+                        }
                         method.attrs.retain(|attr| {
                             !attr.path().is_ident("export_rils")
                                 && !attr.path().is_ident("rils_import")
@@ -330,6 +346,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                         });
                     }
                 }
+                value.items.extend(shadow_methods);
             }
             Item::Fn(function) if has_attr(&function.attrs, "rils_derive") => {
                 let markers = function
@@ -371,6 +388,12 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                     .retain(|attr| !attr.path().is_ident("rils_derive"));
             }
             Item::Fn(function) => {
+                if has_attr(&function.attrs, "rils_fn")
+                    && let Some(shadow) =
+                        super::function_definition::callback_signature::shadow_function(function)?
+                {
+                    shadow_functions.push(Item::Fn(shadow));
+                }
                 function.attrs.retain(|attr| {
                     !attr.path().is_ident("rils_fn")
                         && !attr.path().is_ident("rils_any")
@@ -383,6 +406,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
     for derived in derive_constants {
         emitted_items.push(syn::parse2(derived)?);
     }
+    emitted_items.extend(shadow_functions);
     Ok(quote! { #emitted #(#trait_checks)* #(#callbacks)* })
 }
 

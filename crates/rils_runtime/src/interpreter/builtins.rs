@@ -411,7 +411,10 @@ fn builtin_module(environment: &EnvironmentRef, path: &str) -> Rc<ModuleValue> {
                 ("std::io", "println") => "#rils_native_println",
                 _ => member,
             };
-            environment.borrow().get(binding)
+            environment
+                .borrow()
+                .get(binding)
+                .or_else(|| environment.borrow().get(&child_path))
         };
         if let Some(value) = value {
             public.insert(member.to_owned());
@@ -549,6 +552,15 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             .collect();
         let definition = TraitType {
             name: declaration.path.into(),
+            generic_parameters: declaration
+                .type_parameters
+                .iter()
+                .map(|name| GenericParameter {
+                    name: (*name).into(),
+                    bounds: Vec::new(),
+                    span: Span::default(),
+                })
+                .collect(),
             bounds: declaration
                 .supertraits
                 .iter()

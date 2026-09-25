@@ -1,0 +1,34 @@
+fn make_mapper() -> fn(i32) -> i32 {
+    let multiplier = 3;
+    fn map(value: i32) -> i32 { value * multiplier }
+    map
+}
+
+fn increase(value: i32) -> Option<i32> { Some(value + 1) }
+fn fallback() -> Option<i32> { Some(8) }
+fn is_even(value: &i32) -> bool { *value % 2 == 0 }
+fn make_predicate() -> fn(&i32) -> bool {
+    let threshold = 3;
+    fn above(value: &i32) -> bool { *value > threshold }
+    above
+}
+fn error_length(error: string) -> usize { error.len() }
+fn successful(value: i32) -> Result<i32, string> { Ok(value + 2) }
+fn recovered(error: string) -> Result<i32, usize> { Err(error.len()) }
+
+assert!(Some(7).map(make_mapper()).unwrap() == 21);
+assert!(Some(4).and_then(increase).unwrap() == 5);
+let absent: Option<i32> = None;
+assert!(absent.or_else(fallback).unwrap() == 8);
+assert!(Some(6).filter(is_even).unwrap() == 6);
+assert!(Some(5).filter(is_even).is_none());
+assert!(Some(6).filter(make_predicate()).unwrap() == 6);
+
+let good: Result<i32, string> = Ok(5);
+assert!(good.map(make_mapper()).unwrap() == 15);
+let bad: Result<i32, string> = Err("bad");
+assert!(bad.map_err(error_length).unwrap_err() == 3usize);
+let chained: Result<i32, string> = Ok(9);
+assert!(chained.and_then(successful).unwrap() == 11);
+let failed: Result<i32, string> = Err("oops");
+failed.or_else(recovered).unwrap_err()

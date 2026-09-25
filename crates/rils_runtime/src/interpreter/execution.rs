@@ -374,6 +374,7 @@ impl Interpreter {
             Stmt::TypeAlias { .. } => Ok(Flow::Value(Value::Unit)),
             Stmt::Trait {
                 name,
+                generic_parameters,
                 bounds,
                 associated_types,
                 methods,
@@ -436,6 +437,7 @@ impl Interpreter {
                     name.clone(),
                     Value::TraitType(Rc::new(TraitType {
                         name: name.clone(),
+                        generic_parameters: generic_parameters.clone(),
                         bounds: bounds.clone(),
                         associated_types,
                         methods,
@@ -448,10 +450,12 @@ impl Interpreter {
             Stmt::Impl {
                 generic_parameters,
                 trait_name,
+                trait_arguments,
                 target,
                 associated_types,
                 methods,
                 span,
+                ..
             } => {
                 let Type::Named {
                     name: target_name, ..
@@ -480,6 +484,28 @@ impl Interpreter {
                         })
                     })
                     .transpose()?;
+                if let Some(definition) = &trait_definition {
+                    if rils_stdlib::stdlib::ops::callable_trait_kind(&definition.name).is_some() {
+                        return Err(RuntimeError::new(
+                            format!(
+                                "callable trait `{}` is sealed and cannot be implemented manually",
+                                definition.name
+                            ),
+                            *span,
+                        ));
+                    }
+                    if definition.generic_parameters.len() != trait_arguments.len() {
+                        return Err(RuntimeError::new(
+                            format!(
+                                "trait `{}` expects {} type arguments, found {}",
+                                definition.name,
+                                definition.generic_parameters.len(),
+                                trait_arguments.len()
+                            ),
+                            *span,
+                        ));
+                    }
+                }
                 let frontend_impl_verified = self
                     .frontend_impl_ids
                     .get(span)
@@ -588,6 +614,7 @@ impl Interpreter {
                     if !frontend_impl_verified {
                         validate_trait_implementation(
                             definition,
+                            trait_arguments,
                             &associated_type_values,
                             methods,
                             target,

@@ -283,7 +283,7 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
             let primitive = &mapping.primitive;
             let mut cloned = template.clone();
             cloned.generics.params.clear();
-            cloned.self_ty = Box::new(syn::parse_quote!(Number<#primitive>));
+            *cloned.self_ty = syn::parse_quote!(Number<#primitive>);
             for member in &mut cloned.items {
                 let replaced =
                     replace_ident(member.to_token_stream(), &format_ident!("TNum"), primitive);

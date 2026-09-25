@@ -155,6 +155,7 @@ impl Analyzer {
             Stmt::Trait {
                 name,
                 name_span,
+                generic_parameters,
                 bounds,
                 associated_types,
                 methods,
@@ -164,7 +165,16 @@ impl Analyzer {
                 self.set_last_container(SymbolContainer::Module(
                     self.module_path_for_definition(*name_span),
                 ));
-                self.set_last_detail(trait_detail(name, bounds, associated_types, methods));
+                self.set_last_detail(trait_detail(
+                    name,
+                    generic_parameters,
+                    bounds,
+                    associated_types,
+                    methods,
+                ));
+                for parameter in generic_parameters {
+                    self.definition_only(&parameter.name, parameter.span, SymbolKind::Type);
+                }
                 for associated in associated_types {
                     self.definition_only(&associated.name, associated.name_span, SymbolKind::Type);
                     self.set_last_detail(associated_type_detail(associated));

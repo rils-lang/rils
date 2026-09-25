@@ -237,6 +237,23 @@ fn direct_runtime_members_resolve_without_import_names() {
 }
 
 #[test]
+fn exported_option_result_callbacks_use_native_symbols() {
+    for (type_name, methods) in [
+        ("Option", &["map", "and_then", "or_else", "filter"][..]),
+        ("Result", &["map", "map_err", "and_then", "or_else"][..]),
+    ] {
+        let declaration = builtin(type_name).expect("declared standard type");
+        for method in methods {
+            let member = declaration
+                .member(method)
+                .expect("exported callback method");
+            assert!(member.native_symbol.is_some(), "{type_name}::{method}");
+            assert!(member.builtin_id.is_none(), "{type_name}::{method}");
+        }
+    }
+}
+
+#[test]
 fn builtin_catalog_is_bidirectional_at_its_boundaries() {
     for declaration in BUILTINS {
         for member in declaration.members {
@@ -248,6 +265,10 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
     }
     for &id in BuiltinId::ALL {
         if let Some((_, member)) = runtime_member(id) {
+            assert_eq!(id.member_name(), Some(member.name));
+        } else if let Some(member) = id.canonical_path().and_then(native_member) {
+            // An old numeric ID remains reserved for bytecode compatibility after
+            // its declaration moves to a native symbol.
             assert_eq!(id.member_name(), Some(member.name));
         } else {
             let intrinsic = intrinsic(id).unwrap_or_else(|| {
@@ -386,7 +407,12 @@ fn direct_option_result_methods_no_longer_reserve_builtin_ids() {
 fn native_function_aliases_resolve_to_exported_methods() {
     let aliases = BUILTINS
         .iter()
-        .filter_map(|function| function.native_symbol.map(|symbol| (function, symbol)))
+        .filter_map(|function| {
+            function
+                .native_symbol
+                .filter(|symbol| native_member(symbol).is_some())
+                .map(|symbol| (function, symbol))
+        })
         .collect::<Vec<_>>();
     assert_eq!(aliases.len(), 4);
     for (function, symbol) in aliases {
@@ -777,4 +803,23 @@ fn io_error_shapes_and_module_exports_come_from_stdlib() {
     assert!(error_kind.contains_member("Other"));
     assert!(builtin_module_members("std::io").contains(&"Error"));
     assert!(builtin_module_members("std::io").contains(&"ErrorKind"));
+}
+#[test]
+fn exported_fn_trait_keeps_its_generic_contract() {
+    for (name, supertrait) in [
+        ("FnOnce", None),
+        ("FnMut", Some("FnOnce")),
+        ("Fn", Some("FnMut")),
+    ] {
+        let declaration =
+            rils_builtins::builtin(name).expect("callable trait is exported by rils_stdlib");
+        assert_eq!(declaration.kind, rils_builtins::BuiltinKind::Trait);
+        assert_eq!(declaration.type_parameters, &["Args", "Output"]);
+        assert!(declaration.members.is_empty());
+        assert_eq!(
+            declaration.supertraits,
+            supertrait.map(|name| vec![name]).unwrap_or_default()
+        );
+        assert!(rils_builtins::builtin_module_members("core::ops").contains(&name));
+    }
 }

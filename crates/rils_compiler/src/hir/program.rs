@@ -370,6 +370,9 @@ impl ProgramLowerer {
         sources: Vec<SourceFile>,
         entry: Option<rils_frontend::DefId>,
     ) -> Result<HirProgram, CompileError> {
+        for unit in units {
+            reject_unchecked_callable_bounds(&unit.program.statements)?;
+        }
         let generated = GeneratedFunctions {
             next_id: Rc::new(Cell::new(
                 self.methods
@@ -482,4 +485,68 @@ impl ProgramLowerer {
             entry: 0,
         })
     }
+}
+
+fn reject_unchecked_callable_bounds(statements: &[Stmt]) -> Result<(), CompileError> {
+    for statement in statements {
+        match statement {
+            Stmt::Function {
+                generic_parameters,
+                body,
+                ..
+            } => {
+                reject_callable_parameters(generic_parameters)?;
+                reject_unchecked_callable_bounds(&body.statements)?;
+            }
+            Stmt::Impl {
+                generic_parameters,
+                methods,
+                ..
+            } => {
+                reject_callable_parameters(generic_parameters)?;
+                for method in methods {
+                    reject_callable_parameters(&method.generic_parameters)?;
+                    reject_unchecked_callable_bounds(&method.body.statements)?;
+                }
+            }
+            Stmt::Struct {
+                generic_parameters, ..
+            }
+            | Stmt::Enum {
+                generic_parameters, ..
+            }
+            | Stmt::TypeAlias {
+                generic_parameters, ..
+            } => {
+                reject_callable_parameters(generic_parameters)?;
+            }
+            Stmt::Module {
+                statements: Some(children),
+                ..
+            } => {
+                reject_unchecked_callable_bounds(children)?;
+            }
+            Stmt::While { body, .. } | Stmt::Loop { body, .. } | Stmt::For { body, .. } => {
+                reject_unchecked_callable_bounds(&body.statements)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn reject_callable_parameters(
+    parameters: &[rils_frontend::ast::GenericParameter],
+) -> Result<(), CompileError> {
+    for parameter in parameters {
+        if parameter.bounds.iter().any(|bound| {
+            matches!(bound, Type::Named { name, .. } if rils_stdlib::stdlib::ops::callable_trait_kind(name).is_some())
+        }) {
+            return Err(CompileError::unsupported(
+                "callable trait bounds are not yet checked by the bytecode backend",
+                parameter.span,
+            ));
+        }
+    }
+    Ok(())
 }

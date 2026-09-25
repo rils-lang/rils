@@ -1,0 +1,40 @@
+fn invoke_once<F: FnOnce<(), string>>(callback: F) -> string {
+    callback()
+}
+
+fn invoke_mut<F: FnMut<(), i32>>(callback: F) -> i32 {
+    callback() + callback()
+}
+
+fn invoke_shared<F: Fn<(), i32>>(callback: F) -> i32 {
+    callback() + callback()
+}
+
+fn shared() -> i32 { 3 }
+
+fn make_reader() -> fn() -> i32 {
+    let number = 4;
+    fn read() -> i32 { number }
+    read
+}
+
+fn make_counter() -> fn() -> i32 {
+    let mut count = 0;
+    fn next() -> i32 {
+        count = count + 1;
+        count
+    }
+    next
+}
+
+fn make_consumer() -> fn() -> string {
+    let text = "ok";
+    fn take() -> string { text }
+    take
+}
+
+if invoke_once(make_consumer()) == "ok" {
+    invoke_mut(make_counter()) + invoke_shared(shared) + invoke_shared(make_reader())
+} else {
+    0
+}

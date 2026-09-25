@@ -11,6 +11,14 @@ Use `#[rils_any(parameter)]` for a Rust string parameter exposed as Rils `_`, an
 
 ## 显式导出声明
 
+`src/stdlib/ops.rs` 导出泛型 `FnOnce<Args, Output>`、`FnMut<Args, Output>` 和
+`Fn<Args, Output>` trait；`Args` 使用 tuple 表示参数列表。解释器按签名和捕获行为
+检查回调约束。Rust 侧用于绑定的 marker trait 封闭在私有模块中，外部 crate 不能
+为自己的类型实现这些导出 trait。Rust 回调继续使用原生的 `std::ops::Fn*` 约束；
+导出自由函数的桥接器按具体函数签名生成适配闭包，不对参数个数预设固定上限。
+Option/Result 的回调方法已直接在带 `FnOnce` 约束、返回普通 Rust 值的方法上使用
+`#[export_rils]`；宏生成隐藏的可失败实现供运行时桥接调用。其他复杂 receiver 类型仍需扩展原生桥接。
+
 一个 `#[decl_rils(core::collections)]` 模块可以定义一个或多个导出项。类型和 trait
 必须分别标记 `#[rils_struct]`、`#[rils_enum]`、`#[rils_trait]`；未标记的项仅供
 Rust 实现使用。公开结构体字段进入 Rils 声明，固有方法仍需 `#[export_rils]`。
@@ -91,3 +99,11 @@ Rust 包装类型通过 `Deref` / `DerefMut` 访问底层容器或句柄；拥�
 `rils_syntax_macros` 在构建时从标准库定义模块收集带 `#[rils_derive(TraitName)]` 的函数，生成静态注册表；
 新增 trait 派生不需要再维护一份独立的名称列表。
 同一声明生成内建 trait 元信息；已迁移的 trait 不再保留对应的 `core/*.rils` 文件。
+
+导出带回调的自由函数时，只需在返回普通 Rust 值的函数上标记 `#[rils_fn]`，
+并用 `F: FnMut(A) -> B` 等约束描述回调。生成器由这一份实现推导 Rils 的
+`fn(A) -> B` 参数及返回值，为任意参数位置和多个回调生成 Rils 函数值到 Rust 闭包的桥接；
+宏还生成隐藏的可失败实现，在直接调用回调的地方传播运行错误。当前只改写直接回调调用；
+`return`、嵌套闭包和表达式宏会被明确拒绝。普通参数和结果可使用类型泛型、标量与 unit；
+引用和容器的通用转换仍需扩展。`core::ops` 中的 `apply_twice`、`combine`、`chain`
+分别示范状态回调、双参数回调及两个回调。

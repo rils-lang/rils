@@ -50,7 +50,7 @@ pub struct Parameter {
 #[derive(Clone, Debug)]
 pub struct GenericParameter {
     pub name: String,
-    pub bounds: Vec<String>,
+    pub bounds: Vec<Type>,
     pub span: Span,
 }
 
@@ -245,6 +245,7 @@ pub enum Stmt {
     Impl {
         generic_parameters: Vec<GenericParameter>,
         trait_name: Option<String>,
+        trait_arguments: Vec<Type>,
         target: Type,
         associated_types: Vec<AssociatedType>,
         methods: Vec<ImplMethod>,
@@ -254,6 +255,7 @@ pub enum Stmt {
         visibility: Visibility,
         name: String,
         name_span: Span,
+        generic_parameters: Vec<GenericParameter>,
         bounds: Vec<String>,
         associated_types: Vec<AssociatedType>,
         methods: Vec<TraitMethod>,

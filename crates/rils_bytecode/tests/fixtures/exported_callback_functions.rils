@@ -1,0 +1,24 @@
+fn make_counter() -> fn(i32) -> i32 {
+    let mut count = 0;
+    fn advance(value: i32) -> i32 {
+        count = count + 1;
+        value + count
+    }
+    advance
+}
+
+fn join_digits(left: i32, right: i32) -> i32 {
+    left * 10 + right
+}
+
+fn double(value: i32) -> i32 {
+    value * 2
+}
+
+fn increment(value: i32) -> i32 {
+    value + 1
+}
+
+assert!(core::ops::apply_twice(1, make_counter()) == 4);
+assert!(core::ops::chain(double, 4, increment) == 9);
+core::ops::combine(4, 2, join_digits)

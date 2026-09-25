@@ -1,6 +1,94 @@
 use super::*;
 
 impl VirtualMachine<'_> {
+    pub(super) fn call_native_symbol(
+        &mut self,
+        symbol: &str,
+        arguments: &[Value],
+        span: Span,
+    ) -> Result<Value, BytecodeError> {
+        let result = crate::runtime_builtins::call_native_symbol_with_callback(
+            symbol,
+            arguments,
+            &mut |function, values| self.invoke_native_callback(function, values, span),
+        )
+        .ok_or_else(|| {
+            BytecodeError::new(format!("native method `{symbol}` is unavailable"), span)
+        })?;
+        result.map_err(|error| match error {
+            crate::runtime_builtins::NativeCallError::Bridge(message) => {
+                BytecodeError::new(message, span)
+            }
+            crate::runtime_builtins::NativeCallError::Callback(error) => error,
+        })
+    }
+
+    fn invoke_native_callback(
+        &mut self,
+        function: &Value,
+        arguments: &[Value],
+        span: Span,
+    ) -> Result<Value, BytecodeError> {
+        let Value::BytecodeFunction(function) = function else {
+            return Err(BytecodeError::new(
+                format!("{} is not callable", function.type_name()),
+                span,
+            ));
+        };
+        if arguments.len() != function.parameter_count {
+            return Err(BytecodeError::new(
+                format!(
+                    "function `{}` expects {} arguments, found {}",
+                    function.name,
+                    function.parameter_count,
+                    arguments.len()
+                ),
+                span,
+            ));
+        }
+        self.ensure_call_capacity(span)?;
+        let callee = &self.module.functions[function.function];
+        if function.captures.len() != callee.capture_count
+            || function.bound_arguments.len() + arguments.len() != callee.parameter_count
+        {
+            return Err(BytecodeError::new(
+                "closure environment does not match function layout",
+                span,
+            ));
+        }
+        let mut locals = new_local_storage(callee);
+        for (local, capture) in locals.iter_mut().zip(&function.captures) {
+            *local = capture.clone();
+        }
+        for (local, argument) in locals
+            .iter()
+            .skip(callee.capture_count)
+            .zip(function.bound_arguments.iter().chain(arguments).cloned())
+        {
+            local.borrow_mut().initialize(argument);
+        }
+        let active_depth = self.frames.len() - usize::from(self.root_is_module_entry);
+        let mut nested = VirtualMachine {
+            module: self.module,
+            imports: self.imports.clone(),
+            host_value_formatter: self.host_value_formatter.clone(),
+            frames: vec![Frame {
+                function: function.function,
+                registers: vec![None; callee.register_count],
+                locals,
+                instruction: 0,
+                return_action: ReturnAction::Complete,
+            }],
+            steps: self.steps,
+            max_steps: self.max_steps,
+            max_call_depth: self.max_call_depth - active_depth,
+            root_is_module_entry: false,
+        };
+        let result = nested.execute();
+        self.steps = nested.steps;
+        result
+    }
+
     pub(super) fn iterator_methods(&self, value: &Value) -> Option<BytecodeIteratorMethods> {
         let name = match value {
             Value::Struct(instance) => &instance.type_definition.name,

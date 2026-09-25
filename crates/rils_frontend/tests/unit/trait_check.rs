@@ -1,6 +1,65 @@
 use crate::{analysis::analyze_program, lexer::lex, parser::parse, trait_check};
 
 #[test]
+fn callable_traits_cannot_be_implemented_by_user_types() {
+    let fixture = include_str!("../fixtures/sealed_callable_impl.rils");
+    for name in ["FnOnce", "FnMut", "Fn"] {
+        for source in [
+            fixture.replace("FnOnce", name),
+            fixture.replace("FnOnce", &format!("core::ops::{name}")),
+            format!(
+                "use core::ops::{name} as Callback; {}",
+                fixture.replace("FnOnce", "Callback")
+            ),
+        ] {
+            let program = parse(lex(&source).unwrap()).unwrap();
+            let result = trait_check::analyze(&program);
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.message.contains("sealed")),
+                "{name} in {source}: {:?}",
+                result.diagnostics
+            );
+            assert!(result.verified_impls.is_empty());
+        }
+    }
+}
+
+#[test]
+fn checks_generic_trait_arguments_against_method_signatures() {
+    let source = include_str!("../fixtures/generic_trait.rils");
+    let program = parse(lex(source).unwrap()).unwrap();
+    let result = trait_check::analyze(&program);
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    assert_eq!(result.verified_impls.len(), 1);
+
+    for (source, expected) in [
+        (
+            source.replace("Transform<i32>", "Transform"),
+            "expects 1 type arguments",
+        ),
+        (
+            source.replace("value: i32) -> i32", "value: string) -> i32"),
+            "does not match its trait signature",
+        ),
+    ] {
+        let program = parse(lex(&source).unwrap()).unwrap();
+        let result = trait_check::analyze(&program);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(expected)),
+            "expected {expected}: {:?}",
+            result.diagnostics
+        );
+        assert!(result.verified_impls.is_empty());
+    }
+}
+
+#[test]
 fn requires_supertraits_for_trait_implementations() {
     let missing = parse(
         lex("trait Behaviour: Default {} struct State; impl Behaviour for State {}").unwrap(),

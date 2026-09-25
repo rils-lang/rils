@@ -1,0 +1,9 @@
+fn invoke<T, F: Fn<(T,), T>>(value: T, callback: F) -> T {
+    callback(value)
+}
+
+fn double(value: i32) -> i32 {
+    value * 2
+}
+
+invoke(7, double)

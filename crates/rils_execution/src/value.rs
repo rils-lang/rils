@@ -132,6 +132,7 @@ pub struct EnumType {
 
 pub struct TraitType {
     pub name: String,
+    pub generic_parameters: Vec<crate::ast::GenericParameter>,
     pub bounds: Vec<String>,
     pub associated_types: Vec<AssociatedType>,
     pub methods: Vec<TraitMethod>,

@@ -64,14 +64,22 @@ pub(crate) mod default_native {
             .map(|parameter| {
                 let mut bounds = parameter.bounds.clone();
                 if required.contains(&parameter.name)
-                    && !bounds.iter().any(|bound| bound == "Default")
+                    && !bounds.iter().any(|bound| bound == &Type::named("Default"))
                 {
-                    bounds.push("Default".into());
+                    bounds.push(Type::named("Default"));
                 }
                 if bounds.is_empty() {
                     parameter.name.clone()
                 } else {
-                    format!("{}: {}", parameter.name, bounds.join(" + "))
+                    format!(
+                        "{}: {}",
+                        parameter.name,
+                        bounds
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(" + ")
+                    )
                 }
             })
             .collect::<Vec<_>>();

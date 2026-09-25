@@ -16,6 +16,7 @@ impl Interpreter {
             validate_generic_bounds(
                 &definition.generic_parameters,
                 &substitutions,
+                None,
                 environment,
                 span,
             )?;
@@ -69,6 +70,7 @@ impl Interpreter {
                 validate_generic_bounds(
                     &definition.generic_parameters,
                     &substitutions,
+                    None,
                     environment,
                     span,
                 )?;

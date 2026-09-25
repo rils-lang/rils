@@ -37,7 +37,7 @@ pub(super) struct VirtualMachine<'a> {
 }
 
 impl<'a> VirtualMachine<'a> {
-    pub(super) fn execute(mut self) -> Result<Value, BytecodeError> {
+    pub(super) fn execute(&mut self) -> Result<Value, BytecodeError> {
         loop {
             let frame = self.frames.last().expect("VM always has an active frame");
             let function = &self.module.functions[frame.function];
@@ -576,27 +576,37 @@ impl<'a> VirtualMachine<'a> {
                         .into_iter()
                         .map(|register| self.take_register(register, instruction.span))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let value = match builtin {
-                        rils_builtins::BuiltinId::FormatterWriteStr => {
-                            let buffer = crate::formatting::buffer_from_value(&arguments[0])
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                            let Value::String(value) = &arguments[1] else {
-                                return Err(BytecodeError::new(
-                                    "Formatter::write_str expects string",
+                    let native_symbol = builtin.canonical_path().filter(|symbol| {
+                        rils_builtins::native_member(symbol)
+                            .is_some_and(|member| member.native_symbol.is_some())
+                    });
+                    let value = if let Some(symbol) = native_symbol {
+                        self.call_native_symbol(symbol, &arguments, instruction.span)?
+                    } else {
+                        match builtin {
+                            rils_builtins::BuiltinId::FormatterWriteStr => {
+                                let buffer = crate::formatting::buffer_from_value(&arguments[0])
+                                    .map_err(|message| {
+                                        BytecodeError::new(message, instruction.span)
+                                    })?;
+                                let Value::String(value) = &arguments[1] else {
+                                    return Err(BytecodeError::new(
+                                        "Formatter::write_str expects string",
+                                        instruction.span,
+                                    ));
+                                };
+                                buffer.write_str(value);
+                                super::formatting::format_ok()
+                            }
+                            rils_builtins::BuiltinId::FormatterWriteDerivedDebug => self
+                                .write_derived_debug_builtin(
+                                    &arguments[0],
+                                    &arguments[1],
                                     instruction.span,
-                                ));
-                            };
-                            buffer.write_str(value);
-                            super::formatting::format_ok()
+                                )?,
+                            _ => crate::runtime_builtins::call(builtin, &arguments)
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
                         }
-                        rils_builtins::BuiltinId::FormatterWriteDerivedDebug => self
-                            .write_derived_debug_builtin(
-                                &arguments[0],
-                                &arguments[1],
-                                instruction.span,
-                            )?,
-                        _ => crate::runtime_builtins::call(builtin, &arguments)
-                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
                     };
                     self.frame_mut().registers[destination] = Some(value);
                 }
@@ -609,15 +619,8 @@ impl<'a> VirtualMachine<'a> {
                         .into_iter()
                         .map(|register| self.take_register(register, instruction.span))
                         .collect::<Result<Vec<_>, _>>()?;
-                    let symbol = &self.module.native_imports[import].symbol;
-                    let value = crate::runtime_builtins::call_native_symbol(symbol, &arguments)
-                        .ok_or_else(|| {
-                            BytecodeError::new(
-                                format!("native method `{symbol}` is unavailable"),
-                                instruction.span,
-                            )
-                        })?
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    let symbol = self.module.native_imports[import].symbol.clone();
+                    let value = self.call_native_symbol(&symbol, &arguments, instruction.span)?;
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::CallIntrinsic {

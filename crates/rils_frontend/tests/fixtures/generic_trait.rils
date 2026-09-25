@@ -1,0 +1,11 @@
+trait Transform<T> {
+    fn apply(self, value: T) -> T;
+}
+
+struct Echo;
+
+impl Transform<i32> for Echo {
+    fn apply(self, value: i32) -> i32 {
+        value
+    }
+}

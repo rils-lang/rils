@@ -47,7 +47,14 @@ pub(super) fn check_project_coherence(
     let trait_id = resolve_item_name(trait_name, module_path, trait_aliases, trait_ids)
         .and_then(|name| trait_ids.get(&name).copied())
         .map(CoherenceIdentity::Definition)
-        .or_else(|| builtin_identity(trait_name, rils_builtins::BuiltinKind::Trait));
+        .or_else(|| {
+            builtin_identity(
+                trait_aliases
+                    .get(trait_name)
+                    .map_or(trait_name, String::as_str),
+                rils_builtins::BuiltinKind::Trait,
+            )
+        });
     let target_id = match target {
         Type::Named { name, .. } => resolve_item_name(name, module_path, type_aliases, types)
             .and_then(|name| types.get(&name).copied())
@@ -79,6 +86,14 @@ fn check_coherence_pair(
     let (Some(trait_id), Some(target_id)) = (trait_id, target_id) else {
         return true;
     };
+    if matches!(&trait_id, CoherenceIdentity::Foreign(path) if rils_builtins::callable_trait_kind(path).is_some())
+    {
+        result.diagnostics.push(AnalysisDiagnostic::error(
+            format!("callable trait `{trait_name}` is sealed and cannot be implemented manually"),
+            span,
+        ));
+        return false;
+    }
     if !trait_id.is_local() && !target_id.is_local() {
         result.diagnostics.push(AnalysisDiagnostic::error(
             "trait impl violates the orphan rule: either the trait or target type must be declared in the current project",
@@ -101,6 +116,13 @@ fn check_coherence_pair(
 }
 
 fn builtin_identity(name: &str, kind: rils_builtins::BuiltinKind) -> Option<CoherenceIdentity> {
+    if kind == rils_builtins::BuiltinKind::Trait
+        && rils_builtins::callable_trait_kind(name).is_some()
+    {
+        return Some(CoherenceIdentity::Foreign(
+            name.rsplit("::").next().unwrap_or(name).to_owned(),
+        ));
+    }
     rils_builtins::BUILTINS
         .iter()
         .find(|declaration| {
@@ -231,9 +253,15 @@ pub(super) fn check_local_coherence(
                 } => {
                     let trait_id =
                         resolve_item_name(trait_name, module_path, trait_aliases, traits)
+                            .filter(|name| traits.contains_key(name))
                             .map(CoherenceIdentity::LocalPath)
                             .or_else(|| {
-                                builtin_identity(trait_name, rils_builtins::BuiltinKind::Trait)
+                                builtin_identity(
+                                    trait_aliases
+                                        .get(trait_name)
+                                        .map_or(trait_name, String::as_str),
+                                    rils_builtins::BuiltinKind::Trait,
+                                )
                             });
                     let target_id = match target {
                         Type::Named { name, .. } => {

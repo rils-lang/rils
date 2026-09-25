@@ -249,6 +249,11 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(
         crate::native_definitions::into_iterator::DECLARATION
     ));
+    declaration_items.push(quote!(crate::native_definitions::function::DECLARATION));
+    declaration_items.push(quote!(crate::native_definitions::function_mut::DECLARATION));
+    declaration_items.push(quote!(
+        crate::native_definitions::function_once::DECLARATION
+    ));
     declaration_items.push(quote!(crate::native_definitions::format_error::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::debug::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::display::DECLARATION));
@@ -264,6 +269,11 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(crate::native_definitions::ref_cell::DECLARATION));
     declaration_items.extend(
         (0usize..8).map(|index| quote!(crate::native_definitions::fs::DECLARATIONS[#index])),
+    );
+    declaration_items.extend(
+        (0usize..3).map(
+            |index| quote!(crate::native_definitions::callable_functions::DECLARATIONS[#index]),
+        ),
     );
     declaration_items.extend(
         (0usize..6)

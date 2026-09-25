@@ -12,11 +12,18 @@ pub(super) fn implemented_traits(
 
 pub(super) fn validate_trait_implementation(
     definition: &TraitType,
+    trait_arguments: &[Type],
     associated_types: &HashMap<String, TypeAliasType>,
     methods: &[crate::ast::ImplMethod],
     target: &Type,
     span: Span,
 ) -> Result<(), RuntimeError> {
+    let trait_substitutions = definition
+        .generic_parameters
+        .iter()
+        .zip(trait_arguments)
+        .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
+        .collect::<HashMap<_, _>>();
     for required in &definition.methods {
         let implementation = methods
             .iter()
@@ -30,7 +37,13 @@ pub(super) fn validate_trait_implementation(
                     span,
                 )
             })?;
-        validate_trait_method_signature(required, implementation, target, associated_types)?;
+        validate_trait_method_signature(
+            required,
+            implementation,
+            target,
+            associated_types,
+            &trait_substitutions,
+        )?;
     }
     if let Some(extra) = methods.iter().find(|method| {
         !definition
@@ -54,7 +67,15 @@ pub(super) fn validate_trait_method_signature(
     implementation: &crate::ast::ImplMethod,
     target: &Type,
     associated_types: &HashMap<String, TypeAliasType>,
+    trait_substitutions: &HashMap<String, Type>,
 ) -> Result<(), RuntimeError> {
+    let mut substitutions = trait_substitutions.clone();
+    for parameter in &required.generic_parameters {
+        substitutions.insert(
+            parameter.name.clone(),
+            Type::Variable(parameter.name.clone()),
+        );
+    }
     if required.generic_parameters.len() != implementation.generic_parameters.len()
         || required.parameters.len() != implementation.parameters.len()
         || required
@@ -82,10 +103,9 @@ pub(super) fn validate_trait_method_signature(
                 implementation.span,
             ));
         }
-        let expected = required_parameter
-            .type_annotation
-            .as_ref()
-            .map(|value| substitute_associated(value, target, associated_types));
+        let expected = required_parameter.type_annotation.as_ref().map(|value| {
+            substitute_associated(&value.substitute(&substitutions), target, associated_types)
+        });
         let actual = actual_parameter
             .type_annotation
             .as_ref()
@@ -106,7 +126,9 @@ pub(super) fn validate_trait_method_signature(
     let expected_return = required
         .return_type
         .as_ref()
-        .map(|value| substitute_associated(value, target, associated_types))
+        .map(|value| {
+            substitute_associated(&value.substitute(&substitutions), target, associated_types)
+        })
         .unwrap_or(Type::Unit);
     let actual_return = implementation
         .return_type

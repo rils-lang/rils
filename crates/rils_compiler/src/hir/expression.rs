@@ -229,6 +229,18 @@ impl<'a> FunctionLowerer<'a> {
                 span,
             } => {
                 if let Some((name, signature, capability)) = self.resolved_import(expression_id) {
+                    if let Some(symbol) = rils_builtins::builtin_function(name)
+                        .and_then(|declaration| declaration.native_symbol)
+                    {
+                        return Ok(HirExpression::CallNative {
+                            symbol: symbol.to_owned(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
                     return Ok(HirExpression::CallImport {
                         name: name.to_owned(),
                         signature: signature.clone(),
@@ -462,10 +474,8 @@ impl<'a> FunctionLowerer<'a> {
                                 span: *span,
                             });
                         }
-                        if let Some(expression) =
-                            self.builtin_combinator(Some(builtin), name, object, arguments, *span)?
-                        {
-                            return Ok(expression);
+                        if rils_builtins::is_iterator_default_builtin(builtin) {
+                            return self.iterator_default(name, object, arguments, *span);
                         }
                         if builtin.has_direct_runtime_call()
                             && let Some(receiver) = receiver.map(|receiver| match receiver {

@@ -12,7 +12,6 @@ use crate::{
     types::{FunctionSignature, Type},
 };
 
-mod combinators;
 mod expression;
 mod function;
 mod helpers;

@@ -103,77 +103,48 @@ mod native {
 
         /// Maps an Ok value while preserving Err.
         #[export_rils]
-        pub fn map<U>(self, transform: fn(T) -> U) -> Result<U, E> {
-            self.try_map(|value| Ok::<_, std::convert::Infallible>(transform(value)))
-                .unwrap_or_else(|never| match never {})
+        pub fn map<U, F>(self, transform: F) -> Result<U, E>
+        where
+            F: FnOnce(T) -> U,
+        {
+            match self {
+                Self::Ok(value) => Result::Ok(transform(value)),
+                Self::Err(error) => Result::Err(error),
+            }
         }
 
         /// Maps an Err value while preserving Ok.
         #[export_rils]
-        pub fn map_err<F>(self, transform: fn(E) -> F) -> Result<T, F> {
-            self.try_map_err(|error| Ok::<_, std::convert::Infallible>(transform(error)))
-                .unwrap_or_else(|never| match never {})
+        pub fn map_err<F, Callback>(self, transform: Callback) -> Result<T, F>
+        where
+            Callback: FnOnce(E) -> F,
+        {
+            match self {
+                Self::Ok(value) => Result::Ok(value),
+                Self::Err(error) => Result::Err(transform(error)),
+            }
         }
 
         /// Calls the supplied function for Ok and flattens its Result.
         #[export_rils]
-        pub fn and_then<U>(self, transform: fn(T) -> Result<U, E>) -> Result<U, E> {
-            self.try_and_then(|value| Ok::<_, std::convert::Infallible>(transform(value)))
-                .unwrap_or_else(|never| match never {})
+        pub fn and_then<U, F>(self, transform: F) -> Result<U, E>
+        where
+            F: FnOnce(T) -> Result<U, E>,
+        {
+            match self {
+                Self::Ok(value) => transform(value),
+                Self::Err(error) => Result::Err(error),
+            }
         }
 
         /// Calls the supplied fallback for Err and flattens its Result.
         #[export_rils]
-        pub fn or_else<F>(self, fallback: fn(E) -> Result<T, F>) -> Result<T, F> {
-            self.try_or_else(|error| Ok::<_, std::convert::Infallible>(fallback(error)))
-                .unwrap_or_else(|never| match never {})
-        }
-
-        pub fn try_map<U, Fail, F>(self, transform: F) -> std::result::Result<Result<U, E>, Fail>
+        pub fn or_else<F, Callback>(self, fallback: Callback) -> Result<T, F>
         where
-            F: FnOnce(T) -> std::result::Result<U, Fail>,
+            Callback: FnOnce(E) -> Result<T, F>,
         {
             match self {
-                Self::Ok(value) => transform(value).map(Result::Ok),
-                Self::Err(error) => Ok(Result::Err(error)),
-            }
-        }
-
-        pub fn try_map_err<F, Fail, Callback>(
-            self,
-            transform: Callback,
-        ) -> std::result::Result<Result<T, F>, Fail>
-        where
-            Callback: FnOnce(E) -> std::result::Result<F, Fail>,
-        {
-            match self {
-                Self::Ok(value) => Ok(Result::Ok(value)),
-                Self::Err(error) => transform(error).map(Result::Err),
-            }
-        }
-
-        pub fn try_and_then<U, Fail, F>(
-            self,
-            transform: F,
-        ) -> std::result::Result<Result<U, E>, Fail>
-        where
-            F: FnOnce(T) -> std::result::Result<Result<U, E>, Fail>,
-        {
-            match self {
-                Self::Ok(value) => transform(value),
-                Self::Err(error) => Ok(Result::Err(error)),
-            }
-        }
-
-        pub fn try_or_else<F, Fail, Callback>(
-            self,
-            fallback: Callback,
-        ) -> std::result::Result<Result<T, F>, Fail>
-        where
-            Callback: FnOnce(E) -> std::result::Result<Result<T, F>, Fail>,
-        {
-            match self {
-                Self::Ok(value) => Ok(Result::Ok(value)),
+                Self::Ok(value) => Result::Ok(value),
                 Self::Err(error) => fallback(error),
             }
         }

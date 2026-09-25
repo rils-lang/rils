@@ -33,7 +33,16 @@ impl BytecodeModule {
         let mut native_symbols = HashSet::new();
         for import in &self.native_imports {
             let expected = rils_builtins::native_member(&import.symbol)
-                .and_then(rils_frontend::standard_library::erased_builtin_member_signature);
+                .and_then(rils_frontend::standard_library::erased_builtin_member_signature)
+                .or_else(|| {
+                    rils_builtins::builtin_function(&import.symbol)
+                        .filter(|function| function.native_symbol == Some(import.symbol.as_str()))
+                        .and_then(|_| {
+                            rils_frontend::standard_library::erased_standard_function_signature(
+                                &import.symbol,
+                            )
+                        })
+                });
             if !native_symbols.insert(import.symbol.as_str())
                 || !self.valid_signature(&import.signature)
                 || expected.as_ref() != Some(&import.signature)

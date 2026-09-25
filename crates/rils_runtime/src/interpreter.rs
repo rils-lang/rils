@@ -7,14 +7,14 @@ use std::{
 #[path = "interpreter/builtin_methods/iterator.rs"]
 mod builtin_iterator;
 mod builtin_methods;
-#[path = "interpreter/builtin_methods/option_result.rs"]
-mod builtin_option_result;
 mod builtins;
 mod call;
+mod callable;
 mod construction;
 mod evaluation;
 mod execution;
 mod formatting;
+mod native_callback;
 mod operators;
 mod pattern;
 mod place;

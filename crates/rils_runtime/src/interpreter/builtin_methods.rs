@@ -26,22 +26,14 @@ impl Interpreter {
             let mut values = Vec::with_capacity(arguments.len() + 1);
             values.push((*method.receiver).clone());
             values.extend_from_slice(arguments);
-            return crate::runtime_builtins::call_native_symbol(symbol, &values)
-                .ok_or_else(|| {
-                    RuntimeError::new(format!("native method `{symbol}` is unavailable"), span)
-                })?
-                .map_err(|message| RuntimeError::new(message, span));
+            return self.call_native_symbol(symbol, &values, span);
         }
         match method.method {
             BuiltinMethod::Native(symbol) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::runtime_builtins::call_native_symbol(symbol, &values)
-                    .ok_or_else(|| {
-                        RuntimeError::new(format!("native method `{symbol}` is unavailable"), span)
-                    })?
-                    .map_err(|message| RuntimeError::new(message, span))
+                self.call_native_symbol(symbol, &values, span)
             }
             BuiltinMethod::IntegerIntrinsic(id) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
@@ -274,7 +266,15 @@ impl Interpreter {
                 id @ (rils_builtins::BuiltinId::OptionMap
                 | rils_builtins::BuiltinId::OptionAndThen
                 | rils_builtins::BuiltinId::OptionOrElse),
-            ) => self.call_option_result_method(id, method.receiver.as_ref(), arguments, span),
+            ) => {
+                let symbol = id.canonical_path().ok_or_else(|| {
+                    RuntimeError::new("callback method has no native symbol", span)
+                })?;
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push((*method.receiver).clone());
+                values.extend_from_slice(arguments);
+                self.call_native_symbol(symbol, &values, span)
+            }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::OptionTake
                 | rils_builtins::BuiltinId::OptionOr

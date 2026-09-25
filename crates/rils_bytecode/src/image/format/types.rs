@@ -247,14 +247,16 @@ pub(super) fn write_generic_parameter(
     parameter: &GenericParameter,
 ) -> Result<()> {
     writer.string(&parameter.name)?;
-    writer.collection(&parameter.bounds, |writer, value| writer.string(value))?;
+    writer.collection(&parameter.bounds, |writer, value| {
+        write_type(writer, value, 0)
+    })?;
     writer.span(parameter.span)
 }
 
 pub(super) fn read_generic_parameter(reader: &mut Reader<'_>) -> Result<GenericParameter> {
     Ok(GenericParameter {
         name: reader.string()?,
-        bounds: reader.collection(Reader::string)?,
+        bounds: reader.collection(read_type)?,
         span: reader.span()?,
     })
 }

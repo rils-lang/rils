@@ -260,6 +260,7 @@ pub(super) fn bind_type_variable(
 pub(super) fn validate_generic_bounds(
     parameters: &[GenericParameter],
     substitutions: &HashMap<String, Type>,
+    values: Option<(&[Parameter], &[Value])>,
     environment: &EnvironmentRef,
     span: Span,
 ) -> Result<(), RuntimeError> {
@@ -269,9 +270,19 @@ pub(super) fn validate_generic_bounds(
             .cloned()
             .unwrap_or(Type::Unknown);
         for bound in &parameter.bounds {
+            let bound = bound.substitute(substitutions);
+            let Type::Named {
+                name: bound_name, ..
+            } = &bound
+            else {
+                return Err(RuntimeError::new(
+                    format!("invalid trait bound `{bound}`"),
+                    span,
+                ));
+            };
             let trait_value = environment
                 .borrow()
-                .get(bound)
+                .get(bound_name)
                 .ok_or_else(|| RuntimeError::new(format!("unknown trait bound `{bound}`"), span))?;
             if !matches!(trait_value, Value::TraitType(_)) {
                 return Err(RuntimeError::new(format!("`{bound}` is not a trait"), span));
@@ -279,7 +290,13 @@ pub(super) fn validate_generic_bounds(
             if actual == Type::Unknown {
                 continue;
             }
-            if !type_implements_trait(&actual, bound, environment) {
+            let value = values.and_then(|(parameters, arguments)| {
+                parameters.iter().zip(arguments).find_map(|(argument_parameter, argument)| {
+                    matches!(&argument_parameter.type_annotation, Some(Type::Variable(name)) if name == &parameter.name)
+                        .then_some(argument)
+                })
+            });
+            if !type_implements_trait_bound(&actual, &bound, value, environment) {
                 return Err(RuntimeError::new(
                     format!(
                         "type `{actual}` does not implement required trait `{bound}` for `{}`",
@@ -291,6 +308,43 @@ pub(super) fn validate_generic_bounds(
         }
     }
     Ok(())
+}
+
+fn type_implements_trait_bound(
+    actual: &Type,
+    bound: &Type,
+    value: Option<&Value>,
+    environment: &EnvironmentRef,
+) -> bool {
+    let Type::Named { name, arguments } = bound else {
+        return false;
+    };
+    if let Some(required) = rils_stdlib::stdlib::ops::callable_trait_kind(name) {
+        let (
+            Type::Function {
+                parameters: Some(parameters),
+                return_type,
+            },
+            [expected_parameters, expected_return],
+        ) = (actual, arguments.as_slice())
+        else {
+            return false;
+        };
+        let matches_parameters = match expected_parameters {
+            Type::Unit => parameters.is_empty(),
+            Type::Tuple(expected) => parameters == expected,
+            _ => false,
+        };
+        return matches_parameters
+            && return_type.as_ref() == expected_return
+            && value.is_some_and(|value| {
+                super::callable::callable_kind(value).is_some_and(|kind| kind.satisfies(required))
+            });
+    }
+    if !arguments.is_empty() {
+        return false;
+    }
+    type_implements_trait(actual, name, environment)
 }
 
 pub(super) fn type_implements_trait(
@@ -621,12 +675,23 @@ pub(super) fn expand_type_aliases(
                         span,
                     ));
                 }
+                let substitutions = alias
+                    .generic_parameters
+                    .iter()
+                    .zip(&arguments)
+                    .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
+                    .collect::<HashMap<_, _>>();
                 for (parameter, argument) in alias.generic_parameters.iter().zip(&arguments) {
                     if matches!(argument, Type::Unknown | Type::Variable(_)) {
                         continue;
                     }
                     for bound in &parameter.bounds {
-                        if !type_implements_trait(argument, bound, environment) {
+                        if !type_implements_trait_bound(
+                            argument,
+                            &bound.substitute(&substitutions),
+                            None,
+                            environment,
+                        ) {
                             return Err(RuntimeError::new(
                                 format!(
                                     "type `{argument}` does not implement required trait `{bound}` for type alias `{name}`"

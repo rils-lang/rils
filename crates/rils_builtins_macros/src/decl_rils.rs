@@ -117,7 +117,9 @@ impl Definition {
                         "native method needs a Rust body",
                     ));
                 }
-                methods.push(method.clone());
+                methods.push(function_definition::callback_signature::expose_method(
+                    method,
+                )?);
             }
         }
         if methods.is_empty()
@@ -505,6 +507,9 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
 }
 
 fn supports_direct_bridge(item: &ItemEnum, method: &ImplItemFn) -> bool {
+    if callback_operation(item, method).is_some() {
+        return true;
+    }
     if !matches!(item.ident.to_string().as_str(), "Option" | "Result")
         || method.sig.inputs.len() != 1
     {
@@ -538,6 +543,33 @@ fn supports_direct_bridge(item: &ItemEnum, method: &ImplItemFn) -> bool {
     matches!(arguments.args.first(), Some(syn::GenericArgument::Type(Type::Path(path))) if path.path.is_ident("T") || path.path.is_ident("E"))
 }
 
+fn callback_operation(item: &ItemEnum, method: &ImplItemFn) -> Option<Tokens> {
+    if method.sig.receiver()?.reference.is_some() || method.sig.inputs.len() != 2 {
+        return None;
+    }
+    let FnArg::Typed(argument) = method.sig.inputs.last()? else {
+        return None;
+    };
+    if !matches!(argument.ty.as_ref(), Type::BareFn(_)) {
+        return None;
+    }
+    let operation = match (
+        item.ident.to_string().as_str(),
+        method.sig.ident.to_string().as_str(),
+    ) {
+        ("Option", "map") => quote!(OptionMap),
+        ("Option", "and_then") => quote!(OptionAndThen),
+        ("Option", "or_else") => quote!(OptionOrElse),
+        ("Option", "filter") => quote!(OptionFilter),
+        ("Result", "map") => quote!(ResultMap),
+        ("Result", "map_err") => quote!(ResultMapErr),
+        ("Result", "and_then") => quote!(ResultAndThen),
+        ("Result", "or_else") => quote!(ResultOrElse),
+        _ => return None,
+    };
+    Some(operation)
+}
+
 pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
     let source = parse_macro_input!(input as DefinitionInput);
     if string::is_string(&source.path) {
@@ -567,9 +599,28 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         ));
     }
     let module = &definition.module;
+    let callback_implementations = definition
+        .methods
+        .iter()
+        .filter_map(|method| {
+            let operation = callback_operation(&definition.item, method)?;
+            let name = &method.sig.ident;
+            let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
+            Some(quote! {
+                #id_path => Some(super::super::callback::call(
+                    super::super::callback::Operation::#operation,
+                    arguments,
+                    callback,
+                ))
+            })
+        })
+        .collect::<Vec<_>>();
     let implementations = definition.methods.iter().map(|method| {
         let name = &method.sig.ident;
         let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
+        if callback_operation(&definition.item, method).is_some() {
+            return Ok(quote! { #id_path => Some(Err("native callback context is unavailable".to_owned())) });
+        }
         if !supports_direct_bridge(&definition.item, method) {
             let arity = method.sig.inputs.len();
             return Ok(quote! {
@@ -665,6 +716,14 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         })
     }).collect::<syn::Result<Vec<_>>>()?;
     Ok(quote! {
+        pub fn call_callback_symbol<E>(
+            symbol: &str,
+            arguments: &[crate::Value],
+            callback: &mut crate::runtime_builtins::NativeCallback<'_, E>,
+        ) -> Option<Result<crate::Value, crate::runtime_builtins::NativeCallError<E>>> {
+            match symbol { #(#callback_implementations,)* _ => None }
+        }
+
         pub fn call_symbol(
             symbol: &str,
             arguments: &[crate::Value],
@@ -716,11 +775,18 @@ mod tests {
                 loop {}
             }
         );
+        let callback: ImplItemFn = syn::parse_quote!(
+            #[export_rils]
+            pub fn map<U>(self, transform: fn(T) -> U) -> Option<U> {
+                loop {}
+            }
+        );
         assert!(supports_direct_bridge(&option, &state_query));
         assert!(supports_direct_bridge(&result, &state_query));
         assert!(supports_direct_bridge(&result, &extraction));
         assert!(!supports_direct_bridge(&option, &mutable));
         assert!(!supports_direct_bridge(&result, &generic));
+        assert!(supports_direct_bridge(&option, &callback));
 
         let module: ItemMod = syn::parse_quote! {
             mod native {

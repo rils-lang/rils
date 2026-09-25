@@ -174,6 +174,7 @@ impl Parser<'_> {
             return Ok(Vec::new());
         }
         let mut parameters = Vec::new();
+        self.generic_scopes.push(Vec::new());
         loop {
             let (name, span) = self.expect_identifier("expected generic parameter name")?;
             if parameters
@@ -188,29 +189,14 @@ impl Parser<'_> {
             let mut bounds = Vec::new();
             if self.take(&TokenKind::Colon).is_some() {
                 loop {
-                    let (bound, bound_span) =
-                        self.expect_identifier("expected trait name in generic bound")?;
-                    self.type_references.push(TypeReference {
-                        name: bound.clone(),
-                        span: bound_span,
-                        definition_span: None,
-                        is_builtin: matches!(
-                            bound.as_str(),
-                            "Copy"
-                                | "Clone"
-                                | "Default"
-                                | "Eq"
-                                | "Hash"
-                                | "BitFlags"
-                                | "Iterator"
-                                | "IntoIterator"
-                        ),
-                        arguments: Vec::new(),
-                    });
+                    let bound = self.type_annotation()?;
+                    let Type::Named { .. } = &bound else {
+                        return Err(self.error_here("expected trait name in generic bound"));
+                    };
                     if bounds.contains(&bound) {
                         return Err(ParseError {
                             message: format!("duplicate trait bound `{bound}`"),
-                            span: bound_span,
+                            span,
                         });
                     }
                     bounds.push(bound);
@@ -220,11 +206,16 @@ impl Parser<'_> {
                 }
             }
             parameters.push(GenericParameter { name, bounds, span });
+            *self
+                .generic_scopes
+                .last_mut()
+                .expect("generic scope exists") = parameters.clone();
             if self.take(&TokenKind::Comma).is_none() {
                 break;
             }
         }
         self.expect(&TokenKind::Greater, "expected `>` after generic parameters")?;
+        self.generic_scopes.pop();
         Ok(parameters)
     }
 }

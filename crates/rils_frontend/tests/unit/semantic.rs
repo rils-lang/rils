@@ -10,7 +10,10 @@ fn native_default_derive_adds_generic_bounds() {
     else {
         panic!("expected generated Default impl");
     };
-    assert_eq!(generic_parameters[0].bounds, ["Default"]);
+    assert_eq!(
+        generic_parameters[0].bounds,
+        [crate::types::Type::named("Default")]
+    );
 }
 
 #[test]
@@ -281,9 +284,8 @@ fn builtin_method_calls_resolve_to_semantic_ids() {
     )));
     assert!(calls.iter().any(|call| matches!(
         call,
-        ResolvedCall::Builtin {
-            id: rils_builtins::BuiltinId::OptionMap,
-            kind: BuiltinCallKind::Runtime,
+        ResolvedCall::Native {
+            symbol: "core::option::option::map",
             ..
         }
     )));

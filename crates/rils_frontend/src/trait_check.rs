@@ -14,6 +14,7 @@ use coherence::{CoherenceKey, check_local_coherence, check_project_coherence};
 #[derive(Clone)]
 struct TraitRequirement {
     name: String,
+    generic_parameters: Vec<GenericParameter>,
     bounds: Vec<String>,
     associated_types: Vec<AssociatedType>,
     methods: Vec<TraitMethod>,
@@ -131,6 +132,7 @@ fn collect_project_declarations(
             Stmt::Trait {
                 name,
                 name_span,
+                generic_parameters,
                 bounds,
                 associated_types,
                 methods,
@@ -141,6 +143,7 @@ fn collect_project_declarations(
                     path.clone(),
                     TraitRequirement {
                         name: name.clone(),
+                        generic_parameters: generic_parameters.clone(),
                         bounds: bounds.clone(),
                         associated_types: associated_types.clone(),
                         methods: methods.clone(),
@@ -204,6 +207,7 @@ fn check_project_impls(
             Stmt::Impl {
                 generic_parameters,
                 trait_name: Some(trait_name),
+                trait_arguments,
                 target,
                 associated_types,
                 methods,
@@ -235,6 +239,7 @@ fn check_project_impls(
                 };
                 let contract_valid = check_contract(
                     requirement,
+                    trait_arguments,
                     associated_types,
                     methods,
                     *span,
@@ -261,6 +266,11 @@ fn collect_project_imports<T>(
         match import.kind {
             crate::ast::UseImportKind::Single => {
                 let path = import.path.join("::");
+                if rils_builtins::callable_trait_kind(&path).is_some()
+                    && let Some(binding) = import.binding_name()
+                {
+                    trait_aliases.insert(binding.to_owned(), path.clone());
+                }
                 if let Some(trait_name) =
                     resolve_item_name(&path, module_path, trait_aliases, traits)
                     && let Some(binding) = import.binding_name()
@@ -386,6 +396,7 @@ fn collect(
             }
             Stmt::Trait {
                 name,
+                generic_parameters,
                 bounds,
                 associated_types,
                 methods,
@@ -393,6 +404,7 @@ fn collect(
             } => {
                 let requirement = TraitRequirement {
                     name: name.clone(),
+                    generic_parameters: generic_parameters.clone(),
                     bounds: bounds.clone(),
                     associated_types: associated_types.clone(),
                     methods: methods.clone(),
@@ -430,6 +442,7 @@ fn check_impls(
             Stmt::Impl {
                 generic_parameters,
                 trait_name: Some(trait_name),
+                trait_arguments,
                 target: Type::Named { name, .. },
                 associated_types,
                 methods,
@@ -464,6 +477,7 @@ fn check_impls(
                 }
                 let contract_valid = check_contract(
                     requirement,
+                    trait_arguments,
                     associated_types,
                     methods,
                     *span,
@@ -497,14 +511,33 @@ fn check_impl_generic_bounds(
 
 fn check_contract(
     requirement: &TraitRequirement,
+    trait_arguments: &[Type],
     associated_types: &[AssociatedType],
     methods: &[ImplMethod],
     impl_span: crate::Span,
     diagnostics: &mut Vec<AnalysisDiagnostic>,
 ) -> bool {
     let diagnostics_start = diagnostics.len();
+    if requirement.generic_parameters.len() != trait_arguments.len() {
+        diagnostics.push(AnalysisDiagnostic::error(
+            format!(
+                "trait `{}` expects {} type arguments, found {}",
+                requirement.name,
+                requirement.generic_parameters.len(),
+                trait_arguments.len()
+            ),
+            impl_span,
+        ));
+        return false;
+    }
+    let substitutions = requirement
+        .generic_parameters
+        .iter()
+        .zip(trait_arguments)
+        .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
+        .collect::<HashMap<_, _>>();
     check_associated_types(requirement, associated_types, impl_span, diagnostics);
-    check_methods(requirement, methods, diagnostics);
+    check_methods(requirement, &substitutions, methods, diagnostics);
     diagnostics.len() == diagnostics_start
 }
 
@@ -558,6 +591,7 @@ fn check_associated_types(
 
 fn check_methods(
     requirement: &TraitRequirement,
+    substitutions: &HashMap<String, Type>,
     methods: &[ImplMethod],
     diagnostics: &mut Vec<AnalysisDiagnostic>,
 ) -> bool {
@@ -574,7 +608,7 @@ fn check_methods(
             ));
             continue;
         };
-        if !method_signature_matches(required, implementation) {
+        if !method_signature_matches(required, implementation, substitutions) {
             diagnostics.push(AnalysisDiagnostic::error(
                 format!(
                     "method `{}` does not match its trait signature",
@@ -601,7 +635,18 @@ fn check_methods(
     diagnostics.len() == diagnostics_start
 }
 
-fn method_signature_matches(required: &TraitMethod, implementation: &ImplMethod) -> bool {
+fn method_signature_matches(
+    required: &TraitMethod,
+    implementation: &ImplMethod,
+    substitutions: &HashMap<String, Type>,
+) -> bool {
+    let mut substitutions = substitutions.clone();
+    for parameter in &required.generic_parameters {
+        substitutions.insert(
+            parameter.name.clone(),
+            Type::Variable(parameter.name.clone()),
+        );
+    }
     required.generic_parameters.len() == implementation.generic_parameters.len()
         && required.parameters.len() == implementation.parameters.len()
         && required
@@ -617,10 +662,18 @@ fn method_signature_matches(required: &TraitMethod, implementation: &ImplMethod)
             .zip(&implementation.parameters)
             .all(|(required, actual)| {
                 required.name == actual.name
-                    && required.type_annotation == actual.type_annotation
+                    && required
+                        .type_annotation
+                        .as_ref()
+                        .map(|ty| ty.substitute(&substitutions))
+                        == actual.type_annotation
                     && required.mutable == actual.mutable
             })
-        && required.return_type == implementation.return_type
+        && required
+            .return_type
+            .as_ref()
+            .map(|ty| ty.substitute(&substitutions))
+            == implementation.return_type
 }
 
 fn qualified(path: &[String], name: &str) -> String {

@@ -77,10 +77,16 @@ impl Input {
                 "built-in trait must be public",
             ));
         }
-        if !self.item.generics.params.is_empty() {
+        if self
+            .item
+            .generics
+            .params
+            .iter()
+            .any(|parameter| !matches!(parameter, syn::GenericParam::Type(_)))
+        {
             return Err(Error::new_spanned(
-                &self.item,
-                "built-in trait must not declare generics",
+                &self.item.generics,
+                "Rils trait parameters must be types",
             ));
         }
         let methods = self.methods()?;
@@ -189,6 +195,12 @@ impl Input {
         let methods = self.methods().expect("validated trait");
         let associated = self.associated_types().expect("validated trait");
         let rust = self.rust_binding().expect("validated binding");
+        let generics = self
+            .item
+            .generics
+            .to_token_stream()
+            .to_string()
+            .replace(' ', "");
         let bounds = self
             .item
             .supertraits
@@ -203,22 +215,24 @@ impl Input {
             .collect::<Vec<_>>();
         if methods.is_empty() && associated.is_empty() {
             if bounds.is_empty() {
-                source.push_str(&format!("pub trait {} {{}}\n", self.item.ident));
+                source.push_str(&format!("pub trait {}{} {{}}\n", self.item.ident, generics));
             } else {
                 source.push_str(&format!(
-                    "pub trait {}: {} {{}}\n",
+                    "pub trait {}{}: {} {{}}\n",
                     self.item.ident,
+                    generics,
                     bounds.join(" + ")
                 ));
             }
             return source;
         }
         if bounds.is_empty() {
-            source.push_str(&format!("pub trait {} {{\n", self.item.ident));
+            source.push_str(&format!("pub trait {}{} {{\n", self.item.ident, generics));
         } else {
             source.push_str(&format!(
-                "pub trait {}: {} {{\n",
+                "pub trait {}{}: {} {{\n",
                 self.item.ident,
+                generics,
                 bounds.join(" + ")
             ));
         }
@@ -256,6 +270,12 @@ impl Input {
 
     fn metadata(&self) -> syn::Result<proc_macro2::TokenStream> {
         let name = self.item.ident.to_string();
+        let type_parameters = self
+            .item
+            .generics
+            .type_params()
+            .map(|parameter| parameter.ident.to_string())
+            .collect::<Vec<_>>();
         let docs = super::documentation(&self.item.attrs);
         let rust = self.rust_binding()?;
         let supertraits = self
@@ -360,7 +380,7 @@ impl Input {
                 path: #name,
                 kind: crate::BuiltinKind::Trait,
                 supertraits: &[#(#supertraits),*],
-                type_parameters: &[],
+                type_parameters: &[#(#type_parameters),*],
                 members: &[#(#associated,)* #(#methods),*],
                 signature: None,
                 native_symbol: None,

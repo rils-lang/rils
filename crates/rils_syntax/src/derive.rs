@@ -354,6 +354,7 @@ fn derive_debug_statement(
         span,
     };
     Ok(Some(Stmt::Impl {
+        trait_arguments: Vec::new(),
         generic_parameters: impl_generics,
         trait_name: Some("Debug".into()),
         target,
@@ -377,8 +378,12 @@ fn require_debug(
             .iter_mut()
             .find(|parameter| parameter.name == *name)
             .is_some_and(|parameter| {
-                if !parameter.bounds.iter().any(|bound| bound == "Debug") {
-                    parameter.bounds.push("Debug".into());
+                if !parameter
+                    .bounds
+                    .iter()
+                    .any(|bound| bound == &Type::named("Debug"))
+                {
+                    parameter.bounds.push(Type::named("Debug"));
                 }
                 true
             }),

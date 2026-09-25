@@ -1,0 +1,17 @@
+fn invoke_once<F: FnOnce<(i32, i32, i32, i32, i32, i32, i32, i32), i32>>(callback: F) -> i32 {
+    callback(1, 2, 3, 4, 5, 6, 7, 8)
+}
+
+fn invoke_mut<F: FnMut<(i32, i32, i32, i32, i32, i32, i32, i32), i32>>(callback: F) -> i32 {
+    callback(1, 2, 3, 4, 5, 6, 7, 8)
+}
+
+fn invoke_shared<F: Fn<(i32, i32, i32, i32, i32, i32, i32, i32), i32>>(callback: F) -> i32 {
+    callback(1, 2, 3, 4, 5, 6, 7, 8)
+}
+
+fn sum(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> i32 {
+    a + b + c + d + e + f + g + h
+}
+
+invoke_once(sum) + invoke_mut(sum) + invoke_shared(sum)

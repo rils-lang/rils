@@ -133,3 +133,34 @@ pub fn call_symbol(
         .or_else(|| result::call_symbol(symbol, arguments))
         .or_else(|| string::call_symbol(symbol, arguments))
 }
+
+mod callable_functions {
+    use rils_builtins_macros::decl_rils_function_native;
+
+    pub(super) mod apply_twice {
+        use super::decl_rils_function_native;
+        rils_stdlib::core_ops_apply_twice_definition!(decl_rils_function_native);
+    }
+    pub(super) mod combine {
+        use super::decl_rils_function_native;
+        rils_stdlib::core_ops_combine_definition!(decl_rils_function_native);
+    }
+    pub(super) mod chain {
+        use super::decl_rils_function_native;
+        rils_stdlib::core_ops_chain_definition!(decl_rils_function_native);
+    }
+}
+
+pub fn call_callback_symbol<E>(
+    symbol: &str,
+    arguments: &[crate::Value],
+    callback: &mut super::NativeCallback<'_, E>,
+) -> Option<Result<crate::Value, super::NativeCallError<E>>> {
+    option::call_callback_symbol(symbol, arguments, callback)
+        .or_else(|| result::call_callback_symbol(symbol, arguments, callback))
+        .or_else(|| {
+            callable_functions::apply_twice::call_callback_symbol(symbol, arguments, callback)
+        })
+        .or_else(|| callable_functions::combine::call_callback_symbol(symbol, arguments, callback))
+        .or_else(|| callable_functions::chain::call_callback_symbol(symbol, arguments, callback))
+}

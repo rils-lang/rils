@@ -168,15 +168,13 @@ impl Interpreter {
                     return Ok(Value::Unit);
                 }
                 let value = match function.body {
-                    NativeFunctionBody::Rust(callback) => callback(arguments),
-                    NativeFunctionBody::Symbol(symbol) => {
-                        crate::runtime_builtins::call_native_symbol(symbol, arguments)
-                            .unwrap_or_else(|| {
-                                Err(format!("native method `{symbol}` is unavailable"))
-                            })
+                    NativeFunctionBody::Rust(callback) => {
+                        callback(arguments).map_err(|message| RuntimeError::new(message, span))?
                     }
-                }
-                .map_err(|message| RuntimeError::new(message, span))?;
+                    NativeFunctionBody::Symbol(symbol) => {
+                        self.call_native_symbol(symbol, arguments, span)?
+                    }
+                };
                 validate_native_return(function.signature.as_ref(), value, span, function.name)
             }
             Value::HostFunction(function) => {
@@ -467,6 +465,7 @@ impl Interpreter {
                 validate_generic_bounds(
                     &constructor.type_definition.generic_parameters,
                     &substitutions,
+                    None,
                     &constructor.environment,
                     span,
                 )?;

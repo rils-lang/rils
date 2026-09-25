@@ -188,7 +188,7 @@
           }
         },
         {
-          "match": "\\b(impl)\\s+(?:<[^>{}]+>\\s*)?([_\\p{L}][_\\p{L}\\p{N}]*)\\s+(for)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
+          "match": "\\b(impl)\\s+(?:<[^>{}]+>\\s*)?([_\\p{L}][_\\p{L}\\p{N}]*)(?:<[^>{}]+>)?\\s+(for)\\s+([_\\p{L}][_\\p{L}\\p{N}]*)",
           "captures": {
             "1": {"name": "keyword.declaration.rils"},
             "2": {"name": "entity.name.type.trait.rils"},

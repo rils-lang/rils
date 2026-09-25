@@ -10,7 +10,16 @@ pub(super) fn generic_parameters_detail(parameters: &[GenericParameter]) -> Stri
             if parameter.bounds.is_empty() {
                 parameter.name.clone()
             } else {
-                format!("{}: {}", parameter.name, parameter.bounds.join(" + "))
+                format!(
+                    "{}: {}",
+                    parameter.name,
+                    parameter
+                        .bounds
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(" + ")
+                )
             }
         })
         .collect::<Vec<_>>()
@@ -176,10 +185,12 @@ pub(super) fn impl_method_detail(method: &ImplMethod) -> String {
 
 pub(super) fn trait_detail(
     name: &str,
+    generic_parameters: &[GenericParameter],
     bounds: &[String],
     associated_types: &[AssociatedType],
     methods: &[TraitMethod],
 ) -> String {
+    let generics = generic_parameters_detail(generic_parameters);
     let bounds = if bounds.is_empty() {
         String::new()
     } else {
@@ -195,9 +206,12 @@ pub(super) fn trait_detail(
         )
         .collect::<Vec<_>>();
     if members.is_empty() {
-        format!("trait {name}{bounds}")
+        format!("trait {name}{generics}{bounds}")
     } else {
-        format!("trait {name}{bounds} {{\n{}\n}}", members.join("\n"))
+        format!(
+            "trait {name}{generics}{bounds} {{\n{}\n}}",
+            members.join("\n")
+        )
     }
 }
 

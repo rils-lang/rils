@@ -422,6 +422,54 @@ fn option_result_combinators_match_interpreter() {
 }
 
 #[test]
+fn option_result_callbacks_compile_to_native_imports() {
+    let source = include_str!("../../tests/fixtures/native_callbacks.rils");
+    let module = compile(source).unwrap();
+    let symbols = module
+        .native_imports
+        .iter()
+        .map(|import| import.symbol.as_str())
+        .filter(|symbol| {
+            symbol.starts_with("core::option::") || symbol.starts_with("core::result::")
+        })
+        .collect::<HashSet<_>>();
+    assert_eq!(
+        symbols,
+        HashSet::from([
+            "core::option::option::map",
+            "core::option::option::and_then",
+            "core::option::option::or_else",
+            "core::option::option::filter",
+            "core::option::option::is_none",
+            "core::result::result::map",
+            "core::result::result::map_err",
+            "core::result::result::and_then",
+            "core::result::result::or_else",
+        ])
+    );
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .any(|instruction| matches!(instruction.instruction, Instruction::CallNative { .. }))
+    );
+    assert!(module
+        .functions
+        .iter()
+        .flat_map(|function| &function.instructions)
+        .all(|instruction| !matches!(instruction.instruction, Instruction::CallRuntime { builtin, .. } if matches!(builtin,
+            rils_builtins::BuiltinId::OptionMap
+            | rils_builtins::BuiltinId::OptionAndThen
+            | rils_builtins::BuiltinId::OptionOrElse
+            | rils_builtins::BuiltinId::ResultMap
+            | rils_builtins::BuiltinId::ResultMapErr
+            | rils_builtins::BuiltinId::ResultAndThen
+            | rils_builtins::BuiltinId::ResultOrElse
+        ))));
+}
+
+#[test]
 fn option_result_combinators_skip_unselected_callbacks() {
     assert_matches_interpreter(
         r#"
@@ -859,9 +907,17 @@ fn links_and_executes_core_imports() {
         .iter()
         .map(|import| import.name.as_str())
         .collect::<HashSet<_>>();
+    assert_eq!(names, HashSet::from(["clone", "type_of", "unwrap_or"]));
     assert_eq!(
-        names,
-        HashSet::from(["clone", "type_of", "is_some", "is_none", "unwrap_or"])
+        module
+            .native_imports
+            .iter()
+            .map(|import| import.symbol.as_str())
+            .collect::<HashSet<_>>(),
+        HashSet::from([
+            "core::option::option::is_some",
+            "core::option::option::is_none",
+        ])
     );
     assert!(
         module
@@ -997,6 +1053,34 @@ fn native_calls_precede_legacy_builtin_calls_and_survive_round_trip() {
             .unwrap_err()
             .message
             .contains("invalid native call operands")
+    );
+}
+
+#[test]
+fn exported_callback_function_native_imports_are_verified() {
+    let source = "fn id(value: i32) -> i32 { value } core::ops::apply_twice(3, id)";
+    let module = compile(source).unwrap();
+    assert_eq!(module.native_imports.len(), 1);
+    assert_eq!(module.native_imports[0].symbol, "core::ops::apply_twice");
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .any(|instruction| {
+                matches!(instruction.instruction, Instruction::CallNative { .. })
+            })
+    );
+    assert_eq!(module.execute().unwrap(), Value::I32(3));
+
+    let mut restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    restored.native_imports[0].signature.return_type = Type::Bool;
+    assert!(
+        restored
+            .verify()
+            .unwrap_err()
+            .message
+            .contains("invalid native import")
     );
 }
 

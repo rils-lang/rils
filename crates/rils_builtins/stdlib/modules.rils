@@ -55,6 +55,15 @@ pub mod core {
         pub use Range;
     }
 
+    pub mod ops {
+        pub use Fn;
+        pub use FnMut;
+        pub use FnOnce;
+        pub use apply_twice;
+        pub use combine;
+        pub use chain;
+    }
+
     pub mod clone {
         pub use Copy;
         pub use Clone;
@@ -123,4 +132,7 @@ pub mod prelude {
     pub use Hash;
     pub use Iterator;
     pub use IntoIterator;
+    pub use Fn;
+    pub use FnMut;
+    pub use FnOnce;
 }

@@ -335,20 +335,16 @@ fn encode_function(
                         let import = if let Some(index) = native_import_ids.get(&symbol).copied() {
                             index
                         } else {
-                            let member =
-                                rils_builtins::native_member(&symbol).ok_or_else(|| {
-                                    CompileError::unsupported(
-                                        format!("native method `{symbol}` is unavailable"),
-                                        instruction.span,
-                                    )
-                                })?;
-                            let signature =
-                                rils_frontend::standard_library::erased_builtin_member_signature(
-                                    member,
-                                )
+                            let signature = rils_builtins::native_member(&symbol)
+                                .and_then(rils_frontend::standard_library::erased_builtin_member_signature)
+                                .or_else(|| {
+                                    rils_builtins::builtin_function(&symbol)
+                                        .filter(|function| function.native_symbol == Some(symbol.as_str()))
+                                        .and_then(|_| rils_frontend::standard_library::erased_standard_function_signature(&symbol))
+                                })
                                 .ok_or_else(|| {
                                     CompileError::unsupported(
-                                        format!("native method `{symbol}` has no signature"),
+                                        format!("native symbol `{symbol}` is unavailable or has no signature"),
                                         instruction.span,
                                     )
                                 })?;

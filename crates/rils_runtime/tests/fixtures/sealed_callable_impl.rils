@@ -1,0 +1,2 @@
+struct Pretend;
+impl FnOnce<(), i32> for Pretend {}

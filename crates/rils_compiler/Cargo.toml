@@ -12,4 +12,5 @@ include = ["/Cargo.toml", "/src/**"]
 [dependencies]
 rils_frontend.workspace = true
 rils_builtins.workspace = true
+rils_stdlib.workspace = true
 rils_host.workspace = true

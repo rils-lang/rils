@@ -85,52 +85,49 @@ mod native {
 
         /// Maps a present value with the supplied function.
         #[export_rils]
-        pub fn map<U>(self, transform: fn(T) -> U) -> Option<U> {
-            self.try_map(|value| Ok::<_, std::convert::Infallible>(transform(value)))
-                .unwrap_or_else(|never| match never {})
+        pub fn map<U, F>(self, transform: F) -> Option<U>
+        where
+            F: FnOnce(T) -> U,
+        {
+            match self {
+                Self::Some(value) => Option::Some(transform(value)),
+                Self::None => Option::None,
+            }
         }
 
         /// Calls the supplied function for a present value and flattens its Option result.
         #[export_rils]
-        pub fn and_then<U>(self, transform: fn(T) -> Option<U>) -> Option<U> {
-            self.try_and_then(|value| Ok::<_, std::convert::Infallible>(transform(value)))
-                .unwrap_or_else(|never| match never {})
+        pub fn and_then<U, F>(self, transform: F) -> Option<U>
+        where
+            F: FnOnce(T) -> Option<U>,
+        {
+            match self {
+                Self::Some(value) => transform(value),
+                Self::None => Option::None,
+            }
         }
 
         /// Calls the supplied fallback only when the Option is None.
         #[export_rils]
-        pub fn or_else(self, fallback: fn() -> Option<T>) -> Self {
-            self.try_or_else(|| Ok::<_, std::convert::Infallible>(fallback()))
-                .unwrap_or_else(|never| match never {})
-        }
-
-        pub fn try_map<U, E, F>(self, transform: F) -> std::result::Result<Option<U>, E>
+        pub fn or_else<F>(self, fallback: F) -> Self
         where
-            F: FnOnce(T) -> std::result::Result<U, E>,
+            F: FnOnce() -> Self,
         {
             match self {
-                Self::Some(value) => transform(value).map(Option::Some),
-                Self::None => Ok(Option::None),
-            }
-        }
-
-        pub fn try_and_then<U, E, F>(self, transform: F) -> std::result::Result<Option<U>, E>
-        where
-            F: FnOnce(T) -> std::result::Result<Option<U>, E>,
-        {
-            match self {
-                Self::Some(value) => transform(value),
-                Self::None => Ok(Option::None),
-            }
-        }
-
-        pub fn try_or_else<E, F>(self, fallback: F) -> std::result::Result<Self, E>
-        where
-            F: FnOnce() -> std::result::Result<Self, E>,
-        {
-            match self {
-                Self::Some(_) => Ok(self),
+                Self::Some(_) => self,
                 Self::None => fallback(),
+            }
+        }
+
+        /// Keeps a present value only when the predicate accepts a shared borrow.
+        #[export_rils]
+        pub fn filter<F>(self, predicate: F) -> Self
+        where
+            F: FnOnce(&T) -> bool,
+        {
+            match self {
+                Self::Some(value) if predicate(&value) => Self::Some(value),
+                _ => Self::None,
             }
         }
     }

@@ -54,6 +54,7 @@ impl Interpreter {
         validate_generic_bounds(
             &function.generic_parameters,
             &substitutions,
+            Some((&function.parameters, arguments)),
             &function.closure,
             span,
         )?;
@@ -110,6 +111,7 @@ impl Interpreter {
                 validate_generic_bounds(
                     &function.generic_parameters,
                     &substitutions,
+                    Some((&function.parameters, arguments)),
                     &function.closure,
                     span,
                 )?;

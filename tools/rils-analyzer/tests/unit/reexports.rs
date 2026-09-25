@@ -23,7 +23,10 @@ fn workspace() -> (Server, Connection, PathBuf) {
 
 fn at(server: &Server, uri: &str, needle: &str) -> Value {
     let text = &server.documents[uri].text;
-    let offset = text.find(needle).unwrap();
+    let offset = text
+        .find(needle)
+        .or_else(|| text.find(&needle.replace('\n', "\r\n")))
+        .unwrap();
     let [line, character] = position(text, offset);
     json!({"textDocument": {"uri": uri}, "position": {"line": line, "character": character}})
 }

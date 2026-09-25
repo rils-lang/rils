@@ -1,6 +1,84 @@
 use rils_runtime::{Engine, ExecutionLimits, Value, eval};
 
 #[test]
+fn rejects_manual_implementations_of_callable_traits() {
+    let fixture = include_str!("fixtures/sealed_callable_impl.rils");
+    for name in ["FnOnce", "FnMut", "Fn"] {
+        for source in [
+            fixture.replace("FnOnce", name),
+            fixture.replace("FnOnce", &format!("core::ops::{name}")),
+            format!(
+                "use core::ops::{name} as Callback; {}",
+                fixture.replace("FnOnce", "Callback")
+            ),
+        ] {
+            let error =
+                eval(&source).expect_err("callable traits are reserved for function values");
+            assert!(error.to_string().contains("sealed"), "{name}: {error}");
+        }
+    }
+}
+
+#[test]
+fn executes_a_generic_trait_implementation() {
+    let value = eval(include_str!("fixtures/generic_trait.rils"))
+        .expect("generic trait arguments should match the implementation");
+    assert_eq!(value, Value::I32(7));
+}
+
+#[test]
+fn function_values_satisfy_precise_fn_bounds() {
+    let source = include_str!("fixtures/function_trait_bound.rils");
+    assert_eq!(eval(source).unwrap(), Value::I32(14));
+
+    for replacement in [
+        "fn double(value: i32) -> string {\n    \"wrong\"\n}",
+        "fn double(value: u8) -> i32 {\n    2\n}",
+    ] {
+        let mismatched = source.replace(
+            "fn double(value: i32) -> i32 {\n    value * 2\n}",
+            replacement,
+        );
+        let error = eval(&mismatched).expect_err("Fn bound requires an exact signature");
+        assert!(
+            error
+                .to_string()
+                .contains("does not implement required trait `Fn<(i32,), i32>`"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn callable_traits_follow_capture_effects() {
+    let source = include_str!("fixtures/callable_trait_kinds.rils");
+    assert_eq!(eval(source).unwrap(), Value::I32(17));
+
+    for (old, new, expected) in [
+        (
+            "invoke_mut(make_counter())",
+            "invoke_shared(make_counter())",
+            "Fn<(), i32>",
+        ),
+        (
+            "F: FnOnce<(), string>",
+            "F: FnMut<(), string>",
+            "FnMut<(), string>",
+        ),
+    ] {
+        let invalid = source.replace(old, new);
+        let error = eval(&invalid).expect_err("the callable has weaker capture guarantees");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
+fn callable_traits_accept_more_than_four_arguments() {
+    let source = include_str!("fixtures/callable_many_arguments.rils");
+    assert_eq!(eval(source).unwrap(), Value::I32(108));
+}
+
+#[test]
 fn evaluates_owned_values_and_explicit_clones() {
     let value = eval(
         r#"

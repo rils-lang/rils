@@ -303,6 +303,43 @@ impl<T> Describe for Wrapper<T> {
 }
 ```
 
+Trait 本身也可以声明类型参数，impl 必须给出相同数量的类型实参，方法签名按这些实参检查：
+
+```rils
+trait Transform<T> {
+    fn apply(self, value: T) -> T;
+}
+
+struct Echo { value: i32 }
+impl Transform<i32> for Echo {
+    fn apply(self, value: i32) -> i32 { value }
+}
+```
+
+标准库从 `core::ops` 导出 `FnOnce<Args, Output>`、`FnMut<Args, Output>`、
+`Fn<Args, Output>`，其中 `Args` 是参数 tuple。`Fn` 可用于需要 `FnMut` 或
+`FnOnce` 的位置，`FnMut` 可用于需要 `FnOnce` 的位置。精确函数类型还必须与约束中的
+参数和返回类型相同。参数 tuple 不限制为 0～4 项：
+
+```rils
+fn invoke<T, F: Fn<(T,), T>>(value: T, callback: F) -> T {
+    callback(value)
+}
+```
+
+解释器会在调用时核对回调的参数、返回类型和捕获行为。只读捕获可满足 `Fn`，
+修改捕获值的函数满足 `FnMut` 和 `FnOnce`，消费非 `Copy` 捕获值的函数只满足
+`FnOnce`。不带捕获的普通函数满足全部三种约束。当前分类对不能证明可重复调用的
+情况采取保守结果；函数类型本身仍只记录签名，不能单独证明捕获行为。
+这三个 trait 由标准库封闭，不能用 `impl FnOnce/FnMut/Fn for 自定义类型` 手写实现。
+`FnOnce` 约束保证回调至少可以调用一次；当前泛型函数体尚不静态限制调用次数，
+再次调用已经消费捕获值的回调会在执行时报 move 错误。
+
+当前字节码编译器对带调用 trait bound 的声明返回带源码范围的 `CompileError`，
+直到共享前端能够验证同样的捕获语义。其他泛型 bound 的字节码检查仍在迁移中。
+普通泛型 trait 实例的 bound 匹配、原生标准库回调桥接仍在迁移中；
+部分带回调的方法继续使用旧执行入口。
+
 `Debug` 是内建格式化 trait，Struct 与 enum 可以通过派生生成结构化调试表示：
 
 ```rils
@@ -342,7 +379,8 @@ impl core::fmt::Display for Point {
 当前暂不支持：
 
 - 默认 trait 方法体
-- 泛型 trait 本身
+- 同一类型对同一泛型 trait 的不同类型实参分别实现
+- 泛型 trait 的限定关联类型与带类型实参的 trait UFCS 路径
 - trait 对象和 `dyn Trait`
 - 关联常量
 - `where` 子句

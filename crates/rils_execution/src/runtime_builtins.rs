@@ -12,16 +12,47 @@ use crate::{
 mod binary_heap;
 mod btree_map;
 mod btree_set;
+mod callback;
 mod collection_iter;
 mod native;
+pub mod native_value;
 mod option_result;
 mod sequence_iter;
 mod vec_deque;
+
+pub type NativeCallback<'a, E> = dyn FnMut(&Value, &[Value]) -> Result<Value, E> + 'a;
+
+#[derive(Debug)]
+pub enum NativeCallError<E> {
+    Bridge(String),
+    Callback(E),
+}
+
+impl<E> From<String> for NativeCallError<E> {
+    fn from(message: String) -> Self {
+        Self::Bridge(message)
+    }
+}
+
+impl<E> From<&str> for NativeCallError<E> {
+    fn from(message: &str) -> Self {
+        Self::Bridge(message.to_owned())
+    }
+}
 
 /// Calls a native standard-library method by the path generated from its declaration.
 /// Returns `None` when no native bridge has been generated for the symbol yet.
 pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     native::call_symbol(symbol, arguments)
+}
+
+pub fn call_native_symbol_with_callback<E>(
+    symbol: &str,
+    arguments: &[Value],
+    callback: &mut NativeCallback<'_, E>,
+) -> Option<Result<Value, NativeCallError<E>>> {
+    native::call_callback_symbol(symbol, arguments, callback)
+        .or_else(|| native::call_symbol(symbol, arguments).map(|result| result.map_err(Into::into)))
 }
 
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {

@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 泛型 trait 可声明类型参数并在 impl 中指定类型实参；标准库导出 `FnOnce`、`FnMut`、`Fn` 三种泛型调用约束，解释器按精确签名与捕获行为检查。字节码编译器会明确拒绝当前无法验证的调用约束；Option/Result 的导出回调方法与 `core::ops` 的 `apply_twice`、`combine`、`chain` 自由函数现可在解释器和字节码中调用 Rils 函数及闭包，新增接收共享引用谓词的 `Option::filter`。Rust 导出实现可直接使用 `F: FnOnce(T) -> U` 等约束并返回普通值，回调错误由生成的隐藏实现传播。
+
 - 零字段 struct 现可在括号内用 `(Marker {})` 构造；`Default` 派生的无字段实现也统一由 `rils_quote!` 生成。
 - 整数和 `string` 的原生定义现在登记 `Default`、`Eq`、`Hash`，浮点数登记 `Default`；泛型 trait bound 与哈希键检查读取这些登记信息。浮点数仍不能作为哈希键。
 - 非泛型 struct 和 enum 现可派生 `Eq`、`Hash`，用作 HashMap 键与 HashSet 元素；字段需是可递归哈希的基础类型或组合类型。`BitFlags` 保留给宿主 manifest 标记为 flags 的 enum。
@@ -27,6 +29,8 @@
 - Added `BTreeSet<T>` ordered sets with membership, set algebra, cloned endpoint queries, and owned ascending iteration.
 
 ### Breaking Changes
+
+- 实验性 `.rilbc` v8 的泛型参数 bound 改为结构化类型编码；已有 v8 文件需从源码重新编译。
 
 - `.rilbc` v8 增加标准库原生符号导入表和 `CallNative` 指令，
   `string` 方法不再占用 `BuiltinId`。v8 loader 拒绝 v7 字节码；迁移期间 v8 尚未冻结，

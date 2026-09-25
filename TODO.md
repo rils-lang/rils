@@ -28,7 +28,7 @@
   impl associated type 声明契约、暂不支持的条件 trait impl 诊断、孤儿规则与项目内重复 impl 检查。
   后续仍应每次只迁移一类检查，以解释器/VM 对照测试证明行为不变，不把这项开放式清理作为其他
   feature 分支的退出条件。
-- 标准 bytecode core import 已从声明中解析 Option/Result 状态查询的原生符号，其余仍使用旧稳定 ID；逐步改用由标准库声明生成的原生符号导入，
+- 标准 bytecode core import 已从声明中解析 Option/Result 状态查询和回调方法的原生符号，其余仍使用旧稳定 ID；逐步改用由标准库声明生成的原生符号导入，
   并在加载时链接为进程内调用槽位。宿主 import 继续使用独立的 ABI 契约。
   `rils_runtime` 与 `rils_bytecode` 已形成单向依赖，根 `rils` 只保留兼容转发层。后续应继续收窄
   `rils_runtime::support`，把 bytecode/VM 所需的共享值、环境槽位、格式化和 builtin 操作整理成稳定
@@ -42,7 +42,8 @@
 
 ### 基础类型与标准能力
 
-- 为精确函数类型和闭包自动实现 `Fn<Args, Output>`：先支持泛型 trait 声明和匹配，再让解释器与 VM 的统一 callable 代理可供标准库原生桥接调用；同步完成回调错误传播、调用预算和源码位置保留。
+- `FnOnce`、`FnMut`、`Fn` 已导出，解释器按签名和捕获行为检查 bound；继续把捕获能力分析移到共享前端，让字节码路径也拒绝不满足的 bound，并静态约束 `FnOnce` 泛型回调的重复调用。Option/Result 方法与导出自由函数已从普通 `Fn*` Rust 实现生成隐藏的可失败桥接；继续扩展回调调用的宏改写范围、其他方法 receiver 的原生桥接及引用、容器等值类型转换。
+- 完善泛型 trait 身份：普通泛型 trait 实例可作为 bound 使用，同一类型对同一 trait 的不同类型实参可分别实现，限定关联类型与 trait UFCS 路径保留并校验实参，coherence 和方法表按实例身份区分。
 - 为标准库原生桥接补齐 `&mut self` 的 place 代理与写回，以及泛型返回值的类型见证和所有权转换；完成后移除相应旧 ID 适配。
 - 增加结构化数值转换错误类型和更完整的浮点转换入口。
 - 评估 HashMap/HashSet 的借用查询与索引 place，遵守 Rils 引用不能逃逸的规则。

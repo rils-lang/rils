@@ -1,6 +1,10 @@
 use super::*;
 
 impl FunctionLowerer<'_> {
+    fn allocate_combinator_local(&mut self) -> LocalId {
+        self.allocate_combinator_local_with_mutability(false)
+    }
+
     fn allocate_combinator_local_with_mutability(&mut self, mutable: bool) -> LocalId {
         let local = self.mutable.len();
         self.mutable.push(mutable);

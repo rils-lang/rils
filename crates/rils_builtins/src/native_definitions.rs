@@ -140,6 +140,24 @@ pub mod into_iterator {
     rils_stdlib::intoiterator_definition!(decl_rils_trait_metadata);
 }
 
+pub mod function {
+    use rils_builtins_macros::decl_rils_trait_metadata;
+
+    rils_stdlib::fn_definition!(decl_rils_trait_metadata);
+}
+
+pub mod function_mut {
+    use rils_builtins_macros::decl_rils_trait_metadata;
+
+    rils_stdlib::fnmut_definition!(decl_rils_trait_metadata);
+}
+
+pub mod function_once {
+    use rils_builtins_macros::decl_rils_trait_metadata;
+
+    rils_stdlib::fnonce_definition!(decl_rils_trait_metadata);
+}
+
 pub mod format_error {
     use rils_builtins_macros::decl_rils_metadata;
 
@@ -252,6 +270,29 @@ pub mod fs {
         remove_file::DECLARATION,
         remove_dir::DECLARATION,
         read_dir::DECLARATION,
+    ];
+}
+
+pub mod callable_functions {
+    use rils_builtins_macros::decl_rils_function_metadata;
+
+    pub mod apply_twice {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::core_ops_apply_twice_definition!(decl_rils_function_metadata);
+    }
+    pub mod combine {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::core_ops_combine_definition!(decl_rils_function_metadata);
+    }
+    pub mod chain {
+        use super::decl_rils_function_metadata;
+        rils_stdlib::core_ops_chain_definition!(decl_rils_function_metadata);
+    }
+
+    pub const DECLARATIONS: &[crate::BuiltinDeclaration] = &[
+        apply_twice::DECLARATION,
+        combine::DECLARATION,
+        chain::DECLARATION,
     ];
 }
 
