@@ -46,7 +46,16 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
         &[native_i8(i8::MAX), native_i8(1)],
     )
     .unwrap();
-    assert!(matches!(none, Value::Option { value: None, .. }));
+    let Value::Dynamic(object) = &none else {
+        panic!("checked_add must return native Option<i8>");
+    };
+    assert!(object.is_inline());
+    let item_type = Type::Integer(rils_execution::IntegerType::I8);
+    assert_eq!(
+        object.descriptor().layout().rils_type(),
+        &Type::Option(Box::new(item_type.clone()))
+    );
+    assert_eq!(none.as_option(), Some((None, item_type)));
 
     let overflow = execute_integer_intrinsic(
         BuiltinId::IntegerOverflowingAdd,

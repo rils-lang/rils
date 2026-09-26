@@ -109,6 +109,61 @@ fn numeric_option_families_use_generated_native_conversions() {
 }
 
 #[test]
+fn checked_integer_methods_return_native_options() {
+    for ty in [
+        "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
+    ] {
+        let source = format!("1{ty}.checked_add(2{ty})");
+        let option_type = format!("Option<{ty}>");
+        assert_dynamic_option(
+            eval(&source).unwrap(),
+            &option_type,
+            true,
+            "Some(3)",
+            "Some(3)",
+            "interpreter",
+        );
+        let compiled = compile(&source).unwrap();
+        assert_dynamic_option(
+            compiled.execute().unwrap(),
+            &option_type,
+            true,
+            "Some(3)",
+            "Some(3)",
+            "VM",
+        );
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        assert_dynamic_option(
+            loaded.execute().unwrap(),
+            &option_type,
+            true,
+            "Some(3)",
+            "Some(3)",
+            "loaded VM",
+        );
+    }
+
+    for (source, expected) in [
+        ("127i8.checked_add(1i8)", "None"),
+        ("1i8.checked_add(2i8).unwrap()", "3"),
+    ] {
+        let interpreted = eval(source).unwrap();
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            interpreted,
+            compiled.execute().unwrap(),
+            loaded.execute().unwrap(),
+        ] {
+            assert_eq!(value.to_string(), expected, "{source}");
+            if expected == "None" {
+                assert_dynamic_option(value, "Option<i8>", true, "None", "None", source);
+            }
+        }
+    }
+}
+
+#[test]
 fn typed_none_preserves_option_semantics() {
     for (source, ty, inline) in [
         ("let value: Option<i8> = None; value", "Option<i8>", true),

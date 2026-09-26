@@ -132,13 +132,15 @@ macro_rules! integer_bridge {
         }
         impl NativeOutput for Option<Number<$primitive>> {
             fn into_value(self) -> std::result::Result<Value, String> {
-                Ok(Value::Option {
-                    value: match self {
-                        Option::Some(value) => Some(Rc::new($constructor(value.0))),
-                        Option::None => None,
-                    },
-                    element_type: Some(Type::Integer(crate::IntegerType::$variant)),
-                })
+                let item = match self {
+                    Option::Some(value) => Some($constructor(value.0)),
+                    Option::None => None,
+                };
+                crate::value::dynamic_option::construct(
+                    item.as_ref(),
+                    &Type::Integer(crate::IntegerType::$variant),
+                )
+                .ok_or_else(|| format!("no native Option layout for {}", stringify!($primitive)))?
             }
         }
         impl NativeOutput for Result<Number<$primitive>, String> {

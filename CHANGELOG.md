@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- 整数标准库的 `checked_add`、`checked_sub` 等返回 `Option<T>` 的方法现在直接返回原生布局；Rust 宿主应通过 `Value::as_option()` 读取，脚本调用方式不变。
 - `Option<T>` 的原生子值转换现在由标准库数值类型声明生成，覆盖全部整数与 `f32`、`f64`；`Some`、带类型的 `None` 和 `is_some` / `is_none` 在解释器、VM 及重新加载的字节码中一致。Rust 宿主直接匹配这些类型的 `Value::Option` 时，改用 `Value::as_option()`。
 - 共享前端现在会把函数实参、赋值、tuple/数组元素、struct 字段及 `Some`、`if`、`match` 中的预期类型传给 `None`，解释器与 VM 在这些上下文中保持一致的原生 `Option<T>` 表示。
 - `Option<i8>` 及带具体类型的 `None` 现在使用动态原生布局，解释器和 VM 的局部声明、默认值与函数返回值保持相同存储语义。实验性 v8 字节码的 `None` 构造指令新增可选元素类型；旧 v8 文件需从源码重新编译，格式号仍为 v8。
