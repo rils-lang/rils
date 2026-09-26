@@ -38,7 +38,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
             DefaultPlan::Float(crate::FloatType::F32) => Value::F32(0.0),
             DefaultPlan::Float(crate::FloatType::F64) => Value::F64(0.0),
             DefaultPlan::Char => Value::Char('\0'),
-            DefaultPlan::String => Value::String(Rc::from("")),
+            DefaultPlan::String => rils_execution::value::native_string(""),
             DefaultPlan::Tuple(elements) => Value::Tuple(sequence(
                 elements
                     .iter()
@@ -112,6 +112,7 @@ pub(crate) fn builtin_runtime_member(
         Value::VecDeque(_) => "VecDeque",
         Value::BinaryHeap(_) => "BinaryHeap",
         Value::Native(object) => match object.descriptor().rils_type() {
+            Type::String => "string",
             Type::Named { name, .. } => name.as_str(),
             _ => return None,
         },

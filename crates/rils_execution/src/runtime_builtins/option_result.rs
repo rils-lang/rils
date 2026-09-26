@@ -98,9 +98,9 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             if matches!(import_receiver(&arguments[0])?, Value::Result { .. }) {
                 return call(BuiltinId::ResultExpect, arguments);
             }
-            let Value::String(message) = &arguments[1] else {
-                return Err("expect message must be string".into());
-            };
+            let message = arguments[1]
+                .as_string()
+                .ok_or("expect message must be string")?;
             let (value, _) = option_state(&arguments[0])?;
             if value.is_none() {
                 return Err(message.to_string());
@@ -108,9 +108,9 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             value.expect(message.to_string()).clone_owned()
         }
         BuiltinId::ResultExpect => {
-            let Value::String(message) = &arguments[1] else {
-                return Err("expect message must be string".into());
-            };
+            let message = arguments[1]
+                .as_string()
+                .ok_or("expect message must be string")?;
             let (value, _, _) = result_state(&arguments[0])?;
             if let NativeResult::Err(error) = &value {
                 return Err(format!("{message}: {error}"));
@@ -127,14 +127,14 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
         BuiltinId::ResultExpectErr => {
             let (value, _, _) = result_state(&arguments[0])?;
             if let NativeResult::Ok(ok) = &value {
-                let Value::String(message) = &arguments[1] else {
-                    return Err("expect_err message must be string".into());
-                };
+                let message = arguments[1]
+                    .as_string()
+                    .ok_or("expect_err message must be string")?;
                 return Err(format!("{message}: {ok}"));
             }
-            let Value::String(message) = &arguments[1] else {
-                return Err("expect_err message must be string".into());
-            };
+            let message = arguments[1]
+                .as_string()
+                .ok_or("expect_err message must be string")?;
             value.expect_err(message.to_string()).clone_owned()
         }
         BuiltinId::OptionTake => {

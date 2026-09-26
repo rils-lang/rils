@@ -158,13 +158,13 @@ impl Interpreter {
                             .map_err(|message| RuntimeError::new(message, span))?;
                         return Ok(Value::Unit);
                     }
-                    let Some(Value::String(format)) = arguments.first() else {
+                    let Some(format) = arguments.first().and_then(Value::as_string) else {
                         return Err(RuntimeError::new(
                             format!("{}! requires a format string", function.name),
                             span,
                         ));
                     };
-                    let output = self.format_arguments(format, &arguments[1..], span)?;
+                    let output = self.format_arguments(&format, &arguments[1..], span)?;
                     (self.output_handler)(&output, function.binding_name == "#rils_native_println")
                         .map_err(|message| RuntimeError::new(message, span))?;
                     return Ok(Value::Unit);

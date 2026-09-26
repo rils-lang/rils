@@ -8,17 +8,19 @@ use rils_stdlib::stdlib::{
     string::{Iterator, String as NativeString},
 };
 
-fn string_input(value: &Value) -> Result<NativeString, String> {
-    match super::import_receiver(value)? {
-        Value::String(value) => Ok(NativeString::from(value.to_string())),
-        value => Err(format!(
-            "string method receiver or argument is {}, expected string",
-            value.type_name()
-        )),
-    }
+pub(crate) fn string_input(value: &Value) -> Result<NativeString, String> {
+    let value = super::import_receiver(value)?;
+    crate::value::string_payload(&value)
+        .map(NativeString::from)
+        .ok_or_else(|| {
+            format!(
+                "string method receiver or argument is {}, expected string",
+                value.type_name()
+            )
+        })
 }
 
-fn usize_input(value: &Value) -> Result<usize, String> {
+pub(crate) fn usize_input(value: &Value) -> Result<usize, String> {
     value.as_usize().ok_or_else(|| {
         format!(
             "string repeat count must be usize, found {}",
@@ -27,7 +29,7 @@ fn usize_input(value: &Value) -> Result<usize, String> {
     })
 }
 
-trait StringOutput {
+pub(crate) trait StringOutput {
     fn into_value(self) -> Result<Value, String>;
 }
 
@@ -43,7 +45,7 @@ impl StringOutput for usize {
 }
 impl StringOutput for NativeString {
     fn into_value(self) -> Result<Value, String> {
-        Ok(Value::String(Rc::from(std::string::String::from(self))))
+        Ok(crate::value::native_string(std::string::String::from(self)))
     }
 }
 impl StringOutput for NativeOption<usize> {
@@ -61,9 +63,9 @@ impl StringOutput for NativeOption<NativeString> {
     fn into_value(self) -> Result<Value, String> {
         Ok(Value::Option {
             value: match self {
-                NativeOption::Some(value) => Some(Rc::new(Value::String(Rc::from(
+                NativeOption::Some(value) => Some(Rc::new(crate::value::native_string(
                     std::string::String::from(value),
-                )))),
+                ))),
                 NativeOption::None => None,
             },
             element_type: Some(Type::String),
@@ -91,7 +93,7 @@ impl StringOutput for Iterator<NativeString> {
         Ok(super::owned_iterator_value(
             self.0
                 .into_iter()
-                .map(|value| Value::String(Rc::from(std::string::String::from(value))))
+                .map(|value| crate::value::native_string(std::string::String::from(value)))
                 .collect::<VecDeque<_>>(),
             Type::String,
         ))
@@ -148,6 +150,13 @@ pub fn call_symbol(
 ) -> Option<Result<crate::Value, String>> {
     option::call_symbol(symbol, arguments)
         .or_else(|| result::call_symbol(symbol, arguments))
+        .or_else(|| {
+            let receiver = super::import_receiver(arguments.first()?).ok()?;
+            let Value::Native(object) = receiver else {
+                return None;
+            };
+            object.call(symbol, &arguments[1..])
+        })
         .or_else(|| string::call_symbol(symbol, arguments))
         .or_else(|| vector::call_symbol(symbol, arguments))
         .or_else(|| range::call_symbol(symbol, arguments))

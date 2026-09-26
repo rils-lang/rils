@@ -73,13 +73,13 @@ impl Interpreter {
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::FormatterWriteStr) => {
                 let buffer = super::formatting::formatter_buffer(&method.receiver, span)?;
-                let Value::String(value) = &arguments[0] else {
+                let Some(value) = arguments[0].as_string() else {
                     return Err(RuntimeError::new(
                         "Formatter::write_str expects string",
                         span,
                     ));
                 };
-                buffer.write_str(value);
+                buffer.write_str(&value);
                 Ok(format_ok())
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::FormatterWriteDerivedDebug) => {

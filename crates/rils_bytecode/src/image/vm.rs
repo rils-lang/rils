@@ -476,20 +476,21 @@ impl<'a> VirtualMachine<'a> {
                                     BytecodeError::new(message, instruction.span)
                                 })?
                             } else {
-                                let Some(Value::String(format)) = arguments.first() else {
+                                let Some(format) = arguments.first().and_then(Value::as_string)
+                                else {
                                     return Err(BytecodeError::new(
                                         "output function requires a format string",
                                         instruction.span,
                                     ));
                                 };
                                 let output = self.format_import_arguments(
-                                    format,
+                                    &format,
                                     &arguments[1..],
                                     instruction.span,
                                 )?;
                                 (self.imports[import])(&[
-                                    Value::String("{}".into()),
-                                    Value::String(output.into()),
+                                    rils_execution::value::native_string("{}"),
+                                    rils_execution::value::native_string(output),
                                 ])
                                 .map_err(|message| BytecodeError::new(message, instruction.span))?
                             }
@@ -532,13 +533,13 @@ impl<'a> VirtualMachine<'a> {
                                     .map_err(|message| {
                                         BytecodeError::new(message, instruction.span)
                                     })?;
-                                let Value::String(value) = &arguments[1] else {
+                                let Some(value) = arguments[1].as_string() else {
                                     return Err(BytecodeError::new(
                                         "Formatter::write_str expects string",
                                         instruction.span,
                                     ));
                                 };
-                                buffer.write_str(value);
+                                buffer.write_str(&value);
                                 super::formatting::format_ok()
                             }
                             rils_builtins::BuiltinId::FormatterWriteDerivedDebug => self

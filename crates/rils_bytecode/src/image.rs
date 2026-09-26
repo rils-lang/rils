@@ -591,7 +591,7 @@ impl Constant {
             Self::F32(value) => Value::F32(*value),
             Self::F64(value) => Value::F64(*value),
             Self::Char(value) => Value::Char(*value),
-            Self::String(value) => Value::String(Rc::from(value.as_str())),
+            Self::String(value) => rils_execution::value::native_string(value.clone()),
         }
     }
 }

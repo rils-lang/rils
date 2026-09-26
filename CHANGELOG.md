@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- `string` 字面量、字符串运算和标准库结果现在使用原生包装对象；解释器、VM、集合键与 C API 均接受迁移后的值。Rust 宿主若匹配 `Value::String`，需改用 `Value::as_string()` 或读取原生负载；C ABI 字符串标签与字节码磁盘编码保持不变。
 - `i8`、默认整数类型 `i32` 和 `usize` 的运行时值改为内联原生负载；字面量、运算、方法调用和字节码加载在解释器与 VM 中使用同一表示，集合长度、索引和计数也接受原生 `usize`。Rust 宿主若直接匹配 `Value::I8` / `Value::I32` / `Value::Usize`，需改用相应的 `Value::as_i8()` / `Value::as_i32()` / `Value::as_usize()` 或读取原生负载；C ABI 整数标签、Rils 源码及未冻结的 v8 字节码编码无需修改。
 - `Range<T>` 的运行时 `type_of` 结果现在保留整数泛型参数，例如 `Range<i32>`；按旧字符串 `"Range"` 比较的脚本需改用完整类型名。原生值存储已抽离为 `rils_value` crate，Rust 宿主可独立使用其类型描述和负载容器。该 crate 的 API 已改为类型自行注册操作，原先的 `with_clone`、`with_equality`、`with_display`、`with_iterator` 等构造方法需改为 `register_method`；小型 Copy 负载直接内联存储。新增的 `DynamicLayout`、`DynamicValue` 和 `DynamicType` 支持运行时组合的泛型 `Option<T>` 布局；整数、`string` 和 `Option<T>` 布局工厂由标准库声明生成，`i8` / `i32` 已接入执行层。
 - Exported Rust signatures now preserve `[T; N]` / `const N: usize` and formatting bounds. Removed `rils_any` / `rils_ref_any` type widening; unsupported exported types are compile errors. `Vec::from` requires an array. `std::io::write` / `write_line` require `Display` and invoke custom implementations in both backends; use `format!("{:?}", value)` for Debug-only values.

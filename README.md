@@ -27,11 +27,11 @@ VS Code 和 CLI 工具链发行包均携带同源的 `rils_stdlib` 声明包，�
 
 Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[rils_impl]` 整体导出；
 导出方法默认使用原生桥接，兼容旧入口时需显式声明绑定，详见 [标准库定义说明](crates/rils_stdlib/README.md)。
-独立的 [`rils_value`](crates/rils_value/README.md) crate 提供按 Rust 布局存储的原生值与类型操作注册；小型 Copy 值直接内联，其他值使用共享存储。`Range<T>`、`i8`、默认整数类型 `i32` 和 `usize` 已在解释器与字节码 VM 中使用原生负载；整数方法由标准库声明生成注册，并通过类型化上下文调用 Rust 方法。`type_of(1..3)` 保留泛型参数，返回 `"Range<i32>"`。
+独立的 [`rils_value`](crates/rils_value/README.md) crate 提供按 Rust 布局存储的原生值与类型操作注册；小型 Copy 值直接内联，其他值使用共享存储。`Range<T>`、`i8`、默认整数类型 `i32`、`usize` 和 `string` 已在解释器与字节码 VM 中使用原生负载；整数方法由标准库声明生成注册，并通过类型化上下文调用 Rust 方法。`type_of(1..3)` 保留泛型参数，返回 `"Range<i32>"`。
 
-`string` 与 `Option<T>` 当前仍使用既有运行时值分支；它们尚未接入原生值路径。Rust 宿主读取已迁移整数可使用 `Value::as_i8()`、`Value::as_i32()` 和 `Value::as_usize()`，这些接口同时接受过渡期旧值和新原生值。
+`Option<T>` 当前仍使用既有运行时值分支，尚未接入原生值路径。Rust 宿主读取已迁移的基础值可使用 `Value::as_i8()`、`Value::as_i32()`、`Value::as_usize()` 和 `Value::as_string()`，这些接口同时接受过渡期旧值和新原生值。
 
-原生值 crate 已支持运行时组合的 `Option<T>` 布局；整数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数方法的原生对象注册已由过程宏生成，其他类型的可执行注册及实际值迁移仍在进行中。
+原生值 crate 已支持运行时组合的 `Option<T>` 布局；整数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数与 `string` 方法的原生对象注册由过程宏生成；其他类型的可执行注册及实际值迁移仍在进行中。
 项目中的公开源码声明可通过多层 `pub use` 重导出；Analyzer 的补全、Hover、跳转和引用查找
 会追踪到原声明，并隔离不同项目中的同名符号。
 

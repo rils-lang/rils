@@ -73,7 +73,9 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             crate::runtime_builtins::call_native_symbol(symbol, arguments)
                 .ok_or_else(|| format!("native method `{symbol}` is unavailable"))?
         }
-        CoreImport::TypeOf => Ok(Value::String(Rc::from(arguments[0].type_name()))),
+        CoreImport::TypeOf => Ok(rils_execution::value::native_string(
+            arguments[0].type_name(),
+        )),
         CoreImport::Assert => match arguments.first() {
             Some(Value::Bool(true)) => Ok(Value::Unit),
             Some(Value::Bool(false)) => Err(arguments

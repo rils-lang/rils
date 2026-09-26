@@ -127,6 +127,9 @@ fn orderable(value: &Value) -> bool {
     if value.as_usize().is_some() {
         return true;
     }
+    if value.as_string().is_some() {
+        return true;
+    }
     matches!(
         value,
         Value::I8(_)
@@ -160,6 +163,9 @@ fn compare(left: &Value, right: &Value) -> Result<Ordering, String> {
         return Ok(left.cmp(&right));
     }
     if let (Some(left), Some(right)) = (left.as_usize(), right.as_usize()) {
+        return Ok(left.cmp(&right));
+    }
+    if let (Some(left), Some(right)) = (left.as_string(), right.as_string()) {
         return Ok(left.cmp(&right));
     }
     macro_rules! compare_variants {

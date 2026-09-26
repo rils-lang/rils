@@ -127,7 +127,9 @@ fn native_i32_methods_cover_boundary_shapes() {
             assert_eq!(ok_type, Some(Type::I32));
             assert_eq!(error_type, Some(Type::String));
             assert!(
-                matches!(error.as_ref(), Value::String(message) if message.contains("outside the `i32` range"))
+                error
+                    .as_string()
+                    .is_some_and(|message| message.contains("outside the `i32` range"))
             );
         }
         value => panic!("expected failed conversion, found {value:?}"),

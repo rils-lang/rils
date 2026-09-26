@@ -33,6 +33,9 @@ pub type NativeType = rils_value::NativeType<Value>;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
 pub mod native_ops;
+#[path = "value/string.rs"]
+mod string;
+pub use string::{native_string, string_payload};
 
 #[path = "value/reference.rs"]
 mod reference;
@@ -365,6 +368,11 @@ pub enum Value {
 }
 
 impl Value {
+    /// Construct a Rils string in native storage.
+    pub fn from_string(value: impl Into<std::string::String>) -> Self {
+        native_string(value)
+    }
+
     /// Read an `i8` regardless of whether it uses native or legacy storage.
     pub fn as_i8(&self) -> Option<i8> {
         crate::numeric::i8_payload(self)
@@ -378,6 +386,11 @@ impl Value {
     /// Read a `usize` regardless of whether it uses native or legacy storage.
     pub fn as_usize(&self) -> Option<usize> {
         crate::numeric::usize_payload(self)
+    }
+
+    /// Read owned string text from native or legacy storage.
+    pub fn as_string(&self) -> Option<std::string::String> {
+        string_payload(self)
     }
 
     pub fn is_copy(&self) -> bool {
@@ -955,6 +968,12 @@ impl PartialEq for Value {
             (Self::F64(left), Self::F64(right)) => left == right,
             (Self::Char(left), Self::Char(right)) => left == right,
             (Self::String(left), Self::String(right)) => left == right,
+            (Self::Native(_), Self::String(right)) => {
+                self.as_string().is_some_and(|left| left == right.as_ref())
+            }
+            (Self::String(left), Self::Native(_)) => other
+                .as_string()
+                .is_some_and(|right| left.as_ref() == right),
             (Self::Native(left), Self::Native(right)) => native_ops::equal(left, right),
             (Self::Tuple(left), Self::Tuple(right))
             | (Self::Array(left), Self::Array(right))

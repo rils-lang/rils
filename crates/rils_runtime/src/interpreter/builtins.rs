@@ -9,12 +9,12 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             max_arity: usize::MAX,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
             body: NativeFunctionBody::Rust(|arguments| {
-                let Some(Value::String(format)) = arguments.first() else {
+                let Some(format) = arguments.first().and_then(Value::as_string) else {
                     return Err("print! requires a format string".into());
                 };
                 print!(
                     "{}",
-                    crate::formatting::format_arguments(format, &arguments[1..])?
+                    crate::formatting::format_arguments(&format, &arguments[1..])?
                 );
                 Ok(Value::Unit)
             }),
@@ -30,12 +30,12 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     println!();
                     return Ok(Value::Unit);
                 }
-                let Some(Value::String(format)) = arguments.first() else {
+                let Some(format) = arguments.first().and_then(Value::as_string) else {
                     return Err("println! requires a format string".into());
                 };
                 println!(
                     "{}",
-                    crate::formatting::format_arguments(format, &arguments[1..])?
+                    crate::formatting::format_arguments(&format, &arguments[1..])?
                 );
                 Ok(Value::Unit)
             }),
@@ -47,7 +47,9 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             max_arity: 1,
             signature: Some(FunctionSignature::fixed(vec![Type::Unknown], Type::String)),
             body: NativeFunctionBody::Rust(|arguments| {
-                Ok(Value::String(Rc::from(arguments[0].type_name())))
+                Ok(rils_execution::value::native_string(
+                    arguments[0].type_name(),
+                ))
             }),
         },
         NativeFunction {

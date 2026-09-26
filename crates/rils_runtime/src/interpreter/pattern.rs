@@ -183,7 +183,7 @@ pub(super) fn literal_value(literal: &Literal) -> Value {
             i32::try_from(*value).expect("unresolved integer pattern must fit the i32 default"),
         ),
         Literal::Float(value) => Value::F64(*value),
-        Literal::String(value) => Value::String(Rc::from(value.as_str())),
+        Literal::String(value) => rils_execution::value::native_string(value.clone()),
     }
 }
 

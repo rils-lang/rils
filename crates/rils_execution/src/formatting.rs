@@ -145,7 +145,12 @@ fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
     let rendered = match (value, spec.precision) {
         (Value::F32(value), Some(precision)) => Ok(format!("{value:.precision$}")),
         (Value::F64(value), Some(precision)) => Ok(format!("{value:.precision$}")),
-        (Value::String(value), Some(precision)) => Ok(value.chars().take(precision).collect()),
+        (value, Some(precision)) if value.as_string().is_some() => Ok(value
+            .as_string()
+            .expect("checked string payload")
+            .chars()
+            .take(precision)
+            .collect()),
         (_, Some(_)) => Err(format!(
             "format precision is not supported for `{}`",
             value.type_name()

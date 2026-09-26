@@ -93,10 +93,10 @@ impl BytecodeHost {
             FunctionSignature::variadic(Type::Unit),
             "std::io",
             move |arguments| {
-                let Some(Value::String(format)) = arguments.first() else {
+                let Some(format) = arguments.first().and_then(Value::as_string) else {
                     return Err("print! requires a format string".into());
                 };
-                let output = crate::formatting::format_arguments(format, &arguments[1..])?;
+                let output = crate::formatting::format_arguments(&format, &arguments[1..])?;
                 print_handler(&output, false)?;
                 Ok(Value::Unit)
             },
@@ -110,10 +110,10 @@ impl BytecodeHost {
                     handler("", true)?;
                     return Ok(Value::Unit);
                 }
-                let Some(Value::String(format)) = arguments.first() else {
+                let Some(format) = arguments.first().and_then(Value::as_string) else {
                     return Err("println! requires a format string".into());
                 };
-                let output = crate::formatting::format_arguments(format, &arguments[1..])?;
+                let output = crate::formatting::format_arguments(&format, &arguments[1..])?;
                 handler(&output, true)?;
                 Ok(Value::Unit)
             },

@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::{
     ast::{BinaryOp, UnaryOp},
     source::Span,
@@ -47,9 +45,11 @@ pub(super) fn binary(
         return Ok(Value::Bool(if operator == Equal { equal } else { !equal }));
     }
     if operator == Add
-        && let (Value::String(left), Value::String(right)) = (&left, &right)
+        && let (Some(left), Some(right)) = (left.as_string(), right.as_string())
     {
-        return Ok(Value::String(Rc::from(format!("{left}{right}"))));
+        return Ok(rils_execution::value::native_string(format!(
+            "{left}{right}"
+        )));
     }
     crate::numeric::binary(left, operator, right)
         .map_err(|message| BytecodeError::new(message, span))

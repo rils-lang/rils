@@ -51,7 +51,7 @@ pub fn native_range(start: Value, end: Value) -> Result<Value, String> {
                         Ok(Value::Bool(equal))
                     })
                     .register_method(native_ops::DISPLAY, |context| {
-                        Ok(Value::String(context.receiver::<Range, _>(ToString::to_string)?.into()))
+                        Ok(super::native_string(context.receiver::<Range, _>(ToString::to_string)?))
                     })
                     .register_method(native_ops::NEXT, |context| {
                         let value = context.receiver_mut::<Range, _>(Iterator::next)?;

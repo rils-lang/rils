@@ -87,7 +87,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             let error_kind = error_kind.clone();
             move |_| match native_result(native::read_line()) {
                 Ok(line) => Ok(result_ok(
-                    Value::String(Rc::from(std::string::String::from(line))),
+                    crate::value::native_string(std::string::String::from(line)),
                     Type::String,
                 )),
                 Err(source) => Ok(result_error(
@@ -149,7 +149,7 @@ fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             error_kind.clone(),
             |path| {
                 native_result(native::read_to_string(path_text(path)))
-                    .map(|text| Value::String(Rc::from(std::string::String::from(text))))
+                    .map(|text| crate::value::native_string(std::string::String::from(text)))
             },
         ),
     );
@@ -249,13 +249,13 @@ where
 {
     host_function(&format!("std::fs::{name}"), 1, 1, move |arguments| {
         let path = string_argument(arguments, 0, name)?;
-        match operation(std::path::Path::new(path)) {
+        match operation(std::path::Path::new(&path)) {
             Ok(value) => Ok(result_ok(value, ok_type.clone())),
             Err(source) => Ok(result_error(
                 &error,
                 &error_kind,
                 source,
-                Some(path),
+                Some(&path),
                 ok_type.clone(),
             )),
         }
@@ -274,13 +274,13 @@ where
     host_function(&format!("std::fs::{name}"), 2, 2, move |arguments| {
         let path = string_argument(arguments, 0, name)?;
         let text = string_argument(arguments, 1, name)?;
-        match operation(std::path::Path::new(path), text) {
+        match operation(std::path::Path::new(&path), &text) {
             Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
             Err(source) => Ok(result_error(
                 &error,
                 &error_kind,
                 source,
-                Some(path),
+                Some(&path),
                 Type::Unit,
             )),
         }
@@ -358,19 +358,18 @@ fn publish(module: &Rc<ModuleValue>, name: &str, value: Value) {
     module.public.borrow_mut().insert(name.into());
 }
 
-fn string_argument<'a>(
-    arguments: &'a [Value],
+fn string_argument(
+    arguments: &[Value],
     index: usize,
     function: &str,
-) -> Result<&'a str, String> {
-    match &arguments[index] {
-        Value::String(value) => Ok(value),
-        value => Err(format!(
+) -> Result<std::string::String, String> {
+    arguments[index].as_string().ok_or_else(|| {
+        format!(
             "std::fs::{function} argument {} must be string, found {}",
             index + 1,
-            value.type_name()
-        )),
-    }
+            arguments[index].type_name()
+        )
+    })
 }
 
 fn result_ok(value: Value, ok_type: Type) -> Value {
@@ -420,7 +419,7 @@ fn io_error(
         (
             "message".into(),
             FieldSlot {
-                value: Some(Value::String(Rc::from(source.to_string()))),
+                value: Some(crate::value::native_string(source.to_string())),
                 type_annotation: Type::String,
                 references: 0,
             },
@@ -429,7 +428,7 @@ fn io_error(
             "path".into(),
             FieldSlot {
                 value: Some(Value::Option {
-                    value: path.map(|path| Rc::new(Value::String(Rc::from(path)))),
+                    value: path.map(|path| Rc::new(crate::value::native_string(path))),
                     element_type: Some(Type::String),
                 }),
                 type_annotation: Type::Option(Box::new(Type::String)),
@@ -451,7 +450,7 @@ fn string_vec(values: Vec<String>) -> Value {
             values
                 .into_iter()
                 .map(|value| FieldSlot {
-                    value: Some(Value::String(Rc::from(value))),
+                    value: Some(crate::value::native_string(value)),
                     type_annotation: Type::String,
                     references: 0,
                 })

@@ -261,11 +261,17 @@ impl fmt::Debug for Value {
                     Err(_) => f.write_str("<invalid reference>"),
                 },
                 Self::String(value) => write!(f, "{value:#?}"),
+                Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
+                    write!(f, "{:#?}", self.as_string().unwrap_or_default())
+                }
                 _ => write!(f, "{self}"),
             };
         }
         match self {
             Self::String(value) => write!(f, "{value:?}"),
+            Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
+                write!(f, "{:?}", self.as_string().unwrap_or_default())
+            }
             _ => write!(f, "{self}"),
         }
     }

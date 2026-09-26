@@ -114,7 +114,7 @@ pub(crate) fn from_ffi_value(
         }
         RILS_VALUE_STRING => {
             require_zero_high()?;
-            take_string(value.low).map(|value| Value::String(value.into()))
+            take_string(value.low).map(Value::from_string)
         }
         RILS_VALUE_HOST_HANDLE => {
             if logical_host_type
@@ -219,6 +219,9 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
     }
     if let Some(number) = value.as_usize() {
         return Ok(scalar(RILS_VALUE_USIZE, number as u64, 0));
+    }
+    if let Some(text) = value.as_string() {
+        return Ok(scalar(RILS_VALUE_STRING, insert_string(text)?, 0));
     }
     let value = match value {
         Value::Unit => RilsValue::default(),

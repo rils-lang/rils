@@ -1,0 +1,3 @@
+let text = "  héllo  ";
+let clean = text.trim();
+clean.to_uppercase() + "!"

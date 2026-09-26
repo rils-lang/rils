@@ -712,7 +712,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
                                 })??))
                             })
                             .register_method(crate::value::native_ops::DISPLAY, |context| {
-                                Ok(crate::Value::String(context.receiver::<#rust_type, _>(|value| value.0.to_string())?.into()))
+                                Ok(crate::value::native_string(context.receiver::<#rust_type, _>(|value| value.0.to_string())?))
                             })
                             #(#methods)*
                     );

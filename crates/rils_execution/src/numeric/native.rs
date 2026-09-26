@@ -146,7 +146,7 @@ macro_rules! integer_bridge {
                 Ok(Value::Result {
                     value: match self {
                         Result::Ok(value) => Ok(Rc::new($constructor(value.0))),
-                        Result::Err(message) => Err(Rc::new(Value::String(message.into()))),
+                        Result::Err(message) => Err(Rc::new(crate::value::native_string(message))),
                     },
                     ok_type: Some(Type::Integer(crate::IntegerType::$variant)),
                     error_type: Some(Type::String),

@@ -16,6 +16,7 @@ mod callback;
 mod collection_iter;
 mod indexed_iter;
 mod native;
+pub(crate) use native::{StringOutput, string_input, usize_input as string_usize_input};
 pub mod native_value;
 mod option_result;
 mod range;

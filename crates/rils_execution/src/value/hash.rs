@@ -117,6 +117,9 @@ impl HashKey {
         if let Some(value) = crate::numeric::usize_payload(&value) {
             return Ok(Self::Usize(value));
         }
+        if let Some(text) = value.as_string() {
+            return Ok(Self::String(text.into()));
+        }
         Ok(match value {
             Value::Unit => Self::Unit,
             Value::Bool(value) => Self::Bool(value),
@@ -170,7 +173,7 @@ impl HashKey {
             Self::U128(value) => Value::U128(*value),
             Self::Usize(value) => crate::numeric::native_usize(*value),
             Self::Char(value) => Value::Char(*value),
-            Self::String(value) => Value::String(value.clone()),
+            Self::String(value) => super::native_string(value.to_string()),
             Self::Composite(key) => key
                 .value
                 .clone_owned()

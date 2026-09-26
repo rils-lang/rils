@@ -38,7 +38,9 @@ pub fn equal(left: &NativeObject, right: &NativeObject) -> bool {
 
 pub fn display(object: &NativeObject) -> String {
     match object.call(DISPLAY, &[]) {
-        Some(Ok(Value::String(value))) => value.to_string(),
+        Some(Ok(value)) => value
+            .as_string()
+            .unwrap_or_else(|| format!("<{}>", object.descriptor().rils_type())),
         _ => format!("<{}>", object.descriptor().rils_type()),
     }
 }

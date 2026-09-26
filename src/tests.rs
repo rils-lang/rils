@@ -123,10 +123,10 @@ fn bytecode_formatting_calls_custom_traits_and_nested_debug() {
         FunctionSignature::variadic(Type::Unit),
         "std::io",
         move |arguments| {
-            let Value::String(value) = &arguments[1] else {
+            let Some(value) = arguments[1].as_string() else {
                 return Err("expected formatted output".into());
             };
-            output.borrow_mut().push(value.to_string());
+            output.borrow_mut().push(value);
             Ok(Value::Unit)
         },
     )

@@ -18,16 +18,89 @@ pub(super) fn is_string(path: &Path) -> bool {
 
 pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
     match Definition::parse(path, module) {
-        Ok(_) => quote! {
+        Ok(definition) => match descriptor_methods(&definition) {
+            Ok(methods) => quote! {
             pub fn layout() -> std::rc::Rc<rils_value::DynamicLayout> {
                 rils_value::DynamicLayout::of::<rils_stdlib::stdlib::string::String>(
                     crate::Type::String,
                 )
             }
+
+            pub fn descriptor() -> std::rc::Rc<crate::value::NativeType> {
+                type NativeString = rils_stdlib::stdlib::string::String;
+                std::thread_local! {
+                    static DESCRIPTOR: std::rc::Rc<crate::value::NativeType> = std::rc::Rc::new(
+                        crate::value::NativeType::new::<NativeString>(crate::Type::String)
+                            .register_method(crate::value::native_ops::CLONE, |context| {
+                                let clone = context.receiver::<NativeString, _>(Clone::clone)?;
+                                Ok(crate::Value::Native(context.new_object(clone)?))
+                            })
+                            .register_method(crate::value::native_ops::EQUAL, |context| {
+                                let [crate::Value::Native(other)] = context.arguments() else {
+                                    return Err("string equality expects one native string".into());
+                                };
+                                let equal = context.receiver::<NativeString, _>(|value| {
+                                    other.with::<NativeString, _>(|other| value == other)
+                                })??;
+                                Ok(crate::Value::Bool(equal))
+                            })
+                            .register_method(crate::value::native_ops::DISPLAY, |context| {
+                                let text = context.receiver::<NativeString, _>(|value| {
+                                    std::string::String::from(value.clone())
+                                })?;
+                                Ok(crate::value::native_string(text))
+                            })
+                            #(#methods)*
+                    );
+                }
+                DESCRIPTOR.with(std::rc::Rc::clone)
+            }
         }
-        .into(),
+            .into(),
+            Err(error) => error.into_compile_error().into(),
+        },
         Err(error) => error.into_compile_error().into(),
     }
+}
+
+fn descriptor_methods(definition: &Definition) -> syn::Result<Vec<proc_macro2::TokenStream>> {
+    definition.methods.iter().map(|method| {
+        let name = &method.sig.ident;
+        let symbol = format!("core::string::string::{name}");
+        let arity = method.sig.inputs.len() - 1;
+        let converted = method.sig.inputs.iter().enumerate().skip(1).map(|(index, input)| {
+            let FnArg::Typed(parameter) = input else {
+                return Err(Error::new_spanned(input, "unexpected receiver"));
+            };
+            let index = index - 1;
+            let binding = quote::format_ident!("argument_{index}");
+            match parameter.ty.as_ref() {
+                Type::Path(path) if path.path.is_ident("String") => {
+                    Ok((binding, quote!(crate::runtime_builtins::string_input(&arguments[#index])?)))
+                }
+                Type::Path(path) if path.path.is_ident("usize") => {
+                    Ok((binding, quote!(crate::runtime_builtins::string_usize_input(&arguments[#index])?)))
+                }
+                _ => Err(Error::new_spanned(&parameter.ty, "unsupported string argument")),
+            }
+        }).collect::<syn::Result<Vec<_>>>()?;
+        let bindings = converted.iter().map(|(binding, _)| binding);
+        let expressions = converted.iter().map(|(_, expression)| expression);
+        let argument_names = converted.iter().map(|(binding, _)| binding);
+        Ok(quote! {
+            .register_method(#symbol, |context| {
+                let arguments = context.arguments();
+                if arguments.len() != #arity {
+                    return Err(format!("{} expects {} arguments, found {}", stringify!(#name), #arity, arguments.len()));
+                }
+                #(let #bindings = #expressions;)*
+                let result = context.receiver::<NativeString, _>(|receiver| {
+                    receiver.#name(#(#argument_names),*)
+                })?;
+                crate::runtime_builtins::StringOutput::into_value(result)
+            })
+        })
+    }).collect()
 }
 
 impl Definition {

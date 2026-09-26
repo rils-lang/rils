@@ -72,7 +72,7 @@ impl Interpreter {
                         })?)
                     }
                     Literal::Float(value) => Value::F64(*value),
-                    Literal::String(value) => Value::String(Rc::from(value.as_str())),
+                    Literal::String(value) => rils_execution::value::native_string(value.clone()),
                 })
             }
             Expr::Tuple { .. } | Expr::Array { .. } => {

@@ -215,7 +215,7 @@ fn hir_literal_value(literal: &HirLiteral) -> Value {
         HirLiteral::F32(value) => Value::F32(*value),
         HirLiteral::F64(value) => Value::F64(*value),
         HirLiteral::Char(value) => Value::Char(*value),
-        HirLiteral::String(value) => Value::String(Rc::from(value.as_str())),
+        HirLiteral::String(value) => rils_execution::value::native_string(value.clone()),
     }
 }
 
