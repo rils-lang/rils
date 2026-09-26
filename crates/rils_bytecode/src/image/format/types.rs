@@ -66,6 +66,15 @@ pub(super) fn write_type(writer: &mut Writer, value: &Type, depth: usize) -> Res
             write_type(writer, element, next)?;
             writer.index(*length, "array length")?;
         }
+        Type::ArrayParameter { element, length } => {
+            writer.u8(19);
+            write_type(writer, element, next)?;
+            writer.string(length)?;
+        }
+        Type::ConstUsize(value) => {
+            writer.u8(20);
+            writer.index(*value, "const usize")?;
+        }
         Type::Slice(element) => {
             writer.u8(18);
             write_type(writer, element, next)?;
@@ -128,6 +137,14 @@ pub(super) fn write_type(writer: &mut Writer, value: &Type, depth: usize) -> Res
             writer.u8(16);
             writer.string(name)?;
         }
+        Type::BoundVariable { name, bounds } => {
+            writer.u8(21);
+            writer.string(name)?;
+            writer.len(bounds.len(), "generic bounds")?;
+            for bound in bounds {
+                write_type(writer, bound, next)?;
+            }
+        }
         Type::Unknown => writer.u8(17),
     }
     Ok(())
@@ -156,6 +173,11 @@ pub(super) fn read_type(reader: &mut Reader<'_>) -> Result<Type> {
             element: Box::new(read_type(reader)?),
             length: reader.index()?,
         }),
+        19 => Ok(Type::ArrayParameter {
+            element: Box::new(read_type(reader)?),
+            length: reader.string()?,
+        }),
+        20 => Ok(Type::ConstUsize(reader.index()?)),
         18 => Ok(Type::Slice(Box::new(read_type(reader)?))),
         10 => Ok(Type::Reference {
             mutable: reader.bool()?,
@@ -198,6 +220,10 @@ pub(super) fn read_type(reader: &mut Reader<'_>) -> Result<Type> {
             })
         }
         16 => Ok(Type::Variable(reader.string()?)),
+        21 => Ok(Type::BoundVariable {
+            name: reader.string()?,
+            bounds: reader.collection(read_type)?,
+        }),
         17 => Ok(Type::Unknown),
         value => Err(BytecodeFormatError::new(format!(
             "invalid type tag {value}"
@@ -246,6 +272,7 @@ pub(super) fn write_generic_parameter(
     writer: &mut Writer,
     parameter: &GenericParameter,
 ) -> Result<()> {
+    writer.bool(parameter.is_const);
     writer.string(&parameter.name)?;
     writer.collection(&parameter.bounds, |writer, value| {
         write_type(writer, value, 0)
@@ -255,6 +282,7 @@ pub(super) fn write_generic_parameter(
 
 pub(super) fn read_generic_parameter(reader: &mut Reader<'_>) -> Result<GenericParameter> {
     Ok(GenericParameter {
+        is_const: reader.bool()?,
         name: reader.string()?,
         bounds: reader.collection(read_type)?,
         span: reader.span()?,

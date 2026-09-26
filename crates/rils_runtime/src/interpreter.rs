@@ -4,8 +4,6 @@ use std::{
     rc::Rc,
 };
 
-#[path = "interpreter/builtin_methods/iterator.rs"]
-mod builtin_iterator;
 mod builtin_methods;
 mod builtins;
 mod call;
@@ -36,13 +34,12 @@ use crate::{
     source::Span,
     types::{FunctionSignature, Type, merge_types},
     value::{
-        BorrowedMapIteratorValue, BorrowedSequenceIterValue, BorrowedSetIteratorValue, BoundMethod,
-        BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance, EnumPayload,
-        EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod, HostFunction,
-        HostFunctionHandler, HostObject, HostType, ModuleValue, NativeFunction, NativeFunctionBody,
-        OwnedIteratorValue, RangeValue, ReferenceValue, SequenceValue, StructInstance, StructType,
+        BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance,
+        EnumPayload, EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod,
+        HostFunction, HostFunctionHandler, HostObject, HostType, IndexedStorage, ModuleValue,
+        NativeFunction, NativeFunctionBody, ReferenceValue, StructInstance, StructType,
         TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value, VariantConstructor,
-        enum_variant_name,
+        enum_variant_name, native_range,
     },
 };
 

@@ -16,7 +16,7 @@ impl Interpreter {
         .map_err(|message| RuntimeError::new(message, span))
     }
 
-    fn format_value(
+    pub(super) fn format_value(
         &mut self,
         value: &Value,
         spec: &FormatSpec,

@@ -5,6 +5,22 @@
 
 ## Unreleased
 
+- `i8`、默认整数类型 `i32` 和 `usize` 的运行时值改为内联原生负载；字面量、运算、方法调用和字节码加载在解释器与 VM 中使用同一表示，集合长度、索引和计数也接受原生 `usize`。Rust 宿主若直接匹配 `Value::I8` / `Value::I32` / `Value::Usize`，需改用相应的 `Value::as_i8()` / `Value::as_i32()` / `Value::as_usize()` 或读取原生负载；C ABI 整数标签、Rils 源码及未冻结的 v8 字节码编码无需修改。
+- `Range<T>` 的运行时 `type_of` 结果现在保留整数泛型参数，例如 `Range<i32>`；按旧字符串 `"Range"` 比较的脚本需改用完整类型名。原生值存储已抽离为 `rils_value` crate，Rust 宿主可独立使用其类型描述和负载容器。该 crate 的 API 已改为类型自行注册操作，原先的 `with_clone`、`with_equality`、`with_display`、`with_iterator` 等构造方法需改为 `register_method`；小型 Copy 负载直接内联存储。新增的 `DynamicLayout`、`DynamicValue` 和 `DynamicType` 支持运行时组合的泛型 `Option<T>` 布局；整数、`string` 和 `Option<T>` 布局工厂由标准库声明生成，`i8` / `i32` 已接入执行层。
+- Exported Rust signatures now preserve `[T; N]` / `const N: usize` and formatting bounds. Removed `rils_any` / `rils_ref_any` type widening; unsupported exported types are compile errors. `Vec::from` requires an array. `std::io::write` / `write_line` require `Display` and invoke custom implementations in both backends; use `format!("{:?}", value)` for Debug-only values.
+- The unfrozen v8 bytecode type encoding now includes symbolic array lengths and bounded generic parameters. Recompile previously generated v8 files; the format version remains 8.
+
+
+- 移除 `#[rils_native]`：导出的固有方法与 trait impl 方法默认使用原生符号。尚未迁移的入口显式保留 `#[rils_legacy_id(...)]` / `#[rils_import(...)]`，不再隐式选择旧 ID。迁移 Rust 标准库扩展时，删除 `#[rils_native]`；未支持的签名需补充转换或明确绑定已有兼容入口。字节码格式继续保持 v8。
+
+- 带原生桥接的标准库方法不再自动登记数字 `BuiltinId`；`Vec::is_empty` 现在直接由 `len()` 的结果实现。`Vec` 其他已迁移的原生方法和 `Range::next` 的旧编号仅保留历史字节码兼容，新的调用使用原生符号。数组与 Vec 的迭代统一由 `IntoIterator` / `Iterator` 和共享执行入口驱动，不再使用旧 Sequence 成员分派。
+
+- Trait 方法现可在声明处提供默认方法体；`Iterator` 的默认行为由 `rils_stdlib` 的 trait 方法体自动导出，解释器与字节码执行同一份定义。默认方法按关联类型 `Item` 生成签名，不再从接收类型的第一个泛型参数猜测元素类型；自定义迭代器只需实现 `next`，也可以按 trait 签名重写默认方法。默认方法不再声明数字 `BuiltinId`，旧 ID 仅用于读取旧字节码；`next` 仍保留运行时原语 ID。迁移：`take/skip/rev` 现在返回新的 `Iterator<Item>`，此前将结果标为原迭代器 `Self` 的代码需改用 `Iterator<Item>`。
+
+- 标记 `#[rils_impl]` 的 Rust trait 方法现在从实际签名和关联类型推导 Rils 参数、返回类型及内建成员元数据；`Self::Item`、`Self::IntoIter` 和标准库 `Option` 等类型无需用 `#[rils_return]` 手动覆盖，trait impl 中使用该覆盖属性会报错。
+
+- `Vec::into_iter` 和 `Range::next` 现在通过标准库原生符号调用，拥有型迭代器在 Rust 侧实现 `Iterator`。Rust trait impl 需在整个 impl 块上标记 `#[rils_impl]` 才能导出到 Rils，`Item` 和 `IntoIter` 等关联类型随实现导出；trait 方法不再允许单独标记 `#[export_rils]`。显式 Rils `IntoIterator` impl 现在需要同时声明 `Item` 和 `IntoIter`，`IntoIter` 必须实现 `Iterator`，且两者的 `Item` 类型一致。`Vec::from` 由固有方法导出。Rils 中实现 `Iterator` 的类型现在自动实现 `IntoIterator`，`into_iter` 返回自身；与它重叠的显式 impl 会报错。直接使用 `rils_stdlib` Rust API 的代码需注意：`Range::next` 现在返回 Rust `Option`，集合的 `IntoIterator::IntoIter` 现在是标准库的迭代器包装类型。
+
 - 泛型 trait 可声明类型参数并在 impl 中指定类型实参；标准库导出 `FnOnce`、`FnMut`、`Fn` 三种泛型调用约束，解释器按精确签名与捕获行为检查。字节码编译器会明确拒绝当前无法验证的调用约束；Option/Result 的导出回调方法与 `core::ops` 的 `apply_twice`、`combine`、`chain` 自由函数现可在解释器和字节码中调用 Rils 函数及闭包，新增接收共享引用谓词的 `Option::filter`。Rust 导出实现可直接使用 `F: FnOnce(T) -> U` 等约束并返回普通值，回调错误由生成的隐藏实现传播。
 
 - 零字段 struct 现可在括号内用 `(Marker {})` 构造；`Default` 派生的无字段实现也统一由 `rils_quote!` 生成。
@@ -30,6 +46,7 @@
 
 ### Breaking Changes
 
+- Rust API 的 `Value::Range` 已由 `Value::Native` 负载取代，`RangeValue::new` 改为 `value::native_range`。直接匹配或构造旧变体的宿主代码需改用类型描述或范围构造函数；Rils 源码与实验性 `.rilbc` v8 格式无需修改。
 - 实验性 `.rilbc` v8 的泛型参数 bound 改为结构化类型编码；已有 v8 文件需从源码重新编译。
 
 - `.rilbc` v8 增加标准库原生符号导入表和 `CallNative` 指令，
@@ -62,7 +79,8 @@
 - 支持 `&[T]` 借用固定数组和 `Vec<T>` 的元素视图，避免传参时复制或移动整个容器；实验性 v8
   字节码增加切片类型标签，旧 v8 文件应重新编译。
 
-- Rust embedders matching `Value::SequenceIterator` or using `SequenceIteratorValue` must migrate to `Value::OwnedIterator` and `OwnedIteratorValue`. The borrowed sequence runtime variant is now `BorrowedSequenceIter`; Rils `Iterator<T>` source signatures remain available.
+- Rust 宿主若使用旧运行时类型，需将 `SequenceValue` 改为 `IndexedStorage`，将 `Value::BorrowedSequenceIter` / `BorrowedSequenceIterValue` 改为 `Value::BorrowedIndexedIterator` / `BorrowedIndexedIteratorValue`。此前的 `Value::SequenceIterator` / `SequenceIteratorValue` 已由 `Value::OwnedIterator` / `OwnedIteratorValue` 取代；Rils 源码中的 `Iterator<T>` 签名仍可使用。
+- 移除旧 Sequence 的六个数字 ID（`0x0100` 至 `0x0105`），不再从 `core::sequence` 声明、解析或执行集合方法。引用这些 ID 的实验性 `.rilbc` v8 文件会在加载时被拒绝；从源码重新编译 `.rilbc`、Unity `.bytes` 及嵌入 `.rilslib` 的字节码模块。磁盘格式仍为未定型的 v8，不增加 v9。
 
 - Rust consumers constructing `ExternalModuleExport` now supply `target_module`:
   `None` for value/type declarations, or the canonical target path for module

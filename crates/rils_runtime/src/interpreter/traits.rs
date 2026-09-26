@@ -25,18 +25,19 @@ pub(super) fn validate_trait_implementation(
         .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
         .collect::<HashMap<_, _>>();
     for required in &definition.methods {
-        let implementation = methods
-            .iter()
-            .find(|method| method.name == required.name)
-            .ok_or_else(|| {
-                RuntimeError::new(
-                    format!(
-                        "impl of trait `{}` is missing method `{}`",
-                        definition.name, required.name
-                    ),
-                    span,
-                )
-            })?;
+        let implementation = methods.iter().find(|method| method.name == required.name);
+        let Some(implementation) = implementation else {
+            if required.body.is_some() {
+                continue;
+            }
+            return Err(RuntimeError::new(
+                format!(
+                    "impl of trait `{}` is missing method `{}`",
+                    definition.name, required.name
+                ),
+                span,
+            ));
+        };
         validate_trait_method_signature(
             required,
             implementation,

@@ -24,6 +24,14 @@ rils repl
 VS Code 和 CLI 工具链发行包均携带同源的 `rils_stdlib` 声明包，供 Analyzer 索引标准库签名与定义。
 自定义安装可通过 `RILS_SYSROOT` 指定包含 `packages/rils_stdlib/rils.toml` 的目录；发现顺序和
 工作区加载失败的处理方式见 [Analyzer 说明](docs/analyzer.md#标准库声明包)。
+
+Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[rils_impl]` 整体导出；
+导出方法默认使用原生桥接，兼容旧入口时需显式声明绑定，详见 [标准库定义说明](crates/rils_stdlib/README.md)。
+独立的 [`rils_value`](crates/rils_value/README.md) crate 提供按 Rust 布局存储的原生值与类型操作注册；小型 Copy 值直接内联，其他值使用共享存储。`Range<T>`、`i8`、默认整数类型 `i32` 和 `usize` 已在解释器与字节码 VM 中使用原生负载；整数方法由标准库声明生成注册，并通过类型化上下文调用 Rust 方法。`type_of(1..3)` 保留泛型参数，返回 `"Range<i32>"`。
+
+`string` 与 `Option<T>` 当前仍使用既有运行时值分支；它们尚未接入原生值路径。Rust 宿主读取已迁移整数可使用 `Value::as_i8()`、`Value::as_i32()` 和 `Value::as_usize()`，这些接口同时接受过渡期旧值和新原生值。
+
+原生值 crate 已支持运行时组合的 `Option<T>` 布局；整数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数方法的原生对象注册已由过程宏生成，其他类型的可执行注册及实际值迁移仍在进行中。
 项目中的公开源码声明可通过多层 `pub use` 重导出；Analyzer 的补全、Hover、跳转和引用查找
 会追踪到原声明，并隔离不同项目中的同名符号。
 
@@ -38,6 +46,8 @@ VS Code 和 CLI 工具链发行包均携带同源的 `rils_stdlib` 声明包，�
 Struct 和 enum 支持 `#[derive(Clone)]`、`#[derive(Copy)]`、`#[derive(Eq, Hash)]`；struct 也支持 `#[derive(Default)]`。`Clone` 逐字段调用对应 trait 实现，`Copy` 要求字段均为 Copy。
 整数实现 `Clone`、`Copy`、`Default`、`Eq`、`Hash`；`f32`、`f64` 实现前三者；`string` 实现 `Clone`、`Default`、`Eq`、`Hash`。
 泛型 trait 可声明类型参数；解释器可按函数签名和捕获行为检查标准库的 `FnOnce<Args, Output>`、`FnMut<Args, Output>`、`Fn<Args, Output>` bound。字节码编译器当前会明确拒绝这组三种 bound，直到共享前端完成相同的检查。Option/Result 的 `map`、`and_then`、`or_else` 等导出方法，以及 `core::ops::apply_twice`、`combine`、`chain` 等导出自由函数，已可在解释器和字节码中调用 Rils 函数或闭包；`Option::filter` 还可把共享引用交给谓词。回调错误保留源码位置。
+
+实现 `Iterator` 的 Rils 类型只需声明 `Item` 并实现 `next`，可使用或重写标准库 trait 中定义的默认方法；解释器和字节码均从这些方法体执行，元素类型从关联类型 `Item` 解析。它还会自动实现 `IntoIterator`，`into_iter()` 返回自身，可直接用于 `for`。
 
 ```rust
 let value = rils::eval("1 + 2 * 3")?;
@@ -87,3 +97,7 @@ Unity 项目通过独立的 [RilsForUnity](https://github.com/rils-lang/RilsForU
 
 当前代码处于 `0.4.0` 阶段，适合语言实验、工具开发和受控宿主嵌入。Unity、UE 等引擎集成由
 各自独立的插件工程维护，不属于 Rils 核心仓库的版本标准。
+
+标准库导出保留数组的元素类型与 `const N: usize` 长度约束。IO 的 `write` / `write_line`
+使用 `T: Display`，支持内建值和用户定义的 `Display` 实现；未实现该 trait 的类型会被拒绝。
+参见[泛型签名](docs/language/06-impl-generics-and-traits.md)与[IO 输出](docs/language/08-modules-and-standard-library.md)。

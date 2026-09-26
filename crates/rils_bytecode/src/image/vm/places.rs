@@ -12,7 +12,7 @@ enum ResolvedProjection {
 
 enum PlaceContainer {
     Struct(Rc<StructInstance>),
-    Sequence(Rc<SequenceValue>),
+    Indexed(Rc<IndexedStorage>),
 }
 
 impl VirtualMachine<'_> {
@@ -27,7 +27,7 @@ impl VirtualMachine<'_> {
                 BytecodeProjection::Field(field) => ResolvedProjection::Field(field),
                 BytecodeProjection::Index(register) => {
                     let value = self.take_register(register, span)?;
-                    let Value::Usize(index) = value else {
+                    let Some(index) = value.as_usize() else {
                         return Err(BytecodeError::new("collection index must be usize", span));
                     };
                     ResolvedProjection::Index(index)
@@ -63,7 +63,7 @@ impl VirtualMachine<'_> {
         match value {
             Value::Struct(instance) => Ok(PlaceContainer::Struct(instance)),
             Value::Tuple(sequence) | Value::Array(sequence) | Value::Vec(sequence) => {
-                Ok(PlaceContainer::Sequence(sequence))
+                Ok(PlaceContainer::Indexed(sequence))
             }
             Value::Reference(reference) => self.place_container(
                 reference
@@ -94,7 +94,7 @@ impl VirtualMachine<'_> {
                     BytecodeError::new(format!("field `{field}` has been moved"), span)
                 })
             }
-            (PlaceContainer::Sequence(sequence), ResolvedProjection::Index(index)) => {
+            (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(index)) => {
                 let elements = sequence.elements.borrow();
                 let slot = elements.get(*index).ok_or_else(|| {
                     BytecodeError::new(format!("index {index} is out of bounds"), span)
@@ -137,7 +137,7 @@ impl VirtualMachine<'_> {
             (PlaceContainer::Struct(instance), ResolvedProjection::Field(field)) => {
                 take_field_slot(instance.fields.borrow_mut().get_mut(field), field, span)
             }
-            (PlaceContainer::Sequence(sequence), ResolvedProjection::Index(index)) => {
+            (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(index)) => {
                 if *index >= sequence.elements.borrow().len() {
                     return Err(BytecodeError::new(
                         format!("index {index} is out of bounds"),
@@ -173,7 +173,7 @@ impl VirtualMachine<'_> {
                     span,
                 )
             }
-            (PlaceContainer::Sequence(sequence), ResolvedProjection::Index(index)) => {
+            (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(index)) => {
                 if *index >= sequence.elements.borrow().len() {
                     return Err(BytecodeError::new(
                         format!("index {index} is out of bounds"),
@@ -212,8 +212,8 @@ impl VirtualMachine<'_> {
                         guard,
                     )
                 }
-                (PlaceContainer::Sequence(sequence), ResolvedProjection::Index(element)) => {
-                    ReferenceValue::new_guarded_sequence_element(
+                (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(element)) => {
+                    ReferenceValue::new_guarded_indexed_element(
                         sequence.clone(),
                         *element,
                         mutable,

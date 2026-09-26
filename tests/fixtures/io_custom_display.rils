@@ -1,0 +1,11 @@
+struct Label { value: i32 }
+impl core::fmt::Display for Label {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter) -> Result<(), core::fmt::FormatError> {
+        assert!(self.value == 42);
+        formatter.write_str("")
+    }
+}
+assert!(std::io::write(Label { value: 42 }).is_ok());
+fn emit<T: Display>(value: T) -> Result<(), std::io::Error> { std::io::write(value) }
+assert!(emit(Label { value: 42 }).is_ok());
+42

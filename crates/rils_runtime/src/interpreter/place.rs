@@ -12,8 +12,8 @@ pub(super) enum Place {
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
     },
-    SequenceElement {
-        sequence: Rc<SequenceValue>,
+    IndexedElement {
+        sequence: Rc<IndexedStorage>,
         index: usize,
         owner: String,
         mutable: bool,
@@ -36,7 +36,7 @@ impl Place {
                 .get(name)
                 .and_then(|field| field.value.clone())
                 .ok_or_else(|| RuntimeError::new(format!("use of moved field `{name}`"), span)),
-            Self::SequenceElement {
+            Self::IndexedElement {
                 sequence, index, ..
             } => {
                 let elements = sequence.elements.borrow();
@@ -110,7 +110,7 @@ impl Place {
                 })?);
                 Ok(())
             }
-            Self::SequenceElement {
+            Self::IndexedElement {
                 sequence,
                 index,
                 owner,
@@ -195,7 +195,7 @@ impl Place {
                         .map_err(|message| RuntimeError::new(message, span))?,
                 )
             }
-            Self::SequenceElement {
+            Self::IndexedElement {
                 sequence,
                 index,
                 owner,
@@ -209,7 +209,7 @@ impl Place {
                     ));
                 }
                 Rc::new(
-                    ReferenceValue::new_guarded_sequence_element(sequence, index, mutable, guard)
+                    ReferenceValue::new_guarded_indexed_element(sequence, index, mutable, guard)
                         .map_err(|message| RuntimeError::new(message, span))?,
                 )
             }
@@ -229,7 +229,7 @@ impl Place {
                 _ => slot.borrow().is_mutable(),
             },
             Self::StructField { mutable, .. } => *mutable,
-            Self::SequenceElement { mutable, .. } => *mutable,
+            Self::IndexedElement { mutable, .. } => *mutable,
             Self::Reference { reference } => reference.mutable,
         }
     }
@@ -238,7 +238,7 @@ impl Place {
         match self {
             Self::Storage { name, .. } => name.clone(),
             Self::StructField { owner, name, .. } => format!("{owner}.{name}"),
-            Self::SequenceElement { owner, index, .. } => format!("{owner}[{index}]"),
+            Self::IndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
             Self::Reference { .. } => "reference".into(),
         }
     }
@@ -262,7 +262,7 @@ impl Place {
                 .get(name)
                 .and_then(|field| field.value.clone())
                 .ok_or_else(|| RuntimeError::new(format!("use of moved field `{name}`"), span)),
-            Self::SequenceElement {
+            Self::IndexedElement {
                 sequence, index, ..
             } => sequence
                 .elements
@@ -301,14 +301,14 @@ impl Place {
                 )
                 .map_err(|message| RuntimeError::new(message, span))?,
             ))),
-            Self::SequenceElement {
+            Self::IndexedElement {
                 sequence,
                 index,
                 mutable,
                 guard,
                 ..
             } => Ok(Some(Rc::new(
-                ReferenceValue::new_guarded_sequence_element(
+                ReferenceValue::new_guarded_indexed_element(
                     sequence.clone(),
                     *index,
                     *mutable,
@@ -368,7 +368,7 @@ impl Interpreter {
                             span,
                         ));
                     }
-                    return Ok(Place::SequenceElement {
+                    return Ok(Place::IndexedElement {
                         sequence,
                         index,
                         owner: owner_name,
@@ -406,7 +406,7 @@ impl Interpreter {
                 let guard = owner.projection_guard(span)?;
                 let value = owner.projection_value(span)?;
                 let index = self.evaluate(index, environment.clone())?;
-                let Value::Usize(index) = index else {
+                let Some(index) = index.as_usize() else {
                     return Err(RuntimeError::new("collection indices must be usize", span));
                 };
                 let sequence = match value {
@@ -424,7 +424,7 @@ impl Interpreter {
                         span,
                     ));
                 }
-                Ok(Place::SequenceElement {
+                Ok(Place::IndexedElement {
                     sequence,
                     index,
                     owner: owner_name,

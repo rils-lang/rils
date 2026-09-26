@@ -29,6 +29,7 @@ impl Window {
 }
 
 impl IntoIterator for Window {
+    type Item = i32;
     type IntoIter = SampleRange;
 
     fn into_iter(self) -> SampleRange {

@@ -4,10 +4,12 @@ use super::*;
 mod helpers;
 mod member;
 mod path;
+mod trait_defaults;
 mod user_function;
 
 use helpers::{builtin_default_value, validate_native_arguments, validate_native_return};
 pub(super) use helpers::{builtin_runtime_member, select_method};
+pub(super) use trait_defaults::builtin_iterator_default_receiver;
 
 impl Interpreter {
     pub(super) fn call(
@@ -32,7 +34,7 @@ impl Interpreter {
             Value::BuiltinFunction(function) => match function {
                 BuiltinFunction::VecNew => {
                     check_arity("Vec::new", 0, 0, arguments.len(), span)?;
-                    Ok(Value::Vec(Rc::new(SequenceValue {
+                    Ok(Value::Vec(Rc::new(IndexedStorage {
                         active_iterators: std::cell::Cell::new(0),
                         elements: RefCell::new(Vec::new()),
                         element_type: RefCell::new(Some(Type::Unknown)),
@@ -55,7 +57,7 @@ impl Interpreter {
                         ));
                     }
                     let elements = array.elements.borrow_mut().drain(..).collect();
-                    Ok(Value::Vec(Rc::new(SequenceValue {
+                    Ok(Value::Vec(Rc::new(IndexedStorage {
                         active_iterators: std::cell::Cell::new(0),
                         elements: RefCell::new(elements),
                         element_type: RefCell::new(array.element_type.borrow().clone()),
@@ -186,7 +188,12 @@ impl Interpreter {
                     span,
                 )?;
                 validate_native_arguments(function.signature.as_ref(), arguments, span)?;
-                let value = (function.function)(arguments)
+                let arguments = rils_execution::native_arguments::prepare(
+                    function.signature.as_ref(),
+                    arguments,
+                    |value, spec| self.format_value(value, spec, span),
+                )?;
+                let value = (function.function)(&arguments)
                     .map_err(|message| RuntimeError::new(message, span))?;
                 validate_native_return(function.signature.as_ref(), value, span, &function.name)
             }
@@ -332,15 +339,27 @@ impl Interpreter {
                         span,
                     );
                 }
+                if selector.trait_name == "IntoIterator"
+                    && selector.method_name == "into_iter"
+                    && type_implements_trait(actual_target, "Iterator", &selector.environment)
+                {
+                    return self.call(
+                        Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                            receiver: Rc::new(receiver.clone()),
+                            method: BuiltinMethod::Runtime(
+                                rils_builtins::BuiltinId::IteratorIntoIter,
+                            ),
+                        })),
+                        &arguments[1..],
+                        span,
+                    );
+                }
                 if matches!(actual_target, Type::Named { name, arguments } if name == "Range" && arguments.is_empty())
                 {
                     let method = match (selector.trait_name.as_str(), selector.method_name.as_str())
                     {
                         ("Iterator", "next") => {
                             BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext)
-                        }
-                        ("IntoIterator", "into_iter") => {
-                            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeIntoIter)
                         }
                         _ => {
                             return Err(RuntimeError::new(
@@ -361,21 +380,25 @@ impl Interpreter {
                         span,
                     );
                 }
-                let sequence_method = match (
+                if selector.trait_name == "IntoIterator"
+                    && selector.method_name == "into_iter"
+                    && (matches!(actual_target, Type::Array { .. })
+                        || matches!(actual_target, Type::Named { name, .. } if name == "Vec"))
+                {
+                    return match rils_execution::iteration::into_iterator(receiver.clone())
+                        .map_err(|message| RuntimeError::new(message, span))?
+                    {
+                        rils_execution::iteration::IntoIteratorResult::Ready(value) => Ok(value),
+                        rils_execution::iteration::IntoIteratorResult::UserDefined(_) => Err(
+                            RuntimeError::new("value does not implement IntoIterator", span),
+                        ),
+                    };
+                }
+                let iterator_method = match (
                     selector.trait_name.as_str(),
                     selector.method_name.as_str(),
                     actual_target,
                 ) {
-                    ("IntoIterator", "into_iter", Type::Array { .. }) => Some(
-                        BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIntoIter),
-                    ),
-                    ("IntoIterator", "into_iter", Type::Named { name, arguments })
-                        if name == "Vec" && arguments.len() == 1 =>
-                    {
-                        Some(BuiltinMethod::Runtime(
-                            rils_builtins::BuiltinId::SequenceIntoIter,
-                        ))
-                    }
                     ("Iterator", "next", Type::Named { name, arguments })
                         if name == "OwnedIterator" && arguments.len() == 1 =>
                     {
@@ -385,7 +408,7 @@ impl Interpreter {
                     }
                     _ => None,
                 };
-                if let Some(method) = sequence_method {
+                if let Some(method) = iterator_method {
                     return self.call(
                         Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(receiver.clone()),
@@ -577,6 +600,9 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         if let Some(member) = member::resolve_numeric_member(&object, name, span)? {
+            return Ok(member);
+        }
+        if let Some(member) = self.bind_builtin_iterator_default(&object, name) {
             return Ok(member);
         }
         if let Some(member) = member::resolve_host_or_builtin_member(&object, name, span)? {

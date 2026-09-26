@@ -577,6 +577,48 @@ impl Interpreter {
                             extra.span,
                         ));
                     }
+                    if definition.name == "IntoIterator"
+                        && let (Some(item), Some(iterator)) =
+                            (values.get("Item"), values.get("IntoIter"))
+                    {
+                        let iterator = &iterator.target;
+                        let expected =
+                            rils_frontend::standard_library::builtin_iterator_item_type(iterator)
+                                .or_else(|| {
+                                    type_implements_trait(iterator, "Iterator", &environment)
+                                        .then(|| Type::Associated {
+                                            base: Box::new(iterator.clone()),
+                                            trait_name: Some("Iterator".into()),
+                                            name: "Item".into(),
+                                            arguments: Vec::new(),
+                                        })
+                                        .and_then(|projection| {
+                                            expand_type_aliases(&projection, &environment, *span)
+                                                .ok()
+                                        })
+                                });
+                        if expected.is_none()
+                            && !type_implements_trait(iterator, "Iterator", &environment)
+                        {
+                            return Err(RuntimeError::new(
+                                format!(
+                                    "IntoIterator::IntoIter `{iterator}` must implement Iterator"
+                                ),
+                                *span,
+                            ));
+                        }
+                        if let Some(expected) = expected
+                            && item.target != expected
+                        {
+                            return Err(RuntimeError::new(
+                                format!(
+                                    "IntoIterator::Item must match IntoIter::Item: expected `{expected}`, found `{}`",
+                                    item.target
+                                ),
+                                *span,
+                            ));
+                        }
+                    }
                     values
                 } else {
                     HashMap::new()
@@ -848,9 +890,7 @@ impl Interpreter {
                 ..
             } => {
                 let value = self.evaluate(iterable, environment.clone())?;
-                let iterator = if matches!(&value, Value::Range(_)) {
-                    value
-                } else if Type::of_value(&value)
+                let iterator = if Type::of_value(&value)
                     .is_some_and(|ty| type_implements_trait(&ty, "IntoIterator", &environment))
                 {
                     let method = self.resolve_member(value, "into_iter", *span)?;
@@ -866,30 +906,6 @@ impl Interpreter {
                         format!("type `{iterator_type}` does not implement Iterator"),
                         *span,
                     ));
-                }
-
-                if let Value::Range(range) = &iterator {
-                    let mut range = range.clone();
-                    while let Some(current) = range
-                        .next()
-                        .map_err(|message| RuntimeError::new(message, *span))?
-                    {
-                        self.tick(*span)?;
-                        let iteration_environment = Environment::child(environment.clone());
-                        iteration_environment.borrow_mut().define(
-                            binding.clone(),
-                            current,
-                            false,
-                            Some(range.element_type()),
-                        );
-                        match self.execute_block(body, iteration_environment)? {
-                            Flow::Value(_) => {}
-                            returned @ Flow::Return(_) => return Ok(returned),
-                            Flow::Break(value) => return Ok(Flow::Value(value)),
-                            Flow::Continue => continue,
-                        }
-                    }
-                    return Ok(Flow::Value(Value::Unit));
                 }
 
                 let loop_environment = Environment::child(environment.clone());

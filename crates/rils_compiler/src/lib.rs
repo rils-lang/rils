@@ -133,11 +133,12 @@ pub fn compile_program_with_host_and_sources(
 fn compile_program_with_host_and_sources_and_entry(
     program: &Program,
     host: &HostContract,
-    sources: Vec<SourceFile>,
+    mut sources: Vec<SourceFile>,
     entry: Option<(rils_frontend::SourceId, String)>,
 ) -> Result<mir::MirProgram, CompileError> {
-    let analysis = rils_frontend::analyze_program_with_host_and_source_id_and_external_exports(
-        program,
+    let mut program = program.clone();
+    let mut analysis = rils_frontend::analyze_program_with_host_and_source_id_and_external_exports(
+        &program,
         SourceId::UNKNOWN,
         host,
         &std::collections::HashMap::new(),
@@ -151,6 +152,25 @@ fn compile_program_with_host_and_sources_and_entry(
             diagnostic.span,
         ));
     }
+    if analysis.typeck_results.has_trait_default_calls() {
+        rils_frontend::append_bytecode_iterator_defaults(&mut program, SourceId::UNKNOWN);
+        analysis = rils_frontend::analyze_program_with_host_and_source_id_and_external_exports(
+            &program,
+            SourceId::UNKNOWN,
+            host,
+            &std::collections::HashMap::new(),
+        );
+        if let Some(error) = analysis.host_type_resolutions.errors().first() {
+            return Err(CompileError::new(error.message.clone(), error.span));
+        }
+        if let Some(diagnostic) = analysis.first_error() {
+            return Err(CompileError::new(
+                diagnostic.message.clone(),
+                diagnostic.span,
+            ));
+        }
+    }
+    sources.extend(program.generated_sources.iter().cloned());
     let entry = entry
         .map(|(source, module_path)| {
             analysis
@@ -173,7 +193,7 @@ fn compile_program_with_host_and_sources_and_entry(
         })
         .transpose()?;
     mir::lower(hir::lower_with_host(
-        program, host, &analysis, sources, entry,
+        &program, host, &analysis, sources, entry,
     )?)
 }
 
@@ -194,21 +214,49 @@ pub fn compile_program_with_host_and_session(
             Span::default(),
         )
     })?;
-    let analysis = session.project_analysis(project, host).ok_or_else(|| {
+    let original_analysis = session.project_analysis(project, host).ok_or_else(|| {
         CompileError::new(
             "compilation session has no current project analysis for this host contract",
             Span::default(),
         )
     })?;
-    if let Some(error) = analysis.host_type_resolutions.errors().first() {
+    if let Some(error) = original_analysis.host_type_resolutions.errors().first() {
         return Err(CompileError::new(error.message.clone(), error.span));
     }
-    if let Some(diagnostic) = analysis.first_error() {
+    if let Some(diagnostic) = original_analysis.first_error() {
         return Err(CompileError::new(
             diagnostic.message.clone(),
             diagnostic.span,
         ));
     }
+    let mut syntax = syntax.clone();
+    let analysis = if original_analysis.typeck_results.has_trait_default_calls() {
+        if let Some(root) = syntax.roots_mut().next() {
+            rils_frontend::append_bytecode_iterator_defaults(root, SourceId::UNKNOWN);
+        }
+        for (module, unit) in syntax.modules_mut() {
+            let source = semantics
+                .module_graph()
+                .module(module)
+                .and_then(|module| module.source)
+                .unwrap_or(SourceId::UNKNOWN);
+            rils_frontend::append_bytecode_iterator_defaults(unit, source);
+        }
+        let analysis =
+            rils_frontend::analyze_project_with_host(&syntax, semantics.module_graph(), host);
+        if let Some(error) = analysis.host_type_resolutions.errors().first() {
+            return Err(CompileError::new(error.message.clone(), error.span));
+        }
+        if let Some(diagnostic) = analysis.first_error() {
+            return Err(CompileError::new(
+                diagnostic.message.clone(),
+                diagnostic.span,
+            ));
+        }
+        analysis
+    } else {
+        original_analysis.clone()
+    };
     let entry = (|| {
         let source = semantics.entry_source()?;
         let module = semantics.module(source)?;
@@ -235,12 +283,19 @@ pub fn compile_program_with_host_and_session(
                 })
         })
         .transpose()?;
+    let mut sources = session.sources().source_files();
+    sources.extend(syntax.root_program().generated_sources);
+    sources.extend(
+        syntax
+            .modules()
+            .flat_map(|(_, program)| program.generated_sources.iter().cloned()),
+    );
     mir::lower(hir::lower_project_with_host(
-        syntax,
+        &syntax,
         semantics.module_graph(),
         host,
-        analysis,
-        session.sources().source_files(),
+        &analysis,
+        sources,
         entry,
     )?)
 }

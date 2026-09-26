@@ -48,9 +48,9 @@ impl Interpreter {
                 Ok(match &value {
                     Literal::Unit => Value::Unit,
                     Literal::Bool(value) => Value::Bool(*value),
-                    Literal::I8(value) => Value::I8(*value),
+                    Literal::I8(value) => crate::numeric::native_i8(*value),
                     Literal::I16(value) => Value::I16(*value),
-                    Literal::I32(value) => Value::I32(*value),
+                    Literal::I32(value) => crate::numeric::native_i32(*value),
                     Literal::I64(value) => Value::I64(*value),
                     Literal::I128(value) => Value::I128(*value),
                     Literal::Isize(value) => Value::Isize(*value),
@@ -59,16 +59,18 @@ impl Interpreter {
                     Literal::U32(value) => Value::U32(*value),
                     Literal::U64(value) => Value::U64(*value),
                     Literal::U128(value) => Value::U128(*value),
-                    Literal::Usize(value) => Value::Usize(*value),
+                    Literal::Usize(value) => crate::numeric::native_usize(*value),
                     Literal::F32(value) => Value::F32(*value),
                     Literal::F64(value) => Value::F64(*value),
                     Literal::Char(value) => Value::Char(*value),
-                    Literal::Integer(value) => Value::I32(i32::try_from(*value).map_err(|_| {
-                        RuntimeError::new(
-                            "integer literal is outside the inferred i32 range",
-                            expression.span(),
-                        )
-                    })?),
+                    Literal::Integer(value) => {
+                        crate::numeric::native_i32(i32::try_from(*value).map_err(|_| {
+                            RuntimeError::new(
+                                "integer literal is outside the inferred i32 range",
+                                expression.span(),
+                            )
+                        })?)
+                    }
                     Literal::Float(value) => Value::F64(*value),
                     Literal::String(value) => Value::String(Rc::from(value.as_str())),
                 })
@@ -205,9 +207,7 @@ impl Interpreter {
             Expr::Range { start, end, span } => {
                 let start = self.evaluate(start, environment.clone())?;
                 let end = self.evaluate(end, environment)?;
-                RangeValue::new(start, end)
-                    .map(Value::Range)
-                    .map_err(|message| RuntimeError::new(message, *span))
+                native_range(start, end).map_err(|message| RuntimeError::new(message, *span))
             }
             Expr::Call { .. } | Expr::If { .. } | Expr::Match { .. } | Expr::Block(_) => {
                 self.evaluate_control(expression, environment)

@@ -27,13 +27,14 @@ impl Interpreter {
             {
                 return self.resolve_member(value, name, span);
             }
-            let builtin_borrow = super::super::call::builtin_runtime_member(&value, name).and_then(
-                |(_, receiver)| match receiver {
+            let builtin_borrow = super::super::call::builtin_runtime_member(&value, name)
+                .map(|(_, receiver)| receiver)
+                .or_else(|| super::super::call::builtin_iterator_default_receiver(&value, name))
+                .and_then(|receiver| match receiver {
                     rils_builtins::ReceiverMode::Shared => Some(false),
                     rils_builtins::ReceiverMode::Mutable => Some(true),
                     rils_builtins::ReceiverMode::Owned => None,
-                },
-            );
+                });
             if let Some(mutable) = builtin_borrow {
                 let receiver =
                     self.reference_variable(variable_name, mutable, &environment, span)?;
@@ -70,16 +71,23 @@ impl Interpreter {
         ) {
             let place = self.resolve_place(object, &environment, span)?;
             let value = place.read(span)?;
-            if let Some(mutable) =
-                selected_method(&value, name, span)?
-                    .as_ref()
-                    .and_then(|method| {
-                        match method.parameters.first()?.type_annotation.as_ref()? {
-                            Type::Reference { mutable, .. } => Some(*mutable),
-                            _ => None,
-                        }
-                    })
-            {
+            let builtin_borrow = super::super::call::builtin_iterator_default_receiver(
+                &value, name,
+            )
+            .and_then(|receiver| match receiver {
+                rils_builtins::ReceiverMode::Shared => Some(false),
+                rils_builtins::ReceiverMode::Mutable => Some(true),
+                rils_builtins::ReceiverMode::Owned => None,
+            });
+            let method_borrow = selected_method(&value, name, span)?
+                .as_ref()
+                .and_then(
+                    |method| match method.parameters.first()?.type_annotation.as_ref()? {
+                        Type::Reference { mutable, .. } => Some(*mutable),
+                        _ => None,
+                    },
+                );
+            if let Some(mutable) = builtin_borrow.or(method_borrow) {
                 let receiver = place.borrow(mutable, span)?;
                 return self.resolve_member(receiver, name, span);
             }

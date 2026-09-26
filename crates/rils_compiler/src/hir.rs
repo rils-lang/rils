@@ -17,7 +17,6 @@ mod function;
 mod helpers;
 mod imports;
 mod ir;
-mod iterator_defaults;
 mod literals;
 mod program;
 mod symbols;
@@ -144,6 +143,7 @@ struct GeneratedFunctions {
 }
 
 struct FunctionLowerer<'a> {
+    functions: &'a HashMap<String, FunctionId>,
     types: &'a HashMap<String, TypeId>,
     type_definitions: &'a [HirTypeDefinition],
     host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,

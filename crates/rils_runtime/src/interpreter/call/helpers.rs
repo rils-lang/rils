@@ -5,7 +5,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
 
     fn materialize(plan: &DefaultPlan) -> Option<Value> {
         let sequence = |values: Vec<(Value, Type)>| {
-            Rc::new(SequenceValue {
+            Rc::new(IndexedStorage {
                 active_iterators: std::cell::Cell::new(0),
                 elements: RefCell::new(
                     values
@@ -23,9 +23,9 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
         Some(match plan {
             DefaultPlan::Unit => Value::Unit,
             DefaultPlan::Bool => Value::Bool(false),
-            DefaultPlan::Integer(crate::IntegerType::I8) => Value::I8(0),
+            DefaultPlan::Integer(crate::IntegerType::I8) => crate::numeric::native_i8(0),
             DefaultPlan::Integer(crate::IntegerType::I16) => Value::I16(0),
-            DefaultPlan::Integer(crate::IntegerType::I32) => Value::I32(0),
+            DefaultPlan::Integer(crate::IntegerType::I32) => crate::numeric::native_i32(0),
             DefaultPlan::Integer(crate::IntegerType::I64) => Value::I64(0),
             DefaultPlan::Integer(crate::IntegerType::I128) => Value::I128(0),
             DefaultPlan::Integer(crate::IntegerType::Isize) => Value::Isize(0),
@@ -34,7 +34,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
             DefaultPlan::Integer(crate::IntegerType::U32) => Value::U32(0),
             DefaultPlan::Integer(crate::IntegerType::U64) => Value::U64(0),
             DefaultPlan::Integer(crate::IntegerType::U128) => Value::U128(0),
-            DefaultPlan::Integer(crate::IntegerType::Usize) => Value::Usize(0),
+            DefaultPlan::Integer(crate::IntegerType::Usize) => crate::numeric::native_usize(0),
             DefaultPlan::Float(crate::FloatType::F32) => Value::F32(0.0),
             DefaultPlan::Float(crate::FloatType::F64) => Value::F64(0.0),
             DefaultPlan::Char => Value::Char('\0'),
@@ -66,7 +66,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
                 element_type: Some(inner.clone()),
             },
             DefaultPlan::EmptyCollection { name, arguments } if name == "Vec" => {
-                Value::Vec(Rc::new(SequenceValue {
+                Value::Vec(Rc::new(IndexedStorage {
                     active_iterators: std::cell::Cell::new(0),
                     elements: RefCell::new(Vec::new()),
                     element_type: RefCell::new(Some(arguments[0].clone())),
@@ -111,11 +111,14 @@ pub(crate) fn builtin_runtime_member(
         Value::RefCell(_) => "RefCell",
         Value::VecDeque(_) => "VecDeque",
         Value::BinaryHeap(_) => "BinaryHeap",
-        Value::Range(_) => "Range",
+        Value::Native(object) => match object.descriptor().rils_type() {
+            Type::Named { name, .. } => name.as_str(),
+            _ => return None,
+        },
         Value::Option { .. } => "Option",
         Value::Result { .. } => "Result",
         Value::OwnedIterator(_) => "Iterator",
-        Value::BorrowedSequenceIter(_) => "Iter",
+        Value::BorrowedIndexedIterator(_) => "Iter",
         Value::BorrowedMapIterator(_) | Value::BorrowedSetIterator(_) => "Iter",
         Value::HostObject(object) if object.type_definition.name == "Formatter" => "Formatter",
         _ => return None,
@@ -125,12 +128,7 @@ pub(crate) fn builtin_runtime_member(
             .then(|| rils_builtins::builtin_member("Iterator", name))
             .flatten()
     })?;
-    if matches!(value, Value::Array(_))
-        && !member
-            .builtin_id
-            .and_then(rils_builtins::BuiltinId::canonical_path)
-            .is_some_and(|path| path.starts_with("core::sequence::"))
-    {
+    if matches!(value, Value::Array(_)) && !member.indexed_view {
         return None;
     }
     let method = if let Some(symbol) = member.native_symbol {

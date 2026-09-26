@@ -1,4 +1,4 @@
-use rils::{Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval};
 
 #[test]
 fn native_range_steps_match_in_interpreter_and_vm() {
@@ -13,7 +13,10 @@ fn native_range_steps_match_in_interpreter_and_vm() {
         ),
     ] {
         assert_eq!(eval(source).unwrap(), expected);
-        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+        let compiled = compile(source).unwrap();
+        assert_eq!(compiled.execute().unwrap(), expected);
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.execute().unwrap(), expected);
     }
 
     for direct in [
@@ -21,6 +24,58 @@ fn native_range_steps_match_in_interpreter_and_vm() {
         "let mut range = 254u8..255u8; if range.next() == Some(254u8) && range.next() == None { 42 } else { 0 }",
     ] {
         assert_eq!(eval(direct).unwrap(), Value::I32(42));
-        assert_eq!(compile(direct).unwrap().execute().unwrap(), Value::I32(42));
+        let compiled = compile(direct).unwrap();
+        assert_eq!(compiled.execute().unwrap(), Value::I32(42));
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.execute().unwrap(), Value::I32(42));
+    }
+}
+
+#[test]
+fn range_values_use_native_storage_in_both_backends() {
+    let interpreted = eval("1..3").unwrap();
+    assert!(matches!(interpreted, Value::Native(_)));
+    assert_eq!(interpreted.type_name(), "Range<i32>");
+    assert_eq!(interpreted.to_string(), "1..3");
+
+    let compiled = compile("1..3").unwrap();
+    assert_eq!(compiled.execute().unwrap(), interpreted);
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute().unwrap(), interpreted);
+}
+
+#[test]
+fn every_integer_range_uses_the_same_native_iterator_bridge() {
+    for suffix in [
+        "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
+    ] {
+        let type_name = format!("type_of(1{suffix}..3{suffix})");
+        let expected_type_name = format!("Range<{suffix}>");
+        assert_eq!(
+            eval(&type_name).unwrap().to_string(),
+            expected_type_name,
+            "{suffix} type_of"
+        );
+        assert_eq!(
+            compile(&type_name).unwrap().execute().unwrap().to_string(),
+            expected_type_name,
+            "{suffix} VM type_of"
+        );
+        let source = format!(
+            "let mut range = 1{suffix}..3{suffix};
+             if range.next() == Some(1{suffix})
+                && range.next() == Some(2{suffix})
+                && range.next() == None {{ 42 }} else {{ 0 }}"
+        );
+        assert_eq!(
+            eval(&source).unwrap(),
+            Value::I32(42),
+            "{suffix} interpreter"
+        );
+        assert_eq!(
+            compile(&source).unwrap().execute().unwrap(),
+            Value::I32(42),
+            "{suffix} VM"
+        );
     }
 }

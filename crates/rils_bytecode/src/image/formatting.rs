@@ -16,7 +16,7 @@ impl VirtualMachine<'_> {
         .map_err(|message| BytecodeError::new(message, span))
     }
 
-    fn format_value(
+    pub(super) fn format_value(
         &self,
         value: &Value,
         spec: &FormatSpec,

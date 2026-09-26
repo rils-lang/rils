@@ -27,6 +27,35 @@ fn executes_a_generic_trait_implementation() {
 }
 
 #[test]
+fn iterator_satisfies_into_iterator_bound_without_an_explicit_impl() {
+    let source = r#"
+        struct Counter;
+        impl Iterator for Counter {
+            type Item = i32;
+            fn next(&mut self) -> Option<i32> { None }
+        }
+        fn accepts<T: IntoIterator>(value: T) -> i32 { 7 }
+        accepts((Counter {}))
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::I32(7));
+    let rejected = source.replace("accepts((Counter {}))", "struct Plain; accepts((Plain {}))");
+    let error = eval(&rejected).expect_err("Plain does not implement IntoIterator");
+    assert!(error.to_string().contains("IntoIterator"), "{error}");
+}
+
+#[test]
+fn iterator_can_override_a_default_method() {
+    let source = include_str!("fixtures/iterator_default_override.rils");
+    assert_eq!(eval(source).unwrap(), Value::Usize(42));
+    let mismatched = source.replace("fn count(self) -> usize", "fn count(self) -> i32");
+    let error = eval(&mismatched).expect_err("override must match the trait signature");
+    assert!(
+        error.to_string().contains("return type of method `count`"),
+        "{error}"
+    );
+}
+
+#[test]
 fn function_values_satisfy_precise_fn_bounds() {
     let source = include_str!("fixtures/function_trait_bound.rils");
     assert_eq!(eval(source).unwrap(), Value::I32(14));
@@ -102,7 +131,7 @@ fn evaluates_rc_and_weak_handles() {
         "#,
     )
     .expect("Rc and Weak should execute in the interpreter");
-    assert!(matches!(value, Value::Usize(count) if count >= 1));
+    assert!(value.as_usize().is_some_and(|count| count >= 1));
 }
 
 #[test]
@@ -215,7 +244,7 @@ fn evaluates_btree_map_ordered_operations() {
 }
 
 #[test]
-fn borrowed_sequence_iterator_preserves_the_source() {
+fn borrowed_indexed_iterator_preserves_the_source() {
     for (source, expected) in [
         (
             "{ let values = [2, 3, 5]; let mut iter = values.iter(); let first = iter.next().unwrap(); if values.len() == 3 { *first } else { 0 } }",
@@ -235,7 +264,7 @@ fn borrowed_sequence_iterator_preserves_the_source() {
 }
 
 #[test]
-fn borrowed_sequence_iterator_rejects_escape_and_mutation() {
+fn borrowed_indexed_iterator_rejects_escape_and_mutation() {
     let escaped =
         eval("fn escaped() -> Iter<&i32> { let values = [1, 2]; values.iter() } escaped()")
             .expect_err("borrowed iterator must not outlive its source");

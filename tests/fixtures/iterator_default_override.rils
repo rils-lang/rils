@@ -1,0 +1,18 @@
+struct Counter { value: i32 }
+
+impl Iterator for Counter {
+    type Item = i32;
+
+    fn next(&mut self) -> Option<i32> {
+        if self.value < 2 {
+            self.value = self.value + 1;
+            Some(self.value)
+        } else {
+            None
+        }
+    }
+
+    fn count(self) -> usize { 42usize }
+}
+
+Counter { value: 0 }.count()

@@ -1,0 +1,11 @@
+use crate::numbers::Numbers;
+
+struct Values;
+
+impl IntoIterator for Values {
+    type Item = string;
+    type IntoIter = Numbers;
+    fn into_iter(self) -> Numbers { (Numbers {}) }
+}
+
+fn main() {}

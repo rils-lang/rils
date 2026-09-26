@@ -1,10 +1,10 @@
 use super::*;
 
 fn integer(source: &str) -> i32 {
-    match eval(source).unwrap() {
-        Value::I32(value) => value,
-        value => panic!("expected integer, found {value:?}"),
-    }
+    let value = eval(source).unwrap();
+    value
+        .as_i32()
+        .unwrap_or_else(|| panic!("expected integer, found {value:?}"))
 }
 
 #[test]
@@ -853,6 +853,7 @@ fn for_loops_use_into_iterator_when_available() {
                 }
 
                 impl IntoIterator for CountTo {
+                    type Item = i32;
                     type IntoIter = CounterRange;
 
                     fn into_iter(self) -> CounterRange {
@@ -864,11 +865,111 @@ fn for_loops_use_into_iterator_when_available() {
                 for value in CountTo { end: 5 } {
                     total = total + value;
                 }
-                total
+                let declared: <CountTo as IntoIterator>::Item = 5;
+                total + declared
             "#
         ),
-        10
+        15
     );
+}
+
+#[test]
+fn into_iterator_requires_item_associated_type() {
+    let source = r#"
+        struct Values;
+        impl IntoIterator for Values {
+            type IntoIter = Range<i32>;
+            fn into_iter(self) -> Range<i32> { 0..1 }
+        }
+    "#;
+    let interpreted = eval(source).unwrap_err().to_string();
+    let compiled = match compile(source) {
+        Ok(_) => panic!("missing IntoIterator::Item should not compile"),
+        Err(error) => error.to_string(),
+    };
+    for message in [interpreted, compiled] {
+        assert!(
+            message.contains("missing associated type `Item`"),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn into_iterator_item_matches_its_iterator() {
+    for source in [
+        r#"
+            struct Values;
+            impl IntoIterator for Values {
+                type Item = string;
+                type IntoIter = Range<i32>;
+                fn into_iter(self) -> Range<i32> { 0..1 }
+            }
+        "#,
+        r#"
+            struct Numbers;
+            impl Iterator for Numbers {
+                type Item = i32;
+                fn next(&mut self) -> Option<i32> { None }
+            }
+            struct Values;
+            impl IntoIterator for Values {
+                type Item = string;
+                type IntoIter = Numbers;
+                fn into_iter(self) -> Numbers { (Numbers {}) }
+            }
+        "#,
+    ] {
+        let interpreted = eval(source).unwrap_err().to_string();
+        let compiled = match compile(source) {
+            Ok(_) => panic!("mismatched IntoIterator::Item should not compile"),
+            Err(error) => error.to_string(),
+        };
+        for message in [interpreted, compiled] {
+            assert!(
+                message.contains("IntoIterator::Item must match IntoIter::Item"),
+                "{message}"
+            );
+        }
+    }
+}
+
+#[test]
+fn into_iterator_requires_an_iterator_result() {
+    let source = r#"
+        struct Plain;
+        struct Values;
+        impl IntoIterator for Values {
+            type Item = i32;
+            type IntoIter = Plain;
+            fn into_iter(self) -> Plain { (Plain {}) }
+        }
+    "#;
+    let interpreted = eval(source).unwrap_err().to_string();
+    let compiled = match compile(source) {
+        Ok(_) => panic!("non-iterator IntoIter should not compile"),
+        Err(error) => error.to_string(),
+    };
+    for message in [interpreted, compiled] {
+        assert!(message.contains("must implement Iterator"), "{message}");
+    }
+}
+
+#[test]
+fn project_into_iterator_item_contract_matches_across_files() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/project_iterator_item_mismatch/src/main.rils");
+    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let compiled = match compile_file(&entry) {
+        Ok(_) => panic!("mismatched project IntoIterator::Item should not compile"),
+        Err(error) => error.to_string(),
+    };
+    for message in [interpreted, compiled] {
+        assert!(
+            message.contains("IntoIterator::Item must match IntoIter::Item"),
+            "{message}"
+        );
+    }
 }
 
 #[test]
@@ -886,13 +987,13 @@ fn integer_ranges_work_with_for_loops() {
                 for value in 0..5 {
                     total = total + value;
                 }
-                assert!(type_of(2..4) == "Range");
+                assert!(type_of(2..4) == "Range<i32>");
                 let mut range = 2..4;
                 assert!(range.next() == Some(2));
                 assert!(range.next() == Some(3));
                 assert!(range.next() == None);
                 let iterator = (0..1).into_iter();
-                assert!(type_of(iterator) == "Range");
+                assert!(type_of(iterator) == "Range<i32>");
                 total
             "#
         ),
@@ -2430,9 +2531,7 @@ fn rust_helper_forwards_native_functions_as_rils_macros() {
     fn host_sum(arguments: &[Value]) -> Result<Value, String> {
         let mut total = 0_i32;
         for value in arguments {
-            let Value::I32(value) = value else {
-                return Err("host_sum expects integers".into());
-            };
+            let value = value.as_i32().ok_or("host_sum expects integers")?;
             total += value;
         }
         Ok(Value::I32(total))
@@ -3027,9 +3126,7 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
     let constructor_type = counter_type.clone();
     engine
         .register_module_function("host", "counter", 1, 1, move |arguments| {
-            let Value::I32(initial) = arguments[0] else {
-                return Err("counter expects i32".into());
-            };
+            let initial = arguments[0].as_i32().ok_or("counter expects i32")?;
             Ok(constructor_type.value(std::cell::Cell::new(initial)))
         })
         .unwrap();

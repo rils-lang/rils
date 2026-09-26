@@ -1,0 +1,5 @@
+fn first<const N: usize>(values: [i32; N]) -> i32 { values[0] }
+fn same<const N: usize>(left: [i32; N], right: [i32; N]) -> i32 { left[0] + right[0] }
+assert!(first([42]) == 42);
+assert!(same([20, 1], [22, 2]) == 42);
+42

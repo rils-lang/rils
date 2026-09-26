@@ -20,6 +20,10 @@ pub(super) fn resolve_numeric_member(
         | Value::U128(_)
         | Value::Usize(_) => rils_builtins::integer_method(name)
             .map(|method| BuiltinMethod::IntegerIntrinsic(method.id)),
+        Value::Native(object) if matches!(object.descriptor().rils_type(), Type::Integer(_)) => {
+            rils_builtins::integer_method(name)
+                .map(|method| BuiltinMethod::IntegerIntrinsic(method.id))
+        }
         Value::F32(_) | Value::F64(_) => {
             rils_builtins::float_method(name).map(|method| BuiltinMethod::FloatIntrinsic(method.id))
         }
@@ -49,6 +53,22 @@ pub(super) fn resolve_host_or_builtin_member(
             BuiltinBoundMethod {
                 receiver: Rc::new(value.clone()),
                 method,
+            },
+        ))));
+    }
+    if name == "into_iter"
+        && Type::of_value(value).is_some_and(|ty| {
+            let Type::Named { name, .. } = ty else {
+                return false;
+            };
+            rils_builtins::builtin(&name)
+                .is_some_and(|definition| definition.member("next").is_some())
+        })
+    {
+        return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
+            BuiltinBoundMethod {
+                receiver: Rc::new(value.clone()),
+                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter),
             },
         ))));
     }
@@ -259,16 +279,6 @@ pub(super) fn bind_rils_method(
         )
     })?;
     let Some(function) = function else {
-        if trait_methods.borrow().contains_key("Iterator")
-            && rils_builtins::is_iterator_default_method(name)
-            && let Some(member) = rils_builtins::builtin_member("Iterator", name)
-            && let (Some(method), Some(_)) = (member.builtin_id, member.receiver)
-        {
-            return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                receiver: Rc::new(receiver),
-                method: BuiltinMethod::Runtime(method),
-            })));
-        }
         if name == "clone" {
             return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(receiver),

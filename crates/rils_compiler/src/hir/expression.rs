@@ -259,6 +259,16 @@ impl<'a> FunctionLowerer<'a> {
                     ..
                 } = callee.as_ref()
                 {
+                    if trait_name.rsplit("::").next() == Some("IntoIterator")
+                        && member == "into_iter"
+                        && arguments.len() == 1
+                        && matches!(
+                            self.resolved_builtin(expression_id),
+                            Some((rils_builtins::BuiltinId::IteratorIntoIter, _, None))
+                        )
+                    {
+                        return self.expression(&arguments[0]);
+                    }
                     if trait_name == "Default" && member == "default" {
                         if !arguments.is_empty() {
                             return Err(CompileError::unsupported(
@@ -425,6 +435,52 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
+                    if let Some(rils_frontend::semantic::ResolvedCall::TraitDefault {
+                        trait_name,
+                        method,
+                        receiver,
+                    }) = self.typeck_results.resolved_call(expression_id)
+                    {
+                        let name = format!("@{}_{}", trait_name.to_ascii_lowercase(), method);
+                        let symbol = if self.namespace.is_empty() {
+                            name
+                        } else {
+                            format!("{}::{name}", self.namespace)
+                        };
+                        let function = *self.functions.get(&symbol).ok_or_else(|| {
+                            CompileError::unsupported(
+                                format!(
+                                    "exported {trait_name} default `{method}` has no compiled body"
+                                ),
+                                *span,
+                            )
+                        })?;
+                        let receiver = self.method_receiver(
+                            object,
+                            match receiver {
+                                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
+                                rils_builtins::ReceiverMode::Shared => {
+                                    ReceiverMode::Reference { mutable: false }
+                                }
+                                rils_builtins::ReceiverMode::Mutable => {
+                                    ReceiverMode::Reference { mutable: true }
+                                }
+                            },
+                        )?;
+                        let mut lowered = Vec::with_capacity(arguments.len() + 1);
+                        lowered.push(receiver);
+                        lowered.extend(
+                            arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        );
+                        return Ok(HirExpression::Call {
+                            function,
+                            arguments: lowered,
+                            span: *span,
+                        });
+                    }
                     let semantic_builtin = self
                         .typeck_results
                         .resolved_call(expression_id)
@@ -462,20 +518,12 @@ impl<'a> FunctionLowerer<'a> {
                     }) {
                         if name == "into_iter"
                             && arguments.is_empty()
-                            && matches!(
-                                builtin,
-                                rils_builtins::BuiltinId::SequenceIntoIter
-                                    | rils_builtins::BuiltinId::RangeIntoIter
-                                    | rils_builtins::BuiltinId::IteratorIntoIter
-                            )
+                            && matches!(builtin, rils_builtins::BuiltinId::RangeIntoIter)
                         {
                             return Ok(HirExpression::IntoIterator {
                                 value: Box::new(self.expression(object)?),
                                 span: *span,
                             });
-                        }
-                        if rils_builtins::is_iterator_default_builtin(builtin) {
-                            return self.iterator_default(name, object, arguments, *span);
                         }
                         if builtin.has_direct_runtime_call()
                             && let Some(receiver) = receiver.map(|receiver| match receiver {

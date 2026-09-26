@@ -28,6 +28,14 @@ impl Interpreter {
             values.extend_from_slice(arguments);
             return self.call_native_symbol(symbol, &values, span);
         }
+        if let BuiltinMethod::Runtime(id) = method.method
+            && rils_builtins::is_iterator_default_builtin(id)
+            && let Some((_, member)) = rils_builtins::runtime_member(id)
+            && let Some(bound) =
+                self.bind_exported_iterator_default(method.receiver.as_ref(), member.name)
+        {
+            return self.call(bound, arguments, span);
+        }
         match method.method {
             BuiltinMethod::Native(symbol) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
@@ -50,9 +58,6 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeIntoIter) => {
-                Ok((*method.receiver).clone())
-            }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter) => {
                 Ok((*method.receiver).clone())
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone) => {
@@ -120,17 +125,6 @@ impl Interpreter {
                 )
                 .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::SequenceLen
-                | rils_builtins::BuiltinId::SequenceIsEmpty
-                | rils_builtins::BuiltinId::SequenceContains),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPush) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
@@ -172,17 +166,8 @@ impl Interpreter {
                 crate::runtime_builtins::call(rils_builtins::BuiltinId::VecExtend, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::SequenceIntoIter) => {
-                crate::runtime_builtins::call(
-                    rils_builtins::BuiltinId::SequenceIntoIter,
-                    &[(*method.receiver).clone()],
-                )
-                .map_err(|message| RuntimeError::new(message, span))
-            }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::SequenceIter
-                | rils_builtins::BuiltinId::SequenceIterNext
-                | rils_builtins::BuiltinId::HashMapIter
+                id @ (rils_builtins::BuiltinId::HashMapIter
                 | rils_builtins::BuiltinId::BtreeMapIter
                 | rils_builtins::BuiltinId::HashSetIter
                 | rils_builtins::BuiltinId::BtreeSetIter),
@@ -195,43 +180,6 @@ impl Interpreter {
                 )
                 .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::IteratorCount
-                | rils_builtins::BuiltinId::IteratorLast
-                | rils_builtins::BuiltinId::IteratorNth
-                | rils_builtins::BuiltinId::IteratorCollectVec
-                | rils_builtins::BuiltinId::IteratorTake
-                | rils_builtins::BuiltinId::IteratorSkip
-                | rils_builtins::BuiltinId::IteratorRev
-                | rils_builtins::BuiltinId::IteratorEnumerate),
-            ) => {
-                let receiver = match method.receiver.as_ref() {
-                    Value::Reference(reference) => reference
-                        .read()
-                        .map_err(|message| RuntimeError::new(message, span))?,
-                    value => value.clone(),
-                };
-                if matches!(receiver, Value::OwnedIterator(_)) {
-                    let mut values = Vec::with_capacity(arguments.len() + 1);
-                    values.push((*method.receiver).clone());
-                    values.extend_from_slice(arguments);
-                    crate::runtime_builtins::call(id, &values)
-                        .map_err(|message| RuntimeError::new(message, span))
-                } else {
-                    self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span)
-                }
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::IteratorMap
-                | rils_builtins::BuiltinId::IteratorFilter
-                | rils_builtins::BuiltinId::IteratorFilterMap
-                | rils_builtins::BuiltinId::IteratorFold
-                | rils_builtins::BuiltinId::IteratorForEach
-                | rils_builtins::BuiltinId::IteratorAny
-                | rils_builtins::BuiltinId::IteratorAll
-                | rils_builtins::BuiltinId::IteratorFind
-                | rils_builtins::BuiltinId::IteratorPosition),
-            ) => self.call_iterator_default_method(id, method.receiver.as_ref(), arguments, span),
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::ResultUnwrap
                 | rils_builtins::BuiltinId::ResultUnwrapOr

@@ -1,0 +1,7 @@
+let values = Vec::from([1, 2, 3]);
+let empty: Vec<i32> = Vec::from([]);
+let nested = Vec::from([[1, 2], [3, 4]]);
+assert!(values.len() == 3usize);
+assert!(empty.len() == 0usize);
+assert!(nested[0][1] == 2);
+42

@@ -6,6 +6,7 @@ impl<'a> FunctionLowerer<'a> {
         reason = "the lowerer borrows one immutable table per compiler identity domain"
     )]
     pub(super) fn new(
+        functions: &'a HashMap<String, FunctionId>,
         types: &'a HashMap<String, TypeId>,
         type_definitions: &'a [HirTypeDefinition],
         host_functions: &'a HashMap<String, Vec<HostFunctionDeclaration>>,
@@ -17,6 +18,7 @@ impl<'a> FunctionLowerer<'a> {
         generated: GeneratedFunctions,
     ) -> Self {
         Self {
+            functions,
             types,
             type_definitions,
             host_functions,
@@ -195,6 +197,7 @@ impl<'a> FunctionLowerer<'a> {
                 let function = self.generated.next_id.get();
                 self.generated.next_id.set(function + 1);
                 let mut child = FunctionLowerer::new(
+                    self.functions,
                     self.types,
                     self.type_definitions,
                     self.host_functions,

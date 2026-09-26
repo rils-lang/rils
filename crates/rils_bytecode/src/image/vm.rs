@@ -272,73 +272,11 @@ impl<'a> VirtualMachine<'a> {
                     source,
                 } => {
                     let source = self.take_register(source, instruction.span)?;
-                    let iterator = match source {
-                        Value::Range(range) => Value::Range(range),
-                        Value::OwnedIterator(iterator) => Value::OwnedIterator(iterator),
-                        Value::BorrowedSequenceIter(iterator) => {
-                            Value::BorrowedSequenceIter(iterator)
-                        }
-                        Value::BorrowedMapIterator(iterator) => {
-                            Value::BorrowedMapIterator(iterator)
-                        }
-                        Value::BorrowedSetIterator(iterator) => {
-                            Value::BorrowedSetIterator(iterator)
-                        }
-                        Value::Array(sequence) | Value::Vec(sequence) => {
-                            if sequence.active_iterators.get() > 0
-                                || sequence
-                                    .elements
-                                    .borrow()
-                                    .iter()
-                                    .any(|slot| slot.references > 0)
-                            {
-                                return Err(BytecodeError::new(
-                                    "cannot iterate a collection while an element is referenced",
-                                    instruction.span,
-                                ));
-                            }
-                            let element_type = sequence
-                                .element_type
-                                .borrow()
-                                .clone()
-                                .unwrap_or(Type::Unknown);
-                            if sequence
-                                .elements
-                                .borrow()
-                                .iter()
-                                .any(|slot| slot.value.is_none())
-                            {
-                                return Err(BytecodeError::new(
-                                    "cannot iterate a partially moved collection",
-                                    instruction.span,
-                                ));
-                            }
-                            Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_sequence(
-                                sequence,
-                                element_type,
-                            )))
-                        }
-                        Value::HashMap(map) => crate::hash_collections::call(
-                            rils_builtins::BuiltinId::HashMapIntoIter,
-                            &[Value::HashMap(map)],
-                        )
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                        Value::BTreeMap(map) => crate::runtime_builtins::call(
-                            rils_builtins::BuiltinId::BtreeMapIntoIter,
-                            &[Value::BTreeMap(map)],
-                        )
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                        Value::BTreeSet(set) => crate::runtime_builtins::call(
-                            rils_builtins::BuiltinId::BtreeSetIntoIter,
-                            &[Value::BTreeSet(set)],
-                        )
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                        Value::HashSet(set) => crate::hash_collections::call(
-                            rils_builtins::BuiltinId::HashSetIntoIter,
-                            &[Value::HashSet(set)],
-                        )
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                        value => {
+                    let iterator = match rils_execution::iteration::into_iterator(source)
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?
+                    {
+                        rils_execution::iteration::IntoIteratorResult::Ready(iterator) => iterator,
+                        rils_execution::iteration::IntoIteratorResult::UserDefined(value) => {
                             let methods = self.iterator_methods(&value).ok_or_else(|| {
                                 BytecodeError::new(
                                     format!(
@@ -526,6 +464,11 @@ impl<'a> VirtualMachine<'a> {
                             }
                         }
                     }
+                    let arguments = rils_execution::native_arguments::prepare(
+                        Some(&declaration.signature),
+                        &arguments,
+                        |value, spec| self.format_value(value, spec, instruction.span),
+                    )?;
                     let value = match declaration.name.as_str() {
                         "std::io::print" | "std::io::println" => {
                             if arguments.is_empty() && declaration.name == "std::io::println" {
@@ -765,7 +708,7 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let value = self.take_register(value, instruction.span)?;
                     let count = self.take_register(count, instruction.span)?;
-                    let Value::Usize(count) = count else {
+                    let Some(count) = count.as_usize() else {
                         return Err(BytecodeError::new(
                             "array repeat count must be usize",
                             instruction.span,
@@ -794,9 +737,9 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let start = self.take_register(start, instruction.span)?;
                     let end = self.take_register(end, instruction.span)?;
-                    let range = RangeValue::new(start, end)
+                    let range = native_range(start, end)
                         .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                    self.frame_mut().registers[destination] = Some(Value::Range(range));
+                    self.frame_mut().registers[destination] = Some(range);
                 }
                 Instruction::BuildOptionNone { destination } => {
                     self.frame_mut().registers[destination] = Some(Value::Option {
@@ -953,29 +896,14 @@ impl<'a> VirtualMachine<'a> {
                                         instruction.span,
                                     )
                                 })?;
-                        match iterator {
-                            Value::Range(range) => range
-                                .next()
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                            Value::OwnedIterator(iterator) => iterator
-                                .next()
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                            Value::BorrowedSequenceIter(iterator) => iterator
-                                .next()
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                            Value::BorrowedMapIterator(iterator) => iterator
-                                .next()
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                            Value::BorrowedSetIterator(iterator) => iterator
-                                .next()
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                            value => {
-                                return Err(BytecodeError::new(
-                                    format!("{} is not an iterator", value.type_name()),
+                        rils_execution::iteration::next_builtin(iterator)
+                            .ok_or_else(|| {
+                                BytecodeError::new(
+                                    format!("{} is not an iterator", iterator.type_name()),
                                     instruction.span,
-                                ));
-                            }
-                        }
+                                )
+                            })?
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?
                     };
                     if let Some(item) = item {
                         self.frame_mut().registers[destination] = Some(item);

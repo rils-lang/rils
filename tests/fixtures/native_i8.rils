@@ -1,0 +1,17 @@
+let max = 127i8;
+let wrapped = max.wrapping_add(1i8);
+let mut keys: HashSet<i8> = HashSet::new();
+keys.insert(wrapped);
+let mut range = -2i8..0i8;
+let first = range.next();
+let second = range.next();
+let result = (wrapped + 2i8).saturating_abs();
+if keys.contains(&wrapped)
+    && first == Some(-2i8)
+    && second == Some(-1i8)
+    && result == 126i8
+{
+    result
+} else {
+    0i8
+}

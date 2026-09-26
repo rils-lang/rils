@@ -5,8 +5,10 @@
 
 ## 泛型 trait bound 一致性
 
-- 字节码编译路径需要检查泛型函数调用的 trait bound。目前解释器会拒绝将 `Option<string>` 传给 `T: Copy`，但字节码路径尚未拒绝同一调用；应在共享前端完成检查，并增加解释器与 VM 的失败路径对照测试。
+- `Display` / `Debug` 的调用约束已进入共享前端；字节码编译路径仍需补齐其他泛型函数调用的 trait bound。目前解释器会拒绝将 `Option<string>` 传给 `T: Copy`，但字节码路径尚未拒绝同一调用；应在共享前端完成检查，并增加解释器与 VM 的失败路径对照测试。
 - `decl_rils` 导出方法时需保留 `where` 约束并交由共享前端检查；当前 `Cell<T>::get()` 的 `T: Copy` 只能在执行时拒绝不匹配的值。
+
+- 数组签名已支持 `const N: usize` 与长度推导；后续扩展 const 表达式、函数体内的 const 值读取与显式 const 实参。
 
 ## 优化项
 
@@ -23,6 +25,7 @@
 
 ### 运行时与编译器
 
+- `rils_value` 已提供内联 Copy 布局、动态 `Option<T>` 布局和任意操作表，实际运行时已接入 `Range<T>`、`i8`、`i32` 和 `usize`。布局工厂及整数方法的原生对象注册由标准库声明过程宏生成；继续收敛这些整数的旧值边界，再迁移 `string` 和 `Option<T>`。全部读写入口迁移后删除相应旧 `Value` 变体。每步检查类型推断、方法调用、move/Copy、解释器/VM 和字节码往返。泛型 `Option<T>` 还需运行时类型见证、嵌套引用报告和动态构造路径，而不是枚举几个 Rust 实例。为内联 Copy 的可变 receiver 增加 place 写回；为原生桥接建立可重复的 release 基准。
 - 评估以源码 revision 缓存 entry `DefId` 与每模块 HIR，并为项目分析建立细粒度失效边界。
 - 继续收缩 AST 解释器内剩余的类型兼容检查和名称查找逻辑。已迁入共享 frontend 的部分包括 trait
   impl associated type 声明契约、暂不支持的条件 trait impl 诊断、孤儿规则与项目内重复 impl 检查。
@@ -44,6 +47,7 @@
 
 - `FnOnce`、`FnMut`、`Fn` 已导出，解释器按签名和捕获行为检查 bound；继续把捕获能力分析移到共享前端，让字节码路径也拒绝不满足的 bound，并静态约束 `FnOnce` 泛型回调的重复调用。Option/Result 方法与导出自由函数已从普通 `Fn*` Rust 实现生成隐藏的可失败桥接；继续扩展回调调用的宏改写范围、其他方法 receiver 的原生桥接及引用、容器等值类型转换。
 - 完善泛型 trait 身份：普通泛型 trait 实例可作为 bound 使用，同一类型对同一 trait 的不同类型实参可分别实现，限定关联类型与 trait UFCS 路径保留并校验实参，coherence 和方法表按实例身份区分。
+- 将标准库 `Iterator -> IntoIterator` 的 blanket 关系推广为用户可声明的带条件 trait impl，统一泛型匹配、关联类型投影、跨模块 coherence 和解释器/VM 分派。
 - 为标准库原生桥接补齐 `&mut self` 的 place 代理与写回，以及泛型返回值的类型见证和所有权转换；完成后移除相应旧 ID 适配。
 - 增加结构化数值转换错误类型和更完整的浮点转换入口。
 - 评估 HashMap/HashSet 的借用查询与索引 place，遵守 Rils 引用不能逃逸的规则。
@@ -54,7 +58,7 @@
 
 ### 语言
 
-- 为 `#[decl_rils(...)] mod native` 中的 trait 增加默认方法：从模块内的 Rust 实现注册可调用入口，生成 Rils 可见签名与默认性，并在解释器与 VM 均可执行后开放声明语法。继续扩展 trait 定义中的派生生成器，覆盖泛型 `Copy` 的条件 impl。
+- 继续扩展 trait 定义中的派生生成器，覆盖泛型 `Copy` 的条件 impl。
 - 将现有 `Debug` 的派生逻辑从 `rils_syntax` 的固定名称分支迁入对应 trait 的注册生成器，使所有内建 derive 使用同一入口。扩展 `Eq`、`Hash` 派生的字段检查，支持已实现相应 trait 的命名字段和泛型条件 impl。
 
 - 模式守卫、或模式、`@` 绑定和更完整的 `..` 模式。
@@ -88,7 +92,7 @@
 - 完善 CLI 的项目检查、模块图、Manifest 校验和诊断导出命令。
 - 提供标准库 API 目录和由 `rils_builtins` 生成的文档入口。
 - 继续把未迁移的标准库 `.rils` 占位声明迁移到 `rils_stdlib` 的 Rust 定义。迁移期间保留旧语言包供构建和 Analyzer 使用；全部迁移完成后，再统一移除重复声明、设计 Analyzer 对新定义的支持，并清理旧的按 ID 手写实现。
-- 扩展 `decl_rils` 原生桥接以覆盖 Option/Result 的剩余方法、数值与集合；String 方法已迁移并删除其 ID。每迁移一个方法就改由 `native_symbol` 走原生调用。全部迁移后删除 `BuiltinId`、`builtin_ids.toml`、旧字节码调用指令和运行时回退，并对仍缺少实现的导出方法报错。
+- 扩展 `decl_rils` 原生桥接以覆盖 Option/Result 的剩余方法、数值与集合；String 方法已迁移并删除其 ID，Vec 的部分方法和拥有型 `into_iter` 已通过 receiver 代理迁移。继续覆盖 Vec 的其余方法、借用迭代器及其他容器，统一泛型值与引用转换。全部迁移后删除 `BuiltinId`、`builtin_ids.toml`、旧字节码调用指令和运行时回退，并对仍缺少实现的导出方法报错。
 - 已建立独立的 `tools/rils-bench` release 基准工具和 `python tools/benchmark.py` 稳定入口；继续扩展
   解释器、磁盘字节码和 Analyzer 场景，并在基线稳定后建立持续性能回归。
 - 增加跨平台原生构建与发布矩阵，并明确各宿主的 ABI/字节码兼容策略。

@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use crate::{
     source::Span,
     types::Type,
-    value::{FieldSlot, SequenceValue, Value},
+    value::{FieldSlot, IndexedStorage, Value},
 };
 
 use super::BytecodeError;
@@ -39,7 +39,7 @@ pub(super) fn sequence_value(
             references: 0,
         })
         .collect();
-    let sequence = Rc::new(SequenceValue {
+    let sequence = Rc::new(IndexedStorage {
         active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(elements),
         element_type: RefCell::new(array.then_some(element_type)),

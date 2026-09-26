@@ -1,0 +1,26 @@
+let mut values: Vec<i32> = Vec::new();
+values.push(1);
+values.push(2);
+let length = values.len();
+let popped = values.pop().unwrap();
+values.push(3);
+values.truncate(1usize);
+let remaining = values.pop().unwrap();
+let was_empty = values.is_empty();
+values.push(4);
+values.clear();
+let cleared = values.is_empty();
+values.push(6);
+values.insert(0usize, 5);
+let removed = values.remove(1usize);
+values.push(7);
+let swapped = values.swap_remove(0usize);
+let final_length = values.len();
+let mut iterator = values.into_iter();
+let final_item = iterator.next().unwrap();
+let remaining_count = Vec::from([8, 9]).into_iter().count();
+if length == 2usize && popped == 2 && remaining == 1 && was_empty && cleared && removed == 6 && swapped == 5 && final_length == 1usize && final_item == 7 && remaining_count == 2usize {
+    42
+} else {
+    0
+}

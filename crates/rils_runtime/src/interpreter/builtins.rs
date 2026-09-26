@@ -274,6 +274,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                     ["K", "V"]
                         .into_iter()
                         .map(|name| GenericParameter {
+                            is_const: false,
                             name: name.into(),
                             bounds: Vec::new(),
                             span: Span::default(),
@@ -281,6 +282,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                         .collect()
                 } else {
                     vec![GenericParameter {
+                        is_const: false,
                         name: "T".into(),
                         bounds: Vec::new(),
                         span: Span::default(),
@@ -317,6 +319,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         Value::StructType(Rc::new(StructType {
             name: "Range".into(),
             generic_parameters: vec![GenericParameter {
+                is_const: false,
                 name: "T".into(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -463,6 +466,24 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
         .iter()
         .filter(|declaration| declaration.kind == rils_builtins::BuiltinKind::Trait)
     {
+        let source_methods = declaration
+            .source
+            .map(|source| {
+                let tokens = rils_frontend::lexer::lex(source)
+                    .expect("generated built-in trait source must lex");
+                rils_frontend::parser::parse_builtin_declarations(tokens)
+                    .expect("generated built-in trait source must parse")
+            })
+            .and_then(|program| {
+                program
+                    .statements
+                    .into_iter()
+                    .find_map(|statement| match statement {
+                        crate::ast::Stmt::Trait { methods, .. } => Some(methods),
+                        _ => None,
+                    })
+            })
+            .unwrap_or_default();
         let associated_types = declaration
             .members
             .iter()
@@ -479,12 +500,11 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             .members
             .iter()
             .filter(|member| {
-                member.required
-                    && matches!(
-                        member.kind,
-                        rils_builtins::BuiltinMemberKind::Method
-                            | rils_builtins::BuiltinMemberKind::AssociatedFunction
-                    )
+                matches!(
+                    member.kind,
+                    rils_builtins::BuiltinMemberKind::Method
+                        | rils_builtins::BuiltinMemberKind::AssociatedFunction
+                )
             })
             .map(|member| {
                 let Type::Function {
@@ -539,6 +559,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                         .type_parameters
                         .iter()
                         .map(|name| GenericParameter {
+                            is_const: false,
                             name: (*name).into(),
                             bounds: Vec::new(),
                             span,
@@ -546,6 +567,10 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                         .collect(),
                     parameters,
                     return_type: Some(*return_type),
+                    body: source_methods
+                        .iter()
+                        .find(|method| method.name == member.name)
+                        .and_then(|method| method.body.clone()),
                     span,
                 }
             })
@@ -556,6 +581,7 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
                 .type_parameters
                 .iter()
                 .map(|name| GenericParameter {
+                    is_const: false,
                     name: (*name).into(),
                     bounds: Vec::new(),
                     span: Span::default(),

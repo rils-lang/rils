@@ -87,7 +87,7 @@ pub(super) fn infer_type_from_value(
     substitutions: &mut HashMap<String, Type>,
 ) -> Result<(), String> {
     match (expected, value) {
-        (Type::Variable(name), value) => {
+        (Type::Variable(name) | Type::BoundVariable { name, .. }, value) => {
             let actual = Type::of_value(value).unwrap_or(Type::Unknown);
             bind_type_variable(name, actual, substitutions)
         }
@@ -154,6 +154,10 @@ pub(super) fn infer_type_from_value(
             let actual = Type::of_value(value).unwrap_or(Type::opaque_function());
             infer_type_from_type(expected, &actual, substitutions)
         }
+        (Type::Array { .. } | Type::ArrayParameter { .. } | Type::Tuple(_), value) => {
+            let actual = Type::of_value(value).ok_or("cannot infer argument type")?;
+            infer_type_from_type(expected, &actual, substitutions)
+        }
         (Type::Unknown, _) => Ok(()),
         (expected, value) if expected.accepts(value) => Ok(()),
         (expected, value) => Err(format!(
@@ -168,62 +172,7 @@ pub(super) fn infer_type_from_type(
     actual: &Type,
     substitutions: &mut HashMap<String, Type>,
 ) -> Result<(), String> {
-    match (expected, actual) {
-        (Type::Variable(name), actual) => bind_type_variable(name, actual.clone(), substitutions),
-        (Type::Option(expected), Type::Option(actual)) => {
-            infer_type_from_type(expected, actual, substitutions)
-        }
-        (Type::Result(expected_ok, expected_error), Type::Result(actual_ok, actual_error)) => {
-            infer_type_from_type(expected_ok, actual_ok, substitutions)?;
-            infer_type_from_type(expected_error, actual_error, substitutions)
-        }
-        (
-            Type::Reference {
-                mutable: expected_mutable,
-                inner: expected,
-            },
-            Type::Reference {
-                mutable: actual_mutable,
-                inner: actual,
-            },
-        ) if !*expected_mutable || *actual_mutable => {
-            infer_type_from_type(expected, actual, substitutions)
-        }
-        (
-            Type::Function {
-                parameters: expected_parameters,
-                return_type: expected_return,
-            },
-            Type::Function {
-                parameters: actual_parameters,
-                return_type: actual_return,
-            },
-        ) => {
-            if let (Some(expected_parameters), Some(actual_parameters)) =
-                (expected_parameters, actual_parameters)
-            {
-                infer_type_arguments(expected_parameters, actual_parameters, substitutions)?;
-            }
-            infer_type_from_type(expected_return, actual_return, substitutions)
-        }
-        (
-            Type::Named {
-                name: expected_name,
-                arguments: expected_arguments,
-            },
-            Type::Named {
-                name: actual_name,
-                arguments: actual_arguments,
-            },
-        ) if expected_name == actual_name => {
-            infer_type_arguments(expected_arguments, actual_arguments, substitutions)
-        }
-        (Type::Unknown, _) | (_, Type::Unknown) => Ok(()),
-        (expected, actual) if expected == actual => Ok(()),
-        (expected, actual) => Err(format!(
-            "generic type mismatch: expected {expected}, found {actual}"
-        )),
-    }
+    crate::types::infer_generic_arguments(expected, actual, substitutions)
 }
 
 pub(super) fn infer_type_arguments(
@@ -352,6 +301,32 @@ pub(super) fn type_implements_trait(
     trait_name: &str,
     environment: &EnvironmentRef,
 ) -> bool {
+    if rils_builtins::BLANKET_TRAIT_IMPLS
+        .iter()
+        .any(|&(bound, provided)| {
+            provided == trait_name && type_implements_trait(actual, bound, environment)
+        })
+    {
+        return true;
+    }
+    let trait_name = trait_name.rsplit("::").next().unwrap_or(trait_name);
+    if matches!(trait_name, "Display" | "Debug") {
+        return rils_frontend::format_traits::implements(actual, trait_name, &|ty, required| {
+            let Type::Named { name, .. } = ty else {
+                return false;
+            };
+            match environment.borrow().get(name) {
+                Some(Value::StructType(definition)) => {
+                    definition.implemented_traits.borrow().contains(required)
+                }
+                Some(Value::EnumType(definition)) => {
+                    definition.implemented_traits.borrow().contains(required)
+                }
+                Some(Value::HostType(_)) => true,
+                _ => false,
+            }
+        });
+    }
     match trait_name {
         "IntoIterator" if matches!(actual, Type::Array { .. }) => true,
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Vec" && arguments.len() == 1) => {
@@ -405,15 +380,16 @@ fn type_is_structural_key_trait(
     environment: &EnvironmentRef,
 ) -> bool {
     match actual {
+        Type::ConstUsize(_) => false,
         Type::Unit | Type::Bool | Type::Char => true,
         Type::String => rils_builtins::native_implements("string", trait_name),
         Type::Integer(integer) => rils_builtins::native_implements(integer.name(), trait_name),
         Type::Tuple(elements) => elements
             .iter()
             .all(|element| type_is_structural_key_trait(element, trait_name, environment)),
-        Type::Array { element, .. } | Type::Option(element) => {
-            type_is_structural_key_trait(element, trait_name, environment)
-        }
+        Type::Array { element, .. }
+        | Type::ArrayParameter { element, .. }
+        | Type::Option(element) => type_is_structural_key_trait(element, trait_name, environment),
         Type::Result(ok, error) => {
             type_is_structural_key_trait(ok, trait_name, environment)
                 && type_is_structural_key_trait(error, trait_name, environment)
@@ -529,6 +505,22 @@ pub(super) fn expand_type_aliases(
                     .iter()
                     .map(|argument| expand(argument, environment, span, stack))
                     .collect::<Result<Vec<_>, _>>()?;
+                if trait_name.as_deref() == Some("IntoIterator")
+                    && name == "IntoIter"
+                    && arguments.is_empty()
+                    && type_implements_trait(&base, "Iterator", environment)
+                {
+                    return Ok(base);
+                }
+                let lookup_trait = if trait_name.as_deref() == Some("IntoIterator")
+                    && name == "Item"
+                    && arguments.is_empty()
+                    && type_implements_trait(&base, "Iterator", environment)
+                {
+                    Some("Iterator")
+                } else {
+                    trait_name.as_deref()
+                };
                 let Type::Named {
                     name: target_name, ..
                 } = &base
@@ -540,15 +532,28 @@ pub(super) fn expand_type_aliases(
                         arguments,
                     });
                 };
+                if lookup_trait == Some("Iterator")
+                    && name == "Item"
+                    && let Some(item) =
+                        rils_frontend::standard_library::builtin_iterator_item_type(&base)
+                {
+                    return Ok(item);
+                }
+                if trait_name.as_deref() == Some("IntoIterator")
+                    && name == "Item"
+                    && let Some(item) =
+                        rils_frontend::standard_library::builtin_into_iterator_item_type(&base)
+                {
+                    return Ok(item);
+                }
                 let definitions = match environment.borrow().get(target_name) {
                     Some(Value::StructType(definition)) => definition
                         .associated_types
                         .borrow()
                         .iter()
                         .filter(|(implemented_trait, _)| {
-                            trait_name
-                                .as_ref()
-                                .is_none_or(|expected| expected == *implemented_trait)
+                            lookup_trait
+                                .is_none_or(|expected| expected == implemented_trait.as_str())
                         })
                         .filter_map(|(_, items)| items.get(name).cloned())
                         .collect::<Vec<_>>(),
@@ -557,9 +562,8 @@ pub(super) fn expand_type_aliases(
                         .borrow()
                         .iter()
                         .filter(|(implemented_trait, _)| {
-                            trait_name
-                                .as_ref()
-                                .is_none_or(|expected| expected == *implemented_trait)
+                            lookup_trait
+                                .is_none_or(|expected| expected == implemented_trait.as_str())
                         })
                         .filter_map(|(_, items)| items.get(name).cloned())
                         .collect::<Vec<_>>(),
@@ -682,7 +686,10 @@ pub(super) fn expand_type_aliases(
                     .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
                     .collect::<HashMap<_, _>>();
                 for (parameter, argument) in alias.generic_parameters.iter().zip(&arguments) {
-                    if matches!(argument, Type::Unknown | Type::Variable(_)) {
+                    if matches!(
+                        argument,
+                        Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }
+                    ) {
                         continue;
                     }
                     for bound in &parameter.bounds {
@@ -737,7 +744,11 @@ fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
         | Type::Char
         | Type::Reference { .. } => true,
         Type::Function { .. } => true,
-        Type::String | Type::Unknown | Type::Variable(_) | Type::Associated { .. } => false,
+        Type::String
+        | Type::Unknown
+        | Type::Variable(_)
+        | Type::BoundVariable { .. }
+        | Type::Associated { .. } => false,
         Type::Option(inner) => {
             rils_builtins::native_implements_with("Option", "Copy", |parameter, bound| {
                 parameter == "T" && bound == "Copy" && type_is_copy(inner, environment)
@@ -754,8 +765,10 @@ fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
             })
         }
         Type::Tuple(elements) => elements.iter().all(|ty| type_is_copy(ty, environment)),
-        Type::Array { element, .. } => type_is_copy(element, environment),
-        Type::Slice(_) => false,
+        Type::Array { element, .. } | Type::ArrayParameter { element, .. } => {
+            type_is_copy(element, environment)
+        }
+        Type::Slice(_) | Type::ConstUsize(_) => false,
         Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => true,
         Type::Named { name, arguments } => match environment.borrow().get(name) {
             Some(Value::StructType(definition)) => {
@@ -805,7 +818,10 @@ fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
 
 fn type_is_clone(actual: &Type, environment: &EnvironmentRef) -> bool {
     match actual {
-        Type::Unknown | Type::Variable(_) | Type::Associated { .. } => false,
+        Type::Unknown
+        | Type::Variable(_)
+        | Type::BoundVariable { .. }
+        | Type::Associated { .. } => false,
         Type::Option(inner) => {
             rils_builtins::native_implements_with("Option", "Clone", |parameter, bound| {
                 parameter == "T" && bound == "Clone" && type_is_clone(inner, environment)
@@ -822,7 +838,9 @@ fn type_is_clone(actual: &Type, environment: &EnvironmentRef) -> bool {
             })
         }
         Type::Tuple(elements) => elements.iter().all(|ty| type_is_clone(ty, environment)),
-        Type::Array { element, .. } => type_is_clone(element, environment),
+        Type::Array { element, .. } | Type::ArrayParameter { element, .. } => {
+            type_is_clone(element, environment)
+        }
         Type::Named { name, .. } if name == "Vec" => true,
         Type::Named { name, .. } => matches!(
             environment.borrow().get(name),

@@ -221,6 +221,12 @@ fn runtime_instructions_store_and_validate_u32_builtin_ids() {
         }
     ));
 
+    bytes[id_offset..id_offset + 4].copy_from_slice(&0x0100u32.to_le_bytes());
+    let retired = read_instruction(&mut Reader::new(&bytes))
+        .err()
+        .expect("retired indexed collection ID should require recompilation");
+    assert!(retired.message.contains("invalid runtime built-in ID"));
+
     bytes[id_offset..id_offset + 4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
     let error = read_instruction(&mut Reader::new(&bytes))
         .err()

@@ -1,0 +1,18 @@
+let repeated = [7; 3usize];
+let picked = repeated[1usize];
+let mut range = 1usize..3usize;
+let first = range.next();
+let second = range.next();
+let mut values: Vec<i32> = Vec::new();
+values.push(40);
+values.push(42);
+let length = values.len();
+if picked == 7
+    && first == Some(1usize)
+    && second == Some(2usize)
+    && length == 2usize
+{
+    length
+} else {
+    0usize
+}

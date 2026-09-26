@@ -18,7 +18,7 @@ impl Interpreter {
                         references: 0,
                     });
                 }
-                Ok(Value::Tuple(Rc::new(SequenceValue {
+                Ok(Value::Tuple(Rc::new(IndexedStorage {
                     active_iterators: std::cell::Cell::new(0),
                     elements: RefCell::new(slots),
                     element_type: RefCell::new(None),
@@ -39,7 +39,7 @@ impl Interpreter {
                         ));
                     }
                     let count = self.evaluate(count, environment.clone())?;
-                    let Value::Usize(count) = count else {
+                    let Some(count) = count.as_usize() else {
                         return Err(RuntimeError::new("array repeat count must be usize", *span));
                     };
                     for _ in 0..count {
@@ -75,7 +75,7 @@ impl Interpreter {
                         references: 0,
                     })
                     .collect();
-                Ok(Value::Array(Rc::new(SequenceValue {
+                Ok(Value::Array(Rc::new(IndexedStorage {
                     active_iterators: std::cell::Cell::new(0),
                     elements: RefCell::new(slots),
                     element_type: RefCell::new(Some(element_type)),

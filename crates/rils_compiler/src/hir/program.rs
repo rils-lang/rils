@@ -86,6 +86,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Box".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -101,6 +102,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Rc".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -112,6 +114,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Cell".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -123,6 +126,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "RefCell".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -134,6 +138,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "VecDeque".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -145,6 +150,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "BinaryHeap".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -158,6 +164,7 @@ impl ProgramLowerer {
             generic_parameters: ["K", "V"]
                 .into_iter()
                 .map(|name| rils_frontend::ast::GenericParameter {
+                    is_const: false,
                     name: name.to_owned(),
                     bounds: Vec::new(),
                     span: Span::default(),
@@ -170,6 +177,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "BTreeSet".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -181,6 +189,7 @@ impl ProgramLowerer {
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Weak".to_owned(),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
+                is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
@@ -393,6 +402,7 @@ impl ProgramLowerer {
             .filter(|statement| !is_compile_time_declaration(statement))
             .collect::<Vec<_>>();
         let mut entry_function = FunctionLowerer::new(
+            &self.functions,
             &self.types,
             &self.type_definitions,
             &self.host_functions,
@@ -451,6 +461,7 @@ impl ProgramLowerer {
         for (_, declaration) in declarations {
             lowered.push(
                 FunctionLowerer::new(
+                    &self.functions,
                     &self.types,
                     &self.type_definitions,
                     &self.host_functions,

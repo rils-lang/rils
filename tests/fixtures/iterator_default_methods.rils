@@ -1,0 +1,47 @@
+struct Counter { current: i32, end: i32 }
+
+impl Iterator for Counter {
+    type Item = i32;
+
+    fn next(&mut self) -> Option<i32> {
+        if self.current < self.end {
+            let value = self.current;
+            let end = self.end;
+            *self = Counter { current: value + 1, end: end };
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+fn double(value: i32) -> i32 { value * 2 }
+fn add(total: i32, value: i32) -> i32 { total + value }
+fn over_two(value: &i32) -> bool { *value > 2 }
+fn even(value: i32) -> bool { value % 2 == 0 }
+fn maybe_double(value: i32) -> Option<i32> {
+    if value % 2 == 0 { Some(value * 2) } else { None }
+}
+fn check_positive(value: i32) { assert!(value > 0); }
+
+assert!(Counter { current: 1, end: 5 }.count() == 4usize);
+assert!(Counter { current: 1, end: 5 }.last().unwrap() == 4);
+let mut nth = Counter { current: 1, end: 5 };
+assert!(nth.nth(2usize).unwrap() == 3);
+assert!(nth.next().unwrap() == 4);
+assert!(Counter { current: 1, end: 5 }.collect_vec().len() == 4usize);
+assert!(Counter { current: 1, end: 5 }.take(2usize).fold(0, add) == 3);
+assert!(Counter { current: 1, end: 5 }.skip(2usize).fold(0, add) == 7);
+assert!(Counter { current: 1, end: 5 }.rev().fold(0, add) == 10);
+assert!(Counter { current: 1, end: 5 }.map(double).fold(0, add) == 20);
+assert!(Counter { current: 1, end: 5 }.filter(over_two).fold(0, add) == 7);
+assert!(Counter { current: 1, end: 5 }.filter_map(maybe_double).fold(0, add) == 12);
+assert!(Counter { current: 1, end: 5 }.fold(0, add) == 10);
+Counter { current: 1, end: 5 }.for_each(check_positive);
+assert!(Counter { current: 1, end: 5 }.any(even));
+assert!(!Counter { current: 1, end: 5 }.all(even));
+assert!(Counter { current: 1, end: 5 }.find(over_two).unwrap() == 3);
+assert!(Counter { current: 1, end: 5 }.position(even).unwrap() == 1usize);
+assert!(Counter { current: 1, end: 5 }.enumerate().count() == 4usize);
+assert!(Counter { current: 1, end: 5 }.into_iter().count() == 4usize);
+42

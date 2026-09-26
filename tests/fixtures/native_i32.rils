@@ -1,0 +1,16 @@
+let max = 2147483647;
+let wrapped = max.wrapping_add(1);
+let mut keys: HashSet<i32> = HashSet::new();
+keys.insert(wrapped);
+let mut range = 40..42;
+let first = range.next();
+let second = range.next();
+if keys.contains(&wrapped)
+    && wrapped < 0
+    && first == Some(40)
+    && second == Some(41)
+{
+    42
+} else {
+    0
+}

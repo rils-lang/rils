@@ -22,6 +22,7 @@ struct CountTo {
 }
 
 impl IntoIterator for CountTo {
+    type Item = i32;
     type IntoIter = CounterRange;
 
     fn into_iter(self) -> CounterRange {

@@ -5,10 +5,7 @@ fn assert_matches_interpreter(source: &str) {
     let interpreted = crate::eval(source).expect("source should interpret");
     let module = compile(source).expect("source should compile");
     let compiled = module.execute().expect("bytecode should execute");
-    match (&compiled, &interpreted) {
-        (Value::Range(left), Value::Range(right)) => assert_eq!(left, right),
-        _ => assert_eq!(compiled, interpreted),
-    }
+    assert_eq!(compiled, interpreted);
 }
 
 #[test]
@@ -598,7 +595,7 @@ fn constructs_and_clones_rc_handles_with_explicit_type_arguments() {
     )
     .expect("Rc source should compile");
     let strong_count = module.call("main", Vec::new()).unwrap();
-    assert!(matches!(strong_count, Value::Usize(count) if count >= 2));
+    assert!(strong_count.as_usize().is_some_and(|count| count >= 2));
 }
 
 #[test]
@@ -613,7 +610,13 @@ fn upgrades_weak_handles_while_the_rc_is_alive() {
         "#,
     )
     .expect("Weak source should compile");
-    assert!(matches!(module.call("main", Vec::new()).unwrap(), Value::Usize(count) if count >= 1));
+    assert!(
+        module
+            .call("main", Vec::new())
+            .unwrap()
+            .as_usize()
+            .is_some_and(|count| count >= 1)
+    );
 }
 
 #[test]
@@ -928,7 +931,7 @@ fn links_and_executes_core_imports() {
 }
 
 #[test]
-fn runtime_members_use_stable_ids_without_host_imports() {
+fn migrated_vec_members_use_native_imports_without_host_imports() {
     let module = compile(
         r#"
             let mut values = Vec::from([1, 2]);
@@ -956,12 +959,69 @@ fn runtime_members_use_stable_ids_without_host_imports() {
             _ => None,
         })
         .collect::<HashSet<_>>();
+    assert!(runtime_ids.is_empty());
+    let vector = rils_builtins::builtin("Vec").unwrap();
+    let symbols = ["push", "len"]
+        .map(|name| vector.member(name).unwrap().native_symbol.unwrap())
+        .into_iter()
+        .collect::<HashSet<_>>();
     assert_eq!(
-        runtime_ids,
-        HashSet::from([
-            rils_builtins::BuiltinId::VecPush,
-            rils_builtins::BuiltinId::SequenceLen,
-        ])
+        module
+            .native_imports
+            .iter()
+            .map(|import| import.symbol.as_str())
+            .collect::<HashSet<_>>(),
+        symbols
+    );
+}
+
+#[test]
+fn iterator_default_body_compiles_without_legacy_runtime_id() {
+    let source = "let values = [1, 2, 3]; values.into_iter().count()";
+    let module = compile(source).unwrap();
+    assert_eq!(module.execute().unwrap(), Value::Usize(3));
+    assert!(
+        module
+            .functions
+            .iter()
+            .any(|function| function.name.contains("@iterator_count"))
+    );
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .all(|instruction| {
+                !matches!(
+                    instruction.instruction,
+                    Instruction::CallRuntime {
+                        builtin: rils_builtins::BuiltinId::IteratorCount,
+                        ..
+                    }
+                )
+            })
+    );
+}
+
+#[test]
+fn vec_is_empty_uses_native_body_without_legacy_runtime_id() {
+    let source = "let values: Vec<i32> = Vec::new(); values.is_empty()";
+    let module = compile(source).unwrap();
+    assert_eq!(module.execute().unwrap(), Value::Bool(true));
+    assert!(
+        module
+            .native_imports
+            .iter()
+            .any(|import| import.symbol.contains("is_empty"))
+    );
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .all(|instruction| {
+                !matches!(instruction.instruction, Instruction::CallRuntime { .. })
+            })
     );
 }
 
@@ -1334,6 +1394,36 @@ fn rejects_non_hashable_collection_keys_during_analysis() {
 fn compiles_custom_iterator_and_into_iterator_traits() {
     assert_matches_interpreter(
         r#"
+                struct Counter { current: i32 }
+                impl Iterator for Counter {
+                    type Item = i32;
+                    fn next(&mut self) -> Option<i32> {
+                        if self.current < 3 {
+                            let current = self.current;
+                            self.current = current + 1;
+                            Some(current)
+                        } else {
+                            None
+                        }
+                    }
+                }
+                let mut counter = Counter { current: 0 }.into_iter();
+                let mut other = <Counter as IntoIterator>::into_iter(Counter { current: 0 });
+                let mut projected: <Counter as IntoIterator>::IntoIter = Counter { current: 0 };
+                let item: <Counter as IntoIterator>::Item = 4;
+                counter.next().unwrap() + counter.next().unwrap() + other.next().unwrap() + projected.next().unwrap() + item
+            "#,
+    );
+    assert_matches_interpreter(
+        "{ let mut values = (0..3).into_iter(); values.next().unwrap() + values.next().unwrap() }",
+    );
+    assert_matches_interpreter(
+        "{ let mut values = <Range<i32> as IntoIterator>::into_iter(0..3); values.next().unwrap() + values.next().unwrap() }",
+    );
+    assert_matches_interpreter("{ let item: <Range<i32> as IntoIterator>::Item = 1; item }");
+    assert_matches_interpreter("{ let item: <Vec<i32> as IntoIterator>::Item = 1; item }");
+    assert_matches_interpreter(
+        r#"
                 struct CounterRange { current: i32, end: i32 }
 
                 impl Iterator for CounterRange {
@@ -1377,6 +1467,7 @@ fn compiles_custom_iterator_and_into_iterator_traits() {
                 }
 
                 impl IntoIterator for CountTo {
+                    type Item = i32;
                     type IntoIter = CounterRange;
                     fn into_iter(self) -> CounterRange {
                         CounterRange { current: 0, end: self.end }
@@ -1393,7 +1484,46 @@ fn compiles_custom_iterator_and_into_iterator_traits() {
 }
 
 #[test]
-fn compiles_borrowed_sequence_iteration_with_interpreter_parity() {
+fn rejects_explicit_into_iterator_for_an_iterator() {
+    let error = match compile(
+        r#"
+            struct Counter { current: i32 }
+            impl Iterator for Counter {
+                type Item = i32;
+                fn next(&mut self) -> Option<i32> { None }
+            }
+            impl IntoIterator for Counter {
+                type Item = i32;
+                type IntoIter = Counter;
+                fn into_iter(self) -> Counter { self }
+            }
+            0
+        "#,
+    ) {
+        Ok(_) => panic!("the standard blanket implementation already covers Counter"),
+        Err(error) => error,
+    };
+    assert!(error.message.contains("blanket implementation"), "{error}");
+}
+
+#[test]
+fn rejects_blanket_into_iterator_ufcs_for_non_iterators() {
+    let source = "struct Plain; <Plain as IntoIterator>::into_iter((Plain {}))";
+    assert!(rils_runtime::eval(source).is_err());
+    let error = match compile(source) {
+        Ok(_) => panic!("Plain is not an iterator"),
+        Err(error) => error,
+    };
+    assert!(error.message.contains("did not resolve UFCS"), "{error}");
+
+    let invalid_projection =
+        "struct Plain; let value: <Plain as IntoIterator>::IntoIter = Plain {}; value";
+    assert!(rils_runtime::eval(invalid_projection).is_err());
+    assert!(compile(invalid_projection).is_err());
+}
+
+#[test]
+fn compiles_borrowed_indexed_iteration_with_interpreter_parity() {
     for source in [
         "{ let values = [2, 3, 5]; let mut iter = values.iter(); let first = iter.next().unwrap(); if values.len() == 3 { *first } else { 0 } }",
         "{ let mut values: Vec<i32> = Vec::new(); values.push(4); values.push(7); let mut sum = 0; for value in values.iter() { sum = sum + *value; } if values.len() == 2 { sum } else { 0 } }",
@@ -1404,7 +1534,7 @@ fn compiles_borrowed_sequence_iteration_with_interpreter_parity() {
 }
 
 #[test]
-fn compiles_owned_sequence_iteration_with_interpreter_parity() {
+fn compiles_owned_indexed_iteration_with_interpreter_parity() {
     for source in [
         "{ let values = [2, 3, 5]; let mut iter = values.into_iter(); let first = iter.next().unwrap(); let rest = iter.collect_vec(); first + rest[0] }",
         "{ let mut values: Vec<i32> = Vec::new(); values.push(4); values.push(7); let mut iter = values.into_iter(); iter.nth(1usize).unwrap() }",
@@ -1495,7 +1625,10 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
         FunctionSignature::fixed(vec![Type::I32, Type::I32], Type::I32),
         "unity.math",
         |arguments| match arguments {
-            [Value::I32(left), Value::I32(right)] => Ok(Value::I32(left + right)),
+            [left, right] => match (left.as_i32(), right.as_i32()) {
+                (Some(left), Some(right)) => Ok(Value::I32(left + right)),
+                _ => Err("unexpected arguments".into()),
+            },
             _ => Err("unexpected arguments".into()),
         },
     )
@@ -1555,7 +1688,10 @@ fn links_distinct_host_overloads_by_name_and_signature() {
         FunctionSignature::fixed(vec![Type::I32], Type::I32),
         "unity.math",
         |arguments| match arguments {
-            [Value::I32(value)] => Ok(Value::I32(value + 1)),
+            [value] => value
+                .as_i32()
+                .map(|value| Value::I32(value + 1))
+                .ok_or_else(|| "unexpected integer overload arguments".into()),
             _ => Err("unexpected integer overload arguments".into()),
         },
     )

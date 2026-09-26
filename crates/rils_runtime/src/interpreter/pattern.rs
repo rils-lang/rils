@@ -164,9 +164,9 @@ pub(super) fn literal_value(literal: &Literal) -> Value {
     match literal {
         Literal::Unit => Value::Unit,
         Literal::Bool(value) => Value::Bool(*value),
-        Literal::I8(value) => Value::I8(*value),
+        Literal::I8(value) => crate::numeric::native_i8(*value),
         Literal::I16(value) => Value::I16(*value),
-        Literal::I32(value) => Value::I32(*value),
+        Literal::I32(value) => crate::numeric::native_i32(*value),
         Literal::I64(value) => Value::I64(*value),
         Literal::I128(value) => Value::I128(*value),
         Literal::Isize(value) => Value::Isize(*value),
@@ -175,11 +175,11 @@ pub(super) fn literal_value(literal: &Literal) -> Value {
         Literal::U32(value) => Value::U32(*value),
         Literal::U64(value) => Value::U64(*value),
         Literal::U128(value) => Value::U128(*value),
-        Literal::Usize(value) => Value::Usize(*value),
+        Literal::Usize(value) => crate::numeric::native_usize(*value),
         Literal::F32(value) => Value::F32(*value),
         Literal::F64(value) => Value::F64(*value),
         Literal::Char(value) => Value::Char(*value),
-        Literal::Integer(value) => Value::I32(
+        Literal::Integer(value) => crate::numeric::native_i32(
             i32::try_from(*value).expect("unresolved integer pattern must fit the i32 default"),
         ),
         Literal::Float(value) => Value::F64(*value),

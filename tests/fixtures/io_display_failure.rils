@@ -1,0 +1,8 @@
+struct Broken { value: i32 }
+impl core::fmt::Display for Broken {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter) -> Result<(), core::fmt::FormatError> {
+        assert!(false, "display was invoked");
+        Ok(())
+    }
+}
+std::io::write(Broken { value: 0 })

@@ -19,9 +19,6 @@ mod environment {
 mod formatting {
     pub(crate) use rils_execution::formatting::*;
 }
-mod hash_collections {
-    pub(crate) use rils_execution::hash_collections::*;
-}
 mod hir {
     pub(crate) use rils_compiler::hir::*;
 }

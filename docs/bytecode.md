@@ -80,6 +80,11 @@ receiver 和引用 receiver 只允许立即调用，不能进入可复制的绑�
 `compile_file_with_host` 会让这些声明参与静态分析并生成普通 import，运行前由
 `BytecodeModule::validate_host` 或正常执行路径链接到 `BytecodeHost`。自定义
 `Iterator`/`IntoIterator` 的脚本方法登记在模块迭代表中，`for` 会通过普通 VM 调用帧驱动它们。
+标准库 `Iterator` 默认方法从 trait 声明的方法体编译为普通函数，不为新字节码写入这些方法的旧数字 ID；
+`next` 仍由运行时原语推进。Iterator 默认方法的旧 ID 只用于读取历史字节码。
+旧 Sequence 的六个数字 ID（`0x0100` 至 `0x0105`）已移除；读取包含这些调用的旧
+`.rilbc` v8 文件会报无效内建 ID。当前 v8 尚未定型，因此格式号保持 v8，旧文件应从
+源码重新编译；Unity `.bytes` 和嵌入 `.rilslib` 的字节码模块也应重新生成。
 跨工具交换使用严格、确定性排序的 [Host Manifest v5](capi/host-manifest.md)，不直接序列化 Rust 结构。
 
 当前覆盖边界汇总如下：
@@ -92,7 +97,7 @@ receiver 和引用 receiver 只允许立即调用，不能进入可复制的绑�
 | 所有权与引用 | 已支持基础层 | move/Copy、解引用、reborrow，以及引用根和 struct/tuple/数组/Vec 混合投影链的读取、赋值和局部借用 |
 | Trait 与方法 | 已支持 | 关联函数、四种 self、任意 receiver、trait impl、UFCS/UFCS 函数值、模块内 impl |
 | 模块 | 已支持 | 内联模块、use/as、多段路径及 `compile_file` 外部模块链接 |
-| 迭代器 | 部分支持 | Range、数组、Vec 和自定义 Iterator/IntoIterator；借用迭代器待实现 |
+| 迭代器 | 部分支持 | Range、数组、Vec、借用集合迭代器和自定义 Iterator/IntoIterator；适配器目前会预先收集结果 |
 | 标准库/宿主 | 部分支持 | core/Vec、内置宏、显式授权的 std::io/std::fs，以及编译期自定义 HostContract 已链接；解释器 Engine 与同一契约的整合待完成 |
 | 磁盘预编译 | 实验可用 | `.rilbc` v8、bytes/file API、CLI compile/verify/run；尚未承诺跨版本稳定 |
 
@@ -143,6 +148,7 @@ game.validate_host(&game_host)?;
 
 当前已实现实验性 `.rilbc` v8。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
 内存布局：
+`Range<T>` 等原生负载在加载后由运行时构造，字节码只保留构造指令与类型信息；`i8`、`i32` 和 `usize` 常量加载时也构造成原生内联值。原生类型描述和 Rust 分配器所有权不进入磁盘格式。
 
 ```text
 magic | format version | language version | host ABI | pointer width | flags | section directory | CRC32
@@ -203,3 +209,8 @@ module 导出为构建产物。
 
 未来的格式、性能和运行时增强统一记录在仓库根目录的 [TODO.md](../TODO.md)，不作为当前字节码
 格式承诺。
+
+导出签名的类型编码还保留符号数组长度（`[T; N]`）、推导出的 `usize` const 实参及泛型
+trait 约束。泛型参数记录区分类型参数与 `const usize` 参数。IO 的 `Display` 约束经过
+序列化和加载仍保留，由通用参数转换入口调用格式化 trait。该调整属于尚未冻结的 v8；
+此前生成的 v8 文件应重新编译，不递增到 v9。

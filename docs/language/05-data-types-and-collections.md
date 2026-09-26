@@ -101,7 +101,7 @@ let copied = Vec::from([1, 2, 3]);
 ```
 
 借用迭代器和它产出的引用不能超过源集合的词法作用域。借用迭代期间不能结构修改 Vec；
-`iter_mut()` 以及其他容器的借用迭代器尚未提供。
+HashMap、HashSet、BTreeMap 和 BTreeSet 也提供共享借用迭代；`iter_mut()` 尚未提供。
 
 ## String 与内建迭代器
 
@@ -119,11 +119,10 @@ let characters = "R世".chars().count(); // 2
 
 `Iterator` 支持 `next/nth/count/last`，可通过 `take/skip/rev/enumerate` 继续组成迭代器，通过
 `map/filter/filter_map` 转换或筛选，通过 `fold/for_each/any/all/find/position` 聚合和查询，或通过
-`collect_vec()` 收集为 `Vec<T>`。这些默认方法同样适用于脚本实现的自定义 `Iterator`；`any/all/find/position`
+`collect_vec()` 收集为 `Vec<T>`。实现 `Iterator` 时必须声明 `Item` 并实现 `next`；上述其他方法均提供默认行为，也可以在 impl 中按原签名重写。它们的元素类型由 `Item` 决定，不要求它是类型的第一个泛型参数。`any/all/find/position`
 会短路。`filter/find` 的谓词接收 `&T`，筛选拥有型非 Copy 元素时不需要 Clone。
 
-除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。数组和 Vec 的拥有型 `into_iter()` 在调用 `next()` 时逐项移出元素；当前转换适配器和字符串迭代会先收集结果，再生成拥有型内建迭代器。
-数组、Vec、HashMap、HashSet、BTreeMap 和 BTreeSet 已提供共享借用迭代，`iter_mut()` 尚未实现。
+除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。`take/skip/rev` 的返回类型是 `Iterator<Item>`，与产生的新迭代器一致，不再是原 receiver 的 `Self`。数组和 Vec 的拥有型 `into_iter()` 在调用 `next()` 时逐项移出元素；当前转换适配器和字符串迭代会先收集结果，再生成拥有型内建迭代器。这些默认行为由标准库的 trait 方法体导出，解释器和字节码共用同一份定义。
 
 ## VecDeque 与 BinaryHeap
 

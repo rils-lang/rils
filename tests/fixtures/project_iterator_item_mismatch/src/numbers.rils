@@ -1,0 +1,6 @@
+pub struct Numbers;
+
+impl Iterator for Numbers {
+    type Item = i32;
+    fn next(&mut self) -> Option<i32> { None }
+}

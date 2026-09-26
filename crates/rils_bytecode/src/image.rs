@@ -13,8 +13,8 @@ use crate::{
     types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
-        FieldSlot, HashMapValue, HashSetValue, OwnedIteratorValue, RangeValue, ReferenceValue,
-        SequenceValue, StructInstance, StructType, Value,
+        FieldSlot, HashMapValue, HashSetValue, IndexedStorage, ReferenceValue, StructInstance,
+        StructType, Value, native_range,
     },
 };
 
@@ -576,9 +576,9 @@ impl Constant {
         match self {
             Self::Unit => Value::Unit,
             Self::Bool(value) => Value::Bool(*value),
-            Self::I8(value) => Value::I8(*value),
+            Self::I8(value) => crate::numeric::native_i8(*value),
             Self::I16(value) => Value::I16(*value),
-            Self::I32(value) => Value::I32(*value),
+            Self::I32(value) => crate::numeric::native_i32(*value),
             Self::I64(value) => Value::I64(*value),
             Self::I128(value) => Value::I128(*value),
             Self::Isize(value) => Value::Isize(*value),
@@ -587,7 +587,7 @@ impl Constant {
             Self::U32(value) => Value::U32(*value),
             Self::U64(value) => Value::U64(*value),
             Self::U128(value) => Value::U128(*value),
-            Self::Usize(value) => Value::Usize(*value),
+            Self::Usize(value) => crate::numeric::native_usize(*value),
             Self::F32(value) => Value::F32(*value),
             Self::F64(value) => Value::F64(*value),
             Self::Char(value) => Value::Char(*value),
