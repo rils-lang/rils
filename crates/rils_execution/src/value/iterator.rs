@@ -3,21 +3,23 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use crate::types::Type;
 
 use super::{
-    FieldSlot, HashKey, MapCollection, ReferenceValue, SequenceValue, SetCollection, Value,
+    FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue, SetCollection, Value,
 };
 
 #[derive(Clone)]
 pub struct OwnedIteratorValue {
     pub items: RefCell<VecDeque<Value>>,
+    slots: Option<RefCell<VecDeque<FieldSlot>>>,
     pub element_type: Type,
-    pub source: Option<Rc<SequenceValue>>,
+    pub source: Option<Rc<IndexedStorage>>,
     pub cursor: std::cell::Cell<usize>,
 }
 
 impl OwnedIteratorValue {
-    pub fn from_sequence(source: Rc<SequenceValue>, element_type: Type) -> Self {
+    pub fn from_indexed(source: Rc<IndexedStorage>, element_type: Type) -> Self {
         Self {
             items: RefCell::new(VecDeque::new()),
+            slots: None,
             element_type,
             source: Some(source),
             cursor: std::cell::Cell::new(0),
@@ -27,6 +29,17 @@ impl OwnedIteratorValue {
     pub fn from_items(items: VecDeque<Value>, element_type: Type) -> Self {
         Self {
             items: RefCell::new(items),
+            slots: None,
+            element_type,
+            source: None,
+            cursor: std::cell::Cell::new(0),
+        }
+    }
+
+    pub fn from_slots(slots: VecDeque<FieldSlot>, element_type: Type) -> Self {
+        Self {
+            items: RefCell::new(VecDeque::new()),
+            slots: Some(RefCell::new(slots)),
             element_type,
             source: None,
             cursor: std::cell::Cell::new(0),
@@ -36,6 +49,16 @@ impl OwnedIteratorValue {
     pub fn next(&self) -> Result<Option<Value>, String> {
         if let Some(value) = self.items.borrow_mut().pop_front() {
             return Ok(Some(value));
+        }
+        if let Some(slots) = &self.slots {
+            return slots
+                .borrow_mut()
+                .pop_front()
+                .map(|slot| {
+                    slot.value
+                        .ok_or_else(|| "cannot iterate a partially moved collection".to_owned())
+                })
+                .transpose();
         }
         let Some(source) = &self.source else {
             return Ok(None);
@@ -54,6 +77,17 @@ impl OwnedIteratorValue {
     }
 
     pub fn materialize(&self) -> Result<(), String> {
+        if let Some(slots) = &self.slots {
+            let mut slots = slots.borrow_mut();
+            let mut items = self.items.borrow_mut();
+            while let Some(slot) = slots.pop_front() {
+                items.push_back(
+                    slot.value
+                        .ok_or_else(|| "cannot iterate a partially moved collection".to_owned())?,
+                );
+            }
+            return Ok(());
+        }
         let Some(source) = &self.source else {
             return Ok(());
         };
@@ -72,6 +106,13 @@ impl OwnedIteratorValue {
 
     pub fn contains_reference(&self) -> bool {
         self.items.borrow().iter().any(Value::contains_reference)
+            || self.slots.as_ref().is_some_and(|slots| {
+                slots
+                    .borrow()
+                    .iter()
+                    .filter_map(|slot| slot.value.as_ref())
+                    .any(Value::contains_reference)
+            })
             || self.source.as_ref().is_some_and(|source| {
                 source
                     .elements
@@ -84,28 +125,28 @@ impl OwnedIteratorValue {
     }
 }
 
-pub struct BorrowedSequenceIterValue {
+pub struct BorrowedIndexedIteratorValue {
     pub source: Rc<ReferenceValue>,
-    pub sequence: Rc<SequenceValue>,
+    pub storage: Rc<IndexedStorage>,
     pub index: std::cell::Cell<usize>,
     pub length: usize,
     pub element_type: Type,
 }
 
-impl BorrowedSequenceIterValue {
+impl BorrowedIndexedIteratorValue {
     pub fn next(&self) -> Result<Option<Value>, String> {
         let (Value::Array(source) | Value::Vec(source)) = self.source.read()? else {
-            return Err("iterator source is no longer a sequence".into());
+            return Err("iterator source is no longer an indexed collection".into());
         };
-        if !Rc::ptr_eq(&source, &self.sequence) {
+        if !Rc::ptr_eq(&source, &self.storage) {
             return Err("iterator source has been replaced".into());
         }
         let index = self.index.get();
         if index >= self.length {
             return Ok(None);
         }
-        let reference = ReferenceValue::new_guarded_sequence_element(
-            self.sequence.clone(),
+        let reference = ReferenceValue::new_guarded_indexed_element(
+            self.storage.clone(),
             index,
             false,
             Some(self.source.clone()),
@@ -115,11 +156,11 @@ impl BorrowedSequenceIterValue {
     }
 }
 
-impl Drop for BorrowedSequenceIterValue {
+impl Drop for BorrowedIndexedIteratorValue {
     fn drop(&mut self) {
-        self.sequence
+        self.storage
             .active_iterators
-            .set(self.sequence.active_iterators.get().saturating_sub(1));
+            .set(self.storage.active_iterators.get().saturating_sub(1));
     }
 }
 
@@ -166,7 +207,7 @@ impl BorrowedMapIteratorValue {
         let Type::Tuple(types) = item_type else {
             unreachable!()
         };
-        Ok(Some(Value::Tuple(Rc::new(SequenceValue {
+        Ok(Some(Value::Tuple(Rc::new(IndexedStorage {
             active_iterators: std::cell::Cell::new(0),
             elements: RefCell::new(vec![
                 FieldSlot {

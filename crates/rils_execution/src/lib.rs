@@ -3,7 +3,9 @@
 pub mod environment;
 pub mod formatting;
 pub mod hash_collections;
+pub mod iteration;
 mod limits;
+pub mod native_arguments;
 pub mod numeric;
 pub mod output;
 pub mod runtime_builtins;

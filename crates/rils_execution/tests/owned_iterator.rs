@@ -2,12 +2,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use rils_execution::{
     Type, Value,
-    value::{FieldSlot, OwnedIteratorValue, SequenceValue},
+    value::{FieldSlot, IndexedStorage, OwnedIteratorValue},
 };
 
 #[test]
-fn owned_sequence_iterator_moves_items_only_when_advanced() {
-    let source = Rc::new(SequenceValue {
+fn owned_indexed_iterator_moves_items_only_when_advanced() {
+    let source = Rc::new(IndexedStorage {
         elements: RefCell::new(
             [2, 3, 5]
                 .into_iter()
@@ -21,7 +21,7 @@ fn owned_sequence_iterator_moves_items_only_when_advanced() {
         element_type: RefCell::new(Some(Type::I32)),
         active_iterators: Default::default(),
     });
-    let iterator = OwnedIteratorValue::from_sequence(source.clone(), Type::I32);
+    let iterator = OwnedIteratorValue::from_indexed(source.clone(), Type::I32);
 
     assert!(
         source

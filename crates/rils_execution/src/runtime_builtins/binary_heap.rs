@@ -26,7 +26,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
         return Err("expected BinaryHeap receiver".into());
     };
     match id {
-        BuiltinId::BinaryHeapLen => Ok(Value::Usize(heap.elements.borrow().len())),
+        BuiltinId::BinaryHeapLen => Ok(crate::numeric::native_usize(heap.elements.borrow().len())),
         BuiltinId::BinaryHeapIsEmpty => Ok(Value::Bool(heap.elements.borrow().is_empty())),
         BuiltinId::BinaryHeapPush => {
             let item = arguments.get(1).ok_or("missing BinaryHeap element")?;
@@ -118,6 +118,15 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
 }
 
 fn orderable(value: &Value) -> bool {
+    if crate::numeric::i8_payload(value).is_some() {
+        return true;
+    }
+    if crate::numeric::i32_payload(value).is_some() {
+        return true;
+    }
+    if value.as_usize().is_some() {
+        return true;
+    }
     matches!(
         value,
         Value::I8(_)
@@ -138,6 +147,21 @@ fn orderable(value: &Value) -> bool {
 }
 
 fn compare(left: &Value, right: &Value) -> Result<Ordering, String> {
+    if let (Some(left), Some(right)) = (
+        crate::numeric::i8_payload(left),
+        crate::numeric::i8_payload(right),
+    ) {
+        return Ok(left.cmp(&right));
+    }
+    if let (Some(left), Some(right)) = (
+        crate::numeric::i32_payload(left),
+        crate::numeric::i32_payload(right),
+    ) {
+        return Ok(left.cmp(&right));
+    }
+    if let (Some(left), Some(right)) = (left.as_usize(), right.as_usize()) {
+        return Ok(left.cmp(&right));
+    }
     macro_rules! compare_variants {
         ($($variant:ident),+ $(,)?) => {
             match (left, right) {

@@ -19,13 +19,12 @@ fn string_input(value: &Value) -> Result<NativeString, String> {
 }
 
 fn usize_input(value: &Value) -> Result<usize, String> {
-    match value {
-        Value::Usize(value) => Ok(*value),
-        value => Err(format!(
+    value.as_usize().ok_or_else(|| {
+        format!(
             "string repeat count must be usize, found {}",
             value.type_name()
-        )),
-    }
+        )
+    })
 }
 
 trait StringOutput {
@@ -39,7 +38,7 @@ impl StringOutput for bool {
 }
 impl StringOutput for usize {
     fn into_value(self) -> Result<Value, String> {
-        Ok(Value::Usize(self))
+        Ok(crate::numeric::native_usize(self))
     }
 }
 impl StringOutput for NativeString {
@@ -51,7 +50,7 @@ impl StringOutput for NativeOption<usize> {
     fn into_value(self) -> Result<Value, String> {
         Ok(Value::Option {
             value: match self {
-                NativeOption::Some(value) => Some(Rc::new(Value::Usize(value))),
+                NativeOption::Some(value) => Some(Rc::new(crate::numeric::native_usize(value))),
                 NativeOption::None => None,
             },
             element_type: Some(Type::USIZE),
@@ -117,6 +116,24 @@ mod string {
     rils_stdlib::string_definition!(decl_rils_native);
 }
 
+mod vector {
+    use rils_builtins_macros::decl_rils_native;
+
+    rils_stdlib::vec_definition!(decl_rils_native);
+}
+
+mod range {
+    use rils_builtins_macros::decl_rils_native;
+
+    rils_stdlib::range_definition!(decl_rils_native);
+}
+
+mod indexed_iterator {
+    use rils_builtins_macros::decl_rils_native;
+
+    rils_stdlib::iter_definition!(decl_rils_native);
+}
+
 pub fn call(
     id: rils_builtins::BuiltinId,
     arguments: &[crate::Value],
@@ -132,6 +149,9 @@ pub fn call_symbol(
     option::call_symbol(symbol, arguments)
         .or_else(|| result::call_symbol(symbol, arguments))
         .or_else(|| string::call_symbol(symbol, arguments))
+        .or_else(|| vector::call_symbol(symbol, arguments))
+        .or_else(|| range::call_symbol(symbol, arguments))
+        .or_else(|| indexed_iterator::call_symbol(symbol, arguments))
 }
 
 mod callable_functions {

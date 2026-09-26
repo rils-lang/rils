@@ -25,7 +25,14 @@ use hash::{btree_maps_equal, clone_hash_map, hash_maps_equal};
 
 #[path = "value/range.rs"]
 mod range;
-pub use range::RangeValue;
+pub use range::native_range;
+
+pub use rils_value::NativeChildren;
+pub type NativeObject = rils_value::NativeObject<Value>;
+pub type NativeType = rils_value::NativeType<Value>;
+#[path = "value/native_layouts.rs"]
+pub mod native_layouts;
+pub mod native_ops;
 
 #[path = "value/reference.rs"]
 mod reference;
@@ -34,7 +41,7 @@ pub use reference::ReferenceValue;
 #[path = "value/iterator.rs"]
 mod iterator;
 pub use iterator::{
-    BorrowedMapIteratorValue, BorrowedSequenceIterValue, BorrowedSetIteratorValue,
+    BorrowedIndexedIteratorValue, BorrowedMapIteratorValue, BorrowedSetIteratorValue,
     OwnedIteratorValue,
 };
 
@@ -166,7 +173,7 @@ pub struct FieldSlot {
 }
 
 #[derive(Clone)]
-pub struct SequenceValue {
+pub struct IndexedStorage {
     pub elements: RefCell<Vec<FieldSlot>>,
     pub element_type: RefCell<Option<Type>>,
     pub active_iterators: std::cell::Cell<usize>,
@@ -306,9 +313,9 @@ pub enum Value {
     F64(f64),
     Char(char),
     String(Rc<str>),
-    Tuple(Rc<SequenceValue>),
-    Array(Rc<SequenceValue>),
-    Vec(Rc<SequenceValue>),
+    Tuple(Rc<IndexedStorage>),
+    Array(Rc<IndexedStorage>),
+    Vec(Rc<IndexedStorage>),
     HashMap(Rc<HashMapValue>),
     BTreeMap(Rc<BTreeMapValue>),
     BTreeSet(Rc<BTreeSetValue>),
@@ -320,7 +327,7 @@ pub enum Value {
     VecDeque(Rc<VecDequeValue>),
     BinaryHeap(Rc<BinaryHeapValue>),
     OwnedIterator(Rc<OwnedIteratorValue>),
-    BorrowedSequenceIter(Rc<BorrowedSequenceIterValue>),
+    BorrowedIndexedIterator(Rc<BorrowedIndexedIteratorValue>),
     BorrowedMapIterator(Rc<BorrowedMapIteratorValue>),
     BorrowedSetIterator(Rc<BorrowedSetIteratorValue>),
     BytecodeIterator(Rc<BytecodeIteratorValue>),
@@ -340,6 +347,7 @@ pub enum Value {
     HostFunction(Rc<HostFunction>),
     HostType(Rc<HostType>),
     HostObject(Rc<HostObject>),
+    Native(NativeObject),
     HostBoundMethod(Rc<HostBoundMethod>),
     BuiltinType(BuiltinType),
     BuiltinFunction(BuiltinFunction),
@@ -350,7 +358,6 @@ pub enum Value {
     TypeAlias(Rc<TypeAliasType>),
     Struct(Rc<StructInstance>),
     Enum(Rc<EnumInstance>),
-    Range(RangeValue),
     VariantConstructor(Rc<VariantConstructor>),
     BoundMethod(Rc<BoundMethod>),
     BuiltinBoundMethod(Rc<BuiltinBoundMethod>),
@@ -358,6 +365,21 @@ pub enum Value {
 }
 
 impl Value {
+    /// Read an `i8` regardless of whether it uses native or legacy storage.
+    pub fn as_i8(&self) -> Option<i8> {
+        crate::numeric::i8_payload(self)
+    }
+
+    /// Read an `i32` regardless of whether it uses native or legacy storage.
+    pub fn as_i32(&self) -> Option<i32> {
+        crate::numeric::i32_payload(self)
+    }
+
+    /// Read a `usize` regardless of whether it uses native or legacy storage.
+    pub fn as_usize(&self) -> Option<usize> {
+        crate::numeric::usize_payload(self)
+    }
+
     pub fn is_copy(&self) -> bool {
         match self {
             Self::Unit | Self::Bool(_) | Self::Char(_) => true,
@@ -419,9 +441,9 @@ impl Value {
             // reference-counted internally, but copying the token must not copy
             // or transfer ownership of the host object itself.
             Self::HostObject(object) => object.type_definition.copy,
+            Self::Native(object) => object.descriptor().is_copy(),
             Self::String(_) => rils_builtins::native_implements("string", "Copy"),
-            Self::Range(_)
-            | Self::Rc(_)
+            Self::Rc(_)
             | Self::Weak(_)
             | Self::Cell(_)
             | Self::RefCell(_)
@@ -433,7 +455,7 @@ impl Value {
             | Self::BTreeSet(_)
             | Self::HashSet(_)
             | Self::OwnedIterator(_)
-            | Self::BorrowedSequenceIter(_)
+            | Self::BorrowedIndexedIterator(_)
             | Self::BorrowedMapIterator(_)
             | Self::BorrowedSetIterator(_)
             | Self::BytecodeIterator(_) => false,
@@ -449,6 +471,7 @@ impl Value {
                 .iter()
                 .any(|value| value.contains_reference()),
             Self::Reference(_) => true,
+            Self::Native(object) => object.any_child(Value::contains_reference),
             Self::BytecodeFunction(function) => {
                 function.captures.iter().any(|slot| {
                     slot.borrow()
@@ -501,9 +524,8 @@ impl Value {
                 EnumPayload::Tuple(values) => values.iter().any(Value::contains_reference),
                 EnumPayload::Record(values) => values.values().any(Value::contains_reference),
             },
-            Self::Range(_) => false,
             Self::OwnedIterator(iterator) => iterator.contains_reference(),
-            Self::BorrowedSequenceIter(_) => true,
+            Self::BorrowedIndexedIterator(_) => true,
             Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => true,
             _ => false,
         }
@@ -528,7 +550,10 @@ impl Value {
                 .iter()
                 .any(|value| value.contains_local_reference(environment)),
             Self::Reference(reference) => reference.is_local_to(environment),
-            Self::BorrowedSequenceIter(iterator) => iterator.source.is_local_to(environment),
+            Self::Native(object) => {
+                object.any_child(|value| value.contains_local_reference(environment))
+            }
+            Self::BorrowedIndexedIterator(iterator) => iterator.source.is_local_to(environment),
             Self::BorrowedMapIterator(iterator) => iterator.source.is_local_to(environment),
             Self::BorrowedSetIterator(iterator) => iterator.source.is_local_to(environment),
             Self::Option {
@@ -564,6 +589,9 @@ impl Value {
 
     pub fn has_active_references(&self) -> bool {
         match self {
+            Self::Native(object) => {
+                object.has_active_references() || object.any_child(Value::has_active_references)
+            }
             Self::BinaryHeap(heap) => heap
                 .elements
                 .borrow()
@@ -619,6 +647,9 @@ impl Value {
 
     pub fn is_partially_moved(&self) -> bool {
         match self {
+            Self::Native(object) => {
+                object.is_partially_moved() || object.any_child(Value::is_partially_moved)
+            }
             Self::Struct(instance) => instance
                 .fields
                 .borrow()
@@ -705,7 +736,7 @@ impl Value {
                 element_type: RefCell::new(set.element_type.borrow().clone()),
             })),
             Self::OwnedIterator(_) => return Err("iterators cannot be cloned".into()),
-            Self::BorrowedSequenceIter(_) => return Err("iterators cannot be cloned".into()),
+            Self::BorrowedIndexedIterator(_) => return Err("iterators cannot be cloned".into()),
             Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => {
                 return Err("iterators cannot be cloned".into());
             }
@@ -759,7 +790,7 @@ impl Value {
                     type_arguments: instance.type_arguments.clone(),
                 }))
             }
-            Self::Range(range) => Self::Range(range.clone()),
+            Self::Native(object) => Self::Native(native_ops::clone_owned(object)?),
             value => value.clone(),
         })
     }
@@ -822,7 +853,7 @@ impl Value {
             Self::OwnedIterator(_) => {
                 Type::of_value(self).map_or_else(|| "OwnedIterator".into(), |ty| ty.to_string())
             }
-            Self::BorrowedSequenceIter(_) => {
+            Self::BorrowedIndexedIterator(_) => {
                 Type::of_value(self).map_or_else(|| "Iter".into(), |ty| ty.to_string())
             }
             Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => {
@@ -863,13 +894,13 @@ impl Value {
             Self::BuiltinType(BuiltinType::Float(kind)) => format!("type {kind}"),
             Self::HostType(definition) => format!("type {}", definition.name),
             Self::HostObject(object) => object.type_definition.name.clone(),
+            Self::Native(object) => object.descriptor().rils_type().to_string(),
             Self::Module(module) => format!("module {}", module.name),
             Self::EnumType(definition) => format!("type {}", definition.name),
             Self::TraitType(definition) => format!("trait {}", definition.name),
             Self::TypeAlias(definition) => format!("type alias {}", definition.name),
             Self::Struct(instance) => instance.type_definition.name.clone(),
             Self::Enum(instance) => instance.type_definition.name.clone(),
-            Self::Range(_) => "Range".into(),
         }
     }
 
@@ -891,8 +922,20 @@ impl PartialEq for Value {
             (Self::Unit, Self::Unit) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::I8(left), Self::I8(right)) => left == right,
+            (Self::Native(_), Self::I8(right)) => {
+                crate::numeric::i8_payload(self).is_some_and(|left| left == *right)
+            }
+            (Self::I8(left), Self::Native(_)) => {
+                crate::numeric::i8_payload(other).is_some_and(|right| *left == right)
+            }
             (Self::I16(left), Self::I16(right)) => left == right,
             (Self::I32(left), Self::I32(right)) => left == right,
+            (Self::Native(_), Self::I32(right)) => {
+                crate::numeric::i32_payload(self).is_some_and(|left| left == *right)
+            }
+            (Self::I32(left), Self::Native(_)) => {
+                crate::numeric::i32_payload(other).is_some_and(|right| *left == right)
+            }
             (Self::I64(left), Self::I64(right)) => left == right,
             (Self::I128(left), Self::I128(right)) => left == right,
             (Self::Isize(left), Self::Isize(right)) => left == right,
@@ -902,10 +945,17 @@ impl PartialEq for Value {
             (Self::U64(left), Self::U64(right)) => left == right,
             (Self::U128(left), Self::U128(right)) => left == right,
             (Self::Usize(left), Self::Usize(right)) => left == right,
+            (Self::Native(_), Self::Usize(right)) => {
+                self.as_usize().is_some_and(|left| left == *right)
+            }
+            (Self::Usize(left), Self::Native(_)) => {
+                other.as_usize().is_some_and(|right| *left == right)
+            }
             (Self::F32(left), Self::F32(right)) => left == right,
             (Self::F64(left), Self::F64(right)) => left == right,
             (Self::Char(left), Self::Char(right)) => left == right,
             (Self::String(left), Self::String(right)) => left == right,
+            (Self::Native(left), Self::Native(right)) => native_ops::equal(left, right),
             (Self::Tuple(left), Self::Tuple(right))
             | (Self::Array(left), Self::Array(right))
             | (Self::Vec(left), Self::Vec(right)) => sequence_equal(left, right),
@@ -964,7 +1014,7 @@ pub fn enum_variant_name(variant: &EnumVariant) -> &str {
     }
 }
 
-fn clone_sequence(sequence: &SequenceValue) -> Result<SequenceValue, String> {
+fn clone_sequence(sequence: &IndexedStorage) -> Result<IndexedStorage, String> {
     let elements = sequence
         .elements
         .borrow()
@@ -981,14 +1031,14 @@ fn clone_sequence(sequence: &SequenceValue) -> Result<SequenceValue, String> {
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    Ok(SequenceValue {
+    Ok(IndexedStorage {
         active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(elements),
         element_type: RefCell::new(sequence.element_type.borrow().clone()),
     })
 }
 
-fn sequence_equal(left: &SequenceValue, right: &SequenceValue) -> bool {
+fn sequence_equal(left: &IndexedStorage, right: &IndexedStorage) -> bool {
     let left = left.elements.borrow();
     let right = right.elements.borrow();
     left.len() == right.len()

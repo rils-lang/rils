@@ -8,7 +8,7 @@ use rils_builtins::BuiltinId;
 use crate::{
     types::{Type, merge_types},
     value::{
-        FieldSlot, HashKey, HashMapValue, HashSetValue, OwnedIteratorValue, SequenceValue, Value,
+        FieldSlot, HashKey, HashMapValue, HashSetValue, IndexedStorage, OwnedIteratorValue, Value,
     },
 };
 
@@ -49,7 +49,7 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             .ok_or_else(|| "missing HashMap receiver".to_string())?,
     )?;
     match id {
-        BuiltinId::HashMapLen => Ok(Value::Usize(map.entries.borrow().len())),
+        BuiltinId::HashMapLen => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
         BuiltinId::HashMapIsEmpty => Ok(Value::Bool(map.entries.borrow().is_empty())),
         BuiltinId::HashMapClear => {
             reject_referenced_map(&map)?;
@@ -164,7 +164,7 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
         return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
     }
     match id {
-        BuiltinId::HashSetLen => Ok(Value::Usize(set.entries.borrow().len())),
+        BuiltinId::HashSetLen => Ok(crate::numeric::native_usize(set.entries.borrow().len())),
         BuiltinId::HashSetIsEmpty => Ok(Value::Bool(set.entries.borrow().is_empty())),
         BuiltinId::HashSetClear => {
             set.entries.borrow_mut().clear();
@@ -316,7 +316,7 @@ fn iterator(items: VecDeque<Value>, element_type: Type) -> Value {
 }
 
 fn tuple(values: Vec<Value>) -> Value {
-    Value::Tuple(Rc::new(SequenceValue {
+    Value::Tuple(Rc::new(IndexedStorage {
         active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values

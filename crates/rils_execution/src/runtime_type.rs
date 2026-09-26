@@ -23,7 +23,7 @@ impl RuntimeValue for Value {
 }
 fn accepts(expected: &Type, value: &Value) -> bool {
     match (expected, value) {
-        (Type::Unknown | Type::Variable(_), _) => true,
+        (Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }, _) => true,
         (Type::Unit, Value::Unit)
         | (Type::Bool, Value::Bool(_))
         | (Type::Integer(crate::IntegerType::I8), Value::I8(_))
@@ -63,7 +63,8 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                         .is_some_and(|value| element.accepts(value))
                 })
         }
-        (Type::Slice(element), Value::Array(sequence) | Value::Vec(sequence)) => {
+        (Type::ArrayParameter { element, .. }, Value::Array(sequence))
+        | (Type::Slice(element), Value::Array(sequence) | Value::Vec(sequence)) => {
             sequence.elements.borrow().iter().all(|slot| {
                 slot.value
                     .as_ref()
@@ -127,7 +128,7 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         {
             arguments.len() == 1 && merge_types(&arguments[0], &iterator.element_type).is_some()
         }
-        (Type::Named { name, arguments }, Value::BorrowedSequenceIter(iterator))
+        (Type::Named { name, arguments }, Value::BorrowedIndexedIterator(iterator))
             if name == "Iter" =>
         {
             arguments.len() == 1
@@ -219,13 +220,13 @@ fn accepts(expected: &Type, value: &Value) -> bool {
             instance.type_definition.name == *name
                 && type_arguments_compatible(arguments, &instance.type_arguments)
         }
-        (Type::Named { name, arguments }, Value::Range(range)) => {
-            name == "Range" && (arguments.is_empty() || arguments == &vec![range.element_type()])
-        }
         (Type::Named { name, arguments }, Value::HostObject(object)) => {
             arguments.is_empty()
                 && (object.type_definition.name == *name
                     || object.type_definition.base_types.contains(name))
+        }
+        (expected, Value::Native(object)) => {
+            merge_types(expected, object.descriptor().rils_type()).is_some()
         }
         _ => false,
     }
@@ -281,13 +282,16 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            Some(Value::Tuple(Rc::new(crate::value::SequenceValue {
+            Some(Value::Tuple(Rc::new(crate::value::IndexedStorage {
                 active_iterators: std::cell::Cell::new(0),
                 elements: std::cell::RefCell::new(elements),
                 element_type: std::cell::RefCell::new(None),
             })))
         }
-        (Type::Array { element, .. }, Value::Array(sequence)) => {
+        (
+            Type::Array { element, .. } | Type::ArrayParameter { element, .. },
+            Value::Array(sequence),
+        ) => {
             let source = sequence.elements.borrow();
             let elements = source
                 .iter()
@@ -299,7 +303,7 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            Some(Value::Array(Rc::new(crate::value::SequenceValue {
+            Some(Value::Array(Rc::new(crate::value::IndexedStorage {
                 active_iterators: std::cell::Cell::new(0),
                 elements: std::cell::RefCell::new(elements),
                 element_type: std::cell::RefCell::new(Some((**element).clone())),
@@ -320,7 +324,7 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            Some(Value::Vec(Rc::new(crate::value::SequenceValue {
+            Some(Value::Vec(Rc::new(crate::value::IndexedStorage {
                 active_iterators: std::cell::Cell::new(0),
                 elements: std::cell::RefCell::new(elements),
                 element_type: std::cell::RefCell::new(Some(expected.clone())),
@@ -537,7 +541,7 @@ fn type_of_value(value: &Value) -> Option<Type> {
             name: "OwnedIterator".into(),
             arguments: vec![iterator.element_type.clone()],
         }),
-        Value::BorrowedSequenceIter(iterator) => Some(Type::Named {
+        Value::BorrowedIndexedIterator(iterator) => Some(Type::Named {
             name: "Iter".into(),
             arguments: vec![Type::Reference {
                 mutable: false,
@@ -582,6 +586,7 @@ fn type_of_value(value: &Value) -> Option<Type> {
                 .map_or_else(Type::opaque_function, FunctionSignature::as_type),
         ),
         Value::HostObject(object) => Some(Type::named(object.type_definition.name.clone())),
+        Value::Native(object) => Some(object.descriptor().rils_type().clone()),
         Value::VariantConstructor(constructor) => {
             let variant = constructor
                 .type_definition
@@ -650,6 +655,12 @@ fn type_of_value(value: &Value) -> Option<Type> {
                 fn resolve(kind: rils_builtins::TypePattern, receiver: &Type) -> Type {
                     use rils_builtins::TypePattern;
                     match kind {
+                        rils_builtins::TypePattern::BoundGeneric { .. }
+                        | rils_builtins::TypePattern::Array { .. }
+                        | rils_builtins::TypePattern::ArrayParameter { .. }
+                        | rils_builtins::TypePattern::Slice(_) => {
+                            rils_frontend::standard_library::resolve_type_pattern(kind)
+                        }
                         TypePattern::SelfType => receiver.clone(),
                         TypePattern::AnyInteger | TypePattern::Unknown => Type::Unknown,
                         TypePattern::Generic(name) => Type::Variable(name.into()),
@@ -740,10 +751,6 @@ fn type_of_value(value: &Value) -> Option<Type> {
         Value::Enum(instance) => Some(Type::Named {
             name: instance.type_definition.name.clone(),
             arguments: instance.type_arguments.clone(),
-        }),
-        Value::Range(range) => Some(Type::Named {
-            name: "Range".into(),
-            arguments: vec![range.element_type()],
         }),
         Value::BuiltinFunction(_) => Some(Type::opaque_function()),
         Value::BuiltinType(_)

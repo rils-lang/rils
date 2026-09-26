@@ -39,9 +39,7 @@ macro_rules! scalar {
 scalar!(
     bool => Bool,
     char => Char,
-    i8 => I8,
     i16 => I16,
-    i32 => I32,
     i64 => I64,
     i128 => I128,
     isize => Isize,
@@ -50,10 +48,43 @@ scalar!(
     u32 => U32,
     u64 => U64,
     u128 => U128,
-    usize => Usize,
     f32 => F32,
     f64 => F64,
 );
+
+impl NativeValue for i8 {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        crate::numeric::i8_payload(value)
+            .ok_or_else(|| format!("expected i8, found {}", value.type_name()))
+    }
+
+    fn into_value(self) -> Value {
+        crate::numeric::native_i8(self)
+    }
+}
+
+impl NativeValue for i32 {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        crate::numeric::i32_payload(value)
+            .ok_or_else(|| format!("expected i32, found {}", value.type_name()))
+    }
+
+    fn into_value(self) -> Value {
+        crate::numeric::native_i32(self)
+    }
+}
+
+impl NativeValue for usize {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        value
+            .as_usize()
+            .ok_or_else(|| format!("expected usize, found {}", value.type_name()))
+    }
+
+    fn into_value(self) -> Value {
+        crate::numeric::native_usize(self)
+    }
+}
 
 impl NativeValue for () {
     fn from_value(value: &Value) -> Result<Self, String> {

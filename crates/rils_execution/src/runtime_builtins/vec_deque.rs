@@ -31,7 +31,10 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
         return Err("expected VecDeque receiver".into());
     };
     match id {
-        BuiltinId::VecDequeLen => Ok(Value::Usize(with_native(&queue, |native| native.len()))),
+        BuiltinId::VecDequeLen => Ok(crate::numeric::native_usize(with_native(
+            &queue,
+            |native| native.len(),
+        ))),
         BuiltinId::VecDequeIsEmpty => {
             Ok(Value::Bool(with_native(&queue, |native| native.is_empty())))
         }

@@ -3,7 +3,7 @@ use std::fmt;
 use crate::ast::EnumVariant;
 
 use super::hash::{display_hash_map, display_hash_set};
-use super::{BuiltinType, EnumPayload, SequenceValue, Value, enum_variant_name};
+use super::{BuiltinType, EnumPayload, IndexedStorage, Value, enum_variant_name};
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -40,8 +40,8 @@ impl fmt::Display for Value {
             Self::RefCell(_) => write!(f, "<RefCell>"),
             Self::VecDeque(_) => write!(f, "<VecDeque>"),
             Self::BinaryHeap(_) => write!(f, "<BinaryHeap>"),
-            Self::OwnedIterator(_) => write!(f, "<sequence iterator>"),
-            Self::BorrowedSequenceIter(_) => write!(f, "<borrowed sequence iterator>"),
+            Self::OwnedIterator(_) => write!(f, "<iterator>"),
+            Self::BorrowedIndexedIterator(_) => write!(f, "<borrowed indexed iterator>"),
             Self::BorrowedMapIterator(_) => write!(f, "<borrowed map iterator>"),
             Self::BorrowedSetIterator(_) => write!(f, "<borrowed set iterator>"),
             Self::BytecodeIterator(_) => write!(f, "<bytecode iterator>"),
@@ -63,6 +63,7 @@ impl fmt::Display for Value {
             Self::HostFunction(function) => write!(f, "<host fn {}>", function.name),
             Self::HostType(definition) => write!(f, "<host type {}>", definition.name),
             Self::HostObject(object) => write!(f, "<{}>", object.type_definition.name),
+            Self::Native(object) => write!(f, "{}", super::native_ops::display(object)),
             Self::HostBoundMethod(method) => write!(f, "<bound host fn {}>", method.function.name),
             Self::BuiltinType(BuiltinType::Vec) => write!(f, "<type Vec>"),
             Self::BuiltinType(BuiltinType::HashMap) => write!(f, "<type HashMap>"),
@@ -127,7 +128,6 @@ impl fmt::Display for Value {
                     }
                 }
             }
-            Self::Range(range) => write!(f, "{}..{}", range.current, range.end),
             Self::VariantConstructor(constructor) => write!(
                 f,
                 "<constructor {}::{}>",
@@ -146,7 +146,7 @@ impl fmt::Display for Value {
 
 fn display_sequence(
     f: &mut fmt::Formatter<'_>,
-    sequence: &SequenceValue,
+    sequence: &IndexedStorage,
     open: &str,
     close: &str,
     tuple: bool,

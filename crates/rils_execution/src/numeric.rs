@@ -4,6 +4,10 @@ use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
 mod float_methods;
 mod native;
+mod scalars;
+
+pub use scalars::{i8_payload, i32_payload, native_i8, native_i32, native_usize, usize_payload};
+use scalars::{lift_migrated_integer, lower_migrated_integer};
 
 pub fn integer_constant(target: IntegerType, constant: rils_builtins::IntegerConstantId) -> Value {
     native::integer::constant(target, constant)
@@ -16,6 +20,7 @@ pub fn float_constant(target: crate::FloatType, constant: rils_builtins::FloatCo
 }
 
 pub fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> {
+    let value = lower_migrated_integer(value);
     enum IntegerValue {
         Signed(i128),
         Unsigned(u128),
@@ -81,7 +86,7 @@ pub fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> 
         IntegerType::U128 => unsigned_target!(u128, Value::U128),
         IntegerType::Usize => unsigned_target!(usize, Value::Usize),
     };
-    converted.map_err(|_| {
+    converted.map(lift_migrated_integer).map_err(|_| {
         format!(
             "cannot cast value from `{}` to `{target}` without losing information",
             source.0
@@ -97,6 +102,17 @@ pub fn execute_integer_intrinsic(
     use rils_builtins::builtin_ids::*;
     if id == IntegerTryFrom && target.is_none() {
         return Err("integer try_from is missing its target type".into());
+    }
+    if target.is_none()
+        && let Some(Value::Native(object)) = values.first()
+        && matches!(object.descriptor().rils_type(), Type::Integer(_))
+        && let Some(declaration) = rils_builtins::intrinsic(id)
+        && let Some(result) = object.call(
+            &format!("core::integer::{}", declaration.name),
+            &values[1..],
+        )
+    {
+        return result;
     }
     native::integer::call(id, target, values)
         .unwrap_or_else(|| Err("unknown integer intrinsic or receiver type".into()))
@@ -119,7 +135,7 @@ pub fn execute_intrinsic(
 fn tuple_value(value: Value, overflowed: bool) -> Result<Value, String> {
     let types = [Type::of_value(&value).unwrap_or(Type::Unknown), Type::Bool];
     Ok(Value::Tuple(std::rc::Rc::new(
-        crate::value::SequenceValue {
+        crate::value::IndexedStorage {
             active_iterators: std::cell::Cell::new(0),
             elements: std::cell::RefCell::new(vec![
                 crate::value::FieldSlot {
@@ -195,6 +211,7 @@ macro_rules! float_binary {
 }
 
 pub fn negate(value: Value) -> Result<Value, String> {
+    let value = lower_migrated_integer(value);
     macro_rules! signed {
         ($value:expr, $constructor:path) => {
             $value
@@ -203,7 +220,7 @@ pub fn negate(value: Value) -> Result<Value, String> {
                 .ok_or_else(|| "integer overflow".to_string())
         };
     }
-    match value {
+    let result = match value {
         Value::I8(value) => signed!(value, Value::I8),
         Value::I16(value) => signed!(value, Value::I16),
         Value::I32(value) => signed!(value, Value::I32),
@@ -216,11 +233,12 @@ pub fn negate(value: Value) -> Result<Value, String> {
             "unary `-` expects a signed number, found {}",
             value.type_name()
         )),
-    }
+    };
+    result.map(lift_migrated_integer)
 }
 
 pub fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Value, String> {
-    match (left, right) {
+    let result = match (lower_migrated_integer(left), lower_migrated_integer(right)) {
         (Value::I8(left), Value::I8(right)) => {
             integer_binary!(left, operator, right, Value::I8)
         }
@@ -268,7 +286,8 @@ pub fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Value, St
             left.type_name(),
             right.type_name()
         )),
-    }
+    };
+    result.map(lift_migrated_integer)
 }
 
 /// Executes an integer operation whose operand type has already been proven by the compiler.
@@ -291,6 +310,8 @@ pub fn integer_binary_typed(
         }));
     }
 
+    let left = lower_migrated_integer(left);
+    let right = lower_migrated_integer(right);
     macro_rules! typed {
         ($value:ident, $constructor:path) => {
             match (left, right) {
@@ -306,7 +327,7 @@ pub fn integer_binary_typed(
         };
     }
 
-    match integer {
+    let result = match integer {
         IntegerType::I8 => typed!(I8, Value::I8),
         IntegerType::I16 => typed!(I16, Value::I16),
         IntegerType::I32 => typed!(I32, Value::I32),
@@ -319,5 +340,6 @@ pub fn integer_binary_typed(
         IntegerType::U64 => typed!(U64, Value::U64),
         IntegerType::U128 => typed!(U128, Value::U128),
         IntegerType::Usize => typed!(Usize, Value::Usize),
-    }
+    };
+    result.map(lift_migrated_integer)
 }

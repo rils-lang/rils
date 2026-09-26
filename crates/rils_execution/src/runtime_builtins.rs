@@ -4,7 +4,7 @@ use crate::{
     environment::{AssignError, StorageSlot},
     types::Type,
     value::{
-        CellValue, FieldSlot, OwnedIteratorValue, RefCellValue, ReferenceValue, SequenceValue,
+        CellValue, FieldSlot, IndexedStorage, OwnedIteratorValue, RefCellValue, ReferenceValue,
         Value, WeakValue,
     },
 };
@@ -14,11 +14,13 @@ mod btree_map;
 mod btree_set;
 mod callback;
 mod collection_iter;
+mod indexed_iter;
 mod native;
 pub mod native_value;
 mod option_result;
-mod sequence_iter;
+mod range;
 mod vec_deque;
+mod vector;
 
 pub type NativeCallback<'a, E> = dyn FnMut(&Value, &[Value]) -> Result<Value, E> + 'a;
 
@@ -75,9 +77,9 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             })))
         }
         BuiltinId::RcStrongCount => match import_receiver(&arguments[0])? {
-            Value::Rc(value) => Ok(Value::Usize(Rc::strong_count(&value))),
+            Value::Rc(value) => Ok(crate::numeric::native_usize(Rc::strong_count(&value))),
             Value::Struct(value) if value.type_definition.name == "Rc" => {
-                Ok(Value::Usize(Rc::strong_count(&value)))
+                Ok(crate::numeric::native_usize(Rc::strong_count(&value)))
             }
             value => Err(format!(
                 "Rc::strong_count expects Rc, found {}",
@@ -108,14 +110,14 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             )),
         },
         BuiltinId::WeakStrongCount => match import_receiver(&arguments[0])? {
-            Value::Weak(value) => Ok(Value::Usize(value.value.strong_count())),
+            Value::Weak(value) => Ok(crate::numeric::native_usize(value.value.strong_count())),
             value => Err(format!(
                 "Weak::strong_count expects Weak, found {}",
                 value.type_name()
             )),
         },
         BuiltinId::WeakWeakCount => match import_receiver(&arguments[0])? {
-            Value::Weak(value) => Ok(Value::Usize(value.value.weak_count())),
+            Value::Weak(value) => Ok(crate::numeric::native_usize(value.value.weak_count())),
             value => Err(format!(
                 "Weak::weak_count expects Weak, found {}",
                 value.type_name()
@@ -271,41 +273,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 value.type_name()
             )),
         },
-        BuiltinId::SequenceLen => {
-            let value = import_receiver(&arguments[0])?;
-            let length = match value {
-                Value::Array(sequence) | Value::Vec(sequence) => sequence.elements.borrow().len(),
-                value => {
-                    return Err(format!(
-                        "len receiver is not a collection: {}",
-                        value.type_name()
-                    ));
-                }
-            };
-            Ok(Value::Usize(length))
-        }
-        BuiltinId::SequenceIsEmpty => {
-            let value = import_receiver(&arguments[0])?;
-            let empty = match value {
-                Value::Array(sequence) | Value::Vec(sequence) => {
-                    sequence.elements.borrow().is_empty()
-                }
-                value => return Err(format!("{} has no is_empty method", value.type_name())),
-            };
-            Ok(Value::Bool(empty))
-        }
-        BuiltinId::SequenceContains => match import_receiver(&arguments[0])? {
-            Value::Array(sequence) | Value::Vec(sequence) => {
-                let needle = import_receiver(&arguments[1])?;
-                let contains = sequence
-                    .elements
-                    .borrow()
-                    .iter()
-                    .any(|slot| slot.value.as_ref() == Some(&needle));
-                Ok(Value::Bool(contains))
-            }
-            _ => Err("contains receiver is not a collection".into()),
-        },
         BuiltinId::VecPush => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("Vec::push requires a mutable binding".into());
@@ -316,7 +283,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("push receiver is not Vec".into());
             };
-            sequence_iter::reject_growth(&sequence)?;
+            indexed_iter::reject_growth(&sequence)?;
             let value = &arguments[1];
             let current = sequence
                 .elements
@@ -346,7 +313,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("pop receiver is not Vec".into());
             };
-            sequence_iter::reject_mutation(&sequence)?;
+            indexed_iter::reject_mutation(&sequence)?;
             let element_type = sequence
                 .element_type
                 .borrow()
@@ -374,11 +341,11 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("receiver is not Vec".into());
             };
-            sequence_iter::reject_mutation(&sequence)?;
+            indexed_iter::reject_mutation(&sequence)?;
             let length = if id == BuiltinId::VecClear {
                 0
             } else {
-                let Value::Usize(length) = arguments[1] else {
+                let Some(length) = arguments[1].as_usize() else {
                     return Err("Vec::truncate length must be usize".into());
                 };
                 length
@@ -403,8 +370,8 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(sequence) = reference.read()? else {
                 return Err("receiver is not Vec".into());
             };
-            sequence_iter::reject_mutation(&sequence)?;
-            let Value::Usize(index) = arguments[1] else {
+            indexed_iter::reject_mutation(&sequence)?;
+            let Some(index) = arguments[1].as_usize() else {
                 return Err("Vec index must be usize".into());
             };
             let mut elements = sequence.elements.borrow_mut();
@@ -456,14 +423,14 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             let Value::Vec(destination) = reference.read()? else {
                 return Err("extend receiver is not Vec".into());
             };
-            sequence_iter::reject_growth(&destination)?;
+            indexed_iter::reject_growth(&destination)?;
             let Value::Vec(source) = &arguments[1] else {
                 return Err("Vec::extend source must be Vec".into());
             };
             if Rc::ptr_eq(&destination, source) {
                 return Err("Vec cannot extend itself".into());
             }
-            sequence_iter::reject_mutation(source)?;
+            indexed_iter::reject_mutation(source)?;
             let mut source_elements = source.elements.borrow_mut();
             if source_elements.iter().any(|slot| slot.references > 0) {
                 return Err("cannot move from a Vec while an element is referenced".into());
@@ -489,29 +456,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 .extend(source_elements.drain(..));
             Ok(Value::Unit)
         }
-        BuiltinId::SequenceIntoIter => {
-            let (Value::Array(sequence) | Value::Vec(sequence)) = &arguments[0] else {
-                return Err("into_iter receiver is not a collection".into());
-            };
-            sequence_iter::reject_mutation(sequence)?;
-            if sequence
-                .elements
-                .borrow()
-                .iter()
-                .any(|slot| slot.references > 0)
-            {
-                return Err("cannot iterate a collection while an element is referenced".into());
-            }
-            let element_type = sequence
-                .element_type
-                .borrow()
-                .clone()
-                .unwrap_or(Type::Unknown);
-            Ok(Value::OwnedIterator(Rc::new(
-                OwnedIteratorValue::from_sequence(sequence.clone(), element_type),
-            )))
-        }
-        BuiltinId::SequenceIter | BuiltinId::SequenceIterNext => sequence_iter::call(id, arguments),
         BuiltinId::HashMapIter
         | BuiltinId::BtreeMapIter
         | BuiltinId::HashSetIter
@@ -547,34 +491,28 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             if !reference.mutable {
                 return Err("Iterator::next requires `&mut self`".into());
             }
-            let Value::OwnedIterator(iterator) = reference.read()? else {
-                return Err("next receiver is not an iterator".into());
+            let (next, element_type) = match reference.read()? {
+                Value::OwnedIterator(iterator) => (iterator.next()?, iterator.element_type.clone()),
+                Value::BorrowedIndexedIterator(iterator) => (
+                    iterator.next()?,
+                    Type::Reference {
+                        mutable: false,
+                        inner: Box::new(iterator.element_type.clone()),
+                    },
+                ),
+                Value::BorrowedMapIterator(iterator) => (iterator.next()?, iterator.item_type()),
+                Value::BorrowedSetIterator(iterator) => (iterator.next()?, iterator.item_type()),
+                value if crate::value::native_ops::is_iterator(&value) => {
+                    return range::next(arguments);
+                }
+                _ => return Err("next receiver is not an iterator".into()),
             };
             Ok(Value::Option {
-                value: iterator.next()?.map(Rc::new),
-                element_type: Some(iterator.element_type.clone()),
-            })
-        }
-        BuiltinId::RangeNext => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Range::next requires a mutable range binding".into());
-            };
-            if !reference.mutable {
-                return Err("Range::next requires `&mut self`".into());
-            }
-            let Value::Range(mut range) = reference.read()? else {
-                return Err("Range::next receiver is not a Range".into());
-            };
-            let element_type = range.element_type();
-            let current = range.next()?;
-            reference
-                .write(Value::Range(range))
-                .map_err(assignment_error_message)?;
-            Ok(Value::Option {
-                value: current.map(Rc::new),
+                value: next.map(Rc::new),
                 element_type: Some(element_type),
             })
         }
+        BuiltinId::RangeNext => range::next(arguments),
         BuiltinId::IteratorCount
         | BuiltinId::IteratorLast
         | BuiltinId::IteratorNth
@@ -590,18 +528,16 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
             iterator.materialize()?;
             let mut items = iterator.items.borrow_mut();
             let count = || match arguments.get(1) {
-                Some(Value::Usize(value)) => Ok(*value),
-                Some(value) => Err(format!(
-                    "iterator count must be usize, found {}",
-                    value.type_name()
-                )),
+                Some(value) => value.as_usize().ok_or_else(|| {
+                    format!("iterator count must be usize, found {}", value.type_name())
+                }),
                 None => Err("missing iterator count".into()),
             };
             match id {
                 BuiltinId::IteratorCount => {
                     let count = items.len();
                     items.clear();
-                    Ok(Value::Usize(count))
+                    Ok(crate::numeric::native_usize(count))
                 }
                 BuiltinId::IteratorLast => {
                     let value = items.pop_back().map(Rc::new);
@@ -633,7 +569,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                             references: 0,
                         })
                         .collect();
-                    Ok(Value::Vec(Rc::new(SequenceValue {
+                    Ok(Value::Vec(Rc::new(IndexedStorage {
                         active_iterators: std::cell::Cell::new(0),
                         elements: RefCell::new(elements),
                         element_type: RefCell::new(Some(element_type)),
@@ -659,7 +595,9 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                     items
                         .drain(..)
                         .enumerate()
-                        .map(|(index, value)| tuple_value(vec![Value::Usize(index), value]))
+                        .map(|(index, value)| {
+                            tuple_value(vec![crate::numeric::native_usize(index), value])
+                        })
                         .collect(),
                     Type::Tuple(vec![Type::USIZE, element_type]),
                 )),
@@ -681,7 +619,7 @@ fn tuple_value(values: Vec<Value>) -> Value {
         .iter()
         .map(|value| Type::of_value(value).unwrap_or(Type::Unknown))
         .collect();
-    Value::Tuple(Rc::new(SequenceValue {
+    Value::Tuple(Rc::new(IndexedStorage {
         active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values
@@ -791,7 +729,7 @@ mod tests {
     fn mutable_members_update_their_receivers() {
         use rils_builtins::BuiltinId;
 
-        let vector = mutable_receiver(Value::Vec(Rc::new(SequenceValue {
+        let vector = mutable_receiver(Value::Vec(Rc::new(IndexedStorage {
             active_iterators: std::cell::Cell::new(0),
             elements: RefCell::new(Vec::new()),
             element_type: RefCell::new(Some(Type::I32)),
@@ -843,9 +781,8 @@ mod tests {
             Value::Option { value: None, .. }
         ));
 
-        let range = mutable_receiver(Value::Range(
-            crate::value::RangeValue::new(Value::I32(2), Value::I32(3)).unwrap(),
-        ));
+        let range =
+            mutable_receiver(crate::value::native_range(Value::I32(2), Value::I32(3)).unwrap());
         assert_eq!(
             call(BuiltinId::RangeNext, std::slice::from_ref(&range)).unwrap(),
             Value::Option {

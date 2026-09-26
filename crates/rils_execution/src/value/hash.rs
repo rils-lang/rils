@@ -108,6 +108,15 @@ impl HashKey {
             Value::Reference(reference) => reference.read()?,
             value => value.clone(),
         };
+        if let Some(value) = crate::numeric::i8_payload(&value) {
+            return Ok(Self::I8(value));
+        }
+        if let Some(value) = crate::numeric::i32_payload(&value) {
+            return Ok(Self::I32(value));
+        }
+        if let Some(value) = crate::numeric::usize_payload(&value) {
+            return Ok(Self::Usize(value));
+        }
         Ok(match value {
             Value::Unit => Self::Unit,
             Value::Bool(value) => Self::Bool(value),
@@ -148,9 +157,9 @@ impl HashKey {
         match self {
             Self::Unit => Value::Unit,
             Self::Bool(value) => Value::Bool(*value),
-            Self::I8(value) => Value::I8(*value),
+            Self::I8(value) => crate::numeric::native_i8(*value),
             Self::I16(value) => Value::I16(*value),
-            Self::I32(value) => Value::I32(*value),
+            Self::I32(value) => crate::numeric::native_i32(*value),
             Self::I64(value) => Value::I64(*value),
             Self::I128(value) => Value::I128(*value),
             Self::Isize(value) => Value::Isize(*value),
@@ -159,7 +168,7 @@ impl HashKey {
             Self::U32(value) => Value::U32(*value),
             Self::U64(value) => Value::U64(*value),
             Self::U128(value) => Value::U128(*value),
-            Self::Usize(value) => Value::Usize(*value),
+            Self::Usize(value) => crate::numeric::native_usize(*value),
             Self::Char(value) => Value::Char(*value),
             Self::String(value) => Value::String(value.clone()),
             Self::Composite(key) => key

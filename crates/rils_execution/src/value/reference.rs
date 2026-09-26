@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
-use super::{HashKey, MapCollection, SequenceValue, SetCollection, StructInstance, Value};
+use super::{HashKey, IndexedStorage, MapCollection, SetCollection, StructInstance, Value};
 
 pub struct ReferenceValue {
     pub mutable: bool,
@@ -16,8 +16,8 @@ enum ReferenceTarget {
         instance: Rc<StructInstance>,
         name: String,
     },
-    SequenceElement {
-        sequence: Rc<SequenceValue>,
+    IndexedElement {
+        sequence: Rc<IndexedStorage>,
         index: usize,
     },
     MapKey {
@@ -42,7 +42,7 @@ impl ReferenceValue {
             || match &self.target {
                 ReferenceTarget::Storage(target) => environment.borrow().owns_storage(target),
                 ReferenceTarget::StructField { .. }
-                | ReferenceTarget::SequenceElement { .. }
+                | ReferenceTarget::IndexedElement { .. }
                 | ReferenceTarget::MapKey { .. }
                 | ReferenceTarget::MapValue { .. }
                 | ReferenceTarget::SetItem { .. } => false,
@@ -88,16 +88,16 @@ impl ReferenceValue {
         })
     }
 
-    pub fn new_sequence_element(
-        sequence: Rc<SequenceValue>,
+    pub fn new_indexed_element(
+        sequence: Rc<IndexedStorage>,
         index: usize,
         mutable: bool,
     ) -> Result<Self, String> {
-        Self::new_guarded_sequence_element(sequence, index, mutable, None)
+        Self::new_guarded_indexed_element(sequence, index, mutable, None)
     }
 
-    pub fn new_guarded_sequence_element(
-        sequence: Rc<SequenceValue>,
+    pub fn new_guarded_indexed_element(
+        sequence: Rc<IndexedStorage>,
         index: usize,
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
@@ -113,7 +113,7 @@ impl ReferenceValue {
         drop(elements);
         Ok(Self {
             mutable,
-            target: ReferenceTarget::SequenceElement { sequence, index },
+            target: ReferenceTarget::IndexedElement { sequence, index },
             _guard: guard,
         })
     }
@@ -178,8 +178,8 @@ impl ReferenceValue {
                 mutable,
                 self._guard.clone(),
             ),
-            ReferenceTarget::SequenceElement { sequence, index } => {
-                Self::new_guarded_sequence_element(
+            ReferenceTarget::IndexedElement { sequence, index } => {
+                Self::new_guarded_indexed_element(
                     sequence.clone(),
                     *index,
                     mutable,
@@ -210,7 +210,7 @@ impl ReferenceValue {
                 .get(name)
                 .and_then(|field| field.value.clone())
                 .ok_or_else(|| format!("reference target field `{name}` has been moved")),
-            ReferenceTarget::SequenceElement { sequence, index } => sequence
+            ReferenceTarget::IndexedElement { sequence, index } => sequence
                 .elements
                 .borrow()
                 .get(*index)
@@ -247,7 +247,7 @@ impl ReferenceValue {
                 );
                 Ok(())
             }
-            ReferenceTarget::SequenceElement { sequence, index } => {
+            ReferenceTarget::IndexedElement { sequence, index } => {
                 if sequence.active_iterators.get() > 0 {
                     return Err(AssignError::BorrowedTarget);
                 }
@@ -276,7 +276,7 @@ impl Drop for ReferenceValue {
                     field.references = field.references.saturating_sub(1);
                 }
             }
-            ReferenceTarget::SequenceElement { sequence, index } => {
+            ReferenceTarget::IndexedElement { sequence, index } => {
                 if let Some(slot) = sequence.elements.borrow_mut().get_mut(*index) {
                     slot.references = slot.references.saturating_sub(1);
                 }

@@ -110,6 +110,38 @@ fn render_value(value: &Value, spec: &FormatSpec) -> Result<String, String> {
 }
 
 fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
+    if let Value::Reference(reference) = value {
+        return display(&reference.read()?, spec);
+    }
+    if !matches!(value, Value::Native(object) if object.descriptor().has_method(crate::value::native_ops::DISPLAY))
+        && !matches!(
+            value,
+            Value::Unit
+                | Value::Bool(_)
+                | Value::Char(_)
+                | Value::String(_)
+                | Value::I8(_)
+                | Value::I16(_)
+                | Value::I32(_)
+                | Value::I64(_)
+                | Value::I128(_)
+                | Value::Isize(_)
+                | Value::U8(_)
+                | Value::U16(_)
+                | Value::U32(_)
+                | Value::U64(_)
+                | Value::U128(_)
+                | Value::Usize(_)
+                | Value::F32(_)
+                | Value::F64(_)
+                | Value::HostObject(_)
+        )
+    {
+        return Err(format!(
+            "type `{}` does not implement required trait `Display`",
+            value.type_name()
+        ));
+    }
     let rendered = match (value, spec.precision) {
         (Value::F32(value), Some(precision)) => Ok(format!("{value:.precision$}")),
         (Value::F64(value), Some(precision)) => Ok(format!("{value:.precision$}")),
@@ -128,6 +160,15 @@ fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
 }
 
 fn is_nonnegative_number(value: &Value) -> bool {
+    if let Some(value) = crate::numeric::i8_payload(value) {
+        return value >= 0;
+    }
+    if let Some(value) = crate::numeric::i32_payload(value) {
+        return value >= 0;
+    }
+    if crate::numeric::usize_payload(value).is_some() {
+        return true;
+    }
     match value {
         Value::I8(value) => *value >= 0,
         Value::I16(value) => *value >= 0,
@@ -169,6 +210,15 @@ fn integer_format(value: &Value, kind: IntegerFormat, alternate: bool) -> Result
                 (IntegerFormat::UpperHex, true) => format!("{:#X}", $value),
             }
         }};
+    }
+    if let Some(value) = crate::numeric::i8_payload(value) {
+        return Ok(render!(value));
+    }
+    if let Some(value) = crate::numeric::i32_payload(value) {
+        return Ok(render!(value));
+    }
+    if let Some(value) = crate::numeric::usize_payload(value) {
+        return Ok(render!(value));
     }
     Ok(match value {
         Value::I8(value) => render!(value),

@@ -7,7 +7,7 @@ use rils_builtins::BuiltinId;
 
 use crate::{
     types::{Type, merge_types},
-    value::{BTreeMapValue, FieldSlot, HashKey, OwnedIteratorValue, SequenceValue, Value},
+    value::{BTreeMapValue, FieldSlot, HashKey, IndexedStorage, OwnedIteratorValue, Value},
 };
 
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
@@ -31,7 +31,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
         return Err("expected BTreeMap receiver".into());
     };
     match id {
-        BuiltinId::BtreeMapLen => Ok(Value::Usize(map.entries.borrow().len())),
+        BuiltinId::BtreeMapLen => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
         BuiltinId::BtreeMapIsEmpty => Ok(Value::Bool(map.entries.borrow().is_empty())),
         BuiltinId::BtreeMapClear => {
             reject_referenced(&map)?;
@@ -149,7 +149,7 @@ fn option(value: Option<Value>, element_type: Type) -> Result<Value, String> {
 }
 
 fn tuple(values: Vec<Value>) -> Value {
-    Value::Tuple(Rc::new(SequenceValue {
+    Value::Tuple(Rc::new(IndexedStorage {
         active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values

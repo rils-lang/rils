@@ -33,7 +33,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
         return Err("cannot mutate BTreeSet while it is borrowed by an iterator".into());
     }
     match id {
-        BuiltinId::BtreeSetLen => Ok(Value::Usize(set.entries.borrow().len())),
+        BuiltinId::BtreeSetLen => Ok(crate::numeric::native_usize(set.entries.borrow().len())),
         BuiltinId::BtreeSetIsEmpty => Ok(Value::Bool(set.entries.borrow().is_empty())),
         BuiltinId::BtreeSetClear => {
             set.entries.borrow_mut().clear();

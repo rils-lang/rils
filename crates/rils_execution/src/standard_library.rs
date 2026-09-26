@@ -10,7 +10,7 @@ use crate::{
     source::Span,
     types::Type,
     value::{
-        EnumInstance, EnumPayload, EnumType, FieldSlot, HostFunction, ModuleValue, SequenceValue,
+        EnumInstance, EnumPayload, EnumType, FieldSlot, HostFunction, IndexedStorage, ModuleValue,
         StructInstance, StructType, Value,
     },
 };
@@ -106,7 +106,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
         host_function("std::io::write", 1, 1, {
             let error = error.clone();
             let error_kind = error_kind.clone();
-            move |arguments| match native_result(native::write(arguments[0].to_string().into())) {
+            move |arguments| match native_result(native::write(arguments[0].to_string())) {
                 Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
@@ -118,9 +118,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
         host_function("std::io::write_line", 1, 1, {
             let error = error.clone();
             let error_kind = error_kind.clone();
-            move |arguments| match native_result(native::write_line(
-                arguments[0].to_string().into(),
-            )) {
+            move |arguments| match native_result(native::write_line(arguments[0].to_string())) {
                 Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
@@ -447,7 +445,7 @@ fn io_error(
 }
 
 fn string_vec(values: Vec<String>) -> Value {
-    Value::Vec(Rc::new(SequenceValue {
+    Value::Vec(Rc::new(IndexedStorage {
         active_iterators: std::cell::Cell::new(0),
         elements: RefCell::new(
             values

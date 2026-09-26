@@ -55,6 +55,17 @@ impl NativeInput for u32 {
 
 impl NativeInput for Integer {
     fn from_value(value: &Value) -> std::result::Result<Self, String> {
+        if let Value::Native(_) = value {
+            if let Some(inner) = super::i8_payload(value) {
+                return Ok(Self::Signed(inner.into(), "i8"));
+            }
+            if let Some(inner) = super::i32_payload(value) {
+                return Ok(Self::Signed(inner.into(), "i32"));
+            }
+            if let Some(inner) = super::usize_payload(value) {
+                return Ok(Self::Unsigned(inner as u128, "usize"));
+            }
+        }
         macro_rules! signed {
             ($value:expr, $name:literal) => {
                 Ok(Self::Signed((*$value).into(), $name))
@@ -102,25 +113,28 @@ impl NativeOutput for f64 {
     }
 }
 macro_rules! integer_bridge {
-    ($($primitive:ty => $variant:ident),* $(,)?) => {$(
+    ($($primitive:ty => $variant:ident => $constructor:path),* $(,)?) => {$(
         impl NativeInput for Number<$primitive> {
             fn from_value(value: &Value) -> std::result::Result<Self, String> {
                 match value {
                     Value::$variant(value) => Ok(Self(*value)),
+                    Value::Native(object) if object.descriptor().rils_type() == &Type::Integer(crate::IntegerType::$variant) => {
+                        object.with::<Self, _>(|value| *value)
+                    }
                     value => Err(format!("expected {}, found {}", stringify!($variant).to_ascii_lowercase(), value.type_name())),
                 }
             }
         }
         impl NativeOutput for Number<$primitive> {
             fn into_value(self) -> std::result::Result<Value, String> {
-                Ok(Value::$variant(self.0))
+                Ok($constructor(self.0))
             }
         }
         impl NativeOutput for Option<Number<$primitive>> {
             fn into_value(self) -> std::result::Result<Value, String> {
                 Ok(Value::Option {
                     value: match self {
-                        Option::Some(value) => Some(Rc::new(Value::$variant(value.0))),
+                        Option::Some(value) => Some(Rc::new($constructor(value.0))),
                         Option::None => None,
                     },
                     element_type: Some(Type::Integer(crate::IntegerType::$variant)),
@@ -131,7 +145,7 @@ macro_rules! integer_bridge {
             fn into_value(self) -> std::result::Result<Value, String> {
                 Ok(Value::Result {
                     value: match self {
-                        Result::Ok(value) => Ok(Rc::new(Value::$variant(value.0))),
+                        Result::Ok(value) => Ok(Rc::new($constructor(value.0))),
                         Result::Err(message) => Err(Rc::new(Value::String(message.into()))),
                     },
                     ok_type: Some(Type::Integer(crate::IntegerType::$variant)),
@@ -141,15 +155,20 @@ macro_rules! integer_bridge {
         }
         impl NativeOutput for (Number<$primitive>, bool) {
             fn into_value(self) -> std::result::Result<Value, String> {
-                super::tuple_value(Value::$variant(self.0.0), self.1)
+                super::tuple_value($constructor(self.0.0), self.1)
             }
         }
     )*};
 }
 
 integer_bridge!(
-    i8 => I8, i16 => I16, i32 => I32, i64 => I64, i128 => I128, isize => Isize,
-    u8 => U8, u16 => U16, u32 => U32, u64 => U64, u128 => U128, usize => Usize,
+    i8 => I8 => super::native_i8,
+    i16 => I16 => Value::I16, i32 => I32 => super::native_i32,
+    i64 => I64 => Value::I64, i128 => I128 => Value::I128,
+    isize => Isize => Value::Isize, u8 => U8 => Value::U8,
+    u16 => U16 => Value::U16, u32 => U32 => Value::U32,
+    u64 => U64 => Value::U64, u128 => U128 => Value::U128,
+    usize => Usize => super::native_usize,
 );
 
 pub(super) mod integer {
