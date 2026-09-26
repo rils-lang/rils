@@ -64,6 +64,11 @@ impl fmt::Display for Value {
             Self::HostType(definition) => write!(f, "<host type {}>", definition.name),
             Self::HostObject(object) => write!(f, "<{}>", object.type_definition.name),
             Self::Native(object) => write!(f, "{}", super::native_ops::display(object)),
+            Self::Dynamic(_) => match super::dynamic_option::view(self) {
+                Some(Ok((Some(value), _))) => write!(f, "Some({value})"),
+                Some(Ok((None, _))) => f.write_str("None"),
+                _ => write!(f, "<{}>", self.type_name()),
+            },
             Self::HostBoundMethod(method) => write!(f, "<bound host fn {}>", method.function.name),
             Self::BuiltinType(BuiltinType::Vec) => write!(f, "<type Vec>"),
             Self::BuiltinType(BuiltinType::HashMap) => write!(f, "<type HashMap>"),
@@ -206,6 +211,11 @@ impl fmt::Debug for Value {
                 Self::Option {
                     value: Some(value), ..
                 } => f.debug_tuple("Some").field(value).finish(),
+                Self::Dynamic(_) => match super::dynamic_option::view(self) {
+                    Some(Ok((Some(value), _))) => f.debug_tuple("Some").field(&value).finish(),
+                    Some(Ok((None, _))) => f.write_str("None"),
+                    _ => write!(f, "<{}>", self.type_name()),
+                },
                 Self::Result {
                     value: Ok(value), ..
                 } => f.debug_tuple("Ok").field(value).finish(),
@@ -272,6 +282,11 @@ impl fmt::Debug for Value {
             Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
                 write!(f, "{:?}", self.as_string().unwrap_or_default())
             }
+            Self::Dynamic(_) => match super::dynamic_option::view(self) {
+                Some(Ok((Some(value), _))) => f.debug_tuple("Some").field(&value).finish(),
+                Some(Ok((None, _))) => f.write_str("None"),
+                _ => write!(f, "<{}>", self.type_name()),
+            },
             _ => write!(f, "{self}"),
         }
     }

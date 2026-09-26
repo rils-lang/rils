@@ -760,6 +760,9 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     crate::Value::Reference(reference) => reference.read()?,
                     value => value.clone(),
                 };
+                let receiver = crate::value::dynamic_option::materialize(&receiver)
+                    .transpose()?
+                    .unwrap_or(receiver);
                 #conversion
                 #result_code
             })())

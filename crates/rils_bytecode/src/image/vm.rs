@@ -754,9 +754,16 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let value = self.take_register(source, instruction.span)?;
                     let element_type = Type::of_value(&value);
-                    self.frame_mut().registers[destination] = Some(Value::Option {
-                        value: Some(Rc::new(value)),
-                        element_type,
+                    let option = element_type.as_ref().and_then(|item_type| {
+                        rils_execution::value::dynamic_option::construct(Some(&value), item_type)
+                    });
+                    self.frame_mut().registers[destination] = Some(match option {
+                        Some(result) => result
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                        None => Value::Option {
+                            value: Some(Rc::new(value)),
+                            element_type,
+                        },
                     });
                 }
                 Instruction::BuildResultOk {
@@ -991,6 +998,8 @@ fn infer_type_arguments(expected: &Type, value: &Value, inferred: &mut HashMap<S
             } = value
             {
                 infer_type_arguments(inner, value, inferred);
+            } else if let Some(Type::Option(actual)) = Type::of_value(value) {
+                infer_type_from_types(inner, &actual, inferred);
             }
         }
         Type::Array { element, .. } => {

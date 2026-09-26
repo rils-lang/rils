@@ -30,6 +30,9 @@ pub use range::native_range;
 pub use rils_value::NativeChildren;
 pub type NativeObject = rils_value::NativeObject<Value>;
 pub type NativeType = rils_value::NativeType<Value>;
+pub type DynamicObject = rils_value::DynamicObject<Value>;
+#[path = "value/dynamic_option.rs"]
+pub mod dynamic_option;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
 pub mod native_ops;
@@ -351,6 +354,7 @@ pub enum Value {
     HostType(Rc<HostType>),
     HostObject(Rc<HostObject>),
     Native(NativeObject),
+    Dynamic(DynamicObject),
     HostBoundMethod(Rc<HostBoundMethod>),
     BuiltinType(BuiltinType),
     BuiltinFunction(BuiltinFunction),
@@ -391,6 +395,11 @@ impl Value {
     /// Read owned string text from native or legacy storage.
     pub fn as_string(&self) -> Option<std::string::String> {
         string_payload(self)
+    }
+
+    /// Read an option regardless of whether it uses dynamic or legacy storage.
+    pub fn as_option(&self) -> Option<(Option<Value>, Type)> {
+        dynamic_option::view_any(self)?.ok()
     }
 
     pub fn is_copy(&self) -> bool {
@@ -455,6 +464,7 @@ impl Value {
             // or transfer ownership of the host object itself.
             Self::HostObject(object) => object.type_definition.copy,
             Self::Native(object) => object.descriptor().is_copy(),
+            Self::Dynamic(object) => object.descriptor().layout().is_copy(),
             Self::String(_) => rils_builtins::native_implements("string", "Copy"),
             Self::Rc(_)
             | Self::Weak(_)
@@ -804,6 +814,17 @@ impl Value {
                 }))
             }
             Self::Native(object) => Self::Native(native_ops::clone_owned(object)?),
+            Self::Dynamic(object) => {
+                if object.descriptor().layout().is_copy() {
+                    Self::Dynamic(object.copy_owned()?)
+                } else {
+                    let (item, item_type) = dynamic_option::view(self)
+                        .ok_or("dynamic value does not support Clone")??;
+                    let item = item.map(|item| item.clone_owned()).transpose()?;
+                    dynamic_option::construct(item.as_ref(), &item_type)
+                        .ok_or("dynamic value does not support Clone")??
+                }
+            }
             value => value.clone(),
         })
     }
@@ -908,6 +929,7 @@ impl Value {
             Self::HostType(definition) => format!("type {}", definition.name),
             Self::HostObject(object) => object.type_definition.name.clone(),
             Self::Native(object) => object.descriptor().rils_type().to_string(),
+            Self::Dynamic(object) => object.descriptor().layout().rils_type().to_string(),
             Self::Module(module) => format!("module {}", module.name),
             Self::EnumType(definition) => format!("type {}", definition.name),
             Self::TraitType(definition) => format!("trait {}", definition.name),
@@ -931,6 +953,15 @@ impl Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
+        if matches!(self, Self::Dynamic(_)) || matches!(other, Self::Dynamic(_)) {
+            return match (
+                dynamic_option::view_any(self),
+                dynamic_option::view_any(other),
+            ) {
+                (Some(Ok((left, _))), Some(Ok((right, _)))) => left == right,
+                _ => false,
+            };
+        }
         match (self, other) {
             (Self::Unit, Self::Unit) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,

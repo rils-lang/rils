@@ -181,6 +181,10 @@ impl VirtualMachine<'_> {
                 some_target,
                 none_target,
             } => {
+                let value = crate::value::dynamic_option::materialize(&value)
+                    .transpose()
+                    .map_err(|message| BytecodeError::new(message, span))?
+                    .unwrap_or(value);
                 let Value::Option { value, .. } = value else {
                     return Err(BytecodeError::new(
                         "Iterator::next must return Option",

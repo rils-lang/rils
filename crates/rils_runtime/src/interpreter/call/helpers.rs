@@ -117,6 +117,11 @@ pub(crate) fn builtin_runtime_member(
             _ => return None,
         },
         Value::Option { .. } => "Option",
+        Value::Dynamic(object)
+            if matches!(object.descriptor().layout().rils_type(), Type::Option(_)) =>
+        {
+            "Option"
+        }
         Value::Result { .. } => "Result",
         Value::OwnedIterator(_) => "Iterator",
         Value::BorrowedIndexedIterator(_) => "Iter",

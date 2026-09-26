@@ -108,6 +108,9 @@ impl HashKey {
             Value::Reference(reference) => reference.read()?,
             value => value.clone(),
         };
+        let value = super::dynamic_option::materialize(&value)
+            .transpose()?
+            .unwrap_or(value);
         if let Some(value) = crate::numeric::i8_payload(&value) {
             return Ok(Self::I8(value));
         }

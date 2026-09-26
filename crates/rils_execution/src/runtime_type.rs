@@ -228,6 +228,9 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (expected, Value::Native(object)) => {
             merge_types(expected, object.descriptor().rils_type()).is_some()
         }
+        (expected, Value::Dynamic(object)) => {
+            merge_types(expected, object.descriptor().layout().rils_type()).is_some()
+        }
         _ => false,
     }
 }
@@ -341,6 +344,11 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                 Some(value) => Some(Rc::new(inner_type.constrain(value.as_ref())?)),
                 None => None,
             };
+            if let Some(result) =
+                crate::value::dynamic_option::construct(value.as_ref().map(Rc::as_ref), inner_type)
+            {
+                return result.ok();
+            }
             Some(Value::Option {
                 value,
                 element_type: Some((**inner_type).clone()),
@@ -587,6 +595,7 @@ fn type_of_value(value: &Value) -> Option<Type> {
         ),
         Value::HostObject(object) => Some(Type::named(object.type_definition.name.clone())),
         Value::Native(object) => Some(object.descriptor().rils_type().clone()),
+        Value::Dynamic(object) => Some(object.descriptor().layout().rils_type().clone()),
         Value::VariantConstructor(constructor) => {
             let variant = constructor
                 .type_definition

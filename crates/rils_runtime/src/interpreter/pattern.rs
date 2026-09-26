@@ -27,6 +27,12 @@ fn pattern_matches_inner(
     environment: &EnvironmentRef,
     borrowed: bool,
 ) -> bool {
+    let materialized = match rils_execution::value::dynamic_option::materialize(value) {
+        Some(Ok(value)) => Some(value),
+        Some(Err(_)) => return false,
+        None => None,
+    };
+    let value = materialized.as_ref().unwrap_or(value);
     match pattern {
         Pattern::Wildcard { .. } => true,
         Pattern::Binding { name, .. } => {

@@ -107,6 +107,13 @@ pub(super) fn infer_type_from_value(
                 value: Some(value), ..
             },
         ) => infer_type_from_value(inner, value, substitutions),
+        (Type::Option(inner), Value::Dynamic(_)) => {
+            if let Some(Type::Option(actual)) = Type::of_value(value) {
+                infer_type_from_type(inner, &actual, substitutions)
+            } else {
+                Ok(())
+            }
+        }
         (
             Type::Option(inner),
             Value::Option {

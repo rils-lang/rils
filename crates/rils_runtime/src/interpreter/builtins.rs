@@ -97,6 +97,12 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 Type::Option(Box::new(Type::Unknown)),
             )),
             body: NativeFunctionBody::Rust(|arguments| {
+                if let Some(item_type) = Type::of_value(&arguments[0])
+                    && let Some(result) =
+                        crate::value::dynamic_option::construct(Some(&arguments[0]), &item_type)
+                {
+                    return result;
+                }
                 let native = rils_stdlib::stdlib::prelude::some(Rc::new(arguments[0].clone()));
                 Ok(Value::Option {
                     value: match native {

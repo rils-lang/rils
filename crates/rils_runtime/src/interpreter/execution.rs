@@ -927,6 +927,10 @@ impl Interpreter {
                         Value::Reference(Rc::new(ReferenceValue::new_storage(slot, true)));
                     let method = self.resolve_member(receiver, "next", *span)?;
                     let next = self.call(method, &[], *span)?;
+                    let next = rils_execution::value::dynamic_option::materialize(&next)
+                        .transpose()
+                        .map_err(|message| RuntimeError::new(message, *span))?
+                        .unwrap_or(next);
                     let item = match next {
                         Value::Option { value: None, .. } => break,
                         Value::Option {

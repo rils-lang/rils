@@ -6,6 +6,6 @@
 
 `NativeObject<V>` 使用尺寸和对齐信息保存具体 Rust 布局。已登记 Copy 且不超过 32 字节、16 字节对齐的值直接放在对象内，不需要逐值分配；其余值使用共享堆存储，以支持词法引用和可变 receiver。擦除布局的分配与复制集中在 `storage.rs`，组合布局的移动与析构集中在 `dynamic.rs`；这些模块显式标注 `unsafe` 前提，不使用 `dyn Any` 作为负载。内联 Copy 值的可变方法需要上层 place 写回，不能通过克隆出的 handle 修改。包含 Rils 值的容器必须通过 `NativeChildren<V>` 报告嵌套值、活动引用和部分 move；Rils 的所有权与词法引用仍由执行层负责。
 
-目前只有 `Range<T>` 在实际解释器与 VM 值路径中使用 `Value::Native`。测试已验证本 crate 能存储 Rust `i32`、`usize`、标准库包装的 `String`、`Option<i32>` 和 `Option<String>`，但这些类型在 Rils 运行时仍由旧 `Value` 分支表示。其类型和方法注册尚未从 `#[decl_rils]` 自动生成；手工构造 `NativeType` 仅用于验证布局，不是标准库迁移的正式入口。
+`Range<T>`、`i8`、`i32`、`usize` 和 `string` 已在解释器与 VM 的实际值路径中使用 `Value::Native`。类型描述和整数、字符串方法注册由标准库声明生成；手工构造 `NativeType` 仅用于验证独立存储 API。
 
-`DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需内联标记。`DynamicType<V>` 为这类布局提供任意操作的注册表和带布局检查的调用上下文。执行层已有从标准库声明过程宏生成的整数、`string` 与 `Option<T>` 布局工厂。导出方法的操作注册与实际 `Value` 路径尚需迁移，不能把布局工厂视为完整的标准库接入。
+`DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需标记字节。`DynamicObject<V>` 按类型 Copy 性质选择内联句柄或共享存储；`DynamicType<V>` 为它提供任意操作的注册表和带布局检查的调用上下文。执行层已有从标准库声明过程宏生成的整数、`string` 与 `Option<T>` 布局工厂。`Option<i32>`、`Option<usize>`、`Option<string>` 的 `Some` 已接入实际 `Value::Dynamic` 路径；方法仍通过过渡适配器转换，其余泛型实例和 VM 中带上下文类型的 `None` 尚未迁移。
