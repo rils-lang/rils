@@ -122,6 +122,16 @@ fn typed_none_preserves_option_semantics() {
 }
 
 #[test]
+fn contextual_none_remains_semantically_equal_across_backends() {
+    let source = "fn pass(value: Option<string>) -> Option<string> { value } pass(None)";
+    assert_eq!(eval(source).unwrap().to_string(), "None");
+    let compiled = compile(source).unwrap();
+    assert_eq!(compiled.execute().unwrap().to_string(), "None");
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute().unwrap().to_string(), "None");
+}
+
+#[test]
 fn native_options_work_as_collection_keys_and_match_values() {
     let source = include_str!("fixtures/native_option.rils");
     assert_eq!(eval(source).unwrap().as_i32(), Some(42));
