@@ -20,6 +20,7 @@ pub(crate) fn analyze(
         nominals: HashSet::new(),
         implementations: HashMap::new(),
         diagnostics: Vec::new(),
+        generic_bounds: HashMap::new(),
     };
     checker.collect(&program.statements);
     checker.statements(&program.statements);
@@ -32,6 +33,7 @@ struct Checker<'a> {
     nominals: HashSet<String>,
     implementations: HashMap<String, HashSet<String>>,
     diagnostics: Vec<AnalysisDiagnostic>,
+    generic_bounds: HashMap<String, Vec<Type>>,
 }
 
 impl Checker<'_> {
@@ -74,16 +76,31 @@ impl Checker<'_> {
                     ..
                 } => self.statements(statements),
                 Stmt::Function {
-                    attributes, body, ..
+                    attributes,
+                    body,
+                    generic_parameters,
+                    ..
                 } => {
                     if !crate::ast::has_compiler_internal_attribute(attributes) {
+                        let previous = self.generic_bounds.clone();
+                        for parameter in generic_parameters {
+                            self.generic_bounds
+                                .insert(parameter.name.clone(), parameter.bounds.clone());
+                        }
                         self.block(body);
+                        self.generic_bounds = previous;
                     }
                 }
                 Stmt::Impl { methods, .. } => {
                     for method in methods {
                         if !crate::ast::has_compiler_internal_attribute(&method.attributes) {
+                            let previous = self.generic_bounds.clone();
+                            for parameter in &method.generic_parameters {
+                                self.generic_bounds
+                                    .insert(parameter.name.clone(), parameter.bounds.clone());
+                            }
                             self.block(&method.body);
+                            self.generic_bounds = previous;
                         }
                     }
                 }
@@ -173,6 +190,20 @@ impl Checker<'_> {
                 callee, arguments, ..
             } => {
                 self.expression(callee);
+                if let Some(Type::Function {
+                    parameters: Some(parameters),
+                    ..
+                }) = self.expression_types.get(callee).cloned()
+                {
+                    for (expected, argument) in parameters.iter().zip(arguments) {
+                        let actual = self
+                            .expression_types
+                            .get(argument)
+                            .cloned()
+                            .unwrap_or(Type::Unknown);
+                        self.check_bound_argument(expected, &actual, argument.span());
+                    }
+                }
                 for argument in arguments {
                     self.expression(argument);
                 }
@@ -282,44 +313,51 @@ impl Checker<'_> {
         }
     }
 
-    fn implements(&self, ty: &Type, required: &str) -> bool {
+    fn check_bound_argument(&mut self, expected: &Type, actual: &Type, span: Span) {
+        match (expected, actual) {
+            (Type::BoundVariable { bounds, .. }, actual) => {
+                for bound in bounds {
+                    if let Type::Named { name, .. } = bound {
+                        let required = name.rsplit("::").next().unwrap_or(name);
+                        if matches!(required, "Display" | "Debug")
+                            && !self.implements_strict(actual, required)
+                        {
+                            self.error(
+                                format!(
+                                    "type `{actual}` does not implement required trait `{required}`"
+                                ),
+                                span,
+                            );
+                        }
+                    }
+                }
+            }
+            (Type::Reference { inner, .. }, Type::Reference { inner: actual, .. }) => {
+                self.check_bound_argument(inner, actual, span)
+            }
+            _ => {}
+        }
+    }
+
+    fn implements_strict(&self, ty: &Type, required: &str) -> bool {
         match deref_type(ty) {
+            Type::Unknown | Type::Associated { .. } => false,
+            Type::Variable(name) => self.generic_bounds.get(name).is_some_and(|bounds| bounds.iter().any(|bound| matches!(bound, Type::Named { name, .. } if name.rsplit("::").next() == Some(required)))),
+            Type::BoundVariable { bounds, .. } => bounds.iter().any(|bound| matches!(bound, Type::Named { name, .. } if name.rsplit("::").next() == Some(required))),
+            ty => self.implements(ty, required),
+        }
+    }
+
+    fn implements(&self, ty: &Type, required: &str) -> bool {
+        crate::format_traits::implements(ty, required, &|ty, required| match ty {
             Type::Unknown | Type::Variable(_) | Type::Associated { .. } => true,
-            Type::Unit
-            | Type::Bool
-            | Type::Integer(_)
-            | Type::IntegerVariable(_)
-            | Type::IntegerInference(_)
-            | Type::Float(_)
-            | Type::FloatVariable(_)
-            | Type::FloatInference(_)
-            | Type::Char
-            | Type::String => true,
-            Type::Tuple(elements) => {
-                required == "Debug" && elements.iter().all(|ty| self.implements(ty, required))
-            }
-            Type::Array { element, .. } | Type::Slice(element) | Type::Option(element) => {
-                required == "Debug" && self.implements(element, required)
-            }
-            Type::Result(ok, error) => {
-                required == "Debug"
-                    && self.implements(ok, required)
-                    && self.implements(error, required)
-            }
-            Type::Named { name, arguments }
-                if matches!(name.as_str(), "Vec" | "HashMap" | "HashSet" | "Range") =>
-            {
-                required == "Debug" && arguments.iter().all(|ty| self.implements(ty, required))
-            }
             Type::Named { name, .. } if self.host_types.contains(name) => true,
-            Type::Named { name, .. } if self.nominals.contains(name) => self
+            Type::Named { name, .. } => self
                 .implementations
                 .get(name)
                 .is_some_and(|traits| traits.contains(required)),
-            Type::Named { .. } => true,
-            Type::Function { .. } => false,
-            Type::Reference { .. } => unreachable!(),
-        }
+            _ => false,
+        })
     }
 
     fn error(&mut self, message: String, span: Span) {

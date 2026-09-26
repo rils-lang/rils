@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use quote::{ToTokens, quote};
+use quote::quote;
 use syn::{
     Attribute, Error, GenericParam, Generics, Ident, ItemImpl, Path, Token, Type, TypeParamBound,
 };
@@ -38,11 +38,16 @@ pub(super) fn parse_impl(
             "#[rils_impl] requires a trait impl",
         ));
     };
-    let trait_name = trait_path.to_token_stream().to_string().replace(' ', "");
-    if trait_path.get_ident().is_none() || (!allow_custom && !supported_trait(&trait_name)) {
+    let trait_name = trait_path
+        .segments
+        .last()
+        .expect("trait path")
+        .ident
+        .to_string();
+    if !allow_custom && !supported_trait(&trait_name) {
         return Err(Error::new_spanned(
             trait_path,
-            "#[rils_impl] requires a simple Rils trait name",
+            "#[rils_impl] requires a supported Rils trait name",
         ));
     }
     let Type::Path(ty) = item.self_ty.as_ref() else {

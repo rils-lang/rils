@@ -44,7 +44,10 @@ fn derived_debug_runtime_call_has_one_reference_layer_per_argument() {
                 },
                 Type::Reference {
                     mutable: false,
-                    inner: Box::new(Type::Unknown),
+                    inner: Box::new(Type::BoundVariable {
+                        name: "T".into(),
+                        bounds: vec![Type::named("core::fmt::Debug")]
+                    }),
                 },
             ],
             Type::Result(Box::new(Type::Unit), Box::new(Type::named("FormatError")),),

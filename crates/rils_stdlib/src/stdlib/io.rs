@@ -96,17 +96,17 @@ mod native {
 
     /// Writes a value to standard output.
     #[rils_fn]
-    #[rils_any(value)]
-    pub fn write(value: String) -> Result<(), rils_stdlib::stdlib::io::Error> {
-        let text: std::string::String = value.into();
+    pub fn write<T: std::fmt::Display>(value: T) -> Result<(), rils_stdlib::stdlib::io::Error> {
+        let text = value.to_string();
         write_text(&text)
     }
 
     /// Writes a value and a newline.
     #[rils_fn]
-    #[rils_any(value)]
-    pub fn write_line(value: String) -> Result<(), rils_stdlib::stdlib::io::Error> {
-        let mut text: std::string::String = value.into();
+    pub fn write_line<T: std::fmt::Display>(
+        value: T,
+    ) -> Result<(), rils_stdlib::stdlib::io::Error> {
+        let mut text = value.to_string();
         text.push('\n');
         write_text(&text)
     }

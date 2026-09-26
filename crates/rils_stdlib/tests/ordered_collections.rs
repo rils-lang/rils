@@ -22,10 +22,25 @@ fn ordered_set_preserves_order_and_set_operations() {
     let mut other = BTreeSet::new();
     other.insert(3);
     other.insert(4);
-    assert_eq!(values.union(&other).into_iter().0, [1, 3, 4]);
-    assert_eq!(values.intersection(&other).into_iter().0, [3]);
-    assert_eq!(values.difference(&other).into_iter().0, [1]);
-    assert_eq!(values.symmetric_difference(&other).into_iter().0, [1, 4]);
+    assert_eq!(
+        values.union(&other).into_iter().collect::<Vec<_>>(),
+        [1, 3, 4]
+    );
+    assert_eq!(
+        values.intersection(&other).into_iter().collect::<Vec<_>>(),
+        [3]
+    );
+    assert_eq!(
+        values.difference(&other).into_iter().collect::<Vec<_>>(),
+        [1]
+    );
+    assert_eq!(
+        values
+            .symmetric_difference(&other)
+            .into_iter()
+            .collect::<Vec<_>>(),
+        [1, 4]
+    );
     assert!(values.remove(&1));
     assert!(!values.remove(&1));
 }
@@ -44,5 +59,5 @@ fn ordered_map_preserves_keys_and_replaces_values() {
         [(&1, &"one"), (&2, &"second")]
     );
     assert_eq!(value(values.remove(&1)), Some("one"));
-    assert_eq!(values.into_iter().0, [(2, "second")]);
+    assert_eq!(values.into_iter().collect::<Vec<_>>(), [(2, "second")]);
 }

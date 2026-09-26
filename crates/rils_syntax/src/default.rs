@@ -52,7 +52,9 @@ pub fn default_plan(ty: &Type) -> Option<DefaultPlan> {
                 arguments: arguments.clone(),
             }
         }
-        Type::Named { .. } | Type::Variable(_) => DefaultPlan::TraitCall(ty.clone()),
+        Type::Named { .. } | Type::Variable(_) | Type::BoundVariable { .. } => {
+            DefaultPlan::TraitCall(ty.clone())
+        }
         Type::Reference { .. }
         | Type::Slice(_)
         | Type::Function { .. }
@@ -62,6 +64,8 @@ pub fn default_plan(ty: &Type) -> Option<DefaultPlan> {
         | Type::FloatVariable(_)
         | Type::IntegerInference(_)
         | Type::FloatInference(_)
+        | Type::ArrayParameter { .. }
+        | Type::ConstUsize(_)
         | Type::Unknown => return None,
     })
 }

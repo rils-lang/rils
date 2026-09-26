@@ -447,9 +447,11 @@ fn infers_for_binding_types_from_builtin_and_custom_iterators() {
             fn next(&mut self) -> Option<i32> { None }
         }
         impl IntoIterator for Source {
+            type Item = i32;
             type IntoIter = Numbers;
             fn into_iter(self) -> Numbers { Numbers { marker: self.marker } }
         }
+        let projected: <Source as IntoIterator>::Item = 1;
         let values = Vec::from([1, 2]);
         for array_item in [1, 2] { array_item; }
         for vec_item in values { vec_item; }
@@ -462,6 +464,29 @@ fn infers_for_binding_types_from_builtin_and_custom_iterators() {
                 &source[hint.span.start..hint.span.end] == binding && hint.label == ": i32"
             }),
             "missing {binding}: {:?}",
+            analysis.inlay_hints
+        );
+    }
+}
+
+#[test]
+fn iterator_defaults_use_item_associated_type_not_first_generic_parameter() {
+    let source = r#"
+        struct Source<Key, Value> { key: Key, value: Value }
+        impl<Key, Value> Iterator for Source<Key, Value> {
+            type Item = Value;
+            fn next(&mut self) -> Option<Value> { None }
+        }
+        let last = Source { key: "id", value: 7 }.last();
+        let collected = Source { key: "id", value: 7 }.collect_vec();
+    "#;
+    let analysis = analyze(source).unwrap();
+    for (binding, expected) in [("last", ": Option<i32>"), ("collected", ": Vec<i32>")] {
+        assert!(
+            analysis.inlay_hints.iter().any(|hint| {
+                &source[hint.span.start..hint.span.end] == binding && hint.label == expected
+            }),
+            "missing {binding} {expected}: {:?}",
             analysis.inlay_hints
         );
     }

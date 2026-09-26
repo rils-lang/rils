@@ -90,36 +90,42 @@ mod native {
 
         /// Creates an empty queue.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::new)]
         pub fn new() -> Self {
             Self(std::collections::VecDeque::new())
         }
 
         /// Returns the number of elements.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
         /// Returns whether the queue is empty.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
 
         /// Adds an element at the front.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::push_front)]
         pub fn push_front(&mut self, value: T) {
             self.0.push_front(value);
         }
 
         /// Adds an element at the back.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::push_back)]
         pub fn push_back(&mut self, value: T) {
             self.0.push_back(value);
         }
 
         /// Removes the front element.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::pop_front)]
         pub fn pop_front(&mut self) -> Option<T> {
             match self.0.pop_front() {
                 Some(value) => Option::Some(value),
@@ -129,6 +135,7 @@ mod native {
 
         /// Removes the back element.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::pop_back)]
         pub fn pop_back(&mut self) -> Option<T> {
             match self.0.pop_back() {
                 Some(value) => Option::Some(value),
@@ -138,6 +145,7 @@ mod native {
 
         /// Clones the front element.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::front_cloned)]
         pub fn front_cloned(&self) -> Option<T>
         where
             T: Clone,
@@ -150,6 +158,7 @@ mod native {
 
         /// Clones the back element.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::back_cloned)]
         pub fn back_cloned(&self) -> Option<T>
         where
             T: Clone,
@@ -162,6 +171,7 @@ mod native {
 
         /// Removes all elements.
         #[export_rils]
+        #[rils_legacy_id(core::collections::vec_deque::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }
@@ -180,30 +190,35 @@ mod native {
     impl<T: HeapElement> BinaryHeap<T> {
         /// Creates an empty max-priority queue.
         #[export_rils]
+        #[rils_legacy_id(core::collections::binary_heap::new)]
         pub fn new() -> Self {
             Self(std::collections::BinaryHeap::new())
         }
 
         /// Returns the number of elements.
         #[export_rils]
+        #[rils_legacy_id(core::collections::binary_heap::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
         /// Returns whether the queue is empty.
         #[export_rils]
+        #[rils_legacy_id(core::collections::binary_heap::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
 
         /// Inserts an element, rejecting unsupported ordering types.
         #[export_rils]
+        #[rils_legacy_id(core::collections::binary_heap::push)]
         pub fn push(&mut self, value: T) {
             self.0.push(value);
         }
 
         /// Removes and returns the greatest element.
         #[export_rils]
+        #[rils_legacy_id(core::collections::binary_heap::pop)]
         pub fn pop(&mut self) -> Option<T> {
             match self.0.pop() {
                 Some(value) => Option::Some(value),
@@ -213,6 +228,7 @@ mod native {
 
         /// Explicitly clones the highest-priority element.
         #[export_rils]
+        #[rils_legacy_id(core::collections::binary_heap::peek_cloned)]
         pub fn peek_cloned(&self) -> Option<T> {
             match self.0.peek() {
                 Some(value) => Option::Some(value.clone()),
@@ -222,6 +238,7 @@ mod native {
 
         /// Removes all elements.
         #[export_rils]
+        #[rils_legacy_id(core::collections::binary_heap::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }
@@ -256,73 +273,81 @@ mod native {
         }
     }
 
+    #[rils_impl]
     impl<T> std::iter::IntoIterator for BTreeSet<T> {
         type Item = T;
-        type IntoIter = std::collections::btree_set::IntoIter<T>;
+        type IntoIter = Iterator<T>;
+        /// Consumes the set and iterates over owned elements in order.
+        #[rils_legacy_id(core::btree_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            self.0.into_iter()
+            Iterator(self.0.into_iter().collect())
         }
     }
 
     impl<T: Ord> BTreeSet<T> {
         /// Creates an empty set.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::new)]
         pub fn new() -> Self {
             Self(std::collections::BTreeSet::new())
         }
         /// Returns the number of elements.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns whether the set is empty.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
         /// Removes all elements.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Tests whether an element is present.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::contains)]
         pub fn contains(&self, value: &T) -> bool {
             self.0.contains(value)
         }
         /// Inserts an element and reports whether it was new.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::insert)]
         pub fn insert(&mut self, value: T) -> bool {
             self.0.insert(value)
         }
         /// Removes an element and reports whether it was present.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::remove)]
         pub fn remove(&mut self, value: &T) -> bool {
             self.0.remove(value)
         }
         /// Tests whether every element is present in the other set.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::is_subset)]
         pub fn is_subset(&self, other: &BTreeSet<T>) -> bool {
             self.0.is_subset(&other.0)
         }
         /// Tests whether this set contains every element of the other set.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::is_superset)]
         pub fn is_superset(&self, other: &BTreeSet<T>) -> bool {
             self.0.is_superset(&other.0)
         }
         /// Tests whether the sets share no elements.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::is_disjoint)]
         pub fn is_disjoint(&self, other: &BTreeSet<T>) -> bool {
             self.0.is_disjoint(&other.0)
         }
-        /// Consumes the set and iterates over owned elements in order.
-        #[export_rils]
-        #[allow(clippy::should_implement_trait)]
-        pub fn into_iter(self) -> Iterator<T> {
-            Iterator(self.0.into_iter().collect())
-        }
         /// Borrows each element in ascending order.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::iter)]
         pub fn iter(&self) -> Iter<&T> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -331,31 +356,37 @@ mod native {
     impl<T: Ord + Clone> BTreeSet<T> {
         /// Clones the smallest element.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::first_cloned)]
         pub fn first_cloned(&self) -> Option<T> {
             self.0.first().cloned().map_or(Option::None, Option::Some)
         }
         /// Clones the largest element.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::last_cloned)]
         pub fn last_cloned(&self) -> Option<T> {
             self.0.last().cloned().map_or(Option::None, Option::Some)
         }
         /// Clones the union into a new ordered set.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::union)]
         pub fn union(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.union(&other.0).cloned().collect())
         }
         /// Clones the intersection into a new ordered set.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::intersection)]
         pub fn intersection(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.intersection(&other.0).cloned().collect())
         }
         /// Clones elements absent from the other set.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::difference)]
         pub fn difference(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.difference(&other.0).cloned().collect())
         }
         /// Clones elements present in exactly one set.
         #[export_rils]
+        #[rils_legacy_id(core::btree_set::symmetric_difference)]
         pub fn symmetric_difference(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.symmetric_difference(&other.0).cloned().collect())
         }
@@ -384,58 +415,63 @@ mod native {
         }
     }
 
+    #[rils_impl]
     impl<K, V> std::iter::IntoIterator for BTreeMap<K, V> {
         type Item = (K, V);
-        type IntoIter = std::collections::btree_map::IntoIter<K, V>;
+        type IntoIter = Iterator<(K, V)>;
+        /// Consumes the map and iterates over owned entries in key order.
+        #[rils_legacy_id(core::btree_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            self.0.into_iter()
+            Iterator(self.0.into_iter().collect())
         }
     }
 
     impl<K: Ord, V> BTreeMap<K, V> {
         /// Creates an empty map.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::new)]
         pub fn new() -> Self {
             Self(std::collections::BTreeMap::new())
         }
         /// Returns the number of entries.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns whether the map is empty.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
         /// Removes all entries.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Tests whether a key is present.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::contains_key)]
         pub fn contains_key(&self, key: &K) -> bool {
             self.0.contains_key(key)
         }
         /// Inserts a key-value pair and returns the previous value.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::insert)]
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             self.0.insert(key, value).map_or(Option::None, Option::Some)
         }
         /// Removes a key and returns its value.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::remove)]
         pub fn remove(&mut self, key: &K) -> Option<V> {
             self.0.remove(key).map_or(Option::None, Option::Some)
         }
-        /// Consumes the map and iterates over owned entries in key order.
-        #[export_rils]
-        #[allow(clippy::should_implement_trait)]
-        pub fn into_iter(self) -> Iterator<(K, V)> {
-            Iterator(self.0.into_iter().collect())
-        }
         /// Borrows each key-value pair in key order.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::iter)]
         pub fn iter(&self) -> Iter<(&K, &V)> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -444,6 +480,7 @@ mod native {
     impl<K: Ord, V: Clone> BTreeMap<K, V> {
         /// Clones the value for a key.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::get_cloned)]
         pub fn get_cloned(&self, key: &K) -> Option<V> {
             self.0.get(key).cloned().map_or(Option::None, Option::Some)
         }
@@ -452,6 +489,7 @@ mod native {
     impl<K: Ord + Clone, V> BTreeMap<K, V> {
         /// Clones the smallest key.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::first_key_cloned)]
         pub fn first_key_cloned(&self) -> Option<K> {
             self.0
                 .first_key_value()
@@ -460,6 +498,7 @@ mod native {
         }
         /// Clones the largest key.
         #[export_rils]
+        #[rils_legacy_id(core::btree_map::last_key_cloned)]
         pub fn last_key_cloned(&self) -> Option<K> {
             self.0
                 .last_key_value()

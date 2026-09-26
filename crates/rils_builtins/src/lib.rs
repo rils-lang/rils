@@ -6,6 +6,7 @@ mod numeric;
 pub use catalog::*;
 pub use numeric::*;
 pub use rils_stdlib::NATIVE_DERIVES;
+pub use rils_stdlib::stdlib::iterator::BLANKET_TRAIT_IMPLS;
 pub use rils_stdlib::stdlib::ops::callable_trait_kind;
 
 #[doc(hidden)]

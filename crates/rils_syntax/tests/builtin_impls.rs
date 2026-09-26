@@ -22,7 +22,7 @@ fn parses_impls_for_builtin_generic_types() {
 fn parses_primitive_impls_and_builtin_member_attributes() {
     let source = r#"
         impl string {
-            #[runtime(core::sequence::len)]
+            #[runtime(core::fixture::len)]
             fn len(&self) -> usize {}
 
             #[metadata]
@@ -43,7 +43,7 @@ fn parses_primitive_impls_and_builtin_member_attributes() {
     assert_eq!(methods[0].attributes[0].path, ["runtime"]);
     assert_eq!(
         methods[0].attributes[0].arguments,
-        [vec!["core", "sequence", "len"]]
+        [vec!["core", "fixture", "len"]]
     );
     assert_eq!(methods[1].attributes[0].path, ["metadata"]);
 }

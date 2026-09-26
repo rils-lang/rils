@@ -31,7 +31,34 @@ pub(crate) fn tokens(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
         Type::BareFn(function) => function_tokens(function),
         Type::Paren(parenthesized) => tokens(&parenthesized.elem),
         Type::Group(grouped) => tokens(&grouped.elem),
-        Type::Infer(_) => Ok(quote!(TypePattern::Unknown)),
+        Type::Array(array) => {
+            let element = tokens(&array.elem)?;
+            match &array.len {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Int(length),
+                    ..
+                }) => {
+                    let length = length.base10_parse::<usize>()?;
+                    Ok(quote!(TypePattern::Array { element: &#element, length: #length }))
+                }
+                syn::Expr::Path(length) if length.path.get_ident().is_some() => {
+                    let length = length.path.get_ident().unwrap().to_string();
+                    Ok(quote!(TypePattern::ArrayParameter { element: &#element, length: #length }))
+                }
+                _ => Err(Error::new_spanned(
+                    &array.len,
+                    "exported array length must be a usize literal or const parameter",
+                )),
+            }
+        }
+        Type::Slice(slice) => {
+            let element = tokens(&slice.elem)?;
+            Ok(quote!(TypePattern::Slice(&#element)))
+        }
+        Type::Infer(_) => Err(Error::new_spanned(
+            ty,
+            "exported signatures require an explicit type or declared generic parameter",
+        )),
         _ => Err(Error::new_spanned(
             ty,
             "unsupported type in built-in type pattern",
@@ -173,4 +200,49 @@ fn type_arguments(arguments: &PathArguments) -> syn::Result<Vec<proc_macro2::Tok
             "parenthesized type arguments are not supported here",
         )),
     }
+}
+
+/// Preserve declared bounds rather than widening native generic parameters.
+pub(crate) fn with_generics(
+    ty: &Type,
+    generics: &syn::Generics,
+) -> syn::Result<proc_macro2::TokenStream> {
+    if let Type::Path(path) = ty
+        && let Some(name) = path.path.get_ident()
+        && let Some(parameter) = generics
+            .type_params()
+            .find(|parameter| parameter.ident == *name)
+    {
+        let name = name.to_string();
+        let bounds = parameter
+            .bounds
+            .iter()
+            .map(|bound| match bound {
+                syn::TypeParamBound::Trait(bound) => {
+                    let mut path = bound.path.clone();
+                    if path.segments.len() == 3
+                        && path.segments[0].ident == "std"
+                        && path.segments[1].ident == "fmt"
+                    {
+                        path.segments[0].ident = syn::parse_quote!(core);
+                    }
+                    path_tokens(&path)
+                }
+                _ => Err(Error::new_spanned(
+                    bound,
+                    "unsupported exported generic bound",
+                )),
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
+        if bounds.is_empty() {
+            return Ok(quote!(TypePattern::Generic(#name)));
+        }
+        return Ok(quote!(TypePattern::BoundGeneric { name: #name, bounds: &[#(#bounds),*] }));
+    }
+    if let Type::Reference(reference) = ty {
+        let inner = with_generics(&reference.elem, generics)?;
+        let mutable = reference.mutability.is_some();
+        return Ok(quote!(TypePattern::Reference { mutable: #mutable, inner: &#inner }));
+    }
+    tokens(ty)
 }

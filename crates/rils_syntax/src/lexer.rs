@@ -278,6 +278,7 @@ impl<'a> Lexer<'a> {
             "let" => TokenKind::Let,
             "mut" => TokenKind::Mut,
             "fn" => TokenKind::Fn,
+            "const" => TokenKind::Const,
             "macro" => TokenKind::Macro,
             "if" => TokenKind::If,
             "else" => TokenKind::Else,

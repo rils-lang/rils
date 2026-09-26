@@ -224,6 +224,12 @@ pub fn analyze_program_with_host_declarations(
         host_contract: None,
     })
     .analyze(program, program, &host_type_resolutions);
+    analysis.inlay_hints.retain(|hint| {
+        !program
+            .generated_sources
+            .iter()
+            .any(|source| source.id == hint.span.source)
+    });
     analysis.host_type_resolutions = host_type_resolutions;
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
     analysis
@@ -341,6 +347,12 @@ pub(crate) fn analyze_program_in_module_with_external_exports_and_host_types(
         host_contract,
     })
     .analyze(program, program, &host_type_resolutions);
+    analysis.inlay_hints.retain(|hint| {
+        !program
+            .generated_sources
+            .iter()
+            .any(|source| source.id == hint.span.source)
+    });
     analysis.host_type_resolutions = host_type_resolutions;
     append_host_type_resolution_errors(&mut analysis, resolution_errors);
     analysis

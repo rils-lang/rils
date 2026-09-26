@@ -8,7 +8,7 @@ and lookup macro. It does not define built-in members or own their stable IDs.
 `rils_syntax` lexer and parser, then emits the same metadata while checking that
 every configured ID has exactly one method declaration. Standard-library files
 may mark metadata-only associated functions with `#[metadata]` and reuse a
-cross-module ID with an attribute such as `#[runtime(core::sequence::len)]`.
+cross-module ID with an attribute such as `#[runtime(core::iterator::next)]`.
 Associated functions implemented through an internal runtime import declare that
 binding beside the signature with `#[import(core::vec::new)]`. Trait methods
 supplied by compiler lowering use `#[provided]`; every other trait method is a

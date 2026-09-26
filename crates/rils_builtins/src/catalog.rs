@@ -30,8 +30,7 @@ impl BuiltinId {
         runtime_member(self).is_some()
             && !matches!(
                 self,
-                Self::SequenceIntoIter
-                    | Self::IteratorIntoIter
+                Self::IteratorIntoIter
                     | Self::IteratorMap
                     | Self::IteratorFilter
                     | Self::IteratorFilterMap
@@ -90,6 +89,8 @@ pub struct BuiltinMember {
     pub value_type: Option<TypePattern>,
     pub receiver: Option<ReceiverMode>,
     pub builtin_id: Option<BuiltinId>,
+    /// Whether this method is also available on fixed arrays and slices.
+    pub indexed_view: bool,
     pub runtime_import: Option<&'static str>,
     /// Generated native implementation path, when this method has a direct bridge.
     pub native_symbol: Option<&'static str>,
@@ -103,6 +104,8 @@ pub struct BuiltinMember {
 pub struct BuiltinDeclaration {
     pub path: &'static str,
     pub kind: BuiltinKind,
+    /// Generated Rils declaration source, including trait default bodies when present.
+    pub source: Option<&'static str>,
     /// Rils trait bounds; empty for other declaration kinds.
     pub supertraits: &'static [&'static str],
     pub type_parameters: &'static [&'static str],
@@ -254,42 +257,75 @@ pub fn builtin_module_members(path: &str) -> &'static [&'static str] {
         .map_or(&[], Vec::as_slice)
 }
 
-pub const fn is_iterator_default_builtin(id: BuiltinId) -> bool {
-    matches!(
-        id,
-        BuiltinId::IteratorCount
-            | BuiltinId::IteratorLast
-            | BuiltinId::IteratorCollectVec
-            | BuiltinId::IteratorTake
-            | BuiltinId::IteratorSkip
-            | BuiltinId::IteratorRev
-            | BuiltinId::IteratorMap
-            | BuiltinId::IteratorFilter
-            | BuiltinId::IteratorFilterMap
-            | BuiltinId::IteratorFold
-            | BuiltinId::IteratorForEach
-            | BuiltinId::IteratorAny
-            | BuiltinId::IteratorAll
-            | BuiltinId::IteratorFind
-            | BuiltinId::IteratorPosition
-            | BuiltinId::IteratorEnumerate
-    )
+pub fn is_iterator_default_builtin(id: BuiltinId) -> bool {
+    id.canonical_path()
+        .and_then(|path| path.strip_prefix("core::iterator::"))
+        .is_some_and(is_iterator_default_method)
 }
+
+/// IDs retired from declarations but still accepted by older bytecode.
+pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] = &[
+    BuiltinId::RangeIntoIter,
+    BuiltinId::RangeNext,
+    BuiltinId::VecPush,
+    BuiltinId::VecPop,
+    BuiltinId::VecClear,
+    BuiltinId::VecTruncate,
+    BuiltinId::VecInsert,
+    BuiltinId::VecRemove,
+    BuiltinId::VecSwapRemove,
+    BuiltinId::IteratorCount,
+    BuiltinId::IteratorIntoIter,
+    BuiltinId::IteratorLast,
+    BuiltinId::IteratorNth,
+    BuiltinId::IteratorCollectVec,
+    BuiltinId::IteratorTake,
+    BuiltinId::IteratorSkip,
+    BuiltinId::IteratorRev,
+    BuiltinId::IteratorMap,
+    BuiltinId::IteratorFilter,
+    BuiltinId::IteratorFilterMap,
+    BuiltinId::IteratorFold,
+    BuiltinId::IteratorForEach,
+    BuiltinId::IteratorAny,
+    BuiltinId::IteratorAll,
+    BuiltinId::IteratorFind,
+    BuiltinId::IteratorPosition,
+    BuiltinId::IteratorEnumerate,
+];
 
 pub fn is_iterator_default_method(name: &str) -> bool {
     builtin_member("Iterator", name)
-        .and_then(|member| member.builtin_id)
-        .is_some_and(is_iterator_default_builtin)
+        .is_some_and(|member| member.kind == BuiltinMemberKind::Method && !member.required)
 }
 
 pub fn runtime_member(id: BuiltinId) -> Option<(&'static str, &'static BuiltinMember)> {
-    BUILTINS.iter().find_map(|owner| {
-        owner
-            .members
-            .iter()
-            .find(|member| member.builtin_id == Some(id))
-            .map(|member| (owner.path, member))
-    })
+    BUILTINS
+        .iter()
+        .find_map(|owner| {
+            owner
+                .members
+                .iter()
+                .find(|member| member.builtin_id == Some(id))
+                .map(|member| (owner.path, member))
+        })
+        .or_else(|| {
+            if let Some(name) = id
+                .canonical_path()
+                .and_then(|path| path.strip_prefix("core::vec::"))
+            {
+                return builtin_member("Vec", name).map(|member| ("Vec", member));
+            }
+            if let Some(name) = id
+                .canonical_path()
+                .and_then(|path| path.strip_prefix("core::iter::range::"))
+            {
+                return builtin_member("Range", name).map(|member| ("Range", member));
+            }
+            let name = id.canonical_path()?.strip_prefix("core::iterator::")?;
+            let member = builtin_member("Iterator", name)?;
+            (!member.required).then_some(("Iterator", member))
+        })
 }
 
 pub fn native_member(symbol: &str) -> Option<&'static BuiltinMember> {

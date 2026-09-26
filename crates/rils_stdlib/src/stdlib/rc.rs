@@ -48,18 +48,21 @@ mod native {
     impl<T> Rc<T> {
         /// Creates a new reference-counted handle.
         #[export_rils]
+        #[rils_legacy_id(core::rc::rc::new)]
         pub fn new(value: T) -> Self {
             Self(std::rc::Rc::new(value))
         }
 
         /// Returns the number of strong handles to the shared value.
         #[export_rils]
+        #[rils_legacy_id(core::rc::rc::strong_count)]
         pub fn strong_count(&self) -> usize {
             std::rc::Rc::strong_count(&self.0)
         }
 
         /// Creates a non-owning weak handle to this allocation.
         #[export_rils]
+        #[rils_legacy_id(core::rc::rc::downgrade)]
         pub fn downgrade(&self) -> Weak<T> {
             Weak(std::rc::Rc::downgrade(&self.0))
         }
@@ -98,6 +101,7 @@ mod native {
     impl<T> Weak<T> {
         /// Attempts to upgrade this handle while the allocation is still alive.
         #[export_rils]
+        #[rils_legacy_id(core::rc::weak::upgrade)]
         pub fn upgrade(&self) -> Option<Rc<T>> {
             match self.0.upgrade() {
                 Some(value) => Option::Some(Rc(value)),
@@ -107,12 +111,14 @@ mod native {
 
         /// Returns the number of strong owners.
         #[export_rils]
+        #[rils_legacy_id(core::rc::weak::strong_count)]
         pub fn strong_count(&self) -> usize {
             self.0.strong_count()
         }
 
         /// Returns the number of weak handles.
         #[export_rils]
+        #[rils_legacy_id(core::rc::weak::weak_count)]
         pub fn weak_count(&self) -> usize {
             self.0.weak_count()
         }

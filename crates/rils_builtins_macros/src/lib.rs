@@ -89,3 +89,8 @@ pub fn decl_rils_trait_impls(input: TokenStream) -> TokenStream {
 pub fn decl_rils_native(input: TokenStream) -> TokenStream {
     decl_rils::expand_native(input)
 }
+
+#[proc_macro]
+pub fn decl_rils_layout(input: TokenStream) -> TokenStream {
+    decl_rils::expand_layout(input)
+}

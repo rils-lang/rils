@@ -3,11 +3,17 @@
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{
-    Error, Fields, FnArg, GenericArgument, ImplItem, ImplItemFn, Item, ItemMod, ItemStruct, Path,
-    PathArguments, ReturnType, Type,
+    Error, Fields, FnArg, GenericArgument, ImplItem, ImplItemFn, Item, ItemImpl, ItemMod,
+    ItemStruct, Path, PathArguments, ReturnType, Type, fold::Fold,
 };
 
 use crate::type_patterns;
+
+mod native;
+
+pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
+    native::expand(path, module)
+}
 
 struct Definition {
     path: Path,
@@ -15,6 +21,7 @@ struct Definition {
     methods: Vec<ImplItemFn>,
     traits: Vec<Path>,
     trait_impls: Vec<super::trait_impls::ConditionalImpl>,
+    exported_impls: Vec<ItemImpl>,
 }
 
 pub(super) fn contains_struct(module: &ItemMod) -> bool {
@@ -60,6 +67,7 @@ impl Definition {
         }
         let mut methods = Vec::new();
         let mut trait_impls = Vec::new();
+        let mut exported_impls = Vec::new();
         for implementation in items.iter().filter_map(|item| match item {
             Item::Impl(item) => Some(item),
             _ => None,
@@ -84,8 +92,29 @@ impl Definition {
                         .iter()
                         .any(|attr| attr.path().is_ident("rils_struct")),
                 )? {
+                    if let Some(method) =
+                        implementation.items.iter().find_map(|member| match member {
+                            ImplItem::Fn(method)
+                                if method
+                                    .attrs
+                                    .iter()
+                                    .any(|attr| attr.path().is_ident("rils_return")) =>
+                            {
+                                Some(method)
+                            }
+                            _ => None,
+                        })
+                    {
+                        return Err(Error::new_spanned(
+                            method,
+                            "trait impl return types are derived from the Rust signature and associated types; remove #[rils_return]",
+                        ));
+                    }
                     trait_impls.push(parsed);
+                    exported_impls.push(implementation.clone());
                 }
+            }
+            if implementation.trait_.is_some() {
                 continue;
             }
             for member in &implementation.items {
@@ -99,7 +128,8 @@ impl Definition {
                 {
                     continue;
                 }
-                if !matches!(method.vis, syn::Visibility::Public(_))
+                if (implementation.trait_.is_none()
+                    && !matches!(method.vis, syn::Visibility::Public(_)))
                     || method.block.stmts.is_empty()
                 {
                     return Err(Error::new_spanned(
@@ -111,6 +141,7 @@ impl Definition {
             }
         }
         if methods.is_empty()
+            && exported_impls.is_empty()
             && !item
                 .attrs
                 .iter()
@@ -133,6 +164,7 @@ impl Definition {
             methods,
             traits,
             trait_impls,
+            exported_impls,
         })
     }
 
@@ -170,86 +202,153 @@ impl Definition {
         }
         source.push_str(&format!("\nimpl{generics} {name}{generics} {{\n"));
         for method in &self.methods {
-            for line in super::documentation(&method.attrs).lines() {
-                source.push_str(&format!("    /// {line}\n"));
-            }
-            let mut signature = method.sig.clone();
-            signature.inputs.pop_punct();
-            signature.generics.where_clause = None;
-            signature.generics.params = signature
-                .generics
-                .params
-                .into_iter()
-                .filter(|parameter| !matches!(parameter, syn::GenericParam::Const(_)))
-                .collect();
-            if let Some(attribute) = method
-                .attrs
-                .iter()
-                .find(|attr| attr.path().is_ident("rils_return"))
-            {
-                let ty: Type = attribute.parse_args()?;
-                signature.output = syn::parse_quote!(-> #ty);
-            }
-            for any in any_parameters(method)? {
-                let mut found = false;
-                for argument in &mut signature.inputs {
-                    if let FnArg::Typed(argument) = argument
-                        && matches!(argument.pat.as_ref(), syn::Pat::Ident(name) if name.ident == any)
-                    {
-                        *argument.ty = syn::parse_quote!(_);
-                        found = true;
-                    }
-                }
-                if !found {
-                    return Err(Error::new_spanned(any, "unknown exported parameter"));
-                }
-            }
-            for any in any_reference_parameters(method)? {
-                let mut found = false;
-                for argument in &mut signature.inputs {
-                    if let FnArg::Typed(argument) = argument
-                        && matches!(argument.pat.as_ref(), syn::Pat::Ident(name) if name.ident == any)
-                    {
-                        *argument.ty = syn::parse_quote!(&_);
-                        found = true;
-                    }
-                }
-                if !found {
-                    return Err(Error::new_spanned(any, "unknown exported parameter"));
-                }
-            }
-            let signature = signature
-                .to_token_stream()
-                .to_string()
-                .replace(" (", "(")
-                .replace(" < ", "<")
-                .replace(" >", ">")
-                .replace("& self", "&self")
-                .replace("& mut self", "&mut self")
-                .replace("& mut", "&mut");
-            source.push_str(&format!("    {signature} {{}}\n"));
+            write_method(&mut source, method, None)?;
         }
         source.push_str("}\n");
+        for implementation in &self.exported_impls {
+            let trait_name = &implementation
+                .trait_
+                .as_ref()
+                .expect("trait impl")
+                .1
+                .segments
+                .last()
+                .expect("trait path")
+                .ident;
+            source.push_str(&format!(
+                "\nimpl{generics} {trait_name} for {name}{generics} {{\n"
+            ));
+            for member in &implementation.items {
+                match member {
+                    ImplItem::Type(associated) => {
+                        let ty = rils_field_type(&associated.ty)?;
+                        source.push_str(&format!("    type {} = {ty};\n", associated.ident));
+                    }
+                    ImplItem::Fn(method) => {
+                        write_method(&mut source, method, Some(implementation))?
+                    }
+                    _ => {}
+                }
+            }
+            source.push_str("}\n");
+        }
         Ok(source)
     }
 }
 
-fn any_parameters(method: &ImplItemFn) -> syn::Result<Vec<syn::Ident>> {
-    method
+fn write_method(
+    source: &mut String,
+    method: &ImplItemFn,
+    implementation: Option<&ItemImpl>,
+) -> syn::Result<()> {
+    for line in super::documentation(&method.attrs).lines() {
+        source.push_str(&format!("    /// {line}\n"));
+    }
+    let mut signature = method.sig.clone();
+    signature.inputs.pop_punct();
+    signature.generics.where_clause = None;
+    if let Some(implementation) = implementation {
+        for argument in &mut signature.inputs {
+            if let FnArg::Typed(argument) = argument {
+                *argument.ty = normalize_trait_type(&argument.ty, implementation)?;
+            }
+        }
+        if let ReturnType::Type(_, ty) = &mut signature.output {
+            **ty = normalize_trait_type(ty, implementation)?;
+        }
+    }
+    if let Some(attribute) = method
         .attrs
         .iter()
-        .filter(|attr| attr.path().is_ident("rils_any"))
-        .map(|attr| attr.parse_args())
-        .collect()
+        .find(|attr| attr.path().is_ident("rils_return"))
+    {
+        let ty: Type = attribute.parse_args()?;
+        signature.output = syn::parse_quote!(-> #ty);
+    }
+    let signature = signature
+        .to_token_stream()
+        .to_string()
+        .replace("std :: fmt", "core :: fmt")
+        .replace(" (", "(")
+        .replace(" < ", "<")
+        .replace(" >", ">")
+        .replace("& self", "&self")
+        .replace("& mut self", "&mut self")
+        .replace("& mut", "&mut");
+    source.push_str(&format!("    {signature} {{}}\n"));
+    Ok(())
 }
 
-fn any_reference_parameters(method: &ImplItemFn) -> syn::Result<Vec<syn::Ident>> {
-    method
-        .attrs
-        .iter()
-        .filter(|attr| attr.path().is_ident("rils_ref_any"))
-        .map(|attr| attr.parse_args())
-        .collect()
+struct TraitTypeNormalizer<'a> {
+    implementation: &'a ItemImpl,
+}
+
+impl Fold for TraitTypeNormalizer<'_> {
+    fn fold_type(&mut self, ty: Type) -> Type {
+        if let Type::Path(path) = &ty {
+            let associated = if let Some(qself) = &path.qself {
+                matches!(qself.ty.as_ref(), Type::Path(base) if base.path.is_ident("Self"))
+                    .then(|| path.path.segments.last().map(|segment| &segment.ident))
+                    .flatten()
+            } else if path.path.segments.len() == 2
+                && path
+                    .path
+                    .segments
+                    .first()
+                    .is_some_and(|segment| segment.ident == "Self")
+            {
+                path.path.segments.last().map(|segment| &segment.ident)
+            } else {
+                None
+            };
+            if let Some(associated) = associated
+                && let Some(value) = self
+                    .implementation
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        ImplItem::Type(item) if item.ident == *associated => Some(&item.ty),
+                        _ => None,
+                    })
+            {
+                return self.fold_type(value.clone());
+            }
+        }
+        let mut ty = syn::fold::fold_type(self, ty);
+        if let Type::Path(path) = &mut ty
+            && path.qself.is_none()
+        {
+            let full = path
+                .path
+                .segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
+            let mapped = match full.as_str() {
+                "std::option::Option" | "core::option::Option" => Some("Option"),
+                "std::result::Result" | "core::result::Result" => Some("Result"),
+                "std::vec::Vec" | "alloc::vec::Vec" => Some("Vec"),
+                "std::string::String" | "alloc::string::String" => Some("string"),
+                _ => None,
+            };
+            if let Some(mapped) = mapped {
+                let mut last = path
+                    .path
+                    .segments
+                    .last()
+                    .expect("type path segment")
+                    .clone();
+                last.ident = syn::parse_str(mapped).expect("mapped Rils type name");
+                path.path = syn::parse_quote!(#last);
+            }
+        }
+        ty
+    }
+}
+
+fn normalize_trait_type(ty: &Type, implementation: &ItemImpl) -> syn::Result<Type> {
+    Ok(TraitTypeNormalizer { implementation }.fold_type(ty.clone()))
 }
 
 fn public_fields(item: &ItemStruct) -> Vec<&syn::Field> {
@@ -396,6 +495,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     value_type: Some(#value_type),
                     receiver: None,
                     builtin_id: None,
+                    indexed_view: false,
                     runtime_import: None,
                     native_symbol: None,
                     required: false,
@@ -408,41 +508,34 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
     let methods = definition
         .methods
         .iter()
-        .map(|method| {
+        .map(|method| (method, None))
+        .chain(
+            exported_trait_methods(definition)
+                .map(|(method, implementation)| (method, Some(implementation))),
+        )
+        .map(|(method, implementation)| {
             let method_name = method.sig.ident.to_string();
             let method_docs = super::documentation(&method.attrs);
             let id_path = format!(
                 "{}::{method_name}",
                 quote!(#module).to_string().replace(' ', "")
             );
-            let imports = method
+            let indexed_view = method
                 .attrs
                 .iter()
-                .filter(|attr| attr.path().is_ident("rils_import"))
-                .collect::<Vec<_>>();
-            if imports.len() > 1 {
-                return Err(Error::new_spanned(method, "duplicate #[rils_import]"));
-            }
-            let legacy_ids = method.attrs.iter().filter(|attr| attr.path().is_ident("rils_legacy_id")).collect::<Vec<_>>();
-            if legacy_ids.len() > 1 || (!legacy_ids.is_empty() && !imports.is_empty()) {
-                return Err(Error::new_spanned(method, "one legacy ID or runtime import is allowed"));
-            }
-            let runtime_import = if let Some(attribute) = imports.first() {
-                let path: Path = attribute.parse_args()?;
-                let path = quote!(#path).to_string().replace(' ', "");
-                quote!(Some(#path))
-            } else {
-                quote!(None)
-            };
-            let builtin_id = if let Some(attribute) = legacy_ids.first() {
-                let path: Path = attribute.parse_args()?;
-                let path = quote!(#path).to_string().replace(' ', "");
-                quote!(Some(builtin_id!(#path)))
-            } else if imports.is_empty() {
-                quote!(Some(legacy_builtin_id!(#id_path)))
-            } else {
-                quote!(None)
-            };
+                .any(|attr| attr.path().is_ident("rils_indexed_view"));
+            let (builtin_id, runtime_import, native_symbol) =
+                match super::method_binding::MethodBinding::parse(method)? {
+                    super::method_binding::MethodBinding::Native => {
+                        (quote!(None), quote!(None), quote!(Some(#id_path)))
+                    }
+                    super::method_binding::MethodBinding::Legacy(path) => {
+                        (quote!(Some(builtin_id!(#path))), quote!(None), quote!(None))
+                    }
+                    super::method_binding::MethodBinding::Import(path) => {
+                        (quote!(None), quote!(Some(#path)), quote!(None))
+                    }
+                };
             let (kind, receiver_mode, parameter_start) =
                 if let Some(receiver) = method.sig.receiver() {
                     let mode = if receiver.reference.is_some() {
@@ -466,8 +559,6 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                         0,
                     )
                 };
-            let any = any_parameters(method)?.into_iter().map(|name| name.to_string()).collect::<Vec<_>>();
-            let any_references = any_reference_parameters(method)?.into_iter().map(|name| name.to_string()).collect::<Vec<_>>();
             let parameters = method
                 .sig
                 .inputs
@@ -475,25 +566,35 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                 .skip(parameter_start)
                 .map(|input| match input {
                     FnArg::Typed(parameter) => {
-                        if matches!(parameter.pat.as_ref(), syn::Pat::Ident(name) if any.contains(&name.ident.to_string())) {
-                            Ok(quote!(TypePattern::Unknown))
-                        } else if matches!(parameter.pat.as_ref(), syn::Pat::Ident(name) if any_references.contains(&name.ident.to_string())) {
-                            Ok(quote!(TypePattern::Reference { mutable: false, inner: &TypePattern::Unknown }))
+                        let ty = if let Some(implementation) = implementation {
+                            normalize_trait_type(&parameter.ty, implementation)?
                         } else {
-                            type_patterns::tokens(&parameter.ty)
-                        }
+                            *parameter.ty.clone()
+                        };
+                        type_patterns::with_generics(&ty, &method.sig.generics)
                     }
                     _ => Err(Error::new_spanned(input, "unexpected receiver")),
                 })
                 .collect::<syn::Result<Vec<_>>>()?;
-            let result_type = method.attrs.iter().find(|attr| attr.path().is_ident("rils_return"))
-                .map(|attr| attr.parse_args::<Type>()).transpose()?;
+            let result_type = method
+                .attrs
+                .iter()
+                .find(|attr| attr.path().is_ident("rils_return"))
+                .map(|attr| attr.parse_args::<Type>())
+                .transpose()?;
             let result = if let Some(ty) = result_type.as_ref() {
                 type_patterns::tokens(ty)?
             } else {
                 match &method.sig.output {
                     ReturnType::Default => quote!(TypePattern::Unit),
-                    ReturnType::Type(_, ty) => type_patterns::tokens(ty)?,
+                    ReturnType::Type(_, ty) => {
+                        let ty = if let Some(implementation) = implementation {
+                            normalize_trait_type(ty, implementation)?
+                        } else {
+                            *ty.clone()
+                        };
+                        type_patterns::tokens(&ty)?
+                    }
                 }
             };
             let generics = method
@@ -514,8 +615,9 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     value_type: None,
                     receiver: #receiver_mode,
                     builtin_id: #builtin_id,
+                    indexed_view: #indexed_view,
                     runtime_import: #runtime_import,
-                    native_symbol: None,
+                    native_symbol: #native_symbol,
                     required: true,
                     type_parameters: &[#(#generics),*],
                     documentation: #method_docs,
@@ -528,6 +630,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
         pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
             path: #path,
             kind: crate::BuiltinKind::Struct,
+            source: None,
             supertraits: &[],
             type_parameters: &[#(#type_parameters),*],
             members: &[#(#fields,)* #(#methods),*],
@@ -537,6 +640,30 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             documentation: #docs,
         };
     })
+}
+
+fn exported_trait_methods(
+    definition: &Definition,
+) -> impl Iterator<Item = (&ImplItemFn, &ItemImpl)> {
+    definition
+        .exported_impls
+        .iter()
+        .filter(|implementation| {
+            implementation.trait_.as_ref().is_some_and(|(_, path, _)| {
+                path.segments.last().is_some_and(|segment| {
+                    segment.ident == "Iterator" || segment.ident == "IntoIterator"
+                })
+            })
+        })
+        .flat_map(|implementation| {
+            implementation
+                .items
+                .iter()
+                .filter_map(move |member| match member {
+                    ImplItem::Fn(method) => Some((method, implementation)),
+                    _ => None,
+                })
+        })
 }
 
 pub(super) fn expand_trait_impls(path: Path, module: ItemMod) -> TokenStream {
@@ -556,19 +683,6 @@ pub(super) fn expand_trait_impls(path: Path, module: ItemMod) -> TokenStream {
         }
         Err(error) => error.into_compile_error().into(),
     }
-}
-
-pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
-    let definition = match Definition::parse(path, module) {
-        Ok(value) => value,
-        Err(error) => return error.into_compile_error().into(),
-    };
-    Error::new_spanned(
-        definition.item,
-        "native struct bridge must provide an explicit runtime value adapter",
-    )
-    .into_compile_error()
-    .into()
 }
 
 #[cfg(test)]
@@ -595,6 +709,82 @@ mod tests {
         assert!(source.contains("fn next(&mut self) -> Option<T>"));
         assert!(!source.contains("current"));
         assert!(metadata_tokens(&definition).is_ok());
+    }
+
+    #[test]
+    fn trait_impl_exports_its_identity_and_associated_type() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_struct]
+                pub struct Iter<T>(std::vec::IntoIter<T>);
+                #[rils_impl]
+                impl<T> std::iter::Iterator for Iter<T> {
+                    type Item = T;
+                    fn next(&mut self) -> std::option::Option<Self::Item> {
+                        self.0.next()
+                    }
+                }
+            }
+        };
+        let definition = Definition::parse(syn::parse_quote!(core::iter), module).unwrap();
+        let source = definition.source().unwrap();
+        assert!(source.contains("impl<T> Iterator for Iter<T>"));
+        assert!(source.contains("type Item = T;"));
+        assert!(source.contains("fn next(&mut self) -> Option<T>"));
+        let tokens = rils_syntax::lex(&source).unwrap();
+        rils_syntax::parser::parse_builtin_declarations(tokens).unwrap();
+        let metadata = metadata_tokens(&definition).unwrap().to_string();
+        assert!(metadata.contains("TypePattern :: Option"));
+        assert!(metadata.contains("TypePattern :: Generic"));
+    }
+
+    #[test]
+    fn trait_impl_rejects_return_override() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_struct]
+                pub struct Iter<T>(std::vec::IntoIter<T>);
+                #[rils_impl]
+                impl<T> std::iter::Iterator for Iter<T> {
+                    type Item = T;
+                    #[rils_return(Option<T>)]
+                    fn next(&mut self) -> std::option::Option<Self::Item> {
+                        self.0.next()
+                    }
+                }
+            }
+        };
+        let error = Definition::parse(syn::parse_quote!(core::iter), module)
+            .err()
+            .expect("trait return override must be rejected");
+        assert!(error.to_string().contains("remove #[rils_return]"));
+    }
+
+    #[test]
+    fn into_iterator_impl_exports_the_rils_associated_type() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_struct]
+                pub struct Vec<T>(std::vec::Vec<T>);
+                #[rils_impl]
+                impl<T> std::iter::IntoIterator for Vec<T> {
+                    type Item = T;
+                    type IntoIter = Iter<T>;
+                    fn into_iter(self) -> Self::IntoIter { loop {} }
+                }
+            }
+        };
+        let definition = Definition::parse(syn::parse_quote!(core::vec), module).unwrap();
+        let source = definition.source().unwrap();
+        assert!(source.contains("impl<T> IntoIterator for Vec<T>"));
+        assert!(source.contains("type IntoIter = Iter<T>;"));
+        assert!(source.contains("type Item = T;"));
+        assert!(source.contains("fn into_iter(self) -> Iter<T>"));
+        let tokens = rils_syntax::lex(&source).unwrap();
+        rils_syntax::parser::parse_builtin_declarations(tokens).unwrap();
+        let metadata = metadata_tokens(&definition).unwrap().to_string();
+        assert!(metadata.contains("TypePattern :: Named"));
+        assert!(metadata.contains("path : \"Iter\""));
     }
 
     #[test]

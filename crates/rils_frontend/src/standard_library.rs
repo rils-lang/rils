@@ -91,6 +91,23 @@ pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
     ))
 }
 
+pub fn builtin_iterator_item_type(object: &Type) -> Option<Type> {
+    let Type::Function { return_type, .. } = builtin_member_type(object, "next")? else {
+        return None;
+    };
+    let Type::Option(item) = *return_type else {
+        return None;
+    };
+    Some(*item)
+}
+
+pub fn builtin_into_iterator_item_type(object: &Type) -> Option<Type> {
+    let Type::Function { return_type, .. } = builtin_member_type(object, "into_iter")? else {
+        return None;
+    };
+    builtin_iterator_item_type(&return_type)
+}
+
 pub fn builtin_associated_function_signature(owner: &str, name: &str) -> Option<FunctionSignature> {
     let declaration = rils_builtins::builtin(owner)?;
     let member = declaration.member(name)?;
@@ -103,13 +120,13 @@ pub fn builtin_associated_function_signature(owner: &str, name: &str) -> Option<
         arguments: declaration
             .type_parameters
             .iter()
-            .map(|_| Type::Unknown)
+            .map(|name| Type::Variable((*name).into()))
             .collect(),
     };
     let generics = declaration
         .type_parameters
         .iter()
-        .map(|parameter| (*parameter, Type::Unknown))
+        .map(|parameter| (*parameter, Type::Variable((*parameter).into())))
         .collect::<HashMap<_, _>>();
     Some(FunctionSignature::fixed(
         signature
@@ -123,14 +140,21 @@ pub fn builtin_associated_function_signature(owner: &str, name: &str) -> Option<
 }
 
 pub fn builtin_trait_member_type(trait_name: &str, object: &Type, name: &str) -> Option<Type> {
+    builtin_trait_member_type_with_iterator_item(trait_name, object, name, None)
+}
+
+pub(crate) fn builtin_trait_member_type_with_iterator_item(
+    trait_name: &str,
+    object: &Type,
+    name: &str,
+    iterator_item: Option<Type>,
+) -> Option<Type> {
     let member = rils_builtins::builtin_member(trait_name, name)?;
     let signature = member.signature?;
     let mut generics = HashMap::new();
-    let item = match object {
-        Type::Named { arguments, .. } => arguments.first().cloned().unwrap_or(Type::Unknown),
-        _ => Type::Unknown,
-    };
-    generics.insert("T", item);
+    if let Some(item) = iterator_item {
+        generics.insert("Iterator::Item", item);
+    }
     for parameter in member.type_parameters {
         generics.insert(parameter, Type::Variable((*parameter).into()));
     }
@@ -155,20 +179,22 @@ pub fn builtin_member_for_type(
 ) -> Option<&'static rils_builtins::BuiltinMember> {
     let (owner, _, _) = builtin_owner(object)?;
     let member = rils_builtins::builtin_member(owner, name)?;
-    if is_sequence_view(object)
-        && !member
-            .builtin_id
-            .and_then(rils_builtins::BuiltinId::canonical_path)
-            .is_some_and(|path| path.starts_with("core::sequence::"))
-    {
+    if is_indexed_view(object) && !member.indexed_view {
         return None;
     }
     Some(member)
 }
 
-fn is_sequence_view(ty: &Type) -> bool {
+pub fn unsupported_indexed_view_member(object: &Type, name: &str) -> bool {
+    is_indexed_view(object)
+        && builtin_owner(object)
+            .and_then(|(owner, _, _)| rils_builtins::builtin_member(owner, name))
+            .is_some_and(|member| !member.indexed_view)
+}
+
+fn is_indexed_view(ty: &Type) -> bool {
     match ty {
-        Type::Reference { inner, .. } => is_sequence_view(inner),
+        Type::Reference { inner, .. } => is_indexed_view(inner),
         Type::Array { .. } | Type::Slice(_) => true,
         _ => false,
     }
@@ -316,7 +342,21 @@ fn resolve_member_pattern(
     use rils_builtins::TypePattern;
     match pattern {
         TypePattern::SelfType => self_type.clone(),
-        TypePattern::Generic(name) => generics.get(name).cloned().unwrap_or(Type::Unknown),
+        TypePattern::Generic(name) => generics
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| Type::Variable(name.into())),
+        TypePattern::Array { element, length } => Type::Array {
+            element: Box::new(resolve_member_pattern(*element, self_type, generics)),
+            length,
+        },
+        TypePattern::ArrayParameter { element, length } => Type::ArrayParameter {
+            element: Box::new(resolve_member_pattern(*element, self_type, generics)),
+            length: length.into(),
+        },
+        TypePattern::Slice(element) => Type::Slice(Box::new(resolve_member_pattern(
+            *element, self_type, generics,
+        ))),
         TypePattern::Option(inner) => Type::Option(Box::new(resolve_member_pattern(
             *inner, self_type, generics,
         ))),
@@ -350,6 +390,14 @@ fn resolve_member_pattern(
             arguments,
         } => {
             let base = resolve_member_pattern(*base, self_type, generics);
+            if trait_name == Some("Iterator")
+                && name == "Item"
+                && arguments.is_empty()
+                && base == *self_type
+                && let Some(item) = generics.get("Iterator::Item")
+            {
+                return item.clone();
+            }
             if trait_name == Some("Iterator")
                 && name == "Item"
                 && arguments.is_empty()
@@ -406,6 +454,19 @@ pub fn resolve_type_pattern(pattern: rils_builtins::TypePattern) -> Type {
                 .map(resolve_type_pattern)
                 .collect(),
         },
+        TypePattern::BoundGeneric { name, bounds } => Type::BoundVariable {
+            name: name.into(),
+            bounds: bounds.iter().copied().map(resolve_type_pattern).collect(),
+        },
+        TypePattern::Array { element, length } => Type::Array {
+            element: Box::new(resolve_type_pattern(*element)),
+            length,
+        },
+        TypePattern::ArrayParameter { element, length } => Type::ArrayParameter {
+            element: Box::new(resolve_type_pattern(*element)),
+            length: length.into(),
+        },
+        TypePattern::Slice(element) => Type::Slice(Box::new(resolve_type_pattern(*element))),
         TypePattern::Option(inner) => Type::Option(Box::new(resolve_type_pattern(*inner))),
         TypePattern::Result { ok, error } => Type::Result(
             Box::new(resolve_type_pattern(*ok)),

@@ -1,4 +1,4 @@
-use crate::source::Span;
+use crate::source::{SourceFile, Span};
 use crate::types::Type;
 
 /// Template-only type names accepted by built-in declaration generators.
@@ -15,6 +15,8 @@ pub struct Program {
     pub statements: Vec<Stmt>,
     pub type_references: Vec<TypeReference>,
     pub macros: Vec<MacroSymbol>,
+    /// Generated method bodies with distinct source identities.
+    pub generated_sources: Vec<SourceFile>,
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +51,7 @@ pub struct Parameter {
 
 #[derive(Clone, Debug)]
 pub struct GenericParameter {
+    pub is_const: bool,
     pub name: String,
     pub bounds: Vec<Type>,
     pub span: Span,
@@ -121,6 +124,7 @@ pub struct TraitMethod {
     pub generic_parameters: Vec<GenericParameter>,
     pub parameters: Vec<Parameter>,
     pub return_type: Option<Type>,
+    pub body: Option<Block>,
     pub span: Span,
 }
 

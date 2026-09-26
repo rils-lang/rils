@@ -272,28 +272,19 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                     Error::new_spanned(implementation, "#[rils_impl] requires a trait impl")
                 })?
                 .1;
-            if trait_path.get_ident().is_none() {
-                return Err(Error::new_spanned(
-                    trait_path,
-                    "expected a simple Rils trait name",
-                ));
+            if trait_path.segments.is_empty() {
+                return Err(Error::new_spanned(trait_path, "expected a Rils trait name"));
             }
         }
-        if implementation.trait_.is_some()
-            && implementation.items.iter().any(|member| {
-                matches!(member, ImplItem::Fn(method) if has_attr(&method.attrs, "export_rils"))
-            })
-        {
-            return Err(Error::new_spanned(
-                implementation,
-                "#[export_rils] requires an inherent implementation",
-            ));
-        }
-        if implementation.trait_.is_none()
-            && !exported.contains(&target.to_string())
+        if !exported.contains(&target.to_string())
             && implementation.items.iter().any(|member| matches!(member, ImplItem::Fn(method) if has_attr(&method.attrs, "export_rils")))
         {
             return Err(Error::new_spanned(implementation, "#[export_rils] target must be exported"));
+        }
+        if implementation.trait_.is_some()
+            && implementation.items.iter().any(|member| matches!(member, ImplItem::Fn(method) if has_attr(&method.attrs, "export_rils")))
+        {
+            return Err(Error::new_spanned(implementation, "#[export_rils] is only allowed on inherent impl methods; export a trait impl with #[rils_impl] on the impl block"));
         }
     }
 
@@ -340,8 +331,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                             !attr.path().is_ident("export_rils")
                                 && !attr.path().is_ident("rils_import")
                                 && !attr.path().is_ident("rils_legacy_id")
-                                && !attr.path().is_ident("rils_any")
-                                && !attr.path().is_ident("rils_ref_any")
+                                && !attr.path().is_ident("rils_indexed_view")
                                 && !attr.path().is_ident("rils_return")
                         });
                     }
@@ -395,9 +385,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                     shadow_functions.push(Item::Fn(shadow));
                 }
                 function.attrs.retain(|attr| {
-                    !attr.path().is_ident("rils_fn")
-                        && !attr.path().is_ident("rils_any")
-                        && !attr.path().is_ident("rils_variadic")
+                    !attr.path().is_ident("rils_fn") && !attr.path().is_ident("rils_variadic")
                 });
             }
             _ => {}
@@ -512,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn trait_impl_methods_cannot_be_exported_as_inherent_methods() {
+    fn unrelated_trait_impl_methods_are_not_flattened_into_inherent_exports() {
         let module: ItemMod = syn::parse_quote! {
             mod native {
                 #[rils_struct]
@@ -528,7 +516,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("requires an inherent implementation")
+                .contains("only allowed on inherent impl methods")
         );
     }
 }

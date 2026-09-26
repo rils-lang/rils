@@ -99,7 +99,7 @@ let holder: Holder<i32> = Holder {
 };
 ```
 
-泛型类型采用运行时单态参数信息，但当前不会生成专用机器码。尚不支持显式 turbofish、默认类型参数、显式生命周期参数、const 泛型和 `where`；引用生命周期由词法作用域自动推导。
+泛型类型采用运行时单态参数信息，但当前不会生成专用机器码。尚不支持显式 turbofish、默认类型参数、显式生命周期参数和 `where`；引用生命周期由词法作用域自动推导。
 
 ### Recursive structures and heap indirection
 
@@ -147,7 +147,16 @@ trait Duplicate {
 }
 ```
 
-Trait 方法当前没有默认实现，因此签名必须以分号结束。`Self` 表示正在实现该 trait 的具体类型。
+Trait 方法可以用分号声明为必需方法，也可以提供默认方法体。`Self` 表示正在实现该 trait 的具体类型：
+
+```rils
+trait Score {
+    fn score(self) -> i32;
+    fn doubled(self) -> i32 { self.score() * 2 }
+}
+```
+
+实现 `Score` 时只需定义 `score`；如需不同的行为，可以在 impl 中重写 `doubled`。
 
 以下 trait 由运行时预先声明，用户不能同名重定义：
 
@@ -161,9 +170,11 @@ trait Clone {
 trait Iterator {
     type Item;
     fn next(&mut self) -> Option<Self::Item>;
+    // count、collect_vec、take 等方法由标准库 trait 定义提供默认方法体。
 }
 
 trait IntoIterator {
+    type Item;
     type IntoIter;
     fn into_iter(self) -> Self::IntoIter;
 }
@@ -303,6 +314,14 @@ impl<T> Describe for Wrapper<T> {
 }
 ```
 
+标准库提供一项通用实现：任何实现 `Iterator` 的类型同时实现 `IntoIterator`，
+`Item` 为其 `Iterator::Item`，`IntoIter` 为该类型自身，`into_iter(self)` 直接返回自身。因此自定义迭代器只需实现
+`Iterator`，即可用于 `for`、调用 `.into_iter()` 或通过
+`<MyIterator as IntoIterator>::into_iter(value)` 调用。再为同一类型显式实现
+`IntoIterator` 会与这项通用实现冲突。当前用户代码仍不能声明新的带条件或 blanket trait impl。
+显式实现 `IntoIterator` 时需声明 `Item` 和 `IntoIter`；`IntoIter` 必须实现 `Iterator`，
+且 `Item` 必须与 `IntoIter` 的 `Iterator::Item` 一致。
+
 Trait 本身也可以声明类型参数，impl 必须给出相同数量的类型实参，方法签名按这些实参检查：
 
 ```rils
@@ -388,3 +407,17 @@ impl core::fmt::Display for Point {
 
 带条件的 trait impl 会在共享 frontend 阶段返回明确诊断；AST 解释器和字节码编译器采用相同的
 执行前 gate，不会静默忽略泛型参数上的 trait bound。
+
+### 数组签名中的 const 长度参数
+
+函数和方法签名支持 `const N: usize`，在 `[T; N]` 中保留长度关系，调用时从数组实参推导。
+同一调用中重复使用的 `T` 和 `N` 必须一致；数组不能被整数、字符串或其他容器替代。
+
+```rils
+fn first<const N: usize>(values: [i32; N]) -> i32 { values[0] }
+let value = first([1, 2, 3]);
+```
+
+当前 const 参数支持范围是数组签名与调用推导，不包含 const 表达式计算、函数体中的 const
+值读取、默认 const 参数或显式 const 实参。`Vec::from` 的导出签名为
+`from<const N: usize>(values: [T; N]) -> Vec<T>`，不再使用 `_` 放宽输入类型。

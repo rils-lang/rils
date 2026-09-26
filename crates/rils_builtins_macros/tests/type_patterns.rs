@@ -3,7 +3,6 @@ enum TypePattern {
     SelfType,
     Generic(&'static str),
     AnyInteger,
-    Unknown,
     Unit,
     Bool,
     Char,
@@ -33,7 +32,6 @@ enum TypePattern {
     },
 }
 
-const UNKNOWN: TypePattern = rils_builtins_macros::type_pattern!(_);
 const CALLBACK: TypePattern = rils_builtins_macros::type_pattern!(fn(&mut T, usize) -> Option<U>);
 const IO_RESULT: TypePattern =
     rils_builtins_macros::type_pattern!(Result<Vec<string>, std::io::Error>);
@@ -41,7 +39,6 @@ const ITERATOR: TypePattern = rils_builtins_macros::type_pattern!(Iterator<(usiz
 
 #[test]
 fn type_pattern_macro_covers_nested_rust_style_types() {
-    assert_eq!(UNKNOWN, TypePattern::Unknown);
     assert_eq!(
         CALLBACK,
         TypePattern::Function {

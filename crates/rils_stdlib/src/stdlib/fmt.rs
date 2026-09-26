@@ -37,10 +37,9 @@ mod native {
         /// Writes the structural Debug representation used by derived implementations.
         #[export_rils]
         #[rils_legacy_id(core::fmt::write_derived_debug)]
-        #[rils_ref_any(value)]
-        pub fn write_derived_debug(
+        pub fn write_derived_debug<T: std::fmt::Debug>(
             &mut self,
-            value: &dyn std::fmt::Debug,
+            value: &T,
         ) -> Result<(), FormatError> {
             use std::fmt::Write;
             match write!(&mut self.0, "{value:?}") {

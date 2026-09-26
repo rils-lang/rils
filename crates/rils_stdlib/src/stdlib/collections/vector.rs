@@ -41,15 +41,30 @@ mod native {
         }
     }
 
+    #[rils_impl]
     impl<T> IntoIterator for Vec<T> {
         type Item = T;
-        type IntoIter = std::vec::IntoIter<T>;
+        type IntoIter = Iterator<T>;
+        /// Consumes the Vec and creates an iterator.
+        #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
-            self.0.into_iter()
+            Iterator(self.0.into())
         }
     }
 
     impl<T> Vec<T> {
+        /// Creates a Vec from an owned array.
+        #[export_rils]
+        #[rils_import(core::vec::from)]
+        pub fn from<const N: usize>(values: [T; N]) -> Self {
+            <Self as From<[T; N]>>::from(values)
+        }
+
+        /// Returns the owned storage to a native runtime adapter.
+        pub fn into_inner(self) -> std::vec::Vec<T> {
+            self.0
+        }
+
         /// Creates an empty Vec.
         #[export_rils]
         #[rils_import(core::vec::new)]
@@ -57,27 +72,18 @@ mod native {
             Self(std::vec::Vec::new())
         }
 
-        /// Creates a Vec from an owned array.
-        #[export_rils]
-        #[rils_import(core::vec::from)]
-        #[rils_any(values)]
-        #[allow(clippy::should_implement_trait)]
-        pub fn from<const N: usize>(values: [T; N]) -> Self {
-            Self(std::vec::Vec::from(values))
-        }
-
         /// Returns the element count.
         #[export_rils]
-        #[rils_legacy_id(core::sequence::len)]
+        #[rils_indexed_view]
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
         /// Returns true when the Vec has no elements.
         #[export_rils]
-        #[rils_legacy_id(core::sequence::is_empty)]
+        #[rils_indexed_view]
         pub fn is_empty(&self) -> bool {
-            self.0.is_empty()
+            self.len() == 0
         }
 
         /// Appends one element.
@@ -124,21 +130,14 @@ mod native {
 
         /// Moves every element from another Vec into this Vec.
         #[export_rils]
+        #[rils_legacy_id(core::vec::extend)]
         pub fn extend(&mut self, other: Self) {
             self.0.extend(other.0);
         }
 
-        /// Consumes the Vec and creates an iterator.
-        #[export_rils]
-        #[rils_legacy_id(core::sequence::into_iter)]
-        #[allow(clippy::should_implement_trait)]
-        pub fn into_iter(self) -> Iterator<T> {
-            Iterator(self.0)
-        }
-
         /// Borrows each element without consuming the Vec.
         #[export_rils]
-        #[rils_legacy_id(core::sequence::iter)]
+        #[rils_indexed_view]
         pub fn iter(&self) -> Iter<&T> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -147,7 +146,7 @@ mod native {
     impl<T: PartialEq> Vec<T> {
         /// Returns true when an equal element is present.
         #[export_rils]
-        #[rils_legacy_id(core::sequence::contains)]
+        #[rils_indexed_view]
         pub fn contains(&self, value: &T) -> bool {
             self.0.contains(value)
         }

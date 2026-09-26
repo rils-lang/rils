@@ -176,6 +176,7 @@ impl Parser<'_> {
         let mut parameters = Vec::new();
         self.generic_scopes.push(Vec::new());
         loop {
+            let is_const = self.take(&TokenKind::Const).is_some();
             let (name, span) = self.expect_identifier("expected generic parameter name")?;
             if parameters
                 .iter()
@@ -187,7 +188,19 @@ impl Parser<'_> {
                 });
             }
             let mut bounds = Vec::new();
-            if self.take(&TokenKind::Colon).is_some() {
+            if is_const {
+                self.expect(
+                    &TokenKind::Colon,
+                    "expected `: usize` after const parameter",
+                )?;
+                let ty = self.type_annotation()?;
+                if ty != Type::USIZE {
+                    return Err(ParseError {
+                        message: "const parameters currently require usize".into(),
+                        span,
+                    });
+                }
+            } else if self.take(&TokenKind::Colon).is_some() {
                 loop {
                     let bound = self.type_annotation()?;
                     let Type::Named { .. } = &bound else {
@@ -205,7 +218,12 @@ impl Parser<'_> {
                     }
                 }
             }
-            parameters.push(GenericParameter { name, bounds, span });
+            parameters.push(GenericParameter {
+                is_const,
+                name,
+                bounds,
+                span,
+            });
             *self
                 .generic_scopes
                 .last_mut()

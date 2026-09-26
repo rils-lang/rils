@@ -45,6 +45,7 @@ struct BuiltinMember {
     value_type: Option<TypePattern>,
     receiver: Option<ReceiverMode>,
     builtin_id: Option<BuiltinId>,
+    indexed_view: bool,
     runtime_import: Option<&'static str>,
     native_symbol: Option<&'static str>,
     required: bool,
@@ -56,6 +57,7 @@ struct BuiltinMember {
 struct BuiltinDeclaration {
     path: &'static str,
     kind: BuiltinKind,
+    source: Option<&'static str>,
     supertraits: &'static [&'static str],
     type_parameters: &'static [&'static str],
     members: &'static [BuiltinMember],
@@ -76,6 +78,7 @@ rils_builtins_macros::builtin_file! {
 #[test]
 fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
     assert_eq!(FIXTURE_BUILTIN.path, "Fixture");
+    assert!(FIXTURE_BUILTIN.source.is_none());
     assert_eq!(FIXTURE_BUILTIN.kind, BuiltinKind::Enum);
     assert!(FIXTURE_BUILTIN.supertraits.is_empty());
     assert_eq!(FIXTURE_BUILTIN.type_parameters, &["T"]);
@@ -98,6 +101,12 @@ fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
             .members
             .iter()
             .all(|member| member.native_symbol.is_none())
+    );
+    assert!(
+        FIXTURE_BUILTIN
+            .members
+            .iter()
+            .all(|member| !member.indexed_view)
     );
 
     assert_eq!(empty.kind, BuiltinMemberKind::Variant);

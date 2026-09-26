@@ -26,6 +26,8 @@ struct Alias {
 struct Checker<'a> {
     expression_types: ExpressionTypes<'a>,
     aliases: HashMap<String, Alias>,
+    associated_items: HashMap<(String, String), Alias>,
+    iterator_types: HashSet<String>,
     return_types: Vec<Option<Type>>,
     self_types: Vec<Option<Type>>,
     diagnostics: Vec<AnalysisDiagnostic>,
@@ -42,12 +44,20 @@ impl<'a> Checker<'a> {
         let mut checker = Self {
             expression_types,
             aliases: HashMap::new(),
+            associated_items: HashMap::new(),
+            iterator_types: HashSet::new(),
             return_types: Vec::new(),
             self_types: Vec::new(),
             diagnostics: Vec::new(),
             host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
         };
         checker.collect_aliases(&program.statements);
+        crate::semantic::collect_trait_implementations(
+            &program.statements,
+            &mut Vec::new(),
+            "Iterator",
+            &mut checker.iterator_types,
+        );
         checker
     }
 
@@ -79,6 +89,35 @@ impl<'a> Checker<'a> {
                             target: self.host_types.resolved_type(target),
                         },
                     );
+                }
+                Stmt::Impl {
+                    target: Type::Named { name, .. },
+                    trait_name: Some(trait_name),
+                    generic_parameters,
+                    associated_types,
+                    ..
+                } if matches!(
+                    trait_name.rsplit("::").next(),
+                    Some("Iterator" | "IntoIterator")
+                ) =>
+                {
+                    if let Some(item) = associated_types.iter().find(|item| item.name == "Item")
+                        && let Some(value) = &item.value
+                    {
+                        self.associated_items.insert(
+                            (
+                                name.clone(),
+                                trait_name.rsplit("::").next().unwrap().to_owned(),
+                            ),
+                            Alias {
+                                parameters: generic_parameters
+                                    .iter()
+                                    .map(|parameter| parameter.name.clone())
+                                    .collect(),
+                                target: self.host_types.resolved_type(value),
+                            },
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -423,8 +462,15 @@ impl<'a> Checker<'a> {
                     );
                     return;
                 }
+                let mut bindings = HashMap::new();
                 for (expected, argument) in parameters.iter().zip(arguments) {
-                    self.expect(expected, self.ty(argument), argument.span(), "argument");
+                    let expected = self.expand(expected, &mut HashSet::new());
+                    let actual = self.expand(&self.ty(argument), &mut HashSet::new());
+                    if let Err(message) =
+                        crate::types::infer_generic_arguments(&expected, &actual, &mut bindings)
+                    {
+                        self.diagnostic(message, argument.span());
+                    }
                 }
             }
             Expr::If {
@@ -529,6 +575,13 @@ impl<'a> Checker<'a> {
         let Expr::Member { object, name, .. } = callee else {
             return false;
         };
+        if crate::standard_library::unsupported_indexed_view_member(&self.ty(object), name) {
+            self.diagnostic(
+                format!("method `{name}` is not available on arrays or slices"),
+                span,
+            );
+            return true;
+        }
         if crate::standard_library::builtin_receiver_mode(&self.ty(object), name).is_none() {
             return false;
         }
@@ -573,6 +626,54 @@ impl<'a> Checker<'a> {
 
     fn expand(&self, ty: &Type, visiting: &mut HashSet<String>) -> Type {
         let (name, arguments) = match ty {
+            Type::Associated {
+                base,
+                trait_name: Some(trait_name),
+                name,
+                arguments,
+            } if trait_name == "IntoIterator" && name == "Item" && arguments.is_empty() => {
+                let base = self.expand(base, visiting);
+                if let Type::Named { name, arguments } = &base {
+                    for source_trait in ["IntoIterator", "Iterator"] {
+                        if let Some(alias) = self
+                            .associated_items
+                            .get(&(name.clone(), source_trait.to_owned()))
+                        {
+                            let substitutions = alias
+                                .parameters
+                                .iter()
+                                .cloned()
+                                .zip(arguments.iter().cloned())
+                                .collect::<HashMap<_, _>>();
+                            return self.expand(&alias.target.substitute(&substitutions), visiting);
+                        }
+                    }
+                }
+                if let Some(item) = crate::standard_library::builtin_iterator_item_type(&base) {
+                    return item;
+                }
+                if let Some(item) = crate::standard_library::builtin_into_iterator_item_type(&base)
+                {
+                    return item;
+                }
+                return ty.clone();
+            }
+            Type::Associated {
+                base,
+                trait_name: Some(trait_name),
+                name,
+                arguments,
+            } if trait_name == "IntoIterator" && name == "IntoIter" && arguments.is_empty() => {
+                let base = self.expand(base, visiting);
+                if let Type::Named { name, .. } = &base
+                    && (self.iterator_types.contains(name)
+                        || rils_builtins::builtin(name)
+                            .is_some_and(|definition| definition.member("next").is_some()))
+                {
+                    return base;
+                }
+                return ty.clone();
+            }
             Type::Option(inner) => return Type::Option(Box::new(self.expand(inner, visiting))),
             Type::Result(ok, error) => {
                 return Type::Result(

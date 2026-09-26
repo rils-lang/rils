@@ -13,5 +13,5 @@ fn native_vec_supports_fixed_arrays_and_borrowed_iteration() {
     assert!(matches!(values.pop(), Option::Some(4)));
     values.insert(1, 5);
     assert_eq!(values.remove(1), 5);
-    assert_eq!(values.into_iter().0, [1, 2, 3]);
+    assert_eq!(values.into_iter().collect::<std::vec::Vec<_>>(), [1, 2, 3]);
 }

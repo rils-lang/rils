@@ -1,3 +1,6 @@
+mod generics;
+pub use generics::infer_generic_arguments;
+
 use std::{collections::HashMap, fmt};
 
 use crate::source::{ExprId, Span};
@@ -167,6 +170,13 @@ pub enum Type {
         element: Box<Type>,
         length: usize,
     },
+    /// An array whose length is a declared const usize parameter.
+    ArrayParameter {
+        element: Box<Type>,
+        length: String,
+    },
+    /// A solved const usize argument, used when substituting generic signatures.
+    ConstUsize(usize),
     Slice(Box<Type>),
     Reference {
         mutable: bool,
@@ -189,6 +199,10 @@ pub enum Type {
         arguments: Vec<Type>,
     },
     Variable(String),
+    BoundVariable {
+        name: String,
+        bounds: Vec<Type>,
+    },
     Unknown,
 }
 
@@ -235,7 +249,9 @@ impl Type {
             Self::Option(inner) => inner.contains_reference(),
             Self::Result(ok, error) => ok.contains_reference() || error.contains_reference(),
             Self::Tuple(elements) => elements.iter().any(Self::contains_reference),
-            Self::Array { element, .. } | Self::Slice(element) => element.contains_reference(),
+            Self::Array { element, .. }
+            | Self::ArrayParameter { element, .. }
+            | Self::Slice(element) => element.contains_reference(),
             Self::Function {
                 parameters,
                 return_type,
@@ -288,7 +304,10 @@ impl Type {
 
     pub fn substitute(&self, substitutions: &HashMap<String, Type>) -> Self {
         match self {
-            Self::Variable(name) => substitutions.get(name).cloned().unwrap_or(Self::Unknown),
+            Self::Variable(name) | Self::BoundVariable { name, .. } => substitutions
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| self.clone()),
             Self::Option(inner) => Self::Option(Box::new(inner.substitute(substitutions))),
             Self::Result(ok, error) => Self::Result(
                 Box::new(ok.substitute(substitutions)),
@@ -304,6 +323,23 @@ impl Type {
                 element: Box::new(element.substitute(substitutions)),
                 length: *length,
             },
+            Self::ArrayParameter { element, length } => {
+                let element = Box::new(element.substitute(substitutions));
+                match substitutions.get(length) {
+                    Some(Self::ConstUsize(length)) => Self::Array {
+                        element,
+                        length: *length,
+                    },
+                    Some(Self::Variable(name)) => Self::ArrayParameter {
+                        element,
+                        length: name.clone(),
+                    },
+                    _ => Self::ArrayParameter {
+                        element,
+                        length: length.clone(),
+                    },
+                }
+            }
             Self::Slice(element) => Self::Slice(Box::new(element.substitute(substitutions))),
             Self::Reference { mutable, inner } => Self::Reference {
                 mutable: *mutable,
@@ -361,8 +397,12 @@ pub fn merge_type_arguments(expected: &[Type], actual: &[Type]) -> Option<Vec<Ty
 
 pub fn merge_types(expected: &Type, actual: &Type) -> Option<Type> {
     match (expected, actual) {
-        (Type::Unknown | Type::Variable(_), actual) => Some(actual.clone()),
-        (expected, Type::Unknown | Type::Variable(_)) => Some(expected.clone()),
+        (Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }, actual) => {
+            Some(actual.clone())
+        }
+        (expected, Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }) => {
+            Some(expected.clone())
+        }
         (Type::Option(expected), Type::Option(actual)) => {
             Some(Type::Option(Box::new(merge_types(expected, actual)?)))
         }
@@ -556,7 +596,9 @@ impl fmt::Display for Type {
                 }
                 Ok(())
             }
-            Self::Variable(name) => write!(f, "{name}"),
+            Self::Variable(name) | Self::BoundVariable { name, .. } => write!(f, "{name}"),
+            Self::ArrayParameter { element, length } => write!(f, "[{element}; {length}]"),
+            Self::ConstUsize(value) => write!(f, "{value}"),
             Self::Unknown => write!(f, "_"),
         }
     }

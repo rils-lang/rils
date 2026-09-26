@@ -3,8 +3,16 @@
 use super::prelude::Option;
 use rils_builtins_macros::decl_rils;
 
-/// An owned iterator of values produced by a string method.
-pub struct Iterator<T>(pub Vec<T>);
+/// An owned iterator of values produced by standard-library methods.
+pub struct Iterator<T>(pub std::collections::VecDeque<T>);
+
+impl<T> std::iter::Iterator for Iterator<T> {
+    type Item = T;
+
+    fn next(&mut self) -> std::option::Option<T> {
+        self.0.pop_front()
+    }
+}
 
 fn optional<T>(value: std::option::Option<T>) -> Option<T> {
     match value {

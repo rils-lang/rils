@@ -258,6 +258,7 @@ impl<'a> Parser<'a> {
             statements,
             type_references: self.type_references,
             macros: self.macros,
+            generated_sources: Vec::new(),
         })
     }
 

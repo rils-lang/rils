@@ -12,6 +12,10 @@ pub use rils_syntax::IntegerType;
 pub enum TypePattern {
     SelfType,
     Generic(&'static str),
+    BoundGeneric {
+        name: &'static str,
+        bounds: &'static [TypePattern],
+    },
     AnyInteger,
     Unknown,
     Unit,
@@ -33,6 +37,15 @@ pub enum TypePattern {
         error: &'static TypePattern,
     },
     Tuple(&'static [TypePattern]),
+    Array {
+        element: &'static TypePattern,
+        length: usize,
+    },
+    ArrayParameter {
+        element: &'static TypePattern,
+        length: &'static str,
+    },
+    Slice(&'static TypePattern),
     Function {
         parameters: &'static [TypePattern],
         result: &'static TypePattern,

@@ -25,7 +25,7 @@ fn hash_set_supports_owned_and_borrowed_operations() {
     assert_eq!(values.difference(&other).len(), 1);
     assert_eq!(values.symmetric_difference(&other).len(), 2);
     assert!(values.remove(&1));
-    assert_eq!(values.into_iter().0, [3]);
+    assert_eq!(values.into_iter().collect::<Vec<_>>(), [3]);
 }
 
 #[test]
@@ -39,5 +39,5 @@ fn hash_map_preserves_replaced_values_and_entries() {
     assert_eq!(values.values_cloned().0.len(), 2);
     assert_eq!(values.iter().count(), 2);
     assert_eq!(value(values.remove(&2)), Some("second"));
-    assert_eq!(values.into_iter().0, [(1, "replacement")]);
+    assert_eq!(values.into_iter().collect::<Vec<_>>(), [(1, "replacement")]);
 }

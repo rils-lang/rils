@@ -79,6 +79,34 @@ impl Parser<'_> {
             }
             self.expect(&TokenKind::Semicolon, "expected `;` before array length")?;
             let token = self.advance().clone();
+            if let TokenKind::Identifier(name) = &token.kind {
+                let parameter = self
+                    .generic_scopes
+                    .iter()
+                    .rev()
+                    .flatten()
+                    .find(|parameter| parameter.name == *name && parameter.is_const);
+                let Some(parameter) = parameter else {
+                    return Err(ParseError {
+                        message: format!(
+                            "array length `{name}` must be a declared const usize parameter"
+                        ),
+                        span: token.span,
+                    });
+                };
+                self.type_references.push(TypeReference {
+                    name: name.clone(),
+                    span: token.span,
+                    definition_span: Some(parameter.span),
+                    is_builtin: false,
+                    arguments: Vec::new(),
+                });
+                self.expect(&TokenKind::RightBracket, "expected `]` after array type")?;
+                return Ok(Type::ArrayParameter {
+                    element: Box::new(element),
+                    length: name.clone(),
+                });
+            }
             let length = match token.kind {
                 TokenKind::Integer(length) => usize::try_from(length).ok(),
                 TokenKind::Usize(length) => Some(length),
@@ -137,7 +165,7 @@ impl Parser<'_> {
             .iter()
             .rev()
             .flatten()
-            .find(|parameter| parameter.name == name)
+            .find(|parameter| parameter.name == name && !parameter.is_const)
             .map(|parameter| parameter.span);
         let is_builtin = (self.capabilities.allow_signature_placeholders
             && crate::ast::is_builtin_signature_placeholder(&name))

@@ -6,8 +6,11 @@ Mark public Rust functions inside `#[decl_rils(std::fs)]` with `#[rils_fn]` to e
 signatures and documentation to Rils. Unmarked functions remain Rust helpers. The Rust body is
 kept as the implementation; the execution adapter converts Rils values at the boundary. For
 example, `src/stdlib/fs.rs` defines the filesystem functions and their native bodies together.
-Use `#[rils_any(parameter)]` for a Rust string parameter exposed as Rils `_`, and
-`#[rils_variadic]` for a Rust slice parameter exposed as a variadic Rils function.
+Exported parameter types are preserved, including `[T; N]` with `const N: usize` and
+formatting bounds such as `T: std::fmt::Display`. Unsupported type forms are compile errors;
+`rils_any` and `rils_ref_any` are removed. `#[rils_variadic]` remains the explicit variadic
+contract used by formatting macros. `write` and `write_line` require `Display`; their native
+argument conversion invokes Rils trait dispatch before passing rendered text to Rust.
 
 ## 显式导出声明
 
@@ -17,7 +20,29 @@ Use `#[rils_any(parameter)]` for a Rust string parameter exposed as Rils `_`, an
 为自己的类型实现这些导出 trait。Rust 回调继续使用原生的 `std::ops::Fn*` 约束；
 导出自由函数的桥接器按具体函数签名生成适配闭包，不对参数个数预设固定上限。
 Option/Result 的回调方法已直接在带 `FnOnce` 约束、返回普通 Rust 值的方法上使用
-`#[export_rils]`；宏生成隐藏的可失败实现供运行时桥接调用。其他复杂 receiver 类型仍需扩展原生桥接。
+`#[export_rils]`；宏生成隐藏的可失败实现供运行时桥接调用。导出方法默认生成原生符号，
+无需额外的后端标记。Vec 的 receiver 代理把元素槽位临时移入 Rust 包装类型并在调用结束后归还；
+生成器从方法签名生成调用，Rust 检查参数与返回值是否满足转换接口。
+涉及词法引用的借用迭代，以及结构修改时的引用保护，仍由对应 receiver 适配器处理。
+其他复杂 receiver 类型仍需扩展原生桥接。
+`#[export_rils]` 只可标在固有 impl 的方法上。Rust trait impl 必须在整个 impl 块上
+标记 `#[rils_impl]`，由宏一并导出 trait 身份、方法和关联类型；trait 方法不能单独标记
+`#[export_rils]`。集合的 `IntoIterator` 和迭代器的 `Iterator` 使用这种形式。
+原生方法不登记数字 ID。仍需要旧入口的方法显式写 `#[rils_legacy_id(...)]` 或
+`#[rils_import(...)]`，不会因签名无法转换而自动退回旧 ID。未提供所需转换或适配器时，
+桥接生成会在编译期间报错。例如 `Vec::is_empty` 由 `len()` 计算，并通过原生符号调用。
+Rils 的 `IntoIterator` 与 Rust 一样声明 `Item` 和 `IntoIter`，标记后的 impl 会导出
+这两个关联类型。`Vec::from` 由固有方法导出，其 Rust `From<[T; N]>` 实现保持内部使用。
+trait impl 的导出方法签名从 Rust 方法签名和 impl 中的关联类型推导；例如
+`std::option::Option<Self::Item>` 会根据 `type Item = T` 导出为 Rils 的 `Option<T>`。
+trait 方法不使用 `#[rils_return]` 覆盖返回类型。`Range<T>` 已经实现
+Rust `Iterator`，其 `IntoIterator` 来自 blanket impl；Rils 也在标准库声明中登记
+`Iterator` 到 `IntoIterator` 的通用关系。
+拥有型标准库迭代器以 `VecDeque` 保存剩余元素，并实现 Rust 的 `Iterator` trait。
+`#[rils_trait]` 的方法体会导出为 Rils 默认方法，缺少重写的 impl 自动获得该实现。
+`Iterator` 的默认方法在 trait 定义处编写，由解释器和字节码从同一份生成源码执行；
+这些方法不再分配 `BuiltinId`。`next` 仍是推进迭代器的底层原语，旧默认方法 ID
+只保留旧字节码的读取兼容。
 
 一个 `#[decl_rils(core::collections)]` 模块可以定义一个或多个导出项。类型和 trait
 必须分别标记 `#[rils_struct]`、`#[rils_enum]`、`#[rils_trait]`；未标记的项仅供

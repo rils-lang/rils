@@ -14,21 +14,12 @@ mod native {
         }
     }
 
+    #[rils_impl]
     impl<T> std::iter::Iterator for Iter<T> {
         type Item = T;
 
-        fn next(&mut self) -> std::option::Option<T> {
-            self.0.next()
-        }
-    }
-
-    impl<T> Iter<T> {
         /// Advances the iterator and borrows its next item.
-        #[export_rils]
-        #[rils_legacy_id(core::sequence_iter::next)]
-        #[rils_return(Option<T>)]
-        #[allow(clippy::should_implement_trait)]
-        pub fn next(&mut self) -> std::option::Option<T> {
+        fn next(&mut self) -> std::option::Option<T> {
             self.0.next()
         }
     }
@@ -43,89 +34,258 @@ mod native {
         #[rils_legacy_id(core::iterator::next)]
         fn next(&mut self) -> Option<<Self as Iterator>::Item>;
         /// Consumes the iterator and returns the remaining item count.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::count)]
-        fn count(self) -> usize;
+        fn count(self) -> usize {
+            let mut iterator = self;
+            let mut count = 0usize;
+            while iterator.next().is_some() {
+                count = count + 1usize;
+            }
+            count
+        }
         /// Consumes the iterator and returns its final item.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::last)]
-        fn last(self) -> Option<T>;
+        fn last(self) -> Option<<Self as Iterator>::Item> {
+            let mut values = self.collect_vec();
+            values.pop()
+        }
         /// Advances to and returns the nth remaining item.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::nth)]
-        fn nth(&mut self, index: usize) -> Option<T>;
+        fn nth(&mut self, index: usize) -> Option<<Self as Iterator>::Item> {
+            let mut remaining = index;
+            while remaining > 0usize {
+                if self.next().is_none() {
+                    return None;
+                }
+                remaining = remaining - 1usize;
+            }
+            self.next()
+        }
         /// Consumes the iterator and collects its items into a Vec.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::collect_vec)]
-        fn collect_vec(self) -> Vec<T>;
+        fn collect_vec(self) -> Vec<<Self as Iterator>::Item> {
+            let mut iterator = self;
+            let mut values = Vec::new();
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                values.push(item.unwrap());
+            }
+            values
+        }
         /// Returns an iterator over at most the first n remaining items.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::take)]
-        fn take(self, count: usize) -> Self;
+        fn take(self, count: usize) -> Iterator<<Self as Iterator>::Item> {
+            let mut iterator = self;
+            let mut values = Vec::new();
+            let mut remaining = count;
+            while remaining > 0usize {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                values.push(item.unwrap());
+                remaining = remaining - 1usize;
+            }
+            values.into_iter()
+        }
         /// Returns an iterator after discarding the first n remaining items.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::skip)]
-        fn skip(self, count: usize) -> Self;
+        fn skip(self, count: usize) -> Iterator<<Self as Iterator>::Item> {
+            let mut iterator = self;
+            let mut skipped = 0usize;
+            let mut values = Vec::new();
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                if skipped >= count {
+                    values.push(item.unwrap());
+                }
+                skipped = skipped + 1usize;
+            }
+            values.into_iter()
+        }
         /// Reverses the remaining items of this double-ended built-in iterator.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::rev)]
-        fn rev(self) -> Self;
+        fn rev(self) -> Iterator<<Self as Iterator>::Item> {
+            let mut values = self.collect_vec();
+            let mut reversed = Vec::new();
+            loop {
+                let item = values.pop();
+                if item.is_none() {
+                    break;
+                }
+                reversed.push(item.unwrap());
+            }
+            reversed.into_iter()
+        }
         /// Transforms every remaining item with the supplied function.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::map)]
-        fn map<U>(self, transform: fn(T) -> U) -> Iterator<U>;
+        fn map<U>(self, transform: fn(<Self as Iterator>::Item) -> U) -> Iterator<U> {
+            let mut iterator = self;
+            let mut values = Vec::new();
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                values.push(transform(item.unwrap()));
+            }
+            values.into_iter()
+        }
         /// Keeps items for which the predicate returns true.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::filter)]
-        fn filter(self, predicate: fn(&T) -> bool) -> Iterator<T>;
+        fn filter(
+            self,
+            predicate: fn(&<Self as Iterator>::Item) -> bool,
+        ) -> Iterator<<Self as Iterator>::Item> {
+            let mut iterator = self;
+            let mut values = Vec::new();
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                let value = item.unwrap();
+                if predicate(&value) {
+                    values.push(value);
+                }
+            }
+            values.into_iter()
+        }
         /// Transforms and keeps items for which the function returns Some.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::filter_map)]
-        fn filter_map<U>(self, transform: fn(T) -> Option<U>) -> Iterator<U>;
+        fn filter_map<U>(
+            self,
+            transform: fn(<Self as Iterator>::Item) -> Option<U>,
+        ) -> Iterator<U> {
+            let mut iterator = self;
+            let mut values = Vec::new();
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                let mapped = transform(item.unwrap());
+                if mapped.is_some() {
+                    values.push(mapped.unwrap());
+                }
+            }
+            values.into_iter()
+        }
         /// Accumulates all remaining items from an initial value.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::fold)]
-        fn fold<U>(self, initial: U, accumulate: fn(U, T) -> U) -> U;
+        fn fold<U>(self, initial: U, accumulate: fn(U, <Self as Iterator>::Item) -> U) -> U {
+            let mut iterator = self;
+            let mut result = initial;
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                result = accumulate(result, item.unwrap());
+            }
+            result
+        }
         /// Calls a function for every remaining item.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::for_each)]
-        fn for_each(self, operation: fn(T) -> ());
+        fn for_each(self, operation: fn(<Self as Iterator>::Item) -> ()) {
+            let mut iterator = self;
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                operation(item.unwrap());
+            }
+        }
         /// Returns true when any item satisfies the predicate.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::any)]
-        fn any(self, predicate: fn(T) -> bool) -> bool;
+        fn any(self, predicate: fn(<Self as Iterator>::Item) -> bool) -> bool {
+            let mut iterator = self;
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    return false;
+                }
+                if predicate(item.unwrap()) {
+                    return true;
+                }
+            }
+        }
         /// Returns true when every item satisfies the predicate.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::all)]
-        fn all(self, predicate: fn(T) -> bool) -> bool;
+        fn all(self, predicate: fn(<Self as Iterator>::Item) -> bool) -> bool {
+            let mut iterator = self;
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    return true;
+                }
+                if !predicate(item.unwrap()) {
+                    return false;
+                }
+            }
+        }
         /// Returns the first item satisfying the predicate.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::find)]
-        fn find(self, predicate: fn(&T) -> bool) -> Option<T>;
+        fn find(
+            self,
+            predicate: fn(&<Self as Iterator>::Item) -> bool,
+        ) -> Option<<Self as Iterator>::Item> {
+            let mut iterator = self;
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    return None;
+                }
+                let value = item.unwrap();
+                if predicate(&value) {
+                    return Some(value);
+                }
+            }
+        }
         /// Returns the index of the first item satisfying the predicate.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::position)]
-        fn position(self, predicate: fn(T) -> bool) -> Option<usize>;
+        fn position(self, predicate: fn(<Self as Iterator>::Item) -> bool) -> Option<usize> {
+            let mut iterator = self;
+            let mut index = 0usize;
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    return None;
+                }
+                if predicate(item.unwrap()) {
+                    return Some(index);
+                }
+                index = index + 1usize;
+            }
+        }
         /// Yields each remaining item together with its zero-based index.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::enumerate)]
-        fn enumerate(self) -> Iterator<(usize, T)>;
+        fn enumerate(self) -> Iterator<(usize, <Self as Iterator>::Item)> {
+            let mut iterator = self;
+            let mut values = Vec::new();
+            let mut index = 0usize;
+            loop {
+                let item = iterator.next();
+                if item.is_none() {
+                    break;
+                }
+                values.push((index, item.unwrap()));
+                index = index + 1usize;
+            }
+            values.into_iter()
+        }
         /// Returns this iterator unchanged.
-        #[rils_provided]
-        #[rils_legacy_id(core::iterator::into_iter)]
-        fn into_iter(self) -> Self;
+        fn into_iter(self) -> Self {
+            self
+        }
     }
 
     /// Conversion into an iterator.
     #[rils_trait]
     pub trait IntoIterator: ::std::iter::IntoIterator {
+        /// The item yielded by the resulting iterator.
+        type Item;
+
         /// The concrete iterator produced by this conversion.
         type IntoIter;
 
         /// Consumes a value and creates an iterator.
-        #[rils_legacy_id(core::sequence::into_iter)]
         fn into_iter(self) -> <Self as IntoIterator>::IntoIter;
     }
 }
 
 pub use native::{IntoIterator, Iter, Iterator};
+
+/// A blanket relationship supplied by the Rust standard library for every
+/// iterator. Rils uses the same relationship when checking trait bounds.
+pub const BLANKET_TRAIT_IMPLS: &[(&str, &str)] = &[("Iterator", "IntoIterator")];

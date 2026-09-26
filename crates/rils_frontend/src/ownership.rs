@@ -1172,8 +1172,10 @@ impl<'a> Checker<'a> {
                 })
             }
             Type::Tuple(elements) => elements.iter().all(|ty| self.is_copy_inner(ty, visiting)),
-            Type::Array { element, .. } => self.is_copy_inner(element, visiting),
-            Type::Slice(_) => false,
+            Type::Array { element, .. } | Type::ArrayParameter { element, .. } => {
+                self.is_copy_inner(element, visiting)
+            }
+            Type::Slice(_) | Type::ConstUsize(_) => false,
             Type::Named { name, arguments } => {
                 if arguments.is_empty() && (name == "HostHandle" || self.host_types.contains(name))
                 {
@@ -1198,7 +1200,10 @@ impl<'a> Checker<'a> {
                 visiting.remove(name);
                 copy
             }
-            Type::Unknown | Type::Variable(_) | Type::Associated { .. } => true,
+            Type::Unknown
+            | Type::Variable(_)
+            | Type::BoundVariable { .. }
+            | Type::Associated { .. } => true,
             Type::String => rils_builtins::native_implements("string", "Copy"),
         }
     }

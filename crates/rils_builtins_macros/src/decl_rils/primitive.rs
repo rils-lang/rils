@@ -616,6 +616,111 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         Ok(value) => value,
         Err(error) => return error.into_compile_error().into(),
     };
+    let descriptors = mappings.iter().map(|mapping| {
+        let primitive = &mapping.primitive;
+        let variant = mapping.variant();
+        let name = format_ident!("descriptor_{}", primitive);
+        let numeric_module = if float { format_ident!("float") } else { format_ident!("integer") };
+        let rust_type = quote!(rils_stdlib::stdlib::#numeric_module::Number<#primitive>);
+        let type_token = if float {
+            quote!(crate::Type::Float(crate::FloatType::#variant))
+        } else {
+            quote!(crate::Type::Integer(crate::IntegerType::#variant))
+        };
+        let copy = if definition.traits.iter().any(|path| path.is_ident("Copy")) {
+            quote!(.with_copy::<#rust_type>())
+        } else {
+            quote!()
+        };
+        let methods = definition.methods.iter()
+            .filter(|method| method.sig.receiver().is_some()
+                && !method.attrs.iter().any(|attr| attr.path().is_ident("constant")))
+            .map(|method| {
+                let method_name = &method.sig.ident;
+                let symbol = format!("{}::{method_name}", if float { "core::float" } else { "core::integer" });
+                let mut inputs = Vec::new();
+                let mut names = Vec::new();
+                for (index, input) in method.sig.inputs.iter().enumerate().skip(1) {
+                    let FnArg::Typed(parameter) = input else {
+                        return Err(Error::new_spanned(input, "unexpected receiver"));
+                    };
+                    let ty = match parameter.ty.as_ref() {
+                        Type::Path(path) if path.path.is_ident("Self") => rust_type.clone(),
+                        Type::Path(path) if path.path.is_ident("u32") => quote!(u32),
+                        Type::Path(path) if path.path.is_ident("Integer") => quote!(rils_stdlib::stdlib::integer::Integer),
+                        _ => return Err(Error::new_spanned(&parameter.ty, "unsupported primitive argument")),
+                    };
+                    let name = format_ident!("arg_{}", index - 1);
+                    let argument_index = index - 1;
+                    inputs.push(quote! {
+                        let #name: #ty = super::NativeInput::from_value(&context.arguments()[#argument_index])?;
+                    });
+                    names.push(name);
+                }
+                let arity = names.len();
+                let preflight = match method_name.to_string().as_str() {
+                    "clamp" if float => quote! {
+                        if arg_0.0.is_nan() || arg_1.0.is_nan() || arg_0.0 > arg_1.0 {
+                            return Err("float clamp requires non-NaN bounds with min <= max".into());
+                        }
+                    },
+                    "pow" if !float => quote! {
+                        if receiver.0.checked_pow(arg_0).is_none() { return Err("integer overflow".into()); }
+                    },
+                    "abs" if primitive.to_string().starts_with('i') => quote! {
+                        if receiver.0.checked_abs().is_none() { return Err("integer overflow".into()); }
+                    },
+                    "div_euclid" if !float => quote! {
+                        if arg_0.0 == 0 { return Err("division by zero".into()); }
+                        if receiver.0.checked_div_euclid(arg_0.0).is_none() { return Err("integer overflow".into()); }
+                    },
+                    "rem_euclid" if !float => quote! {
+                        if arg_0.0 == 0 { return Err("division by zero".into()); }
+                        if receiver.0.checked_rem_euclid(arg_0.0).is_none() { return Err("integer overflow".into()); }
+                    },
+                    _ => quote!(),
+                };
+                Ok(quote! {
+                    .register_method(#symbol, |context| {
+                        if context.arguments().len() != #arity {
+                            return Err(format!("{} expects {} arguments, found {}", stringify!(#method_name), #arity, context.arguments().len()));
+                        }
+                        let receiver = context.receiver::<#rust_type, _>(|value| *value)?;
+                        #(#inputs)*
+                        #preflight
+                        super::NativeOutput::into_value(receiver.#method_name(#(#names),*))
+                    })
+                })
+            })
+            .collect::<syn::Result<Vec<_>>>();
+        let methods = match methods {
+            Ok(methods) => methods,
+            Err(error) => return error.into_compile_error(),
+        };
+        quote! {
+            pub fn #name() -> std::rc::Rc<crate::value::NativeType> {
+                std::thread_local! {
+                    static DESCRIPTOR: std::rc::Rc<crate::value::NativeType> = std::rc::Rc::new(
+                        crate::value::NativeType::new::<#rust_type>(#type_token)
+                            #copy
+                            .register_method(crate::value::native_ops::EQUAL, |context| {
+                                let [crate::Value::Native(other)] = context.arguments() else {
+                                    return Err("numeric equality expects a native argument".into());
+                                };
+                                Ok(crate::Value::Bool(context.receiver::<#rust_type, _>(|left| {
+                                    other.with::<#rust_type, _>(|right| left.0 == right.0)
+                                })??))
+                            })
+                            .register_method(crate::value::native_ops::DISPLAY, |context| {
+                                Ok(crate::Value::String(context.receiver::<#rust_type, _>(|value| value.0.to_string())?.into()))
+                            })
+                            #(#methods)*
+                    );
+                }
+                DESCRIPTOR.with(std::rc::Rc::clone)
+            }
+        }
+    });
     let receiver_dispatch = mappings.iter().map(|mapping| {
         let wrapper = mapping.variant();
         let call_name = format_ident!("call_{}", mapping.primitive);
@@ -639,6 +744,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     if float {
         return quote! {
             #(#bindings)*
+            #(#descriptors)*
             pub fn call(id: rils_builtins::BuiltinId, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
                 match arguments.first() { #(#receiver_dispatch)* _ => None }
             }
@@ -649,6 +755,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     }
     quote! {
         #(#bindings)*
+        #(#descriptors)*
         pub fn call(
             id: rils_builtins::BuiltinId,
             target: Option<rils_builtins::IntegerType>,
@@ -665,6 +772,38 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
             id: rils_builtins::IntegerConstantId,
         ) -> Option<Result<crate::Value, String>> {
             match target { #(#constant_dispatch)* }
+        }
+    }
+    .into()
+}
+
+pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
+    let definition = match Definition::parse(path, module) {
+        Ok(definition) => definition,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let copy = definition
+        .traits
+        .iter()
+        .any(|trait_path| trait_path.is_ident("Copy"));
+    let variants = definition.family.iter().map(|mapping| {
+        let primitive = &mapping.primitive;
+        let variant = mapping.variant();
+        let type_token = if definition.float {
+            quote!(crate::Type::Float(crate::FloatType::#variant))
+        } else {
+            quote!(crate::Type::Integer(crate::IntegerType::#variant))
+        };
+        let constructor = if copy {
+            quote!(rils_value::DynamicLayout::copy_of::<#primitive>)
+        } else {
+            quote!(rils_value::DynamicLayout::of::<#primitive>)
+        };
+        quote!(#type_token => Some(#constructor(#type_token)),)
+    });
+    quote! {
+        pub fn layout(ty: &crate::Type) -> Option<std::rc::Rc<rils_value::DynamicLayout>> {
+            match ty { #(#variants)* _ => None }
         }
     }
     .into()

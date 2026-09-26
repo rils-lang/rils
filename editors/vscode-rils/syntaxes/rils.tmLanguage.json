@@ -265,7 +265,7 @@
         },
         {
           "name": "keyword.declaration.rils",
-          "match": "\\b(?:let|mut|fn|macro|struct|enum|impl|trait|type|mod|pub)\\b"
+          "match": "\\b(?:let|mut|const|fn|macro|struct|enum|impl|trait|type|mod|pub)\\b"
         },
         {
           "name": "keyword.other.self.rils",

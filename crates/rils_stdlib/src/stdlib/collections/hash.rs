@@ -30,11 +30,14 @@ mod native {
         }
     }
 
+    #[rils_impl]
     impl<T> IntoIterator for HashSet<T> {
         type Item = T;
-        type IntoIter = std::collections::hash_set::IntoIter<T>;
+        type IntoIter = Iterator<T>;
+        /// Consumes the set and iterates over its values.
+        #[rils_legacy_id(core::hash_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            self.0.into_iter()
+            Iterator(self.0.into_iter().collect())
         }
     }
 
@@ -47,57 +50,61 @@ mod native {
         }
         /// Returns the element count.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns true when the set has no elements.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
         /// Removes all elements.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Returns true when the value is present.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::contains)]
         pub fn contains(&self, value: &T) -> bool {
             self.0.contains(value)
         }
         /// Inserts a value and reports whether it was new.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::insert)]
         pub fn insert(&mut self, value: T) -> bool {
             self.0.insert(value)
         }
         /// Removes a value and reports whether it was present.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::remove)]
         pub fn remove(&mut self, value: &T) -> bool {
             self.0.remove(value)
         }
         /// Returns true when every element is in the other set.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::is_subset)]
         pub fn is_subset(&self, other: &HashSet<T>) -> bool {
             self.0.is_subset(&other.0)
         }
         /// Returns true when the set contains every element of the other set.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::is_superset)]
         pub fn is_superset(&self, other: &HashSet<T>) -> bool {
             self.0.is_superset(&other.0)
         }
         /// Returns true when the sets share no elements.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::is_disjoint)]
         pub fn is_disjoint(&self, other: &HashSet<T>) -> bool {
             self.0.is_disjoint(&other.0)
         }
-        /// Consumes the set and iterates over its values.
-        #[export_rils]
-        #[allow(clippy::should_implement_trait)]
-        pub fn into_iter(self) -> Iterator<T> {
-            Iterator(self.0.into_iter().collect())
-        }
         /// Borrows each element without consuming the set.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::iter)]
         pub fn iter(&self) -> Iter<&T> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -106,21 +113,25 @@ mod native {
     impl<T: Eq + Hash + Clone> HashSet<T> {
         /// Clones the union of two sets.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::union)]
         pub fn union(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.union(&other.0).cloned().collect())
         }
         /// Clones the intersection of two sets.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::intersection)]
         pub fn intersection(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.intersection(&other.0).cloned().collect())
         }
         /// Clones values that are not in the other set.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::difference)]
         pub fn difference(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.difference(&other.0).cloned().collect())
         }
         /// Clones values present in exactly one set.
         #[export_rils]
+        #[rils_legacy_id(core::hash_set::symmetric_difference)]
         pub fn symmetric_difference(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.symmetric_difference(&other.0).cloned().collect())
         }
@@ -149,11 +160,14 @@ mod native {
         }
     }
 
+    #[rils_impl]
     impl<K, V> IntoIterator for HashMap<K, V> {
         type Item = (K, V);
-        type IntoIter = std::collections::hash_map::IntoIter<K, V>;
+        type IntoIter = Iterator<(K, V)>;
+        /// Consumes the map and iterates over owned key-value pairs.
+        #[rils_legacy_id(core::hash_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            self.0.into_iter()
+            Iterator(self.0.into_iter().collect())
         }
     }
 
@@ -166,42 +180,43 @@ mod native {
         }
         /// Returns the entry count.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns true when the map has no entries.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
         /// Removes all entries.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Returns true when the key is present.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::contains_key)]
         pub fn contains_key(&self, key: &K) -> bool {
             self.0.contains_key(key)
         }
         /// Inserts a key-value pair and returns the previous value.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::insert)]
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             self.0.insert(key, value).map_or(Option::None, Option::Some)
         }
         /// Removes a key and returns its value.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::remove)]
         pub fn remove(&mut self, key: &K) -> Option<V> {
             self.0.remove(key).map_or(Option::None, Option::Some)
         }
-        /// Consumes the map and iterates over owned key-value pairs.
-        #[export_rils]
-        #[allow(clippy::should_implement_trait)]
-        pub fn into_iter(self) -> Iterator<(K, V)> {
-            Iterator(self.0.into_iter().collect())
-        }
         /// Borrows each key-value pair without consuming the map.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::iter)]
         pub fn iter(&self) -> Iter<(&K, &V)> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -210,11 +225,13 @@ mod native {
     impl<K: Eq + Hash, V: Clone> HashMap<K, V> {
         /// Clones the value stored for a key.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::get_cloned)]
         pub fn get_cloned(&self, key: &K) -> Option<V> {
             self.0.get(key).cloned().map_or(Option::None, Option::Some)
         }
         /// Clones all values into an owned iterator.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::values_cloned)]
         pub fn values_cloned(&self) -> Iterator<V> {
             Iterator(self.0.values().cloned().collect())
         }
@@ -223,6 +240,7 @@ mod native {
     impl<K: Eq + Hash + Clone, V> HashMap<K, V> {
         /// Clones all keys into an owned iterator.
         #[export_rils]
+        #[rils_legacy_id(core::hash_map::keys_cloned)]
         pub fn keys_cloned(&self) -> Iterator<K> {
             Iterator(self.0.keys().cloned().collect())
         }

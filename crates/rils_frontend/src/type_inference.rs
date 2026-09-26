@@ -203,7 +203,57 @@ impl<'a> Inferencer<'a> {
     }
 
     fn syntax_type(&self, ty: &Type) -> Type {
-        self.host_types.resolved_type(ty)
+        let ty = self.host_types.resolved_type(ty);
+        if let Type::Associated {
+            base,
+            trait_name: Some(trait_name),
+            name,
+            arguments,
+        } = &ty
+            && trait_name == "IntoIterator"
+            && arguments.is_empty()
+            && let Type::Named {
+                name: owner,
+                arguments: type_arguments,
+            } = base.as_ref()
+        {
+            if name == "Item" {
+                if let Some(definition) = self.types.get(owner) {
+                    let substitutions = definition
+                        .generic_parameters
+                        .iter()
+                        .cloned()
+                        .zip(type_arguments.iter().cloned())
+                        .collect::<HashMap<_, _>>();
+                    if let Some(item) = definition
+                        .associated_types
+                        .get(&(String::from("IntoIterator"), String::from("Item")))
+                        .or_else(|| {
+                            definition
+                                .associated_types
+                                .get(&(String::from("Iterator"), String::from("Item")))
+                        })
+                    {
+                        return item.substitute(&substitutions);
+                    }
+                }
+                let item = self.iterable_item_type(base);
+                if item != Type::Unknown {
+                    return item;
+                }
+            }
+            if name == "IntoIter"
+                && (self
+                    .types
+                    .get(owner)
+                    .is_some_and(|definition| definition.implemented_traits.contains("Iterator"))
+                    || rils_builtins::builtin(owner)
+                        .is_some_and(|definition| definition.member("next").is_some()))
+            {
+                return *base.clone();
+            }
+        }
+        ty
     }
 
     fn optional_syntax_type(&self, ty: Option<&Type>) -> Type {
@@ -330,6 +380,10 @@ impl<'a> Inferencer<'a> {
                     .map(|element| self.resolve_type(element))
                     .collect(),
             ),
+            Type::ArrayParameter { element, length } => Type::ArrayParameter {
+                element: Box::new(self.resolve_type(element)),
+                length: length.clone(),
+            },
             Type::Array { element, length } => Type::Array {
                 element: Box::new(self.resolve_type(element)),
                 length: *length,
@@ -627,14 +681,31 @@ impl<'a> Inferencer<'a> {
             Stmt::Function {
                 name,
                 name_span,
+                generic_parameters,
                 parameters,
                 return_type,
                 body,
                 ..
             } => {
+                let bound_types = generic_parameters
+                    .iter()
+                    .filter(|parameter| !parameter.bounds.is_empty())
+                    .map(|parameter| {
+                        (
+                            parameter.name.clone(),
+                            Type::BoundVariable {
+                                name: parameter.name.clone(),
+                                bounds: parameter.bounds.clone(),
+                            },
+                        )
+                    })
+                    .collect::<HashMap<_, _>>();
                 let parameter_types = parameters
                     .iter()
-                    .map(|parameter| self.optional_syntax_type(parameter.type_annotation.as_ref()))
+                    .map(|parameter| {
+                        self.optional_syntax_type(parameter.type_annotation.as_ref())
+                            .substitute(&bound_types)
+                    })
                     .collect::<Vec<_>>();
                 let declared_return = return_type.as_ref().map(|ty| self.syntax_type(ty));
                 self.scopes.last_mut().expect("scope exists").insert(
@@ -862,6 +933,14 @@ impl<'a> Inferencer<'a> {
                     })
                     .map(|signature| signature.as_type())
                     .or_else(|| {
+                        let (member, owner) = segments.split_last()?;
+                        crate::standard_library::builtin_associated_function_signature(
+                            &owner.join("::"),
+                            member,
+                        )
+                        .map(|signature| signature.as_type())
+                    })
+                    .or_else(|| {
                         let [type_name, member] = segments else {
                             return None;
                         };
@@ -920,6 +999,17 @@ impl<'a> Inferencer<'a> {
                         rils_builtins::float_constant(member).map(|_| Type::Float(float))
                     })
                     .unwrap_or(Type::Unknown)
+            }
+            Expr::QualifiedPath {
+                target,
+                trait_name,
+                member,
+                ..
+            } if trait_name.rsplit("::").next() == Some("IntoIterator")
+                && member == "into_iter" =>
+            {
+                let target = self.syntax_type(target);
+                Type::function(vec![target.clone()], target)
             }
             Expr::QualifiedPath { .. } => Type::opaque_function(),
             Expr::Cast {
@@ -1196,16 +1286,6 @@ impl<'a> Inferencer<'a> {
                                 arguments: vec![Type::Unknown],
                             };
                         }
-                        "Vec::from" | "std::collections::Vec::from" => {
-                            let item = match argument_types.first() {
-                                Some(Type::Array { element, .. }) => (**element).clone(),
-                                _ => Type::Unknown,
-                            };
-                            return Type::Named {
-                                name: "Vec".into(),
-                                arguments: vec![item],
-                            };
-                        }
                         _ => {}
                     }
                 }
@@ -1391,6 +1471,13 @@ impl<'a> Inferencer<'a> {
         if let Some(member) = crate::standard_library::builtin_member_type(object_type, field) {
             return member;
         }
+        if field == "into_iter"
+            && let Type::Named { name, .. } = object_type
+            && rils_builtins::builtin(name)
+                .is_some_and(|definition| definition.member("next").is_some())
+        {
+            return Type::function(Vec::new(), object_type.clone());
+        }
         if field == "clone"
             && crate::standard_library::builtin_owner_name(object_type)
                 .is_some_and(|owner| rils_builtins::native_implements(owner, "Clone"))
@@ -1439,6 +1526,7 @@ impl<'a> Inferencer<'a> {
         let Type::Named { name, arguments } = object_type else {
             return Type::Unknown;
         };
+        let iterator_item = self.iterable_item_type(object_type);
         self.types.get(name).map_or(Type::Unknown, |definition| {
             let substitutions = definition
                 .generic_parameters
@@ -1455,10 +1543,11 @@ impl<'a> Inferencer<'a> {
                     ((definition.implemented_traits.contains("Iterator") || name == "Iter")
                         && rils_builtins::is_iterator_default_method(field))
                     .then(|| {
-                        crate::standard_library::builtin_trait_member_type(
+                        crate::standard_library::builtin_trait_member_type_with_iterator_item(
                             "Iterator",
                             object_type,
                             field,
+                            Some(iterator_item),
                         )
                     })
                     .flatten()
@@ -1495,6 +1584,12 @@ impl<'a> Inferencer<'a> {
                         .cloned()
                         .zip(arguments.iter().cloned())
                         .collect::<HashMap<_, _>>();
+                    if let Some(item) = definition
+                        .associated_types
+                        .get(&(String::from("IntoIterator"), String::from("Item")))
+                    {
+                        return item.substitute(&substitutions);
+                    }
                     if let Some(item) = definition
                         .associated_types
                         .get(&("Iterator".into(), "Item".into()))
@@ -1696,58 +1791,8 @@ fn function_call_result(function: &Type, arguments: &[Type]) -> Type {
 }
 
 fn infer_type_variables(expected: &Type, actual: &Type, substitutions: &mut HashMap<String, Type>) {
-    match (expected, actual) {
-        (Type::Variable(name), actual) => {
-            let inferred = substitutions
-                .get(name)
-                .and_then(|current| merge_types(current, actual))
-                .unwrap_or_else(|| actual.clone());
-            substitutions.insert(name.clone(), inferred);
-        }
-        (Type::Option(expected), Type::Option(actual)) => {
-            infer_type_variables(expected, actual, substitutions);
-        }
-        (Type::Result(expected_ok, expected_error), Type::Result(actual_ok, actual_error)) => {
-            infer_type_variables(expected_ok, actual_ok, substitutions);
-            infer_type_variables(expected_error, actual_error, substitutions);
-        }
-        (
-            Type::Reference {
-                inner: expected, ..
-            },
-            Type::Reference { inner: actual, .. },
-        ) => infer_type_variables(expected, actual, substitutions),
-        (
-            Type::Function {
-                parameters: Some(expected_parameters),
-                return_type: expected_return,
-            },
-            Type::Function {
-                parameters: Some(actual_parameters),
-                return_type: actual_return,
-            },
-        ) => {
-            for (expected, actual) in expected_parameters.iter().zip(actual_parameters) {
-                infer_type_variables(expected, actual, substitutions);
-            }
-            infer_type_variables(expected_return, actual_return, substitutions);
-        }
-        (
-            Type::Named {
-                name: expected_name,
-                arguments: expected_arguments,
-            },
-            Type::Named {
-                name: actual_name,
-                arguments: actual_arguments,
-            },
-        ) if expected_name == actual_name => {
-            for (expected, actual) in expected_arguments.iter().zip(actual_arguments) {
-                infer_type_variables(expected, actual, substitutions);
-            }
-        }
-        _ => {}
-    }
+    // Static checking reports conflicts; inference keeps the last consistent bindings.
+    let _ = crate::types::infer_generic_arguments(expected, actual, substitutions);
 }
 
 fn is_known(ty: &Type) -> bool {

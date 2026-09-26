@@ -16,6 +16,20 @@ pub(super) fn is_string(path: &Path) -> bool {
     path.to_token_stream().to_string().replace(' ', "") == "core::string::string"
 }
 
+pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
+    match Definition::parse(path, module) {
+        Ok(_) => quote! {
+            pub fn layout() -> std::rc::Rc<rils_value::DynamicLayout> {
+                rils_value::DynamicLayout::of::<rils_stdlib::stdlib::string::String>(
+                    crate::Type::String,
+                )
+            }
+        }
+        .into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
 impl Definition {
     fn parse(path: Path, module: ItemMod) -> syn::Result<Self> {
         if !is_string(&path) {
@@ -148,6 +162,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
                 value_type: None,
                 receiver: Some(crate::ReceiverMode::Shared),
                 builtin_id: None,
+                indexed_view: false,
                 runtime_import: None,
                 native_symbol: Some(#id_path),
                 required: true,
@@ -162,6 +177,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
             pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
                 path: "string",
                 kind: crate::BuiltinKind::Primitive,
+                source: None,
                 supertraits: &[],
                 type_parameters: &[],
                 members: &[#(#methods),*],

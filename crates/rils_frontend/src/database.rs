@@ -204,6 +204,7 @@ impl ProjectSyntax {
             statements: Vec::new(),
             type_references: Vec::new(),
             macros: Vec::new(),
+            generated_sources: Vec::new(),
         };
         for root in &self.roots {
             program
@@ -212,6 +213,9 @@ impl ProjectSyntax {
             program.statements.extend(root.statements.clone());
             program.type_references.extend(root.type_references.clone());
             program.macros.extend(root.macros.clone());
+            program
+                .generated_sources
+                .extend(root.generated_sources.clone());
         }
         program
     }

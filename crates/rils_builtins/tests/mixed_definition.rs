@@ -32,6 +32,7 @@ mod native {
 
     impl Choice {
         #[export_rils]
+        #[rils_legacy_id(core::fixture::choice::is_some)]
         pub fn is_some(&self) -> bool {
             matches!(self, Self::Some(value) if *value >= 0)
         }
@@ -64,20 +65,15 @@ mod native {
 
 mod sample_metadata {
     use super::*;
-    macro_rules! legacy_builtin_id {
-        ("core::fixture::sample::new") => {
-            BuiltinId::BinaryHeapNew
-        };
-    }
     sample_definition!(decl_rils_metadata);
     sample_definition!(decl_rils_trait_impls);
 }
 
 mod choice_metadata {
     use super::*;
-    macro_rules! legacy_builtin_id {
+    macro_rules! builtin_id {
         ("core::fixture::choice::is_some") => {
-            BuiltinId::SequenceIsEmpty
+            BuiltinId::VecExtend
         };
     }
     choice_definition!(decl_rils_metadata);
@@ -105,13 +101,14 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
         sample.member("value").unwrap().kind,
         BuiltinMemberKind::Field
     );
+    assert_eq!(sample.member("new").unwrap().builtin_id, None);
     assert_eq!(
-        sample.member("new").unwrap().builtin_id,
-        Some(BuiltinId::BinaryHeapNew)
+        sample.member("new").unwrap().native_symbol,
+        Some("core::fixture::sample::new")
     );
     assert_eq!(
         choice.member("is_some").unwrap().builtin_id,
-        Some(BuiltinId::SequenceIsEmpty)
+        Some(BuiltinId::VecExtend)
     );
     assert_eq!(choice.member("is_some").unwrap().native_symbol, None);
     assert_eq!(

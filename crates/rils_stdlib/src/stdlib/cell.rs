@@ -25,12 +25,14 @@ mod native {
     impl<T> Cell<T> {
         /// Creates a cell containing a value.
         #[export_rils]
+        #[rils_legacy_id(core::cell::cell::new)]
         pub fn new(value: T) -> Self {
             Self(std::cell::Cell::new(value))
         }
 
         /// Copies the current value.
         #[export_rils]
+        #[rils_legacy_id(core::cell::cell::get)]
         pub fn get(&self) -> T
         where
             T: Copy,
@@ -40,12 +42,14 @@ mod native {
 
         /// Replaces the current value.
         #[export_rils]
+        #[rils_legacy_id(core::cell::cell::set)]
         pub fn set(&self, value: T) {
             self.0.set(value);
         }
 
         /// Replaces and returns the previous value.
         #[export_rils]
+        #[rils_legacy_id(core::cell::cell::replace)]
         pub fn replace(&self, value: T) -> T {
             self.0.replace(value)
         }

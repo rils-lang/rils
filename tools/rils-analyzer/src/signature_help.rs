@@ -171,6 +171,12 @@ fn semantic_signature_at_call(
             let definition = analysis.def_map.definition(*definition)?;
             function_signature(definition.name.clone(), definition.inferred_type.clone()?)
         }
+        rils_frontend::ResolvedCall::TraitDefault { method, .. } => {
+            let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
+            let member_type =
+                rils_frontend::standard_library::builtin_member_type(receiver_type, method)?;
+            function_signature((*method).into(), member_type)
+        }
         rils_frontend::ResolvedCall::Builtin { id, kind, .. } => {
             let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
             match kind {

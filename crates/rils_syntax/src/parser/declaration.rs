@@ -608,10 +608,17 @@ impl Parser<'_> {
         } else {
             None
         };
-        let end = self.expect(
-            &TokenKind::Semicolon,
-            "trait methods without defaults must end with `;`",
-        )?;
+        let (body, end) = if self.check(&TokenKind::LeftBrace) {
+            let body = self.block("expected trait method body")?;
+            let end = body.span;
+            (Some(body), end)
+        } else {
+            let end = self.expect(
+                &TokenKind::Semicolon,
+                "trait methods without defaults must end with `;`",
+            )?;
+            (None, end.span)
+        };
         self.generic_scopes.pop();
         Ok(TraitMethod {
             attributes: Vec::new(),
@@ -620,7 +627,8 @@ impl Parser<'_> {
             generic_parameters,
             parameters,
             return_type,
-            span: start.merge(end.span),
+            body,
+            span: start.merge(end),
         })
     }
 

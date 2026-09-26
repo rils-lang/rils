@@ -205,3 +205,13 @@ Rust 宿主可通过 `register_module`、`register_module_function` 注册多层
 代码不能直接访问或下转 payload，只有宿主方法可以通过 `Value::host_payload<T>()` 读取它。
 需要公开精确签名时可使用 `register_module_typed_function` 与 `register_typed_method`。签名会被
 运行时用于参数和返回值校验；内置标准库的同一份签名也供类型推断和 Analyzer 使用。
+
+### IO 输出的格式化约束
+
+`std::io::write<T: Display>(value: T)` 和 `write_line<T: Display>(value: T)`
+返回 `Result<(), std::io::Error>`。字符串、数值、布尔值等可直接输出；用户类型需要实现
+`core::fmt::Display`。解释器和 VM 都调用该实现，格式化方法产生的执行错误会传回调用方。
+数组、Vec、Option 等只有 Debug 表示的值不能直接传入；请先使用 `format!("{:?}", value)`。
+
+Rust 导出签名不再使用 `rils_any` / `rils_ref_any` 将参数降为未知类型；不支持的导出类型
+会在宏展开时报错。`rils_import` 仅选择已有运行时入口，不会放宽参数类型。

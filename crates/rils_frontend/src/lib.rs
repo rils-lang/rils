@@ -4,6 +4,7 @@ pub mod database;
 mod error;
 pub mod exports;
 mod format_check;
+pub mod format_traits;
 mod host_analysis;
 mod host_type_resolution;
 mod numeric_literals;
@@ -15,6 +16,8 @@ pub mod semantic;
 pub mod standard_library;
 mod static_type_check;
 mod trait_check;
+mod trait_defaults;
+pub use trait_defaults::append_bytecode_iterator_defaults;
 mod type_inference;
 
 pub use rils_syntax::{ast, default, format, lexer, macros, source, token, types};

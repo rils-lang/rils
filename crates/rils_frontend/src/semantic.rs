@@ -184,6 +184,11 @@ pub enum BuiltinCallKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedCall {
     Definition(DefId),
+    TraitDefault {
+        trait_name: &'static str,
+        method: &'static str,
+        receiver: rils_builtins::ReceiverMode,
+    },
     Native {
         symbol: &'static str,
         receiver: Option<rils_builtins::ReceiverMode>,
@@ -261,6 +266,12 @@ impl TypeckResults {
         self.resolved_calls.get(&id)
     }
 
+    pub fn has_trait_default_calls(&self) -> bool {
+        self.resolved_calls
+            .values()
+            .any(|call| matches!(call, ResolvedCall::TraitDefault { .. }))
+    }
+
     pub fn resolved_value(&self, id: ExprId) -> Option<DefId> {
         self.resolved_values.get(&id).copied()
     }
@@ -321,7 +332,14 @@ pub(crate) fn resolve_project_calls(
     results: &mut TypeckResults,
     host_type_resolutions: &crate::HostTypeResolutionResults,
 ) {
-    let mut iterator_types = HashSet::from(["Iter".to_owned()]);
+    let mut iterator_types = rils_builtins::BUILTINS
+        .iter()
+        .filter(|declaration| {
+            declaration.kind == rils_builtins::BuiltinKind::Struct
+                && declaration.member("next").is_some()
+        })
+        .map(|declaration| declaration.path.rsplit("::").next().unwrap().to_owned())
+        .collect::<HashSet<_>>();
     let mut callables = CallableDefinitions::default();
     for (_, module_path, program) in units {
         collect_trait_implementations(
@@ -418,7 +436,13 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
     {
         return Some(ResolvedCall::Definition(definition));
     }
-    if let Some(definition) = callables.resolve_untyped_member(callee) {
+    if let Expr::Member { object, .. } = callee
+        && expression_ids
+            .get(object)
+            .and_then(|id| results.expression_type(id))
+            .is_none_or(|ty| matches!(ty, Type::Unknown))
+        && let Some(definition) = callables.resolve_untyped_member(callee)
+    {
         return Some(ResolvedCall::Definition(definition));
     }
     if let Some(path) = callables.resolve_host(callee, host_functions, namespace, *self_type) {
@@ -428,6 +452,21 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
         return Some(ResolvedCall::Definition(definition));
     }
     match callee {
+        Expr::QualifiedPath {
+            target: Type::Named { name: owner, .. },
+            trait_name,
+            member,
+            ..
+        } if trait_name.rsplit("::").next() == Some("IntoIterator")
+            && member == "into_iter"
+            && iterator_types.contains(owner) =>
+        {
+            Some(ResolvedCall::Builtin {
+                id: rils_builtins::BuiltinId::IteratorIntoIter,
+                kind: BuiltinCallKind::Runtime,
+                receiver: None,
+            })
+        }
         Expr::Member { object, name, .. } => {
             let receiver = results.expression_type(expression_ids.get(object)?)?;
             let receiver = match receiver {
@@ -466,6 +505,15 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
                     return Some(ResolvedCall::Native {
                         symbol,
                         receiver: member.receiver,
+                    });
+                }
+                if rils_builtins::builtin_member("Iterator", name)
+                    .is_some_and(|default| std::ptr::eq(default, member) && !default.required)
+                {
+                    return Some(ResolvedCall::TraitDefault {
+                        trait_name: "Iterator",
+                        method: member.name,
+                        receiver: member.receiver?,
                     });
                 }
                 return Some(ResolvedCall::Builtin {
@@ -918,7 +966,7 @@ fn contextual_name(namespace: &[String], self_type: Option<&str>, name: &str) ->
     qualified_name(namespace, name)
 }
 
-fn collect_trait_implementations(
+pub(crate) fn collect_trait_implementations(
     statements: &[Stmt],
     prefix: &mut Vec<String>,
     trait_name: &str,

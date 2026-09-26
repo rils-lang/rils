@@ -47,16 +47,15 @@ impl Input {
             .any(|attr| attr.path().is_ident("rils_variadic"))
     }
 
-    fn any_parameters(&self) -> syn::Result<Vec<syn::Ident>> {
-        self.function
-            .attrs
-            .iter()
-            .filter(|attr| attr.path().is_ident("rils_any"))
-            .map(|attr| attr.parse_args())
-            .collect()
-    }
-
     fn validate(&self) -> syn::Result<()> {
+        for attribute in &self.function.attrs {
+            if attribute.path().is_ident("rils_any") || attribute.path().is_ident("rils_ref_any") {
+                return Err(Error::new_spanned(
+                    attribute,
+                    "type-widening export attributes were removed; declare the actual type and generic bounds",
+                ));
+            }
+        }
         let name = &self.function.sig.ident;
         if self
             .path
@@ -84,7 +83,6 @@ impl Input {
             .params
             .iter()
             .any(|parameter| !matches!(parameter, syn::GenericParam::Type(_)))
-            || (!self.native_callback && !self.function.sig.generics.params.is_empty())
             || self.function.sig.generics.where_clause.is_some()
             || self.function.sig.asyncness.is_some()
             || self.function.sig.unsafety.is_some()
@@ -109,13 +107,6 @@ impl Input {
                 &self.function.sig,
                 "variadic Rust implementation expects one slice parameter",
             ));
-        }
-        let parameters = self.parameters()?;
-        for any in self.any_parameters()? {
-            let name = any.to_string();
-            if !parameters.iter().any(|(parameter, _)| parameter == &name) {
-                return Err(Error::new_spanned(any, "unknown exported parameter"));
-            }
         }
         Ok(())
     }
@@ -231,20 +222,12 @@ impl Input {
         for line in super::documentation(&self.function.attrs).lines() {
             source.push_str(&format!("/// {line}\n"));
         }
-        let any = self
-            .any_parameters()?
-            .into_iter()
-            .map(|name| name.to_string())
-            .collect::<Vec<_>>();
         let parameters = if self.variadic() {
             Vec::new()
         } else {
             self.parameters()?
                 .into_iter()
                 .map(|(name, ty)| {
-                    if any.contains(&name) {
-                        return format!("{name}: _");
-                    }
                     format!(
                         "{name}: {}",
                         ty.to_token_stream().to_string().replace("String", "string")
@@ -263,7 +246,12 @@ impl Input {
             .sig
             .generics
             .type_params()
-            .map(|parameter| parameter.ident.to_string())
+            .map(|parameter| {
+                parameter
+                    .to_token_stream()
+                    .to_string()
+                    .replace("std :: fmt", "core :: fmt")
+            })
             .collect::<Vec<_>>();
         let generics = if generic_names.is_empty() {
             String::new()
@@ -294,23 +282,12 @@ impl Input {
             quote!(crate::BuiltinBackend::Runtime)
         };
         let docs = super::documentation(&self.function.attrs);
-        let any = self
-            .any_parameters()?
-            .into_iter()
-            .map(|name| name.to_string())
-            .collect::<Vec<_>>();
         let parameters = if self.variadic() {
             Vec::new()
         } else {
             self.parameters()?
                 .iter()
-                .map(|(name, ty)| {
-                    if any.contains(name) {
-                        Ok(quote!(TypePattern::Unknown))
-                    } else {
-                        type_patterns::tokens(ty)
-                    }
-                })
+                .map(|(_, ty)| type_patterns::with_generics(ty, &self.function.sig.generics))
                 .collect::<syn::Result<Vec<_>>>()?
         };
         let variadic = self.variadic();
@@ -332,6 +309,7 @@ impl Input {
             pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
                 path: #path,
                 kind: crate::BuiltinKind::Function,
+                source: None,
                 supertraits: &[],
                 type_parameters: &[#(#type_parameters),*],
                 members: &[],
@@ -411,24 +389,23 @@ mod tests {
     }
 
     #[test]
-    fn explicit_any_and_variadic_markers_change_only_rils_signatures() {
+    fn explicit_bounds_and_variadic_signatures_are_preserved() {
         let write = Input {
             path: syn::parse_quote!(std::io::write),
             native_callback: false,
             shadow_callback: false,
             function: syn::parse_quote! {
-                #[rils_any(value)]
-                pub fn write(value: String) -> Result<(), crate::stdlib::io::Error> { loop {} }
+                pub fn write<T: std::fmt::Display>(value: T) -> Result<(), crate::stdlib::io::Error> { loop {} }
             },
         };
         write.validate().unwrap();
-        assert!(write.source().unwrap().contains("value: _"));
+        assert!(write.source().unwrap().contains("value: T"));
         assert!(
             write
                 .metadata()
                 .unwrap()
                 .to_string()
-                .contains("TypePattern :: Unknown")
+                .contains("TypePattern :: BoundGeneric")
         );
 
         let print = Input {

@@ -34,9 +34,16 @@ mod native {
 
     /// A half-open integer range.
     #[rils_struct]
+    #[derive(Clone, PartialEq)]
     pub struct Range<T> {
         current: T,
         end: T,
+    }
+
+    impl<T: std::fmt::Display> std::fmt::Display for Range<T> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "{}..{}", self.current, self.end)
+        }
     }
 
     impl<T: RangeStep> Range<T> {
@@ -59,28 +66,13 @@ mod native {
             };
             Some(value)
         }
-
-        /// Advances the range.
-        #[allow(clippy::should_implement_trait)] // Rils uses its own Option wrapper.
-        #[export_rils]
-        pub fn next(&mut self) -> Option<T> {
-            match self.step() {
-                Some(value) => Option::Some(value),
-                None => Option::None,
-            }
-        }
-
-        /// Consumes the range and creates its iterator.
-        #[allow(clippy::should_implement_trait)] // This method is part of the Rils API.
-        #[export_rils]
-        pub fn into_iter(self) -> Self {
-            self
-        }
     }
 
+    #[rils_impl]
     impl<T: RangeStep> std::iter::Iterator for Range<T> {
         type Item = T;
 
+        /// Advances the range.
         fn next(&mut self) -> std::option::Option<Self::Item> {
             self.step()
         }

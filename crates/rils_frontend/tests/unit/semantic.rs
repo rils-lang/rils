@@ -198,6 +198,7 @@ fn expressions_with_the_same_span_keep_distinct_identities() {
         ],
         type_references: Vec::new(),
         macros: Vec::new(),
+        generated_sources: Vec::new(),
     };
     let analysis = crate::analysis::analyze_program(&program);
     let results = &analysis.typeck_results;
@@ -316,16 +317,13 @@ fn iterator_trait_methods_resolve_without_compiler_name_lookup() {
     )
     .expect("analyze custom iterator call");
 
-    assert!(analysis.typeck_results.resolved_calls.values().any(|call| {
-        matches!(
-            call,
-            ResolvedCall::Builtin {
-                id: rils_builtins::BuiltinId::IteratorTake,
-                kind: BuiltinCallKind::Runtime,
-                ..
-            }
-        )
-    }));
+    assert!(
+        analysis
+            .typeck_results
+            .resolved_calls
+            .values()
+            .any(|call| matches!(call, ResolvedCall::Definition(_)))
+    );
 }
 
 #[test]

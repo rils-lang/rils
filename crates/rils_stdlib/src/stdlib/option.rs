@@ -26,6 +26,7 @@ mod native {
 
         /// Returns the present value or fails.
         #[export_rils]
+        #[rils_legacy_id(core::option::option::unwrap)]
         pub fn unwrap(self) -> T {
             match self {
                 Self::Some(value) => value,
@@ -35,6 +36,7 @@ mod native {
 
         /// Returns the present value or the supplied default.
         #[export_rils]
+        #[rils_legacy_id(core::option::option::unwrap_or)]
         pub fn unwrap_or(self, default: T) -> T {
             match self {
                 Self::Some(value) => value,
@@ -44,6 +46,7 @@ mod native {
 
         /// Returns the present value or fails with the supplied message.
         #[export_rils]
+        #[rils_legacy_id(core::option::option::expect)]
         pub fn expect(self, message: String) -> T {
             match self {
                 Self::Some(value) => value,
@@ -53,12 +56,14 @@ mod native {
 
         /// Moves the value out, leaving None.
         #[export_rils]
+        #[rils_legacy_id(core::option::option::take)]
         pub fn take(&mut self) -> Self {
             std::mem::replace(self, Self::None)
         }
 
         /// Returns this Option when present, otherwise the supplied Option.
         #[export_rils]
+        #[rils_legacy_id(core::option::option::or)]
         pub fn or(self, other: Self) -> Self {
             match self {
                 Self::Some(_) => self,
@@ -68,6 +73,7 @@ mod native {
 
         /// Returns the present Option only when exactly one operand is present.
         #[export_rils]
+        #[rils_legacy_id(core::option::option::xor)]
         pub fn xor(self, other: Self) -> Self {
             match (self, other) {
                 (Self::Some(value), Self::None) | (Self::None, Self::Some(value)) => {
@@ -79,6 +85,7 @@ mod native {
 
         /// Replaces the contained value and returns the previous Option.
         #[export_rils]
+        #[rils_legacy_id(core::option::option::replace)]
         pub fn replace(&mut self, value: T) -> Self {
             std::mem::replace(self, Self::Some(value))
         }

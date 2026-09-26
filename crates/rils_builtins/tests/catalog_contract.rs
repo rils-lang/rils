@@ -270,6 +270,8 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
             // An old numeric ID remains reserved for bytecode compatibility after
             // its declaration moves to a native symbol.
             assert_eq!(id.member_name(), Some(member.name));
+        } else if rils_builtins::RETIRED_COMPATIBILITY_IDS.contains(&id) {
+            assert_eq!(id.member_name(), Some("into_iter"));
         } else {
             let intrinsic = intrinsic(id).unwrap_or_else(|| {
                 panic!(
@@ -320,19 +322,52 @@ fn migrated_hash_constructors_keep_imports_and_iterator_ids() {
 }
 
 #[test]
-fn migrated_vec_preserves_array_constructor_and_sequence_ids() {
+fn migrated_vec_exports_indexed_methods_without_legacy_ids() {
     let vector = builtin("Vec").expect("native Vec declaration");
     let from = vector.member("from").expect("array constructor");
     assert_eq!(from.runtime_import, Some("core::vec::from"));
-    assert_eq!(from.signature.unwrap().parameters, &[TypePattern::Unknown]);
     assert_eq!(
-        vector.member("len").unwrap().builtin_id,
-        Some(BuiltinId::SequenceLen)
+        from.signature.unwrap().parameters,
+        &[TypePattern::ArrayParameter {
+            element: &TypePattern::Generic("T"),
+            length: "N"
+        }]
     );
-    assert_eq!(
-        vector.member("iter").unwrap().builtin_id,
-        Some(BuiltinId::SequenceIter)
-    );
+    assert!(vector.member("len").unwrap().builtin_id.is_none());
+    assert!(vector.member("iter").unwrap().builtin_id.is_none());
+    assert!(vector.member("len").unwrap().indexed_view);
+    assert!(vector.member("iter").unwrap().indexed_view);
+    for name in [
+        "len",
+        "is_empty",
+        "push",
+        "pop",
+        "clear",
+        "truncate",
+        "insert",
+        "remove",
+        "swap_remove",
+        "into_iter",
+    ] {
+        assert!(
+            vector.member(name).unwrap().native_symbol.is_some(),
+            "Vec::{name}"
+        );
+    }
+    assert!(vector.member("from").is_some());
+}
+
+#[test]
+fn exported_trait_impl_methods_keep_public_names_and_range_next_is_native() {
+    let range = builtin("Range").unwrap();
+    let next = range.member("next").unwrap();
+    assert!(next.native_symbol.is_some());
+    assert_eq!(next.builtin_id, None);
+    assert!(rils_builtins::RETIRED_COMPATIBILITY_IDS.contains(&BuiltinId::RangeNext));
+    assert!(rils_builtins::BLANKET_TRAIT_IMPLS.contains(&("Iterator", "IntoIterator")));
+
+    let borrowed = builtin("Iter").unwrap();
+    assert!(borrowed.member("next").is_some());
 }
 
 #[test]
@@ -381,6 +416,13 @@ fn string_methods_no_longer_reserve_builtin_ids() {
         assert!(member.native_symbol.is_some(), "string::{}", member.name);
     }
     for raw in 0x0A00..=0x0A13 {
+        assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
+    }
+}
+
+#[test]
+fn legacy_sequence_ids_are_no_longer_defined() {
+    for raw in 0x0100..=0x0105 {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
 }
@@ -439,7 +481,10 @@ fn runtime_members_have_a_native_or_legacy_binding() {
                 assert!(
                     member.native_symbol.is_some()
                         || member.builtin_id.is_some()
-                        || member.runtime_import.is_some(),
+                        || member.runtime_import.is_some()
+                        || (declaration.kind == BuiltinKind::Trait
+                            && !member.required
+                            && declaration.source.is_some()),
                     "{}::{} has no runtime binding",
                     declaration.path,
                     member.name
@@ -536,10 +581,7 @@ fn rils_standard_library_files_supply_type_member_and_variant_metadata() {
         BuiltinMemberKind::AssociatedFunction
     );
     assert_eq!(vec.member("new").expect("Vec::new").builtin_id, None);
-    assert_eq!(
-        vec.member("len").expect("Vec::len").builtin_id,
-        Some(BuiltinId::SequenceLen)
-    );
+    assert_eq!(vec.member("len").expect("Vec::len").builtin_id, None);
 
     let map = builtin("HashMap").expect("HashMap declaration");
     assert_eq!(map.type_parameters, &["K", "V"]);
@@ -567,8 +609,28 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
     );
     let map = iterator.member("map").expect("Iterator::map");
     assert_eq!(map.type_parameters, &["U"]);
-    assert_eq!(map.builtin_id, Some(BuiltinId::IteratorMap));
+    assert_eq!(map.builtin_id, None);
     assert!(!map.required);
+    let source = iterator.source.expect("Iterator exports its source");
+    let program =
+        rils_syntax::parser::parse_builtin_declarations(rils_syntax::lex(source).unwrap())
+            .expect("Iterator source parses");
+    let methods = program
+        .statements
+        .into_iter()
+        .find_map(|statement| match statement {
+            rils_syntax::ast::Stmt::Trait { methods, .. } => Some(methods),
+            _ => None,
+        })
+        .expect("Iterator trait is present");
+    assert!(
+        methods
+            .iter()
+            .find(|method| method.name == "map")
+            .unwrap()
+            .body
+            .is_some()
+    );
     assert_eq!(
         iterator.member("next").unwrap().receiver,
         Some(rils_builtins::ReceiverMode::Mutable)
@@ -576,20 +638,22 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
 
     let into_iterator = builtin("IntoIterator").expect("conversion trait");
     assert_eq!(
-        into_iterator.member("IntoIter").unwrap().kind,
+        into_iterator.member("Item").unwrap().kind,
         BuiltinMemberKind::AssociatedType
     );
     assert_eq!(
-        into_iterator.member("into_iter").unwrap().builtin_id,
-        Some(BuiltinId::SequenceIntoIter)
+        into_iterator.member("IntoIter").unwrap().kind,
+        BuiltinMemberKind::AssociatedType
     );
+    assert_eq!(into_iterator.member("into_iter").unwrap().builtin_id, None);
 
-    let borrowed = builtin("Iter").expect("borrowed sequence iterator declaration");
+    let borrowed = builtin("Iter").expect("borrowed indexed iterator declaration");
     assert_eq!(borrowed.type_parameters, &["T"]);
     assert_eq!(
         borrowed.member("next").expect("Iter::next").builtin_id,
-        Some(BuiltinId::SequenceIterNext)
+        None
     );
+    assert!(borrowed.member("next").unwrap().native_symbol.is_some());
     assert_eq!(
         borrowed.member("next").unwrap().signature.unwrap().result,
         TypePattern::Option(&TypePattern::Generic("T"))
@@ -597,11 +661,11 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
 
     assert_eq!(
         builtin("Vec")
-            .expect("sequence declaration")
+            .expect("Vec declaration")
             .member("iter")
             .expect("borrowed iteration method")
             .builtin_id,
-        Some(BuiltinId::SequenceIter)
+        None
     );
     for (owner, id) in [
         ("HashMap", BuiltinId::HashMapIter),
@@ -638,7 +702,13 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
             .signature
             .expect("write signature")
             .parameters,
-        &[TypePattern::Unknown]
+        &[TypePattern::BoundGeneric {
+            name: "T",
+            bounds: &[TypePattern::Named {
+                path: "core::fmt::Display",
+                arguments: &[]
+            }]
+        }]
     );
     let some = builtin("Some").expect("Some function");
     assert_eq!(some.type_parameters, &["T"]);
@@ -662,7 +732,13 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
             .parameters,
         &[TypePattern::Reference {
             mutable: false,
-            inner: &TypePattern::Unknown,
+            inner: &TypePattern::BoundGeneric {
+                name: "T",
+                bounds: &[TypePattern::Named {
+                    path: "core::fmt::Debug",
+                    arguments: &[]
+                }]
+            },
         }]
     );
 }
@@ -763,10 +839,52 @@ fn declarations_report_member_and_runtime_coverage() {
 }
 
 #[test]
+fn derived_vec_is_empty_has_no_numeric_id() {
+    let member = builtin("Vec")
+        .expect("Vec declaration")
+        .member("is_empty")
+        .expect("Vec::is_empty declaration");
+    assert_eq!(member.builtin_id, None);
+    assert!(member.native_symbol.is_some());
+    assert!(member.indexed_view);
+}
+
+#[test]
 fn trait_requirements_and_provided_methods_come_from_stdlib() {
     let iterator = builtin("Iterator").expect("Iterator declaration");
     assert!(iterator.member("next").expect("Iterator::next").required);
-    assert!(!iterator.member("count").expect("Iterator::count").required);
+    assert!(
+        iterator
+            .members
+            .iter()
+            .filter(|member| member.kind == BuiltinMemberKind::Method && member.name != "next")
+            .all(|member| !member.required)
+    );
+    let last = iterator.member("last").expect("Iterator::last");
+    assert!(matches!(
+        last.signature.expect("Iterator::last signature").result,
+        TypePattern::Option(inner)
+            if matches!(
+                *inner,
+                TypePattern::Associated {
+                    trait_name: Some("Iterator"),
+                    name: "Item",
+                    ..
+                }
+            )
+    ));
+    let map = iterator.member("map").expect("Iterator::map");
+    assert!(matches!(
+        map.signature.expect("Iterator::map signature").parameters,
+        [TypePattern::Function {
+            parameters: [TypePattern::Associated {
+                trait_name: Some("Iterator"),
+                name: "Item",
+                ..
+            }],
+            ..
+        }]
+    ));
 
     let into_iterator = builtin("IntoIterator").expect("IntoIterator declaration");
     assert!(

@@ -119,16 +119,14 @@ fn rust_range_definition_matches_the_public_catalog() {
     assert_eq!(generated.kind, BuiltinKind::Struct);
     assert_eq!(generated.type_parameters, &["T"]);
     assert_eq!(generated.documentation, "A half-open integer range.");
-    for name in ["next", "into_iter"] {
-        let method = generated.member(name).expect("generated method");
-        let public = published.member(name).expect("published method");
-        assert_eq!(method.builtin_id, public.builtin_id);
-        assert_eq!(method.receiver, public.receiver);
-        let generated_signature = method.signature.expect("generated signature");
-        let public_signature = public.signature.expect("published signature");
-        assert_eq!(generated_signature.parameters, public_signature.parameters);
-        assert_eq!(generated_signature.result, public_signature.result);
-    }
+    let method = generated.member("next").expect("generated method");
+    let public = published.member("next").expect("published method");
+    assert_eq!(method.builtin_id, public.builtin_id);
+    assert_eq!(method.receiver, public.receiver);
+    let generated_signature = method.signature.expect("generated signature");
+    let public_signature = public.signature.expect("published signature");
+    assert_eq!(generated_signature.parameters, public_signature.parameters);
+    assert_eq!(generated_signature.result, public_signature.result);
 }
 
 #[test]

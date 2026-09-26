@@ -246,23 +246,18 @@ impl Input {
             for line in super::documentation(&method.attrs).lines() {
                 source.push_str(&format!("    /// {line}\n"));
             }
-            if method.default.is_some()
-                || method
-                    .attrs
-                    .iter()
-                    .any(|attr| attr.path().is_ident("rils_provided"))
-            {
-                source.push_str("    #[provided]\n");
+            let mut signature = method.sig.clone();
+            signature.inputs.pop_punct();
+            let signature = signature
+                .to_token_stream()
+                .to_string()
+                .replace(" (", "(")
+                .replace("& self", "&self");
+            if let Some(body) = &method.default {
+                source.push_str(&format!("    {signature} {}\n", body.to_token_stream()));
+            } else {
+                source.push_str(&format!("    {signature};\n"));
             }
-            source.push_str(&format!(
-                "    {};\n",
-                method
-                    .sig
-                    .to_token_stream()
-                    .to_string()
-                    .replace(" (", "(")
-                    .replace("& self", "&self")
-            ));
         }
         source.push_str("}\n");
         source
@@ -270,6 +265,7 @@ impl Input {
 
     fn metadata(&self) -> syn::Result<proc_macro2::TokenStream> {
         let name = self.item.ident.to_string();
+        let source = self.source();
         let type_parameters = self
             .item
             .generics
@@ -303,6 +299,7 @@ impl Input {
                     value_type: Some(TypePattern::Unknown),
                     receiver: None,
                     builtin_id: None,
+                    indexed_view: false,
                     runtime_import: None,
                     native_symbol: None,
                     required: false,
@@ -338,7 +335,7 @@ impl Input {
                 let path = path.to_token_stream().to_string().replace(' ', "");
                 quote!(Some(builtin_id!(#path)))
             } else if name == "clone" { quote!(Some(builtin_id!("core::clone"))) } else { quote!(None) };
-            let required = method.default.is_none() && !method.attrs.iter().any(|attr| attr.path().is_ident("rils_provided"));
+            let required = method.default.is_none();
             let type_parameters = method.sig.generics.type_params().map(|parameter| parameter.ident.to_string()).collect::<Vec<_>>();
             Ok(quote! {
                 crate::BuiltinMember {
@@ -348,6 +345,7 @@ impl Input {
                     value_type: None,
                     receiver: #receiver,
                     builtin_id: #builtin_id,
+                    indexed_view: false,
                     runtime_import: None,
                     native_symbol: None,
                     required: #required,
@@ -379,6 +377,7 @@ impl Input {
             pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
                 path: #name,
                 kind: crate::BuiltinKind::Trait,
+                source: Some(#source),
                 supertraits: &[#(#supertraits),*],
                 type_parameters: &[#(#type_parameters),*],
                 members: &[#(#associated,)* #(#methods),*],
@@ -422,6 +421,42 @@ pub(crate) fn expand_metadata(input: TokenStream) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exports_trait_default_body() {
+        let input: Input = syn::parse_quote! {
+            core::iter::iterator;
+            #[rils_trait]
+            pub trait Iterator: ::std::iter::Iterator {
+                type Item;
+                fn next(&mut self) -> Option<<Self as Iterator>::Item>;
+                fn count(mut self) -> usize {
+                    let mut count = 0usize;
+                    while self.next().is_some() {
+                        count = count + 1usize;
+                    }
+                    count
+                }
+            }
+        };
+        input.validate().unwrap();
+        let source = input.source();
+        assert!(source.contains("fn count(mut self) -> usize {"));
+        let program =
+            rils_syntax::parser::parse_builtin_declarations(rils_syntax::lex(&source).unwrap())
+                .unwrap();
+        let rils_syntax::ast::Stmt::Trait { methods, .. } = &program.statements[0] else {
+            panic!("expected trait");
+        };
+        assert!(
+            methods
+                .iter()
+                .find(|method| method.name == "count")
+                .unwrap()
+                .body
+                .is_some()
+        );
+    }
 
     #[test]
     fn clone_binding_generates_the_existing_rils_contract() {

@@ -8,6 +8,7 @@ use crate::{
 };
 
 mod coherence;
+mod iterator_contract;
 
 use coherence::{CoherenceKey, check_local_coherence, check_project_coherence};
 
@@ -55,6 +56,7 @@ pub(crate) fn analyze_with_host_types(
         verified_impls: Vec::new(),
     };
     check_impls(&program.statements, &traits, &implementations, &mut result);
+    iterator_contract::check(&[(&[] as &[String], program)], &mut result.diagnostics);
     check_local_coherence(program, host_types, &mut result);
     result
 }
@@ -100,6 +102,7 @@ pub(crate) fn analyze_project(
             &mut result,
         );
     }
+    iterator_contract::check(programs, &mut result.diagnostics);
     result
 }
 
@@ -232,9 +235,21 @@ fn check_project_impls(
                 let Some(trait_name) =
                     resolve_item_name(trait_name, module_path, trait_aliases, declarations.traits)
                 else {
+                    check_builtin_associated_types(
+                        trait_name,
+                        associated_types,
+                        *span,
+                        &mut result.diagnostics,
+                    );
                     continue;
                 };
                 let Some(requirement) = declarations.traits.get(&trait_name) else {
+                    check_builtin_associated_types(
+                        &trait_name,
+                        associated_types,
+                        *span,
+                        &mut result.diagnostics,
+                    );
                     continue;
                 };
                 let contract_valid = check_contract(
@@ -459,6 +474,12 @@ fn check_impls(
                 let supported =
                     check_impl_generic_bounds(generic_parameters, &mut result.diagnostics);
                 let Some(requirement) = traits.get(trait_name) else {
+                    check_builtin_associated_types(
+                        trait_name,
+                        associated_types,
+                        *span,
+                        &mut result.diagnostics,
+                    );
                     continue;
                 };
                 for bound in &requirement.bounds {
@@ -589,6 +610,38 @@ fn check_associated_types(
     }
 }
 
+fn check_builtin_associated_types(
+    trait_name: &str,
+    implementations: &[AssociatedType],
+    impl_span: crate::Span,
+    diagnostics: &mut Vec<AnalysisDiagnostic>,
+) {
+    let Some(declaration) =
+        rils_builtins::builtin(trait_name.rsplit("::").next().unwrap_or(trait_name))
+            .filter(|declaration| declaration.kind == rils_builtins::BuiltinKind::Trait)
+    else {
+        return;
+    };
+    for required in declaration
+        .members
+        .iter()
+        .filter(|member| member.kind == rils_builtins::BuiltinMemberKind::AssociatedType)
+    {
+        if !implementations
+            .iter()
+            .any(|implementation| implementation.name == required.name)
+        {
+            diagnostics.push(AnalysisDiagnostic::error(
+                format!(
+                    "impl of trait `{trait_name}` is missing associated type `{}`",
+                    required.name
+                ),
+                impl_span,
+            ));
+        }
+    }
+}
+
 fn check_methods(
     requirement: &TraitRequirement,
     substitutions: &HashMap<String, Type>,
@@ -599,6 +652,9 @@ fn check_methods(
     for required in &requirement.methods {
         let Some(implementation) = methods.iter().find(|method| method.name == required.name)
         else {
+            if required.body.is_some() {
+                continue;
+            }
             diagnostics.push(AnalysisDiagnostic::error(
                 format!(
                     "impl of trait `{}` is missing method `{}`",

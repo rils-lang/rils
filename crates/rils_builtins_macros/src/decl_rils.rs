@@ -12,6 +12,7 @@ use crate::type_patterns;
 
 mod export_module;
 pub(crate) mod function_definition;
+mod method_binding;
 mod primitive;
 mod string;
 mod structure;
@@ -364,6 +365,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     value_type: Some(#value_type),
                     receiver: None,
                     builtin_id: None,
+                    indexed_view: false,
                     runtime_import: None,
                     native_symbol: None,
                     required: false,
@@ -386,16 +388,16 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             let name = method.sig.ident.to_string();
             let documentation = documentation(&method.attrs);
             let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-            let direct_native = supports_direct_bridge(&definition.item, method);
-            let native_symbol = if direct_native {
-                quote!(Some(#id_path))
-            } else {
-                quote!(None)
-            };
-            let builtin_id = if direct_native {
-                quote!(None)
-            } else {
-                quote!(Some(legacy_builtin_id!(#id_path)))
+            let binding = method_binding::MethodBinding::parse(method)?;
+            let (native_symbol, builtin_id) = match binding {
+                method_binding::MethodBinding::Native => {
+                    if !supports_direct_bridge(&definition.item, method) {
+                        return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion; implement its bridge or explicitly bind an existing #[rils_legacy_id(...)]"));
+                    }
+                    (quote!(Some(#id_path)), quote!(None))
+                }
+                method_binding::MethodBinding::Legacy(path) => (quote!(None), quote!(Some(builtin_id!(#path)))),
+                method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
             };
             let receiver = method.sig.receiver().ok_or_else(|| {
                 Error::new_spanned(&method.sig, "native methods require a receiver")
@@ -441,6 +443,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     value_type: None,
                     receiver: Some(#receiver_mode),
                     builtin_id: #builtin_id,
+                    indexed_view: false,
                     runtime_import: None,
                     native_symbol: #native_symbol,
                     required: true,
@@ -455,6 +458,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
         pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
             path: #path,
             kind: crate::BuiltinKind::Enum,
+            source: None,
             supertraits: &[],
             type_parameters: &[#(#type_generics),*],
             members: &[#(#variants,)* #(#methods),*],
@@ -591,6 +595,52 @@ pub(crate) fn expand_native(input: TokenStream) -> TokenStream {
     }
 }
 
+pub(crate) fn expand_layout(input: TokenStream) -> TokenStream {
+    let source = parse_macro_input!(input as DefinitionInput);
+    if string::is_string(&source.path) {
+        return string::expand_layout(source.path, source.item);
+    }
+    if primitive::contains_mapping(&source.item) {
+        return primitive::expand_layout(source.path, source.item);
+    }
+    let definition = match Definition::parse(source.path, &source.item) {
+        Ok(definition) => definition,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    if definition.item.ident != "Option" {
+        return Error::new_spanned(
+            &definition.item,
+            "dynamic native layout generation currently supports Option<T>",
+        )
+        .into_compile_error()
+        .into();
+    }
+    let variants = &definition.item.variants;
+    if variants.len() != 2
+        || variants[0].ident != "None"
+        || !matches!(variants[0].fields, syn::Fields::Unit)
+        || variants[1].ident != "Some"
+        || !matches!(&variants[1].fields, syn::Fields::Unnamed(fields)
+            if fields.unnamed.len() == 1
+                && matches!(&fields.unnamed[0].ty, Type::Path(path) if path.path.is_ident("T")))
+    {
+        return Error::new_spanned(
+            &definition.item,
+            "dynamic Option layout requires exactly None and Some(T)",
+        )
+        .into_compile_error()
+        .into();
+    }
+    quote! {
+        pub fn layout(
+            item: std::rc::Rc<rils_value::DynamicLayout>,
+        ) -> Result<std::rc::Rc<rils_value::DynamicLayout>, String> {
+            rils_value::DynamicLayout::option(item)
+        }
+    }
+    .into()
+}
+
 fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
     if definition.item.ident != "Option" && definition.item.ident != "Result" {
         return Err(Error::new_spanned(
@@ -621,20 +671,20 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         if callback_operation(&definition.item, method).is_some() {
             return Ok(quote! { #id_path => Some(Err("native callback context is unavailable".to_owned())) });
         }
-        if !supports_direct_bridge(&definition.item, method) {
-            let arity = method.sig.inputs.len();
-            return Ok(quote! {
-                #id_path => Some(
-                    if arguments.len() == #arity {
-                        super::super::option_result::call(
-                            rils_builtins::legacy_builtin_id!(#id_path),
-                            arguments,
-                        )
+        match method_binding::MethodBinding::parse(method)? {
+            method_binding::MethodBinding::Legacy(path) => {
+                let arity = method.sig.inputs.len();
+                return Ok(quote! {
+                    #id_path => Some(if arguments.len() == #arity {
+                        super::super::option_result::call(rils_builtins::builtin_id!(#path), arguments)
                     } else {
                         Err(format!("native method expects {} arguments, found {}", #arity, arguments.len()))
-                    }
-                )
-            });
+                    })
+                });
+            }
+            method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
+            method_binding::MethodBinding::Native if !supports_direct_bridge(&definition.item, method) => return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion")),
+            method_binding::MethodBinding::Native => {}
         }
         if method.sig.inputs.len() != 1 {
             return Err(Error::new_spanned(&method.sig, "native bridge supports methods without arguments"));
@@ -800,9 +850,9 @@ mod tests {
         let definition = Definition::parse(syn::parse_quote!(core::option), &module).unwrap();
         assert!(
             metadata_tokens(&definition)
-                .unwrap()
+                .unwrap_err()
                 .to_string()
-                .contains("legacy_builtin_id")
+                .contains("no native conversion")
         );
     }
 

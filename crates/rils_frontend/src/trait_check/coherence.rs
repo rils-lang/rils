@@ -105,6 +105,35 @@ fn check_coherence_pair(
         trait_id,
         target_id,
     };
+    if let CoherenceIdentity::Foreign(path) = &key.trait_id {
+        let is_builtin = |path: &str, name: &str| {
+            rils_builtins::builtin(name).is_some_and(|declaration| declaration.path == path)
+        };
+        let overlapping =
+            rils_builtins::BLANKET_TRAIT_IMPLS
+                .iter()
+                .find_map(|&(bound, provided)| {
+                    let counterpart = if is_builtin(path, bound) {
+                        provided
+                    } else if is_builtin(path, provided) {
+                        bound
+                    } else {
+                        return None;
+                    };
+                    implementations.keys().find(|other| {
+                        other.target_id == key.target_id
+                            && matches!(&other.trait_id, CoherenceIdentity::Foreign(other_path)
+                        if is_builtin(other_path, counterpart))
+                    })
+                });
+        if overlapping.is_some() {
+            result.diagnostics.push(AnalysisDiagnostic::error(
+                format!("trait `{trait_name}` overlaps a standard-library blanket implementation for `{target}`"),
+                span,
+            ));
+            return false;
+        }
+    }
     if implementations.insert(key, span).is_some() {
         result.diagnostics.push(AnalysisDiagnostic::error(
             format!("trait `{trait_name}` is already implemented for `{target}`"),

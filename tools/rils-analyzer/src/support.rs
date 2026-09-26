@@ -435,12 +435,40 @@ pub(super) fn function_declaration(name: &str, ty: &Type) -> String {
             parameters: Some(parameters),
             return_type,
         } => {
+            let mut generics = Vec::new();
+            for parameter in parameters {
+                match parameter {
+                    Type::BoundVariable { name, bounds } => {
+                        let bounds = bounds
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(" + ");
+                        let declaration = format!("{name}: {bounds}");
+                        if !generics.contains(&declaration) {
+                            generics.push(declaration);
+                        }
+                    }
+                    Type::ArrayParameter { length, .. } => {
+                        let declaration = format!("const {length}: usize");
+                        if !generics.contains(&declaration) {
+                            generics.push(declaration);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let generics = if generics.is_empty() {
+                String::new()
+            } else {
+                format!("<{}>", generics.join(", "))
+            };
             let parameters = parameters
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("fn {name}({parameters}) -> {return_type}")
+            format!("fn {name}{generics}({parameters}) -> {return_type}")
         }
         _ => format!("fn {name}: {ty}"),
     }

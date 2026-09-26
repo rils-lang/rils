@@ -23,10 +23,13 @@ pub fn parse_with_capabilities(
     native_macros: &[NativeMacroDefinition],
     capabilities: ParseCapabilities,
 ) -> Result<Program, ParseError> {
-    rils_syntax::parser::parse_with_native_macros_and_derives(
+    let source_tokens = tokens.clone();
+    let mut program = rils_syntax::parser::parse_with_native_macros_and_derives(
         tokens,
         native_macros,
         rils_builtins::NATIVE_DERIVES,
         capabilities,
-    )
+    )?;
+    crate::trait_defaults::expand(&mut program, &source_tokens);
+    Ok(program)
 }

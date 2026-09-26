@@ -9,6 +9,17 @@ fn parses_function_and_if_expression() {
 }
 
 #[test]
+fn parses_trait_default_method_body() {
+    let program =
+        parse(lex("trait Counter { fn count(self) -> usize { 7usize } }").unwrap()).unwrap();
+    let Stmt::Trait { methods, .. } = &program.statements[0] else {
+        panic!("expected trait");
+    };
+    assert_eq!(methods.len(), 1);
+    assert!(methods[0].body.is_some());
+}
+
+#[test]
 fn parses_explicit_generic_associated_paths() {
     let program = parse(lex("fn main() { Rc::<i32>::new(1) }").unwrap()).unwrap();
     let Stmt::Function { body, .. } = &program.statements[0] else {
