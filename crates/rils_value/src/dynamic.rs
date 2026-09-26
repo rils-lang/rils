@@ -6,7 +6,9 @@ use rils_syntax::Type;
 
 use crate::storage::RawStorage;
 
+mod object;
 mod operations;
+pub use object::DynamicObject;
 pub use operations::{DynamicCallContext, DynamicType};
 
 enum DropKind {
@@ -169,6 +171,28 @@ impl DynamicValue {
         }
         // SAFETY: optional values are initialized with tag 0 or 1.
         Ok(unsafe { ptr::read(self.storage.pointer()) == 1 })
+    }
+
+    /// Borrow the live item of an optional layout after checking its Rust type.
+    pub fn with_option<T: 'static, R>(&self, f: impl FnOnce(Option<&T>) -> R) -> Result<R, String> {
+        let DropKind::Option { item, item_offset } = &self.descriptor.drop_kind else {
+            return Err("value is not optional".into());
+        };
+        if !matches!(item.drop_kind, DropKind::Rust { type_id, .. } if type_id == TypeId::of::<T>())
+        {
+            return Err(format!(
+                "optional item is not {}",
+                std::any::type_name::<T>()
+            ));
+        }
+        if !self.is_some()? {
+            return Ok(f(None));
+        }
+        // SAFETY: the option tag is 1, the child layout was checked against T,
+        // and Layout::extend established the aligned child offset.
+        Ok(f(Some(unsafe {
+            &*self.storage.pointer().add(*item_offset).cast::<T>()
+        })))
     }
 
     pub fn take_option(mut self) -> Result<Option<Self>, String> {

@@ -17,6 +17,11 @@ fn generic_option_composes_an_inline_copy_layout() {
     .unwrap();
     assert!(value.is_inline());
     assert_eq!(value.is_some(), Ok(true));
+    assert_eq!(
+        value.with_option::<i32, _>(|item| item.copied()),
+        Ok(Some(17))
+    );
+    assert!(value.with_option::<usize, _>(|item| item.copied()).is_err());
     let copy = value.copy_owned().unwrap();
     let child = copy.take_option().unwrap().unwrap();
     assert_eq!(child.with::<i32, _>(|value| *value), Ok(17));
@@ -31,6 +36,7 @@ fn generic_option_composes_an_inline_copy_layout() {
 
     let empty = DynamicValue::none(option).unwrap();
     assert_eq!(empty.is_some(), Ok(false));
+    assert_eq!(empty.with_option::<i32, _>(|item| item.copied()), Ok(None));
     assert!(empty.take_option().unwrap().is_none());
 }
 

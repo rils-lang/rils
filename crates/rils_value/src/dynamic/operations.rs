@@ -56,6 +56,10 @@ impl<V> DynamicType<V> {
     pub fn layout(&self) -> &DynamicLayout {
         &self.layout
     }
+
+    pub fn layout_handle(&self) -> Rc<DynamicLayout> {
+        self.layout.clone()
+    }
 }
 
 /// Typed receiver access and arguments for one dynamically registered method.
