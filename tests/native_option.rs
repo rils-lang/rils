@@ -122,13 +122,91 @@ fn typed_none_preserves_option_semantics() {
 }
 
 #[test]
-fn contextual_none_remains_semantically_equal_across_backends() {
-    let source = "fn pass(value: Option<string>) -> Option<string> { value } pass(None)";
-    assert_eq!(eval(source).unwrap().to_string(), "None");
-    let compiled = compile(source).unwrap();
-    assert_eq!(compiled.execute().unwrap().to_string(), "None");
-    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute().unwrap().to_string(), "None");
+fn contextual_none_uses_native_storage_across_backends() {
+    for (source, ty, inline) in [
+        (
+            "fn pass(value: Option<string>) -> Option<string> { value } pass(None)",
+            "Option<string>",
+            false,
+        ),
+        (
+            "let mut value: Option<string> = Some(\"old\"); value = None; value",
+            "Option<string>",
+            false,
+        ),
+        (
+            "let pair: (Option<string>, i32) = (None, 1i32); pair.0",
+            "Option<string>",
+            false,
+        ),
+        (
+            "let values: [Option<i32>; 1] = [None]; values[0]",
+            "Option<i32>",
+            true,
+        ),
+        (
+            "let values: [Option<i32>; 2] = [None; 2]; values[1]",
+            "Option<i32>",
+            true,
+        ),
+        (
+            "let nested: Option<Option<string>> = Some(None); nested.unwrap()",
+            "Option<string>",
+            false,
+        ),
+        (
+            "struct Holder { value: Option<string> } let holder = Holder { value: None }; holder.value",
+            "Option<string>",
+            false,
+        ),
+        (
+            "fn nested() -> Option<Option<string>> { Some(None) } nested().unwrap()",
+            "Option<string>",
+            false,
+        ),
+        (
+            "fn nested() -> Option<Option<string>> { return Some(None); } nested().unwrap()",
+            "Option<string>",
+            false,
+        ),
+        (
+            "let value: Option<string> = if true { None } else { None }; value",
+            "Option<string>",
+            false,
+        ),
+        (
+            "let value: Option<string> = match 1i32 { 1 => None, _ => None }; value",
+            "Option<string>",
+            false,
+        ),
+    ] {
+        assert_dynamic_option(
+            eval(source).unwrap(),
+            ty,
+            inline,
+            "None",
+            "None",
+            "interpreter",
+        );
+        let compiled = compile(source).unwrap();
+        assert_dynamic_option(
+            compiled.execute().unwrap(),
+            ty,
+            inline,
+            "None",
+            "None",
+            "VM",
+        );
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        assert_dynamic_option(
+            loaded.execute().unwrap(),
+            ty,
+            inline,
+            "None",
+            "None",
+            "loaded VM",
+        );
+    }
 }
 
 #[test]

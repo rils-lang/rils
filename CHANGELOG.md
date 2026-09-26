@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- 共享前端现在会把函数实参、赋值、tuple/数组元素、struct 字段及 `Some`、`if`、`match` 中的预期类型传给 `None`，解释器与 VM 在这些上下文中保持一致的原生 `Option<T>` 表示。
 - `Option<i8>` 及带具体类型的 `None` 现在使用动态原生布局，解释器和 VM 的局部声明、默认值与函数返回值保持相同存储语义。实验性 v8 字节码的 `None` 构造指令新增可选元素类型；旧 v8 文件需从源码重新编译，格式号仍为 v8。
 - `Some(i32)`、`Some(usize)`、`Some(string)` 的运行时值改用动态组合的原生 `Option<T>` 布局。解释器、VM、模式匹配、迭代、标准库方法及集合键接受新值。Rust 宿主若直接匹配 `Value::Option`，需改用 `Value::as_option()` 或同时处理 `Value::Dynamic`；脚本代码无需修改。
 - `string` 字面量、字符串运算和标准库结果现在使用原生包装对象；解释器、VM、集合键与 C API 均接受迁移后的值。Rust 宿主若匹配 `Value::String`，需改用 `Value::as_string()` 或读取原生负载；C ABI 字符串标签与字节码磁盘编码保持不变。

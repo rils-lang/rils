@@ -9,6 +9,8 @@ use crate::{
     types::{FunctionSignature, Type, merge_types},
 };
 
+mod expected;
+
 #[derive(Clone, Debug)]
 pub(crate) struct RawTypeHint {
     pub position: usize,
@@ -667,6 +669,7 @@ impl<'a> Inferencer<'a> {
                 if let Some(expected) = type_annotation {
                     let expected = self.syntax_type(expected);
                     self.unify(&inferred, &expected);
+                    self.apply_expected_type(initializer, &expected);
                 }
                 let ty = type_annotation
                     .as_ref()
@@ -725,6 +728,10 @@ impl<'a> Inferencer<'a> {
                     }
                     let mut explicit_returns = Vec::new();
                     let tail = inferencer.block_contents(body, &mut explicit_returns);
+                    if let Some(expected) = &declared_return {
+                        inferencer.apply_expected_block_tail(body, expected);
+                        inferencer.apply_expected_returns(body, expected);
+                    }
                     declared_return
                         .clone()
                         .unwrap_or_else(|| inferred_return(explicit_returns, tail))
@@ -803,6 +810,10 @@ impl<'a> Inferencer<'a> {
                             .as_ref()
                             .map(|ty| inferencer.syntax_type(ty))
                             .unwrap_or_else(|| inferred_return(method_returns, tail));
+                        if method.return_type.is_some() {
+                            inferencer.apply_expected_block_tail(&method.body, &resolved);
+                            inferencer.apply_expected_returns(&method.body, &resolved);
+                        }
                         inferencer.result.binding_types.insert(
                             method.name_span,
                             Type::function(parameter_types, resolved.clone()),
@@ -1134,6 +1145,14 @@ impl<'a> Inferencer<'a> {
                         infer_type_variables(expected, &actual, &mut substitutions);
                     }
                 }
+                for field in fields {
+                    if let Some(expected) = declared_fields.get(&field.name) {
+                        self.apply_expected_type(
+                            &field.value,
+                            &expected.substitute(&substitutions),
+                        );
+                    }
+                }
                 Type::Named {
                     name: name.clone(),
                     arguments: definition
@@ -1150,8 +1169,9 @@ impl<'a> Inferencer<'a> {
             }
             Expr::Assign { target, value, .. } => {
                 let target = self.expression(target, returns);
-                let value = self.expression(value, returns);
-                self.unify(&target, &value);
+                let value_type = self.expression(value, returns);
+                self.unify(&target, &value_type);
+                self.apply_expected_type(value, &target);
                 Type::Unit
             }
             Expr::Borrow {
@@ -1219,8 +1239,11 @@ impl<'a> Inferencer<'a> {
                     ..
                 } = &callee_type
                 {
-                    for (parameter, argument) in parameters.iter().zip(&argument_types) {
-                        self.unify(parameter, argument);
+                    for ((parameter, argument_type), argument) in
+                        parameters.iter().zip(&argument_types).zip(arguments)
+                    {
+                        self.unify(parameter, argument_type);
+                        self.apply_expected_type(argument, parameter);
                     }
                 }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
