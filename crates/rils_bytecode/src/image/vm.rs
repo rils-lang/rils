@@ -742,10 +742,20 @@ impl<'a> VirtualMachine<'a> {
                         .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     self.frame_mut().registers[destination] = Some(range);
                 }
-                Instruction::BuildOptionNone { destination } => {
-                    self.frame_mut().registers[destination] = Some(Value::Option {
-                        value: None,
-                        element_type: None,
+                Instruction::BuildOptionNone {
+                    destination,
+                    item_type,
+                } => {
+                    let native = item_type.as_ref().and_then(|item_type| {
+                        rils_execution::value::dynamic_option::construct(None, item_type)
+                    });
+                    self.frame_mut().registers[destination] = Some(match native {
+                        Some(result) => result
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
+                        None => Value::Option {
+                            value: None,
+                            element_type: item_type,
+                        },
                     });
                 }
                 Instruction::BuildOptionSome {

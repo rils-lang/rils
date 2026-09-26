@@ -784,6 +784,7 @@ enum Instruction {
     },
     BuildOptionNone {
         destination: usize,
+        item_type: Option<Type>,
     },
     BuildOptionSome {
         destination: usize,

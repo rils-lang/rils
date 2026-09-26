@@ -154,6 +154,7 @@ struct FunctionLowerer<'a> {
     resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
     namespace: String,
     self_type: Option<String>,
+    return_type: Option<Type>,
     scopes: Vec<HashMap<String, LocalId>>,
     mutable: Vec<bool>,
     in_function: bool,

@@ -29,6 +29,7 @@ impl<'a> FunctionLowerer<'a> {
             resolved_definitions,
             namespace: String::new(),
             self_type: None,
+            return_type: None,
             scopes: vec![HashMap::new()],
             mutable: Vec::new(),
             in_function: false,
@@ -65,6 +66,7 @@ impl<'a> FunctionLowerer<'a> {
             .rsplit_once("::")
             .map_or_else(String::new, |(namespace, _)| namespace.to_string());
         self.self_type = declaration.self_type;
+        self.return_type = declaration.return_type.cloned();
         for parameter in declaration.parameters {
             let local = self.mutable.len();
             self.mutable.push(parameter.mutable);
@@ -98,11 +100,13 @@ impl<'a> FunctionLowerer<'a> {
             Stmt::Let {
                 name,
                 mutable,
+                type_annotation,
                 initializer,
                 span,
                 ..
             } => {
-                let initializer = self.expression(initializer)?;
+                let mut initializer = self.expression(initializer)?;
+                apply_option_type(&mut initializer, type_annotation.as_ref());
                 let local = self.mutable.len();
                 self.mutable.push(*mutable);
                 self.scopes.last_mut().unwrap().insert(name.clone(), local);
@@ -149,13 +153,16 @@ impl<'a> FunctionLowerer<'a> {
                     span: *span,
                 })
             }
-            Stmt::Return { value, span } if self.in_function => Ok(HirStatement::Return {
-                value: value
+            Stmt::Return { value, span } if self.in_function => {
+                let mut value = value
                     .as_ref()
                     .map(|value| self.expression(value))
-                    .transpose()?,
-                span: *span,
-            }),
+                    .transpose()?;
+                if let Some(value) = &mut value {
+                    apply_option_type(value, self.return_type.as_ref());
+                }
+                Ok(HirStatement::Return { value, span: *span })
+            }
             Stmt::Break { value, span } => Ok(HirStatement::Break {
                 value: value
                     .as_ref()
@@ -167,15 +174,22 @@ impl<'a> FunctionLowerer<'a> {
             Stmt::Expr {
                 expression,
                 terminated,
-            } => Ok(HirStatement::Expression {
-                expression: self.expression(expression)?,
-                terminated: *terminated,
-                span: expression.span(),
-            }),
+            } => {
+                let mut expression_value = self.expression(expression)?;
+                if self.in_function && !terminated {
+                    apply_option_type(&mut expression_value, self.return_type.as_ref());
+                }
+                Ok(HirStatement::Expression {
+                    expression: expression_value,
+                    terminated: *terminated,
+                    span: expression.span(),
+                })
+            }
             Stmt::Function {
                 name,
                 generic_parameters,
                 parameters,
+                return_type,
                 body,
                 span,
                 ..
@@ -222,6 +236,7 @@ impl<'a> FunctionLowerer<'a> {
                     name_span: *span,
                     qualified_name,
                     parameters,
+                    return_type: return_type.as_ref(),
                     body,
                     span: *span,
                     exported: false,
@@ -243,5 +258,13 @@ impl<'a> FunctionLowerer<'a> {
                 statement_span(unsupported),
             )),
         }
+    }
+}
+
+fn apply_option_type(expression: &mut HirExpression, expected: Option<&Type>) {
+    if let (HirExpression::OptionNone { item_type, .. }, Some(Type::Option(inner))) =
+        (expression, expected)
+    {
+        *item_type = Some(inner.as_ref().clone());
     }
 }

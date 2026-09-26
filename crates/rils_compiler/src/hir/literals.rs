@@ -144,7 +144,10 @@ pub(super) fn builtin_default_hir(
                 repeat: None,
                 span,
             },
-            DefaultPlan::Option(_) => HirExpression::OptionNone { span },
+            DefaultPlan::Option(inner) => HirExpression::OptionNone {
+                item_type: Some(inner.clone()),
+                span,
+            },
             DefaultPlan::EmptyCollection { name, .. } => {
                 let (name, signature) = collection_import_signature(&format!("{name}::new"))
                     .expect("default collection has a constructor import");

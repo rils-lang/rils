@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{BinaryOp, EnumVariant, GenericParameter, LogicalOp, NamedField, UnaryOp},
     source::{SourceFile, Span},
-    types::{FunctionSignature, IntegerType},
+    types::{FunctionSignature, IntegerType, Type},
 };
 use rils_builtins::BuiltinId;
 
@@ -266,6 +266,7 @@ pub enum HirExpression {
         span: Span,
     },
     OptionNone {
+        item_type: Option<Type>,
         span: Span,
     },
     OptionSome {

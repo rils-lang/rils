@@ -15,7 +15,16 @@ impl<'a> FunctionLowerer<'a> {
                 span: *span,
             }),
             Expr::Variable { name, span } if name == "None" => {
-                Ok(HirExpression::OptionNone { span: *span })
+                let item_type = match self.typeck_results.expression_type(expression_id) {
+                    Some(Type::Option(inner)) if !matches!(inner.as_ref(), Type::Unknown) => {
+                        Some(inner.as_ref().clone())
+                    }
+                    _ => None,
+                };
+                Ok(HirExpression::OptionNone {
+                    item_type,
+                    span: *span,
+                })
             }
             Expr::Variable { name, span } => {
                 if let Some(local) = self.lookup(name) {

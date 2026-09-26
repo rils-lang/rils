@@ -586,10 +586,22 @@ impl BytecodeModule {
                         ));
                     }
                 }
-                Instruction::BuildOptionNone { destination } => {
+                Instruction::BuildOptionNone {
+                    destination,
+                    item_type,
+                } => {
                     if invalid_register(*destination) {
                         return Err(BytecodeError::new(
                             "invalid None construction operand",
+                            instruction.span,
+                        ));
+                    }
+                    if item_type
+                        .as_ref()
+                        .is_some_and(|item| matches!(item, Type::Unknown))
+                    {
+                        return Err(BytecodeError::new(
+                            "invalid None item type",
                             instruction.span,
                         ));
                     }

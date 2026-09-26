@@ -436,9 +436,13 @@ fn encode_function(
                         start,
                         end,
                     },
-                    MirInstruction::BuildOptionNone { destination } => {
-                        Instruction::BuildOptionNone { destination }
-                    }
+                    MirInstruction::BuildOptionNone {
+                        destination,
+                        item_type,
+                    } => Instruction::BuildOptionNone {
+                        destination,
+                        item_type,
+                    },
                     MirInstruction::BuildOptionSome {
                         destination,
                         source,

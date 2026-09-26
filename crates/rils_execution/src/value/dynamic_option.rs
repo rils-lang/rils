@@ -5,7 +5,7 @@ use std::rc::Rc;
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicType, DynamicValue};
 
-use crate::Type;
+use crate::{IntegerType, Type};
 
 use super::{DynamicObject, Value, native_layouts};
 
@@ -13,7 +13,9 @@ use super::{DynamicObject, Value, native_layouts};
 /// Unsupported item types remain on the existing owned-value path.
 pub fn construct(value: Option<&Value>, item_type: &Type) -> Option<Result<Value, String>> {
     let item_layout = match item_type.clone() {
-        Type::I32 | Type::USIZE => native_layouts::integer::layout(item_type)?,
+        Type::Integer(IntegerType::I8) | Type::I32 | Type::USIZE => {
+            native_layouts::integer::layout(item_type)?
+        }
         Type::String => native_layouts::string::layout(),
         _ => return None,
     };
@@ -23,6 +25,9 @@ pub fn construct(value: Option<&Value>, item_type: &Type) -> Option<Result<Value
     };
     let item = match (item_type.clone(), value) {
         (_, None) => None,
+        (Type::Integer(IntegerType::I8), Some(value)) => {
+            Some(DynamicValue::from_rust(item_layout, value.as_i8()?))
+        }
         (Type::I32, Some(value)) => Some(DynamicValue::from_rust(item_layout, value.as_i32()?)),
         (Type::USIZE, Some(value)) => Some(DynamicValue::from_rust(item_layout, value.as_usize()?)),
         (Type::String, Some(value)) => Some(DynamicValue::from_rust(
@@ -52,6 +57,9 @@ pub fn view(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {
     };
     let item_type = item_type.as_ref().clone();
     let item = match item_type {
+        Type::Integer(IntegerType::I8) => object.with(|value| {
+            value.with_option::<i8, _>(|item| item.copied().map(crate::numeric::native_i8))
+        }),
         Type::I32 => object.with(|value| {
             value.with_option::<i32, _>(|item| item.copied().map(crate::numeric::native_i32))
         }),

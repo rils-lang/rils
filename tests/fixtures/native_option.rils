@@ -6,12 +6,13 @@ let probe: Option<i32> = Some(7i32);
 let missing: Option<i32> = None;
 let text: Option<string> = Some("native");
 let size: Option<usize> = Some(4usize);
+let tiny: Option<i8> = Some(3i8);
 let total = match selected {
     Some(value) => value,
     None => 0i32,
 };
 if keys.contains(&probe) && keys.contains(&missing)
-    && text.is_some() && size.is_some() && missing.is_none() {
+    && text.is_some() && size.is_some() && tiny.is_some() && missing.is_none() {
     total + 35i32
 } else {
     0i32

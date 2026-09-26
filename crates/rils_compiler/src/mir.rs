@@ -694,9 +694,15 @@ impl Builder {
                 );
                 Ok(destination)
             }
-            HirExpression::OptionNone { span } => {
+            HirExpression::OptionNone { item_type, span } => {
                 let destination = self.register();
-                self.emit(MirInstruction::BuildOptionNone { destination }, *span);
+                self.emit(
+                    MirInstruction::BuildOptionNone {
+                        destination,
+                        item_type: item_type.clone(),
+                    },
+                    *span,
+                );
                 Ok(destination)
             }
             HirExpression::OptionSome { value, span } => {

@@ -427,9 +427,16 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
             writer.index(*start, "start")?;
             writer.index(*end, "end")?;
         }
-        Instruction::BuildOptionNone { destination } => {
+        Instruction::BuildOptionNone {
+            destination,
+            item_type,
+        } => {
             writer.u8(30);
             writer.index(*destination, "destination")?;
+            writer.bool(item_type.is_some());
+            if let Some(item_type) = item_type {
+                write_type(writer, item_type, 0)?;
+            }
         }
         Instruction::BuildOptionSome {
             destination,
@@ -665,6 +672,11 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
         },
         30 => Instruction::BuildOptionNone {
             destination: reader.index()?,
+            item_type: if reader.bool()? {
+                Some(read_type(reader)?)
+            } else {
+                None
+            },
         },
         31 => Instruction::BuildOptionSome {
             destination: reader.index()?,

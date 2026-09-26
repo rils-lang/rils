@@ -21,6 +21,7 @@ fn assert_dynamic_option(
 #[test]
 fn concrete_options_use_native_layout_in_both_backends() {
     for (source, ty, inline, display, debug) in [
+        ("Some(3i8)", "Option<i8>", true, "Some(3)", "Some(3)"),
         ("Some(7i32)", "Option<i32>", true, "Some(7)", "Some(7)"),
         ("Some(4usize)", "Option<usize>", true, "Some(4)", "Some(4)"),
         (
@@ -62,15 +63,62 @@ fn concrete_options_use_native_layout_in_both_backends() {
 
 #[test]
 fn typed_none_preserves_option_semantics() {
-    let source = "let value: Option<string> = None; value";
-    let interpreted = eval(source).unwrap();
-    assert_eq!(interpreted.to_string(), "None");
-    assert!(matches!(interpreted, Value::Dynamic(_)));
-    let compiled = compile(source).unwrap();
-    let executed = compiled.execute().unwrap();
-    assert_eq!(executed.to_string(), "None");
-    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute().unwrap().to_string(), "None");
+    for (source, ty, inline) in [
+        ("let value: Option<i8> = None; value", "Option<i8>", true),
+        ("let value: Option<i32> = None; value", "Option<i32>", true),
+        (
+            "let value: Option<usize> = None; value",
+            "Option<usize>",
+            true,
+        ),
+        (
+            "let value: Option<string> = None; value",
+            "Option<string>",
+            false,
+        ),
+        (
+            "fn missing() -> Option<string> { None } missing()",
+            "Option<string>",
+            false,
+        ),
+        (
+            "fn missing() -> Option<string> { return None; } missing()",
+            "Option<string>",
+            false,
+        ),
+        (
+            "let value: Option<string> = <Option<string> as Default>::default(); value",
+            "Option<string>",
+            false,
+        ),
+    ] {
+        assert_dynamic_option(
+            eval(source).unwrap(),
+            ty,
+            inline,
+            "None",
+            "None",
+            "interpreter",
+        );
+        let compiled = compile(source).unwrap();
+        assert_dynamic_option(
+            compiled.execute().unwrap(),
+            ty,
+            inline,
+            "None",
+            "None",
+            "VM",
+        );
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        assert_dynamic_option(
+            loaded.execute().unwrap(),
+            ty,
+            inline,
+            "None",
+            "None",
+            "loaded VM",
+        );
+    }
 }
 
 #[test]

@@ -5,7 +5,7 @@ use crate::{
         HirTypeDefinition, LocalId, TypeId,
     },
     source::{SourceFile, Span},
-    types::IntegerType,
+    types::{IntegerType, Type},
 };
 use rils_builtins::BuiltinId;
 
@@ -220,6 +220,7 @@ pub enum MirInstruction {
     },
     BuildOptionNone {
         destination: Register,
+        item_type: Option<Type>,
     },
     BuildOptionSome {
         destination: Register,
