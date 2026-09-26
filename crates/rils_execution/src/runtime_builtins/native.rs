@@ -1,6 +1,6 @@
 //! Native methods generated from the shared Rust standard-library definitions.
 
-use std::{collections::VecDeque, rc::Rc};
+use std::collections::VecDeque;
 
 use crate::{IntegerType, Type, Value};
 use rils_stdlib::stdlib::{
@@ -50,26 +50,24 @@ impl StringOutput for NativeString {
 }
 impl StringOutput for NativeOption<usize> {
     fn into_value(self) -> Result<Value, String> {
-        Ok(Value::Option {
-            value: match self {
-                NativeOption::Some(value) => Some(Rc::new(crate::numeric::native_usize(value))),
-                NativeOption::None => None,
-            },
-            element_type: Some(Type::USIZE),
-        })
+        let item = match self {
+            NativeOption::Some(value) => Some(crate::numeric::native_usize(value)),
+            NativeOption::None => None,
+        };
+        crate::value::dynamic_option::construct(item.as_ref(), &Type::USIZE)
+            .ok_or("no native Option<usize> layout")?
     }
 }
 impl StringOutput for NativeOption<NativeString> {
     fn into_value(self) -> Result<Value, String> {
-        Ok(Value::Option {
-            value: match self {
-                NativeOption::Some(value) => Some(Rc::new(crate::value::native_string(
-                    std::string::String::from(value),
-                ))),
-                NativeOption::None => None,
-            },
-            element_type: Some(Type::String),
-        })
+        let item = match self {
+            NativeOption::Some(value) => Some(crate::value::native_string(
+                std::string::String::from(value),
+            )),
+            NativeOption::None => None,
+        };
+        crate::value::dynamic_option::construct(item.as_ref(), &Type::String)
+            .ok_or("no native Option<string> layout")?
     }
 }
 impl StringOutput for Iterator<char> {

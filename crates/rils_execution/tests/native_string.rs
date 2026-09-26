@@ -75,11 +75,17 @@ fn string_native_methods_preserve_unicode_and_optional_results() {
         call("core::string::string::trim", &[string(" é ")]).unwrap(),
         Value::Native(_)
     ));
+    let found = call("core::string::string::find", &[string("éé"), string("é")]).unwrap();
+    let Value::Dynamic(object) = &found else {
+        panic!("string find must return native Option<usize>");
+    };
+    assert!(object.is_inline());
     assert_eq!(
-        call("core::string::string::find", &[string("éé"), string("é")]),
-        Ok(Value::Option {
-            value: Some(Rc::new(Value::Usize(0))),
-            element_type: Some(rils_execution::Type::USIZE)
-        }),
+        object.descriptor().layout().rils_type(),
+        &rils_execution::Type::Option(Box::new(rils_execution::Type::USIZE))
+    );
+    assert_eq!(
+        found.as_option(),
+        Some((Some(Value::Usize(0)), rils_execution::Type::USIZE))
     );
 }

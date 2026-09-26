@@ -164,6 +164,81 @@ fn checked_integer_methods_return_native_options() {
 }
 
 #[test]
+fn string_methods_return_native_options() {
+    for (source, ty, inline, display, debug) in [
+        (
+            "\"banana\".find(\"na\")",
+            "Option<usize>",
+            true,
+            "Some(2)",
+            "Some(2)",
+        ),
+        (
+            "\"banana\".rfind(\"na\")",
+            "Option<usize>",
+            true,
+            "Some(4)",
+            "Some(4)",
+        ),
+        (
+            "\"native\".strip_prefix(\"na\")",
+            "Option<string>",
+            false,
+            "Some(tive)",
+            "Some(\"tive\")",
+        ),
+        (
+            "\"native\".strip_suffix(\"ve\")",
+            "Option<string>",
+            false,
+            "Some(nati)",
+            "Some(\"nati\")",
+        ),
+        (
+            "\"native\".find(\"missing\")",
+            "Option<usize>",
+            true,
+            "None",
+            "None",
+        ),
+        (
+            "\"native\".strip_prefix(\"missing\")",
+            "Option<string>",
+            false,
+            "None",
+            "None",
+        ),
+    ] {
+        assert_dynamic_option(
+            eval(source).unwrap(),
+            ty,
+            inline,
+            display,
+            debug,
+            "interpreter",
+        );
+        let compiled = compile(source).unwrap();
+        assert_dynamic_option(
+            compiled.execute().unwrap(),
+            ty,
+            inline,
+            display,
+            debug,
+            "VM",
+        );
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        assert_dynamic_option(
+            loaded.execute().unwrap(),
+            ty,
+            inline,
+            display,
+            debug,
+            "loaded VM",
+        );
+    }
+}
+
+#[test]
 fn typed_none_preserves_option_semantics() {
     for (source, ty, inline) in [
         ("let value: Option<i8> = None; value", "Option<i8>", true),
