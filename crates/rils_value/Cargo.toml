@@ -1,0 +1,16 @@
+[package]
+name = "rils_value"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+description = "Type-erased native value storage for the Rils runtime"
+license.workspace = true
+repository.workspace = true
+include = ["/Cargo.toml", "/README.md", "/src/**"]
+
+[dependencies]
+rils_syntax.workspace = true
+
+[dev-dependencies]
+rils_stdlib.workspace = true

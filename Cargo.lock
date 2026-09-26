@@ -672,6 +672,7 @@ dependencies = [
  "rils_frontend",
  "rils_host",
  "rils_stdlib",
+ "rils_value",
 ]
 
 [[package]]
@@ -752,6 +753,14 @@ dependencies = [
  "ureq",
  "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "rils_value"
+version = "0.4.0"
+dependencies = [
+ "rils_stdlib",
+ "rils_syntax",
 ]
 
 [[package]]

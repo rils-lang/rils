@@ -27,6 +27,7 @@ members = [
     "crates/rils_runtime",
     "crates/rils_driver",
     "crates/rils_execution",
+    "crates/rils_value",
     "crates/rils_compiler",
     "crates/rils_host",
     "crates/rils_frontend",
@@ -56,6 +57,7 @@ rils_bytecode = { version = "0.4.0", path = "crates/rils_bytecode" }
 rils_runtime = { version = "0.4.0", path = "crates/rils_runtime" }
 rils_driver = { version = "0.4.0", path = "crates/rils_driver" }
 rils_execution = { version = "0.4.0", path = "crates/rils_execution" }
+rils_value = { version = "0.4.0", path = "crates/rils_value" }
 rils_compiler = { version = "0.4.0", path = "crates/rils_compiler" }
 rils_host = { version = "0.4.0", path = "crates/rils_host" }
 rils_frontend = { version = "0.4.0", path = "crates/rils_frontend" }
