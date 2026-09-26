@@ -341,6 +341,36 @@ fn registers_freezes_and_dispatches_custom_host_functions() {
 }
 
 #[test]
+fn returns_native_usize_with_the_existing_c_tag() {
+    let runtime = rils_runtime_create();
+    let mut module = 0;
+    assert_eq!(
+        unsafe {
+            rils_module_compile(
+                runtime,
+                bytes("native-usize.rils"),
+                bytes("let values = [1, 2, 3]; values.len()"),
+                &mut module,
+            )
+        },
+        RILS_STATUS_OK
+    );
+    let mut instance = 0;
+    assert_eq!(
+        unsafe { rils_instance_create(runtime, module, &mut instance) },
+        RILS_STATUS_OK
+    );
+    let mut result = RilsValue::default();
+    assert_eq!(
+        unsafe { rils_instance_execute(runtime, instance, &mut result) },
+        RILS_STATUS_OK
+    );
+    assert_eq!(result.tag, RILS_VALUE_USIZE);
+    assert_eq!(result.low, 3);
+    assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
+}
+
+#[test]
 fn dispatches_opaque_host_handles_through_bytecode() {
     let runtime = rils_runtime_create();
     let no_parameters: [u32; 0] = [];

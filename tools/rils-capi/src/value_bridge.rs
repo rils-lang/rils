@@ -211,6 +211,15 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
         high,
         ..RilsValue::default()
     };
+    if let Some(number) = value.as_i8() {
+        return Ok(scalar(RILS_VALUE_I8, number as i64 as u64, 0));
+    }
+    if let Some(number) = value.as_i32() {
+        return Ok(scalar(RILS_VALUE_I32, number as i64 as u64, 0));
+    }
+    if let Some(number) = value.as_usize() {
+        return Ok(scalar(RILS_VALUE_USIZE, number as u64, 0));
+    }
     let value = match value {
         Value::Unit => RilsValue::default(),
         Value::Bool(value) => scalar(RILS_VALUE_BOOL, u64::from(value), 0),
