@@ -62,6 +62,53 @@ fn concrete_options_use_native_layout_in_both_backends() {
 }
 
 #[test]
+fn numeric_option_families_use_generated_native_conversions() {
+    for ty in [
+        "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
+        "f32", "f64",
+    ] {
+        let option_type = format!("Option<{ty}>");
+        for (source, display) in [
+            (format!("Some(1{ty})"), "Some(1)"),
+            (format!("let value: {option_type} = None; value"), "None"),
+        ] {
+            assert_dynamic_option(
+                eval(&source).unwrap(),
+                &option_type,
+                true,
+                display,
+                display,
+                "interpreter",
+            );
+            let compiled = compile(&source).unwrap();
+            assert_dynamic_option(
+                compiled.execute().unwrap(),
+                &option_type,
+                true,
+                display,
+                display,
+                "VM",
+            );
+            let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+            assert_dynamic_option(
+                loaded.execute().unwrap(),
+                &option_type,
+                true,
+                display,
+                display,
+                "loaded VM",
+            );
+        }
+        let methods = format!(
+            "let some: {option_type} = Some(1{ty}); let none: {option_type} = None; some.is_some() && none.is_none()"
+        );
+        assert_eq!(eval(&methods).unwrap(), Value::Bool(true));
+        let compiled = compile(&methods).unwrap();
+        assert_eq!(compiled.execute().unwrap(), Value::Bool(true));
+    }
+}
+
+#[test]
 fn typed_none_preserves_option_semantics() {
     for (source, ty, inline) in [
         ("let value: Option<i8> = None; value", "Option<i8>", true),

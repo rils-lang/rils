@@ -786,7 +786,7 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
         .traits
         .iter()
         .any(|trait_path| trait_path.is_ident("Copy"));
-    let variants = definition.family.iter().map(|mapping| {
+    let family = definition.family.iter().map(|mapping| {
         let primitive = &mapping.primitive;
         let variant = mapping.variant();
         let type_token = if definition.float {
@@ -799,11 +799,52 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
         } else {
             quote!(rils_value::DynamicLayout::of::<#primitive>)
         };
-        quote!(#type_token => Some(#constructor(#type_token)),)
-    });
+        let wrapper = if definition.float {
+            quote!(rils_stdlib::stdlib::float::Number)
+        } else {
+            quote!(rils_stdlib::stdlib::integer::Number)
+        };
+        (
+            quote!(#type_token => Some(#constructor(#type_token)),),
+            quote! {
+                #type_token => Some(
+                    <#wrapper<#primitive> as crate::numeric::native::NativeInput>::from_value(value)
+                        .and_then(|number| rils_value::DynamicValue::from_rust(layout, number.0))
+                ),
+            },
+            quote! {
+                #type_token => Some(object.with(|stored| {
+                    let item = stored.with_option::<#primitive, _>(|item| item.copied())?;
+                    item.map(|item| {
+                        <#wrapper<#primitive> as crate::numeric::native::NativeOutput>::into_value(
+                            #wrapper(item)
+                        )
+                    }).transpose()
+                }).and_then(|item| item)),
+            },
+        )
+    }).collect::<Vec<_>>();
+    let layout_variants = family.iter().map(|variants| &variants.0);
+    let item_variants = family.iter().map(|variants| &variants.1);
+    let view_variants = family.iter().map(|variants| &variants.2);
     quote! {
         pub fn layout(ty: &crate::Type) -> Option<std::rc::Rc<rils_value::DynamicLayout>> {
-            match ty { #(#variants)* _ => None }
+            match ty { #(#layout_variants)* _ => None }
+        }
+
+        pub fn option_item(
+            value: &crate::Value,
+            ty: &crate::Type,
+            layout: std::rc::Rc<rils_value::DynamicLayout>,
+        ) -> Option<Result<rils_value::DynamicValue, String>> {
+            match ty { #(#item_variants)* _ => None }
+        }
+
+        pub fn option_view(
+            object: &crate::value::DynamicObject,
+            ty: &crate::Type,
+        ) -> Option<Result<Option<crate::Value>, String>> {
+            match ty { #(#view_variants)* _ => None }
         }
     }
     .into()

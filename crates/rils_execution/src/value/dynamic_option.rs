@@ -5,37 +5,31 @@ use std::rc::Rc;
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicType, DynamicValue};
 
-use crate::{IntegerType, Type};
+use crate::Type;
 
 use super::{DynamicObject, Value, native_layouts};
 
 /// Construct an Option with a concrete native item layout when one is available.
 /// Unsupported item types remain on the existing owned-value path.
 pub fn construct(value: Option<&Value>, item_type: &Type) -> Option<Result<Value, String>> {
-    let item_layout = match item_type.clone() {
-        Type::Integer(IntegerType::I8) | Type::I32 | Type::USIZE => {
-            native_layouts::integer::layout(item_type)?
-        }
-        Type::String => native_layouts::string::layout(),
-        _ => return None,
-    };
+    let item_layout = native_layouts::integer::layout(item_type)
+        .or_else(|| native_layouts::float::layout(item_type))
+        .or_else(|| (item_type == &Type::String).then(native_layouts::string::layout))?;
     let option_layout = match native_layouts::option::layout(item_layout.clone()) {
         Ok(layout) => layout,
         Err(error) => return Some(Err(error)),
     };
-    let item = match (item_type.clone(), value) {
-        (_, None) => None,
-        (Type::Integer(IntegerType::I8), Some(value)) => {
-            Some(DynamicValue::from_rust(item_layout, value.as_i8()?))
+    let item = value.map(|value| {
+        if item_type == &Type::String {
+            return DynamicValue::from_rust(
+                item_layout.clone(),
+                NativeString::from(value.as_string().ok_or("expected string option item")?),
+            );
         }
-        (Type::I32, Some(value)) => Some(DynamicValue::from_rust(item_layout, value.as_i32()?)),
-        (Type::USIZE, Some(value)) => Some(DynamicValue::from_rust(item_layout, value.as_usize()?)),
-        (Type::String, Some(value)) => Some(DynamicValue::from_rust(
-            item_layout,
-            NativeString::from(value.as_string()?),
-        )),
-        _ => return None,
-    };
+        native_layouts::integer::option_item(value, item_type, item_layout.clone())
+            .or_else(|| native_layouts::float::option_item(value, item_type, item_layout.clone()))
+            .ok_or_else(|| format!("no native option item converter for {item_type}"))?
+    });
     Some(
         item.map_or_else(
             || DynamicValue::none(option_layout.clone()),
@@ -56,24 +50,22 @@ pub fn view(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {
         return None;
     };
     let item_type = item_type.as_ref().clone();
-    let item = match item_type {
-        Type::Integer(IntegerType::I8) => object.with(|value| {
-            value.with_option::<i8, _>(|item| item.copied().map(crate::numeric::native_i8))
-        }),
-        Type::I32 => object.with(|value| {
-            value.with_option::<i32, _>(|item| item.copied().map(crate::numeric::native_i32))
-        }),
-        Type::USIZE => object.with(|value| {
-            value.with_option::<usize, _>(|item| item.copied().map(crate::numeric::native_usize))
-        }),
-        Type::String => object.with(|value| {
-            value.with_option::<NativeString, _>(|item| {
-                item.map(|text| super::native_string(std::string::String::from(text.clone())))
+    let item = native_layouts::integer::option_view(object, &item_type)
+        .or_else(|| native_layouts::float::option_view(object, &item_type))
+        .or_else(|| {
+            (item_type == Type::String).then(|| {
+                object
+                    .with(|value| {
+                        value.with_option::<NativeString, _>(|item| {
+                            item.map(|text| {
+                                super::native_string(std::string::String::from(text.clone()))
+                            })
+                        })
+                    })
+                    .and_then(|item| item)
             })
-        }),
-        _ => return None,
-    };
-    Some(item.and_then(|item| item).map(|item| (item, item_type)))
+        })?;
+    Some(item.map(|item| (item, item_type)))
 }
 
 pub fn view_any(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {

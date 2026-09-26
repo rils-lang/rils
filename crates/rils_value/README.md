@@ -8,4 +8,4 @@
 
 `Range<T>`、`i8`、`i32`、`usize` 和 `string` 已在解释器与 VM 的实际值路径中使用 `Value::Native`。类型描述和整数、字符串方法注册由标准库声明生成；手工构造 `NativeType` 仅用于验证独立存储 API。
 
-`DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需标记字节。`DynamicObject<V>` 按类型 Copy 性质选择内联句柄或共享存储；`DynamicType<V>` 为它提供任意操作的注册表和带布局检查的调用上下文。执行层已有从标准库声明过程宏生成的整数、`string` 与 `Option<T>` 布局工厂。`Option<i8>`、`Option<i32>`、`Option<usize>` 和 `Option<string>` 的 `Some` 与可推导出具体元素类型的 `None` 已接入实际 `Value::Dynamic` 路径；方法仍通过过渡适配器转换，其余泛型实例尚未迁移。
+`DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需标记字节。`DynamicObject<V>` 按类型 Copy 性质选择内联句柄或共享存储；`DynamicType<V>` 为它提供任意操作的注册表和带布局检查的调用上下文。执行层已有从标准库声明过程宏生成的整数、浮点数、`string` 与 `Option<T>` 布局工厂。所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>` 已接入实际 `Value::Dynamic` 路径；数值子值转换由过程宏生成，方法仍通过过渡适配器转换，其余泛型实例尚未迁移。

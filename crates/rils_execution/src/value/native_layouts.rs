@@ -6,6 +6,12 @@ pub mod integer {
     rils_stdlib::integer_definition!(decl_rils_layout);
 }
 
+pub mod float {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::float_definition!(decl_rils_layout);
+}
+
 pub mod string {
     use rils_builtins_macros::decl_rils_layout;
 

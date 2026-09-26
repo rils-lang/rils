@@ -16,7 +16,7 @@
 
 `Range<T>` 已通过此路径保存为 `rils_stdlib::Range<T>`，范围字面量和 `next()` 在解释器与 VM 中使用相同的原生迭代器实现。运行时类型名保留泛型参数，例如 `Range<i32>`。整数边界到 Rust 类型的转换仍在范围构造适配器内；`Range` 的方法身份仍由标准库导出声明提供。字节码只编码构造指令和类型，不保存原生负载的指针或 Rust 布局。
 
-当前实际接入范围是 `Range<T>`、`i8`、`i32`、`usize`、`string`，以及部分具体 `Option<T>`。三种整数的字面量、默认值、算术结果及字节码常量使用内联的 `Number<T>` 负载；整数方法的原生描述符由标准库导出声明生成，注册函数通过 `NativeCallContext` 类型化读取 receiver、检查实参并直接调用 Rust 方法。旧数值指令仍通过集中在 `numeric::scalars` 的过渡转换使用原有逻辑；集合长度、索引和计数入口通过 `Value::as_usize()` 读取原生值。Rust 宿主可用 `Value::as_i8()` / `Value::as_i32()` / `Value::as_usize()` 读取新旧两种表示；C ABI 保持既有整数标签。`Option<i8>`、`Option<i32>`、`Option<usize>` 和 `Option<string>` 的 `Some` 使用实际子类型的动态布局；共享前端把函数实参、赋值、字段和嵌套表达式的预期类型传给 `None`，解释器与 VM 据此使用相同布局。其余泛型 `Option<T>` 还需要嵌套值的类型见证、所有权转换和词法引用报告，不能仅用有限的 Rust 单态化实例代替任意 Rils `T`。
+当前实际接入范围是 `Range<T>`、`i8`、`i32`、`usize`、`string`，以及所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>`。三种整数的字面量、默认值、算术结果及字节码常量使用内联的 `Number<T>` 负载；整数方法的原生描述符由标准库导出声明生成，注册函数通过 `NativeCallContext` 类型化读取 receiver、检查实参并直接调用 Rust 方法。旧数值指令仍通过集中在 `numeric::scalars` 的过渡转换使用原有逻辑；集合长度、索引和计数入口通过 `Value::as_usize()` 读取原生值。Rust 宿主可用 `Value::as_i8()` / `Value::as_i32()` / `Value::as_usize()` 读取新旧两种表示；C ABI 保持既有整数标签。数值族的 `Option<T>` 子值转换由标准库声明生成；共享前端把函数实参、赋值、字段和嵌套表达式的预期类型传给 `None`，解释器与 VM 据此使用相同布局。其余泛型 `Option<T>` 还需要嵌套值的类型见证、所有权转换和词法引用报告，不能仅用有限的 Rust 单态化实例代替任意 Rils `T`。
 
 `DynamicLayout` 已为上述泛型方向提供可组合的布局：`Option<T>` 按子类型的尺寸和对齐计算负载位置，并通过子类型的析构操作处理嵌套值；`None` 只保存标记字节。`DynamicObject<V>` 让 Copy 布局使用内联句柄，其他布局使用共享存储；`DynamicType<V>` 可按任意名称注册操作，并在调用时校验 receiver 的布局身份。整数族、`string` 与 `Option<T>` 的布局工厂已由 `decl_rils_layout` 从标准库声明生成；`Option<T>` 的可执行方法注册仍需扩展过程宏，目前由过渡适配器读取其原生负载。
 

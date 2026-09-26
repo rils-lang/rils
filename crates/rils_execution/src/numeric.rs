@@ -3,7 +3,7 @@
 use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
 mod float_methods;
-mod native;
+pub(crate) mod native;
 mod scalars;
 
 pub use scalars::{i8_payload, i32_payload, native_i8, native_i32, native_usize, usize_payload};

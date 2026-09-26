@@ -10,11 +10,11 @@ use rils_stdlib::stdlib::{
     result::Result,
 };
 
-pub(super) trait NativeInput: Sized {
+pub(crate) trait NativeInput: Sized {
     fn from_value(value: &Value) -> std::result::Result<Self, String>;
 }
 
-pub(super) trait NativeOutput {
+pub(crate) trait NativeOutput {
     fn into_value(self) -> std::result::Result<Value, String>;
 }
 
