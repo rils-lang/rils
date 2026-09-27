@@ -35,7 +35,7 @@ impl DynamicValue {
         };
         if items
             .iter()
-            .any(|value| !Rc::ptr_eq(item, &value.descriptor))
+            .any(|value| !item.compatible_with(&value.descriptor))
         {
             return Err("sequence item has a different layout".into());
         }
@@ -83,7 +83,7 @@ impl DynamicValue {
         let DropKind::Sequence { item: expected } = &self.descriptor.drop_kind else {
             return Err("value is not a sequence".into());
         };
-        if !Rc::ptr_eq(expected, &item.descriptor) {
+        if !expected.compatible_with(&item.descriptor) {
             return Err("sequence item has a different layout".into());
         }
         self.sequence_items_mut()?.push(item);

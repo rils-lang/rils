@@ -75,11 +75,14 @@ fn nested_option_moves_and_drops_a_noncopy_payload_once() {
 }
 
 #[test]
-fn optional_layout_rejects_a_different_child_descriptor() {
+fn optional_layout_accepts_equivalent_children_and_rejects_other_types() {
     let left = DynamicLayout::copy_of::<i32>(Type::I32);
     let right = DynamicLayout::copy_of::<i32>(Type::I32);
     let optional = DynamicLayout::option(left).unwrap();
     let value = DynamicValue::from_rust(right, 3_i32).unwrap();
+    assert!(DynamicValue::some(optional.clone(), value).is_ok());
+    let wrong = DynamicLayout::copy_of::<u32>(Type::Integer(rils_syntax::IntegerType::U32));
+    let value = DynamicValue::from_rust(wrong, 3_u32).unwrap();
     assert!(DynamicValue::some(optional, value).is_err());
 }
 

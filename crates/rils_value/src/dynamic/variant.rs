@@ -87,7 +87,7 @@ impl DynamicValue {
             .alternatives
             .get(index)
             .ok_or_else(|| format!("variant index {index} is out of bounds"))?;
-        if !Rc::ptr_eq(expected, &payload.descriptor) {
+        if !expected.compatible_with(&payload.descriptor) {
             return Err("variant payload has a different layout".into());
         }
         let mut result = Self::uninitialized(descriptor.clone());

@@ -148,6 +148,7 @@ fn empty_option_and_replaced_field_preserve_drop_state() {
 fn record_rejects_invalid_field_layouts() {
     let first = DynamicLayout::copy_of::<i32>(Type::I32);
     let same_type_different_descriptor = DynamicLayout::copy_of::<i32>(Type::I32);
+    let wrong = DynamicLayout::copy_of::<u32>(Type::Integer(rils_syntax::IntegerType::U32));
     let record =
         DynamicLayout::record(Type::named("One"), vec![("item".into(), first.clone())]).unwrap();
     assert!(
@@ -167,6 +168,13 @@ fn record_rejects_invalid_field_layouts() {
             record.clone(),
             vec![DynamicValue::from_rust(same_type_different_descriptor.clone(), 1).unwrap()]
         )
+        .is_ok()
+    );
+    assert!(
+        DynamicValue::record(
+            record.clone(),
+            vec![DynamicValue::from_rust(wrong.clone(), 1_u32).unwrap()]
+        )
         .is_err()
     );
     let mut value =
@@ -175,11 +183,31 @@ fn record_rejects_invalid_field_layouts() {
         value
             .put_field(
                 0,
-                DynamicValue::from_rust(same_type_different_descriptor, 3).unwrap()
+                DynamicValue::from_rust(same_type_different_descriptor.clone(), 3).unwrap()
             )
             .is_err()
     );
     assert_eq!(value.with_field::<i32, _>(0, |n| *n), Ok(2));
+    assert_eq!(
+        value
+            .take_field(0)
+            .unwrap()
+            .into_rust::<i32>()
+            .unwrap_or_else(|_| panic!("integer field moves")),
+        2
+    );
+    assert!(
+        value
+            .put_field(0, DynamicValue::from_rust(wrong, 4_u32).unwrap())
+            .is_err()
+    );
+    value
+        .put_field(
+            0,
+            DynamicValue::from_rust(same_type_different_descriptor, 5).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(value.with_field::<i32, _>(0, |n| *n), Ok(5));
 }
 
 #[test]

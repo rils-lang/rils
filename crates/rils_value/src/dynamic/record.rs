@@ -22,7 +22,7 @@ impl DynamicField {
         &self.layout
     }
 
-    pub(super) fn layout_handle(&self) -> Rc<DynamicLayout> {
+    pub fn layout_handle(&self) -> Rc<DynamicLayout> {
         self.layout.clone()
     }
 
@@ -32,7 +32,7 @@ impl DynamicField {
 }
 
 pub(super) struct RecordLayout {
-    fields: Vec<DynamicField>,
+    pub(super) fields: Vec<DynamicField>,
     indices: HashMap<String, usize>,
 }
 
@@ -151,7 +151,7 @@ impl DynamicValue {
             ));
         }
         for (index, (field, value)) in record.fields.iter().zip(&values).enumerate() {
-            if !Rc::ptr_eq(&field.layout, &value.descriptor) {
+            if !field.layout.compatible_with(&value.descriptor) {
                 return Err(format!(
                     "record field `{}` at index {index} has a different layout",
                     field.name
@@ -297,7 +297,7 @@ impl DynamicValue {
     /// Restore one empty nested field using its registered concrete layout.
     pub fn put_field_path(&mut self, path: &[usize], mut value: Self) -> Result<(), String> {
         let (parent, index, offset, layout) = self.field_path_parent(path)?;
-        if !Rc::ptr_eq(&layout, &value.descriptor) {
+        if !layout.compatible_with(&value.descriptor) {
             return Err(format!(
                 "record field at path {path:?} has a different layout"
             ));
@@ -396,7 +396,7 @@ impl DynamicValue {
     /// Fill an empty field with a value of its exact registered layout.
     pub fn put_field(&mut self, index: usize, mut value: Self) -> Result<(), String> {
         let field = self.record_field(index)?;
-        if !Rc::ptr_eq(&field.layout, &value.descriptor) {
+        if !field.layout.compatible_with(&value.descriptor) {
             return Err(format!(
                 "record field `{}` has a different layout",
                 field.name

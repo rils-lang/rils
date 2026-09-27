@@ -57,10 +57,53 @@ fn noncopy_option_shares_payload_and_drops_it_once() {
 }
 
 #[test]
-fn dynamic_object_rejects_a_different_descriptor() {
+fn dynamic_object_accepts_equivalent_layouts_and_rejects_incompatible_ones() {
     let item = DynamicLayout::copy_of::<i32>(Type::I32);
     let first = DynamicLayout::option(item.clone()).unwrap();
     let second = DynamicLayout::option(item).unwrap();
     let value = DynamicValue::none(first).unwrap();
-    assert!(DynamicObject::<()>::new(Rc::new(DynamicType::new(second)), value).is_err());
+    assert!(DynamicObject::<()>::new(Rc::new(DynamicType::new(second)), value).is_ok());
+    let wrong = DynamicLayout::option(DynamicLayout::copy_of::<u32>(Type::Integer(
+        rils_syntax::IntegerType::U32,
+    )))
+    .unwrap();
+    let value = DynamicValue::none(wrong).unwrap();
+    let expected = DynamicLayout::option(DynamicLayout::copy_of::<i32>(Type::I32)).unwrap();
+    assert!(DynamicObject::<()>::new(Rc::new(DynamicType::new(expected)), value).is_err());
+}
+
+#[test]
+fn dynamic_object_moves_only_when_its_payload_is_unique() {
+    let item = DynamicLayout::of::<String>(Type::String);
+    let layout = DynamicLayout::option(item.clone()).unwrap();
+    let descriptor = Rc::new(DynamicType::<()>::new(layout.clone()));
+    let make = || {
+        DynamicObject::new(
+            descriptor.clone(),
+            DynamicValue::some(
+                layout.clone(),
+                DynamicValue::from_rust(item.clone(), "owned".to_owned()).unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    };
+    let object = make();
+    let alias = object.clone();
+    let (object, message) = match object.into_value() {
+        Ok(_) => panic!("a shared payload cannot move"),
+        Err(failure) => *failure,
+    };
+    assert!(message.contains("shared"));
+    drop(alias);
+    let value = object
+        .into_value()
+        .unwrap_or_else(|_| panic!("unique payload moves"));
+    let child = value.take_option().unwrap().unwrap();
+    assert_eq!(
+        child
+            .into_rust::<String>()
+            .unwrap_or_else(|_| panic!("string moves")),
+        "owned"
+    );
 }

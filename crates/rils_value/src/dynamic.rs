@@ -91,6 +91,61 @@ impl DynamicLayout {
         self.copy
     }
 
+    pub fn option_item(&self) -> Option<&Rc<Self>> {
+        match &self.drop_kind {
+            DropKind::Option { item, .. } => Some(item),
+            _ => None,
+        }
+    }
+
+    /// Whether two independently constructed descriptors describe the same
+    /// initialized bytes and destructor behavior. Runtime layout caches may
+    /// have different owners, so pointer identity alone is insufficient.
+    pub fn compatible_with(&self, other: &Self) -> bool {
+        if self.rils_type != other.rils_type
+            || self.layout != other.layout
+            || self.copy != other.copy
+        {
+            return false;
+        }
+        match (&self.drop_kind, &other.drop_kind) {
+            (DropKind::Rust { type_id: left, .. }, DropKind::Rust { type_id: right, .. }) => {
+                left == right
+            }
+            (
+                DropKind::Option {
+                    item: left,
+                    item_offset: left_offset,
+                },
+                DropKind::Option {
+                    item: right,
+                    item_offset: right_offset,
+                },
+            ) => left_offset == right_offset && left.compatible_with(right),
+            (DropKind::Record(left), DropKind::Record(right)) => {
+                left.fields.len() == right.fields.len()
+                    && left.fields.iter().zip(&right.fields).all(|(left, right)| {
+                        left.name() == right.name()
+                            && left.offset() == right.offset()
+                            && left.layout().compatible_with(right.layout())
+                    })
+            }
+            (DropKind::Variant(left), DropKind::Variant(right)) => {
+                left.payload_offset == right.payload_offset
+                    && left.alternatives.len() == right.alternatives.len()
+                    && left
+                        .alternatives
+                        .iter()
+                        .zip(&right.alternatives)
+                        .all(|(left, right)| left.compatible_with(right))
+            }
+            (DropKind::Sequence { item: left }, DropKind::Sequence { item: right }) => {
+                left.compatible_with(right)
+            }
+            _ => false,
+        }
+    }
+
     unsafe fn drop_value(&self, pointer: *mut u8) {
         match &self.drop_kind {
             DropKind::Rust { drop_value, .. } => {
@@ -171,7 +226,7 @@ impl DynamicValue {
         else {
             return Err("Some requires an optional layout".into());
         };
-        if !Rc::ptr_eq(expected, &item.descriptor) {
+        if !expected.compatible_with(&item.descriptor) {
             return Err("optional item layout does not match its descriptor".into());
         }
         let mut result = Self::uninitialized(descriptor.clone());
@@ -312,7 +367,7 @@ impl DynamicValue {
     }
 
     pub(crate) fn has_layout(&self, layout: &Rc<DynamicLayout>) -> bool {
-        Rc::ptr_eq(&self.descriptor, layout)
+        self.descriptor.compatible_with(layout)
     }
 
     fn uninitialized(descriptor: Rc<DynamicLayout>) -> Self {

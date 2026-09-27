@@ -58,7 +58,7 @@ impl DynamicValue {
                     let child = items
                         .get(*index)
                         .ok_or_else(|| format!("sequence index {index} is out of bounds"))?;
-                    debug_assert!(Rc::ptr_eq(item, &child.descriptor));
+                    debug_assert!(item.compatible_with(&child.descriptor));
                     pointer = child.storage.pointer();
                     layout = item.clone();
                 }
@@ -99,5 +99,77 @@ impl DynamicValue {
         // SAFETY: every projection checked its tag and &mut self protects the
         // whole nested value for the duration of this callback.
         Ok(f(unsafe { &mut *pointer.cast_mut().cast::<T>() }))
+    }
+
+    fn field_parent(
+        &self,
+        path: &[DynamicPathStep],
+    ) -> Result<(*const u8, usize, usize, Rc<DynamicLayout>), String> {
+        let (&last, parents) = path
+            .split_last()
+            .ok_or_else(|| "native path is empty".to_owned())?;
+        let DynamicPathStep::Field(index) = last else {
+            return Err("a movable nested field path must end in Field".into());
+        };
+        let (pointer, layout) = self.project(parents)?;
+        let DropKind::Record(record) = &layout.drop_kind else {
+            return Err(format!("{} is not a record or aggregate", layout.rils_type));
+        };
+        let field = record.field(index)?;
+        Ok((pointer, index, field.offset(), field.layout_handle()))
+    }
+
+    /// Move a record field through any live option, variant or sequence parent.
+    /// Only the final field becomes empty; all ancestors stay initialized.
+    pub fn take_path_field(&mut self, path: &[DynamicPathStep]) -> Result<Self, String> {
+        let (parent, index, offset, layout) = self.field_parent(path)?;
+        // SAFETY: field_parent checked the index against an initialized record.
+        if unsafe { ptr::read(parent.add(index)) } != 1 {
+            return Err(format!("record field at path {path:?} has been moved"));
+        }
+        let mut child = Self::uninitialized(layout.clone());
+        // SAFETY: the live field has the exact child layout and aligned offset.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                parent.add(offset),
+                child.storage.pointer_mut(),
+                layout.layout.size(),
+            );
+            ptr::write(parent.cast_mut().add(index), 0);
+        }
+        child.initialized = true;
+        Ok(child)
+    }
+
+    /// Restore an empty record field through a checked composite parent path.
+    pub fn put_path_field(
+        &mut self,
+        path: &[DynamicPathStep],
+        mut value: Self,
+    ) -> Result<(), String> {
+        let (parent, index, offset, layout) = self.field_parent(path)?;
+        if !layout.compatible_with(&value.descriptor) {
+            return Err(format!(
+                "record field at path {path:?} has a different layout"
+            ));
+        }
+        // SAFETY: field_parent checked the index against an initialized record.
+        if unsafe { ptr::read(parent.add(index)) } == 1 {
+            return Err(format!(
+                "record field at path {path:?} is already initialized"
+            ));
+        }
+        // SAFETY: the source has the exact child layout. Clearing its live bit
+        // transfers its destructor to this field's live tag.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                value.storage.pointer(),
+                parent.cast_mut().add(offset),
+                value.storage.size(),
+            );
+            value.initialized = false;
+            ptr::write(parent.cast_mut().add(index), 1);
+        }
+        Ok(())
     }
 }

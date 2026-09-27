@@ -36,7 +36,7 @@ impl<V> Clone for DynamicObject<V> {
 
 impl<V> DynamicObject<V> {
     pub fn new(descriptor: Rc<DynamicType<V>>, value: DynamicValue) -> Result<Self, String> {
-        if !value.has_layout(&descriptor.layout_handle()) {
+        if !value.descriptor().compatible_with(descriptor.layout()) {
             return Err("dynamic value layout does not match its type".into());
         }
         let storage = if descriptor.layout().is_copy() && value.is_inline() {
@@ -61,6 +61,29 @@ impl<V> DynamicObject<V> {
     pub fn copy_owned(&self) -> Result<Self, String> {
         let value = self.with(DynamicValue::copy_owned)??;
         Self::new(self.descriptor.clone(), value)
+    }
+
+    /// Consume a uniquely owned handle and transfer its composed bytes.
+    /// Shared handles are returned intact so callers can retain the original
+    /// value without silently cloning a non-Copy payload.
+    pub fn into_value(self) -> Result<DynamicValue, Box<(Self, String)>> {
+        let Self {
+            descriptor,
+            storage,
+        } = self;
+        match storage {
+            Storage::Inline(value) => Ok(value.into_inner()),
+            Storage::Shared(value) => match Rc::try_unwrap(value) {
+                Ok(value) => Ok(value.into_inner()),
+                Err(value) => Err(Box::new((
+                    Self {
+                        descriptor,
+                        storage: Storage::Shared(value),
+                    },
+                    "cannot move a shared dynamic value".into(),
+                ))),
+            },
+        }
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&DynamicValue) -> R) -> Result<R, String> {
