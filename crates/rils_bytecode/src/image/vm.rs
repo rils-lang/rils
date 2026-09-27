@@ -179,9 +179,9 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let mut value = self.take_register(source, instruction.span)?;
                     if let Some(expected) = type_annotation {
-                        value = rils_execution::value::dynamic_sequence::promote_empty(
-                            value, &expected,
-                        );
+                        value = value
+                            .apply_declared_storage(&expected)
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     }
                     self.frame().locals[local].borrow_mut().initialize(value);
                 }

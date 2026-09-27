@@ -7,7 +7,10 @@ use rils_value::{DynamicLayout, DynamicType, DynamicValue};
 
 use crate::Type;
 
-use super::{DynamicObject, Value, native_layouts};
+use super::{
+    DynamicObject, Value, native_layouts, record_codec::NativeRecordCodec,
+    record_layout::RecordLayoutResolver,
+};
 
 /// A native option, or the original item when its type has no native layout.
 pub enum Construction {
@@ -16,9 +19,7 @@ pub enum Construction {
 }
 
 fn item_layout(item_type: &Type) -> Option<Rc<DynamicLayout>> {
-    native_layouts::integer::layout(item_type)
-        .or_else(|| native_layouts::float::layout(item_type))
-        .or_else(|| (item_type == &Type::String).then(native_layouts::string::layout))
+    RecordLayoutResolver::new(&[]).resolve(item_type).ok()
 }
 
 pub fn supports(item_type: &Type) -> bool {
@@ -32,28 +33,12 @@ pub fn construct(value: Option<Value>, item_type: &Type) -> Result<Construction,
         return Ok(Construction::Unsupported(value));
     };
     let option_layout = native_layouts::option::layout(item_layout.clone())?;
-    let item = value.map(|value| {
-        if item_type == &Type::String {
-            let text = match value {
-                Value::Native(object) if object.descriptor().rils_type() == &Type::String => object
-                    .into_rust::<NativeString>()
-                    .map_err(|failure| failure.1)?,
-                value => {
-                    return Err(format!(
-                        "expected string option item, found {}",
-                        value.type_name()
-                    ));
-                }
-            };
-            return DynamicValue::from_rust(item_layout.clone(), text);
-        }
-        native_layouts::integer::option_item(&value, item_type, item_layout.clone())
-            .or_else(|| native_layouts::float::option_item(&value, item_type, item_layout.clone()))
-            .ok_or_else(|| format!("no native option item converter for {item_type}"))?
-    });
+    let item = value
+        .map(|value| NativeRecordCodec::new().into_native(value, item_layout))
+        .transpose()?;
     item.map_or_else(
         || DynamicValue::none(option_layout.clone()),
-        |item| DynamicValue::some(option_layout.clone(), item?),
+        |item| DynamicValue::some(option_layout.clone(), item),
     )
     .and_then(|value| {
         let descriptor = Rc::new(DynamicType::new(option_layout));
@@ -84,8 +69,42 @@ pub fn view(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {
                     })
                     .and_then(|item| item)
             })
-        })?;
+        })
+        .unwrap_or_else(|| view_composite(object));
     Some(item.map(|item| (item, item_type)))
+}
+
+fn view_composite(object: &DynamicObject) -> Result<Option<Value>, String> {
+    let layout = object.descriptor().layout_handle();
+    let Type::Option(item_type) = layout.rils_type() else {
+        return Err("dynamic value is not an option".into());
+    };
+    let item_type = item_type.as_ref().clone();
+    object.with_mut(|payload| {
+        let absent = DynamicValue::none(layout.clone())?;
+        let owned = std::mem::replace(payload, absent);
+        let mut codec = NativeRecordCodec::new();
+        let legacy = codec.from_native(owned)?;
+        let result = match &legacy {
+            Value::Option { value, .. } => value
+                .as_ref()
+                .map(|item| {
+                    let cloned = item.clone_owned()?;
+                    if !matches!(item_type, Type::Option(_)) {
+                        return Ok(cloned);
+                    }
+                    let item_layout = RecordLayoutResolver::new(&[]).resolve(&item_type)?;
+                    let native = codec.into_native(cloned, item_layout.clone())?;
+                    DynamicObject::new(Rc::new(DynamicType::new(item_layout)), native)
+                        .map(Value::Dynamic)
+                })
+                .transpose(),
+            _ => Err("native option decoded to a different value kind".into()),
+        };
+        let restored = codec.into_native(legacy, layout)?;
+        *payload = restored;
+        result
+    })?
 }
 
 pub fn view_any(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {

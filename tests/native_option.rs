@@ -62,6 +62,135 @@ fn concrete_options_use_native_layout_in_both_backends() {
 }
 
 #[test]
+fn options_of_native_containers_use_composed_layouts() {
+    for (source, ty, present) in [
+        ("Some(true)", "Option<bool>", true),
+        ("Some('x')", "Option<char>", true),
+        (
+            "let value: Option<Option<i32>> = Some(Some(7)); value",
+            "Option<Option<i32>>",
+            true,
+        ),
+        (
+            r#"
+                let mut queue: VecDeque<i32> = VecDeque::new();
+                queue.push_back(7);
+                let value: Option<Option<VecDeque<i32>>> = Some(Some(queue));
+                value
+            "#,
+            "Option<Option<VecDeque<i32>>>",
+            true,
+        ),
+        (
+            r#"
+                let mut queue: VecDeque<i32> = VecDeque::new();
+                queue.push_back(7);
+                Some(queue)
+            "#,
+            "Option<VecDeque<i32>>",
+            true,
+        ),
+        (
+            "let value: Option<VecDeque<i32>> = None; value",
+            "Option<VecDeque<i32>>",
+            false,
+        ),
+        (
+            r#"
+                let mut heap: BinaryHeap<string> = BinaryHeap::new();
+                heap.push("z");
+                Some(heap)
+            "#,
+            "Option<BinaryHeap<string>>",
+            true,
+        ),
+        (
+            r#"
+                let mut set: HashSet<i32> = HashSet::new();
+                set.insert(7);
+                Some(set)
+            "#,
+            "Option<HashSet<i32>>",
+            true,
+        ),
+        (
+            r#"
+                let mut values: Vec<i32> = Vec::new();
+                values.push(7);
+                Some(values)
+            "#,
+            "Option<Vec<i32>>",
+            true,
+        ),
+        (
+            "let result: Result<i32, string> = Ok(7); Some(result)",
+            "Option<Result<i32, string>>",
+            true,
+        ),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for (stage, value) in [
+            ("interpreter", eval(source).unwrap()),
+            ("VM", compiled.execute().unwrap()),
+            ("loaded VM", loaded.execute().unwrap()),
+        ] {
+            let Value::Dynamic(object) = &value else {
+                panic!(
+                    "{ty} should use a native option layout in {stage}, found {}",
+                    value.type_name()
+                );
+            };
+            assert_eq!(object.descriptor().layout().rils_type().to_string(), ty);
+            assert_eq!(value.as_option().unwrap().0.is_some(), present);
+            assert_eq!(
+                object.with(|payload| payload.is_some()).unwrap().unwrap(),
+                present
+            );
+        }
+    }
+}
+
+#[test]
+fn options_with_unregistered_user_items_keep_legacy_storage() {
+    let source = "struct Item { value: i32 } Some(Item { value: 7 })";
+    assert!(matches!(eval(source).unwrap(), Value::Option { .. }));
+    assert!(matches!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::Option { .. }
+    ));
+}
+
+#[test]
+fn options_move_native_containers_through_unwrap() {
+    for (source, expected) in [
+        (
+            r#"
+                let mut queue: VecDeque<i32> = VecDeque::new();
+                queue.push_back(7);
+                let value: Option<VecDeque<i32>> = Some(queue);
+                let mut recovered = value.unwrap();
+                recovered.pop_front().unwrap()
+            "#,
+            Value::from_i32(7),
+        ),
+        (
+            r#"
+                let mut heap: BinaryHeap<string> = BinaryHeap::new();
+                heap.push("z");
+                let value: Option<BinaryHeap<string>> = Some(heap);
+                let mut recovered = value.unwrap();
+                recovered.pop().unwrap()
+            "#,
+            Value::from_string("z"),
+        ),
+    ] {
+        assert_eq!(eval(source).unwrap(), expected);
+        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+    }
+}
+
+#[test]
 fn owned_some_moves_string_and_legacy_items_keep_their_value() {
     let source = "let text = \"moved\"; Some(text)";
     assert_dynamic_option(
@@ -95,7 +224,7 @@ fn owned_some_moves_string_and_legacy_items_keep_their_value() {
         eval("Some(true)").unwrap(),
         compile("Some(true)").unwrap().execute().unwrap(),
     ] {
-        assert!(matches!(value, Value::Option { .. }));
+        assert!(matches!(value, Value::Dynamic(_)));
         assert_eq!(
             value.as_option(),
             Some((Some(Value::Bool(true)), rils::Type::Bool))
@@ -317,7 +446,7 @@ fn typed_none_preserves_option_semantics() {
             inline,
             "None",
             "None",
-            "interpreter",
+            &format!("interpreter for `{source}`"),
         );
         let compiled = compile(source).unwrap();
         assert_dynamic_option(
@@ -405,7 +534,7 @@ fn contextual_none_uses_native_storage_across_backends() {
             inline,
             "None",
             "None",
-            "interpreter",
+            &format!("interpreter for `{source}`"),
         );
         let compiled = compile(source).unwrap();
         assert_dynamic_option(

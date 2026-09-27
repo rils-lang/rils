@@ -48,9 +48,9 @@ fn absent_option_has_a_concrete_runtime_type() {
 fn unsupported_item_returns_its_ownership_to_the_caller() {
     let item = Value::Bool(true);
     let dynamic_option::Construction::Unsupported(Some(returned)) =
-        dynamic_option::construct(Some(item), &Type::Bool).unwrap()
+        dynamic_option::construct(Some(item), &Type::named("Unregistered")).unwrap()
     else {
-        panic!("bool has no native Option layout yet");
+        panic!("unregistered type has no native Option layout");
     };
     assert_eq!(returned, Value::Bool(true));
 }

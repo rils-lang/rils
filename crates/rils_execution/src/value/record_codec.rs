@@ -89,9 +89,13 @@ impl NativeRecordCodec {
             (ty, Value::Dynamic(object)) if object.descriptor().layout().rils_type() == &ty => {
                 let value = match object.into_value() {
                     Ok(value) => value,
-                    Err(failure) => super::dynamic_sequence::clone_owned(&failure.0)?
-                        .into_value()
-                        .map_err(|failure| failure.1)?,
+                    Err(failure) => {
+                        let cloned = Value::Dynamic(failure.0).clone_owned()?;
+                        let Value::Dynamic(cloned) = cloned else {
+                            unreachable!("dynamic Clone preserves the storage kind")
+                        };
+                        cloned.into_value().map_err(|failure| failure.1)?
+                    }
                 };
                 if !value.descriptor().compatible_with(&layout) {
                     return Err("value has a different native layout".into());

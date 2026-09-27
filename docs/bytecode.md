@@ -34,6 +34,7 @@ source -> lexer/parser -> static analysis -> HIR -> MIR -> bytecode -> verifier 
 `HashSet` 及脚本自定义 `Iterator` / `IntoIterator` 的 `for`，包括 `break value` 与 `continue`。
 `BinaryHeap<T>` 的构造、插入、弹出、堆顶克隆和清空通过稳定 core builtin ID 调用共享运行时。
 类型化局部绑定中的 `VecDeque<T>` 和 `BinaryHeap<T>` 使用动态原生序列负载；`InitLocal` 指令新增可选声明类型，让 VM 在初始化时取得具体元素布局。未冻结的 v8 编码因此改变，旧 `.rilbc` 文件需从源码重新编译，格式号仍为 v8。
+同一类型信息还用于补齐 `Result<T, E>` 局部值未出现分支的类型见证，使其能继续嵌入 `Option<Result<T, E>>` 的动态布局。
 `BTreeMap<K, V>` 同样经共享 core builtin ID 执行；`for` 的有序迭代复用现有拥有型迭代器值。
 `BTreeSet<T>` 的集合运算和升序迭代也沿用共享 core builtin 与同一迭代器表示。
 复合值已覆盖 tuple、数组、重复数组、Range、Option 和 Result，以及局部 tuple/数组的索引读取
