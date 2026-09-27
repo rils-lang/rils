@@ -28,6 +28,31 @@ fn typed_binary_heap_uses_native_storage_in_both_backends() {
 }
 
 #[test]
+fn native_binary_heap_orders_other_integer_widths() {
+    for (source, expected) in [
+        (
+            r#"
+                let mut heap: BinaryHeap<i8> = BinaryHeap::new();
+                heap.push(1i8); heap.push(7i8); heap.push(3i8);
+                heap.pop().unwrap()
+            "#,
+            Value::from_i8(7),
+        ),
+        (
+            r#"
+                let mut heap: BinaryHeap<usize> = BinaryHeap::new();
+                heap.push(2usize); heap.push(11usize); heap.push(5usize);
+                heap.pop().unwrap()
+            "#,
+            Value::from_usize(11),
+        ),
+    ] {
+        assert_eq!(eval(source).unwrap(), expected);
+        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+    }
+}
+
+#[test]
 fn native_binary_heap_matches_in_interpreter_and_vm() {
     for (source, expected) in [
         (

@@ -48,6 +48,36 @@ fn sequence_field_owns_dynamic_children_and_moves_one_without_cloning() {
 }
 
 #[test]
+fn sequence_mutations_preserve_order_and_drop_each_owned_item_once() {
+    let drops = Rc::new(Cell::new(0));
+    let probe = DynamicLayout::of::<Probe>(Type::named("Probe"));
+    let sequence = DynamicLayout::sequence(
+        Type::Named {
+            name: "VecDeque".into(),
+            arguments: vec![Type::named("Probe")],
+        },
+        probe.clone(),
+    );
+    let mut items = DynamicValue::sequence(sequence, Vec::new()).unwrap();
+    items
+        .push_sequence_item(DynamicValue::from_rust(probe.clone(), Probe(drops.clone())).unwrap())
+        .unwrap();
+    items
+        .push_sequence_front(DynamicValue::from_rust(probe, Probe(drops.clone())).unwrap())
+        .unwrap();
+    assert_eq!(items.sequence_len(), Ok(2));
+    assert!(items.swap_sequence_items(0, 2).is_err());
+    items.swap_sequence_items(0, 1).unwrap();
+    let removed = items.take_sequence_item(0).unwrap();
+    assert_eq!(items.sequence_len(), Ok(1));
+    assert_eq!(drops.get(), 0);
+    items.clear_sequence().unwrap();
+    assert_eq!(drops.get(), 1);
+    drop(removed);
+    assert_eq!(drops.get(), 2);
+}
+
+#[test]
 fn checked_path_reaches_leaf_across_all_composite_kinds() {
     let number = DynamicLayout::copy_of::<i32>(Type::I32);
     let unit = DynamicLayout::copy_of::<()>(Type::Unit);

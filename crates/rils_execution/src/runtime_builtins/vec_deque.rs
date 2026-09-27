@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use rils_builtins::BuiltinId;
+use rils_stdlib::stdlib::string::String as NativeString;
 use rils_stdlib::stdlib::{prelude::Option as NativeOption, vec_deque::VecDeque as NativeVecDeque};
 
 use crate::{
@@ -36,17 +37,110 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             object.descriptor().layout().rils_type(),
         )
     {
-        return crate::value::dynamic_sequence::with_legacy(&object, |value| {
-            let Value::VecDeque(queue) = value else {
-                return Err("expected VecDeque receiver".into());
-            };
-            call_queue(id, arguments, queue)
-        });
+        return call_dynamic(id, arguments, &object);
     }
     let Value::VecDeque(queue) = super::import_receiver(receiver)? else {
         return Err("expected VecDeque receiver".into());
     };
     call_queue(id, arguments, &queue)
+}
+
+fn call_dynamic(
+    id: BuiltinId,
+    arguments: &[Value],
+    object: &crate::value::DynamicObject,
+) -> Result<Value, String> {
+    let item_layout = object
+        .descriptor()
+        .layout()
+        .sequence_item()
+        .ok_or("VecDeque has no native element layout")?;
+    let item_type = item_layout.rils_type().clone();
+    match id {
+        BuiltinId::VecDequeLen => Ok(crate::numeric::native_usize(
+            object.with(|value| value.sequence_len())??,
+        )),
+        BuiltinId::VecDequeIsEmpty => Ok(Value::Bool(
+            object.with(|value| value.sequence_len())?? == 0,
+        )),
+        BuiltinId::VecDequePushFront | BuiltinId::VecDequePushBack => {
+            let item = arguments.get(1).ok_or("missing VecDeque element")?.clone();
+            let item = crate::value::record_codec::into_native(item, item_layout.clone())?;
+            object.with_mut(|value| {
+                if id == BuiltinId::VecDequePushFront {
+                    value.push_sequence_front(item)
+                } else {
+                    value.push_sequence_item(item)
+                }
+            })??;
+            Ok(Value::Unit)
+        }
+        BuiltinId::VecDequePopFront | BuiltinId::VecDequePopBack => {
+            let item = object.with_mut(|value| {
+                let length = value.sequence_len()?;
+                if length == 0 {
+                    Ok(None)
+                } else {
+                    let index = if id == BuiltinId::VecDequePopFront {
+                        0
+                    } else {
+                        length - 1
+                    };
+                    value.take_sequence_item(index).map(Some)
+                }
+            })??;
+            let item = item
+                .map(crate::value::record_codec::from_native)
+                .transpose()?;
+            Ok(Value::Option {
+                value: item.map(Rc::new),
+                element_type: Some(item_type),
+            })
+        }
+        BuiltinId::VecDequeClear => {
+            object.with_mut(|value| value.clear_sequence())??;
+            Ok(Value::Unit)
+        }
+        BuiltinId::VecDequeFrontCloned | BuiltinId::VecDequeBackCloned => {
+            if item_layout.is_copy() || item_type == Type::String {
+                let item = object.with(|value| {
+                    let length = value.sequence_len()?;
+                    if length == 0 {
+                        return Ok(None);
+                    }
+                    let index = if id == BuiltinId::VecDequeFrontCloned {
+                        0
+                    } else {
+                        length - 1
+                    };
+                    value
+                        .with_sequence_item(index, |item| {
+                            if item_type == Type::String {
+                                item.with::<NativeString, _>(|text| {
+                                    crate::value::native_string(std::string::String::from(
+                                        text.clone(),
+                                    ))
+                                })
+                            } else {
+                                crate::value::record_codec::from_native(item.copy_owned()?)
+                            }
+                        })?
+                        .map(Some)
+                })??;
+                return Ok(Value::Option {
+                    value: item.map(Rc::new),
+                    element_type: Some(item_type),
+                });
+            }
+            crate::value::dynamic_sequence::with_legacy(object, |value| {
+                let Value::VecDeque(queue) = value else {
+                    return Err("expected VecDeque receiver".into());
+                };
+                call_queue(id, arguments, queue)
+            })
+        }
+        _ => Err("unsupported VecDeque operation".into()),
+    }
 }
 
 fn call_queue(id: BuiltinId, arguments: &[Value], queue: &VecDequeValue) -> Result<Value, String> {

@@ -1,10 +1,12 @@
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
 use rils_builtins::BuiltinId;
+use rils_stdlib::stdlib::string::String as NativeString;
+use rils_value::DynamicValue;
 
 use crate::{
     types::{Type, merge_types},
-    value::{BinaryHeapValue, Value},
+    value::{BinaryHeapValue, HashKey, Value},
 };
 
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
@@ -31,17 +33,132 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             object.descriptor().layout().rils_type(),
         )
     {
-        return crate::value::dynamic_sequence::with_legacy(&object, |value| {
-            let Value::BinaryHeap(heap) = value else {
-                return Err("expected BinaryHeap receiver".into());
-            };
-            call_heap(id, arguments, heap)
-        });
+        return call_dynamic(id, arguments, &object);
     }
     let Value::BinaryHeap(heap) = super::import_receiver(receiver)? else {
         return Err("expected BinaryHeap receiver".into());
     };
     call_heap(id, arguments, &heap)
+}
+
+fn call_dynamic(
+    id: BuiltinId,
+    arguments: &[Value],
+    object: &crate::value::DynamicObject,
+) -> Result<Value, String> {
+    let item_layout = object
+        .descriptor()
+        .layout()
+        .sequence_item()
+        .ok_or("BinaryHeap has no native element layout")?;
+    let item_type = item_layout.rils_type().clone();
+    match id {
+        BuiltinId::BinaryHeapLen => Ok(crate::numeric::native_usize(
+            object.with(|value| value.sequence_len())??,
+        )),
+        BuiltinId::BinaryHeapIsEmpty => Ok(Value::Bool(
+            object.with(|value| value.sequence_len())?? == 0,
+        )),
+        BuiltinId::BinaryHeapPush => {
+            let item = arguments.get(1).ok_or("missing BinaryHeap element")?;
+            if !orderable(item) {
+                return Err(format!(
+                    "BinaryHeap does not support ordering {}",
+                    item.type_name()
+                ));
+            }
+            let item = crate::value::record_codec::into_native(item.clone(), item_layout.clone())?;
+            object.with_mut(|value| {
+                value.push_sequence_item(item)?;
+                let mut index = value.sequence_len()? - 1;
+                while index > 0 {
+                    let parent = (index - 1) / 2;
+                    if compare_native_items(value, index, parent)? != Ordering::Greater {
+                        break;
+                    }
+                    value.swap_sequence_items(index, parent)?;
+                    index = parent;
+                }
+                Ok::<(), String>(())
+            })??;
+            Ok(Value::Unit)
+        }
+        BuiltinId::BinaryHeapPop => {
+            let item = object.with_mut(|value| {
+                let length = value.sequence_len()?;
+                if length == 0 {
+                    return Ok(None);
+                }
+                value.swap_sequence_items(0, length - 1)?;
+                let item = value.take_sequence_item(length - 1)?;
+                let mut index = 0;
+                while index * 2 + 1 < value.sequence_len()? {
+                    let left = index * 2 + 1;
+                    let right = left + 1;
+                    let child = if right < value.sequence_len()?
+                        && compare_native_items(value, right, left)? == Ordering::Greater
+                    {
+                        right
+                    } else {
+                        left
+                    };
+                    if compare_native_items(value, child, index)? != Ordering::Greater {
+                        break;
+                    }
+                    value.swap_sequence_items(index, child)?;
+                    index = child;
+                }
+                Ok::<_, String>(Some(item))
+            })??;
+            Ok(Value::Option {
+                value: item
+                    .map(crate::value::record_codec::from_native)
+                    .transpose()?
+                    .map(Rc::new),
+                element_type: Some(item_type),
+            })
+        }
+        BuiltinId::BinaryHeapPeekCloned => {
+            let value = object.with(|value| {
+                if value.sequence_len()? == 0 {
+                    Ok(None)
+                } else {
+                    value
+                        .with_sequence_item(0, native_key)?
+                        .map(|key| Some(key.to_value()))
+                }
+            })??;
+            Ok(Value::Option {
+                value: value.map(Rc::new),
+                element_type: Some(item_type),
+            })
+        }
+        BuiltinId::BinaryHeapClear => {
+            object.with_mut(|value| value.clear_sequence())??;
+            Ok(Value::Unit)
+        }
+        _ => Err("unsupported BinaryHeap operation".into()),
+    }
+}
+
+fn compare_native_items(
+    value: &DynamicValue,
+    left: usize,
+    right: usize,
+) -> Result<Ordering, String> {
+    let left = value.with_sequence_item(left, native_key)??;
+    let right = value.with_sequence_item(right, native_key)??;
+    Ok(left.cmp(&right))
+}
+
+fn native_key(value: &DynamicValue) -> Result<HashKey, String> {
+    let value = if value.descriptor().rils_type() == &Type::String {
+        let text = value.with::<NativeString, _>(|text| std::string::String::from(text.clone()))?;
+        crate::value::native_string(text)
+    } else {
+        crate::value::record_codec::from_native(value.copy_owned()?)?
+    };
+    HashKey::from_ordered_value(&value)
 }
 
 fn call_heap(id: BuiltinId, arguments: &[Value], heap: &BinaryHeapValue) -> Result<Value, String> {

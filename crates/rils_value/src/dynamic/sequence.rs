@@ -90,6 +90,31 @@ impl DynamicValue {
         Ok(())
     }
 
+    pub fn push_sequence_front(&mut self, item: Self) -> Result<(), String> {
+        let DropKind::Sequence { item: expected } = &self.descriptor.drop_kind else {
+            return Err("value is not a sequence".into());
+        };
+        if !expected.compatible_with(&item.descriptor) {
+            return Err("sequence item has a different layout".into());
+        }
+        self.sequence_items_mut()?.insert(0, item);
+        Ok(())
+    }
+
+    pub fn clear_sequence(&mut self) -> Result<(), String> {
+        self.sequence_items_mut()?.clear();
+        Ok(())
+    }
+
+    pub fn swap_sequence_items(&mut self, left: usize, right: usize) -> Result<(), String> {
+        let items = self.sequence_items_mut()?;
+        if left >= items.len() || right >= items.len() {
+            return Err("sequence swap index is out of bounds".into());
+        }
+        items.swap(left, right);
+        Ok(())
+    }
+
     pub fn take_sequence_item(&mut self, index: usize) -> Result<Self, String> {
         let items = self.sequence_items_mut()?;
         if index >= items.len() {
