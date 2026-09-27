@@ -680,7 +680,7 @@ mod tests {
             element_type: Some(Type::I32),
         };
         let result = Value::Result {
-            value: Err(Rc::new(Value::String(Rc::from("failed")))),
+            value: Err(Rc::new(Value::from_string("failed"))),
             ok_type: Some(Type::I32),
             error_type: Some(Type::String),
         };

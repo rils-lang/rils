@@ -119,7 +119,6 @@ fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
             Value::Unit
                 | Value::Bool(_)
                 | Value::Char(_)
-                | Value::String(_)
                 | Value::I8(_)
                 | Value::I16(_)
                 | Value::I32(_)
@@ -324,7 +323,7 @@ mod tests {
             "+00012 0x000f"
         );
         assert_eq!(
-            format_arguments("{:?}", &[Value::String("hello".into())]).unwrap(),
+            format_arguments("{:?}", &[Value::from_string("hello")]).unwrap(),
             "\"hello\""
         );
     }

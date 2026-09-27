@@ -38,7 +38,6 @@ pub fn construct(value: Option<Value>, item_type: &Type) -> Result<Construction,
                 Value::Native(object) if object.descriptor().rils_type() == &Type::String => object
                     .into_rust::<NativeString>()
                     .map_err(|failure| failure.1)?,
-                Value::String(text) => NativeString::from(text.to_string()),
                 value => {
                     return Err(format!(
                         "expected string option item, found {}",

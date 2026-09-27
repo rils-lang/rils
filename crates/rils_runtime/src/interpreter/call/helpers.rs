@@ -99,7 +99,6 @@ pub(crate) fn builtin_runtime_member(
 ) -> Option<(BuiltinMethod, rils_builtins::ReceiverMode)> {
     let owner = match value {
         Value::Array(_) => "Vec",
-        Value::String(_) => "string",
         Value::Vec(_) => "Vec",
         Value::HashMap(_) => "HashMap",
         Value::BTreeMap(_) => "BTreeMap",

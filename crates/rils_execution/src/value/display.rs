@@ -25,7 +25,6 @@ impl fmt::Display for Value {
             Self::F32(value) => write!(f, "{value}"),
             Self::F64(value) => write!(f, "{value}"),
             Self::Char(value) => write!(f, "{value}"),
-            Self::String(value) => write!(f, "{value}"),
             Self::Tuple(sequence) => display_sequence(f, sequence, "(", ")", true),
             Self::Array(sequence) | Self::Vec(sequence) => {
                 display_sequence(f, sequence, "[", "]", false)
@@ -270,7 +269,6 @@ impl fmt::Debug for Value {
                     Ok(value) => write!(f, "{value:#?}"),
                     Err(_) => f.write_str("<invalid reference>"),
                 },
-                Self::String(value) => write!(f, "{value:#?}"),
                 Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
                     write!(f, "{:#?}", self.as_string().unwrap_or_default())
                 }
@@ -278,7 +276,6 @@ impl fmt::Debug for Value {
             };
         }
         match self {
-            Self::String(value) => write!(f, "{value:?}"),
             Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
                 write!(f, "{:?}", self.as_string().unwrap_or_default())
             }

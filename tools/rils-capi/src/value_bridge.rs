@@ -245,7 +245,6 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
         Value::F32(value) => scalar(RILS_VALUE_F32, u64::from(value.to_bits()), 0),
         Value::F64(value) => scalar(RILS_VALUE_F64, value.to_bits(), 0),
         Value::Char(value) => scalar(RILS_VALUE_CHAR, u64::from(u32::from(value)), 0),
-        Value::String(value) => scalar(RILS_VALUE_STRING, insert_string(value.to_string())?, 0),
         Value::HostObject(object) => {
             let value = Value::HostObject(object);
             if let Some(handle) = rils_runtime::opaque_host_handle(&value) {

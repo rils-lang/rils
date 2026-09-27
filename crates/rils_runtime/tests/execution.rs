@@ -186,7 +186,7 @@ fn evaluates_binary_heap_max_order_and_empty_cases() {
         (
             r#"let mut heap: BinaryHeap<string> = BinaryHeap::new();
                heap.push("a"); heap.push("z"); heap.pop().unwrap()"#,
-            Value::String("z".into()),
+            Value::from_string("z"),
         ),
         (
             r#"let mut heap: BinaryHeap<char> = BinaryHeap::new();
@@ -235,7 +235,7 @@ fn evaluates_btree_map_ordered_operations() {
     assert_eq!(eval(source).unwrap(), Value::I32(10));
     assert_eq!(
         eval(r#"let mut map = std::collections::BTreeMap::new(); map.insert("b", 2); map.insert("a", 1); map.first_key_cloned().unwrap()"#).unwrap(),
-        Value::String("a".into())
+        Value::from_string("a")
     );
     assert_eq!(
         eval(r#"let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(2, 20); map.insert(1, 10); let mut sum = 0; for entry in map { sum = sum + entry.0; } sum"#).unwrap(),

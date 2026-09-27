@@ -28,7 +28,7 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
                 heap.push("a"); heap.push("z");
                 heap.pop().unwrap()
             "#,
-            Value::String("z".into()),
+            Value::from_string("z"),
         ),
         (
             r#"

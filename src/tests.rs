@@ -56,20 +56,20 @@ fn derives_default_for_unit_structs() {
         let marker = <Marker as Default>::default();
         type_of(marker)
     "#;
-    assert_eq!(eval(source).unwrap(), Value::String("Marker".into()));
+    assert_eq!(eval(source).unwrap(), Value::from_string("Marker"));
     assert_eq!(
         compile(source).unwrap().execute().unwrap(),
-        Value::String("Marker".into())
+        Value::from_string("Marker")
     );
 }
 
 #[test]
 fn empty_record_constructors_work_in_interpreter_and_bytecode() {
     let source = "struct Marker; let marker = (Marker {}); type_of(marker)";
-    assert_eq!(eval(source).unwrap(), Value::String("Marker".into()));
+    assert_eq!(eval(source).unwrap(), Value::from_string("Marker"));
     assert_eq!(
         compile(source).unwrap().execute().unwrap(),
-        Value::String("Marker".into())
+        Value::from_string("Marker")
     );
 }
 
@@ -475,7 +475,7 @@ fn result_supports_error_side_extraction() {
             "#
         )
         .unwrap(),
-        Value::String("invalid".into())
+        Value::from_string("invalid")
     );
     let error = eval("let value: Result<i32, string> = Ok(42); value.unwrap_err();")
         .expect_err("unwrap_err on Ok must fail");
@@ -1222,7 +1222,7 @@ fn builtin_clone_trait_provides_clone_method_for_owned_values() {
         "#,
     )
     .unwrap();
-    assert_eq!(value, Value::String("RilsRilsRilsRilsRils".into()));
+    assert_eq!(value, Value::from_string("RilsRilsRilsRilsRils"));
 
     assert_eq!(
         integer(
@@ -1409,7 +1409,7 @@ fn clone_explicitly_duplicates_owned_values() {
         "#,
     )
     .unwrap();
-    assert_eq!(value, Value::String("hellohello".into()));
+    assert_eq!(value, Value::from_string("hellohello"));
 }
 
 #[test]
@@ -2216,7 +2216,7 @@ fn traits_define_and_dispatch_required_methods() {
             "#,
     )
     .unwrap();
-    assert_eq!(value, Value::String("point".into()));
+    assert_eq!(value, Value::from_string("point"));
 }
 
 #[test]
@@ -2242,7 +2242,7 @@ fn generic_trait_bounds_are_enforced() {
     engine.eval(source).unwrap();
     assert_eq!(
         engine.eval("describe(Point { value: 1 })").unwrap(),
-        Value::String("point".into())
+        Value::from_string("point")
     );
     let error = engine.eval("describe(Hidden { value: 1 })").unwrap_err();
     assert!(
@@ -2302,7 +2302,7 @@ fn generic_types_can_implement_traits_for_all_arguments() {
             "#,
     )
     .unwrap();
-    assert_eq!(value, Value::String("wrapper".into()));
+    assert_eq!(value, Value::from_string("wrapper"));
 }
 
 #[test]
@@ -2437,7 +2437,7 @@ fn nominal_types_can_implement_builtin_clone_and_copy() {
         "#,
     )
     .unwrap();
-    assert_eq!(cloned, Value::String("RilsRils".into()));
+    assert_eq!(cloned, Value::from_string("RilsRils"));
 
     assert_eq!(
         integer(
@@ -3094,7 +3094,7 @@ fn typed_host_functions_validate_arguments_and_returns() {
     let mut engine = Engine::new();
     engine
         .register_module_typed_function("host", "wrong_return", Vec::new(), Type::I32, |_| {
-            Ok(Value::String("wrong".into()))
+            Ok(Value::from_string("wrong"))
         })
         .unwrap();
     let return_error = engine.eval("host::wrong_return()").unwrap_err();

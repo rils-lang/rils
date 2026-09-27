@@ -145,7 +145,6 @@ fn orderable(value: &Value) -> bool {
             | Value::U128(_)
             | Value::Usize(_)
             | Value::Char(_)
-            | Value::String(_)
     )
 }
 
@@ -177,6 +176,6 @@ fn compare(left: &Value, right: &Value) -> Result<Ordering, String> {
         };
     }
     compare_variants!(
-        I8, I16, I32, I64, I128, Isize, U8, U16, U32, U64, U128, Usize, Char, String
+        I8, I16, I32, I64, I128, Isize, U8, U16, U32, U64, U128, Usize, Char
     )
 }

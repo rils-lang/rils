@@ -1578,7 +1578,7 @@ fn rejects_unlinked_unauthorized_and_incompatible_imports() {
             "type_of",
             FunctionSignature::fixed(Vec::new(), Type::String),
             "core",
-            |_| Ok(Value::String(Rc::from("invalid"))),
+            |_| Ok(Value::from_string("invalid")),
         )
         .unwrap();
     let error = module.execute_with_host(&incompatible).unwrap_err();

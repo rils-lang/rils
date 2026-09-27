@@ -11,9 +11,9 @@ fn native_result_methods_cover_both_variants_and_preserve_option_types() {
             None,
         ),
         (
-            Err(Rc::new(Value::String(Rc::from("failure")))),
+            Err(Rc::new(Value::from_string("failure"))),
             None,
-            Some(Rc::new(Value::String(Rc::from("failure")))),
+            Some(Rc::new(Value::from_string("failure"))),
         ),
     ] {
         let input = Value::Result {

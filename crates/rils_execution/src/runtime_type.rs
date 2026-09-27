@@ -66,8 +66,7 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         | (Type::Integer(crate::IntegerType::Usize), Value::Usize(_))
         | (Type::Float(crate::FloatType::F32), Value::F32(_))
         | (Type::Float(crate::FloatType::F64), Value::F64(_))
-        | (Type::Char, Value::Char(_))
-        | (Type::String, Value::String(_)) => true,
+        | (Type::Char, Value::Char(_)) => true,
         (Type::Tuple(expected), Value::Tuple(sequence)) => {
             let elements = sequence.elements.borrow();
             expected.len() == elements.len()
@@ -523,7 +522,6 @@ fn type_of_value(value: &Value) -> Option<Type> {
         Value::F32(_) => Some(Type::Float(crate::FloatType::F32)),
         Value::F64(_) => Some(Type::F64),
         Value::Char(_) => Some(Type::Char),
-        Value::String(_) => Some(Type::String),
         Value::Tuple(sequence) => Some(Type::Tuple(
             sequence
                 .elements

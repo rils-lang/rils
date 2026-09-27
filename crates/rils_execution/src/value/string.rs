@@ -18,7 +18,6 @@ pub fn native_string(value: impl Into<std::string::String>) -> Value {
 
 pub fn string_payload(value: &Value) -> Option<std::string::String> {
     match value {
-        Value::String(text) => Some(text.to_string()),
         Value::Native(object) if object.descriptor().rils_type() == &Type::String => object
             .with::<NativeString, _>(|value| std::string::String::from(value.clone()))
             .ok(),

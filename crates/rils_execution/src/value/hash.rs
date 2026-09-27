@@ -139,7 +139,6 @@ impl HashKey {
             Value::U128(value) => Self::U128(value),
             Value::Usize(value) => Self::Usize(value),
             Value::Char(value) => Self::Char(value),
-            Value::String(value) => Self::String(value),
             Value::Tuple(_)
             | Value::Array(_)
             | Value::Option { .. }

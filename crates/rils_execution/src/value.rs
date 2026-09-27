@@ -342,7 +342,6 @@ pub enum Value {
     F32(f32),
     F64(f64),
     Char(char),
-    String(Rc<str>),
     Tuple(Rc<IndexedStorage>),
     Array(Rc<IndexedStorage>),
     Vec(Rc<IndexedStorage>),
@@ -489,7 +488,6 @@ impl Value {
             Self::HostObject(object) => object.type_definition.copy,
             Self::Native(object) => object.descriptor().is_copy(),
             Self::Dynamic(object) => object.descriptor().layout().is_copy(),
-            Self::String(_) => rils_builtins::native_implements("string", "Copy"),
             Self::Rc(_)
             | Self::Weak(_)
             | Self::Cell(_)
@@ -878,7 +876,6 @@ impl Value {
             Self::F32(_) => "f32".into(),
             Self::F64(_) => "f64".into(),
             Self::Char(_) => "char".into(),
-            Self::String(_) => "string".into(),
             Self::Tuple(_) => {
                 Type::of_value(self).map_or_else(|| "tuple".into(), |ty| ty.to_string())
             }
@@ -1028,13 +1025,6 @@ impl PartialEq for Value {
             (Self::F32(left), Self::F32(right)) => left == right,
             (Self::F64(left), Self::F64(right)) => left == right,
             (Self::Char(left), Self::Char(right)) => left == right,
-            (Self::String(left), Self::String(right)) => left == right,
-            (Self::Native(_), Self::String(right)) => {
-                self.as_string().is_some_and(|left| left == right.as_ref())
-            }
-            (Self::String(left), Self::Native(_)) => other
-                .as_string()
-                .is_some_and(|right| left.as_ref() == right),
             (Self::Native(left), Self::Native(right)) => native_ops::equal(left, right),
             (Self::Tuple(left), Self::Tuple(right))
             | (Self::Array(left), Self::Array(right))

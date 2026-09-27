@@ -74,9 +74,6 @@ impl NativeRecordCodec {
             (Type::Unit, Value::Unit) => DynamicValue::from_rust(layout, ()),
             (Type::Bool, Value::Bool(value)) => DynamicValue::from_rust(layout, value),
             (Type::Char, Value::Char(value)) => DynamicValue::from_rust(layout, value),
-            (Type::String, Value::String(value)) => {
-                DynamicValue::from_rust(layout, NativeString::from(value.to_string()))
-            }
             (Type::String, Value::Native(object))
                 if object.descriptor().rils_type() == &Type::String =>
             {
