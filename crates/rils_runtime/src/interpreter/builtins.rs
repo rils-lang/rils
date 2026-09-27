@@ -96,21 +96,27 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Option(Box::new(Type::Unknown)),
             )),
-            body: NativeFunctionBody::Rust(|arguments| {
-                if let Some(item_type) = Type::of_value(&arguments[0])
-                    && let Some(result) =
-                        crate::value::dynamic_option::construct(Some(&arguments[0]), &item_type)
-                {
-                    return result;
+            body: NativeFunctionBody::RustOwned(|arguments| {
+                let value = arguments
+                    .into_iter()
+                    .next()
+                    .expect("Some arity was checked");
+                let item_type = Type::of_value(&value);
+                let constructed = match item_type.as_ref() {
+                    Some(item_type) => {
+                        crate::value::dynamic_option::construct(Some(value), item_type)?
+                    }
+                    None => crate::value::dynamic_option::Construction::Unsupported(Some(value)),
+                };
+                match constructed {
+                    crate::value::dynamic_option::Construction::Native(value) => Ok(value),
+                    crate::value::dynamic_option::Construction::Unsupported(value) => {
+                        Ok(Value::Option {
+                            value: value.map(Rc::new),
+                            element_type: item_type,
+                        })
+                    }
                 }
-                let native = rils_stdlib::stdlib::prelude::some(Rc::new(arguments[0].clone()));
-                Ok(Value::Option {
-                    value: match native {
-                        rils_stdlib::stdlib::option::Option::Some(value) => Some(value),
-                        rils_stdlib::stdlib::option::Option::None => None,
-                    },
-                    element_type: Type::of_value(&arguments[0]),
-                })
             }),
         },
         NativeFunction {

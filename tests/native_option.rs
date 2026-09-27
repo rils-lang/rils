@@ -62,6 +62,48 @@ fn concrete_options_use_native_layout_in_both_backends() {
 }
 
 #[test]
+fn owned_some_moves_string_and_legacy_items_keep_their_value() {
+    let source = "let text = \"moved\"; Some(text)";
+    assert_dynamic_option(
+        eval(source).unwrap(),
+        "Option<string>",
+        false,
+        "Some(moved)",
+        "Some(\"moved\")",
+        "interpreter",
+    );
+    let compiled = compile(source).unwrap();
+    assert_dynamic_option(
+        compiled.execute().unwrap(),
+        "Option<string>",
+        false,
+        "Some(moved)",
+        "Some(\"moved\")",
+        "VM",
+    );
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    assert_dynamic_option(
+        loaded.execute().unwrap(),
+        "Option<string>",
+        false,
+        "Some(moved)",
+        "Some(\"moved\")",
+        "loaded VM",
+    );
+
+    for value in [
+        eval("Some(true)").unwrap(),
+        compile("Some(true)").unwrap().execute().unwrap(),
+    ] {
+        assert!(matches!(value, Value::Option { .. }));
+        assert_eq!(
+            value.as_option(),
+            Some((Some(Value::Bool(true)), rils::Type::Bool))
+        );
+    }
+}
+
+#[test]
 fn numeric_option_families_use_generated_native_conversions() {
     for ty in [
         "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",

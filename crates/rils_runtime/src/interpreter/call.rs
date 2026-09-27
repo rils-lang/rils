@@ -12,6 +12,29 @@ pub(super) use helpers::{builtin_runtime_member, select_method};
 pub(super) use trait_defaults::builtin_iterator_default_receiver;
 
 impl Interpreter {
+    pub(super) fn call_owned(
+        &mut self,
+        callee: Value,
+        arguments: Vec<Value>,
+        span: Span,
+    ) -> Result<Value, RuntimeError> {
+        if let Value::NativeFunction(function) = &callee
+            && let NativeFunctionBody::RustOwned(callback) = function.body
+        {
+            check_arity(
+                function.name,
+                function.min_arity,
+                function.max_arity,
+                arguments.len(),
+                span,
+            )?;
+            validate_native_arguments(function.signature.as_ref(), &arguments, span)?;
+            let value = callback(arguments).map_err(|message| RuntimeError::new(message, span))?;
+            return validate_native_return(function.signature.as_ref(), value, span, function.name);
+        }
+        self.call(callee, &arguments, span)
+    }
+
     pub(super) fn call(
         &mut self,
         callee: Value,
@@ -172,6 +195,14 @@ impl Interpreter {
                 let value = match function.body {
                     NativeFunctionBody::Rust(callback) => {
                         callback(arguments).map_err(|message| RuntimeError::new(message, span))?
+                    }
+                    NativeFunctionBody::RustOwned(callback) => {
+                        let owned = arguments
+                            .iter()
+                            .map(Value::clone_owned)
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|message| RuntimeError::new(message, span))?;
+                        callback(owned).map_err(|message| RuntimeError::new(message, span))?
                     }
                     NativeFunctionBody::Symbol(symbol) => {
                         self.call_native_symbol(symbol, arguments, span)?

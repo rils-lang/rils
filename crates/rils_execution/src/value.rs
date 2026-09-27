@@ -92,6 +92,7 @@ pub struct NativeFunction {
 #[derive(Clone, Copy)]
 pub enum NativeFunctionBody {
     Rust(fn(&[Value]) -> Result<Value, String>),
+    RustOwned(fn(Vec<Value>) -> Result<Value, String>),
     Symbol(&'static str),
 }
 
@@ -820,9 +821,12 @@ impl Value {
                 } else {
                     let (item, item_type) = dynamic_option::view(self)
                         .ok_or("dynamic value does not support Clone")??;
-                    let item = item.map(|item| item.clone_owned()).transpose()?;
-                    dynamic_option::construct(item.as_ref(), &item_type)
-                        .ok_or("dynamic value does not support Clone")??
+                    match dynamic_option::construct(item, &item_type)? {
+                        dynamic_option::Construction::Native(value) => value,
+                        dynamic_option::Construction::Unsupported(_) => {
+                            return Err("dynamic value does not support Clone".into());
+                        }
+                    }
                 }
             }
             value => value.clone(),

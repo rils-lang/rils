@@ -746,13 +746,21 @@ impl<'a> VirtualMachine<'a> {
                     destination,
                     item_type,
                 } => {
-                    let native = item_type.as_ref().and_then(|item_type| {
-                        rils_execution::value::dynamic_option::construct(None, item_type)
-                    });
-                    self.frame_mut().registers[destination] = Some(match native {
-                        Some(result) => result
-                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                        None => Value::Option {
+                    let constructed = item_type
+                        .as_ref()
+                        .map(|item_type| {
+                            rils_execution::value::dynamic_option::construct(None, item_type)
+                        })
+                        .transpose()
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    self.frame_mut().registers[destination] = Some(match constructed {
+                        Some(rils_execution::value::dynamic_option::Construction::Native(
+                            value,
+                        )) => value,
+                        Some(rils_execution::value::dynamic_option::Construction::Unsupported(
+                            _,
+                        ))
+                        | None => Value::Option {
                             value: None,
                             element_type: item_type,
                         },
@@ -764,16 +772,23 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let value = self.take_register(source, instruction.span)?;
                     let element_type = Type::of_value(&value);
-                    let option = element_type.as_ref().and_then(|item_type| {
-                        rils_execution::value::dynamic_option::construct(Some(&value), item_type)
-                    });
-                    self.frame_mut().registers[destination] = Some(match option {
-                        Some(result) => result
-                            .map_err(|message| BytecodeError::new(message, instruction.span))?,
-                        None => Value::Option {
-                            value: Some(Rc::new(value)),
-                            element_type,
-                        },
+                    let constructed = match element_type.as_ref() {
+                        Some(item_type) => {
+                            rils_execution::value::dynamic_option::construct(Some(value), item_type)
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?
+                        }
+                        None => rils_execution::value::dynamic_option::Construction::Unsupported(
+                            Some(value),
+                        ),
+                    };
+                    self.frame_mut().registers[destination] = Some(match constructed {
+                        rils_execution::value::dynamic_option::Construction::Native(value) => value,
+                        rils_execution::value::dynamic_option::Construction::Unsupported(value) => {
+                            Value::Option {
+                                value: value.map(Rc::new),
+                                element_type,
+                            }
+                        }
                     });
                 }
                 Instruction::BuildResultOk {

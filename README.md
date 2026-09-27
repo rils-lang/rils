@@ -29,7 +29,7 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 导出方法默认使用原生桥接，兼容旧入口时需显式声明绑定，详见 [标准库定义说明](crates/rils_stdlib/README.md)。
 独立的 [`rils_value`](crates/rils_value/README.md) crate 提供按 Rust 布局存储的原生值与类型操作注册；小型 Copy 值直接内联，其他值使用共享存储。`Range<T>`、`i8`、默认整数类型 `i32`、`usize` 和 `string` 已在解释器与字节码 VM 中使用原生负载；整数方法由标准库声明生成注册，并通过类型化上下文调用 Rust 方法。`type_of(1..3)` 保留泛型参数，返回 `"Range<i32>"`。
 
-所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>` 在解释器与 VM 中使用按实际子类型布局组合的 `Value::Dynamic`；局部声明、函数实参、赋值、字段与嵌套表达式中可确定类型的 `None` 也使用该路径。数值类型的转换由标准库声明生成。Rust 宿主可用 `Value::as_option()` 统一读取新旧 Option 表示，读取已迁移的基础值可使用 `Value::as_i8()`、`Value::as_i32()`、`Value::as_usize()` 和 `Value::as_string()`。
+所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>` 在解释器与 VM 中使用按实际子类型布局组合的 `Value::Dynamic`；局部声明、函数实参、赋值、字段与嵌套表达式中可确定类型的 `None` 也使用该路径。`Some(value)` 消耗原值；原生 `string` 可直接把负载移入 `Option<string>`，数值类型的转换由标准库声明生成。Rust 宿主可用 `Value::as_option()` 统一读取新旧 Option 表示，读取已迁移的基础值可使用 `Value::as_i8()`、`Value::as_i32()`、`Value::as_usize()` 和 `Value::as_string()`。
 
 原生值 crate 已支持运行时组合的 `Option<T>` 布局；整数、浮点数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数与 `string` 方法的原生对象注册由过程宏生成；两类方法返回的 `Option<T>` 已使用原生布局，`Option<T>` 自身的方法桥接当前通过过渡适配器读取原生负载，其他类型的可执行注册及实际值迁移仍在进行中。
 项目中的公开源码声明可通过多层 `pub use` 重导出；Analyzer 的补全、Hover、跳转和引用查找

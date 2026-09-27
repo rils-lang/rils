@@ -136,11 +136,15 @@ macro_rules! integer_bridge {
                     Option::Some(value) => Some($constructor(value.0)),
                     Option::None => None,
                 };
-                crate::value::dynamic_option::construct(
-                    item.as_ref(),
+                match crate::value::dynamic_option::construct(
+                    item,
                     &Type::Integer(crate::IntegerType::$variant),
-                )
-                .ok_or_else(|| format!("no native Option layout for {}", stringify!($primitive)))?
+                )? {
+                    crate::value::dynamic_option::Construction::Native(value) => Ok(value),
+                    crate::value::dynamic_option::Construction::Unsupported(_) => {
+                        Err(format!("no native Option layout for {}", stringify!($primitive)))
+                    }
+                }
             }
         }
         impl NativeOutput for Result<Number<$primitive>, String> {

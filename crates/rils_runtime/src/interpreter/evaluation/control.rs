@@ -34,7 +34,7 @@ impl Interpreter {
             .iter()
             .map(|argument| self.evaluate(argument, environment.clone()))
             .collect::<Result<Vec<_>, _>>()?;
-        self.call(callee, &arguments, span)
+        self.call_owned(callee, arguments, span)
     }
 
     fn evaluate_if(

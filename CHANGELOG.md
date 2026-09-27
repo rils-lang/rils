@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- `Some(value)` 的原生 `Option<T>` 构造现在消耗子值；`Some(string)` 在普通调用中直接移动标准库字符串负载，不再为存入 `Option<string>` 复制文本。不支持原生布局的子值会原样返回给旧表示路径。Rust 宿主若直接调用 `rils_execution::value::dynamic_option::construct`，需传入 `Option<Value>` 并处理 `Construction::{Native, Unsupported}`；借用来源须自行明确复制或 Clone。
 - 字符串标准库的 `find` / `rfind` 与 `strip_prefix` / `strip_suffix` 现在返回原生布局的 `Option<usize>` 或 `Option<string>`；Rust 宿主直接匹配旧 `Value::Option` 时改用 `Value::as_option()`。
 - 整数标准库的 `checked_add`、`checked_sub` 等返回 `Option<T>` 的方法现在直接返回原生布局；Rust 宿主应通过 `Value::as_option()` 读取，脚本调用方式不变。
 - `Option<T>` 的原生子值转换现在由标准库数值类型声明生成，覆盖全部整数与 `f32`、`f64`；`Some`、带类型的 `None` 和 `is_some` / `is_none` 在解释器、VM 及重新加载的字节码中一致。Rust 宿主直接匹配这些类型的 `Value::Option` 时，改用 `Value::as_option()`。

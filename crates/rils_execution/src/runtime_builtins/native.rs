@@ -54,8 +54,12 @@ impl StringOutput for NativeOption<usize> {
             NativeOption::Some(value) => Some(crate::numeric::native_usize(value)),
             NativeOption::None => None,
         };
-        crate::value::dynamic_option::construct(item.as_ref(), &Type::USIZE)
-            .ok_or("no native Option<usize> layout")?
+        match crate::value::dynamic_option::construct(item, &Type::USIZE)? {
+            crate::value::dynamic_option::Construction::Native(value) => Ok(value),
+            crate::value::dynamic_option::Construction::Unsupported(_) => {
+                Err("no native Option<usize> layout".into())
+            }
+        }
     }
 }
 impl StringOutput for NativeOption<NativeString> {
@@ -66,8 +70,12 @@ impl StringOutput for NativeOption<NativeString> {
             )),
             NativeOption::None => None,
         };
-        crate::value::dynamic_option::construct(item.as_ref(), &Type::String)
-            .ok_or("no native Option<string> layout")?
+        match crate::value::dynamic_option::construct(item, &Type::String)? {
+            crate::value::dynamic_option::Construction::Native(value) => Ok(value),
+            crate::value::dynamic_option::Construction::Unsupported(_) => {
+                Err("no native Option<string> layout".into())
+            }
+        }
     }
 }
 impl StringOutput for Iterator<char> {

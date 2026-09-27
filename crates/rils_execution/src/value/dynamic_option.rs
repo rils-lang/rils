@@ -3,43 +3,64 @@
 use std::rc::Rc;
 
 use rils_stdlib::stdlib::string::String as NativeString;
-use rils_value::{DynamicType, DynamicValue};
+use rils_value::{DynamicLayout, DynamicType, DynamicValue};
 
 use crate::Type;
 
 use super::{DynamicObject, Value, native_layouts};
 
-/// Construct an Option with a concrete native item layout when one is available.
-/// Unsupported item types remain on the existing owned-value path.
-pub fn construct(value: Option<&Value>, item_type: &Type) -> Option<Result<Value, String>> {
-    let item_layout = native_layouts::integer::layout(item_type)
+/// A native option, or the original item when its type has no native layout.
+pub enum Construction {
+    Native(Value),
+    Unsupported(Option<Value>),
+}
+
+fn item_layout(item_type: &Type) -> Option<Rc<DynamicLayout>> {
+    native_layouts::integer::layout(item_type)
         .or_else(|| native_layouts::float::layout(item_type))
-        .or_else(|| (item_type == &Type::String).then(native_layouts::string::layout))?;
-    let option_layout = match native_layouts::option::layout(item_layout.clone()) {
-        Ok(layout) => layout,
-        Err(error) => return Some(Err(error)),
+        .or_else(|| (item_type == &Type::String).then(native_layouts::string::layout))
+}
+
+pub fn supports(item_type: &Type) -> bool {
+    item_layout(item_type).is_some()
+}
+
+/// Consume an item to construct an Option with its concrete native layout.
+/// Unsupported types return the original item for the legacy value path.
+pub fn construct(value: Option<Value>, item_type: &Type) -> Result<Construction, String> {
+    let Some(item_layout) = item_layout(item_type) else {
+        return Ok(Construction::Unsupported(value));
     };
+    let option_layout = native_layouts::option::layout(item_layout.clone())?;
     let item = value.map(|value| {
         if item_type == &Type::String {
-            return DynamicValue::from_rust(
-                item_layout.clone(),
-                NativeString::from(value.as_string().ok_or("expected string option item")?),
-            );
+            let text = match value {
+                Value::Native(object) if object.descriptor().rils_type() == &Type::String => object
+                    .into_rust::<NativeString>()
+                    .map_err(|failure| failure.1)?,
+                Value::String(text) => NativeString::from(text.to_string()),
+                value => {
+                    return Err(format!(
+                        "expected string option item, found {}",
+                        value.type_name()
+                    ));
+                }
+            };
+            return DynamicValue::from_rust(item_layout.clone(), text);
         }
-        native_layouts::integer::option_item(value, item_type, item_layout.clone())
-            .or_else(|| native_layouts::float::option_item(value, item_type, item_layout.clone()))
+        native_layouts::integer::option_item(&value, item_type, item_layout.clone())
+            .or_else(|| native_layouts::float::option_item(&value, item_type, item_layout.clone()))
             .ok_or_else(|| format!("no native option item converter for {item_type}"))?
     });
-    Some(
-        item.map_or_else(
-            || DynamicValue::none(option_layout.clone()),
-            |item| DynamicValue::some(option_layout.clone(), item?),
-        )
-        .and_then(|value| {
-            let descriptor = Rc::new(DynamicType::new(option_layout));
-            DynamicObject::new(descriptor, value).map(Value::Dynamic)
-        }),
+    item.map_or_else(
+        || DynamicValue::none(option_layout.clone()),
+        |item| DynamicValue::some(option_layout.clone(), item?),
     )
+    .and_then(|value| {
+        let descriptor = Rc::new(DynamicType::new(option_layout));
+        DynamicObject::new(descriptor, value)
+            .map(|object| Construction::Native(Value::Dynamic(object)))
+    })
 }
 
 pub fn view(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {

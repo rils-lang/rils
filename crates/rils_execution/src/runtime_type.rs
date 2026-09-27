@@ -337,22 +337,47 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
             Type::Option(inner_type),
             Value::Option {
                 value,
-                element_type: _,
+                element_type,
             },
         ) => {
+            let resolved_type = if matches!(inner_type.as_ref(), Type::Unknown) {
+                element_type
+                    .clone()
+                    .or_else(|| {
+                        value
+                            .as_ref()
+                            .and_then(|value| Type::of_value(value.as_ref()))
+                    })
+                    .unwrap_or(Type::Unknown)
+            } else {
+                (**inner_type).clone()
+            };
             let value = match value {
-                Some(value) => Some(Rc::new(inner_type.constrain(value.as_ref())?)),
+                Some(value) => {
+                    let constrained = resolved_type.constrain(value.as_ref())?;
+                    // This legacy constraint API only borrows the source Option.
+                    // A non-Copy native item needs its own payload before the
+                    // consuming constructor can move it into a new layout.
+                    if matches!(constrained, Value::Native(_))
+                        && !constrained.is_copy()
+                        && crate::value::dynamic_option::supports(&resolved_type)
+                    {
+                        Some(constrained.clone_owned().ok()?)
+                    } else {
+                        Some(constrained)
+                    }
+                }
                 None => None,
             };
-            if let Some(result) =
-                crate::value::dynamic_option::construct(value.as_ref().map(Rc::as_ref), inner_type)
-            {
-                return result.ok();
+            match crate::value::dynamic_option::construct(value, &resolved_type).ok()? {
+                crate::value::dynamic_option::Construction::Native(value) => Some(value),
+                crate::value::dynamic_option::Construction::Unsupported(value) => {
+                    Some(Value::Option {
+                        value: value.map(Rc::new),
+                        element_type: Some(resolved_type),
+                    })
+                }
             }
-            Some(Value::Option {
-                value,
-                element_type: Some((**inner_type).clone()),
-            })
         }
         (Type::Result(ok_type, error_type), Value::Result { value, .. }) => Some(Value::Result {
             value: match value {
