@@ -157,6 +157,34 @@ impl<V: 'static> NativeObject<V> {
         }
     }
 
+    /// Move out a registered Rust payload without cloning it. Shared backing
+    /// cannot be moved while another handle may still access the same value.
+    pub fn into_rust<T: 'static>(self) -> Result<T, Box<(Self, String)>> {
+        if self.descriptor.rust_type != TypeId::of::<T>() {
+            return Err(Box::new((
+                self,
+                format!("native payload is not {}", std::any::type_name::<T>()),
+            )));
+        }
+        let Self {
+            descriptor,
+            storage,
+        } = self;
+        match storage {
+            NativeStorage::Inline(payload) => Ok(payload.into_value::<T>()),
+            NativeStorage::Shared(payload) => match Rc::try_unwrap(payload) {
+                Ok(payload) => Ok(payload.into_inner().into_value::<T>()),
+                Err(payload) => Err(Box::new((
+                    Self {
+                        descriptor,
+                        storage: NativeStorage::Shared(payload),
+                    },
+                    "native payload is shared and cannot be moved".into(),
+                ))),
+            },
+        }
+    }
+
     pub fn with_mut<T: 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R, String> {
         self.check_type::<T>()?;
         match &self.storage {

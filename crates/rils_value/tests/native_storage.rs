@@ -137,3 +137,65 @@ fn shared_native_payload_drops_exactly_once() {
     drop(alias);
     assert_eq!(drops.get(), 1);
 }
+
+#[test]
+fn owned_native_payload_moves_out_without_cloning_or_double_drop() {
+    struct Probe {
+        allocation: Box<i32>,
+        drops: Rc<Cell<usize>>,
+    }
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+
+    let drops = Rc::new(Cell::new(0));
+    let allocation = Box::new(42);
+    let address = (&*allocation) as *const i32;
+    let descriptor = Rc::new(NativeType::<()>::new::<Probe>(Type::named("Probe")));
+    let value = NativeObject::new(
+        descriptor,
+        Probe {
+            allocation,
+            drops: drops.clone(),
+        },
+    )
+    .unwrap();
+    let moved = value
+        .into_rust::<Probe>()
+        .ok()
+        .expect("unique payload moves");
+    assert_eq!((&*moved.allocation) as *const i32, address);
+    assert_eq!(drops.get(), 0);
+    drop(moved);
+    assert_eq!(drops.get(), 1);
+}
+
+#[test]
+fn shared_native_payload_is_returned_unchanged_when_move_is_unavailable() {
+    let descriptor = Rc::new(NativeType::<()>::new::<String>(Type::String));
+    let value = NativeObject::new(descriptor, "shared".to_owned()).unwrap();
+    let alias = value.clone();
+    let (value, message) = *value
+        .into_rust::<String>()
+        .expect_err("shared payload cannot move");
+    assert!(message.contains("shared"));
+    assert_eq!(
+        alias.with::<String, _>(String::clone),
+        Ok("shared".to_owned())
+    );
+    drop(alias);
+    assert_eq!(value.into_rust::<String>().ok(), Some("shared".to_owned()));
+}
+
+#[test]
+fn mismatched_native_payload_type_is_returned_without_reading_its_bytes() {
+    let descriptor = Rc::new(NativeType::<()>::new::<String>(Type::String));
+    let value = NativeObject::new(descriptor, "typed".to_owned()).unwrap();
+    let (value, message) = *value
+        .into_rust::<Vec<u8>>()
+        .expect_err("payload TypeId must be checked before moving bytes");
+    assert!(message.contains("Vec"));
+    assert_eq!(value.into_rust::<String>().ok(), Some("typed".to_owned()));
+}

@@ -140,6 +140,15 @@ impl Payload {
         // SAFETY: NativeObject checked TypeId and holds an exclusive borrow.
         unsafe { f(&mut *self.storage.pointer_mut().cast::<T>()) }
     }
+
+    pub(crate) fn into_value<T>(mut self) -> T {
+        assert!(self.initialized);
+        // SAFETY: NativeObject checked the stored TypeId before consuming this
+        // payload. Clearing the live bit transfers its sole destructor to T.
+        let value = unsafe { ptr::read(self.storage.pointer().cast::<T>()) };
+        self.initialized = false;
+        value
+    }
 }
 
 impl Drop for Payload {
