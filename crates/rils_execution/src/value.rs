@@ -36,6 +36,8 @@ pub mod dynamic_option;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
 pub mod native_ops;
+#[path = "value/record_layout.rs"]
+pub mod record_layout;
 #[path = "value/string.rs"]
 mod string;
 pub use string::{native_string, string_payload};

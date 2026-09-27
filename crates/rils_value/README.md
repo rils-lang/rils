@@ -8,4 +8,4 @@
 
 `Range<T>`、`i8`、`i32`、`usize` 和 `string` 已在解释器与 VM 的实际值路径中使用 `Value::Native`。类型描述和整数、字符串方法注册由标准库声明生成；手工构造 `NativeType` 仅用于验证独立存储 API。
 
-`DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需标记字节。`DynamicObject<V>` 按类型 Copy 性质选择内联句柄或共享存储；`DynamicType<V>` 为它提供任意操作的注册表和带布局检查的调用上下文。`NativeObject::into_rust` 可以消耗唯一持有的原生负载；共享负载会连同错误归还，避免隐式 Clone 或重复析构。执行层已有从标准库声明过程宏生成的整数、浮点数、`string` 与 `Option<T>` 布局工厂。所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>` 已接入实际 `Value::Dynamic` 路径；数值子值转换由过程宏生成，方法仍通过过渡适配器转换，其余泛型实例尚未迁移。
+`DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需标记字节。用户结构体可由字段布局递归计算对齐与偏移，字段初始化标记与负载放在同一块存储中；按索引访问、移出、重新填入和析构支持嵌套结构及 `Option<T>`。字段名到索引的映射保存在布局描述中，操作注册的上下文可通过类型检查后的字段入口访问负载。`DynamicObject<V>` 按类型 Copy 性质选择内联句柄或共享存储；`DynamicType<V>` 为它提供任意操作的注册表和带布局检查的调用上下文。`NativeObject::into_rust` 和 `DynamicValue::into_rust` 可以消耗已验证类型的原生负载，避免隐式 Clone 或重复析构。执行层已有从标准库声明过程宏生成的整数、浮点数、`string` 与 `Option<T>` 布局工厂，也能从已有的 `StructType` 声明为具体泛型实例解析嵌套布局。结构体布局目前仍是存储层能力，解释器和 VM 的用户结构体实例尚未迁出 `Value::Struct`；所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>` 已接入实际 `Value::Dynamic` 路径。

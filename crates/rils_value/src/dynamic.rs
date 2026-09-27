@@ -8,8 +8,12 @@ use crate::storage::RawStorage;
 
 mod object;
 mod operations;
+mod record;
 pub use object::DynamicObject;
 pub use operations::{DynamicCallContext, DynamicType};
+pub use record::DynamicField;
+
+use record::RecordLayout;
 
 enum DropKind {
     Rust {
@@ -20,6 +24,7 @@ enum DropKind {
         item: Rc<DynamicLayout>,
         item_offset: usize,
     },
+    Record(RecordLayout),
 }
 
 /// A concrete Rust layout or a composite layout assembled from runtime types.
@@ -90,6 +95,10 @@ impl DynamicLayout {
                     // SAFETY: extend calculated this aligned child offset.
                     unsafe { item.drop_value(pointer.add(*item_offset)) };
                 }
+            }
+            DropKind::Record(record) => {
+                // SAFETY: an initialized record has one live tag per field.
+                unsafe { record.drop_value(pointer) };
             }
         }
     }
@@ -244,6 +253,24 @@ impl DynamicValue {
         // SAFETY: descriptor identity was checked and &mut self gives
         // exclusive access to the initialized Rust value.
         Ok(unsafe { f(&mut *self.storage.pointer_mut().cast::<T>()) })
+    }
+
+    /// Consume one concrete Rust leaf without cloning its payload.
+    pub fn into_rust<T: 'static>(mut self) -> Result<T, (Self, String)> {
+        if !matches!(
+            self.descriptor.drop_kind,
+            DropKind::Rust { type_id, .. } if type_id == TypeId::of::<T>()
+        ) {
+            return Err((
+                self,
+                format!("native value is not {}", std::any::type_name::<T>()),
+            ));
+        }
+        // SAFETY: the descriptor checked T and this value owns the initialized
+        // payload. Clearing the live bit transfers its sole destructor to T.
+        let value = unsafe { ptr::read(self.storage.pointer().cast::<T>()) };
+        self.initialized = false;
+        Ok(value)
     }
 
     pub fn copy_owned(&self) -> Result<Self, String> {

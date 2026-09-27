@@ -4,5 +4,7 @@ mod dynamic;
 mod native;
 mod storage;
 
-pub use dynamic::{DynamicCallContext, DynamicLayout, DynamicObject, DynamicType, DynamicValue};
+pub use dynamic::{
+    DynamicCallContext, DynamicField, DynamicLayout, DynamicObject, DynamicType, DynamicValue,
+};
 pub use native::{NativeCallContext, NativeChildren, NativeObject, NativeType};

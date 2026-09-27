@@ -87,4 +87,20 @@ impl<V> DynamicCallContext<'_, V> {
     pub fn option_is_some(&self) -> Result<bool, String> {
         self.receiver.is_some()
     }
+
+    pub fn record_field<T: 'static, R>(
+        &self,
+        index: usize,
+        f: impl FnOnce(&T) -> R,
+    ) -> Result<R, String> {
+        self.receiver.with_field(index, f)
+    }
+
+    pub fn record_field_mut<T: 'static, R>(
+        &mut self,
+        index: usize,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> Result<R, String> {
+        self.receiver.with_field_mut(index, f)
+    }
 }

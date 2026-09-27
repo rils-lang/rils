@@ -74,6 +74,17 @@ impl<V> DynamicObject<V> {
             .map_err(|_| "dynamic value is already mutably accessed".to_owned())
     }
 
+    pub fn with_mut<R>(&self, f: impl FnOnce(&mut DynamicValue) -> R) -> Result<R, String> {
+        let value: &RefCell<DynamicValue> = match &self.storage {
+            Storage::Inline(value) => value,
+            Storage::Shared(value) => value.as_ref(),
+        };
+        value
+            .try_borrow_mut()
+            .map(|mut value| f(&mut value))
+            .map_err(|_| "dynamic value is already accessed".to_owned())
+    }
+
     pub fn call(&self, name: &str, arguments: &[V]) -> Option<Result<V, String>> {
         if !self.descriptor.has_method(name) {
             return None;
