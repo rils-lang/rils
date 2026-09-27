@@ -133,7 +133,6 @@ fn orderable(value: &Value) -> bool {
     matches!(
         value,
         Value::I16(_)
-            | Value::I32(_)
             | Value::I64(_)
             | Value::I128(_)
             | Value::Isize(_)
@@ -174,7 +173,5 @@ fn compare(left: &Value, right: &Value) -> Result<Ordering, String> {
             }
         };
     }
-    compare_variants!(
-        I16, I32, I64, I128, Isize, U8, U16, U32, U64, U128, Usize, Char
-    )
+    compare_variants!(I16, I64, I128, Isize, U8, U16, U32, U64, U128, Usize, Char)
 }

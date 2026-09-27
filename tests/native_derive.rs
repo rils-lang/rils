@@ -9,8 +9,11 @@ fn rust_registered_clone_derive_runs_in_both_backends() {
         let duplicated = original.clone();
         duplicated.value + 1
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -26,8 +29,11 @@ fn derived_clone_calls_a_fields_custom_clone() {
         let duplicated = original.clone();
         duplicated.inner.value
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -39,8 +45,11 @@ fn derived_clone_supports_generic_structs() {
         let duplicated = original.clone();
         duplicated.value
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -52,8 +61,11 @@ fn rust_registered_copy_derive_preserves_owned_value() {
         let other = point;
         point.x + other.x
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -89,8 +101,11 @@ fn native_clone_derive_supports_every_enum_variant_shape() {
         let third = match c { Message::Write { text } => if text == "hi" { 0 } else { 1 }, _ => 1 };
         first + second + third
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -110,10 +125,10 @@ fn derived_clone_of_enum_calls_custom_field_clone() {
         let c = match named { Envelope::Named { value } => value.value, _ => 0 };
         a + b * 100 + c
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(2121));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(2121));
     assert_eq!(
         compile(source).unwrap().execute().unwrap(),
-        Value::I32(2121)
+        Value::from_i32(2121)
     );
 }
 
@@ -130,8 +145,11 @@ fn derived_clone_supports_generic_enums() {
         let c = match named { Envelope::Named { value } => value, _ => 0 };
         a + b + c
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -160,8 +178,11 @@ fn derived_copy_supports_enum_variants_without_moving_the_original() {
         let f = match named_again { Signal::Named { value } => value, _ => 0 };
         a + b + c + d + e + f
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(86));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(86));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(86));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(86)
+    );
 }
 
 #[test]
@@ -181,8 +202,11 @@ fn native_default_derive_handles_fields_and_unit_structs() {
         let marker = <Marker as Default>::default();
         if type_of(marker) == "Marker" { wrapped.value + 42 } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -228,11 +252,11 @@ fn derived_eq_and_hash_support_struct_and_enum_collection_keys() {
             map.get_cloned(&matching).unwrap() + 2
         } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
     let module = compile(source).unwrap();
-    assert_eq!(module.execute().unwrap(), Value::I32(42));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
     let restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(restored.execute().unwrap(), Value::I32(42));
+    assert_eq!(restored.execute().unwrap(), Value::from_i32(42));
 }
 
 #[test]
@@ -264,8 +288,11 @@ fn derived_structural_key_handles_composite_fields_and_replacement() {
             prior + map.get_cloned(&lookup).unwrap()
         } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]

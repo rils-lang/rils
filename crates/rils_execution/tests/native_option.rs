@@ -7,7 +7,7 @@ fn native_option_is_some_handles_variants_and_invalid_receivers() {
     for (input, is_some) in [
         (
             Value::Option {
-                value: Some(Rc::new(Value::I32(5))),
+                value: Some(Rc::new(Value::from_i32(5))),
                 element_type: Some(Type::I32),
             },
             true,
@@ -32,10 +32,12 @@ fn native_option_is_some_handles_variants_and_invalid_receivers() {
             Some(Ok(Value::Bool(!is_some)))
         );
     }
-    let error =
-        runtime_builtins::call_native_symbol("core::option::option::is_some", &[Value::I32(5)])
-            .unwrap()
-            .unwrap_err();
+    let error = runtime_builtins::call_native_symbol(
+        "core::option::option::is_some",
+        &[Value::from_i32(5)],
+    )
+    .unwrap()
+    .unwrap_err();
     assert!(error.contains("expects Option"));
     let error = runtime_builtins::call_native_symbol("core::option::option::is_some", &[])
         .unwrap()
@@ -46,7 +48,7 @@ fn native_option_is_some_handles_variants_and_invalid_receivers() {
 #[test]
 fn native_option_symbol_dispatch_uses_the_exported_declaration() {
     let input = Value::Option {
-        value: Some(Rc::new(Value::I32(5))),
+        value: Some(Rc::new(Value::from_i32(5))),
         element_type: Some(Type::I32),
     };
     assert_eq!(

@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn option_and_result_state_members_use_native_symbols() {
         let option = Value::Option {
-            value: Some(Rc::new(Value::I32(7))),
+            value: Some(Rc::new(Value::from_i32(7))),
             element_type: Some(Type::I32),
         };
         let result = Value::Result {
@@ -709,12 +709,12 @@ mod tests {
         use rils_builtins::BuiltinId;
 
         let option = Value::Option {
-            value: Some(Rc::new(Value::I32(7))),
+            value: Some(Rc::new(Value::from_i32(7))),
             element_type: Some(Type::I32),
         };
         assert_eq!(
             call(BuiltinId::OptionUnwrap, &[option]).unwrap(),
-            Value::I32(7)
+            Value::from_i32(7)
         );
 
         let missing = Value::Option {
@@ -738,7 +738,7 @@ mod tests {
             element_type: RefCell::new(Some(Type::I32)),
         })));
         assert_eq!(
-            call(BuiltinId::VecPush, &[vector.clone(), Value::I32(7)]).unwrap(),
+            call(BuiltinId::VecPush, &[vector.clone(), Value::from_i32(7)]).unwrap(),
             Value::Unit
         );
         let Value::Reference(vector) = &vector else {
@@ -747,16 +747,16 @@ mod tests {
         let Value::Vec(vector) = vector.read().unwrap() else {
             unreachable!();
         };
-        assert_eq!(vector.elements.borrow()[0].value, Some(Value::I32(7)));
+        assert_eq!(vector.elements.borrow()[0].value, Some(Value::from_i32(7)));
 
         let option = mutable_receiver(Value::Option {
-            value: Some(Rc::new(Value::I32(3))),
+            value: Some(Rc::new(Value::from_i32(3))),
             element_type: Some(Type::I32),
         });
         assert_eq!(
             call(BuiltinId::OptionTake, std::slice::from_ref(&option)).unwrap(),
             Value::Option {
-                value: Some(Rc::new(Value::I32(3))),
+                value: Some(Rc::new(Value::from_i32(3))),
                 element_type: Some(Type::I32),
             }
         );
@@ -769,13 +769,13 @@ mod tests {
         ));
 
         let iterator = mutable_receiver(owned_iterator_value(
-            VecDeque::from([Value::I32(11)]),
+            VecDeque::from([Value::from_i32(11)]),
             Type::I32,
         ));
         assert_eq!(
             call(BuiltinId::IteratorNext, std::slice::from_ref(&iterator)).unwrap(),
             Value::Option {
-                value: Some(Rc::new(Value::I32(11))),
+                value: Some(Rc::new(Value::from_i32(11))),
                 element_type: Some(Type::I32),
             }
         );
@@ -784,12 +784,13 @@ mod tests {
             Value::Option { value: None, .. }
         ));
 
-        let range =
-            mutable_receiver(crate::value::native_range(Value::I32(2), Value::I32(3)).unwrap());
+        let range = mutable_receiver(
+            crate::value::native_range(Value::from_i32(2), Value::from_i32(3)).unwrap(),
+        );
         assert_eq!(
             call(BuiltinId::RangeNext, std::slice::from_ref(&range)).unwrap(),
             Value::Option {
-                value: Some(Rc::new(Value::I32(2))),
+                value: Some(Rc::new(Value::from_i32(2))),
                 element_type: Some(Type::I32),
             }
         );
@@ -800,7 +801,7 @@ mod tests {
         use rils_builtins::BuiltinId;
 
         assert!(
-            call(BuiltinId::VecPush, &[Value::Unit, Value::I32(1)])
+            call(BuiltinId::VecPush, &[Value::Unit, Value::from_i32(1)])
                 .unwrap_err()
                 .contains("mutable binding")
         );
@@ -826,7 +827,7 @@ mod tests {
         let enumerated = call(
             BuiltinId::IteratorEnumerate,
             &[owned_iterator_value(
-                VecDeque::from([Value::I32(9)]),
+                VecDeque::from([Value::from_i32(9)]),
                 Type::I32,
             )],
         )
@@ -839,6 +840,6 @@ mod tests {
         };
         let fields = tuple.elements.borrow();
         assert_eq!(fields[0].value, Some(Value::Usize(0)));
-        assert_eq!(fields[1].value, Some(Value::I32(9)));
+        assert_eq!(fields[1].value, Some(Value::from_i32(9)));
     }
 }

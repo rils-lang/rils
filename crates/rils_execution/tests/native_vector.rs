@@ -21,12 +21,12 @@ fn native_vec_receiver_preserves_referenced_slots_and_rejects_reordering() {
     let sequence = Rc::new(IndexedStorage {
         elements: RefCell::new(vec![
             FieldSlot {
-                value: Some(Value::I32(1)),
+                value: Some(Value::from_i32(1)),
                 type_annotation: Type::I32,
                 references: 1,
             },
             FieldSlot {
-                value: Some(Value::I32(2)),
+                value: Some(Value::from_i32(2)),
                 type_annotation: Type::I32,
                 references: 0,
             },
@@ -49,10 +49,10 @@ fn native_vec_receiver_preserves_referenced_slots_and_rejects_reordering() {
     assert_eq!(sequence.elements.borrow()[0].references, 1);
 
     for (name, arguments) in [
-        ("push", vec![receiver.clone(), Value::I32(3)]),
+        ("push", vec![receiver.clone(), Value::from_i32(3)]),
         (
             "insert",
-            vec![receiver.clone(), Value::Usize(1), Value::I32(3)],
+            vec![receiver.clone(), Value::Usize(1), Value::from_i32(3)],
         ),
         ("remove", vec![receiver.clone(), Value::Usize(1)]),
         ("swap_remove", vec![receiver.clone(), Value::Usize(1)]),

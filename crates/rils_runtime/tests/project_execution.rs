@@ -10,5 +10,5 @@ fn eval_file_loads_external_modules() {
         .eval_file(entry)
         .expect("fixture module tree should execute");
 
-    assert_eq!(value, Value::I32(42));
+    assert_eq!(value, Value::from_i32(42));
 }

@@ -26,7 +26,7 @@ fn generated_number_codecs_round_trip_owned_record_payloads() {
             Type::Integer(rils_execution::IntegerType::I8),
             Value::from_i8(-8),
         ),
-        (Type::I32, Value::I32(42)),
+        (Type::I32, Value::from_i32(42)),
         (Type::USIZE, Value::Usize(usize::MAX)),
         (Type::F64, Value::F64(3.5)),
     ];
@@ -87,7 +87,7 @@ fn owned_composite_codec_moves_nested_string_without_value_in_native_bytes() {
         ));
         Value::Tuple(indexed(
             vec![
-                (Value::I32(7), Type::I32),
+                (Value::from_i32(7), Type::I32),
                 (
                     Value::Option {
                         value: Some(Rc::new(Value::from_string("owned"))),
@@ -183,7 +183,12 @@ fn nested_user_struct_fields_are_inline_in_native_bytes() {
             ("backup", Type::Option(Box::new(Type::named("Inner")))),
         ],
     );
-    let make_inner = |text| instance(inner.clone(), vec![Value::from_string(text), Value::I32(7)]);
+    let make_inner = |text| {
+        instance(
+            inner.clone(),
+            vec![Value::from_string(text), Value::from_i32(7)],
+        )
+    };
     let make_outer = || {
         instance(
             outer.clone(),
@@ -452,7 +457,10 @@ fn stdlib_binary_heap_layout_keeps_owned_elements_and_empty_type() {
     let mut resolver = RecordLayoutResolver::new(&[]);
     let layout = resolver.resolve(&ty).unwrap();
     assert!(native_layouts::binary_heap::matches(&ty));
-    for values in [vec![], vec![Value::I32(7), Value::I32(-4), Value::I32(2)]] {
+    for values in [
+        vec![],
+        vec![Value::from_i32(7), Value::from_i32(-4), Value::from_i32(2)],
+    ] {
         let expected = values.clone();
         let heap = Value::BinaryHeap(Rc::new(BinaryHeapValue {
             elements: RefCell::new(values),
@@ -472,7 +480,7 @@ fn stdlib_binary_heap_layout_keeps_owned_elements_and_empty_type() {
 fn standard_collection_fields_round_trip_without_value_payloads() {
     let option_type = Type::Option(Box::new(Type::I32));
     let some = Value::Option {
-        value: Some(Rc::new(Value::I32(9))),
+        value: Some(Rc::new(Value::from_i32(9))),
         element_type: Some(Type::I32),
     };
     let cases = vec![
@@ -483,9 +491,9 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
             },
             Value::HashSet(Rc::new(HashSetValue {
                 borrowed: Cell::new(0),
-                entries: RefCell::new(HashSet::from(
-                    [HashKey::from_value(&Value::I32(3)).unwrap()],
-                )),
+                entries: RefCell::new(HashSet::from([
+                    HashKey::from_value(&Value::from_i32(3)).unwrap()
+                ])),
                 element_type: RefCell::new(Type::I32),
             })),
         ),
@@ -530,7 +538,7 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
             Value::BTreeMap(Rc::new(BTreeMapValue {
                 borrowed: Cell::new(0),
                 entries: RefCell::new(BTreeMap::from([(
-                    HashKey::from_ordered_value(&Value::I32(4)).unwrap(),
+                    HashKey::from_ordered_value(&Value::from_i32(4)).unwrap(),
                     FieldSlot {
                         value: Some(Value::Bool(true)),
                         type_annotation: Type::Bool,
@@ -566,7 +574,7 @@ fn nominal_codec_rejects_a_layout_with_swapped_field_names() {
         ],
     )
     .unwrap();
-    let value = instance(pair, vec![Value::I32(1), Value::I32(2)]);
+    let value = instance(pair, vec![Value::from_i32(1), Value::from_i32(2)]);
     let error = record_codec::NativeRecordCodec::new()
         .into_native(value, wrong)
         .err()

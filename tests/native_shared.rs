@@ -12,6 +12,9 @@ fn shared_handles_match_in_interpreter_and_vm() {
             && weak.upgrade().is_some()
         { 42 } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }

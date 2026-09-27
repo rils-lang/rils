@@ -78,7 +78,6 @@ impl NativeInput for Integer {
         }
         match value {
             Value::I16(value) => signed!(value, "i16"),
-            Value::I32(value) => signed!(value, "i32"),
             Value::I64(value) => signed!(value, "i64"),
             Value::I128(value) => signed!(value, "i128"),
             Value::Isize(value) => Ok(Self::Signed(*value as i128, "isize")),
@@ -114,6 +113,9 @@ impl NativeOutput for f64 {
 macro_rules! integer_input {
     (I8, $value:expr) => {
         super::i8_payload($value)
+    };
+    (I32, $value:expr) => {
+        super::i32_payload($value)
     };
     ($variant:ident, $value:expr) => {
         match $value {

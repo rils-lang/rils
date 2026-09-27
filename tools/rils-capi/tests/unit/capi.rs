@@ -1445,7 +1445,7 @@ fn exports_compiled_bytecode_to_memory_and_file() {
             .unwrap()
             .execute()
             .unwrap(),
-        Value::I32(42)
+        Value::from_i32(42)
     );
 
     let mut small = vec![0; size - 1];
@@ -1481,7 +1481,7 @@ fn exports_compiled_bytecode_to_memory_and_file() {
     );
     assert_eq!(
         BytecodeModule::read_file(&path).unwrap().execute().unwrap(),
-        Value::I32(42)
+        Value::from_i32(42)
     );
     std::fs::remove_file(path).unwrap();
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);

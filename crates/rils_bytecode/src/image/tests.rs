@@ -29,12 +29,12 @@ fn emits_and_round_trips_typed_integer_binary_instructions() {
             })
     };
     assert!(has_i32_binary(&module));
-    assert_eq!(module.execute().unwrap(), Value::I32(3));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(3));
 
     let image = module.to_bytes().expect("module serializes");
     let loaded = BytecodeModule::from_bytes(&image).expect("module deserializes");
     assert!(has_i32_binary(&loaded));
-    assert_eq!(loaded.execute().unwrap(), Value::I32(3));
+    assert_eq!(loaded.execute().unwrap(), Value::from_i32(3));
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn trait_metadata_constructs_and_calls_persistent_default_instances() {
             "Behaviour",
             "tick",
             &mut state,
-            vec![Value::I32(2)],
+            vec![Value::from_i32(2)],
             &host,
             1_000_000,
         )
@@ -106,13 +106,13 @@ fn trait_metadata_constructs_and_calls_persistent_default_instances() {
             "Behaviour",
             "tick",
             &mut state,
-            vec![Value::I32(3)],
+            vec![Value::from_i32(3)],
             &host,
             1_000_000,
         )
         .expect("second trait call should preserve state");
-    assert_eq!(first, Value::I32(2));
-    assert_eq!(second, Value::I32(5));
+    assert_eq!(first, Value::from_i32(2));
+    assert_eq!(second, Value::from_i32(5));
 
     let decoded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(
@@ -523,8 +523,8 @@ fn compiles_loop_values_and_moves() {
 #[test]
 fn compiled_modules_are_reusable_and_limit_steps() {
     let module = compile("let value = 40; value + 2").unwrap();
-    assert_eq!(module.execute().unwrap(), Value::I32(42));
-    assert_eq!(module.execute().unwrap(), Value::I32(42));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
     assert!(module.instruction_count() > 0);
     assert!(module.register_count() > 0);
 
@@ -548,14 +548,14 @@ fn calls_named_functions_with_arguments() {
     let module = compile("pub fn add(left: i32, right: i32) -> i32 { left + right }").unwrap();
     assert_eq!(
         module
-            .call("add", vec![Value::I32(20), Value::I32(22)])
+            .call("add", vec![Value::from_i32(20), Value::from_i32(22)])
             .unwrap(),
-        Value::I32(42)
+        Value::from_i32(42)
     );
 
     let error = module.call("missing", Vec::new()).unwrap_err();
     assert!(error.message.contains("unknown exported function"));
-    let error = module.call("add", vec![Value::I32(1)]).unwrap_err();
+    let error = module.call("add", vec![Value::from_i32(1)]).unwrap_err();
     assert!(error.message.contains("expects 2 arguments"));
 
     let private = compile("fn hidden() -> i32 { 42 }").unwrap();
@@ -578,9 +578,15 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
         "#,
     )
     .expect("recursive generic source should compile");
-    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(42));
+    assert_eq!(
+        module.call("main", Vec::new()).unwrap(),
+        Value::from_i32(42)
+    );
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.call("main", Vec::new()).unwrap(), Value::I32(42));
+    assert_eq!(
+        loaded.call("main", Vec::new()).unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -633,7 +639,7 @@ fn mutates_cell_values_in_bytecode() {
         "#,
     )
     .expect("Cell source should compile");
-    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(5));
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::from_i32(5));
 }
 
 #[test]
@@ -647,7 +653,7 @@ fn borrows_ref_cell_values_in_bytecode() {
         "#,
     )
     .expect("RefCell source should compile");
-    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(8));
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::from_i32(8));
 }
 
 #[test]
@@ -663,7 +669,7 @@ fn executes_vec_deque_operations_in_bytecode() {
         "#,
     )
     .expect("VecDeque source should compile");
-    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(3));
+    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::from_i32(3));
 }
 
 #[test]
@@ -678,7 +684,7 @@ fn executes_binary_heap_max_order_in_bytecode() {
     "#;
     assert_matches_interpreter(source);
     let module = compile(source).expect("BinaryHeap source should compile");
-    assert_eq!(module.execute().unwrap(), Value::I32(13));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(13));
 }
 
 #[test]
@@ -697,7 +703,10 @@ fn executes_btree_map_in_key_order_in_bytecode() {
         order + first + last
     "#;
     assert_matches_interpreter(source);
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(127));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(127)
+    );
 }
 
 #[test]
@@ -720,7 +729,7 @@ fn executes_btree_set_in_order_in_bytecode() {
     assert_matches_interpreter(source);
     assert_eq!(
         compile(source).unwrap().execute().unwrap(),
-        Value::I32(1234)
+        Value::from_i32(1234)
     );
 }
 
@@ -742,7 +751,7 @@ fn compiles_functions_recursion_and_early_return() {
     assert_matches_interpreter(source);
     let module = compile(source).unwrap();
     assert_eq!(module.function_count(), 2);
-    assert_eq!(module.execute().unwrap(), Value::I32(722));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(722));
 }
 
 #[test]
@@ -754,7 +763,7 @@ fn recursion_uses_explicit_vm_frames_and_respects_the_configured_limit() {
         countdown(1000)
     "#;
     let module = compile(source).unwrap();
-    assert_eq!(module.execute().unwrap(), Value::I32(0));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(0));
 
     let error = module
         .execute_with_limits(crate::ExecutionLimits::new(1_000_000, 8))
@@ -1133,7 +1142,7 @@ fn exported_callback_function_native_imports_are_verified() {
                 matches!(instruction.instruction, Instruction::CallNative { .. })
             })
     );
-    assert_eq!(module.execute().unwrap(), Value::I32(3));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(3));
 
     let mut restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     restored.native_imports[0].signature.return_type = Type::Bool;
@@ -1280,7 +1289,10 @@ fn compiles_and_executes_standard_native_macros() {
     .unwrap();
     let mut host = BytecodeHost::standard();
     host.enable_standard_io().unwrap();
-    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(42));
+    assert_eq!(
+        module.execute_with_host(&host).unwrap(),
+        Value::from_i32(42)
+    );
 
     let failure = compile("assert!(false, \"expected failure\")")
         .unwrap()
@@ -1628,7 +1640,7 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
         "unity.math",
         |arguments| match arguments {
             [left, right] => match (left.as_i32(), right.as_i32()) {
-                (Some(left), Some(right)) => Ok(Value::I32(left + right)),
+                (Some(left), Some(right)) => Ok(Value::from_i32(left + right)),
                 _ => Err("unexpected arguments".into()),
             },
             _ => Err("unexpected arguments".into()),
@@ -1639,17 +1651,23 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
         "unity_engine::math::one",
         FunctionSignature::fixed(Vec::new(), Type::I32),
         "unity.math",
-        |_| Ok(Value::I32(1)),
+        |_| Ok(Value::from_i32(1)),
     )
     .unwrap();
 
     module.validate_host(&host).unwrap();
-    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(42));
+    assert_eq!(
+        module.execute_with_host(&host).unwrap(),
+        Value::from_i32(42)
+    );
 
     let image = module.to_bytes().unwrap();
     let loaded = BytecodeModule::from_bytes(&image).unwrap();
     loaded.validate_host(&host).unwrap();
-    assert_eq!(loaded.execute_with_host(&host).unwrap(), Value::I32(42));
+    assert_eq!(
+        loaded.execute_with_host(&host).unwrap(),
+        Value::from_i32(42)
+    );
 }
 
 #[test]
@@ -1692,7 +1710,7 @@ fn links_distinct_host_overloads_by_name_and_signature() {
         |arguments| match arguments {
             [value] => value
                 .as_i32()
-                .map(|value| Value::I32(value + 1))
+                .map(|value| Value::from_i32(value + 1))
                 .ok_or_else(|| "unexpected integer overload arguments".into()),
             _ => Err("unexpected integer overload arguments".into()),
         },
@@ -1712,7 +1730,10 @@ fn links_distinct_host_overloads_by_name_and_signature() {
     )
     .unwrap();
 
-    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(21));
+    assert_eq!(
+        module.execute_with_host(&host).unwrap(),
+        Value::from_i32(21)
+    );
 }
 
 #[test]
@@ -2072,7 +2093,7 @@ fn indexed_record_fields_round_trip_and_reject_invalid_indices() {
     assert_matches_interpreter(source);
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(indexed_places(&loaded), indexed_places(&module));
-    assert_eq!(loaded.execute().unwrap(), Value::I32(15));
+    assert_eq!(loaded.execute().unwrap(), Value::from_i32(15));
 
     let mut wrong_type = loaded.clone();
     let decoy_id = wrong_type
@@ -2389,7 +2410,7 @@ fn compile_file_loads_external_modules() {
     std::fs::write(&module, "pub fn answer() -> i32 { 42 }").unwrap();
 
     let compiled = crate::compile_file(&root).expect("file module should compile");
-    assert_eq!(compiled.execute().unwrap(), Value::I32(42));
+    assert_eq!(compiled.execute().unwrap(), Value::from_i32(42));
 
     std::fs::remove_file(root).unwrap();
     std::fs::remove_file(module).unwrap();

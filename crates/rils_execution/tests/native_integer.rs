@@ -10,9 +10,9 @@ fn native_i32_wrapping_add_and_existing_other_integer_dispatch() {
         execute_integer_intrinsic(
             BuiltinId::IntegerWrappingAdd,
             None,
-            &[Value::I32(i32::MAX), Value::I32(1)],
+            &[Value::from_i32(i32::MAX), Value::from_i32(1)],
         ),
-        Ok(Value::I32(i32::MIN))
+        Ok(Value::from_i32(i32::MIN))
     );
     assert_eq!(
         execute_integer_intrinsic(
@@ -26,7 +26,7 @@ fn native_i32_wrapping_add_and_existing_other_integer_dispatch() {
         execute_integer_intrinsic(
             BuiltinId::IntegerWrappingAdd,
             None,
-            &[Value::I32(1), Value::U32(2)],
+            &[Value::from_i32(1), Value::U32(2)],
         )
         .unwrap_err()
         .contains("expected i32")
@@ -38,37 +38,37 @@ fn native_i32_methods_cover_boundary_shapes() {
     let cases = [
         (
             BuiltinId::IntegerWrappingNeg,
-            vec![Value::I32(i32::MIN)],
-            Value::I32(i32::MIN),
+            vec![Value::from_i32(i32::MIN)],
+            Value::from_i32(i32::MIN),
         ),
         (
             BuiltinId::IntegerSaturatingNeg,
-            vec![Value::I32(i32::MIN)],
-            Value::I32(i32::MAX),
+            vec![Value::from_i32(i32::MIN)],
+            Value::from_i32(i32::MAX),
         ),
         (
             BuiltinId::IntegerSaturatingAbs,
-            vec![Value::I32(i32::MIN)],
-            Value::I32(i32::MAX),
+            vec![Value::from_i32(i32::MIN)],
+            Value::from_i32(i32::MAX),
         ),
         (
             BuiltinId::IntegerSaturatingPow,
-            vec![Value::I32(i32::MAX), Value::U32(2)],
-            Value::I32(i32::MAX),
+            vec![Value::from_i32(i32::MAX), Value::U32(2)],
+            Value::from_i32(i32::MAX),
         ),
         (
             BuiltinId::IntegerCountOnes,
-            vec![Value::I32(-1)],
+            vec![Value::from_i32(-1)],
             Value::U32(32),
         ),
         (
             BuiltinId::IntegerRotateLeft,
-            vec![Value::I32(1), Value::U32(31)],
-            Value::I32(i32::MIN),
+            vec![Value::from_i32(1), Value::U32(31)],
+            Value::from_i32(i32::MIN),
         ),
         (
             BuiltinId::IntegerToF64,
-            vec![Value::I32(-5)],
+            vec![Value::from_i32(-5)],
             Value::F64(-5.0),
         ),
     ];
@@ -80,7 +80,7 @@ fn native_i32_methods_cover_boundary_shapes() {
         );
     }
     assert!(
-        execute_integer_intrinsic(BuiltinId::IntegerAbs, None, &[Value::I32(i32::MIN)])
+        execute_integer_intrinsic(BuiltinId::IntegerAbs, None, &[Value::from_i32(i32::MIN)])
             .unwrap_err()
             .contains("integer overflow")
     );
@@ -88,13 +88,17 @@ fn native_i32_methods_cover_boundary_shapes() {
         execute_integer_intrinsic(
             BuiltinId::IntegerDivEuclid,
             None,
-            &[Value::I32(1), Value::I32(0)]
+            &[Value::from_i32(1), Value::from_i32(0)]
         )
         .unwrap_err()
         .contains("division by zero")
     );
     assert_eq!(
-        execute_integer_intrinsic(BuiltinId::IntegerCheckedAbs, None, &[Value::I32(i32::MIN)]),
+        execute_integer_intrinsic(
+            BuiltinId::IntegerCheckedAbs,
+            None,
+            &[Value::from_i32(i32::MIN)]
+        ),
         Ok(Value::Option {
             value: None,
             element_type: Some(Type::I32)
@@ -108,7 +112,7 @@ fn native_i32_methods_cover_boundary_shapes() {
         Value::U32(32)
     );
     assert!(
-        execute_integer_intrinsic(BuiltinId::IntegerTryFrom, None, &[Value::I32(1)])
+        execute_integer_intrinsic(BuiltinId::IntegerTryFrom, None, &[Value::from_i32(1)])
             .unwrap_err()
             .contains("missing its target")
     );
@@ -141,7 +145,7 @@ fn generated_integer_family_runs_for_every_width() {
     let cases = [
         (Value::from_i8(-1), Value::from_i8(-2)),
         (Value::I16(-1), Value::I16(-2)),
-        (Value::I32(-1), Value::I32(-2)),
+        (Value::from_i32(-1), Value::from_i32(-2)),
         (Value::I64(-1), Value::I64(-2)),
         (Value::I128(-1), Value::I128(-2)),
         (Value::Isize(-1), Value::Isize(-2)),
@@ -163,8 +167,12 @@ fn generated_integer_family_runs_for_every_width() {
             integer_constant(target, rils_builtins::IntegerConstantId::Bits),
             Value::U32(target.bits())
         );
-        match execute_integer_intrinsic(BuiltinId::IntegerTryFrom, Some(target), &[Value::I32(1)])
-            .unwrap()
+        match execute_integer_intrinsic(
+            BuiltinId::IntegerTryFrom,
+            Some(target),
+            &[Value::from_i32(1)],
+        )
+        .unwrap()
         {
             Value::Result {
                 value: Ok(value),

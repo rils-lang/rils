@@ -18,8 +18,11 @@ fn option_and_result_trait_bounds_follow_their_arguments() {
         assert!(result_text.is_ok());
         optional_number.unwrap() + result_number.unwrap()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 
     for source in [
         "fn require_copy<T: Copy>(value: T) -> T { value } let value: Option<string> = Some(\"text\"); require_copy(value)",

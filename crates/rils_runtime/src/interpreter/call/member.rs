@@ -8,7 +8,6 @@ pub(super) fn resolve_numeric_member(
 ) -> Result<Option<Value>, RuntimeError> {
     let method = match value {
         Value::I16(_)
-        | Value::I32(_)
         | Value::I64(_)
         | Value::I128(_)
         | Value::Isize(_)

@@ -52,7 +52,7 @@ fn round_trip_executes_the_same_module() {
     let bytes = module.to_bytes().expect("module serializes");
     let loaded = BytecodeModule::from_bytes(&bytes).expect("module loads");
     let value = loaded.execute().expect("module runs");
-    assert_eq!(value, crate::Value::I32(16));
+    assert_eq!(value, crate::Value::from_i32(16));
 }
 
 #[test]

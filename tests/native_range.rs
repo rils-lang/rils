@@ -5,7 +5,7 @@ fn native_range_steps_match_in_interpreter_and_vm() {
     for (source, expected) in [
         (
             "let mut total = 39; for value in 1..3 { total = total + value; } total",
-            Value::I32(42),
+            Value::from_i32(42),
         ),
         (
             "let mut total = 0u32; for value in 254u32..255u32 { total = total + value; } total - 212u32",
@@ -23,11 +23,11 @@ fn native_range_steps_match_in_interpreter_and_vm() {
         "let mut range = 1i8..3i8; if range.next() == Some(1i8) && range.next() == Some(2i8) && range.next() == None { 42 } else { 0 }",
         "let mut range = 254u8..255u8; if range.next() == Some(254u8) && range.next() == None { 42 } else { 0 }",
     ] {
-        assert_eq!(eval(direct).unwrap(), Value::I32(42));
+        assert_eq!(eval(direct).unwrap(), Value::from_i32(42));
         let compiled = compile(direct).unwrap();
-        assert_eq!(compiled.execute().unwrap(), Value::I32(42));
+        assert_eq!(compiled.execute().unwrap(), Value::from_i32(42));
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-        assert_eq!(loaded.execute().unwrap(), Value::I32(42));
+        assert_eq!(loaded.execute().unwrap(), Value::from_i32(42));
     }
 }
 
@@ -69,12 +69,12 @@ fn every_integer_range_uses_the_same_native_iterator_bridge() {
         );
         assert_eq!(
             eval(&source).unwrap(),
-            Value::I32(42),
+            Value::from_i32(42),
             "{suffix} interpreter"
         );
         assert_eq!(
             compile(&source).unwrap().execute().unwrap(),
-            Value::I32(42),
+            Value::from_i32(42),
             "{suffix} VM"
         );
     }

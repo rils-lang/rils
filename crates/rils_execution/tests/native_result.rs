@@ -6,8 +6,8 @@ use rils_execution::{Type, Value, runtime_builtins};
 fn native_result_methods_cover_both_variants_and_preserve_option_types() {
     for (value, expected_ok, expected_err) in [
         (
-            Ok(Rc::new(Value::I32(7))),
-            Some(Rc::new(Value::I32(7))),
+            Ok(Rc::new(Value::from_i32(7))),
+            Some(Rc::new(Value::from_i32(7))),
             None,
         ),
         (
@@ -64,7 +64,7 @@ fn native_result_methods_reject_invalid_receivers_and_arities() {
         "core::result::result::err",
     ] {
         assert!(
-            runtime_builtins::call_native_symbol(symbol, &[Value::I32(5)])
+            runtime_builtins::call_native_symbol(symbol, &[Value::from_i32(5)])
                 .unwrap()
                 .unwrap_err()
                 .contains("expects Result")

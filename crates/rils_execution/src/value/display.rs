@@ -11,7 +11,6 @@ impl fmt::Display for Value {
             Self::Unit => write!(f, "()"),
             Self::Bool(value) => write!(f, "{value}"),
             Self::I16(value) => write!(f, "{value}"),
-            Self::I32(value) => write!(f, "{value}"),
             Self::I64(value) => write!(f, "{value}"),
             Self::I128(value) => write!(f, "{value}"),
             Self::Isize(value) => write!(f, "{value}"),

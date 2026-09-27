@@ -23,7 +23,7 @@ fn rejects_manual_implementations_of_callable_traits() {
 fn executes_a_generic_trait_implementation() {
     let value = eval(include_str!("fixtures/generic_trait.rils"))
         .expect("generic trait arguments should match the implementation");
-    assert_eq!(value, Value::I32(7));
+    assert_eq!(value, Value::from_i32(7));
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn iterator_satisfies_into_iterator_bound_without_an_explicit_impl() {
         fn accepts<T: IntoIterator>(value: T) -> i32 { 7 }
         accepts((Counter {}))
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(7));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(7));
     let rejected = source.replace("accepts((Counter {}))", "struct Plain; accepts((Plain {}))");
     let error = eval(&rejected).expect_err("Plain does not implement IntoIterator");
     assert!(error.to_string().contains("IntoIterator"), "{error}");
@@ -58,7 +58,7 @@ fn iterator_can_override_a_default_method() {
 #[test]
 fn function_values_satisfy_precise_fn_bounds() {
     let source = include_str!("fixtures/function_trait_bound.rils");
-    assert_eq!(eval(source).unwrap(), Value::I32(14));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(14));
 
     for replacement in [
         "fn double(value: i32) -> string {\n    \"wrong\"\n}",
@@ -81,7 +81,7 @@ fn function_values_satisfy_precise_fn_bounds() {
 #[test]
 fn callable_traits_follow_capture_effects() {
     let source = include_str!("fixtures/callable_trait_kinds.rils");
-    assert_eq!(eval(source).unwrap(), Value::I32(17));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(17));
 
     for (old, new, expected) in [
         (
@@ -104,7 +104,7 @@ fn callable_traits_follow_capture_effects() {
 #[test]
 fn callable_traits_accept_more_than_four_arguments() {
     let source = include_str!("fixtures/callable_many_arguments.rils");
-    assert_eq!(eval(source).unwrap(), Value::I32(108));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(108));
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn evaluates_cell_interior_mutability() {
         "#,
     )
     .expect("Cell should execute in the interpreter");
-    assert_eq!(value, Value::I32(5));
+    assert_eq!(value, Value::from_i32(5));
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn evaluates_ref_cell_borrows() {
         "#,
     )
     .expect("RefCell should execute in the interpreter");
-    assert_eq!(value, Value::I32(8));
+    assert_eq!(value, Value::from_i32(8));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn evaluates_vec_deque_operations() {
         "#,
     )
     .expect("VecDeque should execute in the interpreter");
-    assert_eq!(value, Value::I32(3));
+    assert_eq!(value, Value::from_i32(3));
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn evaluates_binary_heap_max_order_and_empty_cases() {
                heap.push(2); heap.push(5); heap.push(1); heap.push(5);
                heap.peek_cloned().unwrap() + heap.pop().unwrap()
                  + heap.pop().unwrap() + heap.pop().unwrap() + heap.pop().unwrap()"#,
-            Value::I32(18),
+            Value::from_i32(18),
         ),
         (
             r#"let mut heap: BinaryHeap<string> = BinaryHeap::new();
@@ -232,14 +232,14 @@ fn evaluates_btree_map_ordered_operations() {
         }
         if found == "two" { first + last + total } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(10));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(10));
     assert_eq!(
         eval(r#"let mut map = std::collections::BTreeMap::new(); map.insert("b", 2); map.insert("a", 1); map.first_key_cloned().unwrap()"#).unwrap(),
         Value::from_string("a")
     );
     assert_eq!(
         eval(r#"let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(2, 20); map.insert(1, 10); let mut sum = 0; for entry in map { sum = sum + entry.0; } sum"#).unwrap(),
-        Value::I32(3)
+        Value::from_i32(3)
     );
 }
 
@@ -259,7 +259,7 @@ fn borrowed_indexed_iterator_preserves_the_source() {
             3,
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), Value::I32(expected));
+        assert_eq!(eval(source).unwrap(), Value::from_i32(expected));
     }
 }
 
@@ -316,7 +316,7 @@ fn borrowed_map_and_set_iterators_preserve_collections() {
             2,
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), Value::I32(expected));
+        assert_eq!(eval(source).unwrap(), Value::from_i32(expected));
     }
 }
 
@@ -354,7 +354,7 @@ fn btree_map_handles_replacement_removal_and_invalid_keys() {
         let removed = map.remove(&key).unwrap();
         if map.is_empty() { previous + removed } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(3));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(3));
     let error = eval(r#"let mut map: BTreeMap<f64, i32> = BTreeMap::new(); map.insert(1.5, 1);"#)
         .unwrap_err();
     assert!(error.to_string().contains("BTreeMap key must be"));
@@ -382,7 +382,7 @@ fn evaluates_btree_set_order_and_algebra() {
             order + first + last
         } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(127));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(127));
 }
 
 #[test]
@@ -443,7 +443,7 @@ fn supports_local_reference_containers_and_input_reference_returns() {
         "#,
     )
     .expect("references may be carried by local generic containers");
-    assert_eq!(value, Value::I32(41));
+    assert_eq!(value, Value::from_i32(41));
 }
 
 #[test]
@@ -475,7 +475,7 @@ fn generic_structs_can_carry_local_references() {
         "#,
     )
     .expect("generic struct instances may carry local references");
-    assert_eq!(value, Value::I32(7));
+    assert_eq!(value, Value::from_i32(7));
 }
 
 #[test]
@@ -494,5 +494,5 @@ fn hash_maps_can_carry_reference_values_locally() {
         "#,
     )
     .expect("HashMap values may carry local references");
-    assert_eq!(value, Value::I32(42));
+    assert_eq!(value, Value::from_i32(42));
 }

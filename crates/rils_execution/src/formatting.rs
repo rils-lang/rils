@@ -120,7 +120,6 @@ fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
                 | Value::Bool(_)
                 | Value::Char(_)
                 | Value::I16(_)
-                | Value::I32(_)
                 | Value::I64(_)
                 | Value::I128(_)
                 | Value::Isize(_)
@@ -174,7 +173,6 @@ fn is_nonnegative_number(value: &Value) -> bool {
     }
     match value {
         Value::I16(value) => *value >= 0,
-        Value::I32(value) => *value >= 0,
         Value::I64(value) => *value >= 0,
         Value::I128(value) => *value >= 0,
         Value::Isize(value) => *value >= 0,
@@ -224,7 +222,6 @@ fn integer_format(value: &Value, kind: IntegerFormat, alternate: bool) -> Result
     }
     Ok(match value {
         Value::I16(value) => render!(value),
-        Value::I32(value) => render!(value),
         Value::I64(value) => render!(value),
         Value::I128(value) => render!(value),
         Value::Isize(value) => render!(value),
@@ -310,13 +307,13 @@ mod tests {
         assert_eq!(
             format_arguments(
                 "value={:+6} hex={:#x} float={:.2}",
-                &[Value::I32(12), Value::U8(15), Value::F64(1.234)]
+                &[Value::from_i32(12), Value::U8(15), Value::F64(1.234)]
             )
             .unwrap(),
             "value=   +12 hex=0xf float=1.23"
         );
         assert_eq!(
-            format_arguments("{:+06} {:#06x}", &[Value::I32(12), Value::U8(15)]).unwrap(),
+            format_arguments("{:+06} {:#06x}", &[Value::from_i32(12), Value::U8(15)]).unwrap(),
             "+00012 0x000f"
         );
         assert_eq!(

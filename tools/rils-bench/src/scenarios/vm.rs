@@ -13,8 +13,8 @@ pub(super) fn empty_call(work: usize) -> Result<Benchmark, String> {
         "vm_empty_call.rils",
         "echo",
         work,
-        Value::I32(value),
-        Value::I32(value),
+        Value::from_i32(value),
+        Value::from_i32(value),
         "vm-empty-call",
         Some("i32"),
     )
@@ -134,7 +134,7 @@ fn counter_case_name(integer_type: IntegerType) -> &'static str {
 
 fn expected_value(work: usize, integer_type: IntegerType) -> Result<Value, String> {
     match integer_type {
-        IntegerType::I32 => i32::try_from(work).map(Value::I32),
+        IntegerType::I32 => i32::try_from(work).map(Value::from_i32),
         IntegerType::U32 => u32::try_from(work).map(Value::U32),
         IntegerType::I64 => i64::try_from(work).map(Value::I64),
         IntegerType::U64 => u64::try_from(work).map(Value::U64),

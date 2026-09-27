@@ -12,7 +12,7 @@ fn owned_indexed_iterator_moves_items_only_when_advanced() {
             [2, 3, 5]
                 .into_iter()
                 .map(|number| FieldSlot {
-                    value: Some(Value::I32(number)),
+                    value: Some(Value::from_i32(number)),
                     type_annotation: Type::I32,
                     references: 0,
                 })
@@ -30,7 +30,7 @@ fn owned_indexed_iterator_moves_items_only_when_advanced() {
             .iter()
             .all(|slot| slot.value.is_some())
     );
-    assert_eq!(iterator.next().unwrap(), Some(Value::I32(2)));
+    assert_eq!(iterator.next().unwrap(), Some(Value::from_i32(2)));
     assert!(source.elements.borrow()[0].value.is_none());
     assert!(source.elements.borrow()[1].value.is_some());
 
@@ -42,7 +42,7 @@ fn owned_indexed_iterator_moves_items_only_when_advanced() {
             .iter()
             .all(|slot| slot.value.is_none())
     );
-    assert_eq!(iterator.next().unwrap(), Some(Value::I32(3)));
-    assert_eq!(iterator.next().unwrap(), Some(Value::I32(5)));
+    assert_eq!(iterator.next().unwrap(), Some(Value::from_i32(3)));
+    assert_eq!(iterator.next().unwrap(), Some(Value::from_i32(5)));
     assert_eq!(iterator.next().unwrap(), None);
 }

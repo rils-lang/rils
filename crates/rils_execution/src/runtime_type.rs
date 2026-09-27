@@ -53,7 +53,6 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (Type::Unit, Value::Unit)
         | (Type::Bool, Value::Bool(_))
         | (Type::Integer(crate::IntegerType::I16), Value::I16(_))
-        | (Type::Integer(crate::IntegerType::I32), Value::I32(_))
         | (Type::Integer(crate::IntegerType::I64), Value::I64(_))
         | (Type::Integer(crate::IntegerType::I128), Value::I128(_))
         | (Type::Integer(crate::IntegerType::Isize), Value::Isize(_))
@@ -507,7 +506,6 @@ fn type_of_value(value: &Value) -> Option<Type> {
         Value::Unit => Some(Type::Unit),
         Value::Bool(_) => Some(Type::Bool),
         Value::I16(_) => Some(Type::Integer(crate::IntegerType::I16)),
-        Value::I32(_) => Some(Type::I32),
         Value::I64(_) => Some(Type::Integer(crate::IntegerType::I64)),
         Value::I128(_) => Some(Type::Integer(crate::IntegerType::I128)),
         Value::Isize(_) => Some(Type::Integer(crate::IntegerType::Isize)),

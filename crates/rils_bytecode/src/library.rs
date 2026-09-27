@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(decoded.name(), "sample");
         assert_eq!(
             decoded.module().call("answer", Vec::new()).unwrap(),
-            crate::Value::I32(42)
+            crate::Value::from_i32(42)
         );
     }
 
@@ -327,7 +327,7 @@ mod tests {
         let library = crate::compile_library(root.join("rils.toml")).unwrap();
         assert_eq!(
             library.module().call("value", Vec::new()).unwrap(),
-            crate::Value::I32(42)
+            crate::Value::from_i32(42)
         );
         fs::remove_dir_all(root).unwrap();
     }
@@ -359,7 +359,7 @@ mod tests {
         let module = crate::compile_file(root.join("src/prelude.rils")).unwrap();
         assert_eq!(
             module.call("prelude_value", Vec::new()).unwrap(),
-            crate::Value::I32(42)
+            crate::Value::from_i32(42)
         );
         fs::remove_dir_all(root).unwrap();
     }

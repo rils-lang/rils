@@ -127,7 +127,6 @@ impl HashKey {
             Value::Unit => Self::Unit,
             Value::Bool(value) => Self::Bool(value),
             Value::I16(value) => Self::I16(value),
-            Value::I32(value) => Self::I32(value),
             Value::I64(value) => Self::I64(value),
             Value::I128(value) => Self::I128(value),
             Value::Isize(value) => Self::Isize(value),

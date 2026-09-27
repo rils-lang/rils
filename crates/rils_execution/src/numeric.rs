@@ -27,10 +27,11 @@ pub fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> 
 
     let source = if let Some(value) = i8_payload(&value) {
         (IntegerType::I8, IntegerValue::Signed(value.into()))
+    } else if let Some(value) = i32_payload(&value) {
+        (IntegerType::I32, IntegerValue::Signed(value.into()))
     } else {
         match lower_migrated_integer(value) {
             Value::I16(value) => (IntegerType::I16, IntegerValue::Signed(value.into())),
-            Value::I32(value) => (IntegerType::I32, IntegerValue::Signed(value.into())),
             Value::I64(value) => (IntegerType::I64, IntegerValue::Signed(value.into())),
             Value::I128(value) => (IntegerType::I128, IntegerValue::Signed(value)),
             Value::Isize(value) => (IntegerType::Isize, IntegerValue::Signed(value as i128)),
@@ -77,7 +78,7 @@ pub fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> 
     let converted = match target {
         IntegerType::I8 => signed_target!(i8, native_i8),
         IntegerType::I16 => signed_target!(i16, Value::I16),
-        IntegerType::I32 => signed_target!(i32, Value::I32),
+        IntegerType::I32 => signed_target!(i32, native_i32),
         IntegerType::I64 => signed_target!(i64, Value::I64),
         IntegerType::I128 => signed_target!(i128, Value::I128),
         IntegerType::Isize => signed_target!(isize, Value::Isize),
@@ -219,6 +220,12 @@ pub fn negate(value: Value) -> Result<Value, String> {
             .map(native_i8)
             .ok_or_else(|| "integer overflow".to_owned());
     }
+    if let Some(value) = i32_payload(&value) {
+        return value
+            .checked_neg()
+            .map(native_i32)
+            .ok_or_else(|| "integer overflow".to_owned());
+    }
     let value = lower_migrated_integer(value);
     macro_rules! signed {
         ($value:expr, $constructor:path) => {
@@ -230,7 +237,6 @@ pub fn negate(value: Value) -> Result<Value, String> {
     }
     let result = match value {
         Value::I16(value) => signed!(value, Value::I16),
-        Value::I32(value) => signed!(value, Value::I32),
         Value::I64(value) => signed!(value, Value::I64),
         Value::I128(value) => signed!(value, Value::I128),
         Value::Isize(value) => signed!(value, Value::Isize),
@@ -248,12 +254,12 @@ pub fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Value, St
     if let (Some(left), Some(right)) = (i8_payload(&left), i8_payload(&right)) {
         return integer_binary!(left, operator, right, native_i8);
     }
+    if let (Some(left), Some(right)) = (i32_payload(&left), i32_payload(&right)) {
+        return integer_binary!(left, operator, right, native_i32);
+    }
     let result = match (lower_migrated_integer(left), lower_migrated_integer(right)) {
         (Value::I16(left), Value::I16(right)) => {
             integer_binary!(left, operator, right, Value::I16)
-        }
-        (Value::I32(left), Value::I32(right)) => {
-            integer_binary!(left, operator, right, Value::I32)
         }
         (Value::I64(left), Value::I64(right)) => {
             integer_binary!(left, operator, right, Value::I64)
@@ -328,6 +334,17 @@ pub fn integer_binary_typed(
         };
     }
 
+    if integer == IntegerType::I32 {
+        return match (i32_payload(&left), i32_payload(&right)) {
+            (Some(left), Some(right)) => integer_binary!(left, operator, right, native_i32),
+            _ => Err(format!(
+                "typed integer operator expects {integer}, found {} and {}",
+                left.type_name(),
+                right.type_name()
+            )),
+        };
+    }
+
     let left = lower_migrated_integer(left);
     let right = lower_migrated_integer(right);
     macro_rules! typed {
@@ -348,7 +365,7 @@ pub fn integer_binary_typed(
     let result = match integer {
         IntegerType::I8 => unreachable!("i8 uses its native operator path"),
         IntegerType::I16 => typed!(I16, Value::I16),
-        IntegerType::I32 => typed!(I32, Value::I32),
+        IntegerType::I32 => unreachable!("i32 uses its native operator path"),
         IntegerType::I64 => typed!(I64, Value::I64),
         IntegerType::I128 => typed!(I128, Value::I128),
         IntegerType::Isize => typed!(Isize, Value::Isize),

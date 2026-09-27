@@ -328,7 +328,6 @@ pub enum Value {
     Unit,
     Bool(bool),
     I16(i16),
-    I32(i32),
     I64(i64),
     I128(i128),
     Isize(isize),
@@ -399,6 +398,11 @@ impl Value {
         crate::numeric::native_i8(value)
     }
 
+    /// Construct an `i32` in its registered native storage.
+    pub fn from_i32(value: i32) -> Self {
+        crate::numeric::native_i32(value)
+    }
+
     /// Construct a Rils string in native storage.
     pub fn from_string(value: impl Into<std::string::String>) -> Self {
         native_string(value)
@@ -409,7 +413,7 @@ impl Value {
         crate::numeric::i8_payload(self)
     }
 
-    /// Read an `i32` regardless of whether it uses native or legacy storage.
+    /// Read an `i32` from its registered native storage.
     pub fn as_i32(&self) -> Option<i32> {
         crate::numeric::i32_payload(self)
     }
@@ -433,7 +437,6 @@ impl Value {
         match self {
             Self::Unit | Self::Bool(_) | Self::Char(_) => true,
             Self::I16(_) => rils_builtins::native_implements("i16", "Copy"),
-            Self::I32(_) => rils_builtins::native_implements("i32", "Copy"),
             Self::I64(_) => rils_builtins::native_implements("i64", "Copy"),
             Self::I128(_) => rils_builtins::native_implements("i128", "Copy"),
             Self::Isize(_) => rils_builtins::native_implements("isize", "Copy"),
@@ -865,7 +868,6 @@ impl Value {
             Self::Unit => "()".into(),
             Self::Bool(_) => "bool".into(),
             Self::I16(_) => "i16".into(),
-            Self::I32(_) => "i32".into(),
             Self::I64(_) => "i64".into(),
             Self::I128(_) => "i128".into(),
             Self::Isize(_) => "isize".into(),
@@ -995,13 +997,6 @@ impl PartialEq for Value {
             (Self::Unit, Self::Unit) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,
             (Self::I16(left), Self::I16(right)) => left == right,
-            (Self::I32(left), Self::I32(right)) => left == right,
-            (Self::Native(_), Self::I32(right)) => {
-                crate::numeric::i32_payload(self).is_some_and(|left| left == *right)
-            }
-            (Self::I32(left), Self::Native(_)) => {
-                crate::numeric::i32_payload(other).is_some_and(|right| *left == right)
-            }
             (Self::I64(left), Self::I64(right)) => left == right,
             (Self::I128(left), Self::I128(right)) => left == right,
             (Self::Isize(left), Self::Isize(right)) => left == right,

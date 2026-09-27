@@ -25,8 +25,11 @@ fn native_vec_deque_matches_in_interpreter_and_vm() {
             if queue.is_empty() && queue.len() == 0usize { 42 } else { 0 }
         "#,
     ] {
-        assert_eq!(eval(source).unwrap(), Value::I32(42));
-        assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+        assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+        assert_eq!(
+            compile(source).unwrap().execute().unwrap(),
+            Value::from_i32(42)
+        );
     }
 }
 
@@ -39,6 +42,9 @@ fn cloning_an_element_keeps_the_owned_string_in_the_queue() {
         let original = queue.pop_front().unwrap();
         if copy == original && queue.is_empty() { 42 } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
 }

@@ -67,7 +67,7 @@ pub(crate) fn from_ffi_value(
         )),
         RILS_VALUE_I8 => signed!(Value::from_i8, i8),
         RILS_VALUE_I16 => signed!(Value::I16, i16),
-        RILS_VALUE_I32 => signed!(Value::I32, i32),
+        RILS_VALUE_I32 => signed!(Value::from_i32, i32),
         RILS_VALUE_I64 => signed!(Value::I64, i64),
         RILS_VALUE_I128 => Ok(Value::I128(
             ((u128::from(value.high) << 64) | u128::from(value.low)) as i128,
@@ -227,7 +227,6 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
         Value::Unit => RilsValue::default(),
         Value::Bool(value) => scalar(RILS_VALUE_BOOL, u64::from(value), 0),
         Value::I16(value) => scalar(RILS_VALUE_I16, value as i64 as u64, 0),
-        Value::I32(value) => scalar(RILS_VALUE_I32, value as i64 as u64, 0),
         Value::I64(value) => scalar(RILS_VALUE_I64, value as u64, 0),
         Value::I128(value) => scalar(
             RILS_VALUE_I128,
@@ -517,10 +516,11 @@ pub(crate) fn from_ffi_host_enum(
     let integer = from_ffi_value(value, None)?;
     let raw = if let Some(value) = integer.as_i8() {
         value as u8 as u128
+    } else if let Some(value) = integer.as_i32() {
+        value as u32 as u128
     } else {
         match integer {
             Value::I16(value) => value as u16 as u128,
-            Value::I32(value) => value as u32 as u128,
             Value::I64(value) => value as u64 as u128,
             Value::I128(value) => value as u128,
             Value::Isize(value) => value as usize as u128,

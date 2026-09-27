@@ -183,7 +183,7 @@ fn native_containers_report_nested_lexical_references() {
     let environment = Environment::global();
     environment
         .borrow_mut()
-        .define("source", Value::I32(7), true, None);
+        .define("source", Value::from_i32(7), true, None);
     let source = environment.borrow().slot("source").unwrap();
     let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(source, true)));
     let descriptor = Rc::new(
@@ -236,7 +236,7 @@ fn native_iterator_dispatch_follows_registration_instead_of_a_type_name() {
                     item
                 })?;
                 Ok(Value::Option {
-                    value: item.map(|value| Rc::new(Value::I32(value))),
+                    value: item.map(|value| Rc::new(Value::from_i32(value))),
                     element_type: Some(Type::I32),
                 })
             },
@@ -248,11 +248,11 @@ fn native_iterator_dispatch_follows_registration_instead_of_a_type_name() {
     };
     assert!(matches!(
         next_builtin(&mut iterator),
-        Some(Ok(Some(Value::I32(0))))
+        Some(Ok(Some(value))) if value.as_i32() == Some(0)
     ));
     assert!(matches!(
         next_builtin(&mut iterator),
-        Some(Ok(Some(Value::I32(1))))
+        Some(Ok(Some(value))) if value.as_i32() == Some(1)
     ));
     assert!(matches!(next_builtin(&mut iterator), Some(Ok(None))));
 }

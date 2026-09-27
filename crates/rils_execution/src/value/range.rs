@@ -8,14 +8,6 @@ use super::{NativeObject, NativeType, Value, native_ops};
 
 pub fn native_range(start: Value, end: Value) -> Result<Value, String> {
     if matches!((&start, &end), (Value::Native(_), Value::Native(_)))
-        && let (Some(start), Some(end)) = (
-            crate::numeric::i32_payload(&start),
-            crate::numeric::i32_payload(&end),
-        )
-    {
-        return native_range(Value::I32(start), Value::I32(end));
-    }
-    if matches!((&start, &end), (Value::Native(_), Value::Native(_)))
         && let (Some(start), Some(end)) = (start.as_usize(), end.as_usize())
     {
         return native_range(Value::Usize(start), Value::Usize(end));
@@ -70,11 +62,17 @@ pub fn native_range(start: Value, end: Value) -> Result<Value, String> {
         return native_range!(start, end, i8, Type::Integer(IntegerType::I8));
     }
 
+    if let (Some(start), Some(end)) = (
+        crate::numeric::i32_payload(&start),
+        crate::numeric::i32_payload(&end),
+    ) {
+        return native_range!(start, end, i32, Type::I32);
+    }
+
     match (start, end) {
         (Value::I16(start), Value::I16(end)) => {
             native_range!(start, end, i16, Type::Integer(IntegerType::I16))
         }
-        (Value::I32(start), Value::I32(end)) => native_range!(start, end, i32, Type::I32),
         (Value::I64(start), Value::I64(end)) => {
             native_range!(start, end, i64, Type::Integer(IntegerType::I64))
         }

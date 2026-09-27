@@ -312,7 +312,7 @@ fn runtime_record_slots_follow_declaration_order_and_reject_missing_fields() {
         (
             "second".into(),
             FieldSlot {
-                value: Some(Value::I32(2)),
+                value: Some(Value::from_i32(2)),
                 type_annotation: Type::I32,
                 references: 0,
             },
@@ -320,7 +320,7 @@ fn runtime_record_slots_follow_declaration_order_and_reject_missing_fields() {
         (
             "first".into(),
             FieldSlot {
-                value: Some(Value::I32(1)),
+                value: Some(Value::from_i32(1)),
                 type_annotation: Type::I32,
                 references: 0,
             },
@@ -329,8 +329,11 @@ fn runtime_record_slots_follow_declaration_order_and_reject_missing_fields() {
     let fields = StructFields::from_map(definition.clone(), slots).unwrap();
     assert_eq!(definition.field_index("first"), Some(0));
     assert_eq!(definition.field_index("second"), Some(1));
-    assert_eq!(fields.get_index(0).unwrap().value, Some(Value::I32(1)));
-    assert_eq!(fields.get("second").unwrap().value, Some(Value::I32(2)));
+    assert_eq!(fields.get_index(0).unwrap().value, Some(Value::from_i32(1)));
+    assert_eq!(
+        fields.get("second").unwrap().value,
+        Some(Value::from_i32(2))
+    );
     assert!(fields.get("missing").is_none());
     assert!(StructFields::from_map(definition, HashMap::new()).is_err());
 }

@@ -12,7 +12,7 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
                     + heap.pop().unwrap() + heap.pop().unwrap();
                 if heap.is_empty() && heap.len() == 0usize { highest + total } else { 0 }
             "#,
-            Value::I32(18),
+            Value::from_i32(18),
         ),
         (
             r#"

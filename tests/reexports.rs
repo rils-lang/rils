@@ -4,6 +4,6 @@ fn reexport_chains_agree_in_interpreter_and_bytecode() {
         .join("tests/fixtures/reexports/src/main.rils");
     let interpreted = rils::Engine::new().eval_file(&entry).unwrap();
     let compiled = rils::compile_file(&entry).unwrap().execute().unwrap();
-    assert_eq!(interpreted, rils::Value::I32(42));
+    assert_eq!(interpreted, rils::Value::from_i32(42));
     assert_eq!(compiled, interpreted);
 }

@@ -3,9 +3,9 @@ use rils::{Value, compile, eval};
 #[test]
 fn arrays_keep_their_element_types_in_both_backends() {
     let source = include_str!("fixtures/exported_signature_types.rils");
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
     let module = compile(source).unwrap();
-    assert_eq!(module.execute().unwrap(), Value::I32(42));
+    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
 }
 
 #[test]
@@ -44,8 +44,11 @@ fn formatted_io_accepts_display_types() {
 #[test]
 fn const_array_signatures_infer_lengths() {
     let source = include_str!("fixtures/const_array_signatures.rils");
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(42)
+    );
     let invalid = source.replace("[22, 2]", "[22]");
     assert!(compile(&invalid).is_err());
     assert!(eval(&invalid).is_err());
@@ -54,13 +57,19 @@ fn const_array_signatures_infer_lengths() {
 #[test]
 fn io_invokes_user_display_including_loaded_bytecode() {
     let source = include_str!("fixtures/io_custom_display.rils");
-    assert_eq!(eval(source).unwrap(), Value::I32(42));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
     let module = compile(source).unwrap();
     let mut host = rils::BytecodeHost::standard();
     host.enable_standard_io().unwrap();
-    assert_eq!(module.execute_with_host(&host).unwrap(), Value::I32(42));
+    assert_eq!(
+        module.execute_with_host(&host).unwrap(),
+        Value::from_i32(42)
+    );
     let loaded = rils::BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute_with_host(&host).unwrap(), Value::I32(42));
+    assert_eq!(
+        loaded.execute_with_host(&host).unwrap(),
+        Value::from_i32(42)
+    );
     let failure = include_str!("fixtures/io_display_failure.rils");
     let error = eval(failure).unwrap_err().to_string();
     assert!(error.contains("display was invoked"), "{error}");

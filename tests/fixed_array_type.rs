@@ -28,11 +28,11 @@ fn borrowed_slices_read_fixed_arrays_without_moving_them() {
         let values: [i32; 3] = [7, 8, 9];
         first(&values) + values[1]
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I32(15));
+    assert_eq!(eval(source).unwrap(), Value::from_i32(15));
     let compiled = compile(source).unwrap();
-    assert_eq!(compiled.execute().unwrap(), Value::I32(15));
+    assert_eq!(compiled.execute().unwrap(), Value::from_i32(15));
     let restored = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(restored.execute().unwrap(), Value::I32(15));
+    assert_eq!(restored.execute().unwrap(), Value::from_i32(15));
 }
 
 #[test]
