@@ -7,8 +7,7 @@ pub(super) fn resolve_numeric_member(
     span: Span,
 ) -> Result<Option<Value>, RuntimeError> {
     let method = match value {
-        Value::I8(_)
-        | Value::I16(_)
+        Value::I16(_)
         | Value::I32(_)
         | Value::I64(_)
         | Value::I128(_)

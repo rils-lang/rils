@@ -327,7 +327,6 @@ pub struct TraitMethodSelector {
 pub enum Value {
     Unit,
     Bool(bool),
-    I8(i8),
     I16(i16),
     I32(i32),
     I64(i64),
@@ -395,12 +394,17 @@ pub enum Value {
 }
 
 impl Value {
+    /// Construct an `i8` in its registered native storage.
+    pub fn from_i8(value: i8) -> Self {
+        crate::numeric::native_i8(value)
+    }
+
     /// Construct a Rils string in native storage.
     pub fn from_string(value: impl Into<std::string::String>) -> Self {
         native_string(value)
     }
 
-    /// Read an `i8` regardless of whether it uses native or legacy storage.
+    /// Read an `i8` from its registered native storage.
     pub fn as_i8(&self) -> Option<i8> {
         crate::numeric::i8_payload(self)
     }
@@ -428,7 +432,6 @@ impl Value {
     pub fn is_copy(&self) -> bool {
         match self {
             Self::Unit | Self::Bool(_) | Self::Char(_) => true,
-            Self::I8(_) => rils_builtins::native_implements("i8", "Copy"),
             Self::I16(_) => rils_builtins::native_implements("i16", "Copy"),
             Self::I32(_) => rils_builtins::native_implements("i32", "Copy"),
             Self::I64(_) => rils_builtins::native_implements("i64", "Copy"),
@@ -861,7 +864,6 @@ impl Value {
         match self {
             Self::Unit => "()".into(),
             Self::Bool(_) => "bool".into(),
-            Self::I8(_) => "i8".into(),
             Self::I16(_) => "i16".into(),
             Self::I32(_) => "i32".into(),
             Self::I64(_) => "i64".into(),
@@ -992,13 +994,6 @@ impl PartialEq for Value {
         match (self, other) {
             (Self::Unit, Self::Unit) => true,
             (Self::Bool(left), Self::Bool(right)) => left == right,
-            (Self::I8(left), Self::I8(right)) => left == right,
-            (Self::Native(_), Self::I8(right)) => {
-                crate::numeric::i8_payload(self).is_some_and(|left| left == *right)
-            }
-            (Self::I8(left), Self::Native(_)) => {
-                crate::numeric::i8_payload(other).is_some_and(|right| *left == right)
-            }
             (Self::I16(left), Self::I16(right)) => left == right,
             (Self::I32(left), Self::I32(right)) => left == right,
             (Self::Native(_), Self::I32(right)) => {

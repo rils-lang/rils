@@ -126,7 +126,6 @@ impl HashKey {
         Ok(match value {
             Value::Unit => Self::Unit,
             Value::Bool(value) => Self::Bool(value),
-            Value::I8(value) => Self::I8(value),
             Value::I16(value) => Self::I16(value),
             Value::I32(value) => Self::I32(value),
             Value::I64(value) => Self::I64(value),

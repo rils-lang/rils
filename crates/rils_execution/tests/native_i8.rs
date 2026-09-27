@@ -83,7 +83,7 @@ fn native_i8_keeps_existing_format_and_hash_semantics() {
     assert_eq!(value.to_string(), "-42");
     assert_eq!(
         rils_execution::value::HashKey::from_value(&value).unwrap(),
-        rils_execution::value::HashKey::from_value(&Value::I8(-42)).unwrap()
+        rils_execution::value::HashKey::from_value(&Value::from_i8(-42)).unwrap()
     );
     let spec = FormatSpec {
         kind: FormatKind::LowerHex,

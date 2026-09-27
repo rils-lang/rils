@@ -24,7 +24,7 @@ fn generated_number_codecs_round_trip_owned_record_payloads() {
     let cases = [
         (
             Type::Integer(rils_execution::IntegerType::I8),
-            Value::I8(-8),
+            Value::from_i8(-8),
         ),
         (Type::I32, Value::I32(42)),
         (Type::USIZE, Value::Usize(usize::MAX)),

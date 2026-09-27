@@ -10,7 +10,6 @@ impl fmt::Display for Value {
         match self {
             Self::Unit => write!(f, "()"),
             Self::Bool(value) => write!(f, "{value}"),
-            Self::I8(value) => write!(f, "{value}"),
             Self::I16(value) => write!(f, "{value}"),
             Self::I32(value) => write!(f, "{value}"),
             Self::I64(value) => write!(f, "{value}"),

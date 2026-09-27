@@ -25,10 +25,10 @@ pub(crate) fn from_ffi_value(
         }
     };
     macro_rules! signed {
-        ($variant:ident, $type:ty) => {{
+        ($constructor:path, $type:ty) => {{
             require_zero_high()?;
             <$type>::try_from(value.low as i64)
-                .map(Value::$variant)
+                .map($constructor)
                 .map_err(|_| {
                     fail(
                         RILS_STATUS_INVALID_ARGUMENT,
@@ -65,14 +65,14 @@ pub(crate) fn from_ffi_value(
             "",
             Span::default(),
         )),
-        RILS_VALUE_I8 => signed!(I8, i8),
-        RILS_VALUE_I16 => signed!(I16, i16),
-        RILS_VALUE_I32 => signed!(I32, i32),
-        RILS_VALUE_I64 => signed!(I64, i64),
+        RILS_VALUE_I8 => signed!(Value::from_i8, i8),
+        RILS_VALUE_I16 => signed!(Value::I16, i16),
+        RILS_VALUE_I32 => signed!(Value::I32, i32),
+        RILS_VALUE_I64 => signed!(Value::I64, i64),
         RILS_VALUE_I128 => Ok(Value::I128(
             ((u128::from(value.high) << 64) | u128::from(value.low)) as i128,
         )),
-        RILS_VALUE_ISIZE => signed!(Isize, isize),
+        RILS_VALUE_ISIZE => signed!(Value::Isize, isize),
         RILS_VALUE_U8 => unsigned!(U8, u8),
         RILS_VALUE_U16 => unsigned!(U16, u16),
         RILS_VALUE_U32 => unsigned!(U32, u32),
@@ -226,7 +226,6 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
     let value = match value {
         Value::Unit => RilsValue::default(),
         Value::Bool(value) => scalar(RILS_VALUE_BOOL, u64::from(value), 0),
-        Value::I8(value) => scalar(RILS_VALUE_I8, value as i64 as u64, 0),
         Value::I16(value) => scalar(RILS_VALUE_I16, value as i64 as u64, 0),
         Value::I32(value) => scalar(RILS_VALUE_I32, value as i64 as u64, 0),
         Value::I64(value) => scalar(RILS_VALUE_I64, value as u64, 0),
@@ -516,20 +515,23 @@ pub(crate) fn from_ffi_host_enum(
         ));
     }
     let integer = from_ffi_value(value, None)?;
-    let raw = match integer {
-        Value::I8(value) => value as u8 as u128,
-        Value::I16(value) => value as u16 as u128,
-        Value::I32(value) => value as u32 as u128,
-        Value::I64(value) => value as u64 as u128,
-        Value::I128(value) => value as u128,
-        Value::Isize(value) => value as usize as u128,
-        Value::U8(value) => u128::from(value),
-        Value::U16(value) => u128::from(value),
-        Value::U32(value) => u128::from(value),
-        Value::U64(value) => u128::from(value),
-        Value::U128(value) => value,
-        Value::Usize(value) => value as u128,
-        _ => unreachable!("host enum transport tag was checked as an integer"),
+    let raw = if let Some(value) = integer.as_i8() {
+        value as u8 as u128
+    } else {
+        match integer {
+            Value::I16(value) => value as u16 as u128,
+            Value::I32(value) => value as u32 as u128,
+            Value::I64(value) => value as u64 as u128,
+            Value::I128(value) => value as u128,
+            Value::Isize(value) => value as usize as u128,
+            Value::U8(value) => u128::from(value),
+            Value::U16(value) => u128::from(value),
+            Value::U32(value) => u128::from(value),
+            Value::U64(value) => u128::from(value),
+            Value::U128(value) => value,
+            Value::Usize(value) => value as u128,
+            _ => unreachable!("host enum transport tag was checked as an integer"),
+        }
     };
     rils_runtime::host_enum_value(type_name, definition, raw)
         .map_err(|message| fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default()))

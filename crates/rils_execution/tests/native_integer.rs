@@ -139,7 +139,7 @@ fn native_i32_methods_cover_boundary_shapes() {
 #[test]
 fn generated_integer_family_runs_for_every_width() {
     let cases = [
-        (Value::I8(-1), Value::I8(-2)),
+        (Value::from_i8(-1), Value::from_i8(-2)),
         (Value::I16(-1), Value::I16(-2)),
         (Value::I32(-1), Value::I32(-2)),
         (Value::I64(-1), Value::I64(-2)),

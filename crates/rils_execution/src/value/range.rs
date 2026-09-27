@@ -9,14 +9,6 @@ use super::{NativeObject, NativeType, Value, native_ops};
 pub fn native_range(start: Value, end: Value) -> Result<Value, String> {
     if matches!((&start, &end), (Value::Native(_), Value::Native(_)))
         && let (Some(start), Some(end)) = (
-            crate::numeric::i8_payload(&start),
-            crate::numeric::i8_payload(&end),
-        )
-    {
-        return native_range(Value::I8(start), Value::I8(end));
-    }
-    if matches!((&start, &end), (Value::Native(_), Value::Native(_)))
-        && let (Some(start), Some(end)) = (
             crate::numeric::i32_payload(&start),
             crate::numeric::i32_payload(&end),
         )
@@ -71,10 +63,14 @@ pub fn native_range(start: Value, end: Value) -> Result<Value, String> {
         }};
     }
 
+    if let (Some(start), Some(end)) = (
+        crate::numeric::i8_payload(&start),
+        crate::numeric::i8_payload(&end),
+    ) {
+        return native_range!(start, end, i8, Type::Integer(IntegerType::I8));
+    }
+
     match (start, end) {
-        (Value::I8(start), Value::I8(end)) => {
-            native_range!(start, end, i8, Type::Integer(IntegerType::I8))
-        }
         (Value::I16(start), Value::I16(end)) => {
             native_range!(start, end, i16, Type::Integer(IntegerType::I16))
         }

@@ -724,7 +724,12 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     let receiver_dispatch = mappings.iter().map(|mapping| {
         let wrapper = mapping.variant();
         let call_name = format_ident!("call_{}", mapping.primitive);
-        quote!(Some(crate::Value::#wrapper(_)) => #call_name(id, arguments),)
+        let receiver_type = if float {
+            quote!(crate::Type::Float(crate::FloatType::#wrapper))
+        } else {
+            quote!(crate::Type::Integer(crate::IntegerType::#wrapper))
+        };
+        quote!(Some(#receiver_type) => #call_name(id, arguments),)
     });
     let target_dispatch = mappings.iter().map(|mapping| {
         let wrapper = mapping.variant();
@@ -746,7 +751,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
             #(#bindings)*
             #(#descriptors)*
             pub fn call(id: rils_builtins::BuiltinId, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
-                match arguments.first() { #(#receiver_dispatch)* _ => None }
+                match arguments.first().and_then(crate::Type::of_value) { #(#receiver_dispatch)* _ => None }
             }
             pub fn constant(target: crate::FloatType, id: rils_builtins::FloatConstantId) -> Option<Result<crate::Value, String>> {
                 match target { #(#constant_dispatch)* }
@@ -764,7 +769,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
             if id == rils_builtins::BuiltinId::IntegerTryFrom {
                 match target { #(#target_dispatch)* _ => None }
             } else {
-                match arguments.first() { #(#receiver_dispatch)* _ => None }
+                match arguments.first().and_then(crate::Type::of_value) { #(#receiver_dispatch)* _ => None }
             }
         }
         pub fn constant(

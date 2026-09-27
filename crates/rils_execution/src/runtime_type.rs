@@ -52,7 +52,6 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }, _) => true,
         (Type::Unit, Value::Unit)
         | (Type::Bool, Value::Bool(_))
-        | (Type::Integer(crate::IntegerType::I8), Value::I8(_))
         | (Type::Integer(crate::IntegerType::I16), Value::I16(_))
         | (Type::Integer(crate::IntegerType::I32), Value::I32(_))
         | (Type::Integer(crate::IntegerType::I64), Value::I64(_))
@@ -507,7 +506,6 @@ fn type_of_value(value: &Value) -> Option<Type> {
     match value {
         Value::Unit => Some(Type::Unit),
         Value::Bool(_) => Some(Type::Bool),
-        Value::I8(_) => Some(Type::Integer(crate::IntegerType::I8)),
         Value::I16(_) => Some(Type::Integer(crate::IntegerType::I16)),
         Value::I32(_) => Some(Type::I32),
         Value::I64(_) => Some(Type::Integer(crate::IntegerType::I64)),

@@ -119,7 +119,6 @@ fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
             Value::Unit
                 | Value::Bool(_)
                 | Value::Char(_)
-                | Value::I8(_)
                 | Value::I16(_)
                 | Value::I32(_)
                 | Value::I64(_)
@@ -174,7 +173,6 @@ fn is_nonnegative_number(value: &Value) -> bool {
         return true;
     }
     match value {
-        Value::I8(value) => *value >= 0,
         Value::I16(value) => *value >= 0,
         Value::I32(value) => *value >= 0,
         Value::I64(value) => *value >= 0,
@@ -225,7 +223,6 @@ fn integer_format(value: &Value, kind: IntegerFormat, alternate: bool) -> Result
         return Ok(render!(value));
     }
     Ok(match value {
-        Value::I8(value) => render!(value),
         Value::I16(value) => render!(value),
         Value::I32(value) => render!(value),
         Value::I64(value) => render!(value),

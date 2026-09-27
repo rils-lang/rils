@@ -77,7 +77,6 @@ impl NativeInput for Integer {
             };
         }
         match value {
-            Value::I8(value) => signed!(value, "i8"),
             Value::I16(value) => signed!(value, "i16"),
             Value::I32(value) => signed!(value, "i32"),
             Value::I64(value) => signed!(value, "i64"),
@@ -112,16 +111,30 @@ impl NativeOutput for f64 {
         Ok(Value::F64(self))
     }
 }
+macro_rules! integer_input {
+    (I8, $value:expr) => {
+        super::i8_payload($value)
+    };
+    ($variant:ident, $value:expr) => {
+        match $value {
+            Value::$variant(value) => Some(*value),
+            _ => None,
+        }
+    };
+}
+
 macro_rules! integer_bridge {
     ($($primitive:ty => $variant:ident => $constructor:path),* $(,)?) => {$(
         impl NativeInput for Number<$primitive> {
             fn from_value(value: &Value) -> std::result::Result<Self, String> {
-                match value {
-                    Value::$variant(value) => Ok(Self(*value)),
-                    Value::Native(object) if object.descriptor().rils_type() == &Type::Integer(crate::IntegerType::$variant) => {
-                        object.with::<Self, _>(|value| *value)
-                    }
-                    value => Err(format!("expected {}, found {}", stringify!($variant).to_ascii_lowercase(), value.type_name())),
+                if let Some(inner) = integer_input!($variant, value) {
+                    Ok(Self(inner))
+                } else if let Value::Native(object) = value
+                    && object.descriptor().rils_type() == &Type::Integer(crate::IntegerType::$variant)
+                {
+                    object.with::<Self, _>(|value| *value)
+                } else {
+                    Err(format!("expected {}, found {}", stringify!($variant).to_ascii_lowercase(), value.type_name()))
                 }
             }
         }
