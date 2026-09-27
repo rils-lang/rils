@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- `f32`、`f64` 的字面量、默认值、运算结果和标准库方法结果改用内联原生负载；Rust 宿主若匹配返回值中的 `Value::F32` / `Value::F64`，需改用 `Value::as_f32()` / `Value::as_f64()`。旧变体仍可作为输入，C ABI 浮点标签和实验性 v8 字节码编码不变。
 - Rust 运行时移除旧 `Value::I32` 变体；宿主代码改用 `Value::from_i32(...)` 构造、`Value::as_i32()` 读取。`i32` 运算与范围构造直接使用原生负载；Rils 脚本语义、C ABI 整数标签和实验性 v8 字节码编码不变。
 - Rust 运行时移除旧 `Value::I8` 变体；宿主代码改用 `Value::from_i8(...)` 构造、`Value::as_i8()` 读取。`i8` 运算与范围构造直接使用原生负载；Rils 脚本语义、C ABI 整数标签和实验性 v8 字节码编码不变。
 - Rust 运行时移除旧 `Value::String` 变体；宿主代码改用 `Value::from_string(...)` 构造，用 `Value::as_string()` 读取。Rils 脚本语义、C ABI 字符串标签和实验性 v8 字节码字符串编码不变。

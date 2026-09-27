@@ -25,24 +25,26 @@ impl NativeOutput for bool {
 }
 
 macro_rules! float_bridge {
-    ($($primitive:ty => $variant:ident),* $(,)?) => {$ (
+    ($($primitive:ty => $variant:ident => $payload:path => $constructor:path),* $(,)?) => {$ (
         impl NativeInput for FloatNumber<$primitive> {
             fn from_value(value: &Value) -> std::result::Result<Self, String> {
-                match value {
-                    Value::$variant(value) => Ok(Self(*value)),
-                    value => Err(format!("expected {}, found {}", stringify!($primitive), value.type_name())),
-                }
+                $payload(value)
+                    .map(Self)
+                    .ok_or_else(|| format!("expected {}, found {}", stringify!($primitive), value.type_name()))
             }
         }
         impl NativeOutput for FloatNumber<$primitive> {
             fn into_value(self) -> std::result::Result<Value, String> {
-                Ok(Value::$variant(self.0))
+                Ok($constructor(self.0))
             }
         }
     )* };
 }
 
-float_bridge!(f32 => F32, f64 => F64);
+float_bridge!(
+    f32 => F32 => super::f32_payload => super::native_f32,
+    f64 => F64 => super::f64_payload => super::native_f64,
+);
 
 impl NativeInput for u32 {
     fn from_value(value: &Value) -> std::result::Result<Self, String> {
@@ -102,12 +104,12 @@ impl NativeOutput for u32 {
 }
 impl NativeOutput for f32 {
     fn into_value(self) -> std::result::Result<Value, String> {
-        Ok(Value::F32(self))
+        Ok(super::native_f32(self))
     }
 }
 impl NativeOutput for f64 {
     fn into_value(self) -> std::result::Result<Value, String> {
-        Ok(Value::F64(self))
+        Ok(super::native_f64(self))
     }
 }
 macro_rules! integer_input {

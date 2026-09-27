@@ -140,6 +140,14 @@ fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
         ));
     }
     let rendered = match (value, spec.precision) {
+        (Value::Native(_), Some(precision)) if value.as_f32().is_some() => Ok(format!(
+            "{:.precision$}",
+            value.as_f32().expect("checked f32 payload")
+        )),
+        (Value::Native(_), Some(precision)) if value.as_f64().is_some() => Ok(format!(
+            "{:.precision$}",
+            value.as_f64().expect("checked f64 payload")
+        )),
         (Value::F32(value), Some(precision)) => Ok(format!("{value:.precision$}")),
         (Value::F64(value), Some(precision)) => Ok(format!("{value:.precision$}")),
         (value, Some(precision)) if value.as_string().is_some() => Ok(value
@@ -170,6 +178,12 @@ fn is_nonnegative_number(value: &Value) -> bool {
     }
     if crate::numeric::usize_payload(value).is_some() {
         return true;
+    }
+    if let Some(value) = value.as_f32() {
+        return value >= 0.0;
+    }
+    if let Some(value) = value.as_f64() {
+        return value >= 0.0;
     }
     match value {
         Value::I16(value) => *value >= 0,
@@ -251,6 +265,12 @@ fn float_format(value: &Value, upper: bool, precision: Option<usize>) -> Result<
             }
         }};
     }
+    if let Some(value) = value.as_f32() {
+        return Ok(render!(value));
+    }
+    if let Some(value) = value.as_f64() {
+        return Ok(render!(value));
+    }
     match value {
         Value::F32(value) => Ok(render!(value)),
         Value::F64(value) => Ok(render!(value)),
@@ -307,7 +327,7 @@ mod tests {
         assert_eq!(
             format_arguments(
                 "value={:+6} hex={:#x} float={:.2}",
-                &[Value::from_i32(12), Value::U8(15), Value::F64(1.234)]
+                &[Value::from_i32(12), Value::U8(15), Value::from_f64(1.234)]
             )
             .unwrap(),
             "value=   +12 hex=0xf float=1.23"
@@ -319,6 +339,10 @@ mod tests {
         assert_eq!(
             format_arguments("{:?}", &[Value::from_string("hello")]).unwrap(),
             "\"hello\""
+        );
+        assert_eq!(
+            format_arguments("{:.2}", &[Value::from_f32(1.234)]).unwrap(),
+            "1.23"
         );
     }
 }

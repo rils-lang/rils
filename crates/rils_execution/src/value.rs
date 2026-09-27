@@ -403,6 +403,16 @@ impl Value {
         crate::numeric::native_i32(value)
     }
 
+    /// Construct an `f32` in its registered native storage.
+    pub fn from_f32(value: f32) -> Self {
+        crate::numeric::native_f32(value)
+    }
+
+    /// Construct an `f64` in its registered native storage.
+    pub fn from_f64(value: f64) -> Self {
+        crate::numeric::native_f64(value)
+    }
+
     /// Construct a Rils string in native storage.
     pub fn from_string(value: impl Into<std::string::String>) -> Self {
         native_string(value)
@@ -416,6 +426,16 @@ impl Value {
     /// Read an `i32` from its registered native storage.
     pub fn as_i32(&self) -> Option<i32> {
         crate::numeric::i32_payload(self)
+    }
+
+    /// Read an `f32` from native or legacy storage.
+    pub fn as_f32(&self) -> Option<f32> {
+        crate::numeric::f32_payload(self)
+    }
+
+    /// Read an `f64` from native or legacy storage.
+    pub fn as_f64(&self) -> Option<f64> {
+        crate::numeric::f64_payload(self)
     }
 
     /// Read a `usize` regardless of whether it uses native or legacy storage.
@@ -1014,6 +1034,14 @@ impl PartialEq for Value {
             }
             (Self::F32(left), Self::F32(right)) => left == right,
             (Self::F64(left), Self::F64(right)) => left == right,
+            (Self::Native(_), Self::F32(right)) => self.as_f32().is_some_and(|left| left == *right),
+            (Self::F32(left), Self::Native(_)) => {
+                other.as_f32().is_some_and(|right| *left == right)
+            }
+            (Self::Native(_), Self::F64(right)) => self.as_f64().is_some_and(|left| left == *right),
+            (Self::F64(left), Self::Native(_)) => {
+                other.as_f64().is_some_and(|right| *left == right)
+            }
             (Self::Char(left), Self::Char(right)) => left == right,
             (Self::Native(left), Self::Native(right)) => native_ops::equal(left, right),
             (Self::Tuple(left), Self::Tuple(right))

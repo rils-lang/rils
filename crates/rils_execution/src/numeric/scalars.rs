@@ -1,7 +1,7 @@
 //! Constructors and temporary adapters for scalar types being migrated.
 
 use crate::{IntegerType, Type, Value, value::NativeObject};
-use rils_stdlib::stdlib::integer::Number;
+use rils_stdlib::stdlib::{float::Number as FloatNumber, integer::Number};
 
 macro_rules! migrated_integers {
     ($( $constructor:ident, $payload:ident, $rust:ty, $variant:ident, $descriptor:ident; )*) => {
@@ -86,4 +86,34 @@ pub fn i8_payload(value: &Value) -> Option<i8> {
     (object.descriptor().rils_type() == &Type::Integer(IntegerType::I8))
         .then(|| object.with::<Number<i8>, _>(|number| number.0).ok())
         .flatten()
+}
+
+macro_rules! native_floats {
+    ($( $constructor:ident, $payload:ident, $rust:ty, $variant:ident, $descriptor:ident; )*) => {
+        $(
+            pub fn $constructor(value: $rust) -> Value {
+                Value::Native(
+                    NativeObject::new(super::native::float::$descriptor(), FloatNumber(value))
+                        .expect("generated descriptor matches its Rust payload"),
+                )
+            }
+
+            pub fn $payload(value: &Value) -> Option<$rust> {
+                match value {
+                    Value::$variant(value) => Some(*value),
+                    Value::Native(object)
+                        if object.descriptor().rils_type() == &Type::Float(crate::FloatType::$variant) =>
+                    {
+                        object.with::<FloatNumber<$rust>, _>(|number| number.0).ok()
+                    }
+                    _ => None,
+                }
+            }
+        )*
+    };
+}
+
+native_floats! {
+    native_f32, f32_payload, f32, F32, descriptor_f32;
+    native_f64, f64_payload, f64, F64, descriptor_f64;
 }

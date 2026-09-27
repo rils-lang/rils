@@ -35,8 +35,8 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
             DefaultPlan::Integer(crate::IntegerType::U64) => Value::U64(0),
             DefaultPlan::Integer(crate::IntegerType::U128) => Value::U128(0),
             DefaultPlan::Integer(crate::IntegerType::Usize) => crate::numeric::native_usize(0),
-            DefaultPlan::Float(crate::FloatType::F32) => Value::F32(0.0),
-            DefaultPlan::Float(crate::FloatType::F64) => Value::F64(0.0),
+            DefaultPlan::Float(crate::FloatType::F32) => Value::from_f32(0.0),
+            DefaultPlan::Float(crate::FloatType::F64) => Value::from_f64(0.0),
             DefaultPlan::Char => Value::Char('\0'),
             DefaultPlan::String => rils_execution::value::native_string(""),
             DefaultPlan::Tuple(elements) => Value::Tuple(sequence(

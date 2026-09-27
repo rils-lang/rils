@@ -60,8 +60,8 @@ impl Interpreter {
                     Literal::U64(value) => Value::U64(*value),
                     Literal::U128(value) => Value::U128(*value),
                     Literal::Usize(value) => crate::numeric::native_usize(*value),
-                    Literal::F32(value) => Value::F32(*value),
-                    Literal::F64(value) => Value::F64(*value),
+                    Literal::F32(value) => Value::from_f32(*value),
+                    Literal::F64(value) => Value::from_f64(*value),
                     Literal::Char(value) => Value::Char(*value),
                     Literal::Integer(value) => {
                         crate::numeric::native_i32(i32::try_from(*value).map_err(|_| {
@@ -71,7 +71,7 @@ impl Interpreter {
                             )
                         })?)
                     }
-                    Literal::Float(value) => Value::F64(*value),
+                    Literal::Float(value) => Value::from_f64(*value),
                     Literal::String(value) => rils_execution::value::native_string(value.clone()),
                 })
             }

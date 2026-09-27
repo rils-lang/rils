@@ -588,8 +588,8 @@ impl Constant {
             Self::U64(value) => Value::U64(*value),
             Self::U128(value) => Value::U128(*value),
             Self::Usize(value) => crate::numeric::native_usize(*value),
-            Self::F32(value) => Value::F32(*value),
-            Self::F64(value) => Value::F64(*value),
+            Self::F32(value) => Value::from_f32(*value),
+            Self::F64(value) => Value::from_f64(*value),
             Self::Char(value) => Value::Char(*value),
             Self::String(value) => rils_execution::value::native_string(value.clone()),
         }

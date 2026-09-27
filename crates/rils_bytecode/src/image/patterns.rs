@@ -220,8 +220,8 @@ fn hir_literal_value(literal: &HirLiteral) -> Value {
         HirLiteral::U64(value) => Value::U64(*value),
         HirLiteral::U128(value) => Value::U128(*value),
         HirLiteral::Usize(value) => crate::numeric::native_usize(*value),
-        HirLiteral::F32(value) => Value::F32(*value),
-        HirLiteral::F64(value) => Value::F64(*value),
+        HirLiteral::F32(value) => Value::from_f32(*value),
+        HirLiteral::F64(value) => Value::from_f64(*value),
         HirLiteral::Char(value) => Value::Char(*value),
         HirLiteral::String(value) => rils_execution::value::native_string(value.clone()),
     }

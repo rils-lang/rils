@@ -1724,7 +1724,10 @@ fn links_distinct_host_overloads_by_name_and_signature() {
         ),
         "unity.math",
         |arguments| match arguments {
-            [Value::F32(value)] => Ok(Value::F32(value + 0.5)),
+            [value] => value
+                .as_f32()
+                .map(|value| Value::from_f32(value + 0.5))
+                .ok_or_else(|| "unexpected float overload arguments".into()),
             _ => Err("unexpected float overload arguments".into()),
         },
     )
@@ -1762,7 +1765,10 @@ fn custom_host_contract_participates_in_static_type_checking() {
         ),
         "unity.time",
         |arguments| match arguments {
-            [Value::F32(value)] => Ok(Value::F32(value * 2.0)),
+            [value] => value
+                .as_f32()
+                .map(|value| Value::from_f32(value * 2.0))
+                .ok_or_else(|| "unexpected arguments".into()),
             _ => Err("unexpected arguments".into()),
         },
     )

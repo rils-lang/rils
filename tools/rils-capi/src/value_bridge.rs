@@ -91,11 +91,11 @@ pub(crate) fn from_ffi_value(
                     Span::default(),
                 )
             })?;
-            Ok(Value::F32(f32::from_bits(bits)))
+            Ok(Value::from_f32(f32::from_bits(bits)))
         }
         RILS_VALUE_F64 => {
             require_zero_high()?;
-            Ok(Value::F64(f64::from_bits(value.low)))
+            Ok(Value::from_f64(f64::from_bits(value.low)))
         }
         RILS_VALUE_CHAR => {
             require_zero_high()?;
@@ -219,6 +219,12 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
     }
     if let Some(number) = value.as_usize() {
         return Ok(scalar(RILS_VALUE_USIZE, number as u64, 0));
+    }
+    if let Some(number) = value.as_f32() {
+        return Ok(scalar(RILS_VALUE_F32, u64::from(number.to_bits()), 0));
+    }
+    if let Some(number) = value.as_f64() {
+        return Ok(scalar(RILS_VALUE_F64, number.to_bits(), 0));
     }
     if let Some(text) = value.as_string() {
         return Ok(scalar(RILS_VALUE_STRING, insert_string(text)?, 0));

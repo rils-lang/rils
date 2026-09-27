@@ -6,7 +6,10 @@ mod float_methods;
 pub(crate) mod native;
 mod scalars;
 
-pub use scalars::{i8_payload, i32_payload, native_i8, native_i32, native_usize, usize_payload};
+pub use scalars::{
+    f32_payload, f64_payload, i8_payload, i32_payload, native_f32, native_f64, native_i8,
+    native_i32, native_usize, usize_payload,
+};
 use scalars::{lift_migrated_integer, lower_migrated_integer};
 
 pub fn integer_constant(target: IntegerType, constant: rils_builtins::IntegerConstantId) -> Value {
@@ -214,6 +217,12 @@ macro_rules! float_binary {
 }
 
 pub fn negate(value: Value) -> Result<Value, String> {
+    if let Some(value) = f32_payload(&value) {
+        return Ok(native_f32(-value));
+    }
+    if let Some(value) = f64_payload(&value) {
+        return Ok(native_f64(-value));
+    }
     if let Some(value) = i8_payload(&value) {
         return value
             .checked_neg()
@@ -251,6 +260,12 @@ pub fn negate(value: Value) -> Result<Value, String> {
 }
 
 pub fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Value, String> {
+    if let (Some(left), Some(right)) = (f32_payload(&left), f32_payload(&right)) {
+        return float_binary!(left, operator, right, native_f32);
+    }
+    if let (Some(left), Some(right)) = (f64_payload(&left), f64_payload(&right)) {
+        return float_binary!(left, operator, right, native_f64);
+    }
     if let (Some(left), Some(right)) = (i8_payload(&left), i8_payload(&right)) {
         return integer_binary!(left, operator, right, native_i8);
     }

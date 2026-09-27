@@ -1500,11 +1500,20 @@ fn scalar_value_protocol_round_trips_all_payload_shapes() {
         Value::Usize(9),
         Value::F32(1.25),
         Value::F64(-2.5),
+        Value::from_f32(-0.0),
+        Value::from_f64(3.25),
         Value::Char('你'),
     ];
     for expected in values {
         let encoded = to_ffi_value(expected.clone(), "").unwrap();
-        assert_eq!(from_ffi_value(encoded, None).unwrap(), expected);
+        let decoded = from_ffi_value(encoded, None).unwrap();
+        if let Some(value) = expected.as_f32() {
+            assert_eq!(decoded.as_f32().unwrap().to_bits(), value.to_bits());
+        }
+        if let Some(value) = expected.as_f64() {
+            assert_eq!(decoded.as_f64().unwrap().to_bits(), value.to_bits());
+        }
+        assert_eq!(decoded, expected);
     }
 }
 

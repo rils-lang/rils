@@ -25,6 +25,9 @@ pub(super) fn resolve_numeric_member(
         Value::F32(_) | Value::F64(_) => {
             rils_builtins::float_method(name).map(|method| BuiltinMethod::FloatIntrinsic(method.id))
         }
+        Value::Native(object) if matches!(object.descriptor().rils_type(), Type::Float(_)) => {
+            rils_builtins::float_method(name).map(|method| BuiltinMethod::FloatIntrinsic(method.id))
+        }
         _ => return Ok(None),
     }
     .ok_or_else(|| {
