@@ -372,6 +372,7 @@ pub(super) fn read_runtime_type(reader: &mut Reader<'_>) -> Result<RuntimeType> 
             name: reader.string()?,
             generic_parameters: reader.collection(read_generic_parameter)?,
             fields: reader.collection(read_named_field)?,
+            field_indices: Default::default(),
             methods: RefCell::new(HashMap::new()),
             trait_methods: RefCell::new(HashMap::new()),
             implemented_traits: RefCell::new(HashSet::new()),

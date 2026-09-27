@@ -18,6 +18,7 @@ pub struct HirPlace {
 
 pub enum HirProjection {
     Field(String),
+    RecordField { type_id: TypeId, index: usize },
     Index(Box<HirExpression>),
 }
 

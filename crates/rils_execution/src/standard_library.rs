@@ -11,7 +11,7 @@ use crate::{
     types::Type,
     value::{
         EnumInstance, EnumPayload, EnumType, FieldSlot, HostFunction, IndexedStorage, ModuleValue,
-        StructInstance, StructType, Value,
+        StructFields, StructInstance, StructType, Value,
     },
 };
 
@@ -43,6 +43,7 @@ pub fn install(
     let error_declaration = rils_builtins::builtin("std::io::Error")
         .expect("std::io::Error is declared in rils_builtins");
     let error = Rc::new(StructType {
+        field_indices: Default::default(),
         name: "std::io::Error".into(),
         generic_parameters: Vec::new(),
         fields: error_declaration
@@ -438,7 +439,10 @@ fn io_error(
     ]);
     Value::Struct(Rc::new(StructInstance {
         type_definition: definition.clone(),
-        fields: RefCell::new(fields),
+        fields: RefCell::new(
+            StructFields::from_map(definition.clone(), fields)
+                .expect("standard library error fields match their declaration"),
+        ),
         type_arguments: Vec::new(),
     }))
 }

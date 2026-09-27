@@ -599,29 +599,37 @@ impl<'a> VirtualMachine<'a> {
                                 .fields
                                 .iter()
                                 .map(|field| {
-                                    let value = values
-                                        .get(&field.name)
-                                        .cloned()
-                                        .expect("static analysis checked fields");
+                                    let value =
+                                        values.get(&field.name).cloned().ok_or_else(|| {
+                                            BytecodeError::new(
+                                                format!(
+                                                    "record constructor is missing field `{}`",
+                                                    field.name
+                                                ),
+                                                instruction.span,
+                                            )
+                                        })?;
                                     let annotation =
                                         if matches!(field.type_annotation, Type::Variable(_)) {
                                             Type::of_value(&value).unwrap_or(Type::Unknown)
                                         } else {
                                             field.type_annotation.clone()
                                         };
-                                    (
+                                    Ok((
                                         field.name.clone(),
                                         FieldSlot {
                                             value: Some(value),
                                             type_annotation: annotation,
                                             references: 0,
                                         },
-                                    )
+                                    ))
                                 })
-                                .collect();
+                                .collect::<Result<HashMap<_, _>, BytecodeError>>()?;
+                            let fields = StructFields::from_map(definition.clone(), slots)
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
                             Value::Struct(Rc::new(StructInstance {
                                 type_definition: definition.clone(),
-                                fields: RefCell::new(slots),
+                                fields: RefCell::new(fields),
                                 type_arguments: infer_generic_arguments(
                                     &definition.generic_parameters,
                                     &definition.fields,

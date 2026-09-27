@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- 用户结构体字段的字节码 place 现以类型表索引和字段声明索引表示，加载验证会拒绝越界索引，执行时也检查接收对象的类型。解释器和 VM 的结构体字段槽位已按声明顺序存放，字段引用直接定位索引；脚本语义不变。未冻结的 v8 `.rilbc` 增加索引投影标签，旧文件的按名投影仍可读取。
 - `rils_value` 新增用户结构体组合布局：Rust 宿主可从 `DynamicLayout::record` 的字段声明计算偏移，并用 `DynamicValue::record`、字段访问与移动入口操作嵌套负载。`rils_execution::value::record_layout::RecordLayoutResolver` 可从已有结构体声明解析具体泛型实例的布局。脚本结构体的运行时表示尚未切换，脚本行为不变。
 - `Some(value)` 的原生 `Option<T>` 构造现在消耗子值；`Some(string)` 在普通调用中直接移动标准库字符串负载，不再为存入 `Option<string>` 复制文本。不支持原生布局的子值会原样返回给旧表示路径。Rust 宿主若直接调用 `rils_execution::value::dynamic_option::construct`，需传入 `Option<Value>` 并处理 `Construction::{Native, Unsupported}`；借用来源须自行明确复制或 Clone。
 - 字符串标准库的 `find` / `rfind` 与 `strip_prefix` / `strip_suffix` 现在返回原生布局的 `Option<usize>` 或 `Option<string>`；Rust 宿主直接匹配旧 `Value::Option` 时改用 `Value::as_option()`。

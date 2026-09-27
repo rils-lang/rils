@@ -14,7 +14,7 @@ enum ReferenceTarget {
     Storage(StorageRef),
     StructField {
         instance: Rc<StructInstance>,
-        name: String,
+        index: usize,
     },
     IndexedElement {
         sequence: Rc<IndexedStorage>,
@@ -72,9 +72,28 @@ impl ReferenceValue {
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
+        let index = instance
+            .type_definition
+            .field_index(&name)
+            .ok_or_else(|| format!("unknown field `{name}`"))?;
+        Self::new_guarded_struct_field_index(instance, index, mutable, guard)
+    }
+
+    pub fn new_guarded_struct_field_index(
+        instance: Rc<StructInstance>,
+        index: usize,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<Self, String> {
+        let name = instance
+            .type_definition
+            .fields
+            .get(index)
+            .map(|field| field.name.as_str())
+            .ok_or_else(|| format!("record field index {index} is out of bounds"))?;
         let mut fields = instance.fields.borrow_mut();
         let field = fields
-            .get_mut(&name)
+            .get_index_mut(index)
             .ok_or_else(|| format!("unknown field `{name}`"))?;
         if field.value.is_none() {
             return Err(format!("cannot reference moved field `{name}`"));
@@ -83,7 +102,7 @@ impl ReferenceValue {
         drop(fields);
         Ok(Self {
             mutable,
-            target: ReferenceTarget::StructField { instance, name },
+            target: ReferenceTarget::StructField { instance, index },
             _guard: guard,
         })
     }
@@ -172,12 +191,14 @@ impl ReferenceValue {
         }
         match &self.target {
             ReferenceTarget::Storage(target) => Ok(Self::new_storage(target.clone(), mutable)),
-            ReferenceTarget::StructField { instance, name } => Self::new_guarded_struct_field(
-                instance.clone(),
-                name.clone(),
-                mutable,
-                self._guard.clone(),
-            ),
+            ReferenceTarget::StructField { instance, index } => {
+                Self::new_guarded_struct_field_index(
+                    instance.clone(),
+                    *index,
+                    mutable,
+                    self._guard.clone(),
+                )
+            }
             ReferenceTarget::IndexedElement { sequence, index } => {
                 Self::new_guarded_indexed_element(
                     sequence.clone(),
@@ -204,12 +225,15 @@ impl ReferenceValue {
                 .borrow()
                 .read()
                 .map_err(|_| "reference target has been moved".into()),
-            ReferenceTarget::StructField { instance, name } => instance
+            ReferenceTarget::StructField { instance, index } => instance
                 .fields
                 .borrow()
-                .get(name)
+                .get_index(*index)
                 .and_then(|field| field.value.clone())
-                .ok_or_else(|| format!("reference target field `{name}` has been moved")),
+                .ok_or_else(|| {
+                    let name = &instance.type_definition.fields[*index].name;
+                    format!("reference target field `{name}` has been moved")
+                }),
             ReferenceTarget::IndexedElement { sequence, index } => sequence
                 .elements
                 .borrow()
@@ -236,9 +260,9 @@ impl ReferenceValue {
         }
         match &self.target {
             ReferenceTarget::Storage(target) => target.borrow_mut().assign_through_reference(value),
-            ReferenceTarget::StructField { instance, name } => {
+            ReferenceTarget::StructField { instance, index } => {
                 let mut fields = instance.fields.borrow_mut();
-                let field = fields.get_mut(name).ok_or(AssignError::Undefined)?;
+                let field = fields.get_index_mut(*index).ok_or(AssignError::Undefined)?;
                 field.value = Some(
                     field
                         .type_annotation
@@ -271,8 +295,8 @@ impl Drop for ReferenceValue {
     fn drop(&mut self) {
         match &self.target {
             ReferenceTarget::Storage(target) => target.borrow_mut().remove_reference(),
-            ReferenceTarget::StructField { instance, name } => {
-                if let Some(field) = instance.fields.borrow_mut().get_mut(name) {
+            ReferenceTarget::StructField { instance, index } => {
+                if let Some(field) = instance.fields.borrow_mut().get_index_mut(*index) {
                     field.references = field.references.saturating_sub(1);
                 }
             }

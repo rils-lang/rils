@@ -9,6 +9,11 @@ pub(super) fn write_place(writer: &mut Writer, place: &BytecodePlace) -> Result<
                 writer.u8(0);
                 writer.string(name)?;
             }
+            BytecodeProjection::RecordField { type_id, index } => {
+                writer.u8(2);
+                writer.index(*type_id, "record type")?;
+                writer.index(*index, "record field")?;
+            }
             BytecodeProjection::Index(register) => {
                 writer.u8(1);
                 writer.index(*register, "index register")?;
@@ -26,6 +31,10 @@ pub(super) fn read_place(reader: &mut Reader<'_>) -> Result<BytecodePlace> {
         projections.push(match reader.u8()? {
             0 => BytecodeProjection::Field(reader.string()?),
             1 => BytecodeProjection::Index(reader.index()?),
+            2 => BytecodeProjection::RecordField {
+                type_id: reader.index()?,
+                index: reader.index()?,
+            },
             value => {
                 return Err(BytecodeFormatError::new(format!(
                     "invalid projection tag {value}"

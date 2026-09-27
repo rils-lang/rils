@@ -33,6 +33,9 @@ pub type NativeType = rils_value::NativeType<Value>;
 pub type DynamicObject = rils_value::DynamicObject<Value>;
 #[path = "value/dynamic_option.rs"]
 pub mod dynamic_option;
+#[path = "value/record.rs"]
+mod record;
+pub use record::StructFields;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
 pub mod native_ops;
@@ -130,10 +133,26 @@ pub struct StructType {
     pub name: String,
     pub generic_parameters: Vec<GenericParameter>,
     pub fields: Vec<NamedField>,
+    pub field_indices: std::cell::OnceCell<HashMap<String, usize>>,
     pub methods: RefCell<HashMap<String, Rc<UserFunction>>>,
     pub trait_methods: RefCell<HashMap<String, HashMap<String, Rc<UserFunction>>>>,
     pub implemented_traits: RefCell<HashSet<String>>,
     pub associated_types: RefCell<HashMap<String, HashMap<String, TypeAliasType>>>,
+}
+
+impl StructType {
+    pub fn field_index(&self, name: &str) -> Option<usize> {
+        self.field_indices
+            .get_or_init(|| {
+                self.fields
+                    .iter()
+                    .enumerate()
+                    .map(|(index, field)| (field.name.clone(), index))
+                    .collect()
+            })
+            .get(name)
+            .copied()
+    }
 }
 
 pub struct EnumType {
@@ -170,7 +189,7 @@ pub struct TypeAliasType {
 #[derive(Clone)]
 pub struct StructInstance {
     pub type_definition: Rc<StructType>,
-    pub fields: RefCell<HashMap<String, FieldSlot>>,
+    pub fields: RefCell<StructFields>,
     pub type_arguments: Vec<Type>,
 }
 
@@ -788,7 +807,10 @@ impl Value {
                 }
                 Self::Struct(Rc::new(StructInstance {
                     type_definition: instance.type_definition.clone(),
-                    fields: RefCell::new(fields),
+                    fields: RefCell::new(StructFields::from_map(
+                        instance.type_definition.clone(),
+                        fields,
+                    )?),
                     type_arguments: instance.type_arguments.clone(),
                 }))
             }

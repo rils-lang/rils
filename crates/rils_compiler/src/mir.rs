@@ -206,6 +206,10 @@ impl Builder {
         for projection in &place.projections {
             projections.push(match projection {
                 HirProjection::Field(field) => MirProjection::Field(field.clone()),
+                HirProjection::RecordField { type_id, index } => MirProjection::RecordField {
+                    type_id: *type_id,
+                    index: *index,
+                },
                 HirProjection::Index(index) => MirProjection::Index(self.expression(index)?),
             });
         }

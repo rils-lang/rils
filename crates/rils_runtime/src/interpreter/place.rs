@@ -382,7 +382,7 @@ impl Interpreter {
                         span,
                     ));
                 };
-                if !instance.fields.borrow().contains_key(name) {
+                if instance.type_definition.field_index(name).is_none() {
                     return Err(RuntimeError::new(
                         format!(
                             "struct `{}` has no field `{name}`",

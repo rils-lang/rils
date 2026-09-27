@@ -13,8 +13,8 @@ use crate::{
     types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
-        FieldSlot, HashMapValue, HashSetValue, IndexedStorage, ReferenceValue, StructInstance,
-        StructType, Value, native_range,
+        FieldSlot, HashMapValue, HashSetValue, IndexedStorage, ReferenceValue, StructFields,
+        StructInstance, StructType, Value, native_range,
     },
 };
 
@@ -611,6 +611,7 @@ struct BytecodePlace {
 #[derive(Clone)]
 enum BytecodeProjection {
     Field(String),
+    RecordField { type_id: usize, index: usize },
     Index(usize),
 }
 

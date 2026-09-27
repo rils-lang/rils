@@ -283,6 +283,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         environment.borrow_mut().define(
             name,
             Value::StructType(Rc::new(StructType {
+                field_indices: Default::default(),
                 name: name.into(),
                 generic_parameters: if name == "BTreeMap" {
                     ["K", "V"]
@@ -331,6 +332,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     environment.borrow_mut().define(
         "Range",
         Value::StructType(Rc::new(StructType {
+            field_indices: Default::default(),
             name: "Range".into(),
             generic_parameters: vec![GenericParameter {
                 is_const: false,
@@ -460,6 +462,7 @@ fn install_format_types(environment: &EnvironmentRef) {
     environment.borrow_mut().define(
         "FormatError",
         Value::StructType(Rc::new(StructType {
+            field_indices: Default::default(),
             name: "FormatError".into(),
             generic_parameters: Vec::new(),
             fields: Vec::new(),

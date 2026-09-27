@@ -5,7 +5,10 @@ use std::{collections::HashMap, rc::Rc};
 use crate::{
     ast::EnumVariant,
     types::{FunctionSignature, RuntimeValue, Type, merge_type_arguments, merge_types},
-    value::{EnumInstance, EnumPayload, FieldSlot, StructInstance, Value, enum_variant_name},
+    value::{
+        EnumInstance, EnumPayload, FieldSlot, StructFields, StructInstance, Value,
+        enum_variant_name,
+    },
 };
 
 impl RuntimeValue for Value {
@@ -413,7 +416,9 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
             }
             Some(Value::Struct(Rc::new(StructInstance {
                 type_definition: instance.type_definition.clone(),
-                fields: std::cell::RefCell::new(fields),
+                fields: std::cell::RefCell::new(
+                    StructFields::from_map(instance.type_definition.clone(), fields).ok()?,
+                ),
                 type_arguments,
             })))
         }

@@ -8,6 +8,9 @@ fn encode_place(place: rils_compiler::mir::MirPlace) -> BytecodePlace {
             .into_iter()
             .map(|projection| match projection {
                 rils_compiler::mir::MirProjection::Field(field) => BytecodeProjection::Field(field),
+                rils_compiler::mir::MirProjection::RecordField { type_id, index } => {
+                    BytecodeProjection::RecordField { type_id, index }
+                }
                 rils_compiler::mir::MirProjection::Index(index) => BytecodeProjection::Index(index),
             })
             .collect(),
@@ -77,6 +80,7 @@ fn runtime_type(definition: HirTypeDefinition) -> RuntimeType {
             name,
             generic_parameters,
             fields,
+            field_indices: Default::default(),
             methods: RefCell::new(HashMap::new()),
             trait_methods: RefCell::new(HashMap::new()),
             implemented_traits: RefCell::new(HashSet::new()),

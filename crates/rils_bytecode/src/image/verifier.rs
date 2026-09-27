@@ -145,7 +145,13 @@ impl BytecodeModule {
                 place.local >= function.local_count
                     || place.projections.is_empty()
                     || place.projections.iter().any(|projection| {
-                        matches!(projection, BytecodeProjection::Index(register) if invalid_register(*register))
+                        match projection {
+                            BytecodeProjection::Index(register) => invalid_register(*register),
+                            BytecodeProjection::RecordField { type_id, index } => {
+                                !matches!(self.types.get(*type_id), Some(RuntimeType::Struct(definition)) if *index < definition.fields.len())
+                            }
+                            BytecodeProjection::Field(_) => false,
+                        }
                     })
             };
             match &instruction.instruction {

@@ -22,25 +22,26 @@ impl Interpreter {
             )?;
             let values =
                 validate_named_fields(&definition.fields, values, span, name, &substitutions)?;
+            let slots = values
+                .into_iter()
+                .map(|(name, value)| {
+                    let type_annotation = Type::of_value(&value).unwrap_or(Type::Unknown);
+                    (
+                        name,
+                        FieldSlot {
+                            value: Some(value),
+                            type_annotation,
+                            references: 0,
+                        },
+                    )
+                })
+                .collect();
+            let fields = StructFields::from_map(definition.clone(), slots)
+                .map_err(|message| RuntimeError::new(message, span))?;
             return Ok(Value::Struct(Rc::new(StructInstance {
                 type_arguments: generic_arguments(&definition.generic_parameters, &substitutions),
                 type_definition: definition,
-                fields: RefCell::new(
-                    values
-                        .into_iter()
-                        .map(|(name, value)| {
-                            let type_annotation = Type::of_value(&value).unwrap_or(Type::Unknown);
-                            (
-                                name,
-                                FieldSlot {
-                                    value: Some(value),
-                                    type_annotation,
-                                    references: 0,
-                                },
-                            )
-                        })
-                        .collect(),
-                ),
+                fields: RefCell::new(fields),
             })));
         }
         if path.len() >= 2 {

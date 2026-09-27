@@ -20,6 +20,7 @@ pub struct MirPlace {
 
 pub enum MirProjection {
     Field(String),
+    RecordField { type_id: TypeId, index: usize },
     Index(Register),
 }
 

@@ -37,9 +37,9 @@ use crate::{
         BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance,
         EnumPayload, EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod,
         HostFunction, HostFunctionHandler, HostObject, HostType, IndexedStorage, ModuleValue,
-        NativeFunction, NativeFunctionBody, ReferenceValue, StructInstance, StructType,
-        TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value, VariantConstructor,
-        enum_variant_name, native_range,
+        NativeFunction, NativeFunctionBody, ReferenceValue, StructFields, StructInstance,
+        StructType, TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value,
+        VariantConstructor, enum_variant_name, native_range,
     },
 };
 

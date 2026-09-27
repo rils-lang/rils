@@ -579,6 +579,8 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
     )
     .expect("recursive generic source should compile");
     assert_eq!(module.call("main", Vec::new()).unwrap(), Value::I32(42));
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.call("main", Vec::new()).unwrap(), Value::I32(42));
 }
 
 #[test]
@@ -2034,6 +2036,91 @@ fn compiles_struct_fields_borrows_and_enum_patterns() {
                 }
             "#,
     );
+}
+
+#[test]
+fn indexed_record_fields_round_trip_and_reject_invalid_indices() {
+    let source = r#"
+        struct Point { x: i32, y: i32 }
+        struct Decoy { x: i32, y: i32 }
+        fn run() -> i32 {
+            let mut point = Point { x: 1, y: 2 };
+            let x = &mut point.x;
+            *x = 10;
+            point.y = 5;
+            point.x + point.y
+        }
+        run()
+    "#;
+    let module = compile(source).unwrap();
+    let indexed_places = |module: &BytecodeModule| {
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .filter_map(|instruction| match &instruction.instruction {
+                Instruction::TakePlace { place, .. }
+                | Instruction::BorrowPlace { place, .. }
+                | Instruction::StorePlace { place, .. } => Some(place),
+                _ => None,
+            })
+            .flat_map(|place| &place.projections)
+            .filter(|projection| matches!(projection, BytecodeProjection::RecordField { .. }))
+            .count()
+    };
+    assert!(indexed_places(&module) >= 3);
+    assert_matches_interpreter(source);
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(indexed_places(&loaded), indexed_places(&module));
+    assert_eq!(loaded.execute().unwrap(), Value::I32(15));
+
+    let mut wrong_type = loaded.clone();
+    let decoy_id = wrong_type
+        .types
+        .iter()
+        .position(|ty| matches!(ty, RuntimeType::Struct(definition) if definition.name == "Decoy"))
+        .unwrap();
+    let wrong_projection = wrong_type
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.instructions)
+        .find_map(|instruction| match &mut instruction.instruction {
+            Instruction::TakePlace { place, .. }
+            | Instruction::BorrowPlace { place, .. }
+            | Instruction::StorePlace { place, .. } => place
+                .projections
+                .iter_mut()
+                .find(|projection| matches!(projection, BytecodeProjection::RecordField { .. })),
+            _ => None,
+        })
+        .unwrap();
+    let BytecodeProjection::RecordField { type_id, .. } = wrong_projection else {
+        unreachable!()
+    };
+    *type_id = decoy_id;
+    wrong_type.verify().unwrap();
+    assert!(wrong_type.execute().is_err());
+
+    let mut invalid = loaded;
+    let projection = invalid
+        .functions
+        .iter_mut()
+        .flat_map(|function| &mut function.instructions)
+        .find_map(|instruction| match &mut instruction.instruction {
+            Instruction::TakePlace { place, .. }
+            | Instruction::BorrowPlace { place, .. }
+            | Instruction::StorePlace { place, .. } => place
+                .projections
+                .iter_mut()
+                .find(|projection| matches!(projection, BytecodeProjection::RecordField { .. })),
+            _ => None,
+        })
+        .unwrap();
+    let BytecodeProjection::RecordField { index, .. } = projection else {
+        unreachable!()
+    };
+    *index = usize::MAX;
+    assert!(invalid.verify().is_err());
 }
 
 #[test]

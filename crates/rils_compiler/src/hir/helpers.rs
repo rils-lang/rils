@@ -70,7 +70,7 @@ impl<'a> FunctionLowerer<'a> {
                         value: HirLiteral::Usize(index),
                         span: *span,
                     })),
-                    Err(_) => HirProjection::Field(name.clone()),
+                    Err(_) => self.record_field_projection(object, name, *span)?,
                 });
                 Ok(place)
             }
@@ -91,6 +91,59 @@ impl<'a> FunctionLowerer<'a> {
                 expression.span(),
             )),
         }
+    }
+
+    fn record_field_projection(
+        &self,
+        object: &Expr,
+        name: &str,
+        span: Span,
+    ) -> Result<HirProjection, CompileError> {
+        let mut ty = self.expression_type(object).ok_or_else(|| {
+            CompileError::unsupported("field receiver has no resolved type", span)
+        })?;
+        while let Type::Reference { inner, .. } = &ty {
+            ty = inner.as_ref().clone();
+        }
+        if matches!(
+            ty,
+            Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }
+        ) {
+            // Existing generic paths can erase a receiver type after static
+            // checking. Keep symbolic access until inference preserves it.
+            return Ok(HirProjection::Field(name.to_owned()));
+        }
+        let Type::Named {
+            name: type_name, ..
+        } = ty
+        else {
+            return Err(CompileError::unsupported(
+                format!("cannot resolve field `{name}` on {ty}"),
+                span,
+            ));
+        };
+        let Some(type_id) = self.types.get(&type_name).copied() else {
+            // Host and standard-library records are not in this module's
+            // type table; retain their symbolic field access.
+            return Ok(HirProjection::Field(name.to_owned()));
+        };
+        let Some(HirTypeDefinition::Struct { fields, .. }) = self.type_definitions.get(type_id)
+        else {
+            return Err(CompileError::unsupported(
+                format!("type `{type_name}` is not a record"),
+                span,
+            ));
+        };
+        let index = fields
+            .iter()
+            .position(|field| field.name == name)
+            .ok_or_else(|| {
+                CompileError::unsupported(
+                    format!("struct `{type_name}` has no field `{name}`"),
+                    span,
+                )
+            })?;
+        Ok(HirProjection::RecordField { type_id, index })
     }
 
     pub(super) fn method_receiver(

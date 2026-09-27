@@ -295,6 +295,7 @@ impl Interpreter {
                     })
                     .collect::<Result<Vec<_>, RuntimeError>>()?;
                 let definition = StructType {
+                    field_indices: Default::default(),
                     name: name.clone(),
                     generic_parameters: generic_parameters.clone(),
                     fields,
