@@ -6,11 +6,14 @@ mod float_methods;
 pub(crate) mod native;
 mod scalars;
 
+use scalars::lift_migrated_integer;
+pub(crate) use scalars::lower_migrated_integer;
 pub use scalars::{
-    f32_payload, f64_payload, i8_payload, i32_payload, native_f32, native_f64, native_i8,
-    native_i32, native_usize, usize_payload,
+    f32_payload, f64_payload, i8_payload, i16_payload, i32_payload, i64_payload, i128_payload,
+    isize_payload, native_f32, native_f64, native_i8, native_i16, native_i32, native_i64,
+    native_i128, native_isize, native_u8, native_u16, native_u32, native_u64, native_u128,
+    native_usize, u8_payload, u16_payload, u32_payload, u64_payload, u128_payload, usize_payload,
 };
-use scalars::{lift_migrated_integer, lower_migrated_integer};
 
 pub fn integer_constant(target: IntegerType, constant: rils_builtins::IntegerConstantId) -> Value {
     native::integer::constant(target, constant)

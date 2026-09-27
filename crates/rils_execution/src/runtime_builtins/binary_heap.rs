@@ -131,7 +131,7 @@ fn orderable(value: &Value) -> bool {
         return true;
     }
     matches!(
-        value,
+        crate::numeric::lower_migrated_integer(value.clone()),
         Value::I16(_)
             | Value::I64(_)
             | Value::I128(_)
@@ -166,12 +166,18 @@ fn compare(left: &Value, right: &Value) -> Result<Ordering, String> {
         return Ok(left.cmp(&right));
     }
     macro_rules! compare_variants {
-        ($($variant:ident),+ $(,)?) => {
-            match (left, right) {
+        ($left:expr, $right:expr; $($variant:ident),+ $(,)?) => {
+            match ($left, $right) {
                 $((Value::$variant(left), Value::$variant(right)) => Ok(left.cmp(right)),)+
                 _ => Err("BinaryHeap elements must have the same orderable type".into()),
             }
         };
     }
-    compare_variants!(I16, I64, I128, Isize, U8, U16, U32, U64, U128, Usize, Char)
+    let lowered_left = crate::numeric::lower_migrated_integer(left.clone());
+    let lowered_right = crate::numeric::lower_migrated_integer(right.clone());
+    compare_variants!(
+        &lowered_left,
+        &lowered_right;
+        I16, I64, I128, Isize, U8, U16, U32, U64, U128, Usize, Char
+    )
 }

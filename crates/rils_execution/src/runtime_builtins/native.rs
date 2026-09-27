@@ -89,7 +89,10 @@ impl StringOutput for Iterator<char> {
 impl StringOutput for Iterator<u8> {
     fn into_value(self) -> Result<Value, String> {
         Ok(super::owned_iterator_value(
-            self.0.into_iter().map(Value::U8).collect::<VecDeque<_>>(),
+            self.0
+                .into_iter()
+                .map(Value::from_u8)
+                .collect::<VecDeque<_>>(),
             Type::Integer(IntegerType::U8),
         ))
     }

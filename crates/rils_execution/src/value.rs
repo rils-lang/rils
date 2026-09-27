@@ -46,6 +46,8 @@ pub mod record_layout;
 #[path = "value/string.rs"]
 mod string;
 pub use string::{native_string, string_payload};
+#[path = "value/scalar.rs"]
+mod scalar;
 
 #[path = "value/reference.rs"]
 mod reference;
@@ -393,54 +395,9 @@ pub enum Value {
 }
 
 impl Value {
-    /// Construct an `i8` in its registered native storage.
-    pub fn from_i8(value: i8) -> Self {
-        crate::numeric::native_i8(value)
-    }
-
-    /// Construct an `i32` in its registered native storage.
-    pub fn from_i32(value: i32) -> Self {
-        crate::numeric::native_i32(value)
-    }
-
-    /// Construct an `f32` in its registered native storage.
-    pub fn from_f32(value: f32) -> Self {
-        crate::numeric::native_f32(value)
-    }
-
-    /// Construct an `f64` in its registered native storage.
-    pub fn from_f64(value: f64) -> Self {
-        crate::numeric::native_f64(value)
-    }
-
     /// Construct a Rils string in native storage.
     pub fn from_string(value: impl Into<std::string::String>) -> Self {
         native_string(value)
-    }
-
-    /// Read an `i8` from its registered native storage.
-    pub fn as_i8(&self) -> Option<i8> {
-        crate::numeric::i8_payload(self)
-    }
-
-    /// Read an `i32` from its registered native storage.
-    pub fn as_i32(&self) -> Option<i32> {
-        crate::numeric::i32_payload(self)
-    }
-
-    /// Read an `f32` from native or legacy storage.
-    pub fn as_f32(&self) -> Option<f32> {
-        crate::numeric::f32_payload(self)
-    }
-
-    /// Read an `f64` from native or legacy storage.
-    pub fn as_f64(&self) -> Option<f64> {
-        crate::numeric::f64_payload(self)
-    }
-
-    /// Read a `usize` regardless of whether it uses native or legacy storage.
-    pub fn as_usize(&self) -> Option<usize> {
-        crate::numeric::usize_payload(self)
     }
 
     /// Read owned string text from native or legacy storage.
@@ -1044,6 +1001,18 @@ impl PartialEq for Value {
             }
             (Self::Char(left), Self::Char(right)) => left == right,
             (Self::Native(left), Self::Native(right)) => native_ops::equal(left, right),
+            (Self::Native(_), legacy)
+                if matches!(Type::of_value(legacy), Some(Type::Integer(_))) =>
+            {
+                let lowered = crate::numeric::lower_migrated_integer(self.clone());
+                !matches!(&lowered, Self::Native(_)) && &lowered == legacy
+            }
+            (legacy, Self::Native(_))
+                if matches!(Type::of_value(legacy), Some(Type::Integer(_))) =>
+            {
+                let lowered = crate::numeric::lower_migrated_integer(other.clone());
+                !matches!(&lowered, Self::Native(_)) && legacy == &lowered
+            }
             (Self::Tuple(left), Self::Tuple(right))
             | (Self::Array(left), Self::Array(right))
             | (Self::Vec(left), Self::Vec(right)) => sequence_equal(left, right),

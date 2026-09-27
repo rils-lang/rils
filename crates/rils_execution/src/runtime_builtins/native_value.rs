@@ -39,51 +39,41 @@ macro_rules! scalar {
 scalar!(
     bool => Bool,
     char => Char,
-    i16 => I16,
-    i64 => I64,
-    i128 => I128,
-    isize => Isize,
-    u8 => U8,
-    u16 => U16,
-    u32 => U32,
-    u64 => U64,
-    u128 => U128,
-    f32 => F32,
-    f64 => F64,
 );
 
-impl NativeValue for i8 {
-    fn from_value(value: &Value) -> Result<Self, String> {
-        crate::numeric::i8_payload(value)
-            .ok_or_else(|| format!("expected i8, found {}", value.type_name()))
-    }
+macro_rules! native_scalar {
+    ($( $rust:ty => $read:ident => $construct:ident; )*) => {
+        $(
+            impl NativeValue for $rust {
+                fn from_value(value: &Value) -> Result<Self, String> {
+                    value.$read().ok_or_else(|| {
+                        format!("expected {}, found {}", stringify!($rust), value.type_name())
+                    })
+                }
 
-    fn into_value(self) -> Value {
-        crate::numeric::native_i8(self)
-    }
+                fn into_value(self) -> Value {
+                    Value::$construct(self)
+                }
+            }
+        )*
+    };
 }
 
-impl NativeValue for i32 {
-    fn from_value(value: &Value) -> Result<Self, String> {
-        crate::numeric::i32_payload(value)
-            .ok_or_else(|| format!("expected i32, found {}", value.type_name()))
-    }
-
-    fn into_value(self) -> Value {
-        crate::numeric::native_i32(self)
-    }
-}
-
-impl NativeValue for usize {
-    fn from_value(value: &Value) -> Result<Self, String> {
-        value
-            .as_usize()
-            .ok_or_else(|| format!("expected usize, found {}", value.type_name()))
-    }
-
-    fn into_value(self) -> Value {
-        crate::numeric::native_usize(self)
-    }
+native_scalar! {
+    i8 => as_i8 => from_i8;
+    i16 => as_i16 => from_i16;
+    i32 => as_i32 => from_i32;
+    i64 => as_i64 => from_i64;
+    i128 => as_i128 => from_i128;
+    isize => as_isize => from_isize;
+    u8 => as_u8 => from_u8;
+    u16 => as_u16 => from_u16;
+    u32 => as_u32 => from_u32;
+    u64 => as_u64 => from_u64;
+    u128 => as_u128 => from_u128;
+    usize => as_usize => from_usize;
+    f32 => as_f32 => from_f32;
+    f64 => as_f64 => from_f64;
 }
 
 impl NativeValue for () {

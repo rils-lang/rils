@@ -185,7 +185,8 @@ fn is_nonnegative_number(value: &Value) -> bool {
     if let Some(value) = value.as_f64() {
         return value >= 0.0;
     }
-    match value {
+    let lowered = crate::numeric::lower_migrated_integer(value.clone());
+    match &lowered {
         Value::I16(value) => *value >= 0,
         Value::I64(value) => *value >= 0,
         Value::I128(value) => *value >= 0,
@@ -234,7 +235,8 @@ fn integer_format(value: &Value, kind: IntegerFormat, alternate: bool) -> Result
     if let Some(value) = crate::numeric::usize_payload(value) {
         return Ok(render!(value));
     }
-    Ok(match value {
+    let lowered = crate::numeric::lower_migrated_integer(value.clone());
+    Ok(match &lowered {
         Value::I16(value) => render!(value),
         Value::I64(value) => render!(value),
         Value::I128(value) => render!(value),

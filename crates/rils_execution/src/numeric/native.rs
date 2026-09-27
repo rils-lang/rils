@@ -48,10 +48,8 @@ float_bridge!(
 
 impl NativeInput for u32 {
     fn from_value(value: &Value) -> std::result::Result<Self, String> {
-        match value {
-            Value::U32(value) => Ok(*value),
-            value => Err(format!("expected u32, found {}", value.type_name())),
-        }
+        super::u32_payload(value)
+            .ok_or_else(|| format!("expected u32, found {}", value.type_name()))
     }
 }
 
@@ -64,10 +62,8 @@ impl NativeInput for Integer {
             if let Some(inner) = super::i32_payload(value) {
                 return Ok(Self::Signed(inner.into(), "i32"));
             }
-            if let Some(inner) = super::usize_payload(value) {
-                return Ok(Self::Unsigned(inner as u128, "usize"));
-            }
         }
+        let lowered = super::lower_migrated_integer(value.clone());
         macro_rules! signed {
             ($value:expr, $name:literal) => {
                 Ok(Self::Signed((*$value).into(), $name))
@@ -78,7 +74,7 @@ impl NativeInput for Integer {
                 Ok(Self::Unsigned((*$value).into(), $name))
             };
         }
-        match value {
+        match &lowered {
             Value::I16(value) => signed!(value, "i16"),
             Value::I64(value) => signed!(value, "i64"),
             Value::I128(value) => signed!(value, "i128"),
@@ -99,7 +95,7 @@ impl NativeInput for Integer {
 
 impl NativeOutput for u32 {
     fn into_value(self) -> std::result::Result<Value, String> {
-        Ok(Value::U32(self))
+        Ok(super::native_u32(self))
     }
 }
 impl NativeOutput for f32 {
@@ -186,11 +182,11 @@ macro_rules! integer_bridge {
 
 integer_bridge!(
     i8 => I8 => super::native_i8,
-    i16 => I16 => Value::I16, i32 => I32 => super::native_i32,
-    i64 => I64 => Value::I64, i128 => I128 => Value::I128,
-    isize => Isize => Value::Isize, u8 => U8 => Value::U8,
-    u16 => U16 => Value::U16, u32 => U32 => Value::U32,
-    u64 => U64 => Value::U64, u128 => U128 => Value::U128,
+    i16 => I16 => super::native_i16, i32 => I32 => super::native_i32,
+    i64 => I64 => super::native_i64, i128 => I128 => super::native_i128,
+    isize => Isize => super::native_isize, u8 => U8 => super::native_u8,
+    u16 => U16 => super::native_u16, u32 => U32 => super::native_u32,
+    u64 => U64 => super::native_u64, u128 => U128 => super::native_u128,
     usize => Usize => super::native_usize,
 );
 

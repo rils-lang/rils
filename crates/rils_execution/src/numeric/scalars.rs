@@ -26,7 +26,7 @@ macro_rules! migrated_integers {
             }
         )*
 
-        pub(super) fn lower_migrated_integer(value: Value) -> Value {
+        pub(crate) fn lower_migrated_integer(value: Value) -> Value {
             match value {
                 Value::Native(object) => {
                     $(
@@ -53,6 +53,15 @@ macro_rules! migrated_integers {
 }
 
 migrated_integers! {
+    native_i16, i16_payload, i16, I16, descriptor_i16;
+    native_i64, i64_payload, i64, I64, descriptor_i64;
+    native_i128, i128_payload, i128, I128, descriptor_i128;
+    native_isize, isize_payload, isize, Isize, descriptor_isize;
+    native_u8, u8_payload, u8, U8, descriptor_u8;
+    native_u16, u16_payload, u16, U16, descriptor_u16;
+    native_u32, u32_payload, u32, U32, descriptor_u32;
+    native_u64, u64_payload, u64, U64, descriptor_u64;
+    native_u128, u128_payload, u128, U128, descriptor_u128;
     native_usize, usize_payload, usize, Usize, descriptor_usize;
 }
 

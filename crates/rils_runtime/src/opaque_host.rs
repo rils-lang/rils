@@ -87,7 +87,7 @@ pub fn host_enum_value(
             format!("host enum `{type_name}` returned unknown discriminant 0x{raw:x}")
         })?;
     let payload = if variant == HOST_FLAGS_RAW_VARIANT {
-        EnumPayload::Tuple(vec![Value::U128(raw)])
+        EnumPayload::Tuple(vec![Value::from_u128(raw)])
     } else {
         EnumPayload::Unit
     };
@@ -137,9 +137,10 @@ pub fn host_enum_raw(
     if instance.variant == HOST_FLAGS_RAW_VARIANT {
         if definition.flags
             && let EnumPayload::Tuple(values) = &instance.payload
-            && let [Value::U128(raw)] = values.as_slice()
+            && let [raw] = values.as_slice()
+            && let Some(raw) = raw.as_u128()
         {
-            return Ok(*raw);
+            return Ok(raw);
         }
         return Err(format!(
             "host enum `{type_name}` contains invalid flags payload"

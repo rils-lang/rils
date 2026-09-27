@@ -6,6 +6,6 @@
 
 `NativeObject<V>` 使用尺寸和对齐信息保存具体 Rust 布局。已登记 Copy 且不超过 32 字节、16 字节对齐的值直接放在对象内，不需要逐值分配；其余值使用共享堆存储，以支持词法引用和可变 receiver。擦除布局的分配与复制集中在 `storage.rs`，组合布局的移动与析构集中在 `dynamic.rs`；这些模块显式标注 `unsafe` 前提，不使用 `dyn Any` 作为负载。内联 Copy 值的可变方法需要上层 place 写回，不能通过克隆出的 handle 修改。包含 Rils 值的容器必须通过 `NativeChildren<V>` 报告嵌套值、活动引用和部分 move；Rils 的所有权与词法引用仍由执行层负责。
 
-`Range<T>`、`i8`、`i32`、`usize` 和 `string` 已在解释器与 VM 的实际值路径中使用 `Value::Native`。类型描述和整数、字符串方法注册由标准库声明生成；手工构造 `NativeType` 仅用于验证独立存储 API。
+`Range<T>`、全部标准库整数宽度、`f32`、`f64` 和 `string` 已在解释器与 VM 的实际值路径中使用 `Value::Native`。类型描述和数值、字符串方法注册由标准库声明生成；手工构造 `NativeType` 仅用于验证独立存储 API。
 
 `DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需标记字节。用户结构体可由字段布局递归计算对齐与偏移，字段初始化标记与负载放在同一块存储中；按索引访问、移出、重新填入和析构支持嵌套结构及 `Option<T>`。字段名到索引的映射保存在布局描述中，操作注册的上下文可通过类型检查后的字段入口访问负载。`DynamicObject<V>` 按类型 Copy 性质选择内联句柄或共享存储；`DynamicType<V>` 为它提供任意操作的注册表和带布局检查的调用上下文。`NativeObject::into_rust` 和 `DynamicValue::into_rust` 可以消耗已验证类型的原生负载，避免隐式 Clone 或重复析构。执行层已有从标准库声明过程宏生成的整数、浮点数、`string` 与 `Option<T>` 布局工厂，也能从已有的 `StructType` 声明为具体泛型实例解析嵌套布局。结构体布局目前仍是存储层能力，解释器和 VM 的用户结构体实例尚未迁出 `Value::Struct`；所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>` 已接入实际 `Value::Dynamic` 路径。

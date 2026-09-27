@@ -40,18 +40,16 @@ pub(crate) fn from_ffi_value(
         }};
     }
     macro_rules! unsigned {
-        ($variant:ident, $type:ty) => {{
+        ($constructor:path, $type:ty) => {{
             require_zero_high()?;
-            <$type>::try_from(value.low)
-                .map(Value::$variant)
-                .map_err(|_| {
-                    fail(
-                        RILS_STATUS_INVALID_ARGUMENT,
-                        "unsigned integer payload is out of range",
-                        "",
-                        Span::default(),
-                    )
-                })
+            <$type>::try_from(value.low).map($constructor).map_err(|_| {
+                fail(
+                    RILS_STATUS_INVALID_ARGUMENT,
+                    "unsigned integer payload is out of range",
+                    "",
+                    Span::default(),
+                )
+            })
         }};
     }
     match value.tag {
@@ -66,21 +64,21 @@ pub(crate) fn from_ffi_value(
             Span::default(),
         )),
         RILS_VALUE_I8 => signed!(Value::from_i8, i8),
-        RILS_VALUE_I16 => signed!(Value::I16, i16),
+        RILS_VALUE_I16 => signed!(Value::from_i16, i16),
         RILS_VALUE_I32 => signed!(Value::from_i32, i32),
-        RILS_VALUE_I64 => signed!(Value::I64, i64),
-        RILS_VALUE_I128 => Ok(Value::I128(
+        RILS_VALUE_I64 => signed!(Value::from_i64, i64),
+        RILS_VALUE_I128 => Ok(Value::from_i128(
             ((u128::from(value.high) << 64) | u128::from(value.low)) as i128,
         )),
-        RILS_VALUE_ISIZE => signed!(Value::Isize, isize),
-        RILS_VALUE_U8 => unsigned!(U8, u8),
-        RILS_VALUE_U16 => unsigned!(U16, u16),
-        RILS_VALUE_U32 => unsigned!(U32, u32),
-        RILS_VALUE_U64 => unsigned!(U64, u64),
-        RILS_VALUE_U128 => Ok(Value::U128(
+        RILS_VALUE_ISIZE => signed!(Value::from_isize, isize),
+        RILS_VALUE_U8 => unsigned!(Value::from_u8, u8),
+        RILS_VALUE_U16 => unsigned!(Value::from_u16, u16),
+        RILS_VALUE_U32 => unsigned!(Value::from_u32, u32),
+        RILS_VALUE_U64 => unsigned!(Value::from_u64, u64),
+        RILS_VALUE_U128 => Ok(Value::from_u128(
             (u128::from(value.high) << 64) | u128::from(value.low),
         )),
-        RILS_VALUE_USIZE => unsigned!(Usize, usize),
+        RILS_VALUE_USIZE => unsigned!(Value::from_usize, usize),
         RILS_VALUE_F32 => {
             require_zero_high()?;
             let bits = u32::try_from(value.low).map_err(|_| {
@@ -214,8 +212,43 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
     if let Some(number) = value.as_i8() {
         return Ok(scalar(RILS_VALUE_I8, number as i64 as u64, 0));
     }
+    if let Some(number) = value.as_i16() {
+        return Ok(scalar(RILS_VALUE_I16, number as i64 as u64, 0));
+    }
     if let Some(number) = value.as_i32() {
         return Ok(scalar(RILS_VALUE_I32, number as i64 as u64, 0));
+    }
+    if let Some(number) = value.as_i64() {
+        return Ok(scalar(RILS_VALUE_I64, number as u64, 0));
+    }
+    if let Some(number) = value.as_i128() {
+        return Ok(scalar(
+            RILS_VALUE_I128,
+            number as u128 as u64,
+            (number as u128 >> 64) as u64,
+        ));
+    }
+    if let Some(number) = value.as_isize() {
+        return Ok(scalar(RILS_VALUE_ISIZE, number as i64 as u64, 0));
+    }
+    if let Some(number) = value.as_u8() {
+        return Ok(scalar(RILS_VALUE_U8, u64::from(number), 0));
+    }
+    if let Some(number) = value.as_u16() {
+        return Ok(scalar(RILS_VALUE_U16, u64::from(number), 0));
+    }
+    if let Some(number) = value.as_u32() {
+        return Ok(scalar(RILS_VALUE_U32, u64::from(number), 0));
+    }
+    if let Some(number) = value.as_u64() {
+        return Ok(scalar(RILS_VALUE_U64, number, 0));
+    }
+    if let Some(number) = value.as_u128() {
+        return Ok(scalar(
+            RILS_VALUE_U128,
+            number as u64,
+            (number >> 64) as u64,
+        ));
     }
     if let Some(number) = value.as_usize() {
         return Ok(scalar(RILS_VALUE_USIZE, number as u64, 0));
@@ -522,22 +555,30 @@ pub(crate) fn from_ffi_host_enum(
     let integer = from_ffi_value(value, None)?;
     let raw = if let Some(value) = integer.as_i8() {
         value as u8 as u128
+    } else if let Some(value) = integer.as_i16() {
+        value as u16 as u128
     } else if let Some(value) = integer.as_i32() {
         value as u32 as u128
+    } else if let Some(value) = integer.as_i64() {
+        value as u64 as u128
+    } else if let Some(value) = integer.as_i128() {
+        value as u128
+    } else if let Some(value) = integer.as_isize() {
+        value as usize as u128
+    } else if let Some(value) = integer.as_u8() {
+        u128::from(value)
+    } else if let Some(value) = integer.as_u16() {
+        u128::from(value)
+    } else if let Some(value) = integer.as_u32() {
+        u128::from(value)
+    } else if let Some(value) = integer.as_u64() {
+        u128::from(value)
+    } else if let Some(value) = integer.as_u128() {
+        value
+    } else if let Some(value) = integer.as_usize() {
+        value as u128
     } else {
-        match integer {
-            Value::I16(value) => value as u16 as u128,
-            Value::I64(value) => value as u64 as u128,
-            Value::I128(value) => value as u128,
-            Value::Isize(value) => value as usize as u128,
-            Value::U8(value) => u128::from(value),
-            Value::U16(value) => u128::from(value),
-            Value::U32(value) => u128::from(value),
-            Value::U64(value) => u128::from(value),
-            Value::U128(value) => value,
-            Value::Usize(value) => value as u128,
-            _ => unreachable!("host enum transport tag was checked as an integer"),
-        }
+        unreachable!("host enum transport tag was checked as an integer")
     };
     rils_runtime::host_enum_value(type_name, definition, raw)
         .map_err(|message| fail(RILS_STATUS_INVALID_ARGUMENT, message, "", Span::default()))

@@ -1491,6 +1491,17 @@ fn exports_compiled_bytecode_to_memory_and_file() {
 fn scalar_value_protocol_round_trips_all_payload_shapes() {
     let values = [
         Value::from_i8(-8),
+        Value::from_i16(i16::MIN),
+        Value::from_i32(i32::MIN),
+        Value::from_i64(i64::MIN),
+        Value::from_i128(i128::MIN + 42),
+        Value::from_isize(-9),
+        Value::from_u8(u8::MAX),
+        Value::from_u16(u16::MAX),
+        Value::from_u32(u32::MAX),
+        Value::from_u64(u64::MAX),
+        Value::from_u128(u128::MAX - 42),
+        Value::from_usize(9),
         Value::I64(i64::MIN),
         Value::I128(i128::MIN + 42),
         Value::Isize(-9),
