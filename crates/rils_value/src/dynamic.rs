@@ -8,12 +8,17 @@ use crate::storage::RawStorage;
 
 mod object;
 mod operations;
+mod path;
 mod record;
+mod sequence;
+mod variant;
 pub use object::DynamicObject;
 pub use operations::{DynamicCallContext, DynamicType};
+pub use path::DynamicPathStep;
 pub use record::DynamicField;
 
 use record::RecordLayout;
+use variant::VariantLayout;
 
 enum DropKind {
     Rust {
@@ -25,6 +30,10 @@ enum DropKind {
         item_offset: usize,
     },
     Record(RecordLayout),
+    Variant(VariantLayout),
+    Sequence {
+        item: Rc<DynamicLayout>,
+    },
 }
 
 /// A concrete Rust layout or a composite layout assembled from runtime types.
@@ -99,6 +108,14 @@ impl DynamicLayout {
             DropKind::Record(record) => {
                 // SAFETY: an initialized record has one live tag per field.
                 unsafe { record.drop_value(pointer) };
+            }
+            DropKind::Variant(variant) => {
+                // SAFETY: the constructor wrote a valid tag and payload.
+                unsafe { variant.drop_value(pointer) };
+            }
+            DropKind::Sequence { .. } => {
+                // SAFETY: a sequence always initializes one Vec<DynamicValue>.
+                unsafe { ptr::drop_in_place(pointer.cast::<Vec<DynamicValue>>()) };
             }
         }
     }
