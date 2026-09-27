@@ -660,6 +660,7 @@ enum Instruction {
     InitLocal {
         local: usize,
         source: usize,
+        type_annotation: Option<Type>,
     },
     DropLocal {
         local: usize,

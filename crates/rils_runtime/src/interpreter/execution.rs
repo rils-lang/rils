@@ -219,7 +219,7 @@ impl Interpreter {
                         *span,
                     ));
                 }
-                let value = apply_type(type_annotation.as_ref(), &value, *span, name)?;
+                let value = apply_type_owned(type_annotation.as_ref(), value, *span, name)?;
                 environment
                     .borrow_mut()
                     .define(name.clone(), value, *mutable, type_annotation);

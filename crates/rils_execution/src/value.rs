@@ -33,6 +33,7 @@ pub type NativeType = rils_value::NativeType<Value>;
 pub type DynamicObject = rils_value::DynamicObject<Value>;
 #[path = "value/dynamic_option.rs"]
 pub mod dynamic_option;
+pub mod dynamic_sequence;
 #[path = "value/record.rs"]
 mod record;
 pub use record::StructFields;
@@ -825,6 +826,12 @@ impl Value {
             Self::Dynamic(object) => {
                 if object.descriptor().layout().is_copy() {
                     Self::Dynamic(object.copy_owned()?)
+                } else if native_layouts::vec_deque::matches(
+                    object.descriptor().layout().rils_type(),
+                ) || native_layouts::binary_heap::matches(
+                    object.descriptor().layout().rils_type(),
+                ) {
+                    Self::Dynamic(dynamic_sequence::clone_owned(object)?)
                 } else {
                     let (item, item_type) = dynamic_option::view(self)
                         .ok_or("dynamic value does not support Clone")??;

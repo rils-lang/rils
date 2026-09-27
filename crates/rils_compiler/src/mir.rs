@@ -113,6 +113,7 @@ impl Builder {
                     MirInstruction::InitLocal {
                         local: *local,
                         source: destination,
+                        type_annotation: None,
                     },
                     *span,
                 );
@@ -121,6 +122,7 @@ impl Builder {
             HirStatement::Let {
                 local,
                 initializer,
+                type_annotation,
                 span,
             } => {
                 let value = self.expression(initializer)?;
@@ -128,6 +130,7 @@ impl Builder {
                     MirInstruction::InitLocal {
                         local: *local,
                         source: value,
+                        type_annotation: type_annotation.clone(),
                     },
                     *span,
                 );

@@ -77,15 +77,24 @@ impl NativeRecordCodec {
             (Type::String, Value::Native(object))
                 if object.descriptor().rils_type() == &Type::String =>
             {
-                let text = object
-                    .into_rust::<NativeString>()
-                    .map_err(|failure| failure.1)?;
+                // Builtin calls still pass borrowed argument slices and may
+                // retain a shallow handle until the call returns. Keep the
+                // native sequence's item independently owned in that case.
+                let text = match object.into_rust::<NativeString>() {
+                    Ok(text) => text,
+                    Err(failure) => failure.0.with::<NativeString, _>(Clone::clone)?,
+                };
                 DynamicValue::from_rust(layout, text)
             }
-            (Type::Option(_), Value::Dynamic(object)) => {
-                let value = object.into_value().map_err(|failure| failure.1)?;
+            (ty, Value::Dynamic(object)) if object.descriptor().layout().rils_type() == &ty => {
+                let value = match object.into_value() {
+                    Ok(value) => value,
+                    Err(failure) => super::dynamic_sequence::clone_owned(&failure.0)?
+                        .into_value()
+                        .map_err(|failure| failure.1)?,
+                };
                 if !value.descriptor().compatible_with(&layout) {
-                    return Err("optional value has a different native layout".into());
+                    return Err("value has a different native layout".into());
                 }
                 Ok(value)
             }

@@ -172,8 +172,17 @@ impl<'a> VirtualMachine<'a> {
                         .assign(value)
                         .map_err(|error| assign_error(error, instruction.span))?;
                 }
-                Instruction::InitLocal { local, source } => {
-                    let value = self.take_register(source, instruction.span)?;
+                Instruction::InitLocal {
+                    local,
+                    source,
+                    type_annotation,
+                } => {
+                    let mut value = self.take_register(source, instruction.span)?;
+                    if let Some(expected) = type_annotation {
+                        value = rils_execution::value::dynamic_sequence::promote_empty(
+                            value, &expected,
+                        );
+                    }
                     self.frame().locals[local].borrow_mut().initialize(value);
                 }
                 Instruction::DropLocal { local } => {

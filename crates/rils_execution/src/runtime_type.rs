@@ -30,6 +30,16 @@ impl Value {
     /// value. Other cases still use the existing constraint logic, which may
     /// infer generic arguments or materialize a different representation.
     pub fn constrain_owned(self, expected: &Type) -> Option<Self> {
+        if matches!(self, Self::VecDeque(_) | Self::BinaryHeap(_)) {
+            // The legacy constructor has no type argument until the binding
+            // supplies one. Keep the unique owner so its empty storage can be
+            // replaced by the declaration-derived native sequence layout.
+            let checked = expected.constrain(&self)?;
+            drop(checked);
+            return Some(crate::value::dynamic_sequence::promote_empty(
+                self, expected,
+            ));
+        }
         if Type::of_value(&self).as_ref() == Some(expected) {
             if matches!(self, Self::Native(_) | Self::Dynamic(_)) && expected.accepts(&self) {
                 return Some(self);

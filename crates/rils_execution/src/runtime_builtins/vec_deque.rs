@@ -27,16 +27,35 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("VecDeque mutation requires a mutable reference".into());
     }
+    let value = match receiver {
+        Value::Reference(reference) => reference.read()?,
+        value => value.clone(),
+    };
+    if let Value::Dynamic(object) = value
+        && crate::value::native_layouts::vec_deque::matches(
+            object.descriptor().layout().rils_type(),
+        )
+    {
+        return crate::value::dynamic_sequence::with_legacy(&object, |value| {
+            let Value::VecDeque(queue) = value else {
+                return Err("expected VecDeque receiver".into());
+            };
+            call_queue(id, arguments, queue)
+        });
+    }
     let Value::VecDeque(queue) = super::import_receiver(receiver)? else {
         return Err("expected VecDeque receiver".into());
     };
+    call_queue(id, arguments, &queue)
+}
+
+fn call_queue(id: BuiltinId, arguments: &[Value], queue: &VecDequeValue) -> Result<Value, String> {
     match id {
-        BuiltinId::VecDequeLen => Ok(crate::numeric::native_usize(with_native(
-            &queue,
-            |native| native.len(),
-        ))),
+        BuiltinId::VecDequeLen => Ok(crate::numeric::native_usize(with_native(queue, |native| {
+            native.len()
+        }))),
         BuiltinId::VecDequeIsEmpty => {
-            Ok(Value::Bool(with_native(&queue, |native| native.is_empty())))
+            Ok(Value::Bool(with_native(queue, |native| native.is_empty())))
         }
         BuiltinId::VecDequePushFront | BuiltinId::VecDequePushBack => {
             let item = arguments.get(1).ok_or("missing VecDeque element")?;
@@ -46,7 +65,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 .ok_or_else(|| format!("VecDeque expects {expected}, found {actual}"))?;
             let item = ty.constrain(item).ok_or("invalid VecDeque element type")?;
             *queue.element_type.borrow_mut() = Some(ty);
-            with_native(&queue, |native| {
+            with_native(queue, |native| {
                 if id == BuiltinId::VecDequePushFront {
                     native.push_front(item);
                 } else {
@@ -69,9 +88,9 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 return Err("cannot remove a referenced VecDeque element".into());
             }
             let value = if id == BuiltinId::VecDequePopFront {
-                with_native(&queue, |native| native.pop_front())
+                with_native(queue, |native| native.pop_front())
             } else {
-                with_native(&queue, |native| native.pop_back())
+                with_native(queue, |native| native.pop_back())
             };
             Ok(Value::Option {
                 value: match value {
@@ -105,7 +124,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             {
                 return Err("cannot clear referenced VecDeque elements".into());
             }
-            with_native(&queue, |native| native.clear());
+            with_native(queue, |native| native.clear());
             Ok(Value::Unit)
         }
         _ => Err("unsupported VecDeque operation".into()),

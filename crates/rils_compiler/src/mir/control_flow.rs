@@ -264,6 +264,7 @@ impl Builder {
             MirInstruction::InitLocal {
                 local: binding,
                 source: item,
+                type_annotation: None,
             },
             span,
         );

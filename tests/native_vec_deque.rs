@@ -1,4 +1,45 @@
-use rils::{Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval};
+
+#[test]
+fn typed_vec_deque_uses_native_storage_in_both_backends() {
+    let source = r#"
+        let mut queue: VecDeque<i32> = VecDeque::new();
+        queue.push_back(7);
+        queue
+    "#;
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        eval(source).unwrap(),
+        compiled.execute().unwrap(),
+        loaded.execute().unwrap(),
+    ] {
+        let Value::Dynamic(object) = value else {
+            panic!("typed VecDeque should have native storage");
+        };
+        assert_eq!(
+            object.with(|value| value.sequence_len()).unwrap().unwrap(),
+            1
+        );
+    }
+}
+
+#[test]
+fn native_vec_deque_can_own_another_native_vec_deque() {
+    let source = r#"
+        let mut outer: VecDeque<VecDeque<i32>> = VecDeque::new();
+        let mut inner: VecDeque<i32> = VecDeque::new();
+        inner.push_back(7);
+        outer.push_back(inner);
+        let mut recovered = outer.pop_front().unwrap();
+        recovered.pop_front().unwrap()
+    "#;
+    assert_eq!(eval(source).unwrap(), Value::from_i32(7));
+    assert_eq!(
+        compile(source).unwrap().execute().unwrap(),
+        Value::from_i32(7)
+    );
+}
 
 #[test]
 fn native_vec_deque_matches_in_interpreter_and_vm() {

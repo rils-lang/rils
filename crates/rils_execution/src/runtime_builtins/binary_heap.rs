@@ -22,9 +22,29 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("BinaryHeap mutation requires a mutable reference".into());
     }
+    let value = match receiver {
+        Value::Reference(reference) => reference.read()?,
+        value => value.clone(),
+    };
+    if let Value::Dynamic(object) = value
+        && crate::value::native_layouts::binary_heap::matches(
+            object.descriptor().layout().rils_type(),
+        )
+    {
+        return crate::value::dynamic_sequence::with_legacy(&object, |value| {
+            let Value::BinaryHeap(heap) = value else {
+                return Err("expected BinaryHeap receiver".into());
+            };
+            call_heap(id, arguments, heap)
+        });
+    }
     let Value::BinaryHeap(heap) = super::import_receiver(receiver)? else {
         return Err("expected BinaryHeap receiver".into());
     };
+    call_heap(id, arguments, &heap)
+}
+
+fn call_heap(id: BuiltinId, arguments: &[Value], heap: &BinaryHeapValue) -> Result<Value, String> {
     match id {
         BuiltinId::BinaryHeapLen => Ok(crate::numeric::native_usize(heap.elements.borrow().len())),
         BuiltinId::BinaryHeapIsEmpty => Ok(Value::Bool(heap.elements.borrow().is_empty())),

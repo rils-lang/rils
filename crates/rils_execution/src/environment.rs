@@ -80,8 +80,8 @@ impl StorageSlot {
             return Err(AssignError::BorrowedTarget);
         }
         if let Some(expected) = &self.type_annotation {
-            value = expected
-                .constrain(&value)
+            value = value
+                .constrain_owned(expected)
                 .ok_or_else(|| AssignError::TypeMismatch(expected.clone()))?;
         } else if matches!(&value, Value::Option { .. }) {
             return Err(AssignError::OptionRequiresAnnotation);
@@ -99,8 +99,8 @@ impl StorageSlot {
             return Err(AssignError::BorrowedTarget);
         }
         if let Some(expected) = &self.type_annotation {
-            value = expected
-                .constrain(&value)
+            value = value
+                .constrain_owned(expected)
                 .ok_or_else(|| AssignError::TypeMismatch(expected.clone()))?;
         }
         self.value = Some(value);

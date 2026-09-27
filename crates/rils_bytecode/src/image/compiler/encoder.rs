@@ -180,8 +180,8 @@ fn encode_function(
                     MirInstruction::StoreLocal { local, source } => {
                         Instruction::StoreLocal { local, source }
                     }
-                    MirInstruction::InitLocal { local, source } => {
-                        Instruction::InitLocal { local, source }
+                    MirInstruction::InitLocal { local, source, type_annotation } => {
+                        Instruction::InitLocal { local, source, type_annotation }
                     }
                     MirInstruction::DropLocal { local } => Instruction::DropLocal { local },
                     MirInstruction::BorrowLocal {

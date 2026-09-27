@@ -79,6 +79,7 @@ pub enum HirStatement {
     Let {
         local: LocalId,
         initializer: HirExpression,
+        type_annotation: Option<Type>,
         span: Span,
     },
     While {

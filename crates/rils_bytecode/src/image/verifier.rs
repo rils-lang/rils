@@ -254,8 +254,17 @@ impl BytecodeModule {
                         ));
                     }
                 }
-                Instruction::InitLocal { local, source } => {
-                    if *local >= function.local_count || invalid_register(*source) {
+                Instruction::InitLocal {
+                    local,
+                    source,
+                    type_annotation,
+                } => {
+                    if *local >= function.local_count
+                        || invalid_register(*source)
+                        || type_annotation
+                            .as_ref()
+                            .is_some_and(|ty| !self.valid_type(ty))
+                    {
                         return Err(BytecodeError::new(
                             "invalid local initialization operands",
                             instruction.span,

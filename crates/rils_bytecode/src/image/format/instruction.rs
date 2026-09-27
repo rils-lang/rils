@@ -189,10 +189,18 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
             writer.index(*local, "local")?;
             writer.index(*source, "source")?;
         }
-        Instruction::InitLocal { local, source } => {
+        Instruction::InitLocal {
+            local,
+            source,
+            type_annotation,
+        } => {
             writer.u8(9);
             writer.index(*local, "local")?;
             writer.index(*source, "source")?;
+            writer.bool(type_annotation.is_some());
+            if let Some(ty) = type_annotation {
+                write_type(writer, ty, 0)?;
+            }
         }
         Instruction::DropLocal { local } => {
             writer.u8(10);
@@ -575,6 +583,11 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
         9 => Instruction::InitLocal {
             local: reader.index()?,
             source: reader.index()?,
+            type_annotation: if reader.bool()? {
+                Some(read_type(reader)?)
+            } else {
+                None
+            },
         },
         10 => Instruction::DropLocal {
             local: reader.index()?,

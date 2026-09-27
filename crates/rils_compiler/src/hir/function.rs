@@ -113,6 +113,7 @@ impl<'a> FunctionLowerer<'a> {
                 Ok(HirStatement::Let {
                     local,
                     initializer,
+                    type_annotation: type_annotation.clone(),
                     span: *span,
                 })
             }

@@ -1,4 +1,31 @@
-use rils::{Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval};
+
+#[test]
+fn typed_binary_heap_uses_native_storage_in_both_backends() {
+    let source = r#"
+        let mut heap: BinaryHeap<i32> = BinaryHeap::new();
+        heap.push(7);
+        heap
+    "#;
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for (backend, value) in [
+        eval(source).unwrap(),
+        compiled.execute().unwrap(),
+        loaded.execute().unwrap(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let Value::Dynamic(object) = value else {
+            panic!("typed BinaryHeap should have native storage in backend {backend}");
+        };
+        assert_eq!(
+            object.with(|value| value.sequence_len()).unwrap().unwrap(),
+            1
+        );
+    }
+}
 
 #[test]
 fn native_binary_heap_matches_in_interpreter_and_vm() {

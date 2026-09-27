@@ -100,6 +100,7 @@ pub enum MirInstruction {
     InitLocal {
         local: LocalId,
         source: Register,
+        type_annotation: Option<Type>,
     },
     DropLocal {
         local: LocalId,
