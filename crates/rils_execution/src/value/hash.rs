@@ -184,6 +184,29 @@ impl HashKey {
         }
     }
 
+    /// Consume the key's owned snapshot when moving it into a native field.
+    pub fn into_value(self) -> Value {
+        match self {
+            Self::Unit => Value::Unit,
+            Self::Bool(value) => Value::Bool(value),
+            Self::I8(value) => crate::numeric::native_i8(value),
+            Self::I16(value) => Value::I16(value),
+            Self::I32(value) => crate::numeric::native_i32(value),
+            Self::I64(value) => Value::I64(value),
+            Self::I128(value) => Value::I128(value),
+            Self::Isize(value) => Value::Isize(value),
+            Self::U8(value) => Value::U8(value),
+            Self::U16(value) => Value::U16(value),
+            Self::U32(value) => Value::U32(value),
+            Self::U64(value) => Value::U64(value),
+            Self::U128(value) => Value::U128(value),
+            Self::Usize(value) => crate::numeric::native_usize(value),
+            Self::Char(value) => Value::Char(value),
+            Self::String(value) => super::native_string(value.to_string()),
+            Self::Composite(key) => key.value,
+        }
+    }
+
     pub fn ty(&self) -> Type {
         Type::of_value(&self.to_value()).expect("hash keys always have a runtime type")
     }

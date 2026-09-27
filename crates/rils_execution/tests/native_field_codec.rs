@@ -1,10 +1,15 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    rc::Rc,
+};
 
 use rils_execution::{
     Type, Value,
     value::{
-        EnumInstance, EnumPayload, EnumType, FieldSlot, IndexedStorage, StructFields,
-        StructInstance, StructType, native_layouts, record_codec,
+        BTreeMapValue, BTreeSetValue, BinaryHeapValue, EnumInstance, EnumPayload, EnumType,
+        FieldSlot, HashKey, HashMapValue, HashSetValue, IndexedStorage, StructFields,
+        StructInstance, StructType, VecDequeValue, native_layouts, record_codec,
         record_layout::RecordLayoutResolver,
     },
 };
@@ -382,6 +387,171 @@ fn stdlib_vec_declaration_registers_nested_native_record_layout() {
         Value::from_string("third")
     );
     assert_eq!(codec.from_native(native).unwrap(), make());
+}
+
+#[test]
+fn stdlib_vecdeque_layout_round_trips_nested_optional_records() {
+    let item = definition("QueuedItem", vec![("text", Type::String)]);
+    let option_type = Type::Option(Box::new(Type::named("QueuedItem")));
+    let ty = Type::Named {
+        name: "VecDeque".into(),
+        arguments: vec![option_type.clone()],
+    };
+    let make = || {
+        Value::VecDeque(Rc::new(VecDequeValue {
+            elements: RefCell::new(VecDeque::from([
+                Value::Option {
+                    value: Some(Rc::new(instance(
+                        item.clone(),
+                        vec![Value::from_string("front")],
+                    ))),
+                    element_type: Some(Type::named("QueuedItem")),
+                },
+                Value::Option {
+                    value: None,
+                    element_type: Some(Type::named("QueuedItem")),
+                },
+            ])),
+            element_type: RefCell::new(Some(option_type.clone())),
+        }))
+    };
+    let declarations = vec![item.clone()];
+    let mut resolver = RecordLayoutResolver::new(&declarations);
+    let layout = resolver.resolve(&ty).unwrap();
+    assert!(native_layouts::vec_deque::matches(&ty));
+    assert_eq!(layout.sequence_item().unwrap().rils_type(), &option_type);
+    let mut codec = record_codec::NativeRecordCodec::new();
+    let native = codec.into_native(make(), layout).unwrap();
+    let path = [
+        DynamicPathStep::Index(0),
+        DynamicPathStep::Some,
+        DynamicPathStep::Field(0),
+    ];
+    assert_eq!(
+        native.with_path::<rils_stdlib::stdlib::string::String, _>(&path, |text| {
+            std::string::String::from(text.clone())
+        }),
+        Ok("front".into())
+    );
+    let Value::VecDeque(restored) = codec.from_native(native).unwrap() else {
+        panic!("VecDeque round trip")
+    };
+    assert_eq!(*restored.element_type.borrow(), Some(option_type));
+    let elements = restored.elements.borrow();
+    assert_eq!(elements.len(), 2);
+    assert!(matches!(&elements[0], Value::Option { value: Some(_), .. }));
+    assert!(matches!(&elements[1], Value::Option { value: None, .. }));
+}
+
+#[test]
+fn stdlib_binary_heap_layout_keeps_owned_elements_and_empty_type() {
+    let ty = Type::Named {
+        name: "BinaryHeap".into(),
+        arguments: vec![Type::I32],
+    };
+    let mut resolver = RecordLayoutResolver::new(&[]);
+    let layout = resolver.resolve(&ty).unwrap();
+    assert!(native_layouts::binary_heap::matches(&ty));
+    for values in [vec![], vec![Value::I32(7), Value::I32(-4), Value::I32(2)]] {
+        let expected = values.clone();
+        let heap = Value::BinaryHeap(Rc::new(BinaryHeapValue {
+            elements: RefCell::new(values),
+            element_type: RefCell::new(Some(Type::I32)),
+        }));
+        let mut codec = record_codec::NativeRecordCodec::new();
+        let native = codec.into_native(heap, layout.clone()).unwrap();
+        let Value::BinaryHeap(restored) = codec.from_native(native).unwrap() else {
+            panic!("BinaryHeap round trip")
+        };
+        assert_eq!(*restored.element_type.borrow(), Some(Type::I32));
+        assert_eq!(*restored.elements.borrow(), expected);
+    }
+}
+
+#[test]
+fn standard_collection_fields_round_trip_without_value_payloads() {
+    let option_type = Type::Option(Box::new(Type::I32));
+    let some = Value::Option {
+        value: Some(Rc::new(Value::I32(9))),
+        element_type: Some(Type::I32),
+    };
+    let cases = vec![
+        (
+            Type::Named {
+                name: "HashSet".into(),
+                arguments: vec![Type::I32],
+            },
+            Value::HashSet(Rc::new(HashSetValue {
+                borrowed: Cell::new(0),
+                entries: RefCell::new(HashSet::from(
+                    [HashKey::from_value(&Value::I32(3)).unwrap()],
+                )),
+                element_type: RefCell::new(Type::I32),
+            })),
+        ),
+        (
+            Type::Named {
+                name: "BTreeSet".into(),
+                arguments: vec![Type::String],
+            },
+            Value::BTreeSet(Rc::new(BTreeSetValue {
+                borrowed: Cell::new(0),
+                entries: RefCell::new(BTreeSet::from([HashKey::from_ordered_value(
+                    &Value::from_string("key"),
+                )
+                .unwrap()])),
+                element_type: RefCell::new(Type::String),
+            })),
+        ),
+        (
+            Type::Named {
+                name: "HashMap".into(),
+                arguments: vec![Type::String, option_type.clone()],
+            },
+            Value::HashMap(Rc::new(HashMapValue {
+                borrowed: Cell::new(0),
+                entries: RefCell::new(HashMap::from([(
+                    HashKey::from_value(&Value::from_string("key")).unwrap(),
+                    FieldSlot {
+                        value: Some(some),
+                        type_annotation: option_type.clone(),
+                        references: 0,
+                    },
+                )])),
+                key_type: RefCell::new(Type::String),
+                value_type: RefCell::new(option_type),
+            })),
+        ),
+        (
+            Type::Named {
+                name: "BTreeMap".into(),
+                arguments: vec![Type::I32, Type::Bool],
+            },
+            Value::BTreeMap(Rc::new(BTreeMapValue {
+                borrowed: Cell::new(0),
+                entries: RefCell::new(BTreeMap::from([(
+                    HashKey::from_ordered_value(&Value::I32(4)).unwrap(),
+                    FieldSlot {
+                        value: Some(Value::Bool(true)),
+                        type_annotation: Type::Bool,
+                        references: 0,
+                    },
+                )])),
+                key_type: RefCell::new(Type::I32),
+                value_type: RefCell::new(Type::Bool),
+            })),
+        ),
+    ];
+    for (ty, value) in cases {
+        let expected = value.clone_owned().unwrap();
+        let mut resolver = RecordLayoutResolver::new(&[]);
+        let layout = resolver.resolve(&ty).unwrap();
+        assert!(layout.sequence_item().is_some());
+        let mut codec = record_codec::NativeRecordCodec::new();
+        let native = codec.into_native(value, layout).unwrap();
+        assert_eq!(native.sequence_len(), Ok(1));
+        assert_eq!(codec.from_native(native).unwrap(), expected, "{ty}");
+    }
 }
 
 #[test]

@@ -26,24 +26,49 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
             .into();
     };
     let storage = fields.unnamed.iter().next();
-    if fields.unnamed.len() != 1
-        || definition.item.generics.type_params().count() != 1
-        || storage.is_none_or(|field| {
-            field.ty.to_token_stream().to_string().replace(' ', "") != "std::vec::Vec<T>"
-        })
-    {
+    let type_count = definition.item.generics.type_params().count();
+    let storage = storage.map(|field| field.ty.to_token_stream().to_string().replace(' ', ""));
+    let shape: usize = match (type_count, storage.as_deref()) {
+        (
+            1,
+            Some(
+                "std::vec::Vec<T>"
+                | "std::collections::VecDeque<T>"
+                | "std::collections::BinaryHeap<T>"
+                | "std::collections::HashSet<T>"
+                | "std::collections::BTreeSet<T>",
+            ),
+        ) => 1,
+        (2, Some("std::collections::HashMap<K,V>" | "std::collections::BTreeMap<K,V>")) => 2,
+        _ => 0,
+    };
+    if fields.unnamed.len() != 1 || shape == 0 {
         return Error::new_spanned(
             &definition.item,
-            "sequence layout requires one type parameter and std::vec::Vec<T> storage",
+            "native collection layout requires one supported standard-library collection field",
         )
         .into_compile_error()
         .into();
     }
     let name = definition.item.ident.to_string();
+    let item_layout = if shape == 1 {
+        quote! { resolve_child(&arguments[0]) }
+    } else {
+        quote! {
+            (|| {
+                let key = resolve_child(&arguments[0])?;
+                let value = resolve_child(&arguments[1])?;
+                rils_value::DynamicLayout::aggregate(
+                    crate::Type::Tuple(arguments.clone()),
+                    vec![("0".into(), key), ("1".into(), value)],
+                )
+            })()
+        }
+    };
     quote! {
         pub fn matches(ty: &crate::Type) -> bool {
             matches!(ty, crate::Type::Named { name, arguments }
-                if name == #name && arguments.len() == 1)
+                if name == #name && arguments.len() == #shape)
         }
 
         pub fn layout(
@@ -56,7 +81,7 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
             if !matches(ty) {
                 return None;
             }
-            Some(resolve_child(&arguments[0])
+            Some(#item_layout
                 .map(|item| rils_value::DynamicLayout::sequence(ty.clone(), item)))
         }
     }

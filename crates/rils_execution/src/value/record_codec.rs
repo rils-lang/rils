@@ -4,7 +4,11 @@
 //! wrappers at the execution boundary. Nominal declarations are retained in
 //! the codec so nested structs and enums can be reconstructed after a move.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    rc::Rc,
+};
 
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
@@ -12,8 +16,9 @@ use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 use crate::{Type, ast::EnumVariant};
 
 use super::{
-    EnumInstance, EnumPayload, EnumType, FieldSlot, IndexedStorage, StructFields, StructInstance,
-    StructType, Value, native_layouts, native_string,
+    BTreeMapValue, BTreeSetValue, BinaryHeapValue, EnumInstance, EnumPayload, EnumType, FieldSlot,
+    HashKey, HashMapValue, HashSetValue, IndexedStorage, StructFields, StructInstance, StructType,
+    Value, VecDequeValue, native_layouts, native_string,
 };
 
 #[derive(Default)]
@@ -168,6 +173,66 @@ impl NativeRecordCodec {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 DynamicValue::sequence(layout, values)
+            }
+            (ty, Value::VecDeque(queue)) if native_layouts::vec_deque::matches(&ty) => {
+                let queue = Rc::try_unwrap(queue)
+                    .map_err(|_| "cannot move a shared VecDeque".to_owned())?;
+                let item = layout
+                    .sequence_item()
+                    .ok_or_else(|| "expected a native sequence layout for VecDeque".to_owned())?;
+                let values = queue
+                    .elements
+                    .into_inner()
+                    .into_iter()
+                    .map(|value| self.encode(value, item.clone()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                DynamicValue::sequence(layout, values)
+            }
+            (ty, Value::BinaryHeap(heap)) if native_layouts::binary_heap::matches(&ty) => {
+                let heap = Rc::try_unwrap(heap)
+                    .map_err(|_| "cannot move a shared BinaryHeap".to_owned())?;
+                let item = layout
+                    .sequence_item()
+                    .ok_or_else(|| "expected a native sequence layout for BinaryHeap".to_owned())?;
+                let values = heap
+                    .elements
+                    .into_inner()
+                    .into_iter()
+                    .map(|value| self.encode(value, item.clone()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                DynamicValue::sequence(layout, values)
+            }
+            (ty, Value::HashSet(set)) if native_layouts::hash_set::matches(&ty) => {
+                let set =
+                    Rc::try_unwrap(set).map_err(|_| "cannot move a shared HashSet".to_owned())?;
+                if set.borrowed.get() != 0 {
+                    return Err("cannot move a borrowed HashSet".into());
+                }
+                self.encode_set(layout, set.entries.into_inner())
+            }
+            (ty, Value::BTreeSet(set)) if native_layouts::btree_set::matches(&ty) => {
+                let set =
+                    Rc::try_unwrap(set).map_err(|_| "cannot move a shared BTreeSet".to_owned())?;
+                if set.borrowed.get() != 0 {
+                    return Err("cannot move a borrowed BTreeSet".into());
+                }
+                self.encode_set(layout, set.entries.into_inner())
+            }
+            (ty, Value::HashMap(map)) if native_layouts::hash_map::matches(&ty) => {
+                let map =
+                    Rc::try_unwrap(map).map_err(|_| "cannot move a shared HashMap".to_owned())?;
+                if map.borrowed.get() != 0 {
+                    return Err("cannot move a borrowed HashMap".into());
+                }
+                self.encode_map(layout, map.entries.into_inner())
+            }
+            (ty, Value::BTreeMap(map)) if native_layouts::btree_map::matches(&ty) => {
+                let map =
+                    Rc::try_unwrap(map).map_err(|_| "cannot move a shared BTreeMap".to_owned())?;
+                if map.borrowed.get() != 0 {
+                    return Err("cannot move a borrowed BTreeMap".into());
+                }
+                self.encode_map(layout, map.entries.into_inner())
             }
             (Type::Named { name, arguments }, Value::Struct(instance))
                 if instance.type_definition.name == name
@@ -324,6 +389,58 @@ impl NativeRecordCodec {
         }
     }
 
+    fn encode_set(
+        &mut self,
+        layout: Rc<DynamicLayout>,
+        entries: impl IntoIterator<Item = HashKey>,
+    ) -> Result<DynamicValue, String> {
+        let item = layout
+            .sequence_item()
+            .ok_or_else(|| "expected a native set sequence layout".to_owned())?;
+        let values = entries
+            .into_iter()
+            .map(|key| self.encode(key.into_value(), item.clone()))
+            .collect::<Result<Vec<_>, _>>()?;
+        DynamicValue::sequence(layout, values)
+    }
+
+    fn encode_map(
+        &mut self,
+        layout: Rc<DynamicLayout>,
+        entries: impl IntoIterator<Item = (HashKey, FieldSlot)>,
+    ) -> Result<DynamicValue, String> {
+        let pair = layout
+            .sequence_item()
+            .ok_or_else(|| "expected a native map sequence layout".to_owned())?;
+        let fields = pair
+            .record_fields()
+            .ok_or_else(|| "expected a native key-value aggregate layout".to_owned())?;
+        if fields.len() != 2 {
+            return Err("native map entry must have two fields".into());
+        }
+        let key_layout = fields[0].layout_handle();
+        let value_layout = fields[1].layout_handle();
+        let values = entries
+            .into_iter()
+            .map(|(key, slot)| {
+                if slot.references != 0 {
+                    return Err("cannot move a referenced map value".into());
+                }
+                let value = slot
+                    .value
+                    .ok_or_else(|| "cannot move a partially moved map value".to_owned())?;
+                DynamicValue::record(
+                    pair.clone(),
+                    vec![
+                        self.encode(key.into_value(), key_layout.clone())?,
+                        self.encode(value, value_layout.clone())?,
+                    ],
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        DynamicValue::sequence(layout, values)
+    }
+
     fn decode(&self, mut value: DynamicValue) -> Result<Value, String> {
         let ty = value.descriptor().rils_type().clone();
         match ty {
@@ -396,6 +513,80 @@ impl NativeRecordCodec {
                     elements: RefCell::new(slots),
                     element_type: RefCell::new(Some(item_type)),
                     active_iterators: Default::default(),
+                })))
+            }
+            ty if native_layouts::vec_deque::matches(&ty) => {
+                let Type::Named { arguments, .. } = ty else {
+                    unreachable!("generated VecDeque matcher checks a named type")
+                };
+                let length = value.sequence_len()?;
+                let mut elements = VecDeque::with_capacity(length);
+                for _ in 0..length {
+                    elements.push_back(self.decode(value.take_sequence_item(0)?)?);
+                }
+                Ok(Value::VecDeque(Rc::new(VecDequeValue {
+                    elements: RefCell::new(elements),
+                    element_type: RefCell::new(Some(arguments[0].clone())),
+                })))
+            }
+            ty if native_layouts::binary_heap::matches(&ty) => {
+                let Type::Named { arguments, .. } = ty else {
+                    unreachable!("generated BinaryHeap matcher checks a named type")
+                };
+                let length = value.sequence_len()?;
+                let mut elements = Vec::with_capacity(length);
+                for _ in 0..length {
+                    elements.push(self.decode(value.take_sequence_item(0)?)?);
+                }
+                Ok(Value::BinaryHeap(Rc::new(BinaryHeapValue {
+                    elements: RefCell::new(elements),
+                    element_type: RefCell::new(Some(arguments[0].clone())),
+                })))
+            }
+            ty if native_layouts::hash_set::matches(&ty) => {
+                let Type::Named { arguments, .. } = ty else {
+                    unreachable!("generated HashSet matcher checks a named type")
+                };
+                let entries = self.decode_set(&mut value, false)?;
+                Ok(Value::HashSet(Rc::new(HashSetValue {
+                    borrowed: Cell::new(0),
+                    entries: RefCell::new(entries.into_iter().collect::<HashSet<_>>()),
+                    element_type: RefCell::new(arguments[0].clone()),
+                })))
+            }
+            ty if native_layouts::btree_set::matches(&ty) => {
+                let Type::Named { arguments, .. } = ty else {
+                    unreachable!("generated BTreeSet matcher checks a named type")
+                };
+                let entries = self.decode_set(&mut value, true)?;
+                Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
+                    borrowed: Cell::new(0),
+                    entries: RefCell::new(entries.into_iter().collect::<BTreeSet<_>>()),
+                    element_type: RefCell::new(arguments[0].clone()),
+                })))
+            }
+            ty if native_layouts::hash_map::matches(&ty) => {
+                let Type::Named { arguments, .. } = ty else {
+                    unreachable!("generated HashMap matcher checks a named type")
+                };
+                let entries = self.decode_map(&mut value, &arguments[1], false)?;
+                Ok(Value::HashMap(Rc::new(HashMapValue {
+                    borrowed: Cell::new(0),
+                    entries: RefCell::new(entries.into_iter().collect::<HashMap<_, _>>()),
+                    key_type: RefCell::new(arguments[0].clone()),
+                    value_type: RefCell::new(arguments[1].clone()),
+                })))
+            }
+            ty if native_layouts::btree_map::matches(&ty) => {
+                let Type::Named { arguments, .. } = ty else {
+                    unreachable!("generated BTreeMap matcher checks a named type")
+                };
+                let entries = self.decode_map(&mut value, &arguments[1], true)?;
+                Ok(Value::BTreeMap(Rc::new(BTreeMapValue {
+                    borrowed: Cell::new(0),
+                    entries: RefCell::new(entries.into_iter().collect::<BTreeMap<_, _>>()),
+                    key_type: RefCell::new(arguments[0].clone()),
+                    value_type: RefCell::new(arguments[1].clone()),
                 })))
             }
             Type::Named { name, arguments } if self.structs.contains_key(&name) => {
@@ -540,5 +731,48 @@ impl NativeRecordCodec {
                 })
             })
             .collect()
+    }
+
+    fn decode_set(&self, value: &mut DynamicValue, ordered: bool) -> Result<Vec<HashKey>, String> {
+        let length = value.sequence_len()?;
+        let mut keys = Vec::with_capacity(length);
+        for _ in 0..length {
+            let key = self.decode(value.take_sequence_item(0)?)?;
+            keys.push(if ordered {
+                HashKey::from_ordered_value(&key)?
+            } else {
+                HashKey::from_value(&key)?
+            });
+        }
+        Ok(keys)
+    }
+
+    fn decode_map(
+        &self,
+        value: &mut DynamicValue,
+        value_type: &Type,
+        ordered: bool,
+    ) -> Result<Vec<(HashKey, FieldSlot)>, String> {
+        let length = value.sequence_len()?;
+        let mut entries = Vec::with_capacity(length);
+        for _ in 0..length {
+            let mut pair = value.take_sequence_item(0)?;
+            let key = self.decode(pair.take_field(0)?)?;
+            let key = if ordered {
+                HashKey::from_ordered_value(&key)?
+            } else {
+                HashKey::from_value(&key)?
+            };
+            let item = self.decode(pair.take_field(1)?)?;
+            entries.push((
+                key,
+                FieldSlot {
+                    value: Some(item),
+                    type_annotation: value_type.clone(),
+                    references: 0,
+                },
+            ));
+        }
+        Ok(entries)
     }
 }

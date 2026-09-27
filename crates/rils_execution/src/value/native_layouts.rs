@@ -29,3 +29,39 @@ pub mod vec {
 
     rils_stdlib::vec_definition!(decl_rils_layout);
 }
+
+pub mod vec_deque {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::vecdeque_definition!(decl_rils_layout);
+}
+
+pub mod binary_heap {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::binaryheap_definition!(decl_rils_layout);
+}
+
+pub mod hash_set {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::hashset_definition!(decl_rils_layout);
+}
+
+pub mod btree_set {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::btreeset_definition!(decl_rils_layout);
+}
+
+pub mod hash_map {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::hashmap_definition!(decl_rils_layout);
+}
+
+pub mod btree_map {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::btreemap_definition!(decl_rils_layout);
+}
