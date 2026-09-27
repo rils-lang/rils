@@ -822,11 +822,23 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
                     }).transpose()
                 }).and_then(|item| item)),
             },
+            quote! {
+                #type_token => Some(
+                    value.into_rust::<#primitive>()
+                        .map_err(|(_, message)| message)
+                        .and_then(|number| {
+                            <#wrapper<#primitive> as crate::numeric::native::NativeOutput>::into_value(
+                                #wrapper(number)
+                            )
+                        }),
+                ),
+            },
         )
     }).collect::<Vec<_>>();
     let layout_variants = family.iter().map(|variants| &variants.0);
     let item_variants = family.iter().map(|variants| &variants.1);
     let view_variants = family.iter().map(|variants| &variants.2);
+    let field_value_variants = family.iter().map(|variants| &variants.3);
     quote! {
         pub fn layout(ty: &crate::Type) -> Option<std::rc::Rc<rils_value::DynamicLayout>> {
             match ty { #(#layout_variants)* _ => None }
@@ -845,6 +857,13 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
             ty: &crate::Type,
         ) -> Option<Result<Option<crate::Value>, String>> {
             match ty { #(#view_variants)* _ => None }
+        }
+
+        pub fn field_value(
+            value: rils_value::DynamicValue,
+            ty: &crate::Type,
+        ) -> Option<Result<crate::Value, String>> {
+            match ty { #(#field_value_variants)* _ => None }
         }
     }
     .into()

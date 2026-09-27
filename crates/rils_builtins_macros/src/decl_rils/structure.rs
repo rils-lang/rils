@@ -15,6 +15,54 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     native::expand(path, module)
 }
 
+pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
+    let definition = match Definition::parse(path, module) {
+        Ok(definition) => definition,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let Fields::Unnamed(fields) = &definition.item.fields else {
+        return Error::new_spanned(&definition.item, "sequence layout needs one tuple field")
+            .into_compile_error()
+            .into();
+    };
+    let storage = fields.unnamed.iter().next();
+    if fields.unnamed.len() != 1
+        || definition.item.generics.type_params().count() != 1
+        || storage.is_none_or(|field| {
+            field.ty.to_token_stream().to_string().replace(' ', "") != "std::vec::Vec<T>"
+        })
+    {
+        return Error::new_spanned(
+            &definition.item,
+            "sequence layout requires one type parameter and std::vec::Vec<T> storage",
+        )
+        .into_compile_error()
+        .into();
+    }
+    let name = definition.item.ident.to_string();
+    quote! {
+        pub fn matches(ty: &crate::Type) -> bool {
+            matches!(ty, crate::Type::Named { name, arguments }
+                if name == #name && arguments.len() == 1)
+        }
+
+        pub fn layout(
+            ty: &crate::Type,
+            resolve_child: &mut dyn FnMut(&crate::Type) -> Result<std::rc::Rc<rils_value::DynamicLayout>, String>,
+        ) -> Option<Result<std::rc::Rc<rils_value::DynamicLayout>, String>> {
+            let crate::Type::Named { arguments, .. } = ty else {
+                return None;
+            };
+            if !matches(ty) {
+                return None;
+            }
+            Some(resolve_child(&arguments[0])
+                .map(|item| rils_value::DynamicLayout::sequence(ty.clone(), item)))
+        }
+    }
+    .into()
+}
+
 struct Definition {
     path: Path,
     item: ItemStruct,

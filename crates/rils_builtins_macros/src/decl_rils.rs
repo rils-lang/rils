@@ -603,6 +603,9 @@ pub(crate) fn expand_layout(input: TokenStream) -> TokenStream {
     if primitive::contains_mapping(&source.item) {
         return primitive::expand_layout(source.path, source.item);
     }
+    if structure::contains_struct(&source.item) {
+        return structure::expand_layout(source.path, source.item);
+    }
     let definition = match Definition::parse(source.path, &source.item) {
         Ok(definition) => definition,
         Err(error) => return error.into_compile_error().into(),

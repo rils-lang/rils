@@ -23,3 +23,9 @@ pub mod option {
 
     rils_stdlib::option_definition!(decl_rils_layout);
 }
+
+pub mod vec {
+    use rils_builtins_macros::decl_rils_layout;
+
+    rils_stdlib::vec_definition!(decl_rils_layout);
+}

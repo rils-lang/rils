@@ -11,6 +11,10 @@ pub struct StructFields {
 }
 
 impl StructFields {
+    pub fn into_slots(self) -> Vec<FieldSlot> {
+        self.slots
+    }
+
     pub fn from_map(
         definition: Rc<StructType>,
         mut fields: HashMap<String, FieldSlot>,

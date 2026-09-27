@@ -79,6 +79,9 @@ impl<'a> RecordLayoutResolver<'a> {
         {
             return Ok(layout);
         }
+        if let Some(result) = native_layouts::vec::layout(ty, &mut |child| self.resolve(child)) {
+            return result;
+        }
         if let Some(provider) = self.provider
             && let Some(result) = provider.layout(ty, &mut |child| self.resolve(child))
         {

@@ -39,6 +39,8 @@ pub use record::StructFields;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
 pub mod native_ops;
+#[path = "value/record_codec.rs"]
+pub mod record_codec;
 #[path = "value/record_layout.rs"]
 pub mod record_layout;
 #[path = "value/string.rs"]
