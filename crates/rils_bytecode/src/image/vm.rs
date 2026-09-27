@@ -587,7 +587,7 @@ impl<'a> VirtualMachine<'a> {
                     variant,
                     fields,
                 } => {
-                    let values = fields
+                    let mut values = fields
                         .into_iter()
                         .map(|(name, register)| {
                             Ok((name, self.take_register(register, instruction.span)?))
@@ -595,20 +595,24 @@ impl<'a> VirtualMachine<'a> {
                         .collect::<Result<HashMap<_, _>, BytecodeError>>()?;
                     let value = match (&self.module.types[type_id], variant) {
                         (RuntimeType::Struct(definition), None) => {
+                            let type_arguments = infer_generic_arguments(
+                                &definition.generic_parameters,
+                                &definition.fields,
+                                &values,
+                            );
                             let slots = definition
                                 .fields
                                 .iter()
                                 .map(|field| {
-                                    let value =
-                                        values.get(&field.name).cloned().ok_or_else(|| {
-                                            BytecodeError::new(
-                                                format!(
-                                                    "record constructor is missing field `{}`",
-                                                    field.name
-                                                ),
-                                                instruction.span,
-                                            )
-                                        })?;
+                                    let value = values.remove(&field.name).ok_or_else(|| {
+                                        BytecodeError::new(
+                                            format!(
+                                                "record constructor is missing field `{}`",
+                                                field.name
+                                            ),
+                                            instruction.span,
+                                        )
+                                    })?;
                                     let annotation =
                                         if matches!(field.type_annotation, Type::Variable(_)) {
                                             Type::of_value(&value).unwrap_or(Type::Unknown)
@@ -630,11 +634,7 @@ impl<'a> VirtualMachine<'a> {
                             Value::Struct(Rc::new(StructInstance {
                                 type_definition: definition.clone(),
                                 fields: RefCell::new(fields),
-                                type_arguments: infer_generic_arguments(
-                                    &definition.generic_parameters,
-                                    &definition.fields,
-                                    &values,
-                                ),
+                                type_arguments,
                             }))
                         }
                         (RuntimeType::Enum(definition), Some(variant)) => {

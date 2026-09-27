@@ -19,9 +19,9 @@ pub(super) fn validate_named_fields(
             )
         })?;
         let expected = field.type_annotation.substitute(substitutions);
-        let value = apply_type(
+        let value = apply_type_owned(
             Some(&expected),
-            &value,
+            value,
             span,
             &format!("{type_name}.{}", field.name),
         )?;
@@ -907,4 +907,22 @@ pub(super) fn apply_type(
         });
     }
     Ok(value.clone())
+}
+
+pub(super) fn apply_type_owned(
+    expected: Option<&crate::types::Type>,
+    value: Value,
+    span: Span,
+    subject: &str,
+) -> Result<Value, RuntimeError> {
+    let Some(expected) = expected else {
+        return Ok(value);
+    };
+    let found = value.type_name();
+    value.constrain_owned(expected).ok_or_else(|| {
+        RuntimeError::new(
+            format!("type mismatch for `{subject}`: expected {expected}, found {found}"),
+            span,
+        )
+    })
 }

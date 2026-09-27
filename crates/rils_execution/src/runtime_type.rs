@@ -24,6 +24,29 @@ impl RuntimeValue for Value {
         type_of_value(self)
     }
 }
+
+impl Value {
+    /// Preserve unique ownership for an already concrete native or nominal
+    /// value. Other cases still use the existing constraint logic, which may
+    /// infer generic arguments or materialize a different representation.
+    pub fn constrain_owned(self, expected: &Type) -> Option<Self> {
+        if Type::of_value(&self).as_ref() == Some(expected) {
+            if matches!(self, Self::Native(_) | Self::Dynamic(_)) && expected.accepts(&self) {
+                return Some(self);
+            }
+            if matches!(self, Self::Struct(_) | Self::Enum(_))
+                && expected.constrain(&self).is_some()
+            {
+                // Nominal values need their nested fields checked as well.
+                // Once checked, keep the original owner instead of the
+                // temporary reconstructed value.
+                return Some(self);
+            }
+        }
+        expected.constrain(&self)
+    }
+}
+
 fn accepts(expected: &Type, value: &Value) -> bool {
     match (expected, value) {
         (Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }, _) => true,
