@@ -199,3 +199,114 @@ fn independently_resolved_nested_layouts_accept_the_same_value() {
         Ok(Ok(11))
     );
 }
+
+#[test]
+fn copy_path_preserves_copy_aggregates_and_absent_option_layouts() {
+    let number = DynamicLayout::copy_of::<i32>(Type::I32);
+    let optional = DynamicLayout::option(number.clone()).unwrap();
+    let compact_none = DynamicValue::none(optional.clone()).unwrap();
+    assert!(!compact_none.copy_path(&[]).unwrap().is_some().unwrap());
+    let record = DynamicLayout::record(
+        Type::named("Pair"),
+        vec![
+            ("left".into(), optional.clone()),
+            ("right".into(), number.clone()),
+        ],
+    )
+    .unwrap();
+    let root = DynamicValue::record(
+        record,
+        vec![
+            DynamicValue::none(optional).unwrap(),
+            DynamicValue::from_rust(number, 7).unwrap(),
+        ],
+    )
+    .unwrap();
+    let mut copy = root.copy_path(&[]).unwrap();
+    assert!(!copy.take_field(0).unwrap().is_some().unwrap());
+    let leaf = root.copy_path(&[DynamicPathStep::Field(1)]).unwrap();
+    assert_eq!(
+        leaf.into_rust::<i32>()
+            .unwrap_or_else(|_| panic!("i32 copy")),
+        7
+    );
+    assert_eq!(
+        root.with_path::<i32, _>(&[DynamicPathStep::Field(1)], |n| *n),
+        Ok(7)
+    );
+}
+
+#[test]
+fn replace_path_field_accepts_compact_none_without_reading_child_bytes() {
+    let number = DynamicLayout::copy_of::<u128>(Type::Integer(rils_syntax::IntegerType::U128));
+    let optional = DynamicLayout::option(number).unwrap();
+    let record = DynamicLayout::record(
+        Type::named("Holder"),
+        vec![("item".into(), optional.clone())],
+    )
+    .unwrap();
+    let mut root =
+        DynamicValue::record(record, vec![DynamicValue::none(optional.clone()).unwrap()]).unwrap();
+    let previous = root
+        .replace_path_field(
+            &[DynamicPathStep::Field(0)],
+            DynamicValue::none(optional).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    assert!(!previous.is_some().unwrap());
+    assert!(!root.take_field(0).unwrap().is_some().unwrap());
+}
+
+#[test]
+fn replace_path_field_moves_old_owner_once_and_preserves_failed_assignment() {
+    let drops = Rc::new(Cell::new(0));
+    let probe = DynamicLayout::of::<Probe>(Type::named("Probe"));
+    let inner =
+        DynamicLayout::record(Type::named("Inner"), vec![("item".into(), probe.clone())]).unwrap();
+    let optional = DynamicLayout::option(inner.clone()).unwrap();
+    let sequence = DynamicLayout::sequence(
+        Type::Named {
+            name: "Vec".into(),
+            arguments: vec![Type::Option(Box::new(Type::named("Inner")))],
+        },
+        optional.clone(),
+    );
+    let outer = DynamicLayout::record(
+        Type::named("Outer"),
+        vec![("items".into(), sequence.clone())],
+    )
+    .unwrap();
+    let first = DynamicValue::from_rust(probe.clone(), Probe(drops.clone())).unwrap();
+    let inner = DynamicValue::record(inner, vec![first]).unwrap();
+    let items =
+        DynamicValue::sequence(sequence, vec![DynamicValue::some(optional, inner).unwrap()])
+            .unwrap();
+    let mut root = DynamicValue::record(outer, vec![items]).unwrap();
+    let path = [
+        DynamicPathStep::Field(0),
+        DynamicPathStep::Index(0),
+        DynamicPathStep::Some,
+        DynamicPathStep::Field(0),
+    ];
+    let second = DynamicValue::from_rust(probe.clone(), Probe(drops.clone())).unwrap();
+    let old = root.replace_path_field(&path, second).unwrap().unwrap();
+    assert_eq!(drops.get(), 0);
+    drop(old);
+    assert_eq!(drops.get(), 1);
+    assert!(
+        root.replace_path_field(
+            &path,
+            DynamicValue::from_rust(DynamicLayout::copy_of::<i32>(Type::I32), 4).unwrap(),
+        )
+        .is_err()
+    );
+    assert_eq!(drops.get(), 1);
+    let moved = root.take_path_field(&path).unwrap();
+    drop(moved);
+    assert_eq!(drops.get(), 2);
+    let third = DynamicValue::from_rust(probe, Probe(drops.clone())).unwrap();
+    assert!(root.replace_path_field(&path, third).unwrap().is_none());
+    drop(root);
+    assert_eq!(drops.get(), 3);
+}

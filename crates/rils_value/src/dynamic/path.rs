@@ -101,6 +101,30 @@ impl DynamicValue {
         Ok(f(unsafe { &mut *pointer.cast_mut().cast::<T>() }))
     }
 
+    /// Copy a live nested value when its complete concrete layout is Copy.
+    /// This also works for composed records and optional values, without
+    /// decoding them into an interpreter-level representation.
+    pub fn copy_path(&self, path: &[DynamicPathStep]) -> Result<Self, String> {
+        let (pointer, layout) = self.project(path)?;
+        if !layout.is_copy() {
+            return Err(format!("{} is not Copy", layout.rils_type()));
+        }
+        // None may own only its one-byte tag, even when its registered
+        // descriptor reserves room for a larger Some payload.
+        if matches!(layout.drop_kind, DropKind::Option { .. }) && unsafe { ptr::read(pointer) } == 0
+        {
+            return Self::none(layout);
+        }
+        let mut copy = Self::uninitialized(layout.clone());
+        // SAFETY: project checked every parent tag and returned the aligned
+        // pointer for this exact Copy layout. Both allocations are disjoint.
+        unsafe {
+            ptr::copy_nonoverlapping(pointer, copy.storage.pointer_mut(), layout.layout().size());
+        }
+        copy.initialized = true;
+        Ok(copy)
+    }
+
     fn field_parent(
         &self,
         path: &[DynamicPathStep],
@@ -117,6 +141,12 @@ impl DynamicValue {
         };
         let field = record.field(index)?;
         Ok((pointer, index, field.offset(), field.layout_handle()))
+    }
+
+    /// Resolve a record field's concrete layout, including when that field
+    /// has already been moved out and is waiting for an assignment.
+    pub fn path_field_layout(&self, path: &[DynamicPathStep]) -> Result<Rc<DynamicLayout>, String> {
+        self.field_parent(path).map(|(_, _, _, layout)| layout)
     }
 
     /// Move a record field through any live option, variant or sequence parent.
@@ -171,5 +201,51 @@ impl DynamicValue {
             ptr::write(parent.cast_mut().add(index), 1);
         }
         Ok(())
+    }
+
+    /// Assign a record field through a checked composite path. The previous
+    /// value, if present, remains owned by the caller and is dropped exactly
+    /// once. A layout mismatch leaves the record untouched.
+    pub fn replace_path_field(
+        &mut self,
+        path: &[DynamicPathStep],
+        mut value: Self,
+    ) -> Result<Option<Self>, String> {
+        let (parent, index, offset, layout) = self.field_parent(path)?;
+        if !layout.compatible_with(&value.descriptor) {
+            return Err(format!(
+                "record field at path {path:?} has a different layout"
+            ));
+        }
+        // SAFETY: field_parent checked the record and index. Its tag owns the
+        // old value if live; copying to a fresh owner and clearing the tag
+        // transfers that ownership before installing the new value.
+        let previous = if unsafe { ptr::read(parent.add(index)) } == 1 {
+            let mut old = Self::uninitialized(layout.clone());
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    parent.add(offset),
+                    old.storage.pointer_mut(),
+                    layout.layout().size(),
+                );
+                ptr::write(parent.cast_mut().add(index), 0);
+            }
+            old.initialized = true;
+            Some(old)
+        } else {
+            None
+        };
+        // SAFETY: the child descriptor was checked above, and the field is
+        // now empty. Clearing the source's live bit transfers its destructor.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                value.storage.pointer(),
+                parent.cast_mut().add(offset),
+                value.storage.size(),
+            );
+            value.initialized = false;
+            ptr::write(parent.cast_mut().add(index), 1);
+        }
+        Ok(previous)
     }
 }
