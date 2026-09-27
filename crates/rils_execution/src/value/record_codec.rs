@@ -7,7 +7,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use rils_stdlib::stdlib::string::String as NativeString;
-use rils_value::{DynamicLayout, DynamicValue};
+use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 
 use crate::{Type, ast::EnumVariant};
 
@@ -37,6 +37,20 @@ impl NativeRecordCodec {
 
     pub fn from_native(&self, value: DynamicValue) -> Result<Value, String> {
         self.decode(value)
+    }
+
+    /// Encode an assignment against the field's declared concrete layout.
+    /// The old native payload is returned to its owner without first turning
+    /// the complete record back into `Value` slots.
+    pub fn replace_path_field(
+        &mut self,
+        record: &mut DynamicValue,
+        path: &[DynamicPathStep],
+        value: Value,
+    ) -> Result<Option<DynamicValue>, String> {
+        let layout = record.path_field_layout(path)?;
+        let value = self.encode(value, layout)?;
+        record.replace_path_field(path, value)
     }
 }
 

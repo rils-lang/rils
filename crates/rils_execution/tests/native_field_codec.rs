@@ -353,7 +353,7 @@ fn stdlib_vec_declaration_registers_nested_native_record_layout() {
     let layout = resolver.resolve(&ty).unwrap();
     assert_eq!(layout.sequence_item().unwrap().rils_type(), &element_type);
     let mut codec = record_codec::NativeRecordCodec::new();
-    let native = codec.into_native(make(), layout).unwrap();
+    let mut native = codec.into_native(make(), layout).unwrap();
     assert_eq!(native.sequence_len(), Ok(2));
     let path = [DynamicPathStep::Index(1), DynamicPathStep::Field(0)];
     let text = native
@@ -362,6 +362,25 @@ fn stdlib_vec_declaration_registers_nested_native_record_layout() {
         })
         .unwrap();
     assert_eq!(text, "second");
+    let moved = native.take_path_field(&path).unwrap();
+    assert_eq!(
+        codec.from_native(moved).unwrap(),
+        Value::from_string("second")
+    );
+    assert!(
+        codec
+            .replace_path_field(&mut native, &path, Value::from_string("third"))
+            .unwrap()
+            .is_none()
+    );
+    let replaced = codec
+        .replace_path_field(&mut native, &path, Value::from_string("second"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        codec.from_native(replaced).unwrap(),
+        Value::from_string("third")
+    );
     assert_eq!(codec.from_native(native).unwrap(), make());
 }
 
