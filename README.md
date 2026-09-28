@@ -39,6 +39,8 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 
 ## Rust 嵌入
 
+`Vec<string>` 的类型化空构造也使用原生序列；借用读取字符串时，现有 `Value` 调用边界会克隆文本，索引直接移出非 Copy 字符串仍被拒绝。
+
 脚本中的常用拥有型容器包括 `Vec<T>`、`VecDeque<T>`、`BinaryHeap<T>`、`BTreeMap<K, V>`、
 `BTreeSet<T>`、
 `HashMap<K, V>` 和 `HashSet<T>`。`BinaryHeap` 是最大优先队列，使用

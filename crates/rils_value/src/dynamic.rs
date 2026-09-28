@@ -363,6 +363,10 @@ impl DynamicValue {
         &self.descriptor
     }
 
+    pub fn layout_handle(&self) -> Rc<DynamicLayout> {
+        self.descriptor.clone()
+    }
+
     pub fn is_inline(&self) -> bool {
         self.storage.is_inline()
     }

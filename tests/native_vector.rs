@@ -103,10 +103,80 @@ fn native_vec_rejects_growth_while_element_is_borrowed() {
 }
 
 #[test]
-fn non_copy_vec_keeps_legacy_storage() {
+fn string_vec_uses_native_storage() {
     let source = "let mut v: Vec<string> = Vec::new(); v.push(\"hello\"); v";
     for value in run_both(source) {
-        assert!(matches!(value, Value::Vec(_)));
+        assert!(matches!(value, Value::Dynamic(_)));
+        assert_eq!(
+            value.as_vec().unwrap()[0].as_string().as_deref(),
+            Some("hello")
+        );
+        let cloned = value.clone_owned().unwrap();
+        assert_eq!(
+            cloned.as_vec().unwrap()[0].as_string().as_deref(),
+            Some("hello")
+        );
+    }
+}
+
+#[test]
+fn native_string_vec_methods_and_borrows_match_backends() {
+    for (source, expected) in [
+        (
+            "let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let item = &v[0]; item.len()",
+            5usize,
+        ),
+        (
+            "let mut v: Vec<string> = Vec::new(); v.push(\"old\"); { let item = &mut v[0]; *item = \"newer\"; } v.pop().unwrap().len()",
+            5,
+        ),
+        (
+            "let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut it = v.iter(); let item = it.next().unwrap(); item.len()",
+            5,
+        ),
+        (
+            "let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut it = v.into_iter(); it.next().unwrap().len()",
+            5,
+        ),
+        (
+            "let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut more: Vec<string> = Vec::new(); more.push(\"second\"); v.extend(more); v.pop().unwrap().len()",
+            6,
+        ),
+        (
+            "let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut total = 0usize; for item in v { total = total + item.len(); } total",
+            5,
+        ),
+    ] {
+        for value in run_both(&format!("fn result() -> usize {{ {source} }} result()")) {
+            assert_eq!(value.as_usize(), Some(expected), "{source}");
+        }
+    }
+    for value in run_both(
+        "let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let needle = \"first\"; v.contains(&needle)",
+    ) {
+        assert_eq!(value, Value::Bool(true));
+    }
+}
+
+#[test]
+fn native_string_vec_preserves_non_copy_indexing_rule() {
+    let source = "let mut v: Vec<string> = Vec::new(); v.push(\"hello\"); v[0]";
+    assert!(eval(source).is_err());
+    assert!(compile(source).is_err() || compile(source).unwrap().execute().is_err());
+}
+
+#[test]
+fn native_string_vec_rejects_growth_during_borrowed_iteration() {
+    let source = "fn result() -> usize { let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut it = v.iter(); let item = it.next().unwrap(); v.push(\"second\"); item.len() } result()";
+    let compiled = compile(source).unwrap();
+    for error in [
+        eval(source).unwrap_err().to_string(),
+        compiled.execute().unwrap_err().to_string(),
+    ] {
+        assert!(
+            error.contains("structural") || error.contains("borrow"),
+            "{error}"
+        );
     }
 }
 

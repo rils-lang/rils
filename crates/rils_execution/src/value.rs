@@ -879,11 +879,12 @@ impl Value {
             Self::Dynamic(object) => {
                 if object.descriptor().layout().is_copy() {
                     Self::Dynamic(object.copy_owned()?)
-                } else if native_layouts::vec_deque::matches(
-                    object.descriptor().layout().rils_type(),
-                ) || native_layouts::binary_heap::matches(
-                    object.descriptor().layout().rils_type(),
-                ) {
+                } else if native_layouts::vec::matches(object.descriptor().layout().rils_type())
+                    || native_layouts::vec_deque::matches(object.descriptor().layout().rils_type())
+                    || native_layouts::binary_heap::matches(
+                        object.descriptor().layout().rils_type(),
+                    )
+                {
                     Self::Dynamic(dynamic_sequence::clone_owned(object)?)
                 } else if let Some(result) = dynamic_result::materialize(self) {
                     dynamic_result::promote(result?, object.descriptor().layout().rils_type())?

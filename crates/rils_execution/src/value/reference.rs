@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use rils_value::{DynamicPathStep, SequenceItemLease};
+use rils_value::SequenceItemLease;
 
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
@@ -163,7 +163,7 @@ impl ReferenceValue {
             .layout()
             .sequence_item()
             .ok_or("dynamic value is not an indexed sequence")?;
-        if !item.is_copy() {
+        if !item.is_copy() && item.rils_type() != &crate::Type::String {
             return Err(format!(
                 "native references to {} are not yet supported",
                 item.rils_type()
@@ -295,11 +295,7 @@ impl ReferenceValue {
                 .ok_or_else(|| format!("reference target element {index} has been moved")),
             ReferenceTarget::DynamicIndexedElement {
                 sequence, index, ..
-            } => {
-                let item =
-                    sequence.with(|value| value.copy_path(&[DynamicPathStep::Index(*index)]))??;
-                super::record_codec::from_native(item)
-            }
+            } => super::dynamic_sequence::borrowed_item(sequence, *index),
             ReferenceTarget::MapKey { map, key } => map
                 .contains_key(key)
                 .then(|| key.to_value())

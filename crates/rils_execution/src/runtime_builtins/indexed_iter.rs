@@ -64,9 +64,9 @@ pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
                 .descriptor()
                 .layout()
                 .sequence_item()
-                .is_some_and(|item| item.is_copy())
+                .is_some_and(|item| item.is_copy() || item.rils_type() == &Type::String)
             {
-                return Err("native borrowed iteration requires Copy elements".into());
+                return Err("native borrowed iteration requires Copy or string elements".into());
             }
             let (length, ledger) = object.with(|payload| {
                 Ok::<_, String>((payload.sequence_len()?, payload.sequence_borrows()?))

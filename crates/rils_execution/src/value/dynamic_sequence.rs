@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicPathStep, DynamicType, DynamicValue};
 
 use crate::Type;
@@ -42,7 +43,10 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
     let Ok(layout) = RecordLayoutResolver::new(&[]).resolve(expected) else {
         return value;
     };
-    if matches!(value, Value::Vec(_)) && !layout.sequence_item().is_some_and(|item| item.is_copy())
+    if matches!(value, Value::Vec(_))
+        && !layout
+            .sequence_item()
+            .is_some_and(|item| item.is_copy() || item.rils_type() == &Type::String)
     {
         return value;
     }
@@ -83,7 +87,7 @@ pub fn clone_owned(object: &DynamicObject) -> Result<DynamicObject, String> {
         let layout = object.descriptor().layout_handle();
         let items = object.with(|payload| {
             (0..payload.sequence_len()?)
-                .map(|index| payload.copy_path(&[DynamicPathStep::Index(index)]))
+                .map(|index| payload.with_sequence_item(index, clone_item)?)
                 .collect::<Result<Vec<_>, _>>()
         })??;
         let payload = DynamicValue::sequence(layout.clone(), items)?;
@@ -104,7 +108,7 @@ pub fn clone_owned(object: &DynamicObject) -> Result<DynamicObject, String> {
 pub fn copy_items(object: &DynamicObject) -> Result<Vec<Value>, String> {
     let items = object.with(|payload| {
         (0..payload.sequence_len()?)
-            .map(|index| payload.copy_path(&[DynamicPathStep::Index(index)]))
+            .map(|index| payload.with_sequence_item(index, clone_item)?)
             .collect::<Result<Vec<_>, _>>()
     })??;
     items.into_iter().map(record_codec::from_native).collect()
@@ -136,6 +140,27 @@ pub fn view_vec(value: &Value) -> Option<Result<Vec<Value>, String>> {
 pub fn copy_item(object: &DynamicObject, index: usize) -> Result<Value, String> {
     let item = object.with(|payload| payload.copy_path(&[DynamicPathStep::Index(index)]))??;
     record_codec::from_native(item)
+}
+
+/// Read through a Rils reference. Strings are cloned as values for existing
+/// Value-based call sites; the sequence retains the original element.
+pub fn borrowed_item(object: &DynamicObject, index: usize) -> Result<Value, String> {
+    let item = object.with(|payload| payload.with_sequence_item(index, clone_item))???;
+    record_codec::from_native(item)
+}
+
+fn clone_item(item: &DynamicValue) -> Result<DynamicValue, String> {
+    if item.descriptor().is_copy() {
+        return item.copy_owned();
+    }
+    if item.descriptor().rils_type() == &Type::String {
+        let text = item.with::<NativeString, _>(Clone::clone)?;
+        return DynamicValue::from_rust(item.layout_handle(), text);
+    }
+    Err(format!(
+        "native Vec element {} cannot be cloned",
+        item.descriptor().rils_type()
+    ))
 }
 
 pub fn replace_item(object: &DynamicObject, index: usize, value: Value) -> Result<(), String> {

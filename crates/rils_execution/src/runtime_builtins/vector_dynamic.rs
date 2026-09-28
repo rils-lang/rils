@@ -1,4 +1,4 @@
-//! Copy-element Vec operations over the declaration-derived native sequence.
+//! Vec operations over declaration-derived native sequences.
 
 use std::{collections::VecDeque, rc::Rc};
 
@@ -189,10 +189,7 @@ fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value
             let needle = import_receiver(arguments.get(1).ok_or("missing Vec element")?)?;
             let length = object.with(|payload| payload.sequence_len())??;
             for index in 0..length {
-                let candidate = object.with(|payload| {
-                    payload.with_sequence_item(index, |item| item.copy_owned())
-                })???;
-                if record_codec::from_native(candidate)? == needle {
+                if crate::value::dynamic_sequence::borrowed_item(object, index)? == needle {
                     return Ok(Value::Bool(true));
                 }
             }
