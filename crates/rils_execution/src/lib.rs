@@ -3,6 +3,7 @@
 pub mod environment;
 pub mod formatting;
 pub mod hash_collections;
+mod host_value;
 pub mod iteration;
 mod limits;
 pub mod native_arguments;
@@ -23,6 +24,7 @@ mod types {
     pub(crate) use rils_frontend::types::*;
 }
 
+pub use host_value::{RilsHostType, RilsValue};
 pub use limits::ExecutionLimits;
 pub use output::{HostFormatKind, HostFormatSpec, HostValueFormatter, OutputHandler};
 pub use rils_frontend::{FloatType, FunctionSignature, IntegerType, RuntimeValue, Type};

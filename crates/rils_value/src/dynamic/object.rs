@@ -95,6 +95,19 @@ impl<V> DynamicObject<V> {
         }
     }
 
+    /// Move out an exact Rust leaf while retaining the original handle when
+    /// the payload is shared or has a different Rust type.
+    pub fn into_rust<T: 'static>(self) -> Result<T, Box<(Self, String)>> {
+        let descriptor = self.descriptor.clone();
+        let value = self.into_value()?;
+        value.into_rust::<T>().map_err(|(value, message)| {
+            Box::new((
+                Self::new(descriptor, value).expect("restored payload has its original layout"),
+                message,
+            ))
+        })
+    }
+
     pub fn with<R>(&self, f: impl FnOnce(&DynamicValue) -> R) -> Result<R, String> {
         let value: &RefCell<DynamicValue> = match &self.storage {
             Storage::Inline(value) => value,

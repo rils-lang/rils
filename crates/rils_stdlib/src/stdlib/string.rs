@@ -158,6 +158,12 @@ mod native {
             value.0
         }
     }
+
+    impl AsRef<std::string::String> for String {
+        fn as_ref(&self) -> &std::string::String {
+            &self.0
+        }
+    }
 }
 
 pub use native::String;

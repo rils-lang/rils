@@ -34,6 +34,17 @@ impl StorageSlot {
         self.value.clone().ok_or(AccessError::Moved)
     }
 
+    pub(crate) fn with_value<R>(
+        &self,
+        callback: impl FnOnce(&Value) -> Result<R, String>,
+    ) -> Result<R, String> {
+        callback(
+            self.value
+                .as_ref()
+                .ok_or("reference target has been moved")?,
+        )
+    }
+
     pub fn take(&mut self) -> Result<Value, AccessError> {
         let value = self.value.as_ref().ok_or(AccessError::Moved)?;
         if matches!(value, Value::Reference(_)) {

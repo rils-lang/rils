@@ -310,6 +310,38 @@ impl ReferenceValue {
         }
     }
 
+    pub(crate) fn with_rust<T: 'static, R>(
+        &self,
+        callback: impl FnOnce(&T) -> R,
+    ) -> Result<R, String> {
+        match &self.target {
+            ReferenceTarget::Storage(target) => target
+                .borrow()
+                .with_value(|value| crate::host_value::with_rust_value(value, callback)),
+            ReferenceTarget::StructField { instance, index } => {
+                let fields = instance.fields.borrow();
+                let value = fields
+                    .get_index(*index)
+                    .and_then(|field| field.value.as_ref())
+                    .ok_or("reference target field has been moved")?;
+                crate::host_value::with_rust_value(value, callback)
+            }
+            ReferenceTarget::IndexedElement { sequence, index } => {
+                let elements = sequence.elements.borrow();
+                let value = elements
+                    .get(*index)
+                    .and_then(|slot| slot.value.as_ref())
+                    .ok_or("reference target element has been moved")?;
+                crate::host_value::with_rust_value(value, callback)
+            }
+            ReferenceTarget::DynamicIndexedElement {
+                sequence, index, ..
+            } => sequence
+                .with(|value| value.with_sequence_item(*index, |item| item.with(callback)))??,
+            _ => Err("reference target has no direct Rust borrow view".into()),
+        }
+    }
+
     pub fn write(&self, value: Value) -> Result<(), AssignError> {
         if !self.mutable {
             return Err(AssignError::Immutable);
