@@ -379,6 +379,19 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
+                    if let [.., owner, member] = segments.as_slice()
+                        && let Some(symbol) = rils_builtins::builtin_member(owner, member)
+                            .and_then(|declaration| declaration.native_symbol)
+                    {
+                        return Ok(HirExpression::CallNative {
+                            symbol: symbol.to_owned(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
                     let (type_id, variant) = self.enum_variant_path(&segments, *span)?;
                     return Ok(HirExpression::ConstructTupleVariant {
                         type_id,

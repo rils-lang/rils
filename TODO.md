@@ -1,8 +1,8 @@
 # Rils TODO
 
-## Native generic construction
+## Native boxed references
 
-- Export an ordinary `Box<T>::new(value: T) -> Box<T>` associated method through the generic native call bridge, then cover recursive construction and dereference in both backends. Keep the private payload inaccessible to record literals and field access.
+- Add Rils `Deref` / `DerefMut` support for `Box<T>` so scripts can borrow its child with `*box` and mutate it through a lexical reference. `Box::new` and `into_inner` already move the child through the owned native call bridge.
 
 本文档记录尚未完成的优化、新特性和生态工作。条目按主题归类，不绑定具体版本；实际排期
 会根据使用场景、兼容性和测试结果调整。已完成的能力应从这里移除，并同步到正式文档。

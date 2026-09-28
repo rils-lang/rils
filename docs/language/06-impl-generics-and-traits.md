@@ -99,13 +99,13 @@ let holder: Holder<i32> = Holder {
 };
 ```
 
-泛型类型采用运行时单态参数信息，但当前不会生成专用机器码。尚不支持显式 turbofish、默认类型参数、显式生命周期参数和 `where`；引用生命周期由词法作用域自动推导。
+泛型类型采用运行时单态参数信息，但当前不会生成专用机器码。关联函数支持 `Box::<i32>::new(value)` 形式的显式类型参数，也可在 `Box::new(value)` 中由实参推导。默认类型参数、显式生命周期参数和 `where` 暂不支持；引用生命周期由词法作用域自动推导。
 
 ### Recursive structures and heap indirection
 
 Recursive fields must pass through a fixed-size heap handle or container. The compiler treats `Box<T>`, `Vec<T>`, `HashMap<K, V>`, `HashSet<T>`, iterator handles, and `string` as heap-backed indirection. For example:
 
-The built-in `Box<T>` has private storage. Its type may appear in recursive declarations, but `Box { value: ... }` cannot construct it. A public associated constructor is pending native generic call support; use an available collection handle when constructing recursive values today.
+The built-in `Box<T>` has private storage. Use `Box::new(value)` or `Box::<T>::new(value)` to construct it, and `box.into_inner()` to consume it and recover the value. `Box { value: ... }` and `.value` cannot access its private storage.
 
 ```rust
 struct Node {

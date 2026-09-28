@@ -47,6 +47,33 @@ pub fn construct(value: Option<Value>, item_type: &Type) -> Result<Construction,
     })
 }
 
+/// Consumes an Option and transfers its initialized child without cloning it.
+pub fn take_owned(value: Value) -> Result<Option<Value>, String> {
+    match value {
+        Value::Dynamic(object)
+            if matches!(object.descriptor().layout().rils_type(), Type::Option(_)) =>
+        {
+            let value = object.into_value().map_err(|failure| failure.1)?;
+            value
+                .take_option()?
+                .map(|item| {
+                    if matches!(item.descriptor().rils_type(), Type::Option(_)) {
+                        let layout = item.layout_handle();
+                        let descriptor = Rc::new(DynamicType::new(layout));
+                        DynamicObject::new(descriptor, item).map(Value::Dynamic)
+                    } else {
+                        NativeRecordCodec::new().from_native(item)
+                    }
+                })
+                .transpose()
+        }
+        Value::Option { value, .. } => value
+            .map(|value| Rc::try_unwrap(value).map_err(|_| "Option item is shared".to_owned()))
+            .transpose(),
+        value => Err(format!("expected Option, found {}", value.type_name())),
+    }
+}
+
 pub fn view(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {
     let Value::Dynamic(object) = value else {
         return None;

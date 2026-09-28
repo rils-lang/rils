@@ -5,7 +5,9 @@
 
 ## Unreleased
 
-- **破坏性变更：** 原生包装类型的私有字段不再允许用结构体字面量构造，内建 `Box<T>` 的 `Box { value: ... }` 写法现会报错。`Box<T>` 的普通关联构造方法尚未接入泛型原生调用；需要实际构造递归值时，暂用已支持的集合句柄。
+- 内建 `Box<T>` 现在从 Rust 定义导出 `Box::new(value)` 与消费式 `into_inner()`；`Box::<T>::new(value)` 和由实参推导的 `Box::new(value)` 均可用。原生拥有型调用桥保留泛型实参所有权，支持字符串、组合值及递归用户类型，在解释器、VM 和字节码重载后保持一致。迁移：将旧的 `Box { value }` 改为 `Box::new(value)`，取出值时使用 `into_inner()`。
+
+- **破坏性变更：** 原生包装类型的私有字段不再允许用结构体字面量构造，内建 `Box<T>` 的 `Box { value: ... }` 写法现会报错。
 
 - 非 Copy 组合值的原生 Clone 改为按布局递归处理 `Option`、`Result`、record 和序列；`Result<Option<string>, string>` 现在可使用原生布局。`VecDeque<Option<string>>` 的端点克隆与原生 `Option` 复合子值读取不再把整个容器转换为旧 `Value`。删除借用能力的 `can_read_element` 预判；实际读取按具体布局和叶子注册执行。
 - Rust 宿主结果句柄新增 `with_native_view`，可在回调内沿布局读取非 Copy 泛型组合值及原生序列元素引用，无需先转换为拥有型 `Value`。视图提供 record 字段、`Option` 子值、带标签变体和序列元素投影；视图借用受回调范围约束。

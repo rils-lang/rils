@@ -533,7 +533,11 @@ impl<'a> VirtualMachine<'a> {
                         rils_builtins::native_member(symbol)
                             .is_some_and(|member| member.native_symbol.is_some())
                     });
-                    let value = if let Some(symbol) = native_symbol {
+                    let value = if builtin == rils_builtins::BuiltinId::OptionUnwrap {
+                        crate::runtime_builtins::call_owned(builtin, arguments)
+                            .expect("owned Option::unwrap is registered")
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?
+                    } else if let Some(symbol) = native_symbol {
                         self.call_native_symbol(symbol, &arguments, instruction.span)?
                     } else {
                         match builtin {
@@ -573,7 +577,29 @@ impl<'a> VirtualMachine<'a> {
                         .map(|register| self.take_register(register, instruction.span))
                         .collect::<Result<Vec<_>, _>>()?;
                     let symbol = self.module.native_imports[import].symbol.clone();
-                    let value = self.call_native_symbol(&symbol, &arguments, instruction.span)?;
+                    let value = if crate::runtime_builtins::requires_owned_native_call(&symbol) {
+                        let mut context = crate::runtime_builtins::NativeOwnedContext {
+                            structs: Vec::new(),
+                            enums: Vec::new(),
+                        };
+                        for definition in &self.module.types {
+                            match definition {
+                                RuntimeType::Struct(definition) => {
+                                    context.structs.push(definition.clone())
+                                }
+                                RuntimeType::Enum(definition) => {
+                                    context.enums.push(definition.clone())
+                                }
+                            }
+                        }
+                        crate::runtime_builtins::call_native_owned_symbol(
+                            &symbol, arguments, &context,
+                        )
+                        .expect("owned native symbol is registered")
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?
+                    } else {
+                        self.call_native_symbol(&symbol, &arguments, instruction.span)?
+                    };
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::CallIntrinsic {

@@ -118,6 +118,12 @@ mod option {
     rils_stdlib::option_definition!(decl_rils_native);
 }
 
+mod boxed {
+    use rils_stdlib_macros::decl_rils_native;
+
+    rils_stdlib::box_definition!(decl_rils_native);
+}
+
 mod result {
     use rils_stdlib_macros::decl_rils_native;
 
@@ -160,7 +166,8 @@ pub fn call_symbol(
     symbol: &str,
     arguments: &[crate::Value],
 ) -> Option<Result<crate::Value, String>> {
-    option::call_symbol(symbol, arguments)
+    boxed::call_symbol(symbol, arguments)
+        .or_else(|| option::call_symbol(symbol, arguments))
         .or_else(|| result::call_symbol(symbol, arguments))
         .or_else(|| {
             let receiver = super::import_receiver(arguments.first()?).ok()?;
@@ -174,6 +181,18 @@ pub fn call_symbol(
         .or_else(|| vector::call_symbol(symbol, arguments))
         .or_else(|| range::call_symbol(symbol, arguments))
         .or_else(|| indexed_iterator::call_symbol(symbol, arguments))
+}
+
+pub fn call_owned_symbol(
+    symbol: &str,
+    arguments: Vec<crate::Value>,
+    context: &super::NativeOwnedContext,
+) -> Option<Result<crate::Value, String>> {
+    boxed::call_owned_symbol(symbol, arguments, context)
+}
+
+pub fn is_owned_symbol(symbol: &str) -> bool {
+    boxed::is_owned_symbol(symbol)
 }
 
 mod callable_functions {

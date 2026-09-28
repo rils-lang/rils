@@ -32,6 +32,19 @@ impl NativeRecordCodec {
         Self::default()
     }
 
+    pub fn with_definitions(structs: &[Rc<StructType>], enums: &[Rc<EnumType>]) -> Self {
+        Self {
+            structs: structs
+                .iter()
+                .map(|definition| (definition.name.clone(), definition.clone()))
+                .collect(),
+            enums: enums
+                .iter()
+                .map(|definition| (definition.name.clone(), definition.clone()))
+                .collect(),
+        }
+    }
+
     pub fn into_native(
         &mut self,
         value: Value,
@@ -472,6 +485,13 @@ impl NativeRecordCodec {
                 .into_rust::<NativeString>()
                 .map(|text| native_string(std::string::String::from(text)))
                 .map_err(|error| error.1),
+            ty @ Type::Named { .. } if rils_stdlib::stdlib::basic::is_native_box(&ty) => {
+                let layout = value.layout_handle();
+                let descriptor = Rc::new(rils_value::DynamicType::new(layout));
+                Ok(Value::Dynamic(super::DynamicObject::new(
+                    descriptor, value,
+                )?))
+            }
             Type::Option(item_type) => {
                 let item = value.take_option()?;
                 let item = item.map(|item| self.decode(item)).transpose()?;

@@ -15,7 +15,7 @@ fn basic_metadata_types_come_from_rust_definitions() {
         let published = builtin(name).expect("basic type is in the public catalog");
         assert_eq!(published.path, definition.path);
         assert_eq!(published.kind, BuiltinKind::Struct);
-        assert!(published.members.is_empty());
+        assert_eq!(published.members.len(), definition.members.len());
     }
 }
 

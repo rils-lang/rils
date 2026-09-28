@@ -28,6 +28,7 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
     let storage = fields.unnamed.iter().next();
     let type_count = definition.item.generics.type_params().count();
     let storage = storage.map(|field| field.ty.to_token_stream().to_string().replace(' ', ""));
+    let boxed = matches!(storage.as_deref(), Some("std::boxed::Box<T>"));
     let shape: usize = match (type_count, storage.as_deref()) {
         (
             1,
@@ -40,6 +41,7 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
             ),
         ) => 1,
         (2, Some("std::collections::HashMap<K,V>" | "std::collections::BTreeMap<K,V>")) => 2,
+        (1, Some("std::boxed::Box<T>")) => 1,
         _ => 0,
     };
     if fields.unnamed.len() != 1 || shape == 0 {
@@ -65,6 +67,16 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
             })()
         }
     };
+    let layout = if boxed {
+        quote! {
+            Some(Ok(rils_value::DynamicLayout::of::<std::boxed::Box<dyn std::any::Any>>(ty.clone())))
+        }
+    } else {
+        quote! {
+            Some(#item_layout
+                .map(|item| rils_value::DynamicLayout::sequence(ty.clone(), item)))
+        }
+    };
     quote! {
         pub fn matches(ty: &crate::Type) -> bool {
             matches!(ty, crate::Type::Named { name, arguments }
@@ -81,8 +93,8 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
             if !matches(ty) {
                 return None;
             }
-            Some(#item_layout
-                .map(|item| rils_value::DynamicLayout::sequence(ty.clone(), item)))
+            let _ = resolve_child;
+            #layout
         }
     }
     .into()

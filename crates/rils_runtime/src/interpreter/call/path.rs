@@ -77,18 +77,36 @@ pub(super) fn resolve_associated_path(
         Value::StructType(definition) if definition.name == "BTreeSet" && member == "new" => {
             Ok(Value::BuiltinFunction(BuiltinFunction::BTreeSetNew))
         }
-        Value::StructType(definition) => definition
-            .methods
-            .borrow()
-            .get(member)
-            .cloned()
-            .map(Value::Function)
-            .ok_or_else(|| {
-                RuntimeError::new(
-                    format!("struct `{root}` has no associated function `{member}`"),
-                    span,
-                )
-            }),
+        Value::StructType(definition) => {
+            if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
+                && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
+                && let Some(symbol) = builtin.native_symbol
+                && let Some(signature) =
+                    rils_frontend::standard_library::erased_builtin_member_signature(builtin)
+            {
+                let arity = signature.parameters.as_ref().map_or(0, Vec::len);
+                return Ok(Value::NativeFunction(NativeFunction {
+                    binding_name: symbol,
+                    name: symbol,
+                    min_arity: arity,
+                    max_arity: arity,
+                    signature: Some(signature),
+                    body: NativeFunctionBody::Symbol(symbol),
+                }));
+            }
+            definition
+                .methods
+                .borrow()
+                .get(member)
+                .cloned()
+                .map(Value::Function)
+                .ok_or_else(|| {
+                    RuntimeError::new(
+                        format!("struct `{root}` has no associated function `{member}`"),
+                        span,
+                    )
+                })
+        }
         Value::EnumType(definition) => {
             if let Some(method) = definition.methods.borrow().get(member).cloned() {
                 return Ok(Value::Function(method));

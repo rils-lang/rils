@@ -10,6 +10,7 @@ use crate::{
 };
 
 mod binary_heap;
+mod boxed;
 mod btree_map;
 mod btree_set;
 mod callback;
@@ -25,6 +26,12 @@ mod vector;
 pub(crate) mod vector_dynamic;
 
 pub type NativeCallback<'a, E> = dyn FnMut(&Value, &[Value]) -> Result<Value, E> + 'a;
+
+/// Resolved nominal declarations available to an owned native call.
+pub struct NativeOwnedContext {
+    pub structs: Vec<Rc<crate::value::StructType>>,
+    pub enums: Vec<Rc<crate::value::EnumType>>,
+}
 
 #[derive(Debug)]
 pub enum NativeCallError<E> {
@@ -48,6 +55,19 @@ impl<E> From<&str> for NativeCallError<E> {
 /// Returns `None` when no native bridge has been generated for the symbol yet.
 pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     native::call_symbol(symbol, arguments)
+}
+
+/// Dispatches a native method that consumes its arguments without cloning them.
+pub fn call_native_owned_symbol(
+    symbol: &str,
+    arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+) -> Option<Result<Value, String>> {
+    native::call_owned_symbol(symbol, arguments, context)
+}
+
+pub fn requires_owned_native_call(symbol: &str) -> bool {
+    native::is_owned_symbol(symbol)
 }
 
 pub fn call_native_symbol_with_callback<E>(
@@ -615,6 +635,31 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),
+    }
+}
+
+pub fn call_owned(
+    id: rils_builtins::BuiltinId,
+    mut arguments: Vec<Value>,
+) -> Option<Result<Value, String>> {
+    match id {
+        rils_builtins::BuiltinId::OptionUnwrap => {
+            if arguments
+                .first()
+                .and_then(Type::of_value)
+                .is_some_and(|ty| matches!(ty, Type::Result(_, _)))
+            {
+                return Some(call(id, &arguments));
+            }
+            Some(
+                arguments
+                    .pop()
+                    .ok_or_else(|| "Option::unwrap expects a receiver".to_owned())
+                    .and_then(crate::value::dynamic_option::take_owned)
+                    .and_then(|item| item.ok_or_else(|| "called `unwrap` on `None`".to_owned())),
+            )
+        }
+        _ => None,
     }
 }
 

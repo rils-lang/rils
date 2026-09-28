@@ -271,6 +271,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         None,
     );
     for name in [
+        "Box",
         "Rc",
         "Weak",
         "Cell",

@@ -280,7 +280,12 @@ impl Interpreter {
                 span,
                 ..
             } => {
-                if environment.borrow().get(name).is_some() {
+                let existing = environment.borrow().get(name);
+                let shadows_builtin = matches!(&existing, Some(Value::StructType(definition))
+                    if definition.opaque_native
+                        && definition.fields.is_empty()
+                        && rils_builtins::builtin(name).is_some_and(|builtin| builtin.opaque_native));
+                if existing.is_some() && !shadows_builtin {
                     return Err(RuntimeError::new(
                         format!("name `{name}` is already defined"),
                         *span,

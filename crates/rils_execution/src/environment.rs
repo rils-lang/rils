@@ -1,4 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use crate::{types::Type, value::Value};
 
@@ -126,6 +130,40 @@ pub struct Environment {
 }
 
 impl Environment {
+    pub fn visible_type_definitions(
+        &self,
+    ) -> (
+        Vec<Rc<crate::value::StructType>>,
+        Vec<Rc<crate::value::EnumType>>,
+    ) {
+        let mut structs = Vec::new();
+        let mut enums = Vec::new();
+        self.collect_visible_type_definitions(&mut HashSet::new(), &mut structs, &mut enums);
+        (structs, enums)
+    }
+
+    fn collect_visible_type_definitions(
+        &self,
+        seen: &mut HashSet<String>,
+        structs: &mut Vec<Rc<crate::value::StructType>>,
+        enums: &mut Vec<Rc<crate::value::EnumType>>,
+    ) {
+        for (name, slot) in &self.values {
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            match slot.borrow().value.as_ref() {
+                Some(Value::StructType(definition)) => structs.push(definition.clone()),
+                Some(Value::EnumType(definition)) => enums.push(definition.clone()),
+                _ => {}
+            }
+        }
+        if let Some(parent) = &self.parent {
+            parent
+                .borrow()
+                .collect_visible_type_definitions(seen, structs, enums);
+        }
+    }
     pub fn global() -> EnvironmentRef {
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),

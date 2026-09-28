@@ -499,6 +499,29 @@ impl<'a> Checker<'a> {
                 if self.check_builtin_call(callee, arguments, *span) {
                     return;
                 }
+                if let Expr::GenericPath {
+                    segments,
+                    arguments: type_arguments,
+                    ..
+                } = callee.as_ref()
+                    && let Some((member, owner)) = segments.split_last()
+                    && let Some(owner) =
+                        crate::standard_library::builtin_type_name(&owner.join("::"))
+                    && let Some(declaration) = rils_builtins::builtin(owner)
+                    && crate::standard_library::builtin_associated_function_signature(owner, member)
+                        .is_some()
+                    && declaration.type_parameters.len() != type_arguments.len()
+                {
+                    self.diagnostic(
+                        format!(
+                            "`{owner}` expects {} type arguments, found {}",
+                            declaration.type_parameters.len(),
+                            type_arguments.len()
+                        ),
+                        callee.span(),
+                    );
+                    return;
+                }
                 let Type::Function {
                     parameters: Some(parameters),
                     ..

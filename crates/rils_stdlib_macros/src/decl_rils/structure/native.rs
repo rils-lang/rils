@@ -11,6 +11,12 @@ pub(super) fn expand(path: Path, module: ItemMod) -> TokenStream {
 }
 
 fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
+    if matches!(&definition.item.fields, syn::Fields::Unnamed(fields)
+        if fields.unnamed.len() == 1
+            && fields.unnamed[0].ty.to_token_stream().to_string().replace(' ', "") == "std::boxed::Box<T>")
+    {
+        return boxed_tokens(definition);
+    }
     let module = &definition.path;
     let arms = definition
         .methods
@@ -53,6 +59,52 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
     Ok(quote! {
         pub fn call_symbol(symbol: &str, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
             match symbol { #(#arms)* _ => { let _ = arguments; None } }
+        }
+    })
+}
+
+fn boxed_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
+    let module = &definition.path;
+    let mut borrowed_arms = Vec::new();
+    let mut owned_symbols = Vec::new();
+    let arms = definition
+        .methods
+        .iter()
+        .map(|method| {
+            if !matches!(super::super::method_binding::MethodBinding::parse(method)?, super::super::method_binding::MethodBinding::Native) {
+                return Ok(quote!());
+            }
+            let name = &method.sig.ident;
+            let symbol = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
+            owned_symbols.push(symbol.clone());
+            let arity = method.sig.inputs.len();
+            borrowed_arms.push(quote! {
+                #symbol => Some(Err(if arguments.len() == #arity {
+                    "owned native call requires an owned argument frame".into()
+                } else {
+                    format!("native method `{}` expects {} arguments, found {}", #symbol, #arity, arguments.len())
+                })),
+            });
+            Ok(quote! {
+                #symbol => Some(if arguments.len() == #arity {
+                    super::super::boxed::#name(arguments, context)
+                } else {
+                    Err(format!("native method `{}` expects {} arguments, found {}", #symbol, #arity, arguments.len()))
+                }),
+            })
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    Ok(quote! {
+        pub fn call_symbol(symbol: &str, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
+            match symbol { #(#borrowed_arms)* _ => None }
+        }
+
+        pub fn call_owned_symbol(symbol: &str, arguments: std::vec::Vec<crate::Value>, context: &crate::runtime_builtins::NativeOwnedContext) -> Option<Result<crate::Value, String>> {
+            match symbol { #(#arms)* _ => None }
+        }
+
+        pub fn is_owned_symbol(symbol: &str) -> bool {
+            matches!(symbol, #(#owned_symbols)|*)
         }
     })
 }

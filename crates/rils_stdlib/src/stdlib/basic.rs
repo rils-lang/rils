@@ -8,6 +8,20 @@ mod boxed {
     #[rils_struct]
     pub struct Box<T>(std::boxed::Box<T>);
 
+    impl<T> Box<T> {
+        /// Allocates a value on the heap.
+        #[export_rils]
+        pub fn new(value: T) -> Self {
+            Self(std::boxed::Box::new(value))
+        }
+
+        /// Consumes the box and returns its value.
+        #[export_rils]
+        pub fn into_inner(self) -> T {
+            *self.0
+        }
+    }
+
     impl<T> std::ops::Deref for Box<T> {
         type Target = std::boxed::Box<T>;
 
@@ -38,3 +52,18 @@ mod formatting {
 
 pub use boxed::Box;
 pub use formatting::FormatError;
+
+mod boxed_layout {
+    use rils_stdlib_macros::decl_rils_layout;
+
+    box_definition!(decl_rils_layout);
+}
+
+pub const NATIVE_LAYOUT_BOX: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
+    matches: boxed_layout::matches,
+    layout: boxed_layout::layout,
+};
+
+pub fn is_native_box(ty: &rils_syntax::Type) -> bool {
+    boxed_layout::matches(ty)
+}

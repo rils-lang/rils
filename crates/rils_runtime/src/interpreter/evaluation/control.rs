@@ -29,12 +29,55 @@ impl Interpreter {
         span: Span,
         environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
-        let callee = self.evaluate(callee, environment.clone())?;
+        let callee_value = self.evaluate(callee, environment.clone())?;
         let arguments = arguments
             .iter()
             .map(|argument| self.evaluate(argument, environment.clone()))
             .collect::<Result<Vec<_>, _>>()?;
-        self.call_owned(callee, arguments, span)
+        if let Expr::GenericPath {
+            segments,
+            arguments: type_arguments,
+            ..
+        } = callee
+            && let Some((member, owner)) = segments.split_last()
+            && let Some(owner) =
+                rils_frontend::standard_library::builtin_type_name(&owner.join("::"))
+            && let Some(declaration) = rils_builtins::builtin(owner)
+            && let Some(signature) =
+                rils_frontend::standard_library::builtin_associated_function_signature(
+                    owner, member,
+                )
+        {
+            if declaration.type_parameters.len() != type_arguments.len() {
+                return Err(RuntimeError::new(
+                    format!(
+                        "`{owner}` expects {} type arguments, found {}",
+                        declaration.type_parameters.len(),
+                        type_arguments.len()
+                    ),
+                    span,
+                ));
+            }
+            let substitutions = declaration
+                .type_parameters
+                .iter()
+                .zip(type_arguments)
+                .map(|(name, ty)| ((*name).to_owned(), ty.clone()))
+                .collect();
+            if let Some(parameters) = signature.parameters {
+                for (expected, actual) in parameters.iter().zip(&arguments) {
+                    let expected = expected.substitute(&substitutions);
+                    let actual = Type::of_value(actual).unwrap_or(Type::Unknown);
+                    if merge_types(&expected, &actual).is_none() {
+                        return Err(RuntimeError::new(
+                            format!("argument expects `{expected}`, found `{actual}`"),
+                            span,
+                        ));
+                    }
+                }
+            }
+        }
+        self.call_owned(callee_value, arguments, span, environment)
     }
 
     fn evaluate_if(

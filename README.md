@@ -55,6 +55,8 @@ Struct 和 enum 支持 `#[derive(Clone)]`、`#[derive(Copy)]`、`#[derive(Eq, Ha
 
 实现 `Iterator` 的 Rils 类型只需声明 `Item` 并实现 `next`，可使用或重写标准库 trait 中定义的默认方法；解释器和字节码均从这些方法体执行，元素类型从关联类型 `Item` 解析。它还会自动实现 `IntoIterator`，`into_iter()` 返回自身，可直接用于 `for`。
 
+内建 `Box<T>` 使用 `Box::new(value)` 构造；需要显式类型参数时可写 `Box::<T>::new(value)`，消费后通过 `into_inner()` 取回值。内部字段是私有的，不能用 `Box { value: ... }` 构造。
+
 ```rust
 let value: i32 = rils::eval("1 + 2 * 3")?.get_cloned()?;
 let module = rils::compile("let value = 40; value + 2")?;

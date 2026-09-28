@@ -17,7 +17,74 @@ impl Interpreter {
         callee: Value,
         arguments: Vec<Value>,
         span: Span,
+        environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
+        let (structs, enums) = environment.borrow().visible_type_definitions();
+        let native_context = crate::runtime_builtins::NativeOwnedContext { structs, enums };
+        let callee = match callee {
+            Value::BuiltinBoundMethod(method)
+                if matches!(
+                    method.method,
+                    BuiltinMethod::Runtime(rils_builtins::BuiltinId::OptionUnwrap)
+                ) =>
+            {
+                let method = Rc::try_unwrap(method)
+                    .map_err(|_| RuntimeError::new("built-in method receiver is shared", span))?;
+                let receiver = Rc::try_unwrap(method.receiver)
+                    .map_err(|_| RuntimeError::new("built-in method receiver is shared", span))?;
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push(receiver);
+                values.extend(arguments);
+                return crate::runtime_builtins::call_owned(
+                    rils_builtins::BuiltinId::OptionUnwrap,
+                    values,
+                )
+                .expect("owned Option::unwrap is registered")
+                .map_err(|message| RuntimeError::new(message, span));
+            }
+            Value::BuiltinBoundMethod(method) if matches!(method.method, BuiltinMethod::Native(symbol) if crate::runtime_builtins::requires_owned_native_call(symbol)) =>
+            {
+                let method = Rc::try_unwrap(method)
+                    .map_err(|_| RuntimeError::new("native method receiver is shared", span))?;
+                let BuiltinMethod::Native(symbol) = method.method else {
+                    unreachable!("checked native method")
+                };
+                let receiver = Rc::try_unwrap(method.receiver)
+                    .map_err(|_| RuntimeError::new("native method receiver is shared", span))?;
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push(receiver);
+                values.extend(arguments);
+                return crate::runtime_builtins::call_native_owned_symbol(
+                    symbol,
+                    values,
+                    &native_context,
+                )
+                .expect("owned native symbol is registered")
+                .map_err(|message| RuntimeError::new(message, span));
+            }
+            other => other,
+        };
+        if let Value::NativeFunction(function) = &callee
+            && let NativeFunctionBody::Symbol(symbol) = function.body
+            && crate::runtime_builtins::requires_owned_native_call(symbol)
+        {
+            check_arity(
+                function.name,
+                function.min_arity,
+                function.max_arity,
+                arguments.len(),
+                span,
+            )?;
+            validate_native_arguments(function.signature.as_ref(), &arguments, span)?;
+            let value = crate::runtime_builtins::call_native_owned_symbol(
+                symbol,
+                arguments,
+                &native_context,
+            )
+            .expect("owned native symbol is registered")
+            .map_err(|message| RuntimeError::new(message, span))?;
+            return validate_native_return(function.signature.as_ref(), value, span, function.name);
+        }
         if let Value::NativeFunction(function) = &callee
             && let NativeFunctionBody::RustOwned(callback) = function.body
         {

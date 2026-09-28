@@ -905,7 +905,32 @@ impl<'a> Inferencer<'a> {
 
     fn expression(&mut self, expression: &Expr, returns: &mut Vec<Type>) -> Type {
         let id = self.expression_ids.id(expression);
-        let ty = self.expression_inner(expression, id, returns);
+        let mut ty = self.expression_inner(expression, id, returns);
+        if let Expr::GenericPath {
+            segments,
+            arguments,
+            ..
+        } = expression
+            && let Some((member, owner)) = segments.split_last()
+            && let Some(owner) = crate::standard_library::builtin_type_name(&owner.join("::"))
+            && let Some(declaration) = rils_builtins::builtin(owner)
+            && declaration.type_parameters.len() == arguments.len()
+            && crate::standard_library::builtin_associated_function_signature(owner, member)
+                .is_some()
+        {
+            let substitutions = declaration
+                .type_parameters
+                .iter()
+                .zip(arguments)
+                .map(|(parameter, argument)| {
+                    (
+                        (*parameter).to_owned(),
+                        self.host_types.resolved_type(argument),
+                    )
+                })
+                .collect();
+            ty = ty.substitute(&substitutions);
+        }
         self.result.expression_types_by_id.insert(id, ty.clone());
         ty
     }

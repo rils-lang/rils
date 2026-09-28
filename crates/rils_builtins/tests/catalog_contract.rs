@@ -948,3 +948,16 @@ fn native_private_storage_is_opaque() {
     assert!(rils_builtins::builtin("Box").unwrap().opaque_native);
     assert!(!rils_builtins::builtin("FormatError").unwrap().opaque_native);
 }
+
+#[test]
+fn boxed_methods_are_exported_from_the_wrapper_definition() {
+    let declaration = rils_builtins::builtin("Box").unwrap();
+    let method = declaration
+        .members
+        .iter()
+        .find(|member| member.name == "new")
+        .expect("Box::new is exported");
+    let signature = method.signature.as_ref().unwrap();
+    assert_eq!(signature.parameters.len(), 1);
+    assert_eq!(signature.result, rils_builtins::TypePattern::SelfType);
+}
