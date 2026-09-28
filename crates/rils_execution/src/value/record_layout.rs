@@ -84,18 +84,6 @@ impl<'a> RecordLayoutResolver<'a> {
         {
             return result;
         }
-        if let Some(result) =
-            native_layouts::vec_deque::layout(ty, &mut |child| self.resolve(child))
-                .or_else(|| {
-                    native_layouts::binary_heap::layout(ty, &mut |child| self.resolve(child))
-                })
-                .or_else(|| native_layouts::hash_set::layout(ty, &mut |child| self.resolve(child)))
-                .or_else(|| native_layouts::btree_set::layout(ty, &mut |child| self.resolve(child)))
-                .or_else(|| native_layouts::hash_map::layout(ty, &mut |child| self.resolve(child)))
-                .or_else(|| native_layouts::btree_map::layout(ty, &mut |child| self.resolve(child)))
-        {
-            return result;
-        }
         if let Some(provider) = self.provider
             && let Some(result) = provider.layout(ty, &mut |child| self.resolve(child))
         {
