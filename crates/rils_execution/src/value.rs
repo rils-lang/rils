@@ -48,6 +48,9 @@ pub mod record_layout;
 #[path = "value/string.rs"]
 mod string;
 pub use string::{native_string, string_payload};
+#[path = "value/character.rs"]
+mod character;
+pub use character::{char_payload, native_char};
 #[path = "value/scalar.rs"]
 mod scalar;
 
@@ -397,6 +400,16 @@ pub enum Value {
 }
 
 impl Value {
+    /// Construct a character in native storage.
+    pub fn from_char(value: char) -> Self {
+        native_char(value)
+    }
+
+    /// Read a character from native or legacy storage.
+    pub fn as_char(&self) -> Option<char> {
+        char_payload(self)
+    }
+
     /// Construct a Rils string in native storage.
     pub fn from_string(value: impl Into<std::string::String>) -> Self {
         native_string(value)
@@ -1039,6 +1052,12 @@ impl PartialEq for Value {
                 other.as_f64().is_some_and(|right| *left == right)
             }
             (Self::Char(left), Self::Char(right)) => left == right,
+            (Self::Native(_), Self::Char(right)) => {
+                char_payload(self).is_some_and(|left| left == *right)
+            }
+            (Self::Char(left), Self::Native(_)) => {
+                char_payload(other).is_some_and(|right| *left == right)
+            }
             (Self::Native(left), Self::Native(right)) => native_ops::equal(left, right),
             (Self::Native(_), legacy)
                 if matches!(Type::of_value(legacy), Some(Type::Integer(_))) =>

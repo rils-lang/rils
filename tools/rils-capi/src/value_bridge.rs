@@ -262,6 +262,9 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
     if let Some(text) = value.as_string() {
         return Ok(scalar(RILS_VALUE_STRING, insert_string(text)?, 0));
     }
+    if let Some(character) = value.as_char() {
+        return Ok(scalar(RILS_VALUE_CHAR, u64::from(u32::from(character)), 0));
+    }
     let value = match value {
         Value::Unit => RilsValue::default(),
         Value::Bool(value) => scalar(RILS_VALUE_BOOL, u64::from(value), 0),

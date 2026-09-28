@@ -269,12 +269,18 @@ impl fmt::Debug for Value {
                 Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
                     write!(f, "{:#?}", self.as_string().unwrap_or_default())
                 }
+                Self::Native(object) if object.descriptor().rils_type() == &crate::Type::Char => {
+                    write!(f, "{:#?}", self.as_char().expect("native char payload"))
+                }
                 _ => write!(f, "{self}"),
             };
         }
         match self {
             Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
                 write!(f, "{:?}", self.as_string().unwrap_or_default())
+            }
+            Self::Native(object) if object.descriptor().rils_type() == &crate::Type::Char => {
+                write!(f, "{:?}", self.as_char().expect("native char payload"))
             }
             Self::Dynamic(_) => match super::dynamic_option::view(self) {
                 Some(Ok((Some(value), _))) => f.debug_tuple("Some").field(&value).finish(),

@@ -81,7 +81,10 @@ impl StringOutput for NativeOption<NativeString> {
 impl StringOutput for Iterator<char> {
     fn into_value(self) -> Result<Value, String> {
         Ok(super::owned_iterator_value(
-            self.0.into_iter().map(Value::Char).collect::<VecDeque<_>>(),
+            self.0
+                .into_iter()
+                .map(crate::value::native_char)
+                .collect::<VecDeque<_>>(),
             Type::Char,
         ))
     }

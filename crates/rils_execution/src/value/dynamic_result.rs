@@ -68,7 +68,7 @@ fn read_item(payload: &DynamicValue, index: usize, ty: &Type) -> Result<Value, S
     match ty {
         Type::Unit => scalar!((), |_| Value::Unit),
         Type::Bool => scalar!(bool, Value::Bool),
-        Type::Char => scalar!(char, Value::Char),
+        Type::Char => scalar!(char, Value::from_char),
         Type::Integer(IntegerType::I8) => scalar!(i8, Value::from_i8),
         Type::Integer(IntegerType::I16) => scalar!(i16, Value::from_i16),
         Type::Integer(IntegerType::I32) => scalar!(i32, Value::from_i32),

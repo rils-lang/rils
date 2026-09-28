@@ -267,6 +267,9 @@ fn orderable(value: &Value) -> bool {
     if value.as_string().is_some() {
         return true;
     }
+    if crate::value::char_payload(value).is_some() {
+        return true;
+    }
     matches!(
         crate::numeric::lower_migrated_integer(value.clone()),
         Value::I16(_)
@@ -300,6 +303,12 @@ fn compare(left: &Value, right: &Value) -> Result<Ordering, String> {
         return Ok(left.cmp(&right));
     }
     if let (Some(left), Some(right)) = (left.as_string(), right.as_string()) {
+        return Ok(left.cmp(&right));
+    }
+    if let (Some(left), Some(right)) = (
+        crate::value::char_payload(left),
+        crate::value::char_payload(right),
+    ) {
         return Ok(left.cmp(&right));
     }
     macro_rules! compare_variants {

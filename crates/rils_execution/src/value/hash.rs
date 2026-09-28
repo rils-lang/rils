@@ -122,6 +122,9 @@ impl HashKey {
         if let Some(text) = value.as_string() {
             return Ok(Self::String(text.into()));
         }
+        if let Some(character) = super::char_payload(&value) {
+            return Ok(Self::Char(character));
+        }
         Ok(match value {
             Value::Unit => Self::Unit,
             Value::Bool(value) => Self::Bool(value),
@@ -171,7 +174,7 @@ impl HashKey {
             Self::U64(value) => Value::from_u64(*value),
             Self::U128(value) => Value::from_u128(*value),
             Self::Usize(value) => crate::numeric::native_usize(*value),
-            Self::Char(value) => Value::Char(*value),
+            Self::Char(value) => super::native_char(*value),
             Self::String(value) => super::native_string(value.to_string()),
             Self::Composite(key) => key
                 .value
@@ -197,7 +200,7 @@ impl HashKey {
             Self::U64(value) => Value::from_u64(value),
             Self::U128(value) => Value::from_u128(value),
             Self::Usize(value) => crate::numeric::native_usize(value),
-            Self::Char(value) => Value::Char(value),
+            Self::Char(value) => super::native_char(value),
             Self::String(value) => super::native_string(value.to_string()),
             Self::Composite(key) => key.value,
         }

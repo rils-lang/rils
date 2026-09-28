@@ -1513,6 +1513,7 @@ fn scalar_value_protocol_round_trips_all_payload_shapes() {
         Value::F64(-2.5),
         Value::from_f32(-0.0),
         Value::from_f64(3.25),
+        Value::from_char('你'),
         Value::Char('你'),
     ];
     for expected in values {

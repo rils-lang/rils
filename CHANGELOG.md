@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- `char` 字面量、默认值和字符串字符迭代结果现使用内联原生负载；解释器、VM、集合键及 C ABI 保留原有字符语义与编码。Rust 宿主若直接匹配脚本产出的 `Value::Char`，需改用 `Value::as_char()`；可用 `Value::from_char()` 构造原生字符，旧变体继续作为输入被接受。
 - 具体类型的 `Result<T, E>` 在两个分支均有可读取的原生布局时，可在类型化绑定中使用动态带标签负载；覆盖基础标量、`string` 和 Copy 的嵌套负载（如 `Result<Option<i32>, string>`）。解释器、VM、重载字节码、模式匹配与方法调用保持一致。Rust 宿主应通过 `Value::as_result()` 读取新旧表示；直接匹配 `Value::Result` 的代码需同时处理 `Value::Dynamic`。其他子类型仍保留旧表示。
 
 - `Option<T>` 的原生布局现可递归容纳布尔、字符及已有标准库容器布局，例如 `Option<VecDeque<i32>>`、`Option<BinaryHeap<string>>` 和 `Option<HashSet<i32>>`；嵌套 `Some` / `None` 在解释器、VM 与重新加载的字节码中一致。Rust 宿主若直接匹配这些值的 `Value::Option`，需改用 `Value::as_option()` 或同时处理 `Value::Dynamic`。用户定义子类型仍走旧表示。

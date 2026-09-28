@@ -222,7 +222,7 @@ fn hir_literal_value(literal: &HirLiteral) -> Value {
         HirLiteral::Usize(value) => crate::numeric::native_usize(*value),
         HirLiteral::F32(value) => Value::from_f32(*value),
         HirLiteral::F64(value) => Value::from_f64(*value),
-        HirLiteral::Char(value) => Value::Char(*value),
+        HirLiteral::Char(value) => rils_execution::value::native_char(*value),
         HirLiteral::String(value) => rils_execution::value::native_string(value.clone()),
     }
 }

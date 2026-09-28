@@ -184,7 +184,7 @@ pub(super) fn literal_value(literal: &Literal) -> Value {
         Literal::Usize(value) => crate::numeric::native_usize(*value),
         Literal::F32(value) => Value::from_f32(*value),
         Literal::F64(value) => Value::from_f64(*value),
-        Literal::Char(value) => Value::Char(*value),
+        Literal::Char(value) => rils_execution::value::native_char(*value),
         Literal::Integer(value) => crate::numeric::native_i32(
             i32::try_from(*value).expect("unresolved integer pattern must fit the i32 default"),
         ),

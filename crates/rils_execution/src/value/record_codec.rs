@@ -73,7 +73,9 @@ impl NativeRecordCodec {
         match (ty, value) {
             (Type::Unit, Value::Unit) => DynamicValue::from_rust(layout, ()),
             (Type::Bool, Value::Bool(value)) => DynamicValue::from_rust(layout, value),
-            (Type::Char, Value::Char(value)) => DynamicValue::from_rust(layout, value),
+            (Type::Char, value) if super::char_payload(&value).is_some() => {
+                DynamicValue::from_rust(layout, super::char_payload(&value).expect("checked char"))
+            }
             (Type::String, Value::Native(object))
                 if object.descriptor().rils_type() == &Type::String =>
             {
@@ -464,7 +466,7 @@ impl NativeRecordCodec {
                 .map_err(|error| error.1),
             Type::Char => value
                 .into_rust::<char>()
-                .map(Value::Char)
+                .map(super::native_char)
                 .map_err(|error| error.1),
             Type::String => value
                 .into_rust::<NativeString>()
