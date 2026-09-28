@@ -1,0 +1,250 @@
+//! Copy-element Vec operations over the declaration-derived native sequence.
+
+use std::{collections::VecDeque, rc::Rc};
+
+use rils_builtins::builtin;
+
+use crate::{
+    Type,
+    value::{DynamicObject, OwnedIteratorValue, Value, record_codec},
+};
+
+use super::{import_receiver, indexed_iter};
+
+pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    let receiver = arguments.first()?;
+    let Value::Dynamic(object) = import_receiver(receiver).ok()? else {
+        return None;
+    };
+    if !crate::value::native_layouts::vec::matches(object.descriptor().layout().rils_type()) {
+        return None;
+    }
+    let member = builtin("Vec")?
+        .members
+        .iter()
+        .find(|member| member.native_symbol == Some(symbol))?;
+    Some(call(member.name, arguments, &object))
+}
+
+pub(crate) fn into_iterator(object: DynamicObject) -> Result<Value, String> {
+    call("into_iter", &[Value::Dynamic(object.clone())], &object)
+}
+
+pub(crate) fn extend_legacy(arguments: &[Value]) -> Option<Result<Value, String>> {
+    let Some(receiver) = arguments.first() else {
+        return Some(Err("missing Vec receiver".into()));
+    };
+    let Value::Dynamic(destination) = import_receiver(receiver).ok()? else {
+        return None;
+    };
+    if !crate::value::native_layouts::vec::matches(destination.descriptor().layout().rils_type()) {
+        return None;
+    }
+    Some((|| {
+        if !matches!(receiver, Value::Reference(reference) if reference.mutable) {
+            return Err("Vec::extend requires `&mut self`".into());
+        }
+        let source = import_receiver(arguments.get(1).ok_or("missing source Vec")?)?;
+        match source {
+            Value::Dynamic(source)
+                if crate::value::native_layouts::vec::matches(
+                    source.descriptor().layout().rils_type(),
+                ) =>
+            {
+                if destination.same_storage(&source) {
+                    return Err("Vec cannot extend itself".into());
+                }
+                if !destination
+                    .descriptor()
+                    .layout()
+                    .compatible_with(source.descriptor().layout())
+                {
+                    return Err("Vec element types do not match".into());
+                }
+                destination.with_mut(|destination| {
+                    destination
+                        .sequence_borrows()?
+                        .check_structural_mutation()?;
+                    source.with_mut(|source| {
+                        let items = source.take_all_sequence_items()?;
+                        for item in items {
+                            destination.push_sequence_item(item)?;
+                        }
+                        Ok::<_, String>(())
+                    })??;
+                    Ok::<_, String>(())
+                })??;
+            }
+            Value::Vec(source) => {
+                indexed_iter::reject_growth(&source)?;
+                let layout = destination
+                    .descriptor()
+                    .layout()
+                    .sequence_item()
+                    .ok_or("native Vec has no item layout")?
+                    .clone();
+                let items = source
+                    .elements
+                    .borrow()
+                    .iter()
+                    .map(|slot| {
+                        let value = slot
+                            .value
+                            .as_ref()
+                            .ok_or("cannot extend from a partially moved Vec")?;
+                        if !layout.rils_type().accepts(value) {
+                            return Err(format!(
+                                "Vec expects {}, found {}",
+                                layout.rils_type(),
+                                value.type_name()
+                            ));
+                        }
+                        record_codec::into_native(value.clone_owned()?, layout.clone())
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                destination.with_mut(|destination| {
+                    destination
+                        .sequence_borrows()?
+                        .check_structural_mutation()?;
+                    for item in items {
+                        destination.push_sequence_item(item)?;
+                    }
+                    Ok::<_, String>(())
+                })??;
+                source.elements.borrow_mut().clear();
+            }
+            _ => return Err("Vec::extend source must be Vec".into()),
+        }
+        Ok(Value::Unit)
+    })())
+}
+
+fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value, String> {
+    let item_layout = object
+        .descriptor()
+        .layout()
+        .sequence_item()
+        .ok_or("native Vec has no item layout")?
+        .clone();
+    let item_type = item_layout.rils_type().clone();
+    let mutating = matches!(
+        name,
+        "push" | "pop" | "clear" | "truncate" | "insert" | "remove" | "swap_remove"
+    );
+    if mutating
+        && !matches!(arguments.first(), Some(Value::Reference(reference)) if reference.mutable)
+    {
+        return Err("Vec method requires `&mut self`".into());
+    }
+    match name {
+        "len" => Ok(crate::numeric::native_usize(
+            object.with(|value| value.sequence_len())??,
+        )),
+        "is_empty" => Ok(Value::Bool(
+            object.with(|value| value.sequence_len())?? == 0,
+        )),
+        "push" => {
+            let value = item(arguments, 1, &item_layout)?;
+            object.with_mut(|payload| payload.push_sequence_item(value))??;
+            Ok(Value::Unit)
+        }
+        "pop" => {
+            let item = object.with_mut(|payload| {
+                let length = payload.sequence_len()?;
+                if length == 0 {
+                    Ok(None)
+                } else {
+                    payload.take_sequence_item(length - 1).map(Some)
+                }
+            })??;
+            option(item, item_type)
+        }
+        "clear" => {
+            object.with_mut(|payload| payload.clear_sequence())??;
+            Ok(Value::Unit)
+        }
+        "truncate" => {
+            let length = index(arguments, 1)?;
+            object.with_mut(|payload| payload.truncate_sequence(length))??;
+            Ok(Value::Unit)
+        }
+        "insert" => {
+            let index = index(arguments, 1)?;
+            let value = item(arguments, 2, &item_layout)?;
+            object.with_mut(|payload| payload.insert_sequence_item(index, value))??;
+            Ok(Value::Unit)
+        }
+        "remove" | "swap_remove" => {
+            let index = index(arguments, 1)?;
+            let value = object.with_mut(|payload| {
+                if name == "remove" {
+                    payload.take_sequence_item(index)
+                } else {
+                    payload.swap_remove_sequence_item(index)
+                }
+            })??;
+            record_codec::from_native(value)
+        }
+        "contains" => {
+            let needle = import_receiver(arguments.get(1).ok_or("missing Vec element")?)?;
+            let length = object.with(|payload| payload.sequence_len())??;
+            for index in 0..length {
+                let candidate = object.with(|payload| {
+                    payload.with_sequence_item(index, |item| item.copy_owned())
+                })???;
+                if record_codec::from_native(candidate)? == needle {
+                    return Ok(Value::Bool(true));
+                }
+            }
+            Ok(Value::Bool(false))
+        }
+        "iter" => indexed_iter::borrow(arguments),
+        "into_iter" => {
+            let values = object.with_mut(|payload| payload.take_all_sequence_items())??;
+            let values = values
+                .into_iter()
+                .map(record_codec::from_native)
+                .collect::<Result<VecDeque<_>, _>>()?;
+            Ok(Value::OwnedIterator(Rc::new(
+                OwnedIteratorValue::from_items(values, item_type),
+            )))
+        }
+        _ => Err(format!("native Vec method `{name}` is not supported")),
+    }
+}
+
+fn item(
+    arguments: &[Value],
+    index: usize,
+    layout: &Rc<rils_value::DynamicLayout>,
+) -> Result<rils_value::DynamicValue, String> {
+    let value = arguments
+        .get(index)
+        .ok_or("missing Vec element")?
+        .clone_owned()?;
+    if !layout.rils_type().accepts(&value) {
+        return Err(format!(
+            "Vec expects {}, found {}",
+            layout.rils_type(),
+            value.type_name()
+        ));
+    }
+    record_codec::into_native(value, layout.clone())
+}
+
+fn index(arguments: &[Value], index: usize) -> Result<usize, String> {
+    arguments
+        .get(index)
+        .and_then(Value::as_usize)
+        .ok_or("Vec index must be usize".into())
+}
+
+fn option(value: Option<rils_value::DynamicValue>, item_type: Type) -> Result<Value, String> {
+    Ok(Value::Option {
+        value: value
+            .map(record_codec::from_native)
+            .transpose()?
+            .map(Rc::new),
+        element_type: Some(item_type),
+    })
+}

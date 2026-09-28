@@ -61,6 +61,25 @@ impl fmt::Display for Value {
             Self::HostType(definition) => write!(f, "<host type {}>", definition.name),
             Self::HostObject(object) => write!(f, "<{}>", object.type_definition.name),
             Self::Native(object) => write!(f, "{}", super::native_ops::display(object)),
+            Self::Dynamic(object)
+                if super::native_layouts::vec::matches(
+                    object.descriptor().layout().rils_type(),
+                ) =>
+            {
+                match super::dynamic_sequence::copy_items(object) {
+                    Ok(items) => {
+                        write!(f, "[")?;
+                        for (index, item) in items.iter().enumerate() {
+                            if index > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{item}")?;
+                        }
+                        write!(f, "]")
+                    }
+                    Err(_) => write!(f, "<{}>", self.type_name()),
+                }
+            }
             Self::Dynamic(_) => match self.materialize_native_sum() {
                 Some(Ok(value)) => write!(f, "{value}"),
                 Some(Err(_)) => write!(f, "<{}>", self.type_name()),
@@ -208,6 +227,16 @@ impl fmt::Debug for Value {
                 Self::Option {
                     value: Some(value), ..
                 } => f.debug_tuple("Some").field(value).finish(),
+                Self::Dynamic(object)
+                    if super::native_layouts::vec::matches(
+                        object.descriptor().layout().rils_type(),
+                    ) =>
+                {
+                    match super::dynamic_sequence::copy_items(object) {
+                        Ok(items) => f.debug_list().entries(items).finish(),
+                        Err(_) => write!(f, "<{}>", self.type_name()),
+                    }
+                }
                 Self::Dynamic(_) => match self.materialize_native_sum() {
                     Some(Ok(value)) => write!(f, "{value:?}"),
                     _ => write!(f, "<{}>", self.type_name()),
@@ -281,6 +310,16 @@ impl fmt::Debug for Value {
             }
             Self::Native(object) if object.descriptor().rils_type() == &crate::Type::Char => {
                 write!(f, "{:?}", self.as_char().expect("native char payload"))
+            }
+            Self::Dynamic(object)
+                if super::native_layouts::vec::matches(
+                    object.descriptor().layout().rils_type(),
+                ) =>
+            {
+                match super::dynamic_sequence::copy_items(object) {
+                    Ok(items) => f.debug_list().entries(items).finish(),
+                    Err(_) => write!(f, "<{}>", self.type_name()),
+                }
             }
             Self::Dynamic(_) => match super::dynamic_option::view(self) {
                 Some(Ok((Some(value), _))) => f.debug_tuple("Some").field(&value).finish(),

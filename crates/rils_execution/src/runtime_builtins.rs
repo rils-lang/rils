@@ -22,6 +22,7 @@ mod option_result;
 mod range;
 mod vec_deque;
 mod vector;
+pub(crate) mod vector_dynamic;
 
 pub type NativeCallback<'a, E> = dyn FnMut(&Value, &[Value]) -> Result<Value, E> + 'a;
 
@@ -62,6 +63,12 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     use rils_builtins::BuiltinId;
 
     if let Some(result) = native::call(id, arguments) {
+        return result;
+    }
+
+    if id == rils_builtins::BuiltinId::VecExtend
+        && let Some(result) = vector_dynamic::extend_legacy(arguments)
+    {
         return result;
     }
 
@@ -639,6 +646,13 @@ fn tuple_value(values: Vec<Value>) -> Value {
 fn import_receiver(value: &Value) -> Result<Value, String> {
     match value {
         Value::Reference(reference) => import_receiver(&reference.read()?),
+        Value::Dynamic(object)
+            if crate::value::native_layouts::vec::matches(
+                object.descriptor().layout().rils_type(),
+            ) =>
+        {
+            Ok(value.clone())
+        }
         Value::Dynamic(_) => value
             .materialize_native_sum()
             .ok_or("dynamic value has no runtime receiver adapter")?,

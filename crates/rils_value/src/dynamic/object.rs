@@ -58,6 +58,15 @@ impl<V> DynamicObject<V> {
         matches!(self.storage, Storage::Inline(_))
     }
 
+    /// Whether two handles refer to the same mutable native payload.
+    pub fn same_storage(&self, other: &Self) -> bool {
+        match (&self.storage, &other.storage) {
+            (Storage::Shared(left), Storage::Shared(right)) => Rc::ptr_eq(left, right),
+            (Storage::Inline(left), Storage::Inline(right)) => std::ptr::eq(left, right),
+            _ => false,
+        }
+    }
+
     pub fn copy_owned(&self) -> Result<Self, String> {
         let value = self.with(DynamicValue::copy_owned)??;
         Self::new(self.descriptor.clone(), value)

@@ -73,7 +73,7 @@ impl Value {
             expected.constrain(&self)?;
             return self.apply_declared_storage(expected).ok();
         }
-        if matches!(self, Self::VecDeque(_) | Self::BinaryHeap(_)) {
+        if matches!(self, Self::Vec(_) | Self::VecDeque(_) | Self::BinaryHeap(_)) {
             // The legacy constructor has no type argument until the binding
             // supplies one. Keep the unique owner so its empty storage can be
             // replaced by the declaration-derived native sequence layout.

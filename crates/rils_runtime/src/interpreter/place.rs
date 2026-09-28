@@ -19,6 +19,13 @@ pub(super) enum Place {
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
     },
+    DynamicIndexedElement {
+        sequence: rils_execution::value::DynamicObject,
+        index: usize,
+        owner: String,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+    },
     Reference {
         reference: Rc<ReferenceValue>,
     },
@@ -56,6 +63,10 @@ impl Place {
                     .clone_owned()
                     .map_err(|message| RuntimeError::new(message, span))
             }
+            Self::DynamicIndexedElement {
+                sequence, index, ..
+            } => rils_execution::value::dynamic_sequence::copy_item(sequence, *index)
+                .map_err(|message| RuntimeError::new(message, span)),
             Self::Reference { reference } => reference
                 .read()
                 .map_err(|message| RuntimeError::new(message, span)),
@@ -149,6 +160,22 @@ impl Place {
                 })?);
                 Ok(())
             }
+            Self::DynamicIndexedElement {
+                sequence,
+                index,
+                owner,
+                mutable,
+                guard: _guard,
+            } => {
+                if !mutable {
+                    return Err(RuntimeError::new(
+                        format!("cannot assign through immutable place `{owner}`"),
+                        span,
+                    ));
+                }
+                rils_execution::value::dynamic_sequence::replace_item(&sequence, index, value)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
         }
     }
 
@@ -213,6 +240,26 @@ impl Place {
                         .map_err(|message| RuntimeError::new(message, span))?,
                 )
             }
+            Self::DynamicIndexedElement {
+                sequence,
+                index,
+                owner,
+                mutable: owner_mutable,
+                guard,
+            } => {
+                if mutable && !owner_mutable {
+                    return Err(RuntimeError::new(
+                        format!("cannot mutably reference an element of immutable place `{owner}`"),
+                        span,
+                    ));
+                }
+                Rc::new(
+                    ReferenceValue::new_guarded_dynamic_indexed_element(
+                        sequence, index, mutable, guard,
+                    )
+                    .map_err(|message| RuntimeError::new(message, span))?,
+                )
+            }
             Self::Reference { reference } => Rc::new(
                 reference
                     .reborrow(mutable)
@@ -230,6 +277,7 @@ impl Place {
             },
             Self::StructField { mutable, .. } => *mutable,
             Self::IndexedElement { mutable, .. } => *mutable,
+            Self::DynamicIndexedElement { mutable, .. } => *mutable,
             Self::Reference { reference } => reference.mutable,
         }
     }
@@ -239,6 +287,7 @@ impl Place {
             Self::Storage { name, .. } => name.clone(),
             Self::StructField { owner, name, .. } => format!("{owner}.{name}"),
             Self::IndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
+            Self::DynamicIndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
             Self::Reference { .. } => "reference".into(),
         }
     }
@@ -272,6 +321,10 @@ impl Place {
                 .ok_or_else(|| {
                     RuntimeError::new(format!("use of moved element at index {index}"), span)
                 }),
+            Self::DynamicIndexedElement {
+                sequence, index, ..
+            } => rils_execution::value::dynamic_sequence::copy_item(sequence, *index)
+                .map_err(|message| RuntimeError::new(message, span)),
             Self::Reference { reference } => reference
                 .read()
                 .map_err(|message| RuntimeError::new(message, span)),
@@ -309,6 +362,21 @@ impl Place {
                 ..
             } => Ok(Some(Rc::new(
                 ReferenceValue::new_guarded_indexed_element(
+                    sequence.clone(),
+                    *index,
+                    *mutable,
+                    guard.clone(),
+                )
+                .map_err(|message| RuntimeError::new(message, span))?,
+            ))),
+            Self::DynamicIndexedElement {
+                sequence,
+                index,
+                mutable,
+                guard,
+                ..
+            } => Ok(Some(Rc::new(
+                ReferenceValue::new_guarded_dynamic_indexed_element(
                     sequence.clone(),
                     *index,
                     *mutable,
@@ -411,6 +479,29 @@ impl Interpreter {
                 };
                 let sequence = match value {
                     Value::Array(sequence) | Value::Vec(sequence) => sequence,
+                    Value::Dynamic(sequence)
+                        if rils_execution::value::native_layouts::vec::matches(
+                            sequence.descriptor().layout().rils_type(),
+                        ) =>
+                    {
+                        let length = sequence
+                            .with(|value| value.sequence_len())
+                            .map_err(|message| RuntimeError::new(message, span))?
+                            .map_err(|message| RuntimeError::new(message, span))?;
+                        if index >= length {
+                            return Err(RuntimeError::new(
+                                format!("index {index} is out of bounds"),
+                                span,
+                            ));
+                        }
+                        return Ok(Place::DynamicIndexedElement {
+                            sequence,
+                            index,
+                            owner: owner_name,
+                            mutable,
+                            guard,
+                        });
+                    }
                     value => {
                         return Err(RuntimeError::new(
                             format!("type `{}` does not support indexing", value.type_name()),

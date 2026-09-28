@@ -62,7 +62,7 @@ pub use reference::ReferenceValue;
 mod iterator;
 pub use iterator::{
     BorrowedIndexedIteratorValue, BorrowedMapIteratorValue, BorrowedSetIteratorValue,
-    OwnedIteratorValue,
+    IndexedIteratorStorage, OwnedIteratorValue,
 };
 
 pub type HostFunctionHandler = dyn Fn(&[Value]) -> Result<Value, String>;
@@ -418,6 +418,11 @@ impl Value {
     /// Read owned string text from native or legacy storage.
     pub fn as_string(&self) -> Option<std::string::String> {
         string_payload(self)
+    }
+
+    /// Read a Vec snapshot regardless of whether it uses dynamic or legacy storage.
+    pub fn as_vec(&self) -> Option<Vec<Value>> {
+        dynamic_sequence::view_vec(self)?.ok()
     }
 
     /// Read an option regardless of whether it uses dynamic or legacy storage.
@@ -1019,6 +1024,12 @@ impl Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         if matches!(self, Self::Dynamic(_)) || matches!(other, Self::Dynamic(_)) {
+            if let (Some(Ok(left)), Some(Ok(right))) = (
+                dynamic_sequence::view_vec(self),
+                dynamic_sequence::view_vec(other),
+            ) {
+                return left == right;
+            }
             if let (Some((left, _, _)), Some((right, _, _))) = (self.as_result(), other.as_result())
             {
                 return left == right;

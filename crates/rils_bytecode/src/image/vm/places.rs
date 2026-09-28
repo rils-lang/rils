@@ -14,6 +14,7 @@ enum ResolvedProjection {
 enum PlaceContainer {
     Struct(Rc<StructInstance>),
     Indexed(Rc<IndexedStorage>),
+    DynamicIndexed(rils_execution::value::DynamicObject),
 }
 
 impl VirtualMachine<'_> {
@@ -68,6 +69,13 @@ impl VirtualMachine<'_> {
             Value::Struct(instance) => Ok(PlaceContainer::Struct(instance)),
             Value::Tuple(sequence) | Value::Array(sequence) | Value::Vec(sequence) => {
                 Ok(PlaceContainer::Indexed(sequence))
+            }
+            Value::Dynamic(object)
+                if rils_execution::value::native_layouts::vec::matches(
+                    object.descriptor().layout().rils_type(),
+                ) =>
+            {
+                Ok(PlaceContainer::DynamicIndexed(object))
             }
             Value::Reference(reference) => self.place_container(
                 reference
@@ -155,6 +163,10 @@ impl VirtualMachine<'_> {
                     BytecodeError::new(format!("element at index {index} has been moved"), span)
                 })
             }
+            (PlaceContainer::DynamicIndexed(object), ResolvedProjection::Index(index)) => {
+                rils_execution::value::dynamic_sequence::copy_item(object, *index)
+                    .map_err(|message| BytecodeError::new(message, span))
+            }
             _ => Err(BytecodeError::new(
                 "place projection does not match its value",
                 span,
@@ -211,6 +223,10 @@ impl VirtualMachine<'_> {
                     span,
                 )
             }
+            (PlaceContainer::DynamicIndexed(object), ResolvedProjection::Index(index)) => {
+                rils_execution::value::dynamic_sequence::copy_item(&object, *index)
+                    .map_err(|message| BytecodeError::new(message, span))
+            }
             _ => Err(BytecodeError::new(
                 "place projection does not match its value",
                 span,
@@ -253,6 +269,10 @@ impl VirtualMachine<'_> {
                     span,
                 )
             }
+            (PlaceContainer::DynamicIndexed(object), ResolvedProjection::Index(index)) => {
+                rils_execution::value::dynamic_sequence::replace_item(&object, *index, value)
+                    .map_err(|message| BytecodeError::new(message, span))
+            }
             _ => Err(BytecodeError::new(
                 "place projection does not match its value",
                 span,
@@ -286,6 +306,14 @@ impl VirtualMachine<'_> {
                 (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(element)) => {
                     ReferenceValue::new_guarded_indexed_element(
                         sequence.clone(),
+                        *element,
+                        mutable,
+                        guard,
+                    )
+                }
+                (PlaceContainer::DynamicIndexed(object), ResolvedProjection::Index(element)) => {
+                    ReferenceValue::new_guarded_dynamic_indexed_element(
+                        object.clone(),
                         *element,
                         mutable,
                         guard,

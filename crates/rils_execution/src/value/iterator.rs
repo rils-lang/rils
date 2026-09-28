@@ -1,9 +1,12 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+use rils_value::SequenceIteratorLease;
+
 use crate::types::Type;
 
 use super::{
-    FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue, SetCollection, Value,
+    DynamicObject, FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue,
+    SetCollection, Value,
 };
 
 #[derive(Clone)]
@@ -127,30 +130,51 @@ impl OwnedIteratorValue {
 
 pub struct BorrowedIndexedIteratorValue {
     pub source: Rc<ReferenceValue>,
-    pub storage: Rc<IndexedStorage>,
+    pub storage: IndexedIteratorStorage,
     pub index: std::cell::Cell<usize>,
     pub length: usize,
     pub element_type: Type,
 }
 
+pub enum IndexedIteratorStorage {
+    Legacy(Rc<IndexedStorage>),
+    Native {
+        object: DynamicObject,
+        _lease: SequenceIteratorLease,
+    },
+}
+
 impl BorrowedIndexedIteratorValue {
     pub fn next(&self) -> Result<Option<Value>, String> {
-        let (Value::Array(source) | Value::Vec(source)) = self.source.read()? else {
-            return Err("iterator source is no longer an indexed collection".into());
-        };
-        if !Rc::ptr_eq(&source, &self.storage) {
-            return Err("iterator source has been replaced".into());
+        match (&self.storage, self.source.read()?) {
+            (
+                IndexedIteratorStorage::Legacy(storage),
+                Value::Array(source) | Value::Vec(source),
+            ) if Rc::ptr_eq(storage, &source) => {}
+            (IndexedIteratorStorage::Native { object, .. }, Value::Dynamic(source))
+                if object.same_storage(&source) => {}
+            _ => return Err("iterator source has been replaced".into()),
         }
         let index = self.index.get();
         if index >= self.length {
             return Ok(None);
         }
-        let reference = ReferenceValue::new_guarded_indexed_element(
-            self.storage.clone(),
-            index,
-            false,
-            Some(self.source.clone()),
-        )?;
+        let reference = match &self.storage {
+            IndexedIteratorStorage::Legacy(storage) => ReferenceValue::new_guarded_indexed_element(
+                storage.clone(),
+                index,
+                false,
+                Some(self.source.clone()),
+            )?,
+            IndexedIteratorStorage::Native { object, .. } => {
+                ReferenceValue::new_guarded_dynamic_indexed_element(
+                    object.clone(),
+                    index,
+                    false,
+                    Some(self.source.clone()),
+                )?
+            }
+        };
         self.index.set(index + 1);
         Ok(Some(Value::Reference(Rc::new(reference))))
     }
@@ -158,9 +182,11 @@ impl BorrowedIndexedIteratorValue {
 
 impl Drop for BorrowedIndexedIteratorValue {
     fn drop(&mut self) {
-        self.storage
-            .active_iterators
-            .set(self.storage.active_iterators.get().saturating_sub(1));
+        if let IndexedIteratorStorage::Legacy(storage) = &self.storage {
+            storage
+                .active_iterators
+                .set(storage.active_iterators.get().saturating_sub(1));
+        }
     }
 }
 

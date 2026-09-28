@@ -20,6 +20,13 @@ pub fn into_iterator(value: Value) -> Result<IntoIteratorResult, String> {
         | Value::BorrowedMapIterator(_)
         | Value::BorrowedSetIterator(_)) => value,
         Value::Array(storage) | Value::Vec(storage) => owned_indexed_iterator(storage)?,
+        Value::Dynamic(object)
+            if crate::value::native_layouts::vec::matches(
+                object.descriptor().layout().rils_type(),
+            ) =>
+        {
+            runtime_builtins::vector_dynamic::into_iterator(object)?
+        }
         Value::HashMap(map) => hash_collections::call(
             rils_builtins::BuiltinId::HashMapIntoIter,
             &[Value::HashMap(map)],

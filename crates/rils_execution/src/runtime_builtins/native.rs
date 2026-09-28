@@ -170,6 +170,7 @@ pub fn call_symbol(
             object.call(symbol, &arguments[1..])
         })
         .or_else(|| string::call_symbol(symbol, arguments))
+        .or_else(|| super::vector_dynamic::call_symbol(symbol, arguments))
         .or_else(|| vector::call_symbol(symbol, arguments))
         .or_else(|| range::call_symbol(symbol, arguments))
         .or_else(|| indexed_iterator::call_symbol(symbol, arguments))
