@@ -1,8 +1,10 @@
 //! Host-facing ownership choices for an execution result.
 
 use std::any::Any;
+use std::rc::Rc;
 
 use crate::Value;
+use crate::value::ReferenceValue;
 use rils_stdlib::stdlib::{float::Number as FloatNumber, integer::Number as IntegerNumber};
 
 /// Maps a Rust host type to the exact Rust payload stored for its Rils type.
@@ -68,6 +70,48 @@ impl RilsValue {
 
     pub fn is_unit(&self) -> bool {
         matches!(self.value, Value::Unit)
+    }
+
+    /// Borrow one field of a script-defined struct by declaration index.
+    /// The returned handle keeps the original record alive.
+    pub fn field(&self, index: usize) -> Result<Self, String> {
+        let (instance, guard) = match &self.value {
+            Value::Struct(instance) => (instance.clone(), None),
+            Value::Reference(reference) => match reference.read()? {
+                Value::Struct(instance) => (instance, Some(reference.clone())),
+                _ => return Err("result is not a script struct".into()),
+            },
+            _ => return Err("result is not a script struct".into()),
+        };
+        let reference =
+            ReferenceValue::new_guarded_struct_field_index(instance, index, false, guard)?;
+        Ok(Self::new(Value::Reference(Rc::new(reference))))
+    }
+
+    pub fn struct_name(&self) -> Option<String> {
+        self.struct_instance()
+            .map(|instance| instance.type_definition.name.clone())
+    }
+
+    pub fn field_name(&self, index: usize) -> Option<String> {
+        self.struct_instance().and_then(|instance| {
+            instance
+                .type_definition
+                .fields
+                .get(index)
+                .map(|field| field.name.clone())
+        })
+    }
+
+    fn struct_instance(&self) -> Option<Rc<crate::value::StructInstance>> {
+        match &self.value {
+            Value::Struct(instance) => Some(instance.clone()),
+            Value::Reference(reference) => match reference.read().ok()? {
+                Value::Struct(instance) => Some(instance),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     pub fn with_ref<T: RilsHostType, R>(

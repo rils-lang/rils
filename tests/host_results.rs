@@ -42,3 +42,18 @@ fn native_vec_element_reference_borrows_original_string() {
     );
     assert!(result.into_owned::<String>().is_err());
 }
+
+#[test]
+fn script_struct_fields_have_borrowed_result_handles() {
+    let result =
+        eval("struct Point { x: i32, label: string } Point { x: 7, label: \"ok\" }").unwrap();
+    assert_eq!(result.struct_name().as_deref(), Some("Point"));
+    assert_eq!(result.field_name(0).as_deref(), Some("x"));
+    assert_eq!(result.field_name(1).as_deref(), Some("label"));
+    let x = result.field(0).unwrap();
+    let label = result.field(1).unwrap();
+    drop(result);
+    assert_eq!(x.get_cloned::<i32>().unwrap(), 7);
+    assert_eq!(label.get_cloned::<String>().unwrap(), "ok");
+    assert!(x.into_owned::<i32>().is_err());
+}
