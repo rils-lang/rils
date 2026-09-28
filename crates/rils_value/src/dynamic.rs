@@ -14,7 +14,7 @@ mod sequence;
 mod variant;
 pub use object::DynamicObject;
 pub use operations::{DynamicCallContext, DynamicType};
-pub use path::DynamicPathStep;
+pub use path::{DynamicPathStep, DynamicValueRef};
 pub use record::DynamicField;
 pub use sequence::{SequenceBorrowLedger, SequenceItemLease, SequenceIteratorLease};
 

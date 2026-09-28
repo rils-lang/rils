@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use rils_value::SequenceItemLease;
+use rils_value::{DynamicValueRef, SequenceItemLease};
 
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
@@ -333,6 +333,22 @@ impl ReferenceValue {
             } => sequence
                 .with(|value| value.with_sequence_item(*index, |item| item.with(callback)))??,
             _ => Err("reference target has no direct Rust borrow view".into()),
+        }
+    }
+
+    pub(crate) fn with_native_view<R>(
+        &self,
+        callback: impl FnOnce(DynamicValueRef<'_>) -> R,
+    ) -> Result<R, String> {
+        match &self.target {
+            ReferenceTarget::Storage(target) => target
+                .borrow()
+                .with_value(|value| crate::host_value::with_native_value(value, callback)),
+            ReferenceTarget::DynamicIndexedElement {
+                sequence, index, ..
+            } => sequence
+                .with(|value| value.with_sequence_item(*index, |item| callback(item.view())))?,
+            _ => Err("reference target has no native layout view".into()),
         }
     }
 

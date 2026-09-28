@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::Value;
 use crate::value::ReferenceValue;
 use rils_stdlib::stdlib::{float::Number as FloatNumber, integer::Number as IntegerNumber};
+use rils_value::DynamicValueRef;
 
 /// Maps a Rust host type to the exact Rust payload stored for its Rils type.
 pub trait RilsHostType: Sized + 'static {
@@ -121,6 +122,14 @@ impl RilsValue {
         with_rust_value::<T::Native, _>(&self.value, |value| callback(T::as_native_ref(value)))
     }
 
+    /// Borrow a layout-aware view of a native composite without materializing `Value` children.
+    pub fn with_native_view<R>(
+        &self,
+        callback: impl FnOnce(DynamicValueRef<'_>) -> R,
+    ) -> Result<R, String> {
+        with_native_value(&self.value, callback)
+    }
+
     pub fn get_cloned<T: RilsHostType + Clone>(&self) -> Result<T, String> {
         self.with_ref(Clone::clone)
     }
@@ -209,6 +218,17 @@ pub(crate) fn with_rust_value<T: 'static, R>(
         Value::F64(value) => borrow_legacy(value, callback),
         Value::Char(value) => borrow_legacy(value, callback),
         _ => Err(format!("{} has no Rust borrow view", value.type_name())),
+    }
+}
+
+pub(crate) fn with_native_value<R>(
+    value: &Value,
+    callback: impl FnOnce(DynamicValueRef<'_>) -> R,
+) -> Result<R, String> {
+    match value {
+        Value::Dynamic(object) => object.with(|value| callback(value.view())),
+        Value::Reference(reference) => reference.with_native_view(callback),
+        _ => Err(format!("{} has no native layout view", value.type_name())),
     }
 }
 

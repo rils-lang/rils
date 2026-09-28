@@ -44,6 +44,26 @@ fn native_vec_element_reference_borrows_original_string() {
 }
 
 #[test]
+fn native_view_reads_noncopy_generic_element_without_value_conversion() {
+    let mut engine = Engine::new();
+    engine
+        .eval("let mut values: Vec<Option<string>> = Vec::new(); values.push(Some(\"hello\"));")
+        .unwrap();
+    let result = engine.eval("&values[0]").unwrap();
+    let text = result
+        .with_native_view(|option| {
+            assert_eq!(option.option_is_some(), Ok(true));
+            let item = option.option_item()?;
+            assert_eq!(item.layout()?.rils_type().to_string(), "string");
+            Ok::<_, String>(item.copy_owned().is_err())
+        })
+        .unwrap()
+        .unwrap();
+    assert!(text);
+    assert!(result.into_owned::<String>().is_err());
+}
+
+#[test]
 fn script_struct_fields_have_borrowed_result_handles() {
     let result =
         eval("struct Point { x: i32, label: string } Point { x: 7, label: \"ok\" }").unwrap();

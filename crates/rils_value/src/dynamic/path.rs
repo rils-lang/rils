@@ -13,7 +13,91 @@ pub enum DynamicPathStep {
     Index(usize),
 }
 
+/// A borrowed view of any native layout, including composed generic values.
+/// It retains the owning value's borrow and never materializes an interpreter value.
+pub struct DynamicValueRef<'a> {
+    root: &'a DynamicValue,
+    path: Vec<DynamicPathStep>,
+}
+
+impl<'a> DynamicValueRef<'a> {
+    pub fn layout(&self) -> Result<Rc<DynamicLayout>, String> {
+        self.root.project(&self.path).map(|(_, layout)| layout)
+    }
+
+    pub fn with_rust<T: 'static, R>(&self, callback: impl FnOnce(&T) -> R) -> Result<R, String> {
+        self.root.with_path(&self.path, callback)
+    }
+
+    pub fn copy_owned(&self) -> Result<DynamicValue, String> {
+        self.root.copy_path(&self.path)
+    }
+
+    pub fn project(&self, step: DynamicPathStep) -> Result<Self, String> {
+        let mut path = self.path.clone();
+        path.push(step);
+        self.root.project(&path)?;
+        Ok(Self {
+            root: self.root,
+            path,
+        })
+    }
+
+    pub fn field(&self, index: usize) -> Result<Self, String> {
+        self.project(DynamicPathStep::Field(index))
+    }
+
+    pub fn option_item(&self) -> Result<Self, String> {
+        self.project(DynamicPathStep::Some)
+    }
+
+    pub fn variant_payload(&self) -> Result<Self, String> {
+        self.project(DynamicPathStep::Variant(self.variant_index()?))
+    }
+
+    pub fn sequence_item(&self, index: usize) -> Result<Self, String> {
+        self.project(DynamicPathStep::Index(index))
+    }
+
+    pub fn option_is_some(&self) -> Result<bool, String> {
+        let (pointer, layout) = self.root.project(&self.path)?;
+        if !matches!(layout.drop_kind, DropKind::Option { .. }) {
+            return Err(format!("{} is not optional", layout.rils_type()));
+        }
+        // SAFETY: a constructed option always initializes its tag byte.
+        Ok(unsafe { ptr::read(pointer) == 1 })
+    }
+
+    pub fn variant_index(&self) -> Result<usize, String> {
+        let (pointer, layout) = self.root.project(&self.path)?;
+        let DropKind::Variant(variant) = &layout.drop_kind else {
+            return Err(format!("{} is not a variant", layout.rils_type()));
+        };
+        // SAFETY: a constructed variant initializes a u32 tag.
+        let index = unsafe { ptr::read(pointer.cast::<u32>()) } as usize;
+        if index >= variant.alternatives.len() {
+            return Err(format!("variant index {index} is out of bounds"));
+        }
+        Ok(index)
+    }
+
+    pub fn sequence_len(&self) -> Result<usize, String> {
+        let (pointer, layout) = self.root.project(&self.path)?;
+        if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {
+            return Err(format!("{} is not a sequence", layout.rils_type()));
+        }
+        // SAFETY: a constructed sequence initializes exactly one SequenceStorage.
+        Ok(unsafe { &*pointer.cast::<SequenceStorage>() }.items.len())
+    }
+}
+
 impl DynamicValue {
+    pub fn view(&self) -> DynamicValueRef<'_> {
+        DynamicValueRef {
+            root: self,
+            path: Vec::new(),
+        }
+    }
     fn project(&self, path: &[DynamicPathStep]) -> Result<(*const u8, Rc<DynamicLayout>), String> {
         let mut pointer = self.storage.pointer();
         let mut layout = self.descriptor.clone();

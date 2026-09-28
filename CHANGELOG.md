@@ -5,6 +5,7 @@
 
 ## Unreleased
 
+- Rust 宿主结果句柄新增 `with_native_view`，可在回调内沿布局读取非 Copy 泛型组合值及原生序列元素引用，无需先转换为拥有型 `Value`。视图提供 record 字段、`Option` 子值、带标签变体和序列元素投影；视图借用受回调范围约束。
 - 类型化空 `Vec<T>` 现可对可解析布局的非 Copy 复合元素使用原生序列，已验证 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。`push`、`pop`、`remove`、消费式迭代和元素替换在解释器与 VM 中保持一致；索引引用与借用迭代可建立并阻止借用期间的结构性修改。内部解引用非 Copy 复合元素仍需通用借用视图，用户定义元素仍需接入声明上下文。
 - **破坏性 Rust API 更新：** `eval`、`Engine::eval` / `eval_file` 及 `BytecodeModule::execute` / `call` 系列现在返回 `RilsValue` 句柄。宿主代码将原先对返回 `Value` 的读取改为 `with_ref::<T, _>(...)`、`get_cloned::<T>()` 或 `into_owned::<T>()`；移出失败时错误中保留原句柄。类型化访问覆盖基础标量和字符串；脚本结构体可用 `field(index)` 取得字段引用句柄。动态组合类型的视图和用户类型映射尚待补齐；C ABI 未改变。
 - 类型化空 `Vec<string>` 也改用原生序列负载；字符串元素可通过 `&` / `&mut` 索引引用及 `iter()` 访问，`push`、`pop`、`extend` 和拥有型迭代可直接使用原生序列。读取借用的字符串会在现有 `Value` 接口边界克隆文本；直接按索引移出非 Copy 字符串仍会报错。Rust 宿主使用 `Value::as_vec()` 读取新旧表示。
