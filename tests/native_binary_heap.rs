@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
 fn typed_binary_heap_uses_native_storage_in_both_backends() {
@@ -10,9 +10,9 @@ fn typed_binary_heap_uses_native_storage_in_both_backends() {
     let compiled = compile(source).unwrap();
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
     for (backend, value) in [
-        eval(source).unwrap(),
-        compiled.execute().unwrap(),
-        loaded.execute().unwrap(),
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
     ]
     .into_iter()
     .enumerate()
@@ -47,8 +47,8 @@ fn native_binary_heap_orders_other_integer_widths() {
             Value::from_usize(11),
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), expected);
-        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+        assert_eq!(eval_value(source).unwrap(), expected);
+        assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
     }
 }
 
@@ -91,7 +91,7 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
             Value::Bool(true),
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), expected);
-        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+        assert_eq!(eval_value(source).unwrap(), expected);
+        assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
     }
 }

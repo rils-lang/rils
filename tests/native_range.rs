@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
 fn native_range_steps_match_in_interpreter_and_vm() {
@@ -12,36 +12,36 @@ fn native_range_steps_match_in_interpreter_and_vm() {
             Value::U32(42),
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), expected);
+        assert_eq!(eval_value(source).unwrap(), expected);
         let compiled = compile(source).unwrap();
-        assert_eq!(compiled.execute().unwrap(), expected);
+        assert_eq!(compiled.execute_value().unwrap(), expected);
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-        assert_eq!(loaded.execute().unwrap(), expected);
+        assert_eq!(loaded.execute_value().unwrap(), expected);
     }
 
     for direct in [
         "let mut range = 1i8..3i8; if range.next() == Some(1i8) && range.next() == Some(2i8) && range.next() == None { 42 } else { 0 }",
         "let mut range = 254u8..255u8; if range.next() == Some(254u8) && range.next() == None { 42 } else { 0 }",
     ] {
-        assert_eq!(eval(direct).unwrap(), Value::from_i32(42));
+        assert_eq!(eval_value(direct).unwrap(), Value::from_i32(42));
         let compiled = compile(direct).unwrap();
-        assert_eq!(compiled.execute().unwrap(), Value::from_i32(42));
+        assert_eq!(compiled.execute_value().unwrap(), Value::from_i32(42));
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-        assert_eq!(loaded.execute().unwrap(), Value::from_i32(42));
+        assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(42));
     }
 }
 
 #[test]
 fn range_values_use_native_storage_in_both_backends() {
-    let interpreted = eval("1..3").unwrap();
+    let interpreted = eval_value("1..3").unwrap();
     assert!(matches!(interpreted, Value::Native(_)));
     assert_eq!(interpreted.type_name(), "Range<i32>");
     assert_eq!(interpreted.to_string(), "1..3");
 
     let compiled = compile("1..3").unwrap();
-    assert_eq!(compiled.execute().unwrap(), interpreted);
+    assert_eq!(compiled.execute_value().unwrap(), interpreted);
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute().unwrap(), interpreted);
+    assert_eq!(loaded.execute_value().unwrap(), interpreted);
 }
 
 #[test]
@@ -52,12 +52,16 @@ fn every_integer_range_uses_the_same_native_iterator_bridge() {
         let type_name = format!("type_of(1{suffix}..3{suffix})");
         let expected_type_name = format!("Range<{suffix}>");
         assert_eq!(
-            eval(&type_name).unwrap().to_string(),
+            eval_value(&type_name).unwrap().to_string(),
             expected_type_name,
             "{suffix} type_of"
         );
         assert_eq!(
-            compile(&type_name).unwrap().execute().unwrap().to_string(),
+            compile(&type_name)
+                .unwrap()
+                .execute_value()
+                .unwrap()
+                .to_string(),
             expected_type_name,
             "{suffix} VM type_of"
         );
@@ -68,12 +72,12 @@ fn every_integer_range_uses_the_same_native_iterator_bridge() {
                 && range.next() == None {{ 42 }} else {{ 0 }}"
         );
         assert_eq!(
-            eval(&source).unwrap(),
+            eval_value(&source).unwrap(),
             Value::from_i32(42),
             "{suffix} interpreter"
         );
         assert_eq!(
-            compile(&source).unwrap().execute().unwrap(),
+            compile(&source).unwrap().execute_value().unwrap(),
             Value::from_i32(42),
             "{suffix} VM"
         );

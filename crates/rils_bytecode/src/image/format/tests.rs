@@ -51,7 +51,7 @@ fn round_trip_executes_the_same_module() {
     .expect("source compiles");
     let bytes = module.to_bytes().expect("module serializes");
     let loaded = BytecodeModule::from_bytes(&bytes).expect("module loads");
-    let value = loaded.execute().expect("module runs");
+    let value = loaded.execute_value().expect("module runs");
     assert_eq!(value, crate::Value::from_i32(16));
 }
 
@@ -71,7 +71,7 @@ fn round_trip_preserves_source_ids_and_rejects_unknown_span_sources() {
     .unwrap();
     let mut bytes = module.to_bytes().unwrap();
     let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
-    let error = loaded.execute().unwrap_err();
+    let error = loaded.execute_value().unwrap_err();
     assert_eq!(error.span.source, source_id);
     assert_eq!(loaded.source_name(source_id), Some("math.rils"));
 

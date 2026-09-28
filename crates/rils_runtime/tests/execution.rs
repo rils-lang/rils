@@ -1,4 +1,4 @@
-use rils_runtime::{Engine, ExecutionLimits, Value, eval};
+use rils_runtime::{Engine, ExecutionLimits, Value, eval_value};
 
 #[test]
 fn rejects_manual_implementations_of_callable_traits() {
@@ -13,7 +13,7 @@ fn rejects_manual_implementations_of_callable_traits() {
             ),
         ] {
             let error =
-                eval(&source).expect_err("callable traits are reserved for function values");
+                eval_value(&source).expect_err("callable traits are reserved for function values");
             assert!(error.to_string().contains("sealed"), "{name}: {error}");
         }
     }
@@ -21,7 +21,7 @@ fn rejects_manual_implementations_of_callable_traits() {
 
 #[test]
 fn executes_a_generic_trait_implementation() {
-    let value = eval(include_str!("fixtures/generic_trait.rils"))
+    let value = eval_value(include_str!("fixtures/generic_trait.rils"))
         .expect("generic trait arguments should match the implementation");
     assert_eq!(value, Value::from_i32(7));
 }
@@ -37,18 +37,18 @@ fn iterator_satisfies_into_iterator_bound_without_an_explicit_impl() {
         fn accepts<T: IntoIterator>(value: T) -> i32 { 7 }
         accepts((Counter {}))
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(7));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
     let rejected = source.replace("accepts((Counter {}))", "struct Plain; accepts((Plain {}))");
-    let error = eval(&rejected).expect_err("Plain does not implement IntoIterator");
+    let error = eval_value(&rejected).expect_err("Plain does not implement IntoIterator");
     assert!(error.to_string().contains("IntoIterator"), "{error}");
 }
 
 #[test]
 fn iterator_can_override_a_default_method() {
     let source = include_str!("fixtures/iterator_default_override.rils");
-    assert_eq!(eval(source).unwrap(), Value::Usize(42));
+    assert_eq!(eval_value(source).unwrap(), Value::Usize(42));
     let mismatched = source.replace("fn count(self) -> usize", "fn count(self) -> i32");
-    let error = eval(&mismatched).expect_err("override must match the trait signature");
+    let error = eval_value(&mismatched).expect_err("override must match the trait signature");
     assert!(
         error.to_string().contains("return type of method `count`"),
         "{error}"
@@ -58,7 +58,7 @@ fn iterator_can_override_a_default_method() {
 #[test]
 fn function_values_satisfy_precise_fn_bounds() {
     let source = include_str!("fixtures/function_trait_bound.rils");
-    assert_eq!(eval(source).unwrap(), Value::from_i32(14));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(14));
 
     for replacement in [
         "fn double(value: i32) -> string {\n    \"wrong\"\n}",
@@ -68,7 +68,7 @@ fn function_values_satisfy_precise_fn_bounds() {
             "fn double(value: i32) -> i32 {\n    value * 2\n}",
             replacement,
         );
-        let error = eval(&mismatched).expect_err("Fn bound requires an exact signature");
+        let error = eval_value(&mismatched).expect_err("Fn bound requires an exact signature");
         assert!(
             error
                 .to_string()
@@ -81,7 +81,7 @@ fn function_values_satisfy_precise_fn_bounds() {
 #[test]
 fn callable_traits_follow_capture_effects() {
     let source = include_str!("fixtures/callable_trait_kinds.rils");
-    assert_eq!(eval(source).unwrap(), Value::from_i32(17));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(17));
 
     for (old, new, expected) in [
         (
@@ -96,7 +96,7 @@ fn callable_traits_follow_capture_effects() {
         ),
     ] {
         let invalid = source.replace(old, new);
-        let error = eval(&invalid).expect_err("the callable has weaker capture guarantees");
+        let error = eval_value(&invalid).expect_err("the callable has weaker capture guarantees");
         assert!(error.to_string().contains(expected), "{error}");
     }
 }
@@ -104,12 +104,12 @@ fn callable_traits_follow_capture_effects() {
 #[test]
 fn callable_traits_accept_more_than_four_arguments() {
     let source = include_str!("fixtures/callable_many_arguments.rils");
-    assert_eq!(eval(source).unwrap(), Value::from_i32(108));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(108));
 }
 
 #[test]
 fn evaluates_owned_values_and_explicit_clones() {
-    let value = eval(
+    let value = eval_value(
         r#"
         let original = "rils";
         let copied = clone(&original);
@@ -123,7 +123,7 @@ fn evaluates_owned_values_and_explicit_clones() {
 
 #[test]
 fn evaluates_rc_and_weak_handles() {
-    let value = eval(
+    let value = eval_value(
         r#"
         let handle: Rc<i32> = Rc::new(7);
         let weak = handle.downgrade();
@@ -136,7 +136,7 @@ fn evaluates_rc_and_weak_handles() {
 
 #[test]
 fn evaluates_cell_interior_mutability() {
-    let value = eval(
+    let value = eval_value(
         r#"
         let cell: Cell<i32> = Cell::new(1);
         cell.set(2);
@@ -149,7 +149,7 @@ fn evaluates_cell_interior_mutability() {
 
 #[test]
 fn evaluates_ref_cell_borrows() {
-    let value = eval(
+    let value = eval_value(
         r#"
         let cell: RefCell<i32> = RefCell::new(4);
         *cell.borrow() + cell.replace(5)
@@ -161,7 +161,7 @@ fn evaluates_ref_cell_borrows() {
 
 #[test]
 fn evaluates_vec_deque_operations() {
-    let value = eval(
+    let value = eval_value(
         r#"
         let mut queue: VecDeque<i32> = VecDeque::new();
         queue.push_back(2);
@@ -204,14 +204,15 @@ fn evaluates_binary_heap_max_order_and_empty_cases() {
             Value::Usize(1),
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), expected);
+        assert_eq!(eval_value(source).unwrap(), expected);
     }
 }
 
 #[test]
 fn binary_heap_rejects_unorderable_values() {
-    let error = eval(r#"let mut heap: BinaryHeap<bool> = BinaryHeap::new(); heap.push(true);"#)
-        .unwrap_err();
+    let error =
+        eval_value(r#"let mut heap: BinaryHeap<bool> = BinaryHeap::new(); heap.push(true);"#)
+            .unwrap_err();
     assert!(error.to_string().contains("does not support ordering"));
 }
 
@@ -232,13 +233,13 @@ fn evaluates_btree_map_ordered_operations() {
         }
         if found == "two" { first + last + total } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(10));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(10));
     assert_eq!(
-        eval(r#"let mut map = std::collections::BTreeMap::new(); map.insert("b", 2); map.insert("a", 1); map.first_key_cloned().unwrap()"#).unwrap(),
+        eval_value(r#"let mut map = std::collections::BTreeMap::new(); map.insert("b", 2); map.insert("a", 1); map.first_key_cloned().unwrap()"#).unwrap(),
         Value::from_string("a")
     );
     assert_eq!(
-        eval(r#"let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(2, 20); map.insert(1, 10); let mut sum = 0; for entry in map { sum = sum + entry.0; } sum"#).unwrap(),
+        eval_value(r#"let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(2, 20); map.insert(1, 10); let mut sum = 0; for entry in map { sum = sum + entry.0; } sum"#).unwrap(),
         Value::from_i32(3)
     );
 }
@@ -259,14 +260,14 @@ fn borrowed_indexed_iterator_preserves_the_source() {
             3,
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), Value::from_i32(expected));
+        assert_eq!(eval_value(source).unwrap(), Value::from_i32(expected));
     }
 }
 
 #[test]
 fn borrowed_indexed_iterator_rejects_escape_and_mutation() {
     let escaped =
-        eval("fn escaped() -> Iter<&i32> { let values = [1, 2]; values.iter() } escaped()")
+        eval_value("fn escaped() -> Iter<&i32> { let values = [1, 2]; values.iter() } escaped()")
             .expect_err("borrowed iterator must not outlive its source");
     assert!(
         escaped
@@ -275,7 +276,7 @@ fn borrowed_indexed_iterator_rejects_escape_and_mutation() {
         "{escaped}"
     );
 
-    let error = eval(
+    let error = eval_value(
         "{ let mut values: Vec<i32> = Vec::new(); values.push(1); let iter = values.iter(); values.push(2); iter.count() }",
     )
     .expect_err("Vec mutation must be rejected during borrowed iteration");
@@ -284,14 +285,14 @@ fn borrowed_indexed_iterator_rejects_escape_and_mutation() {
         "{error}"
     );
 
-    let replaced = eval(
+    let replaced = eval_value(
         "{ let mut values = Vec::from([1]); let iter = values.iter(); values = Vec::from([2]); iter.count() }",
     )
     .expect_err("source replacement must be rejected during borrowed iteration");
     assert!(replaced.to_string().contains("referenced"), "{replaced}");
 
     assert_eq!(
-        eval("{ let mut values = Vec::from([1]); { let iter = values.iter(); iter.count() }; values.push(2); values.len() }").unwrap(),
+        eval_value("{ let mut values = Vec::from([1]); { let iter = values.iter(); iter.count() }; values.push(2); values.len() }").unwrap(),
         Value::Usize(2),
     );
 }
@@ -316,7 +317,7 @@ fn borrowed_map_and_set_iterators_preserve_collections() {
             2,
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), Value::from_i32(expected));
+        assert_eq!(eval_value(source).unwrap(), Value::from_i32(expected));
     }
 }
 
@@ -328,18 +329,18 @@ fn borrowed_map_and_set_items_block_structural_mutation() {
         "{ let mut set: HashSet<i32> = HashSet::new(); set.insert(1); let iter = set.iter(); set.insert(2); iter.count() }",
         "{ let mut set: BTreeSet<i32> = BTreeSet::new(); set.insert(1); let item = { let mut iter = set.iter(); iter.next().unwrap() }; let key = 1; set.remove(&key); *item }",
     ] {
-        let error = eval(source).expect_err("mutation must be rejected while borrowed");
+        let error = eval_value(source).expect_err("mutation must be rejected while borrowed");
         assert!(
             error.to_string().contains("cannot mutate"),
             "{source}: {error}"
         );
     }
     assert_eq!(
-        eval("{ let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(1, 10); { let iter = map.iter(); iter.count() }; map.insert(2, 20); map.len() }").unwrap(),
+        eval_value("{ let mut map: BTreeMap<i32, i32> = BTreeMap::new(); map.insert(1, 10); { let iter = map.iter(); iter.count() }; map.insert(2, 20); map.len() }").unwrap(),
         Value::Usize(2),
     );
     assert_eq!(
-        eval("{ let mut set: HashSet<i32> = HashSet::new(); set.insert(1); { let iter = set.iter(); iter.count() }; set.insert(2); set.len() }").unwrap(),
+        eval_value("{ let mut set: HashSet<i32> = HashSet::new(); set.insert(1); { let iter = set.iter(); iter.count() }; set.insert(2); set.len() }").unwrap(),
         Value::Usize(2),
     );
 }
@@ -354,9 +355,10 @@ fn btree_map_handles_replacement_removal_and_invalid_keys() {
         let removed = map.remove(&key).unwrap();
         if map.is_empty() { previous + removed } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(3));
-    let error = eval(r#"let mut map: BTreeMap<f64, i32> = BTreeMap::new(); map.insert(1.5, 1);"#)
-        .unwrap_err();
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(3));
+    let error =
+        eval_value(r#"let mut map: BTreeMap<f64, i32> = BTreeMap::new(); map.insert(1.5, 1);"#)
+            .unwrap_err();
     assert!(error.to_string().contains("BTreeMap key must be"));
 }
 
@@ -382,7 +384,7 @@ fn evaluates_btree_set_order_and_algebra() {
             order + first + last
         } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(127));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(127));
 }
 
 #[test]
@@ -397,9 +399,9 @@ fn btree_set_handles_boundaries_and_invalid_elements() {
         let removed = set.remove(&key);
         empty && inserted && !duplicate && present && removed && set.is_empty()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::Bool(true));
-    let error =
-        eval(r#"let mut set: BTreeSet<f64> = BTreeSet::new(); set.insert(1.5);"#).unwrap_err();
+    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    let error = eval_value(r#"let mut set: BTreeSet<f64> = BTreeSet::new(); set.insert(1.5);"#)
+        .unwrap_err();
     assert!(error.to_string().contains("BTreeSet elements must be"));
 }
 
@@ -409,7 +411,7 @@ fn enforces_configured_execution_limits() {
     engine.set_execution_limits(ExecutionLimits::new(1_000, 8));
 
     let error = engine
-        .eval(
+        .eval_value(
             r#"
             fn recurse() {
                 recurse()
@@ -428,7 +430,7 @@ fn enforces_configured_execution_limits() {
 
 #[test]
 fn supports_local_reference_containers_and_input_reference_returns() {
-    let value = eval(
+    let value = eval_value(
         r#"
         fn identity(value: &i32) -> Option<&i32> {
             Some(value)
@@ -448,7 +450,7 @@ fn supports_local_reference_containers_and_input_reference_returns() {
 
 #[test]
 fn rejects_local_reference_return_escape() {
-    let error = eval(
+    let error = eval_value(
         r#"
         fn invalid() -> &i32 {
             let value = 1;
@@ -463,7 +465,7 @@ fn rejects_local_reference_return_escape() {
 
 #[test]
 fn generic_structs_can_carry_local_references() {
-    let value = eval(
+    let value = eval_value(
         r#"
         struct Wrapper<T> { value: T }
         fn run() -> i32 {
@@ -480,7 +482,7 @@ fn generic_structs_can_carry_local_references() {
 
 #[test]
 fn hash_maps_can_carry_reference_values_locally() {
-    let value = eval(
+    let value = eval_value(
         r#"
         fn run() -> i32 {
             let mut values: HashMap<string, &i32> = HashMap::new();

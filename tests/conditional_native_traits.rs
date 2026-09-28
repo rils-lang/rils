@@ -1,4 +1,4 @@
-use rils::{Value, compile, eval};
+use rils::{Value, compile, eval_value};
 
 #[test]
 fn option_and_result_trait_bounds_follow_their_arguments() {
@@ -18,9 +18,9 @@ fn option_and_result_trait_bounds_follow_their_arguments() {
         assert!(result_text.is_ok());
         optional_number.unwrap() + result_number.unwrap()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 
@@ -28,6 +28,6 @@ fn option_and_result_trait_bounds_follow_their_arguments() {
         "fn require_copy<T: Copy>(value: T) -> T { value } let value: Option<string> = Some(\"text\"); require_copy(value)",
         "fn require_copy<T: Copy>(value: T) -> T { value } let value: Result<string, i32> = Ok(\"text\"); require_copy(value)",
     ] {
-        assert!(eval(source).unwrap_err().to_string().contains("Copy"));
+        assert!(eval_value(source).unwrap_err().to_string().contains("Copy"));
     }
 }

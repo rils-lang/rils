@@ -314,7 +314,7 @@ fn run_bytecode(path: &str) -> ExitCode {
     };
     match module.execute() {
         Ok(value) => {
-            if value != rils::Value::Unit {
+            if !value.is_unit() {
                 println!("{value}");
             }
             ExitCode::SUCCESS

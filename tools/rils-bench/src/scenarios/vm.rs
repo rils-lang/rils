@@ -98,7 +98,7 @@ fn verify_result(
     expected: Value,
 ) -> Result<(), String> {
     let result = module
-        .call_with_host_and_limits(function, vec![argument], host, limits)
+        .call_value_with_host_and_limits(function, vec![argument], host, limits)
         .map_err(|error| error.to_string())?;
     if result != expected {
         return Err(format!("expected {expected}, received {result}"));

@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
 fn concrete_results_use_native_layout_in_both_backends() {
@@ -17,9 +17,9 @@ fn concrete_results_use_native_layout_in_both_backends() {
         let compiled = compile(source).unwrap();
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         for value in [
-            eval(source).unwrap(),
-            compiled.execute().unwrap(),
-            loaded.execute().unwrap(),
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
         ] {
             assert_eq!(value.to_string(), expected);
             assert_eq!(format!("{value:?}"), debug);
@@ -43,9 +43,9 @@ fn native_results_keep_pattern_and_method_behavior() {
         "let value: Result<i32, string> = Ok(7); let copy = value.clone(); copy.unwrap()",
         "fn inner() -> Result<i32, string> { let value: Result<i32, string> = Ok(7); Ok(value?) } inner().unwrap()",
     ] {
-        assert_eq!(eval(source).unwrap(), Value::from_i32(7));
+        assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
         assert_eq!(
-            compile(source).unwrap().execute().unwrap(),
+            compile(source).unwrap().execute_value().unwrap(),
             Value::from_i32(7)
         );
     }
@@ -58,9 +58,9 @@ fn concrete_result_error_paths_match_across_backends() {
         "let value: Result<i32, string> = Err(\"missing\"); match value { Ok(number) => number, Err(_) => 7 }",
         "fn inner() -> Result<i32, string> { let value: Result<i32, string> = Err(\"missing\"); Ok(value?) } match inner() { Ok(_) => 0, Err(_) => 7 }",
     ] {
-        assert_eq!(eval(source).unwrap(), Value::from_i32(7));
+        assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
         assert_eq!(
-            compile(source).unwrap().execute().unwrap(),
+            compile(source).unwrap().execute_value().unwrap(),
             Value::from_i32(7)
         );
     }
@@ -72,9 +72,9 @@ fn copy_composite_result_payload_uses_native_layout() {
     let compiled = compile(source).unwrap();
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
     for value in [
-        eval(source).unwrap(),
-        compiled.execute().unwrap(),
-        loaded.execute().unwrap(),
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
     ] {
         assert_eq!(value.to_string(), "Ok(Some(7))");
         let Value::Dynamic(object) = value else {

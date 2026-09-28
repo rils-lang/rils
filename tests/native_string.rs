@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 fn assert_native_string(value: Value, expected: &str) {
     assert_eq!(value.as_string().as_deref(), Some(expected));
@@ -15,10 +15,10 @@ fn native_string_matches_in_interpreter_vm_and_loaded_bytecode() {
         ("\"a\" + \"b\"", "ab"),
         (include_str!("fixtures/native_string.rils"), "HÉLLO!"),
     ] {
-        assert_native_string(eval(source).unwrap(), expected);
+        assert_native_string(eval_value(source).unwrap(), expected);
         let compiled = compile(source).unwrap();
-        assert_native_string(compiled.execute().unwrap(), expected);
+        assert_native_string(compiled.execute_value().unwrap(), expected);
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-        assert_native_string(loaded.execute().unwrap(), expected);
+        assert_native_string(loaded.execute_value().unwrap(), expected);
     }
 }

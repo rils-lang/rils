@@ -8,7 +8,7 @@ use rils_execution::{
 #[cfg(test)]
 use rils_execution::Value;
 #[cfg(test)]
-use rils_runtime::eval;
+use rils_runtime::eval_value as eval;
 
 mod ast {
     pub(crate) use rils_frontend::ast::*;

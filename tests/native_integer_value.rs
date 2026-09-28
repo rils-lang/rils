@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
 fn integer_widths_use_native_storage_in_both_backends() {
@@ -16,13 +16,16 @@ fn integer_widths_use_native_storage_in_both_backends() {
         ("1u128 + 2u128", Value::from_u128(3)),
         ("1usize + 2usize", Value::from_usize(3)),
     ] {
-        let interpreted = eval(source).unwrap();
+        let interpreted = eval_value(source).unwrap();
         assert!(matches!(&interpreted, Value::Native(_)), "{source}");
         assert_eq!(interpreted, expected, "{source}");
 
         let compiled = compile(source).unwrap();
         let restored = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-        for actual in [compiled.execute().unwrap(), restored.execute().unwrap()] {
+        for actual in [
+            compiled.execute_value().unwrap(),
+            restored.execute_value().unwrap(),
+        ] {
             assert!(matches!(&actual, Value::Native(_)), "{source}");
             assert_eq!(actual, expected, "{source}");
         }
@@ -43,9 +46,9 @@ fn migrated_integer_keys_and_heap_order_match_in_both_backends() {
              heap.push({low}); heap.push({high}); \
              keys.contains(&key) && heap.pop().unwrap() == {high}"
         );
-        assert_eq!(eval(&source).unwrap(), Value::Bool(true), "{ty}");
+        assert_eq!(eval_value(&source).unwrap(), Value::Bool(true), "{ty}");
         assert_eq!(
-            compile(&source).unwrap().execute().unwrap(),
+            compile(&source).unwrap().execute_value().unwrap(),
             Value::Bool(true),
             "{ty}"
         );

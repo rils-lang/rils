@@ -1,10 +1,10 @@
 use rils_bytecode::compile;
-use rils_runtime::eval;
+use rils_runtime::eval_value;
 
 #[test]
 fn callable_bounds_report_an_explicit_compile_error_until_verified() {
     let source = include_str!("fixtures/function_trait_bound.rils");
-    assert!(eval(source).is_ok());
+    assert!(eval_value(source).is_ok());
     let error = match compile(source) {
         Ok(_) => panic!("bytecode does not yet verify callable bounds"),
         Err(error) => error,

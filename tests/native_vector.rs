@@ -1,12 +1,12 @@
-use rils::{BytecodeModule, Type, Value, compile, eval};
+use rils::{BytecodeModule, Type, Value, compile, eval_value};
 
 fn run_both(source: &str) -> [Value; 3] {
     let compiled = compile(source).unwrap();
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
     [
-        eval(source).unwrap(),
-        compiled.execute().unwrap(),
-        loaded.execute().unwrap(),
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
     ]
 }
 
@@ -92,8 +92,8 @@ fn native_vec_rejects_growth_while_element_is_borrowed() {
     let source = "fn result() -> i32 { let mut v: Vec<i32> = Vec::new(); v.push(1); let item = &v[0]; v.push(2); *item } result()";
     let compiled = compile(source).unwrap();
     for error in [
-        eval(source).unwrap_err().to_string(),
-        compiled.execute().unwrap_err().to_string(),
+        eval_value(source).unwrap_err().to_string(),
+        compiled.execute_value().unwrap_err().to_string(),
     ] {
         assert!(
             error.contains("structural") || error.contains("borrow"),
@@ -161,8 +161,8 @@ fn native_string_vec_methods_and_borrows_match_backends() {
 #[test]
 fn native_string_vec_preserves_non_copy_indexing_rule() {
     let source = "let mut v: Vec<string> = Vec::new(); v.push(\"hello\"); v[0]";
-    assert!(eval(source).is_err());
-    assert!(compile(source).is_err() || compile(source).unwrap().execute().is_err());
+    assert!(eval_value(source).is_err());
+    assert!(compile(source).is_err() || compile(source).unwrap().execute_value().is_err());
 }
 
 #[test]
@@ -170,8 +170,8 @@ fn native_string_vec_rejects_growth_during_borrowed_iteration() {
     let source = "fn result() -> usize { let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut it = v.iter(); let item = it.next().unwrap(); v.push(\"second\"); item.len() } result()";
     let compiled = compile(source).unwrap();
     for error in [
-        eval(source).unwrap_err().to_string(),
-        compiled.execute().unwrap_err().to_string(),
+        eval_value(source).unwrap_err().to_string(),
+        compiled.execute_value().unwrap_err().to_string(),
     ] {
         assert!(
             error.contains("structural") || error.contains("borrow"),

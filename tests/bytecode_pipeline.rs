@@ -8,7 +8,7 @@ fn compiled_image_round_trips_before_execution() {
     let bytes = module.to_bytes().expect("verified module should encode");
     let restored = BytecodeModule::from_bytes(&bytes).expect("encoded module should decode");
 
-    assert_eq!(restored.execute().unwrap(), Value::from_i32(42));
+    assert_eq!(restored.execute_value().unwrap(), Value::from_i32(42));
 }
 
 #[test]
@@ -17,5 +17,5 @@ fn compile_file_uses_the_shared_module_loading_rules() {
         .join("tests/fixtures/bytecode_module_tree/main.rils");
     let module = compile_file(entry).expect("fixture module tree should compile");
 
-    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(42));
 }

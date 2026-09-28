@@ -72,7 +72,7 @@ mod types {
 }
 
 pub(crate) use engine::is_identifier;
-pub use engine::{Engine, eval};
+pub use engine::{Engine, eval, eval_value};
 pub use error::RilsError;
 pub use native_type::{NativeFunctionHandler, NativeTypeHandle};
 pub use opaque_host::{
@@ -82,6 +82,7 @@ pub use opaque_host::{
 pub use rils_execution::ExecutionLimits;
 pub use rils_execution::Value;
 pub use rils_execution::{HostFormatKind, HostFormatSpec, HostValueFormatter, OutputHandler};
+pub use rils_execution::{RilsHostType, RilsValue};
 pub use rils_frontend::{
     FloatType, FrontendError, FunctionSignature, IntegerType, RuntimeValue, SourceFile, SourceId,
     Span, Type,

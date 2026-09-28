@@ -66,6 +66,10 @@ impl RilsValue {
         Self { value }
     }
 
+    pub fn is_unit(&self) -> bool {
+        matches!(self.value, Value::Unit)
+    }
+
     pub fn with_ref<T: RilsHostType, R>(
         &self,
         callback: impl FnOnce(&T) -> R,
@@ -104,6 +108,36 @@ impl RilsValue {
                     Box::new((Self::new(value), message))
                 }),
         }
+    }
+}
+
+impl std::fmt::Display for RilsValue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(formatter)
+    }
+}
+
+impl std::fmt::Debug for RilsValue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.value, formatter)
+    }
+}
+
+impl PartialEq for RilsValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl PartialEq<Value> for RilsValue {
+    fn eq(&self, other: &Value) -> bool {
+        self.value == *other
+    }
+}
+
+impl PartialEq<RilsValue> for Value {
+    fn eq(&self, other: &RilsValue) -> bool {
+        *self == other.value
     }
 }
 

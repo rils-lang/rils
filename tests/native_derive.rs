@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
 fn rust_registered_clone_derive_runs_in_both_backends() {
@@ -9,9 +9,9 @@ fn rust_registered_clone_derive_runs_in_both_backends() {
         let duplicated = original.clone();
         duplicated.value + 1
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -29,9 +29,9 @@ fn derived_clone_calls_a_fields_custom_clone() {
         let duplicated = original.clone();
         duplicated.inner.value
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -45,9 +45,9 @@ fn derived_clone_supports_generic_structs() {
         let duplicated = original.clone();
         duplicated.value
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -61,9 +61,9 @@ fn rust_registered_copy_derive_preserves_owned_value() {
         let other = point;
         point.x + other.x
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -77,7 +77,7 @@ fn native_derive_rejects_an_explicit_impl_of_the_same_trait() {
             fn clone(&self) -> Self { Label { value: self.value } }
         }
     "#;
-    let error = eval(source).unwrap_err().to_string();
+    let error = eval_value(source).unwrap_err().to_string();
     assert!(error.contains("cannot both derive Clone"), "{error}");
 }
 
@@ -101,9 +101,9 @@ fn native_clone_derive_supports_every_enum_variant_shape() {
         let third = match c { Message::Write { text } => if text == "hi" { 0 } else { 1 }, _ => 1 };
         first + second + third
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -125,9 +125,9 @@ fn derived_clone_of_enum_calls_custom_field_clone() {
         let c = match named { Envelope::Named { value } => value.value, _ => 0 };
         a + b * 100 + c
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(2121));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(2121));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(2121)
     );
 }
@@ -145,9 +145,9 @@ fn derived_clone_supports_generic_enums() {
         let c = match named { Envelope::Named { value } => value, _ => 0 };
         a + b + c
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -155,7 +155,7 @@ fn derived_clone_supports_generic_enums() {
 #[test]
 fn derived_copy_rejects_non_copy_fields() {
     let source = "#[derive(Copy)] struct Text { field: string }";
-    let error = eval(source).unwrap_err().to_string();
+    let error = eval_value(source).unwrap_err().to_string();
     assert!(error.contains("Copy"), "{error}");
 }
 
@@ -178,9 +178,9 @@ fn derived_copy_supports_enum_variants_without_moving_the_original() {
         let f = match named_again { Signal::Named { value } => value, _ => 0 };
         a + b + c + d + e + f
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(86));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(86));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(86)
     );
 }
@@ -188,7 +188,7 @@ fn derived_copy_supports_enum_variants_without_moving_the_original() {
 #[test]
 fn derived_copy_rejects_enum_with_non_copy_payload() {
     let source = "#[derive(Clone, Copy)] enum Message { Text(string) }";
-    assert!(eval(source).unwrap_err().to_string().contains("Copy"));
+    assert!(eval_value(source).unwrap_err().to_string().contains("Copy"));
 }
 
 #[test]
@@ -202,9 +202,9 @@ fn native_default_derive_handles_fields_and_unit_structs() {
         let marker = <Marker as Default>::default();
         if type_of(marker) == "Marker" { wrapped.value + 42 } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -212,21 +212,21 @@ fn native_default_derive_handles_fields_and_unit_structs() {
 #[test]
 fn native_default_derive_rejects_fields_without_a_default() {
     let source = "#[derive(Default)] struct Bad { callback: fn() -> () }";
-    let error = eval(source).unwrap_err().to_string();
+    let error = eval_value(source).unwrap_err().to_string();
     assert!(error.contains("field `callback`"), "{error}");
 }
 
 #[test]
 fn native_default_derive_rejects_user_fields_without_an_impl() {
     let source = "struct Inner { value: i32 } #[derive(Default)] struct Outer { value: Inner } let value = <Outer as Default>::default();";
-    assert!(eval(source).is_err());
+    assert!(eval_value(source).is_err());
     assert!(compile(source).is_err());
 }
 
 #[test]
 fn native_default_derive_rejects_explicit_impl() {
     let source = "#[derive(Default)] struct Value; impl Default for Value { fn default() -> Self { Value } }";
-    let error = eval(source).unwrap_err().to_string();
+    let error = eval_value(source).unwrap_err().to_string();
     assert!(error.contains("both derive Default"), "{error}");
     assert!(compile(source).is_err());
 }
@@ -252,11 +252,11 @@ fn derived_eq_and_hash_support_struct_and_enum_collection_keys() {
             map.get_cloned(&matching).unwrap() + 2
         } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     let module = compile(source).unwrap();
-    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(42));
     let restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(restored.execute().unwrap(), Value::from_i32(42));
+    assert_eq!(restored.execute_value().unwrap(), Value::from_i32(42));
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn hash_and_eq_derive_reject_floats_and_script_bitflags() {
         "#[derive(BitFlags)] enum Flags { Read, Write }",
         "enum Flags { Read, Write } impl BitFlags for Flags {}",
     ] {
-        assert!(eval(source).is_err(), "{source}");
+        assert!(eval_value(source).is_err(), "{source}");
         assert!(compile(source).is_err(), "{source}");
     }
 }
@@ -288,9 +288,9 @@ fn derived_structural_key_handles_composite_fields_and_replacement() {
             prior + map.get_cloned(&lookup).unwrap()
         } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }

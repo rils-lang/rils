@@ -132,10 +132,13 @@ pub unsafe extern "C" fn rils_instance_execute(
                 Span::default(),
             );
         };
-        let value = match module
-            .bytecode
-            .execute_with_host_and_limit(&host, max_steps)
-        {
+        let value = match module.bytecode.execute_value_with_host_and_limits(
+            &host,
+            rils_runtime::ExecutionLimits {
+                max_steps,
+                ..rils_runtime::ExecutionLimits::default()
+            },
+        ) {
             Ok(value) => value,
             Err(error) => {
                 let source_name = module_source_name(&module, error.span).to_owned();
@@ -219,11 +222,14 @@ pub unsafe extern "C" fn rils_instance_call(
                 Span::default(),
             );
         };
-        let value = match module.bytecode.call_with_host_and_limit(
+        let value = match module.bytecode.call_value_with_host_and_limits(
             function_name,
             arguments,
             &host,
-            max_steps,
+            rils_runtime::ExecutionLimits {
+                max_steps,
+                ..rils_runtime::ExecutionLimits::default()
+            },
         ) {
             Ok(value) => value,
             Err(error) => {

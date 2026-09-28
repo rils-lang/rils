@@ -1,4 +1,4 @@
-use rils::{Value, compile, eval};
+use rils::{Value, compile, eval_value};
 
 #[test]
 fn shared_handles_match_in_interpreter_and_vm() {
@@ -12,9 +12,9 @@ fn shared_handles_match_in_interpreter_and_vm() {
             && weak.upgrade().is_some()
         { 42 } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }

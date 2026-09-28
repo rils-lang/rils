@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
 fn typed_vec_deque_uses_native_storage_in_both_backends() {
@@ -10,9 +10,9 @@ fn typed_vec_deque_uses_native_storage_in_both_backends() {
     let compiled = compile(source).unwrap();
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
     for value in [
-        eval(source).unwrap(),
-        compiled.execute().unwrap(),
-        loaded.execute().unwrap(),
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
     ] {
         let Value::Dynamic(object) = value else {
             panic!("typed VecDeque should have native storage");
@@ -34,9 +34,9 @@ fn native_vec_deque_can_own_another_native_vec_deque() {
         let mut recovered = outer.pop_front().unwrap();
         recovered.pop_front().unwrap()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(7));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(7)
     );
 }
@@ -66,9 +66,9 @@ fn native_vec_deque_matches_in_interpreter_and_vm() {
             if queue.is_empty() && queue.len() == 0usize { 42 } else { 0 }
         "#,
     ] {
-        assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+        assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
         assert_eq!(
-            compile(source).unwrap().execute().unwrap(),
+            compile(source).unwrap().execute_value().unwrap(),
             Value::from_i32(42)
         );
     }
@@ -83,9 +83,9 @@ fn cloning_an_element_keeps_the_owned_string_in_the_queue() {
         let original = queue.pop_front().unwrap();
         if copy == original && queue.is_empty() { 42 } else { 0 }
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }

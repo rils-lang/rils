@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Type, Value, compile, eval};
+use rils::{BytecodeModule, Type, Value, compile, eval_value};
 
 #[test]
 fn character_literals_and_string_items_have_native_storage() {
@@ -9,9 +9,9 @@ fn character_literals_and_string_items_have_native_storage() {
         let compiled = compile(source).unwrap();
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         for value in [
-            eval(source).unwrap(),
-            compiled.execute().unwrap(),
-            loaded.execute().unwrap(),
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
         ] {
             let Value::Native(object) = &value else {
                 panic!("char should use native storage: {source}");
@@ -37,9 +37,9 @@ fn native_char_works_as_ordered_key_and_heap_element() {
             'z',
         ),
     ] {
-        assert_eq!(eval(source).unwrap().as_char(), Some(expected));
+        assert_eq!(eval_value(source).unwrap().as_char(), Some(expected));
         assert_eq!(
-            compile(source).unwrap().execute().unwrap().as_char(),
+            compile(source).unwrap().execute_value().unwrap().as_char(),
             Some(expected)
         );
     }

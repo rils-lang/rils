@@ -7,7 +7,7 @@ fn eval_file_loads_external_modules() {
     let entry =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/module_tree/main.rils");
     let value = Engine::new()
-        .eval_file(entry)
+        .eval_file_value(entry)
         .expect("fixture module tree should execute");
 
     assert_eq!(value, Value::from_i32(42));

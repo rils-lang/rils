@@ -54,10 +54,15 @@ Struct 和 enum 支持 `#[derive(Clone)]`、`#[derive(Copy)]`、`#[derive(Eq, Ha
 实现 `Iterator` 的 Rils 类型只需声明 `Item` 并实现 `next`，可使用或重写标准库 trait 中定义的默认方法；解释器和字节码均从这些方法体执行，元素类型从关联类型 `Item` 解析。它还会自动实现 `IntoIterator`，`into_iter()` 返回自身，可直接用于 `for`。
 
 ```rust
-let value = rils::eval("1 + 2 * 3")?;
+let value: i32 = rils::eval("1 + 2 * 3")?.get_cloned()?;
 let module = rils::compile("let value = 40; value + 2")?;
-let value = module.execute()?;
+let value: i32 = module.execute()?.get_cloned()?;
 ```
+
+`eval`、`Engine::eval` 与字节码 `execute` / `call` 返回 `RilsValue` 句柄。
+宿主可用 `with_ref::<T, _>(|value| ...)` 临时借用，用 `get_cloned::<T>()` 显式克隆，
+或用消耗句柄的 `into_owned::<T>()` 移出拥有型结果。移出失败会把句柄连同错误返回。
+目前类型化借用和移出覆盖基础标量与字符串；动态组合值的类型化视图仍在迁移中。
 
 解释器与字节码 VM 默认允许 1024 层脚本调用。嵌入方可通过
 `Engine::set_max_call_depth` 或 `BytecodeModule::execute_with_limits` 配置调用深度和指令步数预算；

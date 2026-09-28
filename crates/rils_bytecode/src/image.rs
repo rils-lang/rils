@@ -151,6 +151,17 @@ impl BytecodeModule {
         target: &str,
         host: &BytecodeHost,
         max_steps: usize,
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
+        self.construct_default_value_with_host_and_limit(target, host, max_steps)
+            .map(rils_execution::RilsValue::new)
+    }
+
+    #[doc(hidden)]
+    pub fn construct_default_value_with_host_and_limit(
+        &self,
+        target: &str,
+        host: &BytecodeHost,
+        max_steps: usize,
     ) -> Result<Value, BytecodeError> {
         let implementation = self
             .trait_implementations("Default")
@@ -179,6 +190,33 @@ impl BytecodeModule {
         reason = "the public trait dispatch API keeps target, method, host, and budget explicit"
     )]
     pub fn call_trait_method_with_host_and_limit(
+        &self,
+        target: &str,
+        trait_name: &str,
+        method_name: &str,
+        receiver: &mut Value,
+        arguments: Vec<Value>,
+        host: &BytecodeHost,
+        max_steps: usize,
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
+        self.call_trait_method_value_with_host_and_limit(
+            target,
+            trait_name,
+            method_name,
+            receiver,
+            arguments,
+            host,
+            max_steps,
+        )
+        .map(rils_execution::RilsValue::new)
+    }
+
+    #[doc(hidden)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the host trait dispatch bridge keeps the existing raw receiver"
+    )]
+    pub fn call_trait_method_value_with_host_and_limit(
         &self,
         target: &str,
         trait_name: &str,
@@ -260,11 +298,46 @@ impl BytecodeModule {
         .execute()
     }
 
-    pub fn execute(&self) -> Result<Value, BytecodeError> {
-        self.execute_with_limits(crate::ExecutionLimits::default())
+    pub fn execute(&self) -> Result<rils_execution::RilsValue, BytecodeError> {
+        self.execute_value().map(rils_execution::RilsValue::new)
     }
 
-    pub fn execute_with_limit(&self, max_steps: usize) -> Result<Value, BytecodeError> {
+    #[doc(hidden)]
+    pub fn execute_value(&self) -> Result<Value, BytecodeError> {
+        self.execute_value_with_host_and_limits(
+            &BytecodeHost::standard(),
+            crate::ExecutionLimits::default(),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn execute_value_with_host(&self, host: &BytecodeHost) -> Result<Value, BytecodeError> {
+        self.execute_value_with_host_and_limits(host, crate::ExecutionLimits::default())
+    }
+
+    #[doc(hidden)]
+    pub fn execute_value_with_limit(&self, max_steps: usize) -> Result<Value, BytecodeError> {
+        self.execute_value_with_host_and_limits(
+            &BytecodeHost::standard(),
+            crate::ExecutionLimits {
+                max_steps,
+                ..crate::ExecutionLimits::default()
+            },
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn execute_value_with_limits(
+        &self,
+        limits: crate::ExecutionLimits,
+    ) -> Result<Value, BytecodeError> {
+        self.execute_value_with_host_and_limits(&BytecodeHost::standard(), limits)
+    }
+
+    pub fn execute_with_limit(
+        &self,
+        max_steps: usize,
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
         self.execute_with_limits(crate::ExecutionLimits {
             max_steps,
             ..crate::ExecutionLimits::default()
@@ -274,11 +347,14 @@ impl BytecodeModule {
     pub fn execute_with_limits(
         &self,
         limits: crate::ExecutionLimits,
-    ) -> Result<Value, BytecodeError> {
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
         self.execute_with_host_and_limits(&BytecodeHost::standard(), limits)
     }
 
-    pub fn execute_with_host(&self, host: &BytecodeHost) -> Result<Value, BytecodeError> {
+    pub fn execute_with_host(
+        &self,
+        host: &BytecodeHost,
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
         self.execute_with_host_and_limits(host, crate::ExecutionLimits::default())
     }
 
@@ -286,7 +362,7 @@ impl BytecodeModule {
         &self,
         host: &BytecodeHost,
         max_steps: usize,
-    ) -> Result<Value, BytecodeError> {
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
         self.execute_with_host_and_limits(
             host,
             crate::ExecutionLimits {
@@ -297,6 +373,16 @@ impl BytecodeModule {
     }
 
     pub fn execute_with_host_and_limits(
+        &self,
+        host: &BytecodeHost,
+        limits: crate::ExecutionLimits,
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
+        self.execute_value_with_host_and_limits(host, limits)
+            .map(rils_execution::RilsValue::new)
+    }
+
+    #[doc(hidden)]
+    pub fn execute_value_with_host_and_limits(
         &self,
         host: &BytecodeHost,
         limits: crate::ExecutionLimits,
@@ -312,12 +398,45 @@ impl BytecodeModule {
     /// stateless script entry points repeatedly. Functions with captured values are
     /// rejected because their closure environment only exists while another
     /// bytecode invocation is running.
-    pub fn call(&self, name: &str, arguments: Vec<Value>) -> Result<Value, BytecodeError> {
+    pub fn call(
+        &self,
+        name: &str,
+        arguments: Vec<Value>,
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
         self.call_with_host_and_limits(
             name,
             arguments,
             &BytecodeHost::standard(),
             crate::ExecutionLimits::default(),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn call_value(&self, name: &str, arguments: Vec<Value>) -> Result<Value, BytecodeError> {
+        self.call_value_with_host_and_limits(
+            name,
+            arguments,
+            &BytecodeHost::standard(),
+            crate::ExecutionLimits::default(),
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn call_value_with_host_and_limit(
+        &self,
+        name: &str,
+        arguments: Vec<Value>,
+        host: &BytecodeHost,
+        max_steps: usize,
+    ) -> Result<Value, BytecodeError> {
+        self.call_value_with_host_and_limits(
+            name,
+            arguments,
+            host,
+            crate::ExecutionLimits {
+                max_steps,
+                ..crate::ExecutionLimits::default()
+            },
         )
     }
 
@@ -327,7 +446,7 @@ impl BytecodeModule {
         arguments: Vec<Value>,
         host: &BytecodeHost,
         max_steps: usize,
-    ) -> Result<Value, BytecodeError> {
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
         self.call_with_host_and_limits(
             name,
             arguments,
@@ -340,6 +459,18 @@ impl BytecodeModule {
     }
 
     pub fn call_with_host_and_limits(
+        &self,
+        name: &str,
+        arguments: Vec<Value>,
+        host: &BytecodeHost,
+        limits: crate::ExecutionLimits,
+    ) -> Result<rils_execution::RilsValue, BytecodeError> {
+        self.call_value_with_host_and_limits(name, arguments, host, limits)
+            .map(rils_execution::RilsValue::new)
+    }
+
+    #[doc(hidden)]
+    pub fn call_value_with_host_and_limits(
         &self,
         name: &str,
         arguments: Vec<Value>,

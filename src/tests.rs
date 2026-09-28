@@ -1,7 +1,7 @@
 use super::*;
 
 fn integer(source: &str) -> i32 {
-    let value = eval(source).unwrap();
+    let value = eval_value(source).unwrap();
     value
         .as_i32()
         .unwrap_or_else(|| panic!("expected integer, found {value:?}"))
@@ -17,8 +17,8 @@ fn native_integer_method_matches_in_interpreter_and_vm() {
         ("255u8.wrapping_add(1u8)", Value::U8(0)),
         ("1usize.saturating_sub(2usize)", Value::Usize(0)),
     ] {
-        assert_eq!(eval(source).unwrap(), expected);
-        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+        assert_eq!(eval_value(source).unwrap(), expected);
+        assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
     }
 }
 
@@ -43,8 +43,11 @@ fn derives_default_from_field_defaults() {
         assert!(settings.selected == None);
         <i64 as Default>::default()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::I64(0));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::I64(0));
+    assert_eq!(eval_value(source).unwrap(), Value::I64(0));
+    assert_eq!(
+        compile(source).unwrap().execute_value().unwrap(),
+        Value::I64(0)
+    );
 }
 
 #[test]
@@ -59,9 +62,9 @@ fn derives_default_for_unit_structs() {
         let marker = <Marker as Default>::default();
         type_of(marker)
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_string("Marker"));
+    assert_eq!(eval_value(source).unwrap(), Value::from_string("Marker"));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_string("Marker")
     );
 }
@@ -69,9 +72,9 @@ fn derives_default_for_unit_structs() {
 #[test]
 fn empty_record_constructors_work_in_interpreter_and_bytecode() {
     let source = "struct Marker; let marker = (Marker {}); type_of(marker)";
-    assert_eq!(eval(source).unwrap(), Value::from_string("Marker"));
+    assert_eq!(eval_value(source).unwrap(), Value::from_string("Marker"));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_string("Marker")
     );
 }
@@ -87,11 +90,14 @@ fn derives_debug_for_structs_and_enums() {
         println!("point = {:#?}", point);
         point.x
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(1));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(1));
     let module = crate::compile(source).expect("Debug derives should compile to bytecode");
     let mut host = crate::BytecodeHost::standard();
     host.enable_standard_io().unwrap();
-    assert_eq!(module.execute_with_host(&host).unwrap(), Value::from_i32(1));
+    assert_eq!(
+        module.execute_value_with_host(&host).unwrap(),
+        Value::from_i32(1)
+    );
 }
 
 #[test]
@@ -115,7 +121,7 @@ fn bytecode_formatting_calls_custom_traits_and_nested_debug() {
         let wrapper = Wrapper { label: Label { value: 2 } };
         println!("{:?}", wrapper);
     "#;
-    assert_eq!(eval(source).unwrap(), Value::Unit);
+    assert_eq!(eval_value(source).unwrap(), Value::Unit);
     let module = compile(source).unwrap();
     let captured = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let output = captured.clone();
@@ -134,7 +140,7 @@ fn bytecode_formatting_calls_custom_traits_and_nested_debug() {
         },
     )
     .unwrap();
-    module.execute_with_host(&host).unwrap();
+    module.execute_value_with_host(&host).unwrap();
     assert_eq!(
         captured.borrow().as_slice(),
         ["custom label", "Wrapper { label: debug label }"]
@@ -152,9 +158,9 @@ fn self_paths_resolve_to_the_current_impl_type() {
         let counter = Counter::answer();
         counter.value
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -172,9 +178,9 @@ fn default_is_available_for_builtin_composite_types() {
         let _items = items;
         pair.0
     "#;
-    assert_eq!(eval(source).unwrap(), Value::Bool(false));
+    assert_eq!(eval_value(source).unwrap(), Value::Bool(false));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::Bool(false)
     );
 }
@@ -193,7 +199,7 @@ fn supports_explicit_default_impls_in_derived_fields() {
     "#;
     assert_eq!(integer(source), 8080);
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(8080)
     );
 }
@@ -207,11 +213,14 @@ fn trait_supertraits_are_required_by_interpreter_and_compiler() {
         impl Behaviour for State {}
         <State as Default>::default();
     "#;
-    assert_eq!(eval(valid).unwrap(), Value::Unit);
-    assert_eq!(compile(valid).unwrap().execute().unwrap(), Value::Unit);
+    assert_eq!(eval_value(valid).unwrap(), Value::Unit);
+    assert_eq!(
+        compile(valid).unwrap().execute_value().unwrap(),
+        Value::Unit
+    );
 
     let missing = "trait Behaviour: Default {} struct State; impl Behaviour for State {}";
-    let interpreted = eval(missing).unwrap_err().to_string();
+    let interpreted = eval_value(missing).unwrap_err().to_string();
     assert!(interpreted.contains("must implement supertrait `Default`"));
     let compiled = match compile(missing) {
         Ok(_) => panic!("missing supertrait unexpectedly compiled"),
@@ -244,9 +253,9 @@ fn supports_concrete_numeric_types_char_and_contextual_usize_inference() {
         assert!(type_of(index) == "usize");
         values[index]
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(22));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(22));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(22)
     );
 }
@@ -258,9 +267,9 @@ fn casts_integers_without_silent_information_loss() {
         let index = 1_i32;
         values[index as usize]
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(22));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(22));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(22)
     );
 
@@ -275,11 +284,11 @@ fn casts_integers_without_silent_information_loss() {
         "{narrowing}"
     );
 
-    let negative = eval("let value = -1i32; value as usize").unwrap_err();
+    let negative = eval_value("let value = -1i32; value as usize").unwrap_err();
     assert!(negative.to_string().contains("without losing information"));
     let negative = compile("let value = -1i32; value as usize")
         .unwrap()
-        .execute()
+        .execute_value()
         .unwrap_err();
     assert!(negative.to_string().contains("without losing information"));
 }
@@ -299,9 +308,9 @@ fn integer_intrinsics_cover_fallible_conversion_and_overflow_modes() {
         assert!(type_of(42i32.to_f32()) == "f32");
         42i32.to_f64()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::F64(42.0));
+    assert_eq!(eval_value(source).unwrap(), Value::F64(42.0));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::F64(42.0)
     );
 }
@@ -351,7 +360,7 @@ fn integer_intrinsics_cover_bits_powers_euclidean_and_unary_overflow() {
     );
 
     for source in ["20i8.pow(2u32)", "1i32.div_euclid(0)", "1i32.rem_euclid(0)"] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(
             error.to_string().contains("overflow")
                 || error.to_string().contains("division by zero"),
@@ -413,13 +422,13 @@ fn float_intrinsics_cover_classification_rounding_and_bounds() {
         assert!(f32::MIN_POSITIVE.is_normal());
         42
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 
-    let error = eval("1f64.clamp(2f64, 0f64)").unwrap_err();
+    let error = eval_value("1f64.clamp(2f64, 0f64)").unwrap_err();
     assert!(error.to_string().contains("min <= max"), "{error}");
 }
 
@@ -432,8 +441,11 @@ fn integer_ranges_preserve_their_concrete_type() {
         }
         total
     "#;
-    assert_eq!(eval(source).unwrap(), Value::U16(6));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::U16(6));
+    assert_eq!(eval_value(source).unwrap(), Value::U16(6));
+    assert_eq!(
+        compile(source).unwrap().execute_value().unwrap(),
+        Value::U16(6)
+    );
 }
 
 #[test]
@@ -481,7 +493,7 @@ fn builtin_result_constructs_matches_and_unwraps_values() {
 #[test]
 fn result_supports_error_side_extraction() {
     assert_eq!(
-        eval(
+        eval_value(
             r#"
                 let first: Result<i32, string> = Err("missing");
                 assert!(first.unwrap_err() == "missing");
@@ -492,7 +504,7 @@ fn result_supports_error_side_extraction() {
         .unwrap(),
         Value::from_string("invalid")
     );
-    let error = eval("let value: Result<i32, string> = Ok(42); value.unwrap_err();")
+    let error = eval_value("let value: Result<i32, string> = Ok(42); value.unwrap_err();")
         .expect_err("unwrap_err on Ok must fail");
     assert!(error.to_string().contains("Ok(42)"));
 }
@@ -545,7 +557,7 @@ fn standard_fs_uses_result_and_structured_io_errors() {
             }}
         "#
     );
-    let result = eval(&source);
+    let result = eval_value(&source);
     if directory.exists() {
         std::fs::remove_dir_all(&directory).unwrap();
     }
@@ -593,17 +605,17 @@ fn question_mark_unwraps_ok_and_propagates_err() {
 
 #[test]
 fn question_mark_reports_invalid_context_and_return_type() {
-    let top_level = eval("Ok(1)?").unwrap_err();
+    let top_level = eval_value("Ok(1)?").unwrap_err();
     assert!(
         top_level
             .to_string()
             .contains("can only be used inside a function")
     );
 
-    let non_result = eval("fn bad() -> i32 { 1? } bad()").unwrap_err();
+    let non_result = eval_value("fn bad() -> i32 { 1? } bad()").unwrap_err();
     assert!(non_result.to_string().contains("requires Result"));
 
-    let incompatible_error = eval(
+    let incompatible_error = eval_value(
         r#"
             fn source() -> Result<i32, string> { Err("failed") }
             fn bad() -> Result<i32, i32> {
@@ -699,11 +711,11 @@ fn loops_support_break_values_and_continue() {
 #[test]
 fn loop_control_is_lexically_scoped() {
     for source in ["break;", "continue;"] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(error.to_string().contains("inside a loop"), "{error}");
     }
 
-    let nested_function = eval(
+    let nested_function = eval_value(
         r#"
             loop {
                 fn invalid() { break; }
@@ -754,7 +766,7 @@ fn struct_fields_are_assignable_places() {
 
 #[test]
 fn field_places_enforce_mutability_types_and_active_references() {
-    let immutable = eval(
+    let immutable = eval_value(
         r#"
             struct Point { x: i32 }
             let point = Point { x: 1 };
@@ -764,7 +776,7 @@ fn field_places_enforce_mutability_types_and_active_references() {
     .unwrap_err();
     assert!(immutable.to_string().contains("immutable place `point`"));
 
-    let mismatch = eval(
+    let mismatch = eval_value(
         r#"
             struct Point { x: i32 }
             let mut point = Point { x: 1 };
@@ -774,7 +786,7 @@ fn field_places_enforce_mutability_types_and_active_references() {
     .unwrap_err();
     assert!(mismatch.to_string().contains("field `x` of type i32"));
 
-    let borrowed = eval(
+    let borrowed = eval_value(
         r#"
             struct Inner { value: i32 }
             struct Outer { inner: Inner }
@@ -794,7 +806,7 @@ fn field_places_enforce_mutability_types_and_active_references() {
 
 #[test]
 fn indexing_rejects_non_collection_values() {
-    let error = eval(
+    let error = eval_value(
         r#"
             let mut value = 42;
             value[0] = 1;
@@ -897,7 +909,7 @@ fn into_iterator_requires_item_associated_type() {
             fn into_iter(self) -> Range<i32> { 0..1 }
         }
     "#;
-    let interpreted = eval(source).unwrap_err().to_string();
+    let interpreted = eval_value(source).unwrap_err().to_string();
     let compiled = match compile(source) {
         Ok(_) => panic!("missing IntoIterator::Item should not compile"),
         Err(error) => error.to_string(),
@@ -935,7 +947,7 @@ fn into_iterator_item_matches_its_iterator() {
             }
         "#,
     ] {
-        let interpreted = eval(source).unwrap_err().to_string();
+        let interpreted = eval_value(source).unwrap_err().to_string();
         let compiled = match compile(source) {
             Ok(_) => panic!("mismatched IntoIterator::Item should not compile"),
             Err(error) => error.to_string(),
@@ -960,7 +972,7 @@ fn into_iterator_requires_an_iterator_result() {
             fn into_iter(self) -> Plain { (Plain {}) }
         }
     "#;
-    let interpreted = eval(source).unwrap_err().to_string();
+    let interpreted = eval_value(source).unwrap_err().to_string();
     let compiled = match compile(source) {
         Ok(_) => panic!("non-iterator IntoIter should not compile"),
         Err(error) => error.to_string(),
@@ -974,7 +986,10 @@ fn into_iterator_requires_an_iterator_result() {
 fn project_into_iterator_item_contract_matches_across_files() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_iterator_item_mismatch/src/main.rils");
-    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let interpreted = Engine::new()
+        .eval_file_value(&entry)
+        .unwrap_err()
+        .to_string();
     let compiled = match compile_file(&entry) {
         Ok(_) => panic!("mismatched project IntoIterator::Item should not compile"),
         Err(error) => error.to_string(),
@@ -989,7 +1004,7 @@ fn project_into_iterator_item_contract_matches_across_files() {
 
 #[test]
 fn for_loops_reject_values_without_iterator_traits() {
-    let error = eval("for value in 42 {}").unwrap_err();
+    let error = eval_value("for value in 42 {}").unwrap_err();
     assert!(error.to_string().contains("does not implement Iterator"));
 }
 
@@ -1015,7 +1030,7 @@ fn integer_ranges_work_with_for_loops() {
         10
     );
 
-    let error = eval("for value in 0..2.5 {}").unwrap_err();
+    let error = eval_value("for value in 0..2.5 {}").unwrap_err();
     assert!(error.to_string().contains("range bounds"));
 }
 
@@ -1037,7 +1052,7 @@ fn generic_type_aliases_expand_in_annotations() {
         42
     );
 
-    let error = eval(
+    let error = eval_value(
         r#"
             struct Box<T> { value: T }
             type ValueBox<T> = Box<T>;
@@ -1076,7 +1091,7 @@ fn associated_types_participate_in_trait_signatures() {
         42
     );
 
-    let missing = eval(
+    let missing = eval_value(
         r#"
             trait Source { type Item; }
             struct Number { value: i32 }
@@ -1090,7 +1105,7 @@ fn associated_types_participate_in_trait_signatures() {
             .contains("missing associated type `Item`")
     );
 
-    let mismatch = eval(
+    let mismatch = eval_value(
         r#"
             trait Source {
                 type Item;
@@ -1176,7 +1191,7 @@ fn trait_methods_keep_their_trait_identity_and_support_ufcs() {
         42
     );
 
-    let ambiguous = eval(
+    let ambiguous = eval_value(
         r#"
             trait Left { fn value(&self) -> i32; }
             trait Right { fn value(&self) -> i32; }
@@ -1223,7 +1238,7 @@ fn inherent_methods_take_priority_over_trait_methods() {
 
 #[test]
 fn builtin_clone_trait_provides_clone_method_for_owned_values() {
-    let value = eval(
+    let value = eval_value(
         r#"
             struct Label { text: string }
 
@@ -1302,7 +1317,7 @@ fn interpreter_reports_the_configured_call_depth_limit() {
     let mut engine = Engine::new();
     engine.set_max_call_depth(8);
     let error = engine
-        .eval(
+        .eval_value(
             r#"
                 fn countdown(n: i32) -> i32 {
                     if n == 0 { 0 } else { countdown(n - 1) }
@@ -1341,9 +1356,9 @@ fn function_types_preserve_higher_order_signatures() {
             assert!(getter() == 42);
             apply(double, 21)
         "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
 
-    let mismatch = eval(
+    let mismatch = eval_value(
         r#"
                 fn text(value: string) -> string { value }
                 let invalid: fn(i32) -> i32 = text;
@@ -1398,13 +1413,13 @@ fn return_works_inside_nested_blocks() {
 
 #[test]
 fn immutable_bindings_reject_assignment() {
-    let error = eval("let answer = 42; answer = 0;").unwrap_err();
+    let error = eval_value("let answer = 42; answer = 0;").unwrap_err();
     assert!(error.to_string().contains("immutable variable"));
 }
 
 #[test]
 fn owned_values_move_while_copy_values_remain_available() {
-    let moved = eval(r#"let text = "hello"; let owned = text; text"#).unwrap_err();
+    let moved = eval_value(r#"let text = "hello"; let owned = text; text"#).unwrap_err();
     assert!(moved.to_string().contains("moved value `text`"));
 
     assert_eq!(
@@ -1415,7 +1430,7 @@ fn owned_values_move_while_copy_values_remain_available() {
 
 #[test]
 fn clone_explicitly_duplicates_owned_values() {
-    let value = eval(
+    let value = eval_value(
         r#"
             struct Message { text: string }
             let original = Message { text: "hello" };
@@ -1487,7 +1502,7 @@ fn multiple_mutable_references_can_target_a_struct_field() {
 
 #[test]
 fn field_references_keep_the_owner_storage_stable() {
-    let moved = eval(
+    let moved = eval_value(
         r#"
             struct Message { text: string }
             let message = Message { text: "hello" };
@@ -1500,7 +1515,7 @@ fn field_references_keep_the_owner_storage_stable() {
     .unwrap_err();
     assert!(moved.to_string().contains("while it is referenced"));
 
-    let replaced = eval(
+    let replaced = eval_value(
         r#"
             struct Counter { value: i32 }
             let mut counter = Counter { value: 1 };
@@ -1601,7 +1616,7 @@ fn self_receivers_are_restricted_to_the_first_method_parameter() {
         "fn invalid(&self) {}",
         "struct Value { inner: i32 } impl Value { fn invalid(value: i32, &self) {} }",
     ] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(error.to_string().contains("self"));
     }
 }
@@ -1625,7 +1640,8 @@ fn reference_parameters_can_mutate_their_owner() {
 
 #[test]
 fn references_prevent_moves_but_not_in_place_assignment() {
-    let borrowed = eval(r#"let text = "hello"; { let reference = &text; text; }"#).unwrap_err();
+    let borrowed =
+        eval_value(r#"let text = "hello"; { let reference = &text; text; }"#).unwrap_err();
     assert!(borrowed.to_string().contains("while it is referenced"));
 
     assert_eq!(
@@ -1636,7 +1652,8 @@ fn references_prevent_moves_but_not_in_place_assignment() {
 
 #[test]
 fn immutable_references_reject_writes() {
-    let error = eval("let mut value = 1; { let reference = &value; *reference = 2; }").unwrap_err();
+    let error =
+        eval_value("let mut value = 1; { let reference = &value; *reference = 2; }").unwrap_err();
     assert!(error.to_string().contains("immutable reference"));
 }
 
@@ -1648,7 +1665,7 @@ fn references_cannot_escape_or_enter_owned_types() {
         "let escaped = { let value = 1; &value };",
         "fn outer() { let value = 1; let reference = &value; fn nested() {} } outer()",
     ] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(
             error.to_string().contains("reference") || error.to_string().contains("references"),
             "unexpected error: {error}"
@@ -1659,15 +1676,15 @@ fn references_cannot_escape_or_enter_owned_types() {
 #[test]
 fn engine_keeps_globals_between_evaluations() {
     let mut engine = Engine::new();
-    engine.eval("let answer = 42;").unwrap();
-    assert_eq!(engine.eval("answer").unwrap(), Value::from_i32(42));
+    engine.eval_value("let answer = 42;").unwrap();
+    assert_eq!(engine.eval_value("answer").unwrap(), Value::from_i32(42));
 }
 
 #[test]
 fn unit_is_distinct_and_is_the_default_function_result() {
-    assert_eq!(eval("()").unwrap(), Value::Unit);
+    assert_eq!(eval_value("()").unwrap(), Value::Unit);
     assert_eq!(
-        eval(
+        eval_value(
             r#"
                 fn do_nothing() -> () {}
                 do_nothing()
@@ -1707,7 +1724,7 @@ fn option_methods_follow_shared_builtin_declarations() {
         ),
         7
     );
-    let error = eval("let value: Option<i32> = None; value.unwrap()").unwrap_err();
+    let error = eval_value("let value: Option<i32> = None; value.unwrap()").unwrap_err();
     assert!(error.to_string().contains("called `unwrap` on `None`"));
 }
 
@@ -1797,7 +1814,7 @@ fn option_result_combinators_are_lazy_and_type_checked() {
         "fn wrong() -> i32 { 1 } let value: Option<i32> = None; value.or_else(wrong)",
         "fn wrong(value: i32) -> Option<i32> { Some(value) } let value: Result<i32, string> = Ok(1); value.and_then(wrong)",
     ] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(
             error.to_string().contains("type mismatch")
                 || error.to_string().contains("callback must return"),
@@ -1817,7 +1834,7 @@ fn annotations_check_initializers_assignments_parameters_and_returns() {
         "fn wrong() -> Option<i32> { 42 } wrong()",
         "let missing: Option<i32> = None; unwrap_or(missing, \"wrong\")",
     ] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(
             error.to_string().contains("type mismatch")
                 || error.to_string().contains("cannot assign")
@@ -1830,7 +1847,7 @@ fn annotations_check_initializers_assignments_parameters_and_returns() {
 
 #[test]
 fn option_cannot_be_used_as_an_implicit_nullable_condition() {
-    let error = eval("if None { 1 } else { 2 }").unwrap_err();
+    let error = eval_value("if None { 1 } else { 2 }").unwrap_err();
     assert!(
         error
             .to_string()
@@ -1840,7 +1857,7 @@ fn option_cannot_be_used_as_an_implicit_nullable_condition() {
 
 #[test]
 fn nil_is_no_longer_a_literal() {
-    let error = eval("nil").unwrap_err();
+    let error = eval_value("nil").unwrap_err();
     assert!(error.to_string().contains("undefined variable `nil`"));
 }
 
@@ -1881,7 +1898,7 @@ fn match_supports_literals_and_wildcards() {
 
 #[test]
 fn match_bindings_are_scoped_to_the_selected_arm() {
-    let error = eval(
+    let error = eval_value(
         r#"
             match Some(1) {
                 Some(value) => value,
@@ -1896,7 +1913,7 @@ fn match_bindings_are_scoped_to_the_selected_arm() {
 
 #[test]
 fn match_reports_non_exhaustive_values() {
-    let error = eval("match None { Some(value) => value }").unwrap_err();
+    let error = eval_value("match None { Some(value) => value }").unwrap_err();
     assert!(error.to_string().contains("non-exhaustive match"));
 }
 
@@ -1968,9 +1985,9 @@ fn empty_struct_declarations_work_in_interpreter_and_bytecode() {
 
         Unit::answer() + Empty::answer()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(42));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(42)
     );
 }
@@ -2053,7 +2070,7 @@ fn record_construction_checks_missing_unknown_and_invalid_fields() {
         "struct Point { x: i32, y: i32 } Point { x: 1, y: 2, z: 3 };",
         "struct Point { x: i32, y: i32 } Point { x: \"wrong\", y: 2 };",
     ] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(
             error.to_string().contains("field") || error.to_string().contains("type mismatch"),
             "unexpected error: {error}"
@@ -2080,7 +2097,7 @@ fn generic_functions_infer_and_reuse_type_parameters() {
         40
     );
 
-    let error = eval(
+    let error = eval_value(
         r#"
             fn choose<T>(left: T, right: T) -> T { left }
             choose(1, "wrong")
@@ -2170,7 +2187,7 @@ fn generic_enums_support_partial_inference_and_annotations() {
 
 #[test]
 fn generic_record_fields_must_infer_consistently() {
-    let error = eval(
+    let error = eval_value(
         r#"
             struct Same<T> {
                 left: T,
@@ -2198,7 +2215,7 @@ fn outer_annotations_fill_unresolved_generic_arguments() {
         42
     );
 
-    let error = eval(
+    let error = eval_value(
         r#"
             struct Holder<T> {
                 value: Option<T>,
@@ -2213,7 +2230,7 @@ fn outer_annotations_fill_unresolved_generic_arguments() {
 
 #[test]
 fn traits_define_and_dispatch_required_methods() {
-    let value = eval(
+    let value = eval_value(
         r#"
             trait Describe {
                 fn describe(self) -> string;
@@ -2257,12 +2274,14 @@ fn generic_trait_bounds_are_enforced() {
         "#;
 
     let mut engine = Engine::new();
-    engine.eval(source).unwrap();
+    engine.eval_value(source).unwrap();
     assert_eq!(
-        engine.eval("describe(Point { value: 1 })").unwrap(),
+        engine.eval_value("describe(Point { value: 1 })").unwrap(),
         Value::from_string("point")
     );
-    let error = engine.eval("describe(Hidden { value: 1 })").unwrap_err();
+    let error = engine
+        .eval_value("describe(Hidden { value: 1 })")
+        .unwrap_err();
     assert!(
         error
             .to_string()
@@ -2296,7 +2315,7 @@ fn trait_self_types_are_checked() {
 
 #[test]
 fn generic_types_can_implement_traits_for_all_arguments() {
-    let value = eval(
+    let value = eval_value(
         r#"
             trait Describe {
                 fn describe(self) -> string;
@@ -2347,7 +2366,7 @@ fn trait_impl_rejects_missing_and_wrong_methods() {
             }
             "#,
     ] {
-        let error = eval(source).unwrap_err();
+        let error = eval_value(source).unwrap_err();
         assert!(
             error.to_string().contains("missing method")
                 || error.to_string().contains("does not match")
@@ -2359,7 +2378,7 @@ fn trait_impl_rejects_missing_and_wrong_methods() {
 
 #[test]
 fn duplicate_trait_impls_are_rejected() {
-    let error = eval(
+    let error = eval_value(
         r#"
             trait Describe { fn describe(self) -> string; }
             struct Point { value: i32 }
@@ -2423,7 +2442,7 @@ fn builtin_copy_and_clone_traits_participate_in_bounds() {
         42
     );
 
-    let error = eval(
+    let error = eval_value(
         r#"
             fn require_copy<T: Copy>(value: T) -> T { value }
             require_copy("not copy")
@@ -2439,7 +2458,7 @@ fn builtin_copy_and_clone_traits_participate_in_bounds() {
 
 #[test]
 fn nominal_types_can_implement_builtin_clone_and_copy() {
-    let cloned = eval(
+    let cloned = eval_value(
         r#"
             struct Label { text: string }
 
@@ -2470,7 +2489,7 @@ fn nominal_types_can_implement_builtin_clone_and_copy() {
         42
     );
 
-    let invalid = eval(
+    let invalid = eval_value(
         r#"
             struct Label { text: string }
             impl Copy for Label {}
@@ -2532,7 +2551,7 @@ fn macro_branches_and_repetitions_execute() {
 
 #[test]
 fn plus_repetition_requires_at_least_one_match() {
-    let error = eval(
+    let error = eval_value(
         r#"
             macro one_or_more {
                 ($($value:expr),+) => { $($value),+ }
@@ -2558,16 +2577,16 @@ fn rust_helper_forwards_native_functions_as_rils_macros() {
     let mut engine = Engine::new();
     rils_forward_macro!(engine, host_sum, 1, usize::MAX, host_sum).unwrap();
     assert_eq!(
-        engine.eval("host_sum!(20, 22)").unwrap(),
+        engine.eval_value("host_sum!(20, 22)").unwrap(),
         Value::from_i32(42)
     );
-    let error = engine.eval("host_sum!()").unwrap_err();
+    let error = engine.eval_value("host_sum!()").unwrap_err();
     assert!(error.to_string().contains("expects at least 1 argument"));
 }
 
 #[test]
 fn former_print_functions_require_macro_invocation_syntax() {
-    let error = eval("println(42)").unwrap_err();
+    let error = eval_value("println(42)").unwrap_err();
     assert!(error.to_string().contains("undefined variable `println`"));
 }
 
@@ -2581,7 +2600,7 @@ fn engine_output_handler_receives_formatted_print_boundaries() {
         Ok(())
     });
     engine
-        .eval(r#"print!("value={}", 7); println!(" done"); println!();"#)
+        .eval_value(r#"print!("value={}", 7); println!(" done"); println!();"#)
         .unwrap();
     assert_eq!(
         events.borrow().as_slice(),
@@ -2595,21 +2614,22 @@ fn engine_output_handler_receives_formatted_print_boundaries() {
 
 #[test]
 fn standard_native_assert_macro_executes() {
-    assert_eq!(eval("assert!(true)").unwrap(), Value::Unit);
-    let error = eval("macro println($value) { $value }").unwrap_err();
+    assert_eq!(eval_value("assert!(true)").unwrap(), Value::Unit);
+    let error = eval_value("macro println($value) { $value }").unwrap_err();
     assert!(error.to_string().contains("duplicate macro `println`"));
 }
 
 #[test]
 fn macros_report_invalid_parameters_and_argument_counts() {
-    let unknown_parameter = eval("macro bad($value) { $missing } bad!(1)").unwrap_err();
+    let unknown_parameter = eval_value("macro bad($value) { $missing } bad!(1)").unwrap_err();
     assert!(
         unknown_parameter
             .to_string()
             .contains("unknown macro parameter")
     );
 
-    let wrong_arity = eval("macro add($left, $right) { $left + $right } add!(1)").unwrap_err();
+    let wrong_arity =
+        eval_value("macro add($left, $right) { $left + $right } add!(1)").unwrap_err();
     assert!(wrong_arity.to_string().contains("expects 2 argument(s)"));
 }
 
@@ -2738,7 +2758,7 @@ fn hash_set_supports_membership_and_set_algebra() {
 #[test]
 fn collections_support_search_and_owned_vec_mutation() {
     assert_eq!(
-        eval(
+        eval_value(
             r#"
                 let values = [1, 2, 3];
                 let two = 2;
@@ -2758,11 +2778,11 @@ fn collections_support_search_and_owned_vec_mutation() {
         Value::Usize(5)
     );
 
-    let error = eval("let mut values = Vec::from([1, 2]); values.insert(3usize, 4);")
+    let error = eval_value("let mut values = Vec::from([1, 2]); values.insert(3usize, 4);")
         .expect_err("out-of-bounds insertion must fail");
     assert!(error.to_string().contains("out of bounds"));
 
-    let error = eval(
+    let error = eval_value(
         "fn mutate() { let mut values = Vec::from([1, 2]); let item = &values[0usize]; values.remove(0usize); } mutate();",
     )
     .expect_err("reordering with an active element reference must fail");
@@ -2823,8 +2843,11 @@ fn strings_expose_unicode_and_owned_iterator_workflows() {
         }
         lines
     "#;
-    assert_eq!(eval(source).unwrap(), Value::Usize(2));
-    assert_eq!(compile(source).unwrap().execute().unwrap(), Value::Usize(2));
+    assert_eq!(eval_value(source).unwrap(), Value::Usize(2));
+    assert_eq!(
+        compile(source).unwrap().execute_value().unwrap(),
+        Value::Usize(2)
+    );
 }
 
 #[test]
@@ -2881,9 +2904,9 @@ fn iterator_default_methods_cover_transform_query_and_fold_workflows() {
         [1, 2, 3].into_iter().for_each(validate_positive);
         6
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(6));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(6));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(6)
     );
 }
@@ -2919,9 +2942,9 @@ fn custom_iterators_inherit_iterator_default_methods() {
         assert!(collected.len() == 4usize);
         Counter { current: 1, end: 5 }.map(square).fold(0, add)
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(30));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(30));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(30)
     );
 }
@@ -2949,16 +2972,16 @@ fn iterator_predicates_short_circuit_and_filter_owned_values_by_reference() {
         }
         run()
     "#;
-    assert_eq!(eval(source).unwrap(), Value::from_i32(2));
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(2));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(2)
     );
 }
 
 #[test]
 fn collection_mutation_respects_active_element_references() {
-    let assign = eval(
+    let assign = eval_value(
         r#"
             {
                 let mut values = [1, 2];
@@ -2970,7 +2993,7 @@ fn collection_mutation_respects_active_element_references() {
     .unwrap_err();
     assert!(assign.to_string().contains("while it is referenced"));
 
-    let pop = eval(
+    let pop = eval_value(
         r#"
             {
                 let mut values = Vec::from([1]);
@@ -3005,7 +3028,7 @@ fn inline_modules_enforce_visibility_and_support_use_aliases() {
         42
     );
 
-    let private = eval(
+    let private = eval_value(
         r#"
             mod math { fn hidden() -> i32 { 42 } }
             math::hidden()
@@ -3065,7 +3088,7 @@ fn eval_file_loads_external_modules() {
     std::fs::write(&root, "mod math; use math::answer; answer()").unwrap();
     std::fs::write(&module, "pub fn answer() -> i32 { 42 }").unwrap();
 
-    let value = Engine::new().eval_file(&root).unwrap();
+    let value = Engine::new().eval_file_value(&root).unwrap();
     assert_eq!(value, Value::from_i32(42));
 
     std::fs::remove_file(root).unwrap();
@@ -3088,11 +3111,11 @@ fn host_modules_accept_stateful_function_closures() {
         .unwrap();
 
     assert_eq!(
-        engine.eval("host::counter::next()").unwrap(),
+        engine.eval_value("host::counter::next()").unwrap(),
         Value::from_i32(41)
     );
     assert_eq!(
-        engine.eval("host::counter::next()").unwrap(),
+        engine.eval_value("host::counter::next()").unwrap(),
         Value::from_i32(42)
     );
 }
@@ -3110,10 +3133,12 @@ fn typed_host_functions_validate_arguments_and_returns() {
         )
         .unwrap();
     assert_eq!(
-        engine.eval("host::math::identity(42)").unwrap(),
+        engine.eval_value("host::math::identity(42)").unwrap(),
         Value::from_i32(42)
     );
-    let argument_error = engine.eval("host::math::identity(\"wrong\")").unwrap_err();
+    let argument_error = engine
+        .eval_value("host::math::identity(\"wrong\")")
+        .unwrap_err();
     assert!(
         argument_error
             .to_string()
@@ -3127,7 +3152,7 @@ fn typed_host_functions_validate_arguments_and_returns() {
             Ok(Value::from_string("wrong"))
         })
         .unwrap();
-    let return_error = engine.eval("host::wrong_return()").unwrap_err();
+    let return_error = engine.eval_value("host::wrong_return()").unwrap_err();
     assert!(
         return_error
             .to_string()
@@ -3163,7 +3188,7 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
 
     assert_eq!(
         engine
-            .eval(
+            .eval_value(
                 r#"
                     use host::Counter;
                     let counter: Counter = host::counter(40);
@@ -3255,24 +3280,28 @@ fn bundled_examples_match_interpreter_and_vm() {
     let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
     for (relative_path, expected) in bundled_example_expectations() {
         let path = examples.join(relative_path);
-        let interpreted = Engine::new().eval_file(&path).unwrap_or_else(|error| {
-            panic!(
-                "example `{}` failed in the interpreter: {error}",
-                path.display()
-            )
-        });
+        let interpreted = Engine::new()
+            .eval_file_value(&path)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "example `{}` failed in the interpreter: {error}",
+                    path.display()
+                )
+            });
         let module = compile_file(&path).unwrap_or_else(|error| {
             panic!("example `{}` failed to compile: {error}", path.display())
         });
         let mut host = BytecodeHost::standard();
         host.enable_standard_io().unwrap();
-        let executed = module.execute_with_host(&host).unwrap_or_else(|error| {
-            panic!(
-                "example `{}` failed in the VM at {:?}: {error}",
-                path.display(),
-                error.span
-            )
-        });
+        let executed = module
+            .execute_value_with_host(&host)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "example `{}` failed in the VM at {:?}: {error}",
+                    path.display(),
+                    error.span
+                )
+            });
         assert_eq!(
             interpreted,
             expected,
@@ -3321,8 +3350,8 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
     )
     .unwrap();
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap();
-    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+    let interpreted = Engine::new().eval_file_value(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
     assert_eq!(interpreted, Value::from_i32(42));
     assert_eq!(compiled, interpreted);
     std::fs::remove_dir_all(root).unwrap();
@@ -3333,8 +3362,8 @@ fn project_module_initialization_and_enum_identity_match_between_backends() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_module_correctness/src/main.rils");
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap();
-    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+    let interpreted = Engine::new().eval_file_value(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
 
     assert_eq!(interpreted, Value::from_i32(42));
     assert_eq!(compiled, interpreted);
@@ -3345,7 +3374,7 @@ fn project_module_initialization_reports_import_cycles() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_module_cycle/src/main.rils");
 
-    let error = Engine::new().eval_file(&entry).unwrap_err();
+    let error = Engine::new().eval_file_value(&entry).unwrap_err();
 
     let message = error.to_string();
     assert!(message.contains("project module import cycle"));
@@ -3373,7 +3402,7 @@ fn configured_projects_reject_frontend_errors_before_execution() {
     let entry = scripts.join("main.rils");
     std::fs::write(&entry, "pub fn main() -> i32 { missing() }").unwrap();
 
-    let error = Engine::new().eval_file(&entry).unwrap_err();
+    let error = Engine::new().eval_file_value(&entry).unwrap_err();
     std::fs::remove_dir_all(&root).unwrap();
 
     assert!(error.to_string().contains("undefined name `missing`"));
@@ -3384,7 +3413,10 @@ fn project_trait_associated_type_contracts_are_shared_by_both_backends() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_trait_contract_invalid/src/main.rils");
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let interpreted = Engine::new()
+        .eval_file_value(&entry)
+        .unwrap_err()
+        .to_string();
     let compiled = match compile_file(&entry) {
         Ok(_) => panic!("invalid trait contract should not compile"),
         Err(error) => error.to_string(),
@@ -3400,7 +3432,10 @@ fn project_conditional_trait_impls_are_rejected_by_both_backends() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_conditional_trait_impl/src/main.rils");
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let interpreted = Engine::new()
+        .eval_file_value(&entry)
+        .unwrap_err()
+        .to_string();
     let compiled = match compile_file(&entry) {
         Ok(_) => panic!("conditional trait impl should not compile"),
         Err(error) => error.to_string(),
@@ -3416,7 +3451,10 @@ fn project_duplicate_trait_impls_are_rejected_by_both_backends() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_trait_duplicate/src/main.rils");
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let interpreted = Engine::new()
+        .eval_file_value(&entry)
+        .unwrap_err()
+        .to_string();
     let compiled = match compile_file(&entry) {
         Ok(_) => panic!("duplicate trait impl should not compile"),
         Err(error) => error.to_string(),
@@ -3432,7 +3470,10 @@ fn project_orphan_trait_impls_are_rejected_by_both_backends() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_trait_orphan/src/main.rils");
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap_err().to_string();
+    let interpreted = Engine::new()
+        .eval_file_value(&entry)
+        .unwrap_err()
+        .to_string();
     let compiled = match compile_file(&entry) {
         Ok(_) => panic!("orphan trait impl should not compile"),
         Err(error) => error.to_string(),
@@ -3448,8 +3489,8 @@ fn project_trait_coherence_distinguishes_same_named_local_definitions() {
     let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/project_trait_distinct/src/main.rils");
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap();
-    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+    let interpreted = Engine::new().eval_file_value(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
 
     assert_eq!(interpreted, Value::from_i32(42));
     assert_eq!(compiled, interpreted);
@@ -3530,8 +3571,8 @@ fn project_entries_support_grouped_and_glob_imports() {
     )
     .unwrap();
 
-    let interpreted = Engine::new().eval_file(&entry).unwrap();
-    let compiled = compile_file(&entry).unwrap().execute().unwrap();
+    let interpreted = Engine::new().eval_file_value(&entry).unwrap();
+    let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
     assert_eq!(interpreted, Value::from_i32(42));
     assert_eq!(compiled, interpreted);
 
@@ -3572,7 +3613,7 @@ fn project_source_ids_survive_bytecode_round_trip_and_locate_runtime_errors() {
     let bytes = module.to_bytes().unwrap();
     let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
     assert_eq!(loaded.sources(), module.sources());
-    let error = loaded.execute().unwrap_err();
+    let error = loaded.execute_value().unwrap_err();
     assert_eq!(
         loaded.source_name(error.span.source),
         Some(dependency.to_string_lossy().as_ref())
@@ -3617,7 +3658,7 @@ fn project_compile_and_interpreter_errors_retain_dependency_source() {
     );
 
     std::fs::write(&dependency, "pub fn broken() -> i32 { @ }").unwrap();
-    let error = Engine::new().eval_file(&entry).unwrap_err();
+    let error = Engine::new().eval_file_value(&entry).unwrap_err();
     let rendered = error.render(entry.to_string_lossy().as_ref(), "");
     assert!(rendered.contains(dependency.to_string_lossy().as_ref()));
     assert!(rendered.contains("pub fn broken() -> i32 { @ }"));

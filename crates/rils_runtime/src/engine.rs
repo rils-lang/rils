@@ -167,7 +167,12 @@ impl Engine {
         Ok(())
     }
 
-    pub fn eval(&mut self, source: &str) -> Result<Value, RilsError> {
+    pub fn eval(&mut self, source: &str) -> Result<rils_execution::RilsValue, RilsError> {
+        self.eval_value(source).map(rils_execution::RilsValue::new)
+    }
+
+    #[doc(hidden)]
+    pub fn eval_value(&mut self, source: &str) -> Result<Value, RilsError> {
         let tokens = lexer::lex(source).map_err(RilsError::Lex)?;
         let program = parser::parse_with_native_macros(tokens, &self.native_macros)
             .map_err(RilsError::Parse)?;
@@ -177,7 +182,16 @@ impl Engine {
             .map_err(RilsError::Runtime)
     }
 
-    pub fn eval_file(&mut self, path: impl AsRef<Path>) -> Result<Value, RilsError> {
+    pub fn eval_file(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<rils_execution::RilsValue, RilsError> {
+        self.eval_file_value(path)
+            .map(rils_execution::RilsValue::new)
+    }
+
+    #[doc(hidden)]
+    pub fn eval_file_value(&mut self, path: impl AsRef<Path>) -> Result<Value, RilsError> {
         let path = path.as_ref();
         let mut sources = ProjectSources::default();
         let result = self.eval_project_file(path, &mut sources);
@@ -224,8 +238,13 @@ impl Engine {
     }
 }
 
-pub fn eval(source: &str) -> Result<Value, RilsError> {
+pub fn eval(source: &str) -> Result<rils_execution::RilsValue, RilsError> {
     Engine::new().eval(source)
+}
+
+#[doc(hidden)]
+pub fn eval_value(source: &str) -> Result<Value, RilsError> {
+    Engine::new().eval_value(source)
 }
 
 fn execute_project(

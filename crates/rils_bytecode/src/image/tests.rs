@@ -4,7 +4,7 @@ use crate::FloatType;
 fn assert_matches_interpreter(source: &str) {
     let interpreted = crate::eval(source).expect("source should interpret");
     let module = compile(source).expect("source should compile");
-    let compiled = module.execute().expect("bytecode should execute");
+    let compiled = module.execute_value().expect("bytecode should execute");
     assert_eq!(compiled, interpreted);
 }
 
@@ -29,12 +29,12 @@ fn emits_and_round_trips_typed_integer_binary_instructions() {
             })
     };
     assert!(has_i32_binary(&module));
-    assert_eq!(module.execute().unwrap(), Value::from_i32(3));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(3));
 
     let image = module.to_bytes().expect("module serializes");
     let loaded = BytecodeModule::from_bytes(&image).expect("module deserializes");
     assert!(has_i32_binary(&loaded));
-    assert_eq!(loaded.execute().unwrap(), Value::from_i32(3));
+    assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(3));
 }
 
 #[test]
@@ -87,10 +87,10 @@ fn trait_metadata_constructs_and_calls_persistent_default_instances() {
 
     let host = BytecodeHost::standard();
     let mut state = module
-        .construct_default_with_host_and_limit("State", &host, 1_000_000)
+        .construct_default_value_with_host_and_limit("State", &host, 1_000_000)
         .expect("Default should construct the state");
     let first = module
-        .call_trait_method_with_host_and_limit(
+        .call_trait_method_value_with_host_and_limit(
             "State",
             "Behaviour",
             "tick",
@@ -101,7 +101,7 @@ fn trait_metadata_constructs_and_calls_persistent_default_instances() {
         )
         .expect("first trait call should succeed");
     let second = module
-        .call_trait_method_with_host_and_limit(
+        .call_trait_method_value_with_host_and_limit(
             "State",
             "Behaviour",
             "tick",
@@ -523,13 +523,13 @@ fn compiles_loop_values_and_moves() {
 #[test]
 fn compiled_modules_are_reusable_and_limit_steps() {
     let module = compile("let value = 40; value + 2").unwrap();
-    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
-    assert_eq!(module.execute().unwrap(), Value::from_i32(42));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(42));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(42));
     assert!(module.instruction_count() > 0);
     assert!(module.register_count() > 0);
 
     let endless = compile("loop {}").unwrap();
-    let error = endless.execute_with_limit(16).unwrap_err();
+    let error = endless.execute_value_with_limit(16).unwrap_err();
     assert!(error.message.contains("step limit"));
 
     let recursion = compile(
@@ -539,7 +539,7 @@ fn compiled_modules_are_reusable_and_limit_steps() {
             "#,
     )
     .unwrap();
-    let error = recursion.execute_with_limit(10_000).unwrap_err();
+    let error = recursion.execute_value_with_limit(10_000).unwrap_err();
     assert!(error.message.contains("call stack"));
 }
 
@@ -548,18 +548,20 @@ fn calls_named_functions_with_arguments() {
     let module = compile("pub fn add(left: i32, right: i32) -> i32 { left + right }").unwrap();
     assert_eq!(
         module
-            .call("add", vec![Value::from_i32(20), Value::from_i32(22)])
+            .call_value("add", vec![Value::from_i32(20), Value::from_i32(22)])
             .unwrap(),
         Value::from_i32(42)
     );
 
-    let error = module.call("missing", Vec::new()).unwrap_err();
+    let error = module.call_value("missing", Vec::new()).unwrap_err();
     assert!(error.message.contains("unknown exported function"));
-    let error = module.call("add", vec![Value::from_i32(1)]).unwrap_err();
+    let error = module
+        .call_value("add", vec![Value::from_i32(1)])
+        .unwrap_err();
     assert!(error.message.contains("expects 2 arguments"));
 
     let private = compile("fn hidden() -> i32 { 42 }").unwrap();
-    let error = private.call("hidden", Vec::new()).unwrap_err();
+    let error = private.call_value("hidden", Vec::new()).unwrap_err();
     assert!(error.message.contains("unknown exported function"));
 }
 
@@ -579,12 +581,12 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
     )
     .expect("recursive generic source should compile");
     assert_eq!(
-        module.call("main", Vec::new()).unwrap(),
+        module.call_value("main", Vec::new()).unwrap(),
         Value::from_i32(42)
     );
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(
-        loaded.call("main", Vec::new()).unwrap(),
+        loaded.call_value("main", Vec::new()).unwrap(),
         Value::from_i32(42)
     );
 }
@@ -602,7 +604,7 @@ fn constructs_and_clones_rc_handles_with_explicit_type_arguments() {
         "#,
     )
     .expect("Rc source should compile");
-    let strong_count = module.call("main", Vec::new()).unwrap();
+    let strong_count = module.call_value("main", Vec::new()).unwrap();
     assert!(strong_count.as_usize().is_some_and(|count| count >= 2));
 }
 
@@ -620,7 +622,7 @@ fn upgrades_weak_handles_while_the_rc_is_alive() {
     .expect("Weak source should compile");
     assert!(
         module
-            .call("main", Vec::new())
+            .call_value("main", Vec::new())
             .unwrap()
             .as_usize()
             .is_some_and(|count| count >= 1)
@@ -639,7 +641,10 @@ fn mutates_cell_values_in_bytecode() {
         "#,
     )
     .expect("Cell source should compile");
-    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::from_i32(5));
+    assert_eq!(
+        module.call_value("main", Vec::new()).unwrap(),
+        Value::from_i32(5)
+    );
 }
 
 #[test]
@@ -653,7 +658,10 @@ fn borrows_ref_cell_values_in_bytecode() {
         "#,
     )
     .expect("RefCell source should compile");
-    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::from_i32(8));
+    assert_eq!(
+        module.call_value("main", Vec::new()).unwrap(),
+        Value::from_i32(8)
+    );
 }
 
 #[test]
@@ -669,7 +677,10 @@ fn executes_vec_deque_operations_in_bytecode() {
         "#,
     )
     .expect("VecDeque source should compile");
-    assert_eq!(module.call("main", Vec::new()).unwrap(), Value::from_i32(3));
+    assert_eq!(
+        module.call_value("main", Vec::new()).unwrap(),
+        Value::from_i32(3)
+    );
 }
 
 #[test]
@@ -684,7 +695,7 @@ fn executes_binary_heap_max_order_in_bytecode() {
     "#;
     assert_matches_interpreter(source);
     let module = compile(source).expect("BinaryHeap source should compile");
-    assert_eq!(module.execute().unwrap(), Value::from_i32(13));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(13));
 }
 
 #[test]
@@ -704,7 +715,7 @@ fn executes_btree_map_in_key_order_in_bytecode() {
     "#;
     assert_matches_interpreter(source);
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(127)
     );
 }
@@ -728,7 +739,7 @@ fn executes_btree_set_in_order_in_bytecode() {
     "#;
     assert_matches_interpreter(source);
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::from_i32(1234)
     );
 }
@@ -751,7 +762,7 @@ fn compiles_functions_recursion_and_early_return() {
     assert_matches_interpreter(source);
     let module = compile(source).unwrap();
     assert_eq!(module.function_count(), 2);
-    assert_eq!(module.execute().unwrap(), Value::from_i32(722));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(722));
 }
 
 #[test]
@@ -763,10 +774,10 @@ fn recursion_uses_explicit_vm_frames_and_respects_the_configured_limit() {
         countdown(1000)
     "#;
     let module = compile(source).unwrap();
-    assert_eq!(module.execute().unwrap(), Value::from_i32(0));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(0));
 
     let error = module
-        .execute_with_limits(crate::ExecutionLimits::new(1_000_000, 8))
+        .execute_value_with_limits(crate::ExecutionLimits::new(1_000_000, 8))
         .unwrap_err();
     assert!(
         error
@@ -952,7 +963,7 @@ fn migrated_vec_members_use_native_imports_without_host_imports() {
     )
     .unwrap();
 
-    assert_eq!(module.execute().unwrap(), Value::Usize(3));
+    assert_eq!(module.execute_value().unwrap(), Value::Usize(3));
     assert_eq!(
         module
             .imports()
@@ -990,7 +1001,7 @@ fn migrated_vec_members_use_native_imports_without_host_imports() {
 fn iterator_default_body_compiles_without_legacy_runtime_id() {
     let source = "let values = [1, 2, 3]; values.into_iter().count()";
     let module = compile(source).unwrap();
-    assert_eq!(module.execute().unwrap(), Value::Usize(3));
+    assert_eq!(module.execute_value().unwrap(), Value::Usize(3));
     assert!(
         module
             .functions
@@ -1018,7 +1029,7 @@ fn iterator_default_body_compiles_without_legacy_runtime_id() {
 fn vec_is_empty_uses_native_body_without_legacy_runtime_id() {
     let source = "let values: Vec<i32> = Vec::new(); values.is_empty()";
     let module = compile(source).unwrap();
-    assert_eq!(module.execute().unwrap(), Value::Bool(true));
+    assert_eq!(module.execute_value().unwrap(), Value::Bool(true));
     assert!(
         module
             .native_imports
@@ -1065,11 +1076,14 @@ fn native_calls_precede_legacy_builtin_calls_and_survive_round_trip() {
                 }
             ))
     );
-    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+    assert_eq!(
+        module.execute_value().unwrap(),
+        crate::eval(source).unwrap()
+    );
 
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(loaded.native_imports, module.native_imports);
-    assert_eq!(loaded.execute().unwrap(), Value::Bool(true));
+    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
 
     let mut missing = loaded.clone();
     missing.native_imports[0].symbol = "core::option::option::missing".into();
@@ -1142,7 +1156,7 @@ fn exported_callback_function_native_imports_are_verified() {
                 matches!(instruction.instruction, Instruction::CallNative { .. })
             })
     );
-    assert_eq!(module.execute().unwrap(), Value::from_i32(3));
+    assert_eq!(module.execute_value().unwrap(), Value::from_i32(3));
 
     let mut restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     restored.native_imports[0].signature.return_type = Type::Bool;
@@ -1164,7 +1178,10 @@ fn result_native_methods_use_the_symbol_import() {
         module.native_imports[0].symbol,
         "core::result::result::is_ok"
     );
-    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+    assert_eq!(
+        module.execute_value().unwrap(),
+        crate::eval(source).unwrap()
+    );
 }
 
 #[test]
@@ -1200,9 +1217,12 @@ fn option_result_native_methods_and_global_helpers_match_interpreter() {
             "core::result::result::err",
         ])
     );
-    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+    assert_eq!(
+        module.execute_value().unwrap(),
+        crate::eval(source).unwrap()
+    );
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute().unwrap(), Value::Bool(true));
+    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
 }
 
 #[test]
@@ -1228,11 +1248,14 @@ fn string_methods_use_native_imports_without_legacy_ids() {
             .flat_map(|function| &function.instructions)
             .all(|instruction| !matches!(instruction.instruction, Instruction::CallRuntime { .. }))
     );
-    assert_eq!(module.execute().unwrap(), crate::eval(source).unwrap());
+    assert_eq!(
+        module.execute_value().unwrap(),
+        crate::eval(source).unwrap()
+    );
 
     let bytes = module.to_bytes().unwrap();
     let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
-    assert_eq!(loaded.execute().unwrap(), Value::Bool(true));
+    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
     let mut previous_format = bytes;
     previous_format[8..10].copy_from_slice(&7u16.to_le_bytes());
     assert!(
@@ -1290,13 +1313,13 @@ fn compiles_and_executes_standard_native_macros() {
     let mut host = BytecodeHost::standard();
     host.enable_standard_io().unwrap();
     assert_eq!(
-        module.execute_with_host(&host).unwrap(),
+        module.execute_value_with_host(&host).unwrap(),
         Value::from_i32(42)
     );
 
     let failure = compile("assert!(false, \"expected failure\")")
         .unwrap()
-        .execute()
+        .execute_value()
         .unwrap_err();
     assert!(failure.message.contains("expected failure"));
 }
@@ -1575,12 +1598,12 @@ fn rejects_unlinked_unauthorized_and_incompatible_imports() {
     let module = compile("type_of(42)").unwrap();
 
     let host = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION);
-    let error = module.execute_with_host(&host).unwrap_err();
+    let error = module.execute_value_with_host(&host).unwrap_err();
     assert!(error.message.contains("not authorized"));
 
     let mut missing = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION);
     missing.allow_capability("core");
-    let error = module.execute_with_host(&missing).unwrap_err();
+    let error = module.execute_value_with_host(&missing).unwrap_err();
     assert!(error.message.contains("missing bytecode import"));
 
     let mut incompatible = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION);
@@ -1593,12 +1616,12 @@ fn rejects_unlinked_unauthorized_and_incompatible_imports() {
             |_| Ok(Value::from_string("invalid")),
         )
         .unwrap();
-    let error = module.execute_with_host(&incompatible).unwrap_err();
+    let error = module.execute_value_with_host(&incompatible).unwrap_err();
     assert!(error.message.contains("signature mismatch"));
 
     let mut wrong_abi = BytecodeHost::new(BYTECODE_HOST_ABI_VERSION + 1);
     wrong_abi.allow_capability("core");
-    let error = module.execute_with_host(&wrong_abi).unwrap_err();
+    let error = module.execute_value_with_host(&wrong_abi).unwrap_err();
     assert!(error.message.contains("requires host ABI"));
 }
 
@@ -1657,7 +1680,7 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
 
     module.validate_host(&host).unwrap();
     assert_eq!(
-        module.execute_with_host(&host).unwrap(),
+        module.execute_value_with_host(&host).unwrap(),
         Value::from_i32(42)
     );
 
@@ -1665,7 +1688,7 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
     let loaded = BytecodeModule::from_bytes(&image).unwrap();
     loaded.validate_host(&host).unwrap();
     assert_eq!(
-        loaded.execute_with_host(&host).unwrap(),
+        loaded.execute_value_with_host(&host).unwrap(),
         Value::from_i32(42)
     );
 }
@@ -1734,7 +1757,7 @@ fn links_distinct_host_overloads_by_name_and_signature() {
     .unwrap();
 
     assert_eq!(
-        module.execute_with_host(&host).unwrap(),
+        module.execute_value_with_host(&host).unwrap(),
         Value::from_i32(21)
     );
 }
@@ -1773,7 +1796,10 @@ fn custom_host_contract_participates_in_static_type_checking() {
         },
     )
     .unwrap();
-    assert_eq!(module.execute_with_host(&host).unwrap(), Value::F32(5.0));
+    assert_eq!(
+        module.execute_value_with_host(&host).unwrap(),
+        Value::F32(5.0)
+    );
 
     let error = match compile_with_host("unity_engine::time::scale(true)", &contract) {
         Ok(_) => panic!("host argument type mismatch should fail"),
@@ -1807,12 +1833,12 @@ fn standard_fs_imports_require_explicit_capability() {
         )
     );
 
-    let error = module.execute().unwrap_err();
+    let error = module.execute_value().unwrap_err();
     assert!(error.message.contains("std::fs") && error.message.contains("not authorized"));
 
     let mut host = BytecodeHost::standard();
     host.enable_standard_fs().unwrap();
-    let compiled = module.execute_with_host(&host).unwrap();
+    let compiled = module.execute_value_with_host(&host).unwrap();
     assert_eq!(compiled, crate::eval(source).unwrap());
 }
 
@@ -1908,7 +1934,7 @@ fn compiles_array_index_and_tuple_field_assignment() {
     );
 
     let module = compile("let values = [1]; values[2]").unwrap();
-    let error = module.execute().unwrap_err();
+    let error = module.execute_value().unwrap_err();
     assert!(error.message.contains("out of bounds"));
 }
 
@@ -2099,7 +2125,7 @@ fn indexed_record_fields_round_trip_and_reject_invalid_indices() {
     assert_matches_interpreter(source);
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(indexed_places(&loaded), indexed_places(&module));
-    assert_eq!(loaded.execute().unwrap(), Value::from_i32(15));
+    assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(15));
 
     let mut wrong_type = loaded.clone();
     let decoy_id = wrong_type
@@ -2126,7 +2152,7 @@ fn indexed_record_fields_round_trip_and_reject_invalid_indices() {
     };
     *type_id = decoy_id;
     wrong_type.verify().unwrap();
-    assert!(wrong_type.execute().is_err());
+    assert!(wrong_type.execute_value().is_err());
 
     let mut invalid = loaded;
     let projection = invalid
@@ -2416,7 +2442,7 @@ fn compile_file_loads_external_modules() {
     std::fs::write(&module, "pub fn answer() -> i32 { 42 }").unwrap();
 
     let compiled = crate::compile_file(&root).expect("file module should compile");
-    assert_eq!(compiled.execute().unwrap(), Value::from_i32(42));
+    assert_eq!(compiled.execute_value().unwrap(), Value::from_i32(42));
 
     std::fs::remove_file(root).unwrap();
     std::fs::remove_file(module).unwrap();

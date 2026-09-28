@@ -54,7 +54,7 @@ pub unsafe extern "C" fn rils_script_value_create_default(
         };
         let value = match module
             .bytecode
-            .construct_default_with_host_and_limit(&target, &host, max_steps)
+            .construct_default_value_with_host_and_limit(&target, &host, max_steps)
         {
             Ok(value) => value,
             Err(error) => {
@@ -271,7 +271,7 @@ pub unsafe extern "C" fn rils_script_value_call_trait(
                 Err(status) => return status,
             }
         }
-        let result = match module.bytecode.call_trait_method_with_host_and_limit(
+        let result = match module.bytecode.call_trait_method_value_with_host_and_limit(
             &script_value.target,
             trait_name,
             method_name,

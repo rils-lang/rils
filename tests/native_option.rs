@@ -1,4 +1,4 @@
-use rils::{BytecodeModule, Value, compile, eval};
+use rils::{BytecodeModule, Value, compile, eval_value};
 
 fn assert_dynamic_option(
     value: Value,
@@ -33,7 +33,7 @@ fn concrete_options_use_native_layout_in_both_backends() {
         ),
     ] {
         assert_dynamic_option(
-            eval(source).unwrap(),
+            eval_value(source).unwrap(),
             ty,
             inline,
             display,
@@ -42,7 +42,7 @@ fn concrete_options_use_native_layout_in_both_backends() {
         );
         let compiled = compile(source).unwrap();
         assert_dynamic_option(
-            compiled.execute().unwrap(),
+            compiled.execute_value().unwrap(),
             ty,
             inline,
             display,
@@ -51,7 +51,7 @@ fn concrete_options_use_native_layout_in_both_backends() {
         );
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         assert_dynamic_option(
-            loaded.execute().unwrap(),
+            loaded.execute_value().unwrap(),
             ty,
             inline,
             display,
@@ -131,9 +131,9 @@ fn options_of_native_containers_use_composed_layouts() {
         let compiled = compile(source).unwrap();
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         for (stage, value) in [
-            ("interpreter", eval(source).unwrap()),
-            ("VM", compiled.execute().unwrap()),
-            ("loaded VM", loaded.execute().unwrap()),
+            ("interpreter", eval_value(source).unwrap()),
+            ("VM", compiled.execute_value().unwrap()),
+            ("loaded VM", loaded.execute_value().unwrap()),
         ] {
             let Value::Dynamic(object) = &value else {
                 panic!(
@@ -154,9 +154,9 @@ fn options_of_native_containers_use_composed_layouts() {
 #[test]
 fn options_with_unregistered_user_items_keep_legacy_storage() {
     let source = "struct Item { value: i32 } Some(Item { value: 7 })";
-    assert!(matches!(eval(source).unwrap(), Value::Option { .. }));
+    assert!(matches!(eval_value(source).unwrap(), Value::Option { .. }));
     assert!(matches!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::Option { .. }
     ));
 }
@@ -185,8 +185,8 @@ fn options_move_native_containers_through_unwrap() {
             Value::from_string("z"),
         ),
     ] {
-        assert_eq!(eval(source).unwrap(), expected);
-        assert_eq!(compile(source).unwrap().execute().unwrap(), expected);
+        assert_eq!(eval_value(source).unwrap(), expected);
+        assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
     }
 }
 
@@ -194,7 +194,7 @@ fn options_move_native_containers_through_unwrap() {
 fn owned_some_moves_string_and_legacy_items_keep_their_value() {
     let source = "let text = \"moved\"; Some(text)";
     assert_dynamic_option(
-        eval(source).unwrap(),
+        eval_value(source).unwrap(),
         "Option<string>",
         false,
         "Some(moved)",
@@ -203,7 +203,7 @@ fn owned_some_moves_string_and_legacy_items_keep_their_value() {
     );
     let compiled = compile(source).unwrap();
     assert_dynamic_option(
-        compiled.execute().unwrap(),
+        compiled.execute_value().unwrap(),
         "Option<string>",
         false,
         "Some(moved)",
@@ -212,7 +212,7 @@ fn owned_some_moves_string_and_legacy_items_keep_their_value() {
     );
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
     assert_dynamic_option(
-        loaded.execute().unwrap(),
+        loaded.execute_value().unwrap(),
         "Option<string>",
         false,
         "Some(moved)",
@@ -221,8 +221,8 @@ fn owned_some_moves_string_and_legacy_items_keep_their_value() {
     );
 
     for value in [
-        eval("Some(true)").unwrap(),
-        compile("Some(true)").unwrap().execute().unwrap(),
+        eval_value("Some(true)").unwrap(),
+        compile("Some(true)").unwrap().execute_value().unwrap(),
     ] {
         assert!(matches!(value, Value::Dynamic(_)));
         assert_eq!(
@@ -244,7 +244,7 @@ fn numeric_option_families_use_generated_native_conversions() {
             (format!("let value: {option_type} = None; value"), "None"),
         ] {
             assert_dynamic_option(
-                eval(&source).unwrap(),
+                eval_value(&source).unwrap(),
                 &option_type,
                 true,
                 display,
@@ -253,7 +253,7 @@ fn numeric_option_families_use_generated_native_conversions() {
             );
             let compiled = compile(&source).unwrap();
             assert_dynamic_option(
-                compiled.execute().unwrap(),
+                compiled.execute_value().unwrap(),
                 &option_type,
                 true,
                 display,
@@ -262,7 +262,7 @@ fn numeric_option_families_use_generated_native_conversions() {
             );
             let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
             assert_dynamic_option(
-                loaded.execute().unwrap(),
+                loaded.execute_value().unwrap(),
                 &option_type,
                 true,
                 display,
@@ -273,9 +273,9 @@ fn numeric_option_families_use_generated_native_conversions() {
         let methods = format!(
             "let some: {option_type} = Some(1{ty}); let none: {option_type} = None; some.is_some() && none.is_none()"
         );
-        assert_eq!(eval(&methods).unwrap(), Value::Bool(true));
+        assert_eq!(eval_value(&methods).unwrap(), Value::Bool(true));
         let compiled = compile(&methods).unwrap();
-        assert_eq!(compiled.execute().unwrap(), Value::Bool(true));
+        assert_eq!(compiled.execute_value().unwrap(), Value::Bool(true));
     }
 }
 
@@ -287,7 +287,7 @@ fn checked_integer_methods_return_native_options() {
         let source = format!("1{ty}.checked_add(2{ty})");
         let option_type = format!("Option<{ty}>");
         assert_dynamic_option(
-            eval(&source).unwrap(),
+            eval_value(&source).unwrap(),
             &option_type,
             true,
             "Some(3)",
@@ -296,7 +296,7 @@ fn checked_integer_methods_return_native_options() {
         );
         let compiled = compile(&source).unwrap();
         assert_dynamic_option(
-            compiled.execute().unwrap(),
+            compiled.execute_value().unwrap(),
             &option_type,
             true,
             "Some(3)",
@@ -305,7 +305,7 @@ fn checked_integer_methods_return_native_options() {
         );
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         assert_dynamic_option(
-            loaded.execute().unwrap(),
+            loaded.execute_value().unwrap(),
             &option_type,
             true,
             "Some(3)",
@@ -318,13 +318,13 @@ fn checked_integer_methods_return_native_options() {
         ("127i8.checked_add(1i8)", "None"),
         ("1i8.checked_add(2i8).unwrap()", "3"),
     ] {
-        let interpreted = eval(source).unwrap();
+        let interpreted = eval_value(source).unwrap();
         let compiled = compile(source).unwrap();
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         for value in [
             interpreted,
-            compiled.execute().unwrap(),
-            loaded.execute().unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
         ] {
             assert_eq!(value.to_string(), expected, "{source}");
             if expected == "None" {
@@ -381,7 +381,7 @@ fn string_methods_return_native_options() {
         ),
     ] {
         assert_dynamic_option(
-            eval(source).unwrap(),
+            eval_value(source).unwrap(),
             ty,
             inline,
             display,
@@ -390,7 +390,7 @@ fn string_methods_return_native_options() {
         );
         let compiled = compile(source).unwrap();
         assert_dynamic_option(
-            compiled.execute().unwrap(),
+            compiled.execute_value().unwrap(),
             ty,
             inline,
             display,
@@ -399,7 +399,7 @@ fn string_methods_return_native_options() {
         );
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         assert_dynamic_option(
-            loaded.execute().unwrap(),
+            loaded.execute_value().unwrap(),
             ty,
             inline,
             display,
@@ -441,7 +441,7 @@ fn typed_none_preserves_option_semantics() {
         ),
     ] {
         assert_dynamic_option(
-            eval(source).unwrap(),
+            eval_value(source).unwrap(),
             ty,
             inline,
             "None",
@@ -450,7 +450,7 @@ fn typed_none_preserves_option_semantics() {
         );
         let compiled = compile(source).unwrap();
         assert_dynamic_option(
-            compiled.execute().unwrap(),
+            compiled.execute_value().unwrap(),
             ty,
             inline,
             "None",
@@ -459,7 +459,7 @@ fn typed_none_preserves_option_semantics() {
         );
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         assert_dynamic_option(
-            loaded.execute().unwrap(),
+            loaded.execute_value().unwrap(),
             ty,
             inline,
             "None",
@@ -529,7 +529,7 @@ fn contextual_none_uses_native_storage_across_backends() {
         ),
     ] {
         assert_dynamic_option(
-            eval(source).unwrap(),
+            eval_value(source).unwrap(),
             ty,
             inline,
             "None",
@@ -538,7 +538,7 @@ fn contextual_none_uses_native_storage_across_backends() {
         );
         let compiled = compile(source).unwrap();
         assert_dynamic_option(
-            compiled.execute().unwrap(),
+            compiled.execute_value().unwrap(),
             ty,
             inline,
             "None",
@@ -547,7 +547,7 @@ fn contextual_none_uses_native_storage_across_backends() {
         );
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
         assert_dynamic_option(
-            loaded.execute().unwrap(),
+            loaded.execute_value().unwrap(),
             ty,
             inline,
             "None",
@@ -560,9 +560,9 @@ fn contextual_none_uses_native_storage_across_backends() {
 #[test]
 fn native_options_work_as_collection_keys_and_match_values() {
     let source = include_str!("fixtures/native_option.rils");
-    assert_eq!(eval(source).unwrap().as_i32(), Some(42));
+    assert_eq!(eval_value(source).unwrap().as_i32(), Some(42));
     let compiled = compile(source).unwrap();
-    assert_eq!(compiled.execute().unwrap().as_i32(), Some(42));
+    assert_eq!(compiled.execute_value().unwrap().as_i32(), Some(42));
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute().unwrap().as_i32(), Some(42));
+    assert_eq!(loaded.execute_value().unwrap().as_i32(), Some(42));
 }

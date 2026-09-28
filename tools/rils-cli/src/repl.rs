@@ -34,7 +34,7 @@ pub(crate) fn run() -> ExitCode {
         }
 
         match engine.eval(&line) {
-            Ok(value) if value != rils::Value::Unit => println!("{value}"),
+            Ok(value) if !value.is_unit() => println!("{value}"),
             Ok(_) => {}
             Err(error) => eprintln!("{}", error.render("<repl>", &line)),
         }

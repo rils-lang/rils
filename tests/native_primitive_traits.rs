@@ -1,4 +1,4 @@
-use rils::{Value, compile, eval};
+use rils::{Value, compile, eval_value};
 
 #[test]
 fn numeric_and_string_defaults_match_native_trait_registrations() {
@@ -20,9 +20,9 @@ fn numeric_and_string_defaults_match_native_trait_registrations() {
         ("string", "\"\""),
     ] {
         let source = format!("<{} as Default>::default() == {zero}", ty);
-        assert_eq!(eval(&source).unwrap(), Value::Bool(true), "{source}");
+        assert_eq!(eval_value(&source).unwrap(), Value::Bool(true), "{source}");
         assert_eq!(
-            compile(&source).unwrap().execute().unwrap(),
+            compile(&source).unwrap().execute_value().unwrap(),
             Value::Bool(true),
             "{source}"
         );
@@ -40,9 +40,9 @@ fn integer_and_string_keys_work_and_float_keys_are_rejected() {
         let text = "answer";
         integers.contains(&integer) && strings.contains(&text)
     "#;
-    assert_eq!(eval(source).unwrap(), Value::Bool(true));
+    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
     assert_eq!(
-        compile(source).unwrap().execute().unwrap(),
+        compile(source).unwrap().execute_value().unwrap(),
         Value::Bool(true)
     );
 
