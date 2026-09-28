@@ -173,7 +173,8 @@ fn clone_borrowed_element(
     rils_value::DynamicValue::from_rust(item.layout_handle(), text)
 }
 
-pub const NATIVE_ELEMENT: rils_native::ElementRegistration = rils_native::ElementRegistration {
-    matches: native_element_matches,
-    clone_borrowed: clone_borrowed_element,
-};
+pub const NATIVE_ELEMENT_STRING: rils_native::ElementRegistration =
+    rils_native::ElementRegistration {
+        matches: native_element_matches,
+        clone_borrowed: clone_borrowed_element,
+    };

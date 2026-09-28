@@ -161,7 +161,7 @@ mod native_layout {
     vec_definition!(decl_rils_layout);
 }
 
-pub const NATIVE_LAYOUT: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
+pub const NATIVE_LAYOUT_VEC: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
     matches: native_layout::matches,
     layout: native_layout::layout,
 };

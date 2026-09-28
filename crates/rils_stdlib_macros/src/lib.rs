@@ -1,6 +1,7 @@
 #![allow(linker_messages)]
 
 mod decl_rils;
+mod native_registry;
 mod type_patterns;
 
 use proc_macro::TokenStream;
@@ -63,4 +64,9 @@ pub fn decl_rils_native(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn decl_rils_layout(input: TokenStream) -> TokenStream {
     decl_rils::expand_layout(input)
+}
+
+#[proc_macro]
+pub fn native_registry(input: TokenStream) -> TokenStream {
+    native_registry::expand(input)
 }

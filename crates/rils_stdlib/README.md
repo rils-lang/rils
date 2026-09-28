@@ -1,6 +1,6 @@
 # rils_stdlib
 
-`rils_stdlib_macros` owns the declaration procedural macros; `rils_builtins_macros` retains the legacy ID and catalog generation macros. Native layout and element-read registrations are defined beside their Rust types and collected in `src/native.rs` through the `rils_native` protocol. The registry currently covers the Vec layout and string element reads; other layouts and execution adapters are still being migrated.
+`rils_stdlib_macros` owns the declaration procedural macros; `rils_builtins_macros` retains the legacy ID and catalog generation macros. Native layout and element-read registrations are defined beside their Rust types as public `NATIVE_LAYOUT[_NAME]` and `NATIVE_ELEMENT[_NAME]` constants. `native_registry!("src/stdlib")` collects them into `src/native.rs` through the `rils_native` protocol, so adding a registered type does not require editing a central type list. The registry currently covers the Vec layout and string element reads; other layouts and execution adapters are still being migrated.
 
 ## Free functions
 
