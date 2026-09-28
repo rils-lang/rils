@@ -250,6 +250,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
             pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
                 path: "string",
                 kind: crate::BuiltinKind::Primitive,
+                opaque_native: false,
                 source: None,
                 supertraits: &[],
                 type_parameters: &[],

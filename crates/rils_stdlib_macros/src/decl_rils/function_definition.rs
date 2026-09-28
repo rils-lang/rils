@@ -309,6 +309,7 @@ impl Input {
             pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
                 path: #path,
                 kind: crate::BuiltinKind::Function,
+                opaque_native: false,
                 source: None,
                 supertraits: &[],
                 type_parameters: &[#(#type_parameters),*],

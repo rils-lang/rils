@@ -48,6 +48,7 @@ pub struct HirIteratorMethods {
 pub enum HirTypeDefinition {
     Struct {
         name: String,
+        opaque_native: bool,
         generic_parameters: Vec<GenericParameter>,
         fields: Vec<NamedField>,
     },

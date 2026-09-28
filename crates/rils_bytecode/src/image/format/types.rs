@@ -370,6 +370,7 @@ pub(super) fn read_runtime_type(reader: &mut Reader<'_>) -> Result<RuntimeType> 
     match reader.u8()? {
         0 => Ok(RuntimeType::Struct(Rc::new(StructType {
             name: reader.string()?,
+            opaque_native: false,
             generic_parameters: reader.collection(read_generic_parameter)?,
             fields: reader.collection(read_named_field)?,
             field_indices: Default::default(),

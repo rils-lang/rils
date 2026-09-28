@@ -57,6 +57,7 @@ struct BuiltinMember {
 struct BuiltinDeclaration {
     path: &'static str,
     kind: BuiltinKind,
+    opaque_native: bool,
     source: Option<&'static str>,
     supertraits: &'static [&'static str],
     type_parameters: &'static [&'static str],
@@ -80,6 +81,7 @@ fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
     assert_eq!(FIXTURE_BUILTIN.path, "Fixture");
     assert!(FIXTURE_BUILTIN.source.is_none());
     assert_eq!(FIXTURE_BUILTIN.kind, BuiltinKind::Enum);
+    assert!(!std::hint::black_box(FIXTURE_BUILTIN.opaque_native));
     assert!(FIXTURE_BUILTIN.supertraits.is_empty());
     assert_eq!(FIXTURE_BUILTIN.type_parameters, &["T"]);
     assert_eq!(FIXTURE_BUILTIN.backend, BuiltinBackend::Runtime);

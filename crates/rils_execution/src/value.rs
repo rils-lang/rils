@@ -140,6 +140,7 @@ pub struct HostBoundMethod {
 
 pub struct StructType {
     pub name: String,
+    pub opaque_native: bool,
     pub generic_parameters: Vec<GenericParameter>,
     pub fields: Vec<NamedField>,
     pub field_indices: std::cell::OnceCell<HashMap<String, usize>>,

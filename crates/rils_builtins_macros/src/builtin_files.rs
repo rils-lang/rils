@@ -360,6 +360,7 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
             path: #path,
             kind: #kind,
             source: None,
+            opaque_native: false,
             supertraits: &[#(#supertraits),*],
             type_parameters: &[#(#type_parameters),*],
             members: #members_name,

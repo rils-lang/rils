@@ -104,6 +104,8 @@ pub struct BuiltinMember {
 pub struct BuiltinDeclaration {
     pub path: &'static str,
     pub kind: BuiltinKind,
+    /// Rust-backed struct storage has fields Rils cannot initialize directly.
+    pub opaque_native: bool,
     /// Generated Rils declaration source, including trait default bodies when present.
     pub source: Option<&'static str>,
     /// Rils trait bounds; empty for other declaration kinds.

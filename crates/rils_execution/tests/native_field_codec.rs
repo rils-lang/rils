@@ -172,6 +172,7 @@ fn owned_composite_codec_rejects_shared_noncopy_items() {
 fn definition(name: &str, fields: Vec<(&str, Type)>) -> Rc<StructType> {
     Rc::new(StructType {
         name: name.into(),
+        opaque_native: false,
         generic_parameters: vec![],
         fields: fields
             .into_iter()
@@ -324,6 +325,7 @@ fn generic_enum_record_payload_keeps_nested_struct_inline() {
 fn generic_struct_fields_use_concrete_native_layouts() {
     let holder = Rc::new(StructType {
         name: "Holder".into(),
+        opaque_native: false,
         generic_parameters: vec![GenericParameter {
             name: "T".into(),
             is_const: false,

@@ -105,6 +105,8 @@ let holder: Holder<i32> = Holder {
 
 Recursive fields must pass through a fixed-size heap handle or container. The compiler treats `Box<T>`, `Vec<T>`, `HashMap<K, V>`, `HashSet<T>`, iterator handles, and `string` as heap-backed indirection. For example:
 
+The built-in `Box<T>` has private storage. Its type may appear in recursive declarations, but `Box { value: ... }` cannot construct it. A public associated constructor is pending native generic call support; use an available collection handle when constructing recursive values today.
+
 ```rust
 struct Node {
     value: i32,

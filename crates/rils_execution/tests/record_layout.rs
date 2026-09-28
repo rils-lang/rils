@@ -21,6 +21,7 @@ fn definition(name: &str, generics: &[&str], fields: Vec<(&str, Type)>) -> Rc<St
     Rc::new(StructType {
         field_indices: Default::default(),
         name: name.into(),
+        opaque_native: false,
         generic_parameters: generics
             .iter()
             .map(|name| GenericParameter {

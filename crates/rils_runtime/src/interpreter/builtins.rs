@@ -285,6 +285,8 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             Value::StructType(Rc::new(StructType {
                 field_indices: Default::default(),
                 name: name.into(),
+                opaque_native: rils_builtins::builtin(name)
+                    .is_some_and(|declaration| declaration.opaque_native),
                 generic_parameters: if name == "BTreeMap" {
                     ["K", "V"]
                         .into_iter()
@@ -334,6 +336,8 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         Value::StructType(Rc::new(StructType {
             field_indices: Default::default(),
             name: "Range".into(),
+            opaque_native: rils_builtins::builtin("Range")
+                .is_some_and(|declaration| declaration.opaque_native),
             generic_parameters: vec![GenericParameter {
                 is_const: false,
                 name: "T".into(),
@@ -464,6 +468,8 @@ fn install_format_types(environment: &EnvironmentRef) {
         Value::StructType(Rc::new(StructType {
             field_indices: Default::default(),
             name: "FormatError".into(),
+            opaque_native: rils_builtins::builtin("FormatError")
+                .is_some_and(|declaration| declaration.opaque_native),
             generic_parameters: Vec::new(),
             fields: Vec::new(),
             methods: Default::default(),

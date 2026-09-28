@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- **破坏性变更：** 原生包装类型的私有字段不再允许用结构体字面量构造，内建 `Box<T>` 的 `Box { value: ... }` 写法现会报错。`Box<T>` 的普通关联构造方法尚未接入泛型原生调用；需要实际构造递归值时，暂用已支持的集合句柄。
+
 - 非 Copy 组合值的原生 Clone 改为按布局递归处理 `Option`、`Result`、record 和序列；`Result<Option<string>, string>` 现在可使用原生布局。`VecDeque<Option<string>>` 的端点克隆与原生 `Option` 复合子值读取不再把整个容器转换为旧 `Value`。删除借用能力的 `can_read_element` 预判；实际读取按具体布局和叶子注册执行。
 - Rust 宿主结果句柄新增 `with_native_view`，可在回调内沿布局读取非 Copy 泛型组合值及原生序列元素引用，无需先转换为拥有型 `Value`。视图提供 record 字段、`Option` 子值、带标签变体和序列元素投影；视图借用受回调范围约束。
 - 类型化空 `Vec<T>` 现可对可解析布局的非 Copy 复合元素使用原生序列，已验证 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。`push`、`pop`、`remove`、消费式迭代和元素替换在解释器与 VM 中保持一致；索引引用与借用迭代可建立并阻止借用期间的结构性修改。内部解引用非 Copy 复合元素仍需通用借用视图，用户定义元素仍需接入声明上下文。

@@ -28,6 +28,7 @@ struct Checker<'a> {
     aliases: HashMap<String, Alias>,
     associated_items: HashMap<(String, String), Alias>,
     iterator_types: HashSet<String>,
+    opaque_types: HashMap<String, bool>,
     return_types: Vec<Option<Type>>,
     self_types: Vec<Option<Type>>,
     diagnostics: Vec<AnalysisDiagnostic>,
@@ -46,12 +47,14 @@ impl<'a> Checker<'a> {
             aliases: HashMap::new(),
             associated_items: HashMap::new(),
             iterator_types: HashSet::new(),
+            opaque_types: HashMap::new(),
             return_types: Vec::new(),
             self_types: Vec::new(),
             diagnostics: Vec::new(),
             host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
         };
         checker.collect_aliases(&program.statements);
+        checker.collect_opaque_types(&program.statements, &mut Vec::new());
         crate::semantic::collect_trait_implementations(
             &program.statements,
             &mut Vec::new(),
@@ -117,6 +120,34 @@ impl<'a> Checker<'a> {
                                 target: self.host_types.resolved_type(value),
                             },
                         );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn collect_opaque_types(&mut self, statements: &[Stmt], path: &mut Vec<String>) {
+        for statement in statements {
+            match statement {
+                Stmt::Module {
+                    name,
+                    statements: Some(children),
+                    ..
+                } => {
+                    path.push(name.clone());
+                    self.collect_opaque_types(children, path);
+                    path.pop();
+                }
+                Stmt::Struct {
+                    name, attributes, ..
+                } => {
+                    let opaque = crate::ast::has_compiler_internal_attribute(attributes);
+                    path.push(name.clone());
+                    self.opaque_types.insert(path.join("::"), opaque);
+                    path.pop();
+                    if path.is_empty() || opaque {
+                        self.opaque_types.insert(name.clone(), opaque);
                     }
                 }
                 _ => {}
@@ -294,7 +325,31 @@ impl<'a> Checker<'a> {
                     );
                 }
             }
-            Expr::RecordLiteral { fields, .. } => {
+            Expr::RecordLiteral { path, fields, span } => {
+                let qualified = path.join("::");
+                let opaque = self
+                    .opaque_types
+                    .get(&qualified)
+                    .copied()
+                    .unwrap_or_else(|| {
+                        let Some(name) = path.last() else {
+                            return false;
+                        };
+                        let visible = path.len() == 1
+                            || rils_builtins::builtin_module_members(
+                                &path[..path.len() - 1].join("::"),
+                            )
+                            .contains(&name.as_str());
+                        visible
+                            && rils_builtins::builtin(name)
+                                .is_some_and(|declaration| declaration.opaque_native)
+                    });
+                if opaque {
+                    self.diagnostic(
+                        format!("cannot construct opaque type `{qualified}` from fields"),
+                        *span,
+                    );
+                }
                 for field in fields {
                     self.expression(&field.value);
                 }

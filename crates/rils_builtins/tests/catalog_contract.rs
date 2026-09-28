@@ -941,3 +941,10 @@ fn exported_fn_trait_keeps_its_generic_contract() {
         assert!(rils_builtins::builtin_module_members("core::ops").contains(&name));
     }
 }
+#[test]
+fn native_private_storage_is_opaque() {
+    assert!(rils_builtins::builtin("Rc").unwrap().opaque_native);
+    assert!(rils_builtins::builtin("Vec").unwrap().opaque_native);
+    assert!(rils_builtins::builtin("Box").unwrap().opaque_native);
+    assert!(!rils_builtins::builtin("FormatError").unwrap().opaque_native);
+}

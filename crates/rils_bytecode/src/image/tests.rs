@@ -566,8 +566,8 @@ fn calls_named_functions_with_arguments() {
 }
 
 #[test]
-fn executes_recursive_generic_structs_through_heap_indirection() {
-    let module = compile(
+fn rejects_direct_construction_of_private_box_storage() {
+    let error = compile(
         r#"
             struct Node { value: i32, next: Option<Box<Node>> }
             pub fn main() -> usize {
@@ -579,15 +579,12 @@ fn executes_recursive_generic_structs_through_heap_indirection() {
             }
         "#,
     )
-    .expect("recursive generic source should compile");
-    assert_eq!(
-        module.call_value("main", Vec::new()).unwrap(),
-        Value::from_i32(42)
-    );
-    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(
-        loaded.call_value("main", Vec::new()).unwrap(),
-        Value::from_i32(42)
+    .err()
+    .expect("Box has private storage");
+    assert!(
+        error
+            .to_string()
+            .contains("cannot construct opaque type `Box`")
     );
 }
 

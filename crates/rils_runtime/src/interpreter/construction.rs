@@ -11,6 +11,12 @@ impl Interpreter {
         let direct = self.resolve_path(path, environment, span).ok();
         if let Some(Value::StructType(definition)) = direct {
             let name = definition.name.as_str();
+            if definition.opaque_native {
+                return Err(RuntimeError::new(
+                    format!("cannot construct opaque type `{name}` from fields"),
+                    span,
+                ));
+            }
             let mut substitutions = generic_substitutions(&definition.generic_parameters);
             infer_named_fields(&definition.fields, &values, &mut substitutions, span, name)?;
             validate_generic_bounds(

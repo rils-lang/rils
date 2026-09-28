@@ -258,6 +258,10 @@ impl Definition {
         for line in super::documentation(&self.item.attrs).lines() {
             source.push_str(&format!("/// {line}\n"));
         }
+        let opaque = opaque_native(&self.item);
+        if opaque {
+            source.push_str("#[compiler_internal]\n");
+        }
         let public_fields = public_fields(&self.item);
         if public_fields.is_empty() {
             source.push_str(&format!("pub struct {name}{generics};\n"));
@@ -435,6 +439,17 @@ fn public_fields(item: &ItemStruct) -> Vec<&syn::Field> {
     }
 }
 
+fn opaque_native(item: &ItemStruct) -> bool {
+    match &item.fields {
+        Fields::Unit => false,
+        Fields::Unnamed(_) => true,
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .any(|field| !matches!(field.vis, syn::Visibility::Public(_))),
+    }
+}
+
 fn rils_field_type(ty: &Type) -> syn::Result<String> {
     match ty {
         Type::Macro(value) if value.mac.path.is_ident("rils_type") => {
@@ -539,6 +554,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
 
 fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
     let name = definition.item.ident.to_string();
+    let opaque_native = opaque_native(&definition.item);
     let (path, backend) = super::declaration_identity(&definition.path, &name);
     let docs = super::documentation(&definition.item.attrs);
     let module = &definition.path;
@@ -703,6 +719,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
         pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
             path: #path,
             kind: crate::BuiltinKind::Struct,
+            opaque_native: #opaque_native,
             source: None,
             supertraits: &[],
             type_parameters: &[#(#type_parameters),*],
@@ -778,6 +795,7 @@ mod tests {
         let definition = Definition::parse(syn::parse_quote!(core::range), module).unwrap();
         let source = definition.source().unwrap();
         assert!(source.contains("pub struct Range<T>;"));
+        assert!(source.contains("#[compiler_internal]\npub struct Range<T>;"));
         assert!(source.contains("fn new() -> Self"));
         assert!(source.contains("fn next(&mut self) -> Option<T>"));
         assert!(!source.contains("current"));
@@ -883,6 +901,7 @@ mod tests {
         assert!(source.contains("text: string,"));
         assert!(source.contains("optional: Option<T>,"));
         assert!(!source.contains("hidden:"));
+        assert!(source.contains("#[compiler_internal]\npub struct Record<T>"));
         assert!(source.contains("/// An integer value."));
         let tokens = rils_syntax::lex(&source).unwrap();
         rils_syntax::parser::parse_builtin_declarations(tokens).unwrap();

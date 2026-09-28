@@ -673,6 +673,21 @@ impl<'a> FunctionLowerer<'a> {
                 } else {
                     (self.type_id(path.last().unwrap(), *span)?, None)
                 };
+                if matches!(
+                    self.type_definitions.get(type_id),
+                    Some(HirTypeDefinition::Struct {
+                        opaque_native: true,
+                        ..
+                    })
+                ) {
+                    return Err(CompileError::unsupported(
+                        format!(
+                            "cannot construct opaque type `{}` from fields",
+                            path.join("::")
+                        ),
+                        *span,
+                    ));
+                }
                 Ok(HirExpression::ConstructRecord {
                     type_id,
                     variant,

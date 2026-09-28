@@ -136,6 +136,7 @@ fn declaration_tokens(
                 BuiltinDeclaration {
                     path: #path,
                     kind: BuiltinKind::Module,
+                    opaque_native: false,
                     source: None,
                     supertraits: &[],
                     type_parameters: &[],
@@ -238,6 +239,7 @@ fn declaration_tokens(
                 BuiltinDeclaration {
                     path: #path,
                     kind: BuiltinKind::Function,
+                    opaque_native: false,
                     source: None,
                     supertraits: &[],
                     type_parameters: &[#(#type_parameters),*],

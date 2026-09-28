@@ -85,22 +85,20 @@ impl ProgramLowerer {
         types.insert("Box".to_owned(), box_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Box".to_owned(),
+            opaque_native: rils_builtins::builtin("Box").is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
                 bounds: Vec::new(),
                 span: Span::default(),
             }],
-            fields: vec![rils_frontend::ast::NamedField {
-                name: "value".to_owned(),
-                type_annotation: Type::Variable("T".to_owned()),
-                span: Span::default(),
-            }],
+            fields: Vec::new(),
         });
         let rc_id = type_definitions.len();
         types.insert("Rc".to_owned(), rc_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Rc".to_owned(),
+            opaque_native: rils_builtins::builtin("Rc").is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
@@ -113,6 +111,7 @@ impl ProgramLowerer {
         types.insert("Cell".to_owned(), cell_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Cell".to_owned(),
+            opaque_native: rils_builtins::builtin("Cell").is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
@@ -125,6 +124,7 @@ impl ProgramLowerer {
         types.insert("RefCell".to_owned(), ref_cell_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "RefCell".to_owned(),
+            opaque_native: rils_builtins::builtin("RefCell").is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
@@ -137,6 +137,8 @@ impl ProgramLowerer {
         types.insert("VecDeque".to_owned(), deque_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "VecDeque".to_owned(),
+            opaque_native: rils_builtins::builtin("VecDeque")
+                .is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
@@ -149,6 +151,8 @@ impl ProgramLowerer {
         types.insert("BinaryHeap".to_owned(), heap_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "BinaryHeap".to_owned(),
+            opaque_native: rils_builtins::builtin("BinaryHeap")
+                .is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
@@ -161,6 +165,8 @@ impl ProgramLowerer {
         types.insert("BTreeMap".to_owned(), tree_map_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "BTreeMap".to_owned(),
+            opaque_native: rils_builtins::builtin("BTreeMap")
+                .is_some_and(|item| item.opaque_native),
             generic_parameters: ["K", "V"]
                 .into_iter()
                 .map(|name| rils_frontend::ast::GenericParameter {
@@ -176,6 +182,8 @@ impl ProgramLowerer {
         types.insert("BTreeSet".to_owned(), tree_set_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "BTreeSet".to_owned(),
+            opaque_native: rils_builtins::builtin("BTreeSet")
+                .is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
@@ -188,6 +196,7 @@ impl ProgramLowerer {
         types.insert("Weak".to_owned(), weak_id);
         type_definitions.push(HirTypeDefinition::Struct {
             name: "Weak".to_owned(),
+            opaque_native: rils_builtins::builtin("Weak").is_some_and(|item| item.opaque_native),
             generic_parameters: vec![rils_frontend::ast::GenericParameter {
                 is_const: false,
                 name: "T".to_owned(),
@@ -235,11 +244,15 @@ impl ProgramLowerer {
                 let definition = match statement {
                     Stmt::Struct {
                         name,
+                        attributes,
                         generic_parameters,
                         fields,
                         ..
                     } => Some(HirTypeDefinition::Struct {
                         name: qualified_name(&unit.module_path, name),
+                        opaque_native: rils_frontend::ast::has_compiler_internal_attribute(
+                            attributes,
+                        ),
                         generic_parameters: generic_parameters.clone(),
                         fields: fields.clone(),
                     }),

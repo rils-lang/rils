@@ -274,6 +274,7 @@ impl Interpreter {
             }
             Stmt::Struct {
                 name,
+                attributes,
                 generic_parameters,
                 fields,
                 span,
@@ -297,6 +298,7 @@ impl Interpreter {
                 let definition = StructType {
                     field_indices: Default::default(),
                     name: name.clone(),
+                    opaque_native: crate::ast::has_compiler_internal_attribute(attributes),
                     generic_parameters: generic_parameters.clone(),
                     fields,
                     methods: Default::default(),

@@ -458,6 +458,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
         pub const DECLARATION: crate::BuiltinDeclaration = crate::BuiltinDeclaration {
             path: #path,
             kind: crate::BuiltinKind::Enum,
+            opaque_native: false,
             source: None,
             supertraits: &[],
             type_parameters: &[#(#type_generics),*],

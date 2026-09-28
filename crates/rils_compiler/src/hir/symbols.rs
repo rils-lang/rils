@@ -96,6 +96,7 @@ pub(super) fn collect_nested_symbols(
                 }
                 Stmt::Struct {
                     name,
+                    attributes,
                     generic_parameters,
                     fields,
                     ..
@@ -106,6 +107,9 @@ pub(super) fn collect_nested_symbols(
                     types.entry(name.clone()).or_insert(id);
                     type_definitions.push(HirTypeDefinition::Struct {
                         name: qualified,
+                        opaque_native: rils_frontend::ast::has_compiler_internal_attribute(
+                            attributes,
+                        ),
                         generic_parameters: generic_parameters.clone(),
                         fields: fields.clone(),
                     });

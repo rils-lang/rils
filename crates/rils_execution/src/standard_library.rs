@@ -45,6 +45,7 @@ pub fn install(
     let error = Rc::new(StructType {
         field_indices: Default::default(),
         name: "std::io::Error".into(),
+        opaque_native: error_declaration.opaque_native,
         generic_parameters: Vec::new(),
         fields: error_declaration
             .members

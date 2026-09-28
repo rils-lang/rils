@@ -604,6 +604,15 @@ impl<'a> VirtualMachine<'a> {
                         .collect::<Result<HashMap<_, _>, BytecodeError>>()?;
                     let value = match (&self.module.types[type_id], variant) {
                         (RuntimeType::Struct(definition), None) => {
+                            if definition.opaque_native {
+                                return Err(BytecodeError::new(
+                                    format!(
+                                        "cannot construct opaque type `{}` from fields",
+                                        definition.name
+                                    ),
+                                    instruction.span,
+                                ));
+                            }
                             let type_arguments = infer_generic_arguments(
                                 &definition.generic_parameters,
                                 &definition.fields,

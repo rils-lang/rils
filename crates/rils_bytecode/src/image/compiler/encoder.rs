@@ -74,9 +74,11 @@ fn runtime_type(definition: HirTypeDefinition) -> RuntimeType {
     match definition {
         HirTypeDefinition::Struct {
             name,
+            opaque_native,
             generic_parameters,
             fields,
         } => RuntimeType::Struct(Rc::new(StructType {
+            opaque_native,
             name,
             generic_parameters,
             fields,
