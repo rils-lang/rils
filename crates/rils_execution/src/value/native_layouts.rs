@@ -25,9 +25,7 @@ pub mod option {
 }
 
 pub mod vec {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    rils_stdlib::vec_definition!(decl_rils_layout);
+    pub use rils_stdlib::stdlib::collections::vector::is_native_vec as matches;
 }
 
 pub mod vec_deque {

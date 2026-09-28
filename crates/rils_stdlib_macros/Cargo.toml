@@ -7,7 +7,7 @@ publish = ["crates-io"]
 description = "Procedural macros for Rust-backed Rils standard-library declarations"
 license.workspace = true
 repository.workspace = true
-include = ["/Cargo.toml", "/src/**"]
+include = ["/Cargo.toml", "/README.md", "/src/**"]
 
 [lib]
 proc-macro = true

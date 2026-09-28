@@ -64,7 +64,7 @@ pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
                 .descriptor()
                 .layout()
                 .sequence_item()
-                .is_some_and(|item| item.is_copy() || item.rils_type() == &Type::String)
+                .is_some_and(|item| rils_stdlib::native::registry().can_read_element(item))
             {
                 return Err("native borrowed iteration requires Copy or string elements".into());
             }

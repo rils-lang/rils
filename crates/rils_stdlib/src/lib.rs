@@ -4,6 +4,10 @@ extern crate self as rils_stdlib;
 
 pub mod stdlib;
 
+pub mod native;
+
+pub use rils_syntax::Type;
+
 /// Marks a field type for Rils declarations while preserving its Rust type.
 #[macro_export]
 macro_rules! rils_type {

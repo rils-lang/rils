@@ -163,7 +163,7 @@ impl ReferenceValue {
             .layout()
             .sequence_item()
             .ok_or("dynamic value is not an indexed sequence")?;
-        if !item.is_copy() && item.rils_type() != &crate::Type::String {
+        if !rils_stdlib::native::registry().can_read_element(item) {
             return Err(format!(
                 "native references to {} are not yet supported",
                 item.rils_type()

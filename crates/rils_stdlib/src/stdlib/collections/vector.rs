@@ -154,3 +154,18 @@ mod native {
 }
 
 pub use native::Vec;
+
+mod native_layout {
+    use rils_stdlib_macros::decl_rils_layout;
+
+    vec_definition!(decl_rils_layout);
+}
+
+pub const NATIVE_LAYOUT: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
+    matches: native_layout::matches,
+    layout: native_layout::layout,
+};
+
+pub fn is_native_vec(ty: &rils_syntax::Type) -> bool {
+    native_layout::matches(ty)
+}

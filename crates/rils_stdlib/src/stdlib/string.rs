@@ -161,3 +161,19 @@ mod native {
 }
 
 pub use native::String;
+
+fn native_element_matches(ty: &rils_syntax::Type) -> bool {
+    ty == &rils_syntax::Type::String
+}
+
+fn clone_borrowed_element(
+    item: &rils_value::DynamicValue,
+) -> Result<rils_value::DynamicValue, std::string::String> {
+    let text = item.with::<String, _>(Clone::clone)?;
+    rils_value::DynamicValue::from_rust(item.layout_handle(), text)
+}
+
+pub const NATIVE_ELEMENT: rils_native::ElementRegistration = rils_native::ElementRegistration {
+    matches: native_element_matches,
+    clone_borrowed: clone_borrowed_element,
+};

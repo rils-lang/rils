@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 
-use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicPathStep, DynamicType, DynamicValue};
 
 use crate::Type;
@@ -46,7 +45,7 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
     if matches!(value, Value::Vec(_))
         && !layout
             .sequence_item()
-            .is_some_and(|item| item.is_copy() || item.rils_type() == &Type::String)
+            .is_some_and(|item| rils_stdlib::native::registry().can_read_element(item))
     {
         return value;
     }
@@ -150,17 +149,7 @@ pub fn borrowed_item(object: &DynamicObject, index: usize) -> Result<Value, Stri
 }
 
 fn clone_item(item: &DynamicValue) -> Result<DynamicValue, String> {
-    if item.descriptor().is_copy() {
-        return item.copy_owned();
-    }
-    if item.descriptor().rils_type() == &Type::String {
-        let text = item.with::<NativeString, _>(Clone::clone)?;
-        return DynamicValue::from_rust(item.layout_handle(), text);
-    }
-    Err(format!(
-        "native Vec element {} cannot be cloned",
-        item.descriptor().rils_type()
-    ))
+    rils_stdlib::native::registry().clone_borrowed_element(item)
 }
 
 pub fn replace_item(object: &DynamicObject, index: usize, value: Value) -> Result<(), String> {
