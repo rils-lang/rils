@@ -837,6 +837,11 @@ impl<'a> VirtualMachine<'a> {
                     source,
                 } => {
                     let result = self.take_register(source, instruction.span)?;
+                    let result = result
+                        .materialize_native_sum()
+                        .transpose()
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?
+                        .unwrap_or(result);
                     match result {
                         Value::Result {
                             value: Ok(value), ..

@@ -59,6 +59,7 @@ impl Value {
             },
             (value, _) => value,
         };
+        let value = crate::value::dynamic_result::promote(value, expected)?;
         Ok(crate::value::dynamic_sequence::promote_empty(
             value, expected,
         ))
@@ -68,6 +69,10 @@ impl Value {
     /// value. Other cases still use the existing constraint logic, which may
     /// infer generic arguments or materialize a different representation.
     pub fn constrain_owned(self, expected: &Type) -> Option<Self> {
+        if matches!((&self, expected), (Self::Result { .. }, Type::Result(_, _))) {
+            expected.constrain(&self)?;
+            return self.apply_declared_storage(expected).ok();
+        }
         if matches!(self, Self::VecDeque(_) | Self::BinaryHeap(_)) {
             // The legacy constructor has no type argument until the binding
             // supplies one. Keep the unique owner so its empty storage can be

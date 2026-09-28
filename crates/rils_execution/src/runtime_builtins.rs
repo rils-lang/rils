@@ -639,7 +639,8 @@ fn tuple_value(values: Vec<Value>) -> Value {
 fn import_receiver(value: &Value) -> Result<Value, String> {
     match value {
         Value::Reference(reference) => import_receiver(&reference.read()?),
-        Value::Dynamic(_) => crate::value::dynamic_option::materialize(value)
+        Value::Dynamic(_) => value
+            .materialize_native_sum()
             .ok_or("dynamic value has no runtime receiver adapter")?,
         value => Ok(value.clone()),
     }

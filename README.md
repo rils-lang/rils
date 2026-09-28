@@ -35,6 +35,8 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 项目中的公开源码声明可通过多层 `pub use` 重导出；Analyzer 的补全、Hover、跳转和引用查找
 会追踪到原声明，并隔离不同项目中的同名符号。
 
+具备具体分支类型的 `Result<T, E>` 也已在基础标量、`string` 和 Copy 嵌套负载上接入原生布局；Rust 宿主可通过 `Value::as_result()` 统一读取新旧表示。
+
 ## Rust 嵌入
 
 脚本中的常用拥有型容器包括 `Vec<T>`、`VecDeque<T>`、`BinaryHeap<T>`、`BTreeMap<K, V>`、

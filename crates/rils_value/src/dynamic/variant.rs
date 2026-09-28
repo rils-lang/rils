@@ -114,6 +114,30 @@ impl DynamicValue {
         Ok(unsafe { ptr::read(self.storage.pointer().cast::<u32>()) as usize })
     }
 
+    /// Copy the active payload when its concrete child layout is Copy.
+    pub fn copy_variant_payload(&self) -> Result<Self, String> {
+        let DropKind::Variant(variant) = &self.descriptor.drop_kind else {
+            return Err("value is not a variant".into());
+        };
+        let index = self.variant_index()?;
+        let child = &variant.alternatives[index];
+        if !child.copy {
+            return Err(format!("variant payload {} is not Copy", child.rils_type));
+        }
+        let mut payload = Self::uninitialized(child.clone());
+        // SAFETY: the active tag selects an initialized Copy child at the
+        // aligned offset; duplicating its bytes creates an independent value.
+        unsafe {
+            ptr::copy_nonoverlapping(
+                self.storage.pointer().add(variant.payload_offset),
+                payload.storage.pointer_mut(),
+                child.layout.size(),
+            );
+        }
+        payload.initialized = true;
+        Ok(payload)
+    }
+
     /// Borrow the active variant when its payload is a registered Rust leaf.
     pub fn with_variant<T: 'static, R>(
         &self,

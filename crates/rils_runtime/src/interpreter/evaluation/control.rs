@@ -69,6 +69,11 @@ impl Interpreter {
                     ));
                 }
                 let value = self.evaluate(operand, environment)?;
+                let value = value
+                    .materialize_native_sum()
+                    .transpose()
+                    .map_err(|message| RuntimeError::new(message, *span))?
+                    .unwrap_or(value);
                 let Value::Result {
                     value, error_type, ..
                 } = value

@@ -121,6 +121,11 @@ pub(crate) fn builtin_runtime_member(
         {
             "Option"
         }
+        Value::Dynamic(object)
+            if matches!(object.descriptor().layout().rils_type(), Type::Result(_, _)) =>
+        {
+            "Result"
+        }
         Value::Dynamic(object) => match object.descriptor().layout().rils_type() {
             Type::Named { name, .. } => name.as_str(),
             _ => return None,

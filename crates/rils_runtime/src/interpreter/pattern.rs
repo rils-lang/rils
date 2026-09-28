@@ -27,7 +27,7 @@ fn pattern_matches_inner(
     environment: &EnvironmentRef,
     borrowed: bool,
 ) -> bool {
-    let materialized = match rils_execution::value::dynamic_option::materialize(value) {
+    let materialized = match value.materialize_native_sum() {
         Some(Ok(value)) => Some(value),
         Some(Err(_)) => return false,
         None => None,

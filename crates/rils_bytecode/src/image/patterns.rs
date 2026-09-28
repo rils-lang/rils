@@ -29,7 +29,7 @@ pub(super) fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
         _ => None,
     };
     let value = borrowed.as_ref().unwrap_or(value);
-    let materialized = match crate::value::dynamic_option::materialize(value) {
+    let materialized = match value.materialize_native_sum() {
         Some(Ok(value)) => Some(value),
         Some(Err(_)) => return false,
         None => None,
@@ -130,7 +130,7 @@ fn collect_pattern_bindings_inner(
     bindings: &mut Vec<(usize, Value)>,
     borrowed: bool,
 ) {
-    let materialized = crate::value::dynamic_option::materialize(value).and_then(Result::ok);
+    let materialized = value.materialize_native_sum().and_then(Result::ok);
     let value = materialized.as_ref().unwrap_or(value);
     match pattern {
         HirPattern::Binding(local) => {

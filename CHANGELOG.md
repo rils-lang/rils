@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 具体类型的 `Result<T, E>` 在两个分支均有可读取的原生布局时，可在类型化绑定中使用动态带标签负载；覆盖基础标量、`string` 和 Copy 的嵌套负载（如 `Result<Option<i32>, string>`）。解释器、VM、重载字节码、模式匹配与方法调用保持一致。Rust 宿主应通过 `Value::as_result()` 读取新旧表示；直接匹配 `Value::Result` 的代码需同时处理 `Value::Dynamic`。其他子类型仍保留旧表示。
+
 - `Option<T>` 的原生布局现可递归容纳布尔、字符及已有标准库容器布局，例如 `Option<VecDeque<i32>>`、`Option<BinaryHeap<string>>` 和 `Option<HashSet<i32>>`；嵌套 `Some` / `None` 在解释器、VM 与重新加载的字节码中一致。Rust 宿主若直接匹配这些值的 `Value::Option`，需改用 `Value::as_option()` 或同时处理 `Value::Dynamic`。用户定义子类型仍走旧表示。
 - 带具体标准库元素布局的 `VecDeque<T>` / `BinaryHeap<T>` 类型化局部绑定现在使用动态原生序列负载；解释器、VM 和重新加载的字节码保持一致。Rust 宿主若直接匹配 `Value::VecDeque` / `Value::BinaryHeap`，需同时处理 `Value::Dynamic`；其余构造上下文和无法解析布局的元素仍使用旧变体。常用读写方法直接访问原生负载，部分非 Copy 元素的端点克隆及容器克隆仍通过转换桥。未冻结的 v8 `InitLocal` 编码已增加可选声明类型，旧 `.rilbc` 文件须重新编译；格式号不变。
 - 标准库全部整数宽度的字面量、默认值、算术及方法结果现使用内联原生负载；旧数值 `Value` 变体仍可作为 Rust 宿主输入。宿主读取运行结果应使用相应的 `Value::as_i16()` / `as_u32()` 等方法，构造时使用 `Value::from_i16()` / `from_u32()` 等方法。C ABI 整数标签和实验性 v8 字节码编码不变。

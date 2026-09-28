@@ -108,9 +108,7 @@ impl HashKey {
             Value::Reference(reference) => reference.read()?,
             value => value.clone(),
         };
-        let value = super::dynamic_option::materialize(&value)
-            .transpose()?
-            .unwrap_or(value);
+        let value = value.materialize_native_sum().transpose()?.unwrap_or(value);
         let value = crate::numeric::lower_migrated_integer(value);
         if let Some(value) = crate::numeric::i8_payload(&value) {
             return Ok(Self::I8(value));

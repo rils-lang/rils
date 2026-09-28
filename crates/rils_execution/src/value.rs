@@ -33,6 +33,7 @@ pub type NativeType = rils_value::NativeType<Value>;
 pub type DynamicObject = rils_value::DynamicObject<Value>;
 #[path = "value/dynamic_option.rs"]
 pub mod dynamic_option;
+pub mod dynamic_result;
 pub mod dynamic_sequence;
 #[path = "value/record.rs"]
 mod record;
@@ -409,6 +410,31 @@ impl Value {
     /// Read an option regardless of whether it uses dynamic or legacy storage.
     pub fn as_option(&self) -> Option<(Option<Value>, Type)> {
         dynamic_option::view_any(self)?.ok()
+    }
+
+    /// Read a result regardless of whether it uses dynamic or legacy storage.
+    pub fn as_result(&self) -> Option<(Result<Value, Value>, Type, Type)> {
+        match self {
+            Self::Result {
+                value,
+                ok_type,
+                error_type,
+            } => Some((
+                value
+                    .clone()
+                    .map(|item| item.as_ref().clone())
+                    .map_err(|item| item.as_ref().clone()),
+                ok_type.clone().unwrap_or(Type::Unknown),
+                error_type.clone().unwrap_or(Type::Unknown),
+            )),
+            Self::Dynamic(_) => dynamic_result::view(self)?.ok(),
+            _ => None,
+        }
+    }
+
+    /// Produce the legacy view used by transitional interpreter and VM paths.
+    pub fn materialize_native_sum(&self) -> Option<Result<Value, String>> {
+        dynamic_option::materialize(self).or_else(|| dynamic_result::materialize(self))
     }
 
     pub fn is_copy(&self) -> bool {
@@ -832,6 +858,8 @@ impl Value {
                     object.descriptor().layout().rils_type(),
                 ) {
                     Self::Dynamic(dynamic_sequence::clone_owned(object)?)
+                } else if let Some(result) = dynamic_result::materialize(self) {
+                    dynamic_result::promote(result?, object.descriptor().layout().rils_type())?
                 } else {
                     let (item, item_type) = dynamic_option::view(self)
                         .ok_or("dynamic value does not support Clone")??;
@@ -969,6 +997,10 @@ impl Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         if matches!(self, Self::Dynamic(_)) || matches!(other, Self::Dynamic(_)) {
+            if let (Some((left, _, _)), Some((right, _, _))) = (self.as_result(), other.as_result())
+            {
+                return left == right;
+            }
             return match (
                 dynamic_option::view_any(self),
                 dynamic_option::view_any(other),
