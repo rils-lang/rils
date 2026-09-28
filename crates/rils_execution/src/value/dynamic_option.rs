@@ -75,35 +75,23 @@ pub fn view(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {
 }
 
 fn view_composite(object: &DynamicObject) -> Result<Option<Value>, String> {
-    let layout = object.descriptor().layout_handle();
-    let Type::Option(item_type) = layout.rils_type() else {
+    let Type::Option(item_type) = object.descriptor().layout().rils_type() else {
         return Err("dynamic value is not an option".into());
     };
-    let item_type = item_type.as_ref().clone();
-    object.with_mut(|payload| {
-        let absent = DynamicValue::none(layout.clone())?;
-        let owned = std::mem::replace(payload, absent);
-        let mut codec = NativeRecordCodec::new();
-        let legacy = codec.from_native(owned)?;
-        let result = match &legacy {
-            Value::Option { value, .. } => value
-                .as_ref()
-                .map(|item| {
-                    let cloned = item.clone_owned()?;
-                    if !matches!(item_type, Type::Option(_)) {
-                        return Ok(cloned);
-                    }
-                    let item_layout = RecordLayoutResolver::new(&[]).resolve(&item_type)?;
-                    let native = codec.into_native(cloned, item_layout.clone())?;
-                    DynamicObject::new(Rc::new(DynamicType::new(item_layout)), native)
-                        .map(Value::Dynamic)
-                })
-                .transpose(),
-            _ => Err("native option decoded to a different value kind".into()),
+    let nested_option = matches!(item_type.as_ref(), Type::Option(_));
+    object.with(|payload| {
+        let view = payload.view();
+        if !view.option_is_some()? {
+            return Ok(None);
+        }
+        let item = rils_stdlib::native::registry().clone_borrowed_view(view.option_item()?)?;
+        let value = if nested_option {
+            let layout = item.layout_handle();
+            Value::Dynamic(DynamicObject::new(Rc::new(DynamicType::new(layout)), item)?)
+        } else {
+            NativeRecordCodec::new().from_native(item)?
         };
-        let restored = codec.into_native(legacy, layout)?;
-        *payload = restored;
-        result
+        Ok(Some(value))
     })?
 }
 

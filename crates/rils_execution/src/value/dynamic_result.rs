@@ -2,10 +2,9 @@
 
 use std::rc::Rc;
 
-use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicType, DynamicValue};
 
-use crate::{FloatType, IntegerType, Type};
+use crate::Type;
 
 use super::{
     DynamicObject, Value, record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver,
@@ -22,12 +21,6 @@ pub fn promote(value: Value, expected: &Type) -> Result<Value, String> {
     let alternatives = layout
         .variant_alternatives()
         .ok_or("Result has no variant layout")?;
-    if !alternatives
-        .iter()
-        .all(|child| child.is_copy() || child.rils_type() == &Type::String)
-    {
-        return Ok(value);
-    }
     let Value::Result { value: branch, .. } = value else {
         return Ok(value);
     };
@@ -59,35 +52,10 @@ pub fn promote(value: Value, expected: &Type) -> Result<Value, String> {
     Ok(Value::Dynamic(object))
 }
 
-fn read_item(payload: &DynamicValue, index: usize, ty: &Type) -> Result<Value, String> {
-    macro_rules! scalar {
-        ($rust:ty, $construct:expr) => {
-            payload.with_variant::<$rust, _>(index, |item| $construct(*item))
-        };
-    }
-    match ty {
-        Type::Unit => scalar!((), |_| Value::Unit),
-        Type::Bool => scalar!(bool, Value::Bool),
-        Type::Char => scalar!(char, Value::from_char),
-        Type::Integer(IntegerType::I8) => scalar!(i8, Value::from_i8),
-        Type::Integer(IntegerType::I16) => scalar!(i16, Value::from_i16),
-        Type::Integer(IntegerType::I32) => scalar!(i32, Value::from_i32),
-        Type::Integer(IntegerType::I64) => scalar!(i64, Value::from_i64),
-        Type::Integer(IntegerType::I128) => scalar!(i128, Value::from_i128),
-        Type::Integer(IntegerType::Isize) => scalar!(isize, Value::from_isize),
-        Type::Integer(IntegerType::U8) => scalar!(u8, Value::from_u8),
-        Type::Integer(IntegerType::U16) => scalar!(u16, Value::from_u16),
-        Type::Integer(IntegerType::U32) => scalar!(u32, Value::from_u32),
-        Type::Integer(IntegerType::U64) => scalar!(u64, Value::from_u64),
-        Type::Integer(IntegerType::U128) => scalar!(u128, Value::from_u128),
-        Type::Integer(IntegerType::Usize) => scalar!(usize, Value::from_usize),
-        Type::Float(FloatType::F32) => scalar!(f32, Value::from_f32),
-        Type::Float(FloatType::F64) => scalar!(f64, Value::from_f64),
-        Type::String => payload.with_variant::<NativeString, _>(index, |item| {
-            Value::from_string(std::string::String::from(item.clone()))
-        }),
-        _ => NativeRecordCodec::new().from_native(payload.copy_variant_payload()?),
-    }
+fn read_item(payload: &DynamicValue) -> Result<Value, String> {
+    let item =
+        rils_stdlib::native::registry().clone_borrowed_view(payload.view().variant_payload()?)?;
+    NativeRecordCodec::new().from_native(item)
 }
 
 type ResultView = (Result<Value, Value>, Type, Type);
@@ -105,11 +73,7 @@ pub fn view(value: &Value) -> Option<Result<ResultView, String>> {
         object
             .with(|payload| {
                 let index = payload.variant_index()?;
-                let item = read_item(
-                    payload,
-                    index,
-                    if index == 0 { &ok_type } else { &error_type },
-                )?;
+                let item = read_item(payload)?;
                 Ok((
                     if index == 0 { Ok(item) } else { Err(item) },
                     ok_type,

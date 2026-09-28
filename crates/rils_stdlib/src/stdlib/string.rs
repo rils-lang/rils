@@ -173,10 +173,10 @@ fn native_element_matches(ty: &rils_syntax::Type) -> bool {
 }
 
 fn clone_borrowed_element(
-    item: &rils_value::DynamicValue,
+    item: rils_value::DynamicValueRef<'_>,
 ) -> Result<rils_value::DynamicValue, std::string::String> {
-    let text = item.with::<String, _>(Clone::clone)?;
-    rils_value::DynamicValue::from_rust(item.layout_handle(), text)
+    let text = item.with_rust::<String, _>(Clone::clone)?;
+    rils_value::DynamicValue::from_rust(item.layout()?, text)
 }
 
 pub const NATIVE_ELEMENT_STRING: rils_native::ElementRegistration =

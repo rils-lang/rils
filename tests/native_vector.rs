@@ -220,6 +220,7 @@ fn nested_non_copy_element_uses_native_storage() {
         let source = format!("let mut v: Vec<{ty}> = Vec::new(); v.push({item}); v");
         for value in run_both(&source) {
             assert!(matches!(value, Value::Dynamic(_)), "{source}");
+            assert_eq!(value.clone_owned().unwrap().to_string(), value.to_string());
         }
     }
 }
@@ -251,6 +252,19 @@ fn nested_non_copy_elements_can_be_referenced() {
     let source = "fn result() -> bool { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let mut it = v.iter(); it.next().is_some() } result()";
     for value in run_both(source) {
         assert_eq!(value, Value::Bool(true));
+    }
+}
+
+#[test]
+fn nested_non_copy_borrowed_reads_use_recursive_native_clone() {
+    for source in [
+        "fn result() -> bool { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let item = &v[0]; item.is_some() } result()",
+        "fn result() -> bool { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let mut it = v.iter(); it.next().unwrap().is_some() } result()",
+        "let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let needle = Some(\"text\"); v.contains(&needle)",
+    ] {
+        for value in run_both(source) {
+            assert_eq!(value, Value::Bool(true), "{source}");
+        }
     }
 }
 

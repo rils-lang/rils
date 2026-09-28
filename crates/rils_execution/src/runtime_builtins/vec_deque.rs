@@ -1,7 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
 use rils_builtins::BuiltinId;
-use rils_stdlib::stdlib::string::String as NativeString;
 use rils_stdlib::stdlib::{prelude::Option as NativeOption, vec_deque::VecDeque as NativeVecDeque};
 
 use crate::{
@@ -102,41 +101,28 @@ fn call_dynamic(
             Ok(Value::Unit)
         }
         BuiltinId::VecDequeFrontCloned | BuiltinId::VecDequeBackCloned => {
-            if item_layout.is_copy() || item_type == Type::String {
-                let item = object.with(|value| {
-                    let length = value.sequence_len()?;
-                    if length == 0 {
-                        return Ok(None);
-                    }
-                    let index = if id == BuiltinId::VecDequeFrontCloned {
-                        0
-                    } else {
-                        length - 1
-                    };
-                    value
-                        .with_sequence_item(index, |item| {
-                            if item_type == Type::String {
-                                item.with::<NativeString, _>(|text| {
-                                    crate::value::native_string(std::string::String::from(
-                                        text.clone(),
-                                    ))
-                                })
-                            } else {
-                                crate::value::record_codec::from_native(item.copy_owned()?)
-                            }
-                        })?
-                        .map(Some)
-                })??;
-                return Ok(Value::Option {
-                    value: item.map(Rc::new),
-                    element_type: Some(item_type),
-                });
-            }
-            crate::value::dynamic_sequence::with_legacy(object, |value| {
-                let Value::VecDeque(queue) = value else {
-                    return Err("expected VecDeque receiver".into());
+            let item = object.with(|value| {
+                let length = value.sequence_len()?;
+                if length == 0 {
+                    return Ok(None);
+                }
+                let index = if id == BuiltinId::VecDequeFrontCloned {
+                    0
+                } else {
+                    length - 1
                 };
-                call_queue(id, arguments, queue)
+                value
+                    .with_sequence_item(index, |item| {
+                        rils_stdlib::native::registry().clone_borrowed_element(item)
+                    })?
+                    .map(Some)
+            })??;
+            Ok(Value::Option {
+                value: item
+                    .map(crate::value::record_codec::from_native)
+                    .transpose()?
+                    .map(Rc::new),
+                element_type: Some(item_type),
             })
         }
         _ => Err("unsupported VecDeque operation".into()),

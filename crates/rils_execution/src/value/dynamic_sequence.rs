@@ -52,51 +52,6 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
     }
 }
 
-/// Invoke an existing owned collection operation while retaining native
-/// storage between calls. The codec transfers every element; no Value is
-/// stored inside the dynamic sequence payload.
-pub fn with_legacy<R>(
-    object: &DynamicObject,
-    operation: impl FnOnce(&Value) -> Result<R, String>,
-) -> Result<R, String> {
-    object.with(|payload| payload.sequence_borrows()?.check_structural_mutation())??;
-    let layout = object.descriptor().layout_handle();
-    object.with_mut(|payload| {
-        let empty = DynamicValue::sequence(layout.clone(), Vec::new())?;
-        let owned = std::mem::replace(payload, empty);
-        let mut codec = record_codec::NativeRecordCodec::new();
-        let legacy = codec.from_native(owned)?;
-        let result = operation(&legacy);
-        let restored = codec.into_native(legacy, layout)?;
-        *payload = restored;
-        result
-    })?
-}
-
-pub fn clone_owned(object: &DynamicObject) -> Result<DynamicObject, String> {
-    let ty = object.descriptor().layout().rils_type();
-    if super::native_layouts::vec::matches(ty) {
-        let layout = object.descriptor().layout_handle();
-        let items = object.with(|payload| {
-            (0..payload.sequence_len()?)
-                .map(|index| payload.with_sequence_item(index, clone_item)?)
-                .collect::<Result<Vec<_>, _>>()
-        })??;
-        let payload = DynamicValue::sequence(layout.clone(), items)?;
-        return DynamicObject::new(Rc::new(DynamicType::new(layout)), payload);
-    }
-    if !super::native_layouts::vec::matches(ty)
-        && !super::native_layouts::vec_deque::matches(ty)
-        && !super::native_layouts::binary_heap::matches(ty)
-    {
-        return Err(format!("dynamic value {ty} does not support Clone"));
-    }
-    let layout = object.descriptor().layout_handle();
-    let cloned = with_legacy(object, Value::clone_owned)?;
-    let payload = record_codec::into_native(cloned, layout.clone())?;
-    DynamicObject::new(Rc::new(DynamicType::new(layout)), payload)
-}
-
 pub fn copy_items(object: &DynamicObject) -> Result<Vec<Value>, String> {
     let items = object.with(|payload| {
         (0..payload.sequence_len()?)

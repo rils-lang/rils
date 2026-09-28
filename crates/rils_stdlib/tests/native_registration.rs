@@ -18,7 +18,6 @@ fn native_registry_collects_vec_and_string_definitions() {
         .unwrap()
         .unwrap();
     assert_eq!(layout.rils_type(), &ty);
-    assert!(registry.can_read_element(layout.sequence_item().unwrap()));
 
     let item = DynamicValue::from_rust(
         layout.sequence_item().unwrap().clone(),

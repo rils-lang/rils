@@ -5,16 +5,17 @@
 
 ## Unreleased
 
+- 非 Copy 组合值的原生 Clone 改为按布局递归处理 `Option`、`Result`、record 和序列；`Result<Option<string>, string>` 现在可使用原生布局。`VecDeque<Option<string>>` 的端点克隆与原生 `Option` 复合子值读取不再把整个容器转换为旧 `Value`。删除借用能力的 `can_read_element` 预判；实际读取按具体布局和叶子注册执行。
 - Rust 宿主结果句柄新增 `with_native_view`，可在回调内沿布局读取非 Copy 泛型组合值及原生序列元素引用，无需先转换为拥有型 `Value`。视图提供 record 字段、`Option` 子值、带标签变体和序列元素投影；视图借用受回调范围约束。
 - 类型化空 `Vec<T>` 现可对可解析布局的非 Copy 复合元素使用原生序列，已验证 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。`push`、`pop`、`remove`、消费式迭代和元素替换在解释器与 VM 中保持一致；索引引用与借用迭代可建立并阻止借用期间的结构性修改。内部解引用非 Copy 复合元素仍需通用借用视图，用户定义元素仍需接入声明上下文。
 - **破坏性 Rust API 更新：** `eval`、`Engine::eval` / `eval_file` 及 `BytecodeModule::execute` / `call` 系列现在返回 `RilsValue` 句柄。宿主代码将原先对返回 `Value` 的读取改为 `with_ref::<T, _>(...)`、`get_cloned::<T>()` 或 `into_owned::<T>()`；移出失败时错误中保留原句柄。类型化访问覆盖基础标量和字符串；脚本结构体可用 `field(index)` 取得字段引用句柄。动态组合类型的视图和用户类型映射尚待补齐；C ABI 未改变。
 - 类型化空 `Vec<string>` 也改用原生序列负载；字符串元素可通过 `&` / `&mut` 索引引用及 `iter()` 访问，`push`、`pop`、`extend` 和拥有型迭代可直接使用原生序列。读取借用的字符串会在现有 `Value` 接口边界克隆文本；直接按索引移出非 Copy 字符串仍会报错。Rust 宿主使用 `Value::as_vec()` 读取新旧表示。
 - 具体元素布局为 Copy 的 `Vec<T>` 类型化空构造现在使用原生序列负载；索引引用、常用方法、借用与拥有型迭代、`for` 和 `extend` 在解释器与 VM 中均可使用。元素引用持有容器句柄及索引，读写时只短暂借用 Rust 负载；有活动元素引用或迭代器时，结构性修改会报错。Rust 宿主若直接匹配 `Value::Vec`，需改用 `Value::as_vec()` 或同时处理 `Value::Dynamic`；无法解析布局的 Vec 仍使用旧表示。
 - `char` 字面量、默认值和字符串字符迭代结果现使用内联原生负载；解释器、VM、集合键及 C ABI 保留原有字符语义与编码。Rust 宿主若直接匹配脚本产出的 `Value::Char`，需改用 `Value::as_char()`；可用 `Value::from_char()` 构造原生字符，旧变体继续作为输入被接受。
-- 具体类型的 `Result<T, E>` 在两个分支均有可读取的原生布局时，可在类型化绑定中使用动态带标签负载；覆盖基础标量、`string` 和 Copy 的嵌套负载（如 `Result<Option<i32>, string>`）。解释器、VM、重载字节码、模式匹配与方法调用保持一致。Rust 宿主应通过 `Value::as_result()` 读取新旧表示；直接匹配 `Value::Result` 的代码需同时处理 `Value::Dynamic`。其他子类型仍保留旧表示。
+- 具体类型的 `Result<T, E>` 在两个分支均有可解析的原生布局时，可在类型化绑定中使用动态带标签负载；覆盖基础标量、`string` 和嵌套负载。解释器、VM、重载字节码、模式匹配与方法调用保持一致。Rust 宿主应通过 `Value::as_result()` 读取新旧表示；直接匹配 `Value::Result` 的代码需同时处理 `Value::Dynamic`。无法解析布局的子类型仍保留旧表示。
 
 - `Option<T>` 的原生布局现可递归容纳布尔、字符及已有标准库容器布局，例如 `Option<VecDeque<i32>>`、`Option<BinaryHeap<string>>` 和 `Option<HashSet<i32>>`；嵌套 `Some` / `None` 在解释器、VM 与重新加载的字节码中一致。Rust 宿主若直接匹配这些值的 `Value::Option`，需改用 `Value::as_option()` 或同时处理 `Value::Dynamic`。用户定义子类型仍走旧表示。
-- 带具体标准库元素布局的 `VecDeque<T>` / `BinaryHeap<T>` 类型化局部绑定现在使用动态原生序列负载；解释器、VM 和重新加载的字节码保持一致。Rust 宿主若直接匹配 `Value::VecDeque` / `Value::BinaryHeap`，需同时处理 `Value::Dynamic`；其余构造上下文和无法解析布局的元素仍使用旧变体。常用读写方法直接访问原生负载，部分非 Copy 元素的端点克隆及容器克隆仍通过转换桥。未冻结的 v8 `InitLocal` 编码已增加可选声明类型，旧 `.rilbc` 文件须重新编译；格式号不变。
+- 带具体标准库元素布局的 `VecDeque<T>` / `BinaryHeap<T>` 类型化局部绑定现在使用动态原生序列负载；解释器、VM 和重新加载的字节码保持一致。Rust 宿主若直接匹配 `Value::VecDeque` / `Value::BinaryHeap`，需同时处理 `Value::Dynamic`；其余构造上下文和无法解析布局的元素仍使用旧变体。常用读写方法直接访问原生负载，支持 Clone 的组合元素端点克隆及容器克隆按布局递归处理。未冻结的 v8 `InitLocal` 编码已增加可选声明类型，旧 `.rilbc` 文件须重新编译；格式号不变。
 - 标准库全部整数宽度的字面量、默认值、算术及方法结果现使用内联原生负载；旧数值 `Value` 变体仍可作为 Rust 宿主输入。宿主读取运行结果应使用相应的 `Value::as_i16()` / `as_u32()` 等方法，构造时使用 `Value::from_i16()` / `from_u32()` 等方法。C ABI 整数标签和实验性 v8 字节码编码不变。
 - `f32`、`f64` 的字面量、默认值、运算结果和标准库方法结果改用内联原生负载；Rust 宿主若匹配返回值中的 `Value::F32` / `Value::F64`，需改用 `Value::as_f32()` / `Value::as_f64()`。旧变体仍可作为输入，C ABI 浮点标签和实验性 v8 字节码编码不变。
 - Rust 运行时移除旧 `Value::I32` 变体；宿主代码改用 `Value::from_i32(...)` 构造、`Value::as_i32()` 读取。`i32` 运算与范围构造直接使用原生负载；Rils 脚本语义、C ABI 整数标签和实验性 v8 字节码编码不变。

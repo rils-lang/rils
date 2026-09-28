@@ -22,9 +22,9 @@ fn matches_string(ty: &Type) -> bool {
     ty == &Type::String
 }
 
-fn clone_string(item: &DynamicValue) -> Result<DynamicValue, String> {
-    let text = item.with::<String, _>(Clone::clone)?;
-    DynamicValue::from_rust(item.layout_handle(), text)
+fn clone_string(item: rils_value::DynamicValueRef<'_>) -> Result<DynamicValue, String> {
+    let text = item.with_rust::<String, _>(Clone::clone)?;
+    DynamicValue::from_rust(item.layout()?, text)
 }
 
 static REGISTRY: NativeRegistry = NativeRegistry::new(
@@ -52,7 +52,6 @@ fn recursive_layout_and_element_policy_are_registered_independently() {
         .unwrap()
         .unwrap();
     assert_eq!(layout.rils_type(), &ty);
-    assert!(REGISTRY.can_read_element(layout.sequence_item().unwrap()));
 
     let string_layout = DynamicLayout::of::<String>(Type::String);
     let item = DynamicValue::from_rust(string_layout, "hello".to_owned()).unwrap();

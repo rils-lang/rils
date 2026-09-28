@@ -89,3 +89,23 @@ fn cloning_an_element_keeps_the_owned_string_in_the_queue() {
         Value::from_i32(42)
     );
 }
+
+#[test]
+fn cloning_a_noncopy_composite_element_keeps_native_queue_storage() {
+    let source = r#"
+        let mut queue: VecDeque<Option<string>> = VecDeque::new();
+        queue.push_back(Some("hello"));
+        let copy = queue.front_cloned().unwrap().unwrap();
+        let original = queue.pop_front().unwrap().unwrap();
+        if copy == original && queue.is_empty() { 42 } else { 0 }
+    "#;
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        assert_eq!(value, Value::from_i32(42));
+    }
+}

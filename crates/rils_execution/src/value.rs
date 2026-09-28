@@ -877,27 +877,14 @@ impl Value {
             }
             Self::Native(object) => Self::Native(native_ops::clone_owned(object)?),
             Self::Dynamic(object) => {
-                if object.descriptor().layout().is_copy() {
-                    Self::Dynamic(object.copy_owned()?)
-                } else if native_layouts::vec::matches(object.descriptor().layout().rils_type())
-                    || native_layouts::vec_deque::matches(object.descriptor().layout().rils_type())
-                    || native_layouts::binary_heap::matches(
-                        object.descriptor().layout().rils_type(),
-                    )
-                {
-                    Self::Dynamic(dynamic_sequence::clone_owned(object)?)
-                } else if let Some(result) = dynamic_result::materialize(self) {
-                    dynamic_result::promote(result?, object.descriptor().layout().rils_type())?
-                } else {
-                    let (item, item_type) = dynamic_option::view(self)
-                        .ok_or("dynamic value does not support Clone")??;
-                    match dynamic_option::construct(item, &item_type)? {
-                        dynamic_option::Construction::Native(value) => value,
-                        dynamic_option::Construction::Unsupported(_) => {
-                            return Err("dynamic value does not support Clone".into());
-                        }
-                    }
-                }
+                let layout = object.descriptor().layout_handle();
+                let payload = object.with(|payload| {
+                    rils_stdlib::native::registry().clone_borrowed_element(payload)
+                })??;
+                Self::Dynamic(DynamicObject::new(
+                    Rc::new(rils_value::DynamicType::new(layout)),
+                    payload,
+                )?)
             }
             value => value.clone(),
         })

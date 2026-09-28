@@ -86,3 +86,29 @@ fn copy_composite_result_payload_uses_native_layout() {
         );
     }
 }
+
+#[test]
+fn noncopy_composite_result_payload_uses_native_layout() {
+    for (source, expected) in [
+        (
+            "let value: Result<Option<string>, string> = Ok(Some(\"hello\")); value",
+            "Ok(Some(hello))",
+        ),
+        (
+            "let value: Result<Option<string>, string> = Err(\"failure\"); value",
+            "Err(failure)",
+        ),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_eq!(value.to_string(), expected);
+            assert!(matches!(value, Value::Dynamic(_)));
+            assert_eq!(value.clone_owned().unwrap().to_string(), expected);
+        }
+    }
+}
