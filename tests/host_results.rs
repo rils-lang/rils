@@ -27,3 +27,18 @@ fn returned_script_reference_cannot_be_moved() {
     assert_eq!(result.get_cloned::<i32>().unwrap(), 7);
     assert!(result.into_owned::<i32>().is_err());
 }
+
+#[test]
+fn native_vec_element_reference_borrows_original_string() {
+    let mut engine = Engine::new();
+    engine
+        .eval("let mut values: Vec<string> = Vec::new(); values.push(\"hello\");")
+        .unwrap();
+    let result = engine.eval("&values[0]").unwrap();
+    assert!(
+        result
+            .with_ref::<String, _>(|text| text == "hello")
+            .unwrap()
+    );
+    assert!(result.into_owned::<String>().is_err());
+}
