@@ -1,4 +1,4 @@
-use rils_builtins_macros::{decl_rils_function_source, decl_rils_source, decl_rils_trait_source};
+use rils_stdlib_macros::{decl_rils_function_source, decl_rils_source, decl_rils_trait_source};
 use rils_syntax::rils_stdlib_sources;
 
 #[test]

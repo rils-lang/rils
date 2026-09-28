@@ -113,37 +113,37 @@ impl StringOutput for Iterator<NativeString> {
 }
 
 mod option {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::option_definition!(decl_rils_native);
 }
 
 mod result {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::result_definition!(decl_rils_native);
 }
 
 mod string {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::string_definition!(decl_rils_native);
 }
 
 mod vector {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::vec_definition!(decl_rils_native);
 }
 
 mod range {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::range_definition!(decl_rils_native);
 }
 
 mod indexed_iterator {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::iter_definition!(decl_rils_native);
 }
@@ -177,7 +177,7 @@ pub fn call_symbol(
 }
 
 mod callable_functions {
-    use rils_builtins_macros::decl_rils_function_native;
+    use rils_stdlib_macros::decl_rils_function_native;
 
     pub(super) mod apply_twice {
         use super::decl_rils_function_native;

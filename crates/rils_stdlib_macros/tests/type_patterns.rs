@@ -32,10 +32,10 @@ enum TypePattern {
     },
 }
 
-const CALLBACK: TypePattern = rils_builtins_macros::type_pattern!(fn(&mut T, usize) -> Option<U>);
+const CALLBACK: TypePattern = rils_stdlib_macros::type_pattern!(fn(&mut T, usize) -> Option<U>);
 const IO_RESULT: TypePattern =
-    rils_builtins_macros::type_pattern!(Result<Vec<string>, std::io::Error>);
-const ITERATOR: TypePattern = rils_builtins_macros::type_pattern!(Iterator<(usize, T)>);
+    rils_stdlib_macros::type_pattern!(Result<Vec<string>, std::io::Error>);
+const ITERATOR: TypePattern = rils_stdlib_macros::type_pattern!(Iterator<(usize, T)>);
 
 #[test]
 fn type_pattern_macro_covers_nested_rust_style_types() {
@@ -80,18 +80,18 @@ fn type_pattern_macro_covers_nested_rust_style_types() {
 #[test]
 fn type_pattern_macro_maps_scalar_and_special_types() {
     assert_eq!(
-        rils_builtins_macros::type_pattern!(Self),
+        rils_stdlib_macros::type_pattern!(Self),
         TypePattern::SelfType
     );
     assert_eq!(
-        rils_builtins_macros::type_pattern!(integer),
+        rils_stdlib_macros::type_pattern!(integer),
         TypePattern::AnyInteger
     );
-    assert_eq!(rils_builtins_macros::type_pattern!(()), TypePattern::Unit);
-    assert_eq!(rils_builtins_macros::type_pattern!(bool), TypePattern::Bool);
-    assert_eq!(rils_builtins_macros::type_pattern!(char), TypePattern::Char);
-    assert_eq!(rils_builtins_macros::type_pattern!(f32), TypePattern::F32);
-    assert_eq!(rils_builtins_macros::type_pattern!(f64), TypePattern::F64);
-    assert_eq!(rils_builtins_macros::type_pattern!(u32), TypePattern::U32);
-    assert_eq!(rils_builtins_macros::type_pattern!(u8), TypePattern::U8);
+    assert_eq!(rils_stdlib_macros::type_pattern!(()), TypePattern::Unit);
+    assert_eq!(rils_stdlib_macros::type_pattern!(bool), TypePattern::Bool);
+    assert_eq!(rils_stdlib_macros::type_pattern!(char), TypePattern::Char);
+    assert_eq!(rils_stdlib_macros::type_pattern!(f32), TypePattern::F32);
+    assert_eq!(rils_stdlib_macros::type_pattern!(f64), TypePattern::F64);
+    assert_eq!(rils_stdlib_macros::type_pattern!(u32), TypePattern::U32);
+    assert_eq!(rils_stdlib_macros::type_pattern!(u8), TypePattern::U8);
 }

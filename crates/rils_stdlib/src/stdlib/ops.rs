@@ -1,6 +1,6 @@
 //! Callable contracts shared by Rils functions and native adapters.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 /// Invocation capability exported with the callable traits below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

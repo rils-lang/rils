@@ -1,6 +1,6 @@
 //! Hash collections exported as Rils built-ins.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::collections)]
 mod native {

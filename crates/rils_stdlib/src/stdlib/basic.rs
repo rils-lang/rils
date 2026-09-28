@@ -1,6 +1,6 @@
 //! Basic owned and formatting types exposed by the Rils standard library.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::boxed)]
 mod boxed {

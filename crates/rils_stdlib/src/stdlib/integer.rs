@@ -1,6 +1,6 @@
 //! Native implementations for the built-in integer types.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 use super::prelude::{Option, Result};
 

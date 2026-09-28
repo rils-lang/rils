@@ -191,13 +191,13 @@ integer_bridge!(
 );
 
 pub(super) mod integer {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::integer_definition!(decl_rils_native);
 }
 
 pub(super) mod float {
-    use rils_builtins_macros::decl_rils_native;
+    use rils_stdlib_macros::decl_rils_native;
 
     rils_stdlib::float_definition!(decl_rils_native);
 }

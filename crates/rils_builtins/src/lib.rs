@@ -10,7 +10,7 @@ pub use rils_stdlib::stdlib::iterator::BLANKET_TRAIT_IMPLS;
 pub use rils_stdlib::stdlib::ops::callable_trait_kind;
 
 #[doc(hidden)]
-pub use rils_builtins_macros::type_pattern as __type_pattern;
+pub use rils_stdlib_macros::type_pattern as __type_pattern;
 
 /// Converts Rust-style type syntax into a static [`TypePattern`].
 #[macro_export]

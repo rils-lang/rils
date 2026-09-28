@@ -1,7 +1,7 @@
 //! Native methods for the built-in owned UTF-8 string.
 
 use super::prelude::Option;
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 /// An owned iterator of values produced by standard-library methods.
 pub struct Iterator<T>(pub std::collections::VecDeque<T>);

@@ -1,6 +1,6 @@
 //! Native methods for the built-in floating-point types.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::float)]
 mod native {

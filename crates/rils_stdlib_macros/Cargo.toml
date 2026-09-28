@@ -1,0 +1,19 @@
+[package]
+name = "rils_stdlib_macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = ["crates-io"]
+description = "Procedural macros for Rust-backed Rils standard-library declarations"
+license.workspace = true
+repository.workspace = true
+include = ["/Cargo.toml", "/src/**"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+rils_syntax.workspace = true
+syn = { version = "2.0", features = ["full", "fold"] }

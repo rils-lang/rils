@@ -1,6 +1,6 @@
 //! Growable owned sequence backed by Rust's Vec.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::collections)]
 mod native {

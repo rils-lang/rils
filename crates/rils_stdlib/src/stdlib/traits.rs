@@ -1,6 +1,6 @@
 //! Basic traits shared by the host-independent standard library.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 /// Marker for host-defined flag enums. The Rils implementation is registered
 /// by the host, so this Rust trait has no blanket implementation.

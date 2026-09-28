@@ -1,6 +1,6 @@
 //! Formatting contracts and the temporary formatting destination.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::fmt)]
 mod native {

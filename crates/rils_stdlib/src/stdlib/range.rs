@@ -1,6 +1,6 @@
 //! Half-open integer ranges shared by the runtime's numeric range values.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 use super::prelude::Option;
 

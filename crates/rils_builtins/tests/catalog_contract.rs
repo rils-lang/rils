@@ -4,7 +4,7 @@ use rils_builtins::{
     INTEGER_INTRINSICS, IntrinsicKind, TypePattern, builtin, builtin_member,
     builtin_module_members, intrinsic, native_member, runtime_member,
 };
-use rils_builtins_macros::decl_rils_source;
+use rils_stdlib_macros::decl_rils_source;
 
 #[test]
 fn stdlib_directory_generates_source_and_module_metadata() {

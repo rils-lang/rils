@@ -40,11 +40,11 @@ mod vector {
 
 mod generated {
     pub mod vector {
-        use rils_builtins_macros::decl_rils_native;
+        use rils_stdlib_macros::decl_rils_native;
         vec_definition!(decl_rils_native);
     }
     pub mod legacy {
-        use rils_builtins_macros::decl_rils_native;
+        use rils_stdlib_macros::decl_rils_native;
         legacy_definition!(decl_rils_native);
     }
 }

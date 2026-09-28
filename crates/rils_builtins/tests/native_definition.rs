@@ -1,7 +1,7 @@
 use rils_builtins::{
     BuiltinKind, BuiltinMemberKind, ReceiverMode, TypePattern, builtin, native_definitions,
 };
-use rils_builtins_macros::decl_rils_source;
+use rils_stdlib_macros::decl_rils_source;
 
 #[test]
 fn basic_metadata_types_come_from_rust_definitions() {

@@ -1,6 +1,6 @@
 //! Interior-mutable value cell.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::cell)]
 mod native {

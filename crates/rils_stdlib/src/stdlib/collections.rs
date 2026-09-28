@@ -1,6 +1,6 @@
 //! Native collection operations.
 
-use rils_builtins_macros::decl_rils;
+use rils_stdlib_macros::decl_rils;
 
 use super::{iterator::Iter, prelude::Option, string::Iterator};
 

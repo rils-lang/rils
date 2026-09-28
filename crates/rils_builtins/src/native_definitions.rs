@@ -1,232 +1,232 @@
 //! Metadata generated from the same Rust definition used by native handlers.
 
 pub mod clone {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::clone_definition!(decl_rils_trait_metadata);
 }
 
 pub mod copy {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::copy_definition!(decl_rils_trait_metadata);
 }
 
 pub mod default {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::default_definition!(decl_rils_trait_metadata);
 }
 
 pub mod eq {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::eq_definition!(decl_rils_trait_metadata);
 }
 
 pub mod hash {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::hash_definition!(decl_rils_trait_metadata);
 }
 
 pub mod bit_flags {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::bitflags_definition!(decl_rils_trait_metadata);
 }
 
 pub mod option {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::option_definition!(decl_rils_metadata);
     rils_stdlib::option_definition!(decl_rils_trait_impls);
 }
 
 pub mod result {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::result_definition!(decl_rils_metadata);
     rils_stdlib::result_definition!(decl_rils_trait_impls);
 }
 
 pub mod integer {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::integer_definition!(decl_rils_metadata);
     rils_stdlib::integer_definition!(decl_rils_trait_impls);
 }
 
 pub mod float {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::float_definition!(decl_rils_metadata);
     rils_stdlib::float_definition!(decl_rils_trait_impls);
 }
 
 pub mod string {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::string_definition!(decl_rils_metadata);
     rils_stdlib::string_definition!(decl_rils_trait_impls);
 }
 
 pub mod range {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::range_definition!(decl_rils_metadata);
     rils_stdlib::range_definition!(decl_rils_trait_impls);
 }
 
 pub mod vec_deque {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::vecdeque_definition!(decl_rils_metadata);
     rils_stdlib::vecdeque_definition!(decl_rils_trait_impls);
 }
 
 pub mod binary_heap {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::binaryheap_definition!(decl_rils_metadata);
     rils_stdlib::binaryheap_definition!(decl_rils_trait_impls);
 }
 
 pub mod btree_map {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::btreemap_definition!(decl_rils_metadata);
 }
 
 pub mod btree_set {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::btreeset_definition!(decl_rils_metadata);
 }
 
 pub mod hash_map {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::hashmap_definition!(decl_rils_metadata);
 }
 
 pub mod hash_set {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::hashset_definition!(decl_rils_metadata);
 }
 
 pub mod vec {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::vec_definition!(decl_rils_metadata);
 }
 
 pub mod iter {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::iter_definition!(decl_rils_metadata);
 }
 
 pub mod iterator {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::iterator_definition!(decl_rils_trait_metadata);
 }
 
 pub mod into_iterator {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::intoiterator_definition!(decl_rils_trait_metadata);
 }
 
 pub mod function {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::fn_definition!(decl_rils_trait_metadata);
 }
 
 pub mod function_mut {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::fnmut_definition!(decl_rils_trait_metadata);
 }
 
 pub mod function_once {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::fnonce_definition!(decl_rils_trait_metadata);
 }
 
 pub mod format_error {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::formaterror_definition!(decl_rils_metadata);
 }
 
 pub mod debug {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::debug_definition!(decl_rils_trait_metadata);
 }
 
 pub mod display {
-    use rils_builtins_macros::decl_rils_trait_metadata;
+    use rils_stdlib_macros::decl_rils_trait_metadata;
 
     rils_stdlib::display_definition!(decl_rils_trait_metadata);
 }
 
 pub mod formatter {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::formatter_definition!(decl_rils_metadata);
 }
 
 pub mod boxed {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::box_definition!(decl_rils_metadata);
 }
 
 pub mod io_error {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::error_definition!(decl_rils_metadata);
 }
 
 pub mod io_error_kind {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::errorkind_definition!(decl_rils_metadata);
 }
 
 pub mod rc {
-    use rils_builtins_macros::{decl_rils_metadata, decl_rils_trait_impls};
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::rc_definition!(decl_rils_metadata);
     rils_stdlib::rc_definition!(decl_rils_trait_impls);
 }
 
 pub mod weak {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::weak_definition!(decl_rils_metadata);
 }
 
 pub mod cell {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::cell_definition!(decl_rils_metadata);
 }
 
 pub mod ref_cell {
-    use rils_builtins_macros::decl_rils_metadata;
+    use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::refcell_definition!(decl_rils_metadata);
 }
 
 pub mod fs {
-    use rils_builtins_macros::decl_rils_function_metadata;
+    use rils_stdlib_macros::decl_rils_function_metadata;
 
     pub mod read_to_string {
         use super::decl_rils_function_metadata;
@@ -274,7 +274,7 @@ pub mod fs {
 }
 
 pub mod callable_functions {
-    use rils_builtins_macros::decl_rils_function_metadata;
+    use rils_stdlib_macros::decl_rils_function_metadata;
 
     pub mod apply_twice {
         use super::decl_rils_function_metadata;
@@ -297,7 +297,7 @@ pub mod callable_functions {
 }
 
 pub mod io_functions {
-    use rils_builtins_macros::decl_rils_function_metadata;
+    use rils_stdlib_macros::decl_rils_function_metadata;
 
     pub mod read_line {
         use super::decl_rils_function_metadata;

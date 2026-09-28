@@ -9,5 +9,5 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-rils_builtins_macros.workspace = true
+rils_stdlib_macros.workspace = true
 rils_syntax.workspace = true

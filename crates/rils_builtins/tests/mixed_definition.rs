@@ -2,7 +2,7 @@ use rils_builtins::{
     BuiltinBackend, BuiltinDeclaration, BuiltinId, BuiltinKind, BuiltinMember, BuiltinMemberKind,
     BuiltinSignature, BuiltinTraitImpl, ReceiverMode, TypePattern,
 };
-use rils_builtins_macros::{
+use rils_stdlib_macros::{
     decl_rils, decl_rils_metadata, decl_rils_trait_impls, decl_rils_trait_metadata,
 };
 
