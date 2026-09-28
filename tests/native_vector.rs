@@ -190,17 +190,29 @@ fn native_vec_can_be_borrowed_as_slice() {
 
 #[test]
 fn native_vec_copy_element_matrix() {
-    for source in [
-        "let mut v: Vec<bool> = Vec::new(); v.push(true); v.pop().unwrap()",
-        "let mut v: Vec<char> = Vec::new(); v.push('x'); v.pop().unwrap()",
-        "let mut v: Vec<Option<i32>> = Vec::new(); v.push(Some(3)); let item = v.pop().unwrap(); item.unwrap()",
-        "let mut v: Vec<(i32, bool)> = Vec::new(); v.push((3, true)); let item = v.pop().unwrap(); item.0",
+    for (ty, item) in [
+        ("bool", "true"),
+        ("char", "'x'"),
+        ("i8", "3i8"),
+        ("i32", "3"),
+        ("i64", "3i64"),
+        ("usize", "3usize"),
+        ("f32", "3.0f32"),
+        ("Option<i32>", "Some(3)"),
+        ("(i32, bool)", "(3, true)"),
     ] {
-        let compiled = compile(source).unwrap();
-        assert_eq!(
-            eval(source).unwrap(),
-            compiled.execute().unwrap(),
-            "{source}"
-        );
+        let source = format!("let mut v: Vec<{ty}> = Vec::new(); v.push({item}); v");
+        for value in run_both(&source) {
+            assert!(matches!(value, Value::Dynamic(_)), "{source}");
+            assert_eq!(value.as_vec().unwrap().len(), 1, "{source}");
+        }
+    }
+}
+
+#[test]
+fn nested_non_copy_element_without_borrow_policy_stays_legacy() {
+    let source = "let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); v";
+    for value in run_both(source) {
+        assert!(matches!(value, Value::Vec(_)));
     }
 }
