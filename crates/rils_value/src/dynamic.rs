@@ -16,6 +16,7 @@ pub use object::DynamicObject;
 pub use operations::{DynamicCallContext, DynamicType};
 pub use path::DynamicPathStep;
 pub use record::DynamicField;
+pub use sequence::{SequenceBorrowLedger, SequenceItemLease, SequenceIteratorLease};
 
 use record::RecordLayout;
 use variant::VariantLayout;
@@ -169,8 +170,8 @@ impl DynamicLayout {
                 unsafe { variant.drop_value(pointer) };
             }
             DropKind::Sequence { .. } => {
-                // SAFETY: a sequence always initializes one Vec<DynamicValue>.
-                unsafe { ptr::drop_in_place(pointer.cast::<Vec<DynamicValue>>()) };
+                // SAFETY: a sequence always initializes one SequenceStorage.
+                unsafe { ptr::drop_in_place(pointer.cast::<sequence::SequenceStorage>()) };
             }
         }
     }

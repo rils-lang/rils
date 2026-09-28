@@ -6,6 +6,7 @@ use rils_execution::{
     runtime_builtins::call_native_symbol,
     value::{FieldSlot, IndexedStorage, ReferenceValue},
 };
+use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
 fn symbol(name: &str) -> &'static str {
     rils_builtins::builtin("Vec")
@@ -62,4 +63,52 @@ fn native_vec_receiver_preserves_referenced_slots_and_rejects_reordering() {
         assert_eq!(sequence.elements.borrow().len(), 2);
         assert_eq!(sequence.elements.borrow()[0].references, 1);
     }
+}
+
+#[test]
+fn two_mutable_handles_to_one_native_element_use_short_borrows() {
+    let item = DynamicLayout::copy_of::<i32>(Type::I32);
+    let vector = DynamicLayout::sequence(
+        Type::Named {
+            name: "Vec".into(),
+            arguments: vec![Type::I32],
+        },
+        item.clone(),
+    );
+    let payload = DynamicValue::sequence(
+        vector.clone(),
+        vec![DynamicValue::from_rust(item.clone(), 3).unwrap()],
+    )
+    .unwrap();
+    let object: DynamicObject<Value> =
+        DynamicObject::new(Rc::new(DynamicType::new(vector)), payload).unwrap();
+    let first =
+        ReferenceValue::new_guarded_dynamic_indexed_element(object.clone(), 0, true, None).unwrap();
+    let second =
+        ReferenceValue::new_guarded_dynamic_indexed_element(object.clone(), 0, true, None).unwrap();
+
+    assert_eq!(first.read().unwrap().as_i32(), Some(3));
+    first.write(Value::from_i32(7)).unwrap();
+    assert_eq!(second.read().unwrap().as_i32(), Some(7));
+    second.write(Value::from_i32(9)).unwrap();
+    assert!(
+        object
+            .with_mut(|payload| payload
+                .push_sequence_item(DynamicValue::from_rust(item.clone(), 10).unwrap()))
+            .unwrap()
+            .is_err()
+    );
+    drop(first);
+    assert!(
+        object
+            .with_mut(|payload| payload.clear_sequence())
+            .unwrap()
+            .is_err()
+    );
+    drop(second);
+    object
+        .with_mut(|payload| payload.push_sequence_item(DynamicValue::from_rust(item, 10).unwrap()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(object.with(|payload| payload.sequence_len()), Ok(Ok(2)));
 }

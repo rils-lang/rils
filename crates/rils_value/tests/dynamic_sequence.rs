@@ -78,6 +78,75 @@ fn sequence_mutations_preserve_order_and_drop_each_owned_item_once() {
 }
 
 #[test]
+fn sequence_leases_block_structural_changes_without_holding_rust_borrows() {
+    let number = DynamicLayout::copy_of::<i32>(Type::I32);
+    let sequence = DynamicLayout::sequence(
+        Type::Named {
+            name: "Vec".into(),
+            arguments: vec![Type::I32],
+        },
+        number.clone(),
+    );
+    let payload = DynamicValue::sequence(
+        sequence.clone(),
+        vec![DynamicValue::from_rust(number.clone(), 4).unwrap()],
+    )
+    .unwrap();
+    let object = rils_value::DynamicObject::<()>::new(
+        Rc::new(rils_value::DynamicType::new(sequence)),
+        payload,
+    )
+    .unwrap();
+    let other_handle = object.clone();
+    let ledger = object
+        .with(|value| value.sequence_borrows())
+        .unwrap()
+        .unwrap();
+    let item = ledger.reference(0).unwrap();
+    let other_item = ledger.reference(0).unwrap();
+    assert_eq!(
+        other_handle.with(|value| value.with_path::<i32, _>(&[DynamicPathStep::Index(0)], |n| *n)),
+        Ok(Ok(4))
+    );
+    assert!(
+        other_handle
+            .with_mut(|value| value
+                .push_sequence_item(DynamicValue::from_rust(number.clone(), 5).unwrap()))
+            .unwrap()
+            .is_err()
+    );
+    drop(item);
+    let old = other_handle
+        .with_mut(|value| {
+            value.replace_sequence_item(0, DynamicValue::from_rust(number.clone(), 8).unwrap())
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        old.into_rust::<i32>()
+            .unwrap_or_else(|_| panic!("native integer")),
+        4
+    );
+    assert!(ledger.check_structural_mutation().is_err());
+    drop(other_item);
+    let iterator = ledger.begin_iteration().unwrap();
+    assert!(
+        other_handle
+            .with_mut(|value| value.clear_sequence())
+            .unwrap()
+            .is_err()
+    );
+    assert!(ledger.check_element_write(0).is_err());
+    drop(iterator);
+    assert!(ledger.check_element_write(0).is_ok());
+    other_handle
+        .with_mut(|value| value.push_sequence_item(DynamicValue::from_rust(number, 5).unwrap()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(other_handle.with(|value| value.sequence_len()), Ok(Ok(2)));
+}
+
+#[test]
 fn checked_path_reaches_leaf_across_all_composite_kinds() {
     let number = DynamicLayout::copy_of::<i32>(Type::I32);
     let unit = DynamicLayout::copy_of::<()>(Type::Unit);

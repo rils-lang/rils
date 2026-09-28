@@ -657,6 +657,15 @@ impl Value {
 
     pub fn has_active_references(&self) -> bool {
         match self {
+            Self::Dynamic(object) if object.descriptor().layout().sequence_item().is_some() => {
+                object
+                    .with(|payload| {
+                        payload
+                            .sequence_borrows()
+                            .is_ok_and(|ledger| ledger.has_active())
+                    })
+                    .unwrap_or(true)
+            }
             Self::Native(object) => {
                 object.has_active_references() || object.any_child(Value::has_active_references)
             }

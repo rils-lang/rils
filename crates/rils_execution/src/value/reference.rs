@@ -1,8 +1,12 @@
 use std::rc::Rc;
 
+use rils_value::{DynamicPathStep, SequenceItemLease};
+
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
-use super::{HashKey, IndexedStorage, MapCollection, SetCollection, StructInstance, Value};
+use super::{
+    DynamicObject, HashKey, IndexedStorage, MapCollection, SetCollection, StructInstance, Value,
+};
 
 pub struct ReferenceValue {
     pub mutable: bool,
@@ -19,6 +23,11 @@ enum ReferenceTarget {
     IndexedElement {
         sequence: Rc<IndexedStorage>,
         index: usize,
+    },
+    DynamicIndexedElement {
+        sequence: DynamicObject,
+        index: usize,
+        _lease: SequenceItemLease,
     },
     MapKey {
         map: MapCollection,
@@ -43,6 +52,7 @@ impl ReferenceValue {
                 ReferenceTarget::Storage(target) => environment.borrow().owns_storage(target),
                 ReferenceTarget::StructField { .. }
                 | ReferenceTarget::IndexedElement { .. }
+                | ReferenceTarget::DynamicIndexedElement { .. }
                 | ReferenceTarget::MapKey { .. }
                 | ReferenceTarget::MapValue { .. }
                 | ReferenceTarget::SetItem { .. } => false,
@@ -137,6 +147,41 @@ impl ReferenceValue {
         })
     }
 
+    /// A Rils reference stores an index and a lease, never a Rust reference
+    /// into the dynamic sequence. Each access borrows the payload briefly.
+    pub fn new_guarded_dynamic_indexed_element(
+        sequence: DynamicObject,
+        index: usize,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<Self, String> {
+        if !super::native_layouts::vec::matches(sequence.descriptor().layout().rils_type()) {
+            return Err("dynamic value is not a Vec".into());
+        }
+        let item = sequence
+            .descriptor()
+            .layout()
+            .sequence_item()
+            .ok_or("dynamic value is not an indexed sequence")?;
+        if !item.is_copy() {
+            return Err(format!(
+                "native references to {} are not yet supported",
+                item.rils_type()
+            ));
+        }
+        let ledger = sequence.with(|value| value.sequence_borrows())??;
+        let lease = ledger.reference(index)?;
+        Ok(Self {
+            mutable,
+            target: ReferenceTarget::DynamicIndexedElement {
+                sequence,
+                index,
+                _lease: lease,
+            },
+            _guard: guard,
+        })
+    }
+
     pub fn new_map_key(
         map: MapCollection,
         key: HashKey,
@@ -207,6 +252,14 @@ impl ReferenceValue {
                     self._guard.clone(),
                 )
             }
+            ReferenceTarget::DynamicIndexedElement {
+                sequence, index, ..
+            } => Self::new_guarded_dynamic_indexed_element(
+                sequence.clone(),
+                *index,
+                mutable,
+                self._guard.clone(),
+            ),
             ReferenceTarget::MapKey { map, key } => {
                 Self::new_map_key(map.clone(), key.clone(), self._guard.clone())
             }
@@ -240,6 +293,13 @@ impl ReferenceValue {
                 .get(*index)
                 .and_then(|slot| slot.value.clone())
                 .ok_or_else(|| format!("reference target element {index} has been moved")),
+            ReferenceTarget::DynamicIndexedElement {
+                sequence, index, ..
+            } => {
+                let item =
+                    sequence.with(|value| value.copy_path(&[DynamicPathStep::Index(*index)]))??;
+                super::record_codec::from_native(item)
+            }
             ReferenceTarget::MapKey { map, key } => map
                 .contains_key(key)
                 .then(|| key.to_value())
@@ -284,6 +344,25 @@ impl ReferenceValue {
                 );
                 Ok(())
             }
+            ReferenceTarget::DynamicIndexedElement {
+                sequence, index, ..
+            } => {
+                let layout = sequence
+                    .descriptor()
+                    .layout()
+                    .sequence_item()
+                    .ok_or(AssignError::Undefined)?;
+                if !layout.rils_type().accepts(&value) {
+                    return Err(AssignError::TypeMismatch(layout.rils_type().clone()));
+                }
+                let item = super::record_codec::into_native(value, layout.clone())
+                    .map_err(|_| AssignError::TypeMismatch(layout.rils_type().clone()))?;
+                sequence
+                    .with_mut(|payload| payload.replace_sequence_item(*index, item))
+                    .map_err(|_| AssignError::BorrowedTarget)?
+                    .map_err(|_| AssignError::BorrowedTarget)?;
+                Ok(())
+            }
             ReferenceTarget::MapKey { .. }
             | ReferenceTarget::MapValue { .. }
             | ReferenceTarget::SetItem { .. } => Err(AssignError::Immutable),
@@ -305,6 +384,7 @@ impl Drop for ReferenceValue {
                     slot.references = slot.references.saturating_sub(1);
                 }
             }
+            ReferenceTarget::DynamicIndexedElement { .. } => {}
             ReferenceTarget::MapKey { map, .. } | ReferenceTarget::MapValue { map, .. } => {
                 map.borrowed().set(map.borrowed().get().saturating_sub(1));
             }

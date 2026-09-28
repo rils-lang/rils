@@ -53,6 +53,7 @@ pub fn with_legacy<R>(
     object: &DynamicObject,
     operation: impl FnOnce(&Value) -> Result<R, String>,
 ) -> Result<R, String> {
+    object.with(|payload| payload.sequence_borrows()?.check_structural_mutation())??;
     let layout = object.descriptor().layout_handle();
     object.with_mut(|payload| {
         let empty = DynamicValue::sequence(layout.clone(), Vec::new())?;

@@ -2,7 +2,7 @@
 
 use std::{any::TypeId, ptr, rc::Rc};
 
-use super::{DropKind, DynamicLayout, DynamicValue};
+use super::{DropKind, DynamicLayout, DynamicValue, sequence::SequenceStorage};
 
 /// One checked projection into a runtime-composed native value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,10 +52,11 @@ impl DynamicValue {
                     layout = child.clone();
                 }
                 (DynamicPathStep::Index(index), DropKind::Sequence { item }) => {
-                    // SAFETY: this descriptor initializes a Vec<DynamicValue>
+                    // SAFETY: this descriptor initializes a SequenceStorage
                     // and the owner is borrowed for the entire callback.
-                    let items = unsafe { &*pointer.cast::<Vec<DynamicValue>>() };
-                    let child = items
+                    let storage = unsafe { &*pointer.cast::<SequenceStorage>() };
+                    let child = storage
+                        .items
                         .get(*index)
                         .ok_or_else(|| format!("sequence index {index} is out of bounds"))?;
                     debug_assert!(item.compatible_with(&child.descriptor));
