@@ -17,7 +17,46 @@ use rils_frontend::{
     Span,
     ast::{EnumVariant, GenericParameter, NamedField},
 };
-use rils_value::DynamicPathStep;
+use rils_value::{DynamicLayout, DynamicObject, DynamicPathStep, DynamicType, DynamicValue};
+
+#[test]
+fn opaque_native_generic_leaf_survives_an_optional_field() {
+    struct Payload(i32);
+    type Shared = rils_stdlib::stdlib::rc::Rc<Payload>;
+    let item_type = Type::named("Payload");
+    let shared_type = Type::Named {
+        name: "Rc".into(),
+        arguments: vec![item_type.clone()],
+    };
+    let shared_layout = DynamicLayout::of::<Shared>(shared_type.clone());
+    assert!(shared_layout.is_rust_value());
+    let shared = DynamicValue::from_rust(shared_layout.clone(), Shared::new(Payload(41))).unwrap();
+    let object =
+        DynamicObject::new(Rc::new(DynamicType::new(shared_layout.clone())), shared).unwrap();
+    let optional_layout = DynamicLayout::option(shared_layout).unwrap();
+    let optional = Value::Option {
+        value: Some(Rc::new(Value::Dynamic(object))),
+        element_type: Some(shared_type.clone()),
+    };
+    let native = record_codec::into_native(optional, optional_layout).unwrap();
+    let restored = record_codec::from_native(native).unwrap();
+    let Value::Option {
+        value: Some(value),
+        element_type: Some(restored_type),
+    } = restored
+    else {
+        panic!("expected an optional native value");
+    };
+    assert_eq!(restored_type, shared_type);
+    let Value::Dynamic(object) = value.as_ref() else {
+        panic!("opaque native leaf must retain its dynamic handle");
+    };
+    let payload = object
+        .with(|value| value.with::<Shared, _>(|shared| std::ops::Deref::deref(shared).as_ref().0))
+        .unwrap()
+        .unwrap();
+    assert_eq!(payload, 41);
+}
 
 #[test]
 fn generated_number_codecs_round_trip_owned_record_payloads() {

@@ -92,6 +92,12 @@ impl DynamicLayout {
         self.copy
     }
 
+    /// Whether this layout stores one concrete Rust value rather than a
+    /// runtime-composed option, record, variant, or sequence.
+    pub fn is_rust_value(&self) -> bool {
+        matches!(self.drop_kind, DropKind::Rust { .. })
+    }
+
     pub fn option_item(&self) -> Option<&Rc<Self>> {
         match &self.drop_kind {
             DropKind::Option { item, .. } => Some(item),

@@ -715,6 +715,13 @@ impl NativeRecordCodec {
                 native_layouts::float::field_value(value, &ty)
                     .ok_or_else(|| format!("no float codec for {ty}"))?
             }
+            _ if value.descriptor().is_rust_value() => {
+                let layout = value.layout_handle();
+                let descriptor = Rc::new(rils_value::DynamicType::new(layout));
+                Ok(Value::Dynamic(super::DynamicObject::new(
+                    descriptor, value,
+                )?))
+            }
             ty => Err(format!("no owned native field decoder for {ty}")),
         }
     }
