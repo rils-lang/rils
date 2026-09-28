@@ -5,9 +5,10 @@
 
 ## Unreleased
 
+- 类型化空 `Vec<T>` 现可对可解析布局的非 Copy 复合元素使用原生序列，已验证 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。`push`、`pop`、`remove`、消费式迭代和元素替换在解释器与 VM 中保持一致；索引引用与借用迭代可建立并阻止借用期间的结构性修改。内部解引用非 Copy 复合元素仍需通用借用视图，用户定义元素仍需接入声明上下文。
 - **破坏性 Rust API 更新：** `eval`、`Engine::eval` / `eval_file` 及 `BytecodeModule::execute` / `call` 系列现在返回 `RilsValue` 句柄。宿主代码将原先对返回 `Value` 的读取改为 `with_ref::<T, _>(...)`、`get_cloned::<T>()` 或 `into_owned::<T>()`；移出失败时错误中保留原句柄。类型化访问覆盖基础标量和字符串；脚本结构体可用 `field(index)` 取得字段引用句柄。动态组合类型的视图和用户类型映射尚待补齐；C ABI 未改变。
 - 类型化空 `Vec<string>` 也改用原生序列负载；字符串元素可通过 `&` / `&mut` 索引引用及 `iter()` 访问，`push`、`pop`、`extend` 和拥有型迭代可直接使用原生序列。读取借用的字符串会在现有 `Value` 接口边界克隆文本；直接按索引移出非 Copy 字符串仍会报错。Rust 宿主使用 `Value::as_vec()` 读取新旧表示。
-- 具体元素布局为 Copy 的 `Vec<T>` 类型化空构造现在使用原生序列负载；索引引用、常用方法、借用与拥有型迭代、`for` 和 `extend` 在解释器与 VM 中均可使用。元素引用持有容器句柄及索引，读写时只短暂借用 Rust 负载；有活动元素引用或迭代器时，结构性修改会报错。Rust 宿主若直接匹配 `Value::Vec`，需改用 `Value::as_vec()` 或同时处理 `Value::Dynamic`；非 Copy 元素或无法解析布局的 Vec 仍使用旧表示。
+- 具体元素布局为 Copy 的 `Vec<T>` 类型化空构造现在使用原生序列负载；索引引用、常用方法、借用与拥有型迭代、`for` 和 `extend` 在解释器与 VM 中均可使用。元素引用持有容器句柄及索引，读写时只短暂借用 Rust 负载；有活动元素引用或迭代器时，结构性修改会报错。Rust 宿主若直接匹配 `Value::Vec`，需改用 `Value::as_vec()` 或同时处理 `Value::Dynamic`；无法解析布局的 Vec 仍使用旧表示。
 - `char` 字面量、默认值和字符串字符迭代结果现使用内联原生负载；解释器、VM、集合键及 C ABI 保留原有字符语义与编码。Rust 宿主若直接匹配脚本产出的 `Value::Char`，需改用 `Value::as_char()`；可用 `Value::from_char()` 构造原生字符，旧变体继续作为输入被接受。
 - 具体类型的 `Result<T, E>` 在两个分支均有可读取的原生布局时，可在类型化绑定中使用动态带标签负载；覆盖基础标量、`string` 和 Copy 的嵌套负载（如 `Result<Option<i32>, string>`）。解释器、VM、重载字节码、模式匹配与方法调用保持一致。Rust 宿主应通过 `Value::as_result()` 读取新旧表示；直接匹配 `Value::Result` 的代码需同时处理 `Value::Dynamic`。其他子类型仍保留旧表示。
 

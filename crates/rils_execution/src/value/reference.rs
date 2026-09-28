@@ -158,17 +158,11 @@ impl ReferenceValue {
         if !super::native_layouts::vec::matches(sequence.descriptor().layout().rils_type()) {
             return Err("dynamic value is not a Vec".into());
         }
-        let item = sequence
+        sequence
             .descriptor()
             .layout()
             .sequence_item()
             .ok_or("dynamic value is not an indexed sequence")?;
-        if !rils_stdlib::native::registry().can_read_element(item) {
-            return Err(format!(
-                "native references to {} are not yet supported",
-                item.rils_type()
-            ));
-        }
         let ledger = sequence.with(|value| value.sequence_borrows())??;
         let lease = ledger.reference(index)?;
         Ok(Self {

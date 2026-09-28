@@ -60,14 +60,6 @@ pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
                 .ok_or("native Vec has no item layout")?
                 .rils_type()
                 .clone();
-            if !object
-                .descriptor()
-                .layout()
-                .sequence_item()
-                .is_some_and(|item| rils_stdlib::native::registry().can_read_element(item))
-            {
-                return Err("native borrowed iteration requires Copy or string elements".into());
-            }
             let (length, ledger) = object.with(|payload| {
                 Ok::<_, String>((payload.sequence_len()?, payload.sequence_borrows()?))
             })??;

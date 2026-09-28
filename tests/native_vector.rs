@@ -210,9 +210,69 @@ fn native_vec_copy_element_matrix() {
 }
 
 #[test]
-fn nested_non_copy_element_without_borrow_policy_stays_legacy() {
-    let source = "let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); v";
+fn nested_non_copy_element_uses_native_storage() {
+    for (ty, item) in [
+        ("Option<string>", "Some(\"text\")"),
+        ("Result<string, string>", "Ok(\"text\")"),
+        ("(string, i32)", "(\"text\", 3)"),
+        ("Vec<string>", "Vec::new()"),
+    ] {
+        let source = format!("let mut v: Vec<{ty}> = Vec::new(); v.push({item}); v");
+        for value in run_both(&source) {
+            assert!(matches!(value, Value::Dynamic(_)), "{source}");
+        }
+    }
+}
+
+#[test]
+fn nested_non_copy_owned_operations_match_backends() {
+    for (source, expected) in [
+        (
+            "let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); v.pop().unwrap().unwrap().len()",
+            4usize,
+        ),
+        (
+            "let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); v.remove(0usize).unwrap().len()",
+            4usize,
+        ),
+        (
+            "let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let mut it = v.into_iter(); it.next().unwrap().unwrap().len()",
+            4usize,
+        ),
+    ] {
+        for value in run_both(source) {
+            assert_eq!(value.as_usize(), Some(expected), "{source}");
+        }
+    }
+}
+
+#[test]
+fn nested_non_copy_elements_can_be_referenced() {
+    let source = "fn result() -> bool { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let mut it = v.iter(); it.next().is_some() } result()";
     for value in run_both(source) {
-        assert!(matches!(value, Value::Vec(_)));
+        assert_eq!(value, Value::Bool(true));
+    }
+}
+
+#[test]
+fn nested_non_copy_borrow_preserves_structural_mutation_rule() {
+    let source = "fn result() -> usize { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"first\")); let item = &v[0]; v.push(Some(\"second\")); 0usize } result()";
+    let compiled = compile(source).unwrap();
+    for error in [
+        eval_value(source).unwrap_err().to_string(),
+        compiled.execute_value().unwrap_err().to_string(),
+    ] {
+        assert!(
+            error.contains("structural") || error.contains("borrow"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn nested_non_copy_borrow_can_replace_element() {
+    let source = "fn result() -> usize { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"old\")); { let item = &mut v[0]; *item = Some(\"newer\"); } v.pop().unwrap().unwrap().len() } result()";
+    for value in run_both(source) {
+        assert_eq!(value.as_usize(), Some(5));
     }
 }

@@ -42,13 +42,6 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
     let Ok(layout) = RecordLayoutResolver::new(&[]).resolve(expected) else {
         return value;
     };
-    if matches!(value, Value::Vec(_))
-        && !layout
-            .sequence_item()
-            .is_some_and(|item| rils_stdlib::native::registry().can_read_element(item))
-    {
-        return value;
-    }
     let Ok(payload) = DynamicValue::sequence(layout.clone(), Vec::new()) else {
         return value;
     };
