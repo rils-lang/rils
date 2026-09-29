@@ -168,6 +168,7 @@ pub fn call_symbol(
 ) -> Option<Result<crate::Value, String>> {
     boxed::call_symbol(symbol, arguments)
         .or_else(|| super::rc_native::call_symbol(symbol, arguments))
+        .or_else(|| super::cell_native::call_symbol(symbol, arguments))
         .or_else(|| option::call_symbol(symbol, arguments))
         .or_else(|| result::call_symbol(symbol, arguments))
         .or_else(|| {
@@ -191,7 +192,9 @@ pub fn call_owned_symbol(
     arguments: Vec<crate::Value>,
     context: &super::NativeOwnedContext,
 ) -> Option<Result<crate::Value, String>> {
-    if super::rc_native::is_owned_symbol(symbol) {
+    if super::cell_native::is_owned_symbol(symbol) {
+        super::cell_native::call_owned_symbol(symbol, arguments, context)
+    } else if super::rc_native::is_owned_symbol(symbol) {
         super::rc_native::call_owned_symbol(symbol, arguments, context)
     } else if boxed::is_owned_symbol(symbol) {
         boxed::call_owned_symbol(symbol, arguments, context)
@@ -205,7 +208,8 @@ pub fn call_owned_symbol(
 }
 
 pub fn is_owned_symbol(symbol: &str) -> bool {
-    super::rc_native::is_owned_symbol(symbol)
+    super::cell_native::is_owned_symbol(symbol)
+        || super::rc_native::is_owned_symbol(symbol)
         || boxed::is_owned_symbol(symbol)
         || super::vec_deque::is_owned_symbol(symbol)
         || super::binary_heap::is_owned_symbol(symbol)

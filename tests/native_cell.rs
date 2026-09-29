@@ -29,3 +29,34 @@ fn cell_get_rejects_non_copy_values_in_both_backends() {
         .expect_err("VM must reject non-Copy values");
     assert!(compiled.to_string().contains("Copy"));
 }
+
+#[test]
+fn cells_with_concrete_items_use_native_storage_and_move_values() {
+    for source in [
+        "let cell: Cell<i32> = Cell::new(4); cell",
+        "let cell: Cell<string> = Cell::new(\"first\"); cell",
+        "struct Item { value: i32 } let cell: Cell<Item> = Cell::new(Item { value: 4 }); cell",
+    ] {
+        assert!(
+            matches!(eval_value(source).unwrap(), Value::Dynamic(_)),
+            "{source}"
+        );
+        assert!(
+            matches!(
+                compile(source).unwrap().execute_value().unwrap(),
+                Value::Dynamic(_)
+            ),
+            "{source}"
+        );
+    }
+    let source = "let cell: Cell<string> = Cell::new(\"first\"); let old = cell.replace(\"second\"); cell.set(\"third\"); old";
+    assert_eq!(eval_value(source).unwrap().to_string(), "first");
+    assert_eq!(
+        compile(source)
+            .unwrap()
+            .execute_value()
+            .unwrap()
+            .to_string(),
+        "first"
+    );
+}

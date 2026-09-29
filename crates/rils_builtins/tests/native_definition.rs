@@ -76,7 +76,10 @@ fn cell_methods_use_the_existing_runtime_ids() {
     for method in ["new", "get", "set", "replace"] {
         let member = published.member(method).expect("Cell method");
         assert!(member.builtin_id.is_some());
-        assert!(member.native_symbol.is_none());
+        assert_eq!(
+            member.native_symbol,
+            member.builtin_id.and_then(|id| id.canonical_path())
+        );
     }
 }
 

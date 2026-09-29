@@ -56,9 +56,6 @@ pub(super) fn resolve_associated_path(
             })?;
             Ok(crate::numeric::float_constant(target, constant.id))
         }
-        Value::StructType(definition) if definition.name == "Cell" && member == "new" => {
-            Ok(Value::BuiltinFunction(BuiltinFunction::CellNew))
-        }
         Value::StructType(definition) if definition.name == "RefCell" && member == "new" => {
             Ok(Value::BuiltinFunction(BuiltinFunction::RefCellNew))
         }

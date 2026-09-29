@@ -26,6 +26,7 @@ mod native {
         /// Creates a cell containing a value.
         #[export_rils]
         #[rils_legacy_id(core::cell::cell::new)]
+        #[rils_native_bridge]
         pub fn new(value: T) -> Self {
             Self(std::cell::Cell::new(value))
         }
@@ -33,6 +34,7 @@ mod native {
         /// Copies the current value.
         #[export_rils]
         #[rils_legacy_id(core::cell::cell::get)]
+        #[rils_native_bridge]
         pub fn get(&self) -> T
         where
             T: Copy,
@@ -43,6 +45,7 @@ mod native {
         /// Replaces the current value.
         #[export_rils]
         #[rils_legacy_id(core::cell::cell::set)]
+        #[rils_native_bridge]
         pub fn set(&self, value: T) {
             self.0.set(value);
         }
@@ -50,6 +53,7 @@ mod native {
         /// Replaces and returns the previous value.
         #[export_rils]
         #[rils_legacy_id(core::cell::cell::replace)]
+        #[rils_native_bridge]
         pub fn replace(&self, value: T) -> T {
             self.0.replace(value)
         }
@@ -111,3 +115,27 @@ mod native {
 }
 
 pub use native::{Cell, RefCell};
+
+#[doc(hidden)]
+pub struct ErasedCell(pub std::cell::RefCell<rils_value::DynamicValue>);
+
+fn cell_matches(ty: &rils_syntax::Type) -> bool {
+    matches!(ty, rils_syntax::Type::Named { name, arguments } if name == "Cell" && arguments.len() == 1)
+}
+
+fn cell_layout(
+    ty: &rils_syntax::Type,
+    resolve: &mut rils_native::LayoutResolver<'_>,
+) -> std::option::Option<Result<std::rc::Rc<rils_value::DynamicLayout>, std::string::String>> {
+    let rils_syntax::Type::Named { arguments, .. } = ty else {
+        return std::option::Option::None;
+    };
+    cell_matches(ty).then(|| {
+        resolve(&arguments[0]).map(|_| rils_value::DynamicLayout::of::<ErasedCell>(ty.clone()))
+    })
+}
+
+pub const NATIVE_LAYOUT_CELL: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
+    matches: cell_matches,
+    layout: cell_layout,
+};

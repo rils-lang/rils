@@ -14,6 +14,7 @@ mod boxed;
 mod btree_map;
 mod btree_set;
 mod callback;
+mod cell_native;
 mod collection_iter;
 mod indexed_iter;
 mod native;
@@ -715,7 +716,7 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
                 object.descriptor().layout().rils_type(),
             ) || crate::value::native_layouts::btree_map::matches(
                 object.descriptor().layout().rils_type(),
-            ) || matches!(object.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Rc" || name == "Weak") =>
+            ) || matches!(object.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Rc" || name == "Weak" || name == "Cell") =>
         {
             Ok(value.clone())
         }
