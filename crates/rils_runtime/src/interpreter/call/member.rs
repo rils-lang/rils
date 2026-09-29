@@ -202,6 +202,31 @@ pub(super) fn read_borrowed_field(
                 })?;
             (value, format!("field `{name}`"))
         }
+        Value::Dynamic(object) => {
+            let Some(index) = object.descriptor().layout().record_field_index(name) else {
+                return Ok(None);
+            };
+            let layout = object
+                .descriptor()
+                .layout()
+                .record_fields()
+                .and_then(|fields| fields.get(index))
+                .ok_or_else(|| RuntimeError::new(format!("unknown field `{name}`"), span))?
+                .layout_handle();
+            if !layout.is_copy() {
+                return Err(RuntimeError::new(
+                    format!("cannot move non-Copy field `{name}` through a reference"),
+                    span,
+                ));
+            }
+            let value = object
+                .with(|payload| payload.copy_path(&[rils_value::DynamicPathStep::Field(index)]))
+                .map_err(|message| RuntimeError::new(message, span))?
+                .map_err(|message| RuntimeError::new(message, span))?;
+            let value = rils_execution::value::record_codec::from_native(value)
+                .map_err(|message| RuntimeError::new(message, span))?;
+            return Ok(Some(value));
+        }
         _ => return Ok(None),
     };
     if !field.0.is_copy() {

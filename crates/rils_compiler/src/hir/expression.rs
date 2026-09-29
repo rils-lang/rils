@@ -327,8 +327,8 @@ impl<'a> FunctionLowerer<'a> {
                         None,
                     )) = self.resolved_builtin(expression_id)
                     {
-                        if let Some(symbol) = builtin.canonical_path()
-                            && rils_builtins::native_member(symbol).is_some()
+                        if let Some(symbol) = rils_builtins::runtime_member(builtin)
+                            .and_then(|(_, member)| member.native_symbol)
                         {
                             return Ok(HirExpression::CallNative {
                                 symbol: symbol.to_owned(),

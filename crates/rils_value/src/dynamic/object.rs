@@ -50,6 +50,29 @@ impl<V> DynamicObject<V> {
         })
     }
 
+    /// Keep one shared storage identity even when the enclosed layout is Copy.
+    /// Interior-mutable wrappers use this so borrowed views see later writes.
+    pub fn new_shared(descriptor: Rc<DynamicType<V>>, value: DynamicValue) -> Result<Self, String> {
+        if !value.descriptor().compatible_with(descriptor.layout()) {
+            return Err("dynamic value layout does not match its type".into());
+        }
+        Ok(Self {
+            descriptor,
+            storage: Storage::Shared(Rc::new(RefCell::new(value))),
+        })
+    }
+
+    /// Share an erased payload with a runtime that supplies another method table.
+    pub fn rebind_shared<U>(&self) -> Result<DynamicObject<U>, String> {
+        let Storage::Shared(value) = &self.storage else {
+            return Err("dynamic value has no shared storage".into());
+        };
+        Ok(DynamicObject {
+            descriptor: Rc::new(DynamicType::new(self.descriptor.layout_handle())),
+            storage: Storage::Shared(value.clone()),
+        })
+    }
+
     pub fn descriptor(&self) -> &DynamicType<V> {
         &self.descriptor
     }

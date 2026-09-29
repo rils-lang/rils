@@ -716,7 +716,7 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
                 object.descriptor().layout().rils_type(),
             ) || crate::value::native_layouts::btree_map::matches(
                 object.descriptor().layout().rils_type(),
-            ) || matches!(object.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Rc" || name == "Weak" || name == "Cell") =>
+            ) || matches!(object.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Rc" || name == "Weak" || name == "Cell" || name == "RefCell") =>
         {
             Ok(value.clone())
         }

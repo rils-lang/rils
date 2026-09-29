@@ -3,18 +3,20 @@
 use std::{cell::RefCell, rc::Rc};
 
 use rils_builtins::BuiltinId;
-use rils_stdlib::stdlib::cell::ErasedCell;
+use rils_stdlib::stdlib::cell::{ErasedCell, ErasedRefCell};
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
 use crate::{
     Type, Value,
-    value::{record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver},
+    value::{ReferenceValue, record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver},
 };
 
 use super::NativeOwnedContext;
 
 fn symbol(id: BuiltinId) -> &'static str {
-    id.canonical_path().expect("Cell built-in has a path")
+    rils_builtins::runtime_member(id)
+        .and_then(|(_, member)| member.native_symbol)
+        .expect("Cell native method has a declaration path")
 }
 
 pub(super) fn is_owned_symbol(path: &str) -> bool {
@@ -23,6 +25,10 @@ pub(super) fn is_owned_symbol(path: &str) -> bool {
         BuiltinId::CellGet,
         BuiltinId::CellSet,
         BuiltinId::CellReplace,
+        BuiltinId::RefCellNew,
+        BuiltinId::RefCellBorrow,
+        BuiltinId::RefCellBorrowMut,
+        BuiltinId::RefCellReplace,
     ]
     .into_iter()
     .any(|id| symbol(id) == path)
@@ -45,11 +51,15 @@ pub(super) fn call_owned_symbol(
         BuiltinId::CellGet,
         BuiltinId::CellSet,
         BuiltinId::CellReplace,
+        BuiltinId::RefCellNew,
+        BuiltinId::RefCellBorrow,
+        BuiltinId::RefCellBorrowMut,
+        BuiltinId::RefCellReplace,
     ]
     .into_iter()
     .find(|id| symbol(*id) == path)?;
     Some((|| {
-        if id == BuiltinId::CellNew {
+        if matches!(id, BuiltinId::CellNew | BuiltinId::RefCellNew) {
             if arguments.len() != 1 {
                 return Err("Cell::new expects one value".into());
             }
@@ -58,14 +68,94 @@ pub(super) fn call_owned_symbol(
             let item_layout =
                 RecordLayoutResolver::with_enums(&context.structs, &context.enums).resolve(&ty)?;
             let native = NativeRecordCodec::with_definitions(&context.structs, &context.enums)
-                .into_native(value, item_layout)?;
-            let layout = DynamicLayout::of::<ErasedCell>(Type::Named {
-                name: "Cell".into(),
-                arguments: vec![ty],
-            });
-            let payload =
-                DynamicValue::from_rust(layout.clone(), ErasedCell(RefCell::new(native)))?;
+                .into_native(value, item_layout.clone())?;
+            let (layout, payload) = if id == BuiltinId::CellNew {
+                let layout = DynamicLayout::of::<ErasedCell>(Type::Named {
+                    name: "Cell".into(),
+                    arguments: vec![ty],
+                });
+                let payload =
+                    DynamicValue::from_rust(layout.clone(), ErasedCell(RefCell::new(native)))?;
+                (layout, payload)
+            } else {
+                let item_descriptor = Rc::new(DynamicType::<()>::new(item_layout));
+                let layout = DynamicLayout::of::<ErasedRefCell>(Type::Named {
+                    name: "RefCell".into(),
+                    arguments: vec![ty],
+                });
+                let payload = DynamicValue::from_rust(
+                    layout.clone(),
+                    ErasedRefCell {
+                        value: DynamicObject::new_shared(item_descriptor, native)?,
+                        references: std::cell::Cell::new(0),
+                    },
+                )?;
+                (layout, payload)
+            };
             return native_value(layout, payload);
+        }
+        if matches!(
+            id,
+            BuiltinId::RefCellBorrow | BuiltinId::RefCellBorrowMut | BuiltinId::RefCellReplace
+        ) {
+            let expected = if id == BuiltinId::RefCellReplace {
+                2
+            } else {
+                1
+            };
+            if arguments.len() != expected {
+                return Err("RefCell method received the wrong number of arguments".into());
+            }
+            let guard = match &arguments[0] {
+                Value::Reference(reference) => Some(reference.clone()),
+                _ => None,
+            };
+            let receiver = super::import_receiver(&arguments[0])?;
+            let Value::Dynamic(object) = receiver else {
+                return Err("expected RefCell receiver".into());
+            };
+            let Type::Named {
+                name,
+                arguments: types,
+            } = object.descriptor().layout().rils_type()
+            else {
+                return Err("expected RefCell receiver".into());
+            };
+            if name != "RefCell" {
+                return Err("expected RefCell receiver".into());
+            }
+            let item_ty = types.first().ok_or("RefCell has no item type")?;
+            return match id {
+                BuiltinId::RefCellBorrow | BuiltinId::RefCellBorrowMut => {
+                    let reference = ReferenceValue::new_dynamic_cell(
+                        object,
+                        id == BuiltinId::RefCellBorrowMut,
+                        guard,
+                        context.structs.clone(),
+                        context.enums.clone(),
+                    )?;
+                    Ok(Value::Reference(Rc::new(reference)))
+                }
+                BuiltinId::RefCellReplace => {
+                    let layout = RecordLayoutResolver::with_enums(&context.structs, &context.enums)
+                        .resolve(item_ty)?;
+                    let mut codec =
+                        NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+                    let native = codec
+                        .into_native(arguments.pop().expect("checked argument count"), layout)?;
+                    let old = object.with(|payload| {
+                        payload.with::<ErasedRefCell, _>(|cell| {
+                            if cell.references.get() > 0 {
+                                return Err("cannot replace RefCell while borrowed".to_owned());
+                            }
+                            cell.value
+                                .with_mut(|value| std::mem::replace(value, native))
+                        })
+                    })???;
+                    codec.from_native(old)
+                }
+                _ => unreachable!(),
+            };
         }
         if arguments.len() != if id == BuiltinId::CellGet { 1 } else { 2 } {
             return Err("Cell method received the wrong number of arguments".into());

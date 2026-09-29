@@ -15,6 +15,7 @@ enum PlaceContainer {
     Struct(Rc<StructInstance>),
     Indexed(Rc<IndexedStorage>),
     DynamicIndexed(rils_execution::value::DynamicObject),
+    DynamicRecord(rils_execution::value::DynamicObject),
 }
 
 impl VirtualMachine<'_> {
@@ -77,6 +78,9 @@ impl VirtualMachine<'_> {
             {
                 Ok(PlaceContainer::DynamicIndexed(object))
             }
+            Value::Dynamic(object) if object.descriptor().layout().record_fields().is_some() => {
+                Ok(PlaceContainer::DynamicRecord(object))
+            }
             Value::Reference(reference) => self.place_container(
                 reference
                     .read()
@@ -88,6 +92,73 @@ impl VirtualMachine<'_> {
                 span,
             )),
         }
+    }
+
+    fn dynamic_field(
+        &self,
+        object: &rils_execution::value::DynamicObject,
+        projection: &ResolvedProjection,
+        span: Span,
+    ) -> Result<usize, BytecodeError> {
+        let layout = object.descriptor().layout();
+        match projection {
+            ResolvedProjection::Field(name) => layout
+                .record_field_index(name)
+                .ok_or_else(|| BytecodeError::new(format!("unknown field `{name}`"), span)),
+            ResolvedProjection::RecordField { type_id, index } => {
+                let Some(RuntimeType::Struct(definition)) = self.module.types.get(*type_id) else {
+                    return Err(BytecodeError::new("invalid record field type", span));
+                };
+                if !matches!(layout.rils_type(), Type::Named { name, .. } if name == &definition.name)
+                {
+                    return Err(BytecodeError::new(
+                        "record field projection does not match its type",
+                        span,
+                    ));
+                }
+                let field = layout
+                    .record_fields()
+                    .and_then(|fields| fields.get(*index))
+                    .ok_or_else(|| {
+                        BytecodeError::new("record field index is out of bounds", span)
+                    })?;
+                let expected = definition.fields.get(*index).ok_or_else(|| {
+                    BytecodeError::new("record field index is out of bounds", span)
+                })?;
+                if field.name() != expected.name {
+                    return Err(BytecodeError::new(
+                        "record field projection does not match its declaration",
+                        span,
+                    ));
+                }
+                Ok(*index)
+            }
+            ResolvedProjection::Index(_) => Err(BytecodeError::new(
+                "expected a record field projection",
+                span,
+            )),
+        }
+    }
+
+    fn dynamic_field_reference(
+        &self,
+        object: rils_execution::value::DynamicObject,
+        projection: &ResolvedProjection,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+        span: Span,
+    ) -> Result<ReferenceValue, BytecodeError> {
+        let index = self.dynamic_field(&object, projection, span)?;
+        let mut structs = Vec::new();
+        let mut enums = Vec::new();
+        for ty in &self.module.types {
+            match ty {
+                RuntimeType::Struct(definition) => structs.push(definition.clone()),
+                RuntimeType::Enum(definition) => enums.push(definition.clone()),
+            }
+        }
+        ReferenceValue::new_dynamic_field(object, index, mutable, guard, structs, enums)
+            .map_err(|message| BytecodeError::new(message, span))
     }
 
     fn struct_field<'a>(
@@ -167,6 +238,14 @@ impl VirtualMachine<'_> {
                 rils_execution::value::dynamic_sequence::copy_item(object, *index)
                     .map_err(|message| BytecodeError::new(message, span))
             }
+            (
+                PlaceContainer::DynamicRecord(object),
+                projection
+                @ (ResolvedProjection::Field(_) | ResolvedProjection::RecordField { .. }),
+            ) => self
+                .dynamic_field_reference(object.clone(), projection, false, None, span)?
+                .read()
+                .map_err(|message| BytecodeError::new(message, span)),
             _ => Err(BytecodeError::new(
                 "place projection does not match its value",
                 span,
@@ -227,6 +306,14 @@ impl VirtualMachine<'_> {
                 rils_execution::value::dynamic_sequence::copy_item(&object, *index)
                     .map_err(|message| BytecodeError::new(message, span))
             }
+            (
+                PlaceContainer::DynamicRecord(object),
+                projection
+                @ (ResolvedProjection::Field(_) | ResolvedProjection::RecordField { .. }),
+            ) => self
+                .dynamic_field_reference(object, projection, false, None, span)?
+                .read()
+                .map_err(|message| BytecodeError::new(message, span)),
             _ => Err(BytecodeError::new(
                 "place projection does not match its value",
                 span,
@@ -273,6 +360,14 @@ impl VirtualMachine<'_> {
                 rils_execution::value::dynamic_sequence::replace_item(&object, *index, value)
                     .map_err(|message| BytecodeError::new(message, span))
             }
+            (
+                PlaceContainer::DynamicRecord(object),
+                projection
+                @ (ResolvedProjection::Field(_) | ResolvedProjection::RecordField { .. }),
+            ) => self
+                .dynamic_field_reference(object, projection, true, None, span)?
+                .write(value)
+                .map_err(|error| BytecodeError::new(format!("{error:?}"), span)),
             _ => Err(BytecodeError::new(
                 "place projection does not match its value",
                 span,
@@ -319,6 +414,13 @@ impl VirtualMachine<'_> {
                         guard,
                     )
                 }
+                (
+                    PlaceContainer::DynamicRecord(object),
+                    projection @ (ResolvedProjection::Field(_)
+                    | ResolvedProjection::RecordField { .. }),
+                ) => self
+                    .dynamic_field_reference(object.clone(), projection, mutable, guard, span)
+                    .map_err(|error| error.message),
                 _ => {
                     return Err(BytecodeError::new(
                         "place projection does not match its value",

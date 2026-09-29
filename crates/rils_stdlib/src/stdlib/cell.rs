@@ -81,6 +81,7 @@ mod native {
         /// Creates a dynamically checked cell.
         #[export_rils]
         #[rils_legacy_id(core::ref_cell::new)]
+        #[rils_native_bridge]
         pub fn new(value: T) -> Self {
             Self(std::cell::RefCell::new(value))
         }
@@ -88,6 +89,7 @@ mod native {
         /// Borrows the contained value for reading.
         #[export_rils]
         #[rils_legacy_id(core::ref_cell::borrow)]
+        #[rils_native_bridge]
         #[rils_return(&T)]
         pub fn borrow(&self) -> std::cell::Ref<'_, T> {
             self.0.borrow()
@@ -96,6 +98,7 @@ mod native {
         /// Borrows the contained value for writing.
         #[export_rils]
         #[rils_legacy_id(core::ref_cell::borrow_mut)]
+        #[rils_native_bridge]
         #[rils_return(&mut T)]
         pub fn borrow_mut(&self) -> std::cell::RefMut<'_, T> {
             self.0.borrow_mut()
@@ -104,6 +107,7 @@ mod native {
         /// Replaces and returns the previous value.
         #[export_rils]
         #[rils_legacy_id(core::ref_cell::replace)]
+        #[rils_native_bridge]
         pub fn replace(&self, value: T) -> T {
             self.0.replace(value)
         }
@@ -118,6 +122,12 @@ pub use native::{Cell, RefCell};
 
 #[doc(hidden)]
 pub struct ErasedCell(pub std::cell::RefCell<rils_value::DynamicValue>);
+
+#[doc(hidden)]
+pub struct ErasedRefCell {
+    pub value: rils_value::DynamicObject<()>,
+    pub references: std::cell::Cell<usize>,
+}
 
 fn cell_matches(ty: &rils_syntax::Type) -> bool {
     matches!(ty, rils_syntax::Type::Named { name, arguments } if name == "Cell" && arguments.len() == 1)
@@ -139,3 +149,25 @@ pub const NATIVE_LAYOUT_CELL: rils_native::LayoutRegistration = rils_native::Lay
     matches: cell_matches,
     layout: cell_layout,
 };
+
+fn ref_cell_matches(ty: &rils_syntax::Type) -> bool {
+    matches!(ty, rils_syntax::Type::Named { name, arguments } if name == "RefCell" && arguments.len() == 1)
+}
+
+fn ref_cell_layout(
+    ty: &rils_syntax::Type,
+    resolve: &mut rils_native::LayoutResolver<'_>,
+) -> std::option::Option<Result<std::rc::Rc<rils_value::DynamicLayout>, std::string::String>> {
+    let rils_syntax::Type::Named { arguments, .. } = ty else {
+        return std::option::Option::None;
+    };
+    ref_cell_matches(ty).then(|| {
+        resolve(&arguments[0]).map(|_| rils_value::DynamicLayout::of::<ErasedRefCell>(ty.clone()))
+    })
+}
+
+pub const NATIVE_LAYOUT_REFCELL: rils_native::LayoutRegistration =
+    rils_native::LayoutRegistration {
+        matches: ref_cell_matches,
+        layout: ref_cell_layout,
+    };

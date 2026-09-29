@@ -16,4 +16,5 @@ rils_project.workspace = true
 rils_driver.workspace = true
 rils_execution.workspace = true
 rils_stdlib.workspace = true
+rils_value.workspace = true
 stacker = "0.1"

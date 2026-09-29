@@ -444,6 +444,29 @@ impl Interpreter {
                         guard,
                     });
                 }
+                if let Value::Dynamic(object) = value {
+                    let index = object
+                        .descriptor()
+                        .layout()
+                        .record_field_index(name)
+                        .ok_or_else(|| {
+                            RuntimeError::new(
+                                format!(
+                                    "{} has no field `{name}`",
+                                    object.descriptor().layout().rils_type()
+                                ),
+                                span,
+                            )
+                        })?;
+                    let (structs, enums) = environment.borrow().visible_type_definitions();
+                    let reference = ReferenceValue::new_dynamic_field(
+                        object, index, mutable, guard, structs, enums,
+                    )
+                    .map_err(|message| RuntimeError::new(message, span))?;
+                    return Ok(Place::Reference {
+                        reference: Rc::new(reference),
+                    });
+                }
                 let Value::Struct(instance) = value else {
                     return Err(RuntimeError::new(
                         format!("{} has no field `{name}`", value.type_name()),

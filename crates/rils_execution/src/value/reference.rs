@@ -1,11 +1,13 @@
 use std::rc::Rc;
 
+use rils_stdlib::stdlib::cell::ErasedRefCell;
 use rils_value::{DynamicValueRef, SequenceItemLease};
 
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
 use super::{
-    DynamicObject, HashKey, IndexedStorage, MapCollection, SetCollection, StructInstance, Value,
+    DynamicObject, EnumType, HashKey, IndexedStorage, MapCollection, SetCollection, StructInstance,
+    StructType, Value,
 };
 
 pub struct ReferenceValue {
@@ -29,6 +31,17 @@ enum ReferenceTarget {
         index: usize,
         field: Option<usize>,
         _lease: SequenceItemLease,
+    },
+    DynamicCell {
+        cell: DynamicObject,
+        structs: Rc<Vec<Rc<StructType>>>,
+        enums: Rc<Vec<Rc<EnumType>>>,
+    },
+    DynamicField {
+        object: DynamicObject,
+        field: usize,
+        structs: Rc<Vec<Rc<StructType>>>,
+        enums: Rc<Vec<Rc<EnumType>>>,
     },
     MapKey {
         map: MapCollection,
@@ -54,6 +67,8 @@ impl ReferenceValue {
                 ReferenceTarget::StructField { .. }
                 | ReferenceTarget::IndexedElement { .. }
                 | ReferenceTarget::DynamicIndexedElement { .. }
+                | ReferenceTarget::DynamicCell { .. }
+                | ReferenceTarget::DynamicField { .. }
                 | ReferenceTarget::MapKey { .. }
                 | ReferenceTarget::MapValue { .. }
                 | ReferenceTarget::SetItem { .. } => false,
@@ -190,6 +205,50 @@ impl ReferenceValue {
         })
     }
 
+    pub fn new_dynamic_cell(
+        cell: DynamicObject,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+        structs: Vec<Rc<StructType>>,
+        enums: Vec<Rc<EnumType>>,
+    ) -> Result<Self, String> {
+        cell.with(|payload| {
+            payload.with::<ErasedRefCell, _>(|value| {
+                value.references.set(value.references.get() + 1);
+            })
+        })??;
+        Ok(Self {
+            mutable,
+            target: ReferenceTarget::DynamicCell {
+                cell,
+                structs: Rc::new(structs),
+                enums: Rc::new(enums),
+            },
+            _guard: guard,
+        })
+    }
+
+    pub fn new_dynamic_field(
+        object: DynamicObject,
+        field: usize,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+        structs: Vec<Rc<StructType>>,
+        enums: Vec<Rc<EnumType>>,
+    ) -> Result<Self, String> {
+        object.with(|payload| payload.view().field(field).map(|_| ()))??;
+        Ok(Self {
+            mutable,
+            target: ReferenceTarget::DynamicField {
+                object,
+                field,
+                structs: Rc::new(structs),
+                enums: Rc::new(enums),
+            },
+            _guard: guard,
+        })
+    }
+
     pub fn new_map_key(
         map: MapCollection,
         key: HashKey,
@@ -272,6 +331,30 @@ impl ReferenceValue {
                 mutable,
                 self._guard.clone(),
             ),
+            ReferenceTarget::DynamicCell {
+                cell,
+                structs,
+                enums,
+            } => Self::new_dynamic_cell(
+                cell.clone(),
+                mutable,
+                self._guard.clone(),
+                structs.as_ref().clone(),
+                enums.as_ref().clone(),
+            ),
+            ReferenceTarget::DynamicField {
+                object,
+                field,
+                structs,
+                enums,
+            } => Self::new_dynamic_field(
+                object.clone(),
+                *field,
+                mutable,
+                self._guard.clone(),
+                structs.as_ref().clone(),
+                enums.as_ref().clone(),
+            ),
             ReferenceTarget::MapKey { map, key } => {
                 Self::new_map_key(map.clone(), key.clone(), self._guard.clone())
             }
@@ -320,6 +403,57 @@ impl ReferenceValue {
                 })??,
                 None => super::dynamic_sequence::borrowed_item(sequence, *index),
             },
+            ReferenceTarget::DynamicCell {
+                cell,
+                structs,
+                enums,
+            } => {
+                let inner = cell.with(|payload| {
+                    payload.with::<ErasedRefCell, _>(|value| value.value.rebind_shared::<Value>())
+                })???;
+                let layout = inner.descriptor().layout();
+                let nominal_noncopy = match layout.rils_type() {
+                    crate::Type::Named { name, .. } => {
+                        structs
+                            .iter()
+                            .find(|definition| definition.name == *name)
+                            .is_some_and(|definition| {
+                                !definition.implemented_traits.borrow().contains("Copy")
+                            })
+                            || enums
+                                .iter()
+                                .find(|definition| definition.name == *name)
+                                .is_some_and(|definition| {
+                                    !definition.implemented_traits.borrow().contains("Copy")
+                                })
+                    }
+                    _ => false,
+                };
+                if (layout.is_copy() && !nominal_noncopy)
+                    || layout.rils_type() == &crate::Type::String
+                {
+                    let cloned = inner.with(|value| {
+                        rils_stdlib::native::registry().clone_borrowed_element(value)
+                    })??;
+                    super::record_codec::NativeRecordCodec::with_definitions(structs, enums)
+                        .from_native(cloned)
+                } else {
+                    Ok(Value::Dynamic(inner))
+                }
+            }
+            ReferenceTarget::DynamicField {
+                object,
+                field,
+                structs,
+                enums,
+            } => {
+                let cloned = object.with(|payload| {
+                    rils_stdlib::native::registry()
+                        .clone_borrowed_view(payload.view().field(*field)?)
+                })??;
+                super::record_codec::NativeRecordCodec::with_definitions(structs, enums)
+                    .from_native(cloned)
+            }
             ReferenceTarget::MapKey { map, key } => map
                 .contains_key(key)
                 .then(|| key.to_value())
@@ -369,6 +503,13 @@ impl ReferenceValue {
                     None => item.with(callback),
                 })
             })??,
+            ReferenceTarget::DynamicCell { cell, .. } => cell.with(|payload| {
+                payload
+                    .with::<ErasedRefCell, _>(|value| value.value.with(|item| item.with(callback)))
+            })???,
+            ReferenceTarget::DynamicField { object, field, .. } => {
+                object.with(|payload| payload.view().field(*field)?.with_rust(callback))?
+            }
             _ => Err("reference target has no direct Rust borrow view".into()),
         }
     }
@@ -392,6 +533,14 @@ impl ReferenceValue {
                     None => Ok(callback(item.view())),
                 })
             })??,
+            ReferenceTarget::DynamicCell { cell, .. } => cell.with(|payload| {
+                payload.with::<ErasedRefCell, _>(|value| {
+                    value.value.with(|item| callback(item.view()))
+                })
+            })??,
+            ReferenceTarget::DynamicField { object, field, .. } => {
+                object.with(|payload| Ok(callback(payload.view().field(*field)?)))?
+            }
             _ => Err("reference target has no native layout view".into()),
         }
     }
@@ -451,6 +600,60 @@ impl ReferenceValue {
                     .map_err(|_| AssignError::BorrowedTarget)?;
                 Ok(())
             }
+            ReferenceTarget::DynamicCell {
+                cell,
+                structs,
+                enums,
+            } => {
+                let item_ty = cell.descriptor().layout().rils_type();
+                let crate::Type::Named { arguments, .. } = item_ty else {
+                    return Err(AssignError::Undefined);
+                };
+                let Some(item_ty) = arguments.first() else {
+                    return Err(AssignError::Undefined);
+                };
+                let layout = super::record_layout::RecordLayoutResolver::with_enums(structs, enums)
+                    .resolve(item_ty)
+                    .map_err(|_| AssignError::TypeMismatch(item_ty.clone()))?;
+                let native =
+                    super::record_codec::NativeRecordCodec::with_definitions(structs, enums)
+                        .into_native(value, layout)
+                        .map_err(|_| AssignError::TypeMismatch(item_ty.clone()))?;
+                cell.with(|payload| {
+                    payload.with::<ErasedRefCell, _>(|value| {
+                        value.value.with_mut(|item| std::mem::replace(item, native))
+                    })
+                })
+                .map_err(|_| AssignError::BorrowedTarget)?
+                .map_err(|_| AssignError::BorrowedTarget)?
+                .map_err(|_| AssignError::BorrowedTarget)?;
+                Ok(())
+            }
+            ReferenceTarget::DynamicField {
+                object,
+                field,
+                structs,
+                enums,
+            } => {
+                let layout = object
+                    .descriptor()
+                    .layout()
+                    .record_fields()
+                    .and_then(|fields| fields.get(*field))
+                    .ok_or(AssignError::Undefined)?
+                    .layout_handle();
+                let item = super::record_codec::NativeRecordCodec::with_definitions(structs, enums)
+                    .into_native(value, layout.clone())
+                    .map_err(|_| AssignError::TypeMismatch(layout.rils_type().clone()))?;
+                object
+                    .with_mut(|payload| {
+                        payload
+                            .replace_path_field(&[rils_value::DynamicPathStep::Field(*field)], item)
+                    })
+                    .map_err(|_| AssignError::BorrowedTarget)?
+                    .map_err(|_| AssignError::BorrowedTarget)?;
+                Ok(())
+            }
             ReferenceTarget::MapKey { .. }
             | ReferenceTarget::MapValue { .. }
             | ReferenceTarget::SetItem { .. } => Err(AssignError::Immutable),
@@ -473,6 +676,16 @@ impl Drop for ReferenceValue {
                 }
             }
             ReferenceTarget::DynamicIndexedElement { .. } => {}
+            ReferenceTarget::DynamicCell { cell, .. } => {
+                let _ = cell.with(|payload| {
+                    payload.with::<ErasedRefCell, _>(|value| {
+                        value
+                            .references
+                            .set(value.references.get().saturating_sub(1));
+                    })
+                });
+            }
+            ReferenceTarget::DynamicField { .. } => {}
             ReferenceTarget::MapKey { map, .. } | ReferenceTarget::MapValue { map, .. } => {
                 map.borrowed().set(map.borrowed().get().saturating_sub(1));
             }
