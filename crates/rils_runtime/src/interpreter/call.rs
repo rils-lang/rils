@@ -411,13 +411,14 @@ impl Interpreter {
                         span,
                     );
                 }
-                if matches!(actual_target, Type::Named { name, arguments } if name == "Range" && arguments.is_empty())
-                {
+                if matches!(actual_target, Type::Named { name, .. } if name == "Range") {
                     let method = match (selector.trait_name.as_str(), selector.method_name.as_str())
                     {
-                        ("Iterator", "next") => {
-                            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext)
-                        }
+                        ("Iterator", "next") => BuiltinMethod::Native(
+                            rils_builtins::builtin_member("Range", "next")
+                                .and_then(|member| member.native_symbol)
+                                .expect("Range::next exports a native symbol"),
+                        ),
                         _ => {
                             return Err(RuntimeError::new(
                                 format!(

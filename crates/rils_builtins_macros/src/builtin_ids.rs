@@ -215,8 +215,8 @@ mod tests {
             "BinaryHeapLen"
         );
         assert_eq!(
-            rust_name(&["core".into(), "iter".into(), "range".into(), "next".into(),]).unwrap(),
-            "RangeNext"
+            rust_name(&["core".into(), "btree_map".into(), "len".into()]).unwrap(),
+            "BtreeMapLen"
         );
     }
 }

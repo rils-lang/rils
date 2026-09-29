@@ -283,7 +283,6 @@ pub fn is_iterator_default_builtin(id: BuiltinId) -> bool {
 /// IDs retired from declarations while the remaining runtime dispatch is migrated.
 pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] = &[
     BuiltinId::RangeIntoIter,
-    BuiltinId::RangeNext,
     BuiltinId::VecPush,
     BuiltinId::VecPop,
     BuiltinId::VecClear,

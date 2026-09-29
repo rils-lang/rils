@@ -32,6 +32,12 @@ fn native_range_steps_match_in_interpreter_and_vm() {
 }
 
 #[test]
+fn trait_qualified_range_next_uses_the_native_symbol_in_the_interpreter() {
+    let source = "let mut range = 1i8..3i8; if Iterator::next(&mut range) == Some(1i8) && Iterator::next(&mut range) == Some(2i8) && Iterator::next(&mut range) == None { 42 } else { 0 }";
+    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+}
+
+#[test]
 fn range_values_use_native_storage_in_both_backends() {
     let interpreted = eval_value("1..3").unwrap();
     assert!(matches!(interpreted, Value::Native(_)));

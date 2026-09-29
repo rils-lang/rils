@@ -432,7 +432,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 element_type: Some(element_type),
             })
         }
-        BuiltinId::RangeNext => range::next(arguments),
         BuiltinId::IteratorCount
         | BuiltinId::IteratorLast
         | BuiltinId::IteratorNth
@@ -755,7 +754,15 @@ mod tests {
             crate::value::native_range(Value::from_i32(2), Value::from_i32(3)).unwrap(),
         );
         assert_eq!(
-            call(BuiltinId::RangeNext, std::slice::from_ref(&range)).unwrap(),
+            call_native_symbol(
+                rils_builtins::builtin_member("Range", "next")
+                    .unwrap()
+                    .native_symbol
+                    .unwrap(),
+                std::slice::from_ref(&range),
+            )
+            .unwrap()
+            .unwrap(),
             Value::Option {
                 value: Some(Rc::new(Value::from_i32(2))),
                 element_type: Some(Type::I32),

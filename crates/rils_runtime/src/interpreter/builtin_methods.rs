@@ -107,13 +107,6 @@ impl Interpreter {
                 crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext) => {
-                crate::runtime_builtins::call(
-                    rils_builtins::BuiltinId::RangeNext,
-                    &[(*method.receiver).clone()],
-                )
-                .map_err(|message| RuntimeError::new(message, span))
-            }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPush) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());

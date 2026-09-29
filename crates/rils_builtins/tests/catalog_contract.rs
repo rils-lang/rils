@@ -309,15 +309,6 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
 }
 
 #[test]
-fn range_next_keeps_its_numeric_id() {
-    assert_eq!(
-        BuiltinId::RangeNext.canonical_path(),
-        Some("core::iter::range::next")
-    );
-    assert_eq!(BuiltinId::RangeNext.as_raw(), 0x0400);
-}
-
-#[test]
 fn collection_constructors_export_native_symbols_without_ids() {
     for owner in ["VecDeque", "BinaryHeap", "BTreeMap", "BTreeSet"] {
         let constructor = builtin_member(owner, "new").expect("constructor");
@@ -386,7 +377,6 @@ fn exported_trait_impl_methods_keep_public_names_and_range_next_is_native() {
     let next = range.member("next").unwrap();
     assert!(next.native_symbol.is_some());
     assert_eq!(next.builtin_id, None);
-    assert!(rils_builtins::RETIRED_COMPATIBILITY_IDS.contains(&BuiltinId::RangeNext));
     assert!(rils_builtins::BLANKET_TRAIT_IMPLS.contains(&("Iterator", "IntoIterator")));
 
     let borrowed = builtin("Iter").unwrap();
