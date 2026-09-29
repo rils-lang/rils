@@ -14,4 +14,5 @@ rils_frontend.workspace = true
 rils_builtins.workspace = true
 rils_stdlib_macros.workspace = true
 rils_stdlib.workspace = true
+rils_native.workspace = true
 rils_value.workspace = true

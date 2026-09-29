@@ -671,6 +671,7 @@ dependencies = [
  "rils_builtins",
  "rils_frontend",
  "rils_host",
+ "rils_native",
  "rils_stdlib",
  "rils_stdlib_macros",
  "rils_value",

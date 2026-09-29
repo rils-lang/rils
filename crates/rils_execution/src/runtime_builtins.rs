@@ -13,6 +13,7 @@ mod binary_heap;
 mod boxed;
 mod btree_map;
 mod btree_set;
+mod btree_set_native;
 mod callback;
 mod collection_iter;
 mod indexed_iter;
@@ -83,6 +84,10 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     use rils_builtins::BuiltinId;
 
     if let Some(result) = native::call(id, arguments) {
+        return result;
+    }
+
+    if let Some(result) = btree_set_native::call(id, arguments) {
         return result;
     }
 
@@ -693,6 +698,8 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
         Value::Reference(reference) => import_receiver(&reference.read()?),
         Value::Dynamic(object)
             if crate::value::native_layouts::vec::matches(
+                object.descriptor().layout().rils_type(),
+            ) || crate::value::native_layouts::btree_set::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {

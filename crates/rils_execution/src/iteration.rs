@@ -27,6 +27,16 @@ pub fn into_iterator(value: Value) -> Result<IntoIteratorResult, String> {
         {
             runtime_builtins::vector_dynamic::into_iterator(object)?
         }
+        Value::Dynamic(object)
+            if crate::value::native_layouts::btree_set::matches(
+                object.descriptor().layout().rils_type(),
+            ) =>
+        {
+            runtime_builtins::call(
+                rils_builtins::BuiltinId::BtreeSetIntoIter,
+                &[Value::Dynamic(object)],
+            )?
+        }
         Value::HashMap(map) => hash_collections::call(
             rils_builtins::BuiltinId::HashMapIntoIter,
             &[Value::HashMap(map)],
