@@ -453,34 +453,25 @@ fn builtin_module(environment: &EnvironmentRef, path: &str) -> Rc<ModuleValue> {
 }
 
 fn install_format_types(environment: &EnvironmentRef) {
-    environment.borrow_mut().define(
-        "Formatter",
-        Value::HostType(Rc::new(HostType {
-            name: "Formatter".into(),
-            base_types: HashSet::new(),
-            copy: false,
-            methods: RefCell::new(HashMap::new()),
-        })),
-        false,
-        None,
-    );
-    environment.borrow_mut().define(
-        "FormatError",
-        Value::StructType(Rc::new(StructType {
-            field_indices: Default::default(),
-            name: "FormatError".into(),
-            opaque_native: rils_builtins::builtin("FormatError")
-                .is_some_and(|declaration| declaration.opaque_native),
-            generic_parameters: Vec::new(),
-            fields: Vec::new(),
-            methods: Default::default(),
-            trait_methods: Default::default(),
-            implemented_traits: Default::default(),
-            associated_types: Default::default(),
-        })),
-        false,
-        None,
-    );
+    for name in ["Formatter", "FormatError"] {
+        environment.borrow_mut().define(
+            name,
+            Value::StructType(Rc::new(StructType {
+                field_indices: Default::default(),
+                name: name.into(),
+                opaque_native: rils_builtins::builtin(name)
+                    .is_some_and(|declaration| declaration.opaque_native),
+                generic_parameters: Vec::new(),
+                fields: Vec::new(),
+                methods: Default::default(),
+                trait_methods: Default::default(),
+                implemented_traits: Default::default(),
+                associated_types: Default::default(),
+            })),
+            false,
+            None,
+        );
+    }
 }
 
 fn install_builtin_traits(environment: &EnvironmentRef) {
