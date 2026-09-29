@@ -173,15 +173,13 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeMapFirstKeyCloned
         | BuiltinId::BtreeMapLastKeyCloned
         | BuiltinId::BtreeMapIntoIter => btree_map::call(id, arguments),
-        BuiltinId::BinaryHeapNew
-        | BuiltinId::BinaryHeapLen
+        BuiltinId::BinaryHeapLen
         | BuiltinId::BinaryHeapIsEmpty
         | BuiltinId::BinaryHeapPush
         | BuiltinId::BinaryHeapPop
         | BuiltinId::BinaryHeapPeekCloned
         | BuiltinId::BinaryHeapClear => binary_heap::call(id, arguments),
-        BuiltinId::VecDequeNew
-        | BuiltinId::VecDequeLen
+        BuiltinId::VecDequeLen
         | BuiltinId::VecDequeIsEmpty
         | BuiltinId::VecDequePushFront
         | BuiltinId::VecDequePushBack

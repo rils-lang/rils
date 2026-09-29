@@ -9,12 +9,6 @@ use crate::{
 };
 
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    if id == BuiltinId::VecDequeNew {
-        return Ok(Value::VecDeque(Rc::new(VecDequeValue {
-            elements: RefCell::new(NativeVecDeque::<Value>::new().into()),
-            element_type: RefCell::new(Some(Type::Unknown)),
-        })));
-    }
     call_named(
         id.member_name().ok_or("unknown VecDeque operation")?,
         arguments,
@@ -25,7 +19,21 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
     let member = rils_builtins::builtin("VecDeque")?
         .members
         .iter()
-        .find(|member| member.native_symbol == Some(symbol) && member.receiver.is_some())?;
+        .find(|member| member.native_symbol == Some(symbol))?;
+    if member.name == "new" {
+        return Some(if arguments.is_empty() {
+            Ok(Value::VecDeque(Rc::new(VecDequeValue {
+                elements: RefCell::new(NativeVecDeque::<Value>::new().into()),
+                element_type: RefCell::new(Some(Type::Unknown)),
+            })))
+        } else {
+            Err(format!(
+                "VecDeque::new expects 0 arguments, found {}",
+                arguments.len()
+            ))
+        });
+    }
+    member.receiver?;
     Some(call_named(member.name, arguments))
 }
 

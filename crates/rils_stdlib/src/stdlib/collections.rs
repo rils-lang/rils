@@ -116,7 +116,6 @@ mod native {
 
         /// Creates an empty queue.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::new)]
         pub fn new() -> Self {
             Self(std::collections::VecDeque::new())
         }
@@ -233,7 +232,6 @@ mod native {
     impl<T: HeapElement> BinaryHeap<T> {
         /// Creates an empty max-priority queue.
         #[export_rils]
-        #[rils_legacy_id(core::collections::binary_heap::new)]
         pub fn new() -> Self {
             Self(std::collections::BinaryHeap::new())
         }

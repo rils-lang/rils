@@ -158,7 +158,6 @@ mul_add = 0x0C13
 
 # Double-ended queue operations: 0x1000-0x10FF.
 [core.collections.vec_deque]
-new = 0x1000
 len = 0x1001
 is_empty = 0x1002
 push_front = 0x1003
@@ -171,7 +170,6 @@ clear = 0x1009
 
 # Max-priority queue operations: 0x1100-0x11FF.
 [core.collections.binary_heap]
-new = 0x1100
 len = 0x1101
 is_empty = 0x1102
 push = 0x1103

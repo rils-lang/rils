@@ -305,8 +305,6 @@ pub enum BuiltinFunction {
     RcNew,
     CellNew,
     RefCellNew,
-    VecDequeNew,
-    BinaryHeapNew,
     BTreeMapNew,
     BTreeSetNew,
     IntegerIntrinsic {

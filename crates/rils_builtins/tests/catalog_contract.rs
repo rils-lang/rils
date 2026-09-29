@@ -309,22 +309,21 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
 }
 
 #[test]
-fn regrouped_native_paths_keep_their_numeric_ids() {
-    for (id, path, raw) in [
-        (BuiltinId::RangeNext, "core::iter::range::next", 0x0400),
-        (
-            BuiltinId::VecDequeNew,
-            "core::collections::vec_deque::new",
-            0x1000,
-        ),
-        (
-            BuiltinId::BinaryHeapNew,
-            "core::collections::binary_heap::new",
-            0x1100,
-        ),
-    ] {
-        assert_eq!(id.canonical_path(), Some(path));
-        assert_eq!(id.as_raw(), raw);
+fn range_next_keeps_its_numeric_id() {
+    assert_eq!(
+        BuiltinId::RangeNext.canonical_path(),
+        Some("core::iter::range::next")
+    );
+    assert_eq!(BuiltinId::RangeNext.as_raw(), 0x0400);
+}
+
+#[test]
+fn collection_constructors_export_native_symbols_without_ids() {
+    for owner in ["VecDeque", "BinaryHeap"] {
+        let constructor = builtin_member(owner, "new").expect("constructor");
+        let symbol = constructor.native_symbol.expect("native symbol");
+        assert_eq!(constructor.builtin_id, None);
+        assert!(std::ptr::eq(native_member(symbol).unwrap(), constructor));
     }
 }
 

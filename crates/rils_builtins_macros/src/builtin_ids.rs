@@ -209,20 +209,14 @@ mod tests {
                 "core".into(),
                 "collections".into(),
                 "binary_heap".into(),
-                "new".into(),
+                "len".into(),
             ])
             .unwrap(),
-            "BinaryHeapNew"
+            "BinaryHeapLen"
         );
         assert_eq!(
-            rust_name(&[
-                "core".into(),
-                "option".into(),
-                "option".into(),
-                "unwrap".into(),
-            ])
-            .unwrap(),
-            "OptionUnwrap"
+            rust_name(&["core".into(), "iter".into(), "range".into(), "next".into(),]).unwrap(),
+            "RangeNext"
         );
     }
 }

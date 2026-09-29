@@ -168,19 +168,6 @@ impl Interpreter {
                         type_argument,
                     })))
                 }
-                BuiltinFunction::VecDequeNew => {
-                    check_arity("VecDeque::new", 0, 0, arguments.len(), span)?;
-                    crate::runtime_builtins::call(rils_builtins::BuiltinId::VecDequeNew, arguments)
-                        .map_err(|message| RuntimeError::new(message, span))
-                }
-                BuiltinFunction::BinaryHeapNew => {
-                    check_arity("BinaryHeap::new", 0, 0, arguments.len(), span)?;
-                    crate::runtime_builtins::call(
-                        rils_builtins::BuiltinId::BinaryHeapNew,
-                        arguments,
-                    )
-                    .map_err(|message| RuntimeError::new(message, span))
-                }
                 BuiltinFunction::BTreeMapNew => {
                     check_arity("BTreeMap::new", 0, 0, arguments.len(), span)?;
                     crate::runtime_builtins::call(rils_builtins::BuiltinId::BtreeMapNew, arguments)

@@ -59,12 +59,6 @@ pub(super) fn resolve_associated_path(
             })?;
             Ok(crate::numeric::float_constant(target, constant.id))
         }
-        Value::StructType(definition) if definition.name == "VecDeque" && member == "new" => {
-            Ok(Value::BuiltinFunction(BuiltinFunction::VecDequeNew))
-        }
-        Value::StructType(definition) if definition.name == "BinaryHeap" && member == "new" => {
-            Ok(Value::BuiltinFunction(BuiltinFunction::BinaryHeapNew))
-        }
         Value::StructType(definition) if definition.name == "BTreeMap" && member == "new" => {
             Ok(Value::BuiltinFunction(BuiltinFunction::BTreeMapNew))
         }
