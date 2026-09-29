@@ -54,8 +54,9 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
     Some(match name {
         "type_of" => CoreImport::TypeOf,
         "clone" => CoreImport::Builtin(BuiltinId::Clone),
-        "unwrap" => CoreImport::Builtin(BuiltinId::OptionUnwrap),
-        "unwrap_or" => CoreImport::Builtin(BuiltinId::OptionUnwrapOr),
+        "unwrap" | "unwrap_or" => {
+            CoreImport::Native(rils_builtins::builtin_member("Option", name)?.native_symbol?)
+        }
         "core::assert" => CoreImport::Assert,
         "core::vec::new" => CoreImport::VecNew,
         "core::vec::from" => CoreImport::VecFrom,

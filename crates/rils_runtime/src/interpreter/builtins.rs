@@ -392,11 +392,19 @@ fn runtime_clone(arguments: &[Value]) -> Result<Value, String> {
 }
 
 fn runtime_unwrap(arguments: &[Value]) -> Result<Value, String> {
-    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionUnwrap, arguments)
+    let symbol = rils_builtins::builtin_member("Option", "unwrap")
+        .and_then(|member| member.native_symbol)
+        .expect("Option::unwrap exports a native symbol");
+    crate::runtime_builtins::call_native_symbol(symbol, arguments)
+        .expect("Option::unwrap native adapter is registered")
 }
 
 fn runtime_unwrap_or(arguments: &[Value]) -> Result<Value, String> {
-    crate::runtime_builtins::call(rils_builtins::BuiltinId::OptionUnwrapOr, arguments)
+    let symbol = rils_builtins::builtin_member("Option", "unwrap_or")
+        .and_then(|member| member.native_symbol)
+        .expect("Option::unwrap_or exports a native symbol");
+    crate::runtime_builtins::call_native_symbol(symbol, arguments)
+        .expect("Option::unwrap_or native adapter is registered")
 }
 
 fn install_builtin_modules(environment: &EnvironmentRef) {

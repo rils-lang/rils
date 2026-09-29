@@ -170,61 +170,6 @@ impl Interpreter {
                 .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::ResultUnwrap
-                | rils_builtins::BuiltinId::ResultUnwrapOr
-                | rils_builtins::BuiltinId::ResultExpect
-                | rils_builtins::BuiltinId::OptionUnwrap
-                | rils_builtins::BuiltinId::OptionUnwrapOr
-                | rils_builtins::BuiltinId::OptionExpect),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::ResultUnwrapErr
-                | rils_builtins::BuiltinId::ResultExpectErr),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::ResultMap
-                | rils_builtins::BuiltinId::ResultMapErr
-                | rils_builtins::BuiltinId::ResultAndThen
-                | rils_builtins::BuiltinId::ResultOrElse),
-            )
-            | BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::OptionMap
-                | rils_builtins::BuiltinId::OptionAndThen
-                | rils_builtins::BuiltinId::OptionOrElse),
-            ) => {
-                let symbol = id.canonical_path().ok_or_else(|| {
-                    RuntimeError::new("callback method has no native symbol", span)
-                })?;
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                self.call_native_symbol(symbol, &values, span)
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::OptionTake
-                | rils_builtins::BuiltinId::OptionOr
-                | rils_builtins::BuiltinId::OptionXor
-                | rils_builtins::BuiltinId::OptionReplace),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::VecDequeLen
                 | rils_builtins::BuiltinId::BtreeSetLen
                 | rils_builtins::BuiltinId::BtreeSetIsEmpty

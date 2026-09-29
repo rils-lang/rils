@@ -42,25 +42,12 @@ impl BuiltinId {
                     | Self::IteratorPosition
                     | Self::IteratorEnumerate
                     | Self::RangeIntoIter
-                    | Self::ResultMap
-                    | Self::ResultMapErr
-                    | Self::ResultAndThen
-                    | Self::ResultOrElse
-                    | Self::OptionMap
-                    | Self::OptionAndThen
-                    | Self::OptionOrElse
             )
     }
 
     /// Returns whether two member IDs use the same type-erased runtime implementation.
     pub fn shares_direct_runtime_implementation(self, other: Self) -> bool {
         self == other
-            || (matches!(self, Self::OptionUnwrap | Self::ResultUnwrap)
-                && matches!(other, Self::OptionUnwrap | Self::ResultUnwrap))
-            || (matches!(self, Self::OptionUnwrapOr | Self::ResultUnwrapOr)
-                && matches!(other, Self::OptionUnwrapOr | Self::ResultUnwrapOr))
-            || (matches!(self, Self::OptionExpect | Self::ResultExpect)
-                && matches!(other, Self::OptionExpect | Self::ResultExpect))
     }
 }
 

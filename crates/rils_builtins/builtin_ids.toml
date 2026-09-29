@@ -79,31 +79,6 @@ iter = 0x060E
 write_str = 0x0700
 write_derived_debug = 0x0701
 
-# Result operations: 0x0800-0x08FF.
-[core.result.result]
-unwrap = 0x0802
-unwrap_or = 0x0803
-expect = 0x0804
-unwrap_err = 0x0807
-expect_err = 0x0808
-map = 0x0809
-map_err = 0x080A
-and_then = 0x080B
-or_else = 0x080C
-
-# Option operations: 0x0900-0x09FF.
-[core.option.option]
-unwrap = 0x0902
-unwrap_or = 0x0903
-expect = 0x0904
-take = 0x0905
-or = 0x0906
-xor = 0x0907
-replace = 0x0908
-map = 0x0909
-and_then = 0x090A
-or_else = 0x090B
-
 # Integer intrinsic operations: 0x0B00-0x0BFF.
 [core.integer]
 try_from = 0x0B00

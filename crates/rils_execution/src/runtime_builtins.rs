@@ -91,7 +91,7 @@ pub fn call_native_owned_symbol(
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
     if is_option_unwrap_symbol(symbol) {
-        return call_owned(rils_builtins::BuiltinId::OptionUnwrap, arguments);
+        return Some(call_owned_option_unwrap(arguments));
     }
     native::call_owned_symbol(symbol, arguments, context)
 }
@@ -534,29 +534,19 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     }
 }
 
-pub fn call_owned(
-    id: rils_builtins::BuiltinId,
-    mut arguments: Vec<Value>,
-) -> Option<Result<Value, String>> {
-    match id {
-        rils_builtins::BuiltinId::OptionUnwrap => {
-            if arguments
-                .first()
-                .and_then(Type::of_value)
-                .is_some_and(|ty| matches!(ty, Type::Result(_, _)))
-            {
-                return Some(call(id, &arguments));
-            }
-            Some(
-                arguments
-                    .pop()
-                    .ok_or_else(|| "Option::unwrap expects a receiver".to_owned())
-                    .and_then(crate::value::dynamic_option::take_owned)
-                    .and_then(|item| item.ok_or_else(|| "called `unwrap` on `None`".to_owned())),
-            )
-        }
-        _ => None,
+fn call_owned_option_unwrap(mut arguments: Vec<Value>) -> Result<Value, String> {
+    if arguments
+        .first()
+        .and_then(Type::of_value)
+        .is_some_and(|ty| matches!(ty, Type::Result(_, _)))
+    {
+        return option_result::call("Result", "unwrap", &arguments);
     }
+    arguments
+        .pop()
+        .ok_or_else(|| "Option::unwrap expects a receiver".to_owned())
+        .and_then(crate::value::dynamic_option::take_owned)
+        .and_then(|item| item.ok_or_else(|| "called `unwrap` on `None`".to_owned()))
 }
 
 fn owned_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value {
@@ -670,14 +660,22 @@ mod tests {
 
     #[test]
     fn unwrap_members_preserve_success_and_failure_paths() {
-        use rils_builtins::BuiltinId;
-
+        let symbol = rils_builtins::builtin_member("Option", "unwrap")
+            .unwrap()
+            .native_symbol
+            .unwrap();
+        let context = NativeOwnedContext {
+            structs: Vec::new(),
+            enums: Vec::new(),
+        };
         let option = Value::Option {
             value: Some(Rc::new(Value::from_i32(7))),
             element_type: Some(Type::I32),
         };
         assert_eq!(
-            call(BuiltinId::OptionUnwrap, &[option]).unwrap(),
+            call_native_owned_symbol(symbol, vec![option], &context)
+                .unwrap()
+                .unwrap(),
             Value::from_i32(7)
         );
 
@@ -686,7 +684,8 @@ mod tests {
             element_type: Some(Type::I32),
         };
         assert!(
-            call(BuiltinId::OptionUnwrap, &[missing])
+            call_native_owned_symbol(symbol, vec![missing], &context)
+                .unwrap()
                 .unwrap_err()
                 .contains("None")
         );
@@ -718,7 +717,15 @@ mod tests {
             element_type: Some(Type::I32),
         });
         assert_eq!(
-            call(BuiltinId::OptionTake, std::slice::from_ref(&option)).unwrap(),
+            call_native_symbol(
+                rils_builtins::builtin_member("Option", "take")
+                    .unwrap()
+                    .native_symbol
+                    .unwrap(),
+                std::slice::from_ref(&option),
+            )
+            .unwrap()
+            .unwrap(),
             Value::Option {
                 value: Some(Rc::new(Value::from_i32(3))),
                 element_type: Some(Type::I32),
@@ -770,9 +777,16 @@ mod tests {
                 .contains("mutable binding")
         );
         assert!(
-            call(BuiltinId::OptionTake, &[Value::Unit])
-                .unwrap_err()
-                .contains("mutable binding")
+            call_native_symbol(
+                rils_builtins::builtin_member("Option", "take")
+                    .unwrap()
+                    .native_symbol
+                    .unwrap(),
+                &[Value::Unit],
+            )
+            .unwrap()
+            .unwrap_err()
+            .contains("mutable binding")
         );
         assert!(
             call(

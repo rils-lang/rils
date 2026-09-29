@@ -22,26 +22,6 @@ impl Interpreter {
         let (structs, enums) = environment.borrow().visible_type_definitions();
         let native_context = crate::runtime_builtins::NativeOwnedContext { structs, enums };
         let callee = match callee {
-            Value::BuiltinBoundMethod(method)
-                if matches!(
-                    method.method,
-                    BuiltinMethod::Runtime(rils_builtins::BuiltinId::OptionUnwrap)
-                ) =>
-            {
-                let method = Rc::try_unwrap(method)
-                    .map_err(|_| RuntimeError::new("built-in method receiver is shared", span))?;
-                let receiver = Rc::try_unwrap(method.receiver)
-                    .map_err(|_| RuntimeError::new("built-in method receiver is shared", span))?;
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push(receiver);
-                values.extend(arguments);
-                return crate::runtime_builtins::call_owned(
-                    rils_builtins::BuiltinId::OptionUnwrap,
-                    values,
-                )
-                .expect("owned Option::unwrap is registered")
-                .map_err(|message| RuntimeError::new(message, span));
-            }
             Value::BuiltinBoundMethod(method) if matches!(method.method, BuiltinMethod::Native(symbol) if crate::runtime_builtins::requires_owned_native_call(symbol)) =>
             {
                 let method = Rc::try_unwrap(method)
