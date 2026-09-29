@@ -103,6 +103,9 @@ fn runtime_import_bindings_come_from_stdlib_members() {
 
 #[test]
 fn native_symbols_are_unique_and_resolve_to_their_declarations() {
+    let extend = builtin_member("Vec", "extend").expect("Vec::extend is exported");
+    assert_eq!(extend.builtin_id, None);
+    assert_eq!(extend.native_symbol, Some("core::collections::vec::extend"));
     let mut symbols = std::collections::HashSet::new();
     for declaration in BUILTINS {
         for member in declaration.members {

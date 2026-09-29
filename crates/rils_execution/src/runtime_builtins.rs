@@ -87,7 +87,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     }
 
     if id == rils_builtins::BuiltinId::VecExtend
-        && let Some(result) = vector_dynamic::extend_legacy(arguments)
+        && let Some(result) = vector_dynamic::extend(arguments)
     {
         return result;
     }

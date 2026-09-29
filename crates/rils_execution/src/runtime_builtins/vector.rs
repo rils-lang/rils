@@ -275,6 +275,49 @@ pub(super) fn swap_remove(
         .ok_or_else(|| format!("element at index {index} has been moved"))
 }
 
+pub(super) fn extend(
+    arguments: &[Value],
+    call: impl FnOnce(&mut NativeVec<FieldSlot>, NativeVec<FieldSlot>),
+) -> Result<Value, String> {
+    let destination = receiver(arguments, 2, true)?;
+    indexed_iter::reject_growth(&destination)?;
+    let Value::Vec(source) = import_receiver(&arguments[1])? else {
+        return Err("Vec::extend source must be Vec".into());
+    };
+    if Rc::ptr_eq(&destination, &source) {
+        return Err("Vec cannot extend itself".into());
+    }
+    indexed_iter::reject_mutation(&source)?;
+    if source
+        .elements
+        .borrow()
+        .iter()
+        .any(|slot| slot.references > 0)
+    {
+        return Err("cannot move from a Vec while an element is referenced".into());
+    }
+    let destination_type = destination
+        .element_type
+        .borrow()
+        .clone()
+        .unwrap_or(Type::Unknown);
+    let source_type = source
+        .element_type
+        .borrow()
+        .clone()
+        .unwrap_or(Type::Unknown);
+    let element_type = merge_types(&destination_type, &source_type).ok_or_else(|| {
+        format!("Vec element type is `{destination_type}`, found `{source_type}`")
+    })?;
+    let elements = std::mem::take(&mut *source.elements.borrow_mut());
+    call(
+        &mut Receiver::new(&destination).native,
+        <NativeVec<FieldSlot> as From<Vec<FieldSlot>>>::from(elements),
+    );
+    *destination.element_type.borrow_mut() = Some(element_type);
+    Ok(Value::Unit)
+}
+
 pub(super) fn into_iter(
     arguments: &[Value],
     call: impl FnOnce(NativeVec<FieldSlot>) -> NativeIterator<FieldSlot>,

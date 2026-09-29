@@ -3,6 +3,7 @@
 ## Native boxed references
 
 - Add Rils `Deref` / `DerefMut` support for `Box<T>` so scripts can borrow its child with `*box` and mutate it through a lexical reference. `Box::new` and `into_inner` already move the child through the owned native call bridge.
+- Move native `Vec<T>::push` arguments without reading `T` through a borrowed value; `Vec<Box<Node>>::push` currently fails because `Box<Node>` cannot be materialized from an element reference.
 
 本文档记录尚未完成的优化、新特性和生态工作。条目按主题归类，不绑定具体版本；实际排期
 会根据使用场景、兼容性和测试结果调整。已完成的能力应从这里移除，并同步到正式文档。
@@ -99,7 +100,7 @@
 - 完善 CLI 的项目检查、模块图、Manifest 校验和诊断导出命令。
 - 提供标准库 API 目录和由 `rils_builtins` 生成的文档入口。
 - 继续把未迁移的标准库 `.rils` 占位声明迁移到 `rils_stdlib` 的 Rust 定义。迁移期间保留旧语言包供构建和 Analyzer 使用；全部迁移完成后，再统一移除重复声明、设计 Analyzer 对新定义的支持，并清理旧的按 ID 手写实现。
-- 扩展 `decl_rils` 原生桥接以覆盖 Option/Result 的剩余方法、数值与集合；String 方法已迁移并删除其 ID，Vec 的部分方法和拥有型 `into_iter` 已通过 receiver 代理迁移。继续覆盖 Vec 的其余方法、借用迭代器及其他容器，统一泛型值与引用转换。全部迁移后删除 `BuiltinId`、`builtin_ids.toml`、旧字节码调用指令和运行时回退，并对仍缺少实现的导出方法报错。
+- 扩展 `decl_rils` 原生桥接以覆盖 Option/Result 的剩余方法、数值与集合；String 方法已迁移并删除其 ID，Vec 的部分方法、拥有型 `into_iter` 和 `extend` 已通过 receiver 代理迁移。继续覆盖 Vec 的其余方法、借用迭代器及其他容器，统一泛型值与引用转换。全部迁移后删除 `BuiltinId`、`builtin_ids.toml`、旧字节码调用指令和运行时回退，并对仍缺少实现的导出方法报错。
 - 已建立独立的 `tools/rils-bench` release 基准工具和 `python tools/benchmark.py` 稳定入口；继续扩展
   解释器、磁盘字节码和 Analyzer 场景，并在基线稳定后建立持续性能回归。
 - 增加跨平台原生构建与发布矩阵，并明确各宿主的 ABI/字节码兼容策略。

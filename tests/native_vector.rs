@@ -166,6 +166,20 @@ fn native_string_vec_preserves_non_copy_indexing_rule() {
 }
 
 #[test]
+fn native_vec_extend_moves_nested_non_copy_elements() {
+    let source = r#"
+        let mut destination: Vec<Option<string>> = Vec::new();
+        let mut source: Vec<Option<string>> = Vec::new();
+        source.push(Some("moved"));
+        destination.extend(source);
+        destination.pop().unwrap().unwrap().len()
+    "#;
+    for value in run_both(source) {
+        assert_eq!(value.as_usize(), Some(5));
+    }
+}
+
+#[test]
 fn native_string_vec_rejects_growth_during_borrowed_iteration() {
     let source = "fn result() -> usize { let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut it = v.iter(); let item = it.next().unwrap(); v.push(\"second\"); item.len() } result()";
     let compiled = compile(source).unwrap();

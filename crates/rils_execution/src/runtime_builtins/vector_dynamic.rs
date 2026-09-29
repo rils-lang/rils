@@ -30,7 +30,7 @@ pub(crate) fn into_iterator(object: DynamicObject) -> Result<Value, String> {
     call("into_iter", &[Value::Dynamic(object.clone())], &object)
 }
 
-pub(crate) fn extend_legacy(arguments: &[Value]) -> Option<Result<Value, String>> {
+pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
     let Some(receiver) = arguments.first() else {
         return Some(Err("missing Vec receiver".into()));
     };
@@ -196,6 +196,7 @@ fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value
             Ok(Value::Bool(false))
         }
         "iter" => indexed_iter::borrow(arguments),
+        "extend" => extend(arguments).expect("native Vec receiver was checked"),
         "into_iter" => {
             let values = object.with_mut(|payload| payload.take_all_sequence_items())??;
             let values = values

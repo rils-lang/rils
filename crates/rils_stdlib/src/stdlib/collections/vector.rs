@@ -130,7 +130,6 @@ mod native {
 
         /// Moves every element from another Vec into this Vec.
         #[export_rils]
-        #[rils_legacy_id(core::vec::extend)]
         pub fn extend(&mut self, other: Self) {
             self.0.extend(other.0);
         }
