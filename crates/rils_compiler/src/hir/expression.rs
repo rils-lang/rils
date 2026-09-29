@@ -374,9 +374,15 @@ impl<'a> FunctionLowerer<'a> {
                                     .then_some(id)
                                 })
                     {
-                        return Ok(HirExpression::CallIntrinsic {
-                            intrinsic,
-                            target: Some(target),
+                        let base = intrinsic.canonical_path().ok_or_else(|| {
+                            CompileError::unsupported("numeric intrinsic has no symbol", *span)
+                        })?;
+                        let method = base
+                            .rsplit("::")
+                            .next()
+                            .expect("intrinsic path has a member");
+                        return Ok(HirExpression::CallNative {
+                            symbol: format!("core::integer::{}::{method}", target.name()),
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -547,9 +553,11 @@ impl<'a> FunctionLowerer<'a> {
                                 .map(|argument| self.expression(argument))
                                 .collect::<Result<Vec<_>, _>>()?,
                         );
-                        return Ok(HirExpression::CallIntrinsic {
-                            intrinsic,
-                            target: None,
+                        let symbol = intrinsic.canonical_path().ok_or_else(|| {
+                            CompileError::unsupported("numeric intrinsic has no symbol", *span)
+                        })?;
+                        return Ok(HirExpression::CallNative {
+                            symbol: symbol.to_owned(),
                             arguments: lowered,
                             span: *span,
                         });

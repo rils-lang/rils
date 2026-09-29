@@ -1263,6 +1263,42 @@ fn string_methods_use_native_imports_without_legacy_ids() {
 }
 
 #[test]
+fn numeric_intrinsics_compile_as_verified_symbol_imports() {
+    let source = "let sum = 2i32.checked_add(3).unwrap(); let converted = i32::try_from(5i64).unwrap(); sum == converted && (-1f64).sqrt().is_nan()";
+    let module = compile(source).unwrap();
+    let symbols = module
+        .native_imports
+        .iter()
+        .map(|import| import.symbol.as_str())
+        .collect::<HashSet<_>>();
+    assert!(symbols.contains("core::integer::checked_add"));
+    assert!(symbols.contains("core::integer::i32::try_from"));
+    assert!(symbols.contains("core::float::sqrt"));
+    assert!(symbols.contains("core::float::is_nan"));
+    assert!(
+        module
+            .functions
+            .iter()
+            .flat_map(|function| &function.instructions)
+            .all(|instruction| !matches!(
+                instruction.instruction,
+                Instruction::CallIntrinsic { .. }
+            ))
+    );
+    assert_eq!(module.execute_value().unwrap(), Value::Bool(true));
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+    let mut invalid = loaded;
+    let import = invalid
+        .native_imports
+        .iter_mut()
+        .find(|import| import.symbol == "core::integer::i32::try_from")
+        .unwrap();
+    import.symbol = "core::integer::invalid::try_from".into();
+    assert!(invalid.verify().is_err());
+}
+
+#[test]
 fn generated_runtime_imports_are_registered_without_a_second_catalog() {
     let registered = super::core_imports::core_imports()
         .into_iter()

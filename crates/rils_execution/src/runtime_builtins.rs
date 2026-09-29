@@ -59,6 +59,13 @@ impl<E> From<&str> for NativeCallError<E> {
 /// Returns `None` when no native bridge has been generated for the symbol yet.
 pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     native::call_symbol(symbol, arguments).or_else(|| {
+        if let Some((declaration, target)) = rils_builtins::intrinsic_by_symbol(symbol) {
+            return Some(crate::numeric::execute_intrinsic(
+                declaration.id,
+                target,
+                arguments,
+            ));
+        }
         let id = rils_builtins::native_member(symbol)?.builtin_id?;
         Some(call(id, arguments))
     })

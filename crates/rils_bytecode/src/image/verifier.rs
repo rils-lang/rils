@@ -35,6 +35,11 @@ impl BytecodeModule {
             let expected = rils_builtins::native_member(&import.symbol)
                 .and_then(rils_frontend::standard_library::erased_builtin_member_signature)
                 .or_else(|| {
+                    rils_frontend::standard_library::erased_intrinsic_symbol_signature(
+                        &import.symbol,
+                    )
+                })
+                .or_else(|| {
                     rils_builtins::builtin_function(&import.symbol)
                         .filter(|function| function.native_symbol == Some(import.symbol.as_str()))
                         .and_then(|_| {

@@ -151,3 +151,22 @@ pub fn intrinsic(id: BuiltinId) -> Option<&'static IntrinsicDeclaration> {
         .chain(crate::FLOAT_INTRINSICS)
         .find(|item| item.id == id)
 }
+
+/// Resolves a numeric operation path, including the target type of an
+/// associated integer function.
+pub fn intrinsic_by_symbol(
+    symbol: &str,
+) -> Option<(&'static IntrinsicDeclaration, Option<IntegerType>)> {
+    if let Some(rest) = symbol.strip_prefix("core::integer::")
+        && let Some((target, method)) = rest.split_once("::")
+        && let Some(target) = IntegerType::from_name(target)
+    {
+        let declaration = integer_associated_function(method)?;
+        return Some((declaration, Some(target)));
+    }
+    crate::INTEGER_INTRINSICS
+        .iter()
+        .chain(crate::FLOAT_INTRINSICS)
+        .find(|declaration| declaration.id.canonical_path() == Some(symbol))
+        .map(|declaration| (declaration, None))
+}

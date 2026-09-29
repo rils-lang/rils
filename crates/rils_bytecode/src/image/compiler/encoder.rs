@@ -343,6 +343,7 @@ fn encode_function(
                         } else {
                             let signature = rils_builtins::native_member(&symbol)
                                 .and_then(rils_frontend::standard_library::erased_builtin_member_signature)
+                                .or_else(|| rils_frontend::standard_library::erased_intrinsic_symbol_signature(&symbol))
                                 .or_else(|| {
                                     rils_builtins::builtin_function(&symbol)
                                         .filter(|function| function.native_symbol == Some(symbol.as_str()))

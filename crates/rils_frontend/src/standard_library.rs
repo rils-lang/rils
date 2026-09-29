@@ -239,6 +239,24 @@ pub fn erased_runtime_signature(id: rils_builtins::BuiltinId) -> Option<Function
     erased_builtin_member_signature(member)
 }
 
+/// Signature stored in a native import for a numeric operation.
+pub fn erased_intrinsic_symbol_signature(symbol: &str) -> Option<FunctionSignature> {
+    let (declaration, target) = rils_builtins::intrinsic_by_symbol(symbol)?;
+    let self_type = target.map(Type::Integer).unwrap_or(Type::Unknown);
+    let Type::Function {
+        parameters,
+        return_type,
+    } = intrinsic_type(declaration, self_type.clone())
+    else {
+        unreachable!("numeric declaration is a function");
+    };
+    let mut parameters = parameters.expect("numeric declaration has fixed parameters");
+    if declaration.kind == rils_builtins::IntrinsicKind::Method {
+        parameters.insert(0, self_type);
+    }
+    Some(FunctionSignature::fixed(parameters, *return_type))
+}
+
 pub fn integer_intrinsic_type(
     intrinsic: &rils_builtins::IntrinsicDeclaration,
     integer: crate::types::IntegerType,
