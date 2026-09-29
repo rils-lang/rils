@@ -7,14 +7,11 @@ use rils_builtins::{
 use rils_stdlib_macros::decl_rils_source;
 
 #[test]
-fn owned_native_bridge_keeps_legacy_id_and_exports_a_symbol() {
+fn owned_native_bridge_exports_a_symbol_without_legacy_id() {
     let constructor = builtin_member("Rc", "new").expect("Rc::new is declared");
-    let path = BuiltinId::RcNew
-        .canonical_path()
-        .expect("stable compatibility path");
-    assert_eq!(constructor.builtin_id, Some(BuiltinId::RcNew));
-    assert_eq!(constructor.native_symbol, Some(path));
-    assert!(std::ptr::eq(native_member(path).unwrap(), constructor));
+    let symbol = constructor.native_symbol.expect("native symbol");
+    assert_eq!(constructor.builtin_id, None);
+    assert!(std::ptr::eq(native_member(symbol).unwrap(), constructor));
 }
 
 #[test]

@@ -10,12 +10,40 @@ use crate::{Type, Value, value::record_codec::NativeRecordCodec};
 
 use super::NativeOwnedContext;
 
-fn matches(id: BuiltinId, symbol: &str) -> bool {
-    id.canonical_path().is_some_and(|path| path == symbol)
+#[derive(Clone, Copy)]
+enum Operation {
+    New,
+    StrongCount,
+    Downgrade,
+    Upgrade,
+    WeakStrongCount,
+    WeakCount,
+}
+
+fn operation(symbol: &str) -> Option<Operation> {
+    let (owner, method) = rils_builtins::native_member_owner(symbol)?;
+    if method.builtin_id.is_some() || method.native_symbol != Some(symbol) {
+        return None;
+    }
+    let rc = rils_builtins::builtin("Rc")?;
+    let weak = rils_builtins::builtin("Weak")?;
+    match (
+        std::ptr::eq(owner, rc),
+        std::ptr::eq(owner, weak),
+        method.name,
+    ) {
+        (true, _, "new") => Some(Operation::New),
+        (true, _, "strong_count") => Some(Operation::StrongCount),
+        (true, _, "downgrade") => Some(Operation::Downgrade),
+        (_, true, "upgrade") => Some(Operation::Upgrade),
+        (_, true, "strong_count") => Some(Operation::WeakStrongCount),
+        (_, true, "weak_count") => Some(Operation::WeakCount),
+        _ => None,
+    }
 }
 
 pub(super) fn is_owned_symbol(symbol: &str) -> bool {
-    matches(BuiltinId::RcNew, symbol)
+    matches!(operation(symbol), Some(Operation::New))
 }
 
 pub(super) fn call_owned_symbol(
@@ -55,15 +83,13 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
     if is_owned_symbol(symbol) {
         return Some(Err("Rc::new requires an owned native call".into()));
     }
-    let id = [
-        BuiltinId::RcStrongCount,
-        BuiltinId::RcDowngrade,
-        BuiltinId::WeakUpgrade,
-        BuiltinId::WeakStrongCount,
-        BuiltinId::WeakWeakCount,
-    ]
-    .into_iter()
-    .find(|id| matches(*id, symbol))?;
+    let operation = operation(symbol)?;
+    if arguments.len() != 1 {
+        return Some(Err(format!(
+            "native method `{symbol}` expects one receiver, found {} arguments",
+            arguments.len()
+        )));
+    }
     let receiver = arguments.first()?;
     let Value::Dynamic(object) = super::import_receiver(receiver).ok()? else {
         return None;
@@ -80,14 +106,14 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             .first()
             .ok_or("shared handle has no item type")?
             .clone();
-        match id {
-            BuiltinId::RcStrongCount => {
+        match operation {
+            Operation::StrongCount => {
                 let count = object.with(|value| {
                     value.with::<ErasedRc, _>(|handle| Rc::strong_count(&handle.0))
                 })??;
                 Ok(crate::numeric::native_usize(count))
             }
-            BuiltinId::RcDowngrade => {
+            Operation::Downgrade => {
                 let weak = object.with(|value| {
                     value.with::<ErasedRc, _>(|handle| ErasedWeak(Rc::downgrade(&handle.0)))
                 })??;
@@ -97,7 +123,7 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
                 });
                 native_value(layout.clone(), DynamicValue::from_rust(layout, weak)?)
             }
-            BuiltinId::WeakUpgrade => {
+            Operation::Upgrade => {
                 let strong = object.with(|value| {
                     value.with::<ErasedWeak, _>(|handle| handle.0.upgrade().map(ErasedRc))
                 })??;
@@ -115,13 +141,13 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
                 };
                 native_value(option_layout, value)
             }
-            BuiltinId::WeakStrongCount => {
+            Operation::WeakStrongCount => {
                 let count = object.with(|value| {
                     value.with::<ErasedWeak, _>(|handle| handle.0.strong_count())
                 })??;
                 Ok(crate::numeric::native_usize(count))
             }
-            BuiltinId::WeakWeakCount => {
+            Operation::WeakCount => {
                 let count = object
                     .with(|value| value.with::<ErasedWeak, _>(|handle| handle.0.weak_count()))??;
                 Ok(crate::numeric::native_usize(count))

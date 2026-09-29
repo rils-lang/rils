@@ -39,7 +39,7 @@ fn io_error_metadata_comes_from_rust_definitions() {
 }
 
 #[test]
-fn shared_handle_methods_use_the_existing_runtime_ids() {
+fn shared_handle_methods_export_native_symbols_without_runtime_ids() {
     for (name, definition, methods) in [
         (
             "Rc",
@@ -56,7 +56,7 @@ fn shared_handle_methods_use_the_existing_runtime_ids() {
         assert_eq!(published.path, definition.path);
         for method in methods {
             let member = published.member(method).expect("shared handle method");
-            assert!(member.builtin_id.is_some());
+            assert_eq!(member.builtin_id, None);
             assert!(member.native_symbol.is_some(), "{name}::{method}");
         }
     }
