@@ -454,19 +454,6 @@ fn option_result_callbacks_compile_to_native_imports() {
             .flat_map(|function| &function.instructions)
             .any(|instruction| matches!(instruction.instruction, Instruction::CallNative { .. }))
     );
-    assert!(module
-        .functions
-        .iter()
-        .flat_map(|function| &function.instructions)
-        .all(|instruction| !matches!(instruction.instruction, Instruction::CallRuntime { builtin, .. } if matches!(builtin,
-            rils_builtins::BuiltinId::OptionMap
-            | rils_builtins::BuiltinId::OptionAndThen
-            | rils_builtins::BuiltinId::OptionOrElse
-            | rils_builtins::BuiltinId::ResultMap
-            | rils_builtins::BuiltinId::ResultMapErr
-            | rils_builtins::BuiltinId::ResultAndThen
-            | rils_builtins::BuiltinId::ResultOrElse
-        ))));
 }
 
 #[test]
@@ -973,16 +960,6 @@ fn migrated_vec_members_use_native_imports_without_host_imports() {
             .collect::<Vec<_>>(),
         ["core::vec::from"]
     );
-    let runtime_ids = module
-        .functions
-        .iter()
-        .flat_map(|function| &function.instructions)
-        .filter_map(|instruction| match &instruction.instruction {
-            Instruction::CallRuntime { builtin, .. } => Some(*builtin),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    assert!(runtime_ids.is_empty());
     let vector = rils_builtins::builtin("Vec").unwrap();
     let symbols = ["push", "len"]
         .map(|name| vector.member(name).unwrap().native_symbol.unwrap())
@@ -1009,21 +986,6 @@ fn iterator_default_body_compiles_without_legacy_runtime_id() {
             .iter()
             .any(|function| function.name.contains("@iterator_count"))
     );
-    assert!(
-        module
-            .functions
-            .iter()
-            .flat_map(|function| &function.instructions)
-            .all(|instruction| {
-                !matches!(
-                    instruction.instruction,
-                    Instruction::CallRuntime {
-                        builtin: rils_builtins::BuiltinId::IteratorCount,
-                        ..
-                    }
-                )
-            })
-    );
 }
 
 #[test]
@@ -1036,15 +998,6 @@ fn vec_is_empty_uses_native_body_without_legacy_runtime_id() {
             .native_imports
             .iter()
             .any(|import| import.symbol.contains("is_empty"))
-    );
-    assert!(
-        module
-            .functions
-            .iter()
-            .flat_map(|function| &function.instructions)
-            .all(|instruction| {
-                !matches!(instruction.instruction, Instruction::CallRuntime { .. })
-            })
     );
 }
 
@@ -1063,13 +1016,6 @@ fn native_calls_include_legacy_adapters_and_survive_round_trip() {
             .iter()
             .flat_map(|function| &function.instructions)
             .any(|instruction| matches!(instruction.instruction, Instruction::CallNative { .. }))
-    );
-    assert!(
-        module
-            .functions
-            .iter()
-            .flat_map(|function| &function.instructions)
-            .all(|instruction| !matches!(instruction.instruction, Instruction::CallRuntime { .. }))
     );
     assert_eq!(
         module.execute_value().unwrap(),
@@ -1237,13 +1183,6 @@ fn string_methods_use_native_imports_without_legacy_ids() {
             "core::string::string::len"
         ])
     );
-    assert!(
-        module
-            .functions
-            .iter()
-            .flat_map(|function| &function.instructions)
-            .all(|instruction| !matches!(instruction.instruction, Instruction::CallRuntime { .. }))
-    );
     assert_eq!(
         module.execute_value().unwrap(),
         crate::eval(source).unwrap()
@@ -1276,16 +1215,6 @@ fn numeric_intrinsics_compile_as_verified_symbol_imports() {
     assert!(symbols.contains("core::integer::i32::try_from"));
     assert!(symbols.contains("core::float::sqrt"));
     assert!(symbols.contains("core::float::is_nan"));
-    assert!(
-        module
-            .functions
-            .iter()
-            .flat_map(|function| &function.instructions)
-            .all(|instruction| !matches!(
-                instruction.instruction,
-                Instruction::CallIntrinsic { .. }
-            ))
-    );
     assert_eq!(module.execute_value().unwrap(), Value::Bool(true));
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));

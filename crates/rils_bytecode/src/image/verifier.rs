@@ -446,26 +446,6 @@ impl BytecodeModule {
                         ));
                     }
                 }
-                Instruction::CallRuntime {
-                    destination,
-                    builtin,
-                    arguments,
-                } => {
-                    let signature =
-                        rils_frontend::standard_library::erased_runtime_signature(*builtin);
-                    if invalid_register(*destination)
-                        || arguments.iter().any(|register| invalid_register(*register))
-                        || !builtin.has_direct_runtime_call()
-                        || signature
-                            .and_then(|signature| signature.parameters)
-                            .is_none_or(|parameters| parameters.len() != arguments.len())
-                    {
-                        return Err(BytecodeError::new(
-                            "invalid runtime built-in call operands",
-                            instruction.span,
-                        ));
-                    }
-                }
                 Instruction::CallNative {
                     destination,
                     import,
@@ -483,32 +463,6 @@ impl BytecodeModule {
                     {
                         return Err(BytecodeError::new(
                             "invalid native call operands",
-                            instruction.span,
-                        ));
-                    }
-                }
-                Instruction::CallIntrinsic {
-                    destination,
-                    intrinsic,
-                    target,
-                    arguments,
-                } => {
-                    let declaration = rils_builtins::intrinsic(*intrinsic);
-                    if invalid_register(*destination)
-                        || arguments.iter().any(|register| invalid_register(*register))
-                        || declaration.is_none()
-                        || declaration.is_some_and(|item| {
-                            arguments.len()
-                                != item.signature.parameters.len()
-                                    + usize::from(item.kind == rils_builtins::IntrinsicKind::Method)
-                        })
-                        || (target.is_some()
-                            != declaration.is_some_and(|item| {
-                                item.kind == rils_builtins::IntrinsicKind::AssociatedFunction
-                            }))
-                    {
-                        return Err(BytecodeError::new(
-                            "invalid intrinsic call operands",
                             instruction.span,
                         ));
                     }

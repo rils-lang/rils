@@ -156,82 +156,26 @@ fn rejects_invalid_instruction_after_checksum_is_updated() {
 }
 
 #[test]
-fn intrinsic_instructions_store_and_validate_u32_builtin_ids() {
+fn retired_numeric_id_opcodes_require_recompilation() {
     let instruction = SpannedInstruction {
-        instruction: Instruction::CallIntrinsic {
+        instruction: Instruction::CallNative {
             destination: 1,
-            intrinsic: rils_builtins::BuiltinId::IntegerCheckedAdd,
-            target: Some(IntegerType::I32),
-            arguments: vec![2, 3],
+            import: 2,
+            arguments: vec![3],
         },
         span: Span::default(),
     };
     let mut writer = Writer::default();
     write_instruction(&mut writer, &instruction).unwrap();
     let mut bytes = writer.finish();
-
-    // Span (20), opcode (1), and destination (4) precede the stable ID.
-    let id_offset = 25;
-    assert_eq!(
-        u32::from_le_bytes(bytes[id_offset..id_offset + 4].try_into().unwrap()),
-        0x0B10
-    );
-    let decoded = read_instruction(&mut Reader::new(&bytes)).unwrap();
-    assert!(matches!(
-        decoded.instruction,
-        Instruction::CallIntrinsic {
-            intrinsic: rils_builtins::BuiltinId::IntegerCheckedAdd,
-            ..
-        }
-    ));
-
-    bytes[id_offset..id_offset + 4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
-    let error = read_instruction(&mut Reader::new(&bytes))
-        .err()
-        .expect("unknown built-in ID should be rejected");
-    assert!(error.message.contains("invalid intrinsic built-in ID"));
-}
-
-#[test]
-fn runtime_instructions_store_and_validate_u32_builtin_ids() {
-    let instruction = SpannedInstruction {
-        instruction: Instruction::CallRuntime {
-            destination: 1,
-            builtin: rils_builtins::BuiltinId::VecPush,
-            arguments: vec![2, 3],
-        },
-        span: Span::default(),
-    };
-    let mut writer = Writer::default();
-    write_instruction(&mut writer, &instruction).unwrap();
-    let mut bytes = writer.finish();
-
-    // Span (20), opcode (1), and destination (4) precede the stable ID.
-    let id_offset = 25;
-    assert_eq!(
-        u32::from_le_bytes(bytes[id_offset..id_offset + 4].try_into().unwrap()),
-        0x0200
-    );
-    let decoded = read_instruction(&mut Reader::new(&bytes)).unwrap();
-    assert!(matches!(
-        decoded.instruction,
-        Instruction::CallRuntime {
-            builtin: rils_builtins::BuiltinId::VecPush,
-            ..
-        }
-    ));
-
-    bytes[id_offset..id_offset + 4].copy_from_slice(&0x0100u32.to_le_bytes());
-    let retired = read_instruction(&mut Reader::new(&bytes))
-        .err()
-        .expect("retired indexed collection ID should require recompilation");
-    assert!(retired.message.contains("invalid runtime built-in ID"));
-
-    bytes[id_offset..id_offset + 4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
-    let error = read_instruction(&mut Reader::new(&bytes))
-        .err()
-        .expect("unknown runtime built-in ID should be rejected");
-    assert!(error.message.contains("invalid runtime built-in ID"));
+    // A serialized span occupies 20 bytes before the instruction opcode.
+    for opcode in [43, 45] {
+        bytes[20] = opcode;
+        let error = read_instruction(&mut Reader::new(&bytes))
+            .err()
+            .expect("retired built-in ID opcode must be rejected");
+        assert!(error.message.contains("invalid instruction opcode"));
+    }
 }
 
 #[test]

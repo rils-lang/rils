@@ -864,20 +864,9 @@ enum Instruction {
         import: usize,
         arguments: Vec<usize>,
     },
-    CallRuntime {
-        destination: usize,
-        builtin: rils_builtins::BuiltinId,
-        arguments: Vec<usize>,
-    },
     CallNative {
         destination: usize,
         import: usize,
-        arguments: Vec<usize>,
-    },
-    CallIntrinsic {
-        destination: usize,
-        intrinsic: rils_builtins::BuiltinId,
-        target: Option<IntegerType>,
         arguments: Vec<usize>,
     },
     ConstructRecord {

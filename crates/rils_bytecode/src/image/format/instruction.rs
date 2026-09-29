@@ -336,16 +336,6 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
             writer.index(*import, "import")?;
             writer.indices(arguments)?;
         }
-        Instruction::CallRuntime {
-            destination,
-            builtin,
-            arguments,
-        } => {
-            writer.u8(45);
-            writer.index(*destination, "destination")?;
-            writer.u32(builtin.as_raw());
-            writer.indices(arguments)?;
-        }
         Instruction::CallNative {
             destination,
             import,
@@ -354,21 +344,6 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
             writer.u8(46);
             writer.index(*destination, "destination")?;
             writer.index(*import, "native import")?;
-            writer.indices(arguments)?;
-        }
-        Instruction::CallIntrinsic {
-            destination,
-            intrinsic,
-            target,
-            arguments,
-        } => {
-            writer.u8(43);
-            writer.index(*destination, "destination")?;
-            writer.u32(intrinsic.as_raw());
-            writer.bool(target.is_some());
-            if let Some(target) = target {
-                writer.u8(write_integer_type(*target));
-            }
             writer.indices(arguments)?;
         }
         Instruction::ConstructRecord {
@@ -748,26 +723,6 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
             source: reader.index()?,
             target: read_integer_type(reader.u8()?)?,
         },
-        43 => {
-            let destination = reader.index()?;
-            let raw_intrinsic = reader.u32()?;
-            let intrinsic = rils_builtins::BuiltinId::from_raw(raw_intrinsic);
-            if rils_builtins::intrinsic(intrinsic).is_none() {
-                return Err(BytecodeFormatError::new(format!(
-                    "invalid intrinsic built-in ID {raw_intrinsic:#x}"
-                )));
-            }
-            let target = reader
-                .bool()?
-                .then(|| read_integer_type(reader.u8()?))
-                .transpose()?;
-            Instruction::CallIntrinsic {
-                destination,
-                intrinsic,
-                target,
-                arguments: reader.indices()?,
-            }
-        }
         44 => Instruction::IntegerBinary {
             destination: reader.index()?,
             left: reader.index()?,
@@ -775,21 +730,6 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
             right: reader.index()?,
             integer: read_integer_type(reader.u8()?)?,
         },
-        45 => {
-            let destination = reader.index()?;
-            let raw_builtin = reader.u32()?;
-            let builtin = rils_builtins::BuiltinId::from_raw(raw_builtin);
-            if !builtin.has_direct_runtime_call() {
-                return Err(BytecodeFormatError::new(format!(
-                    "invalid runtime built-in ID {raw_builtin:#x}"
-                )));
-            }
-            Instruction::CallRuntime {
-                destination,
-                builtin,
-                arguments: reader.indices()?,
-            }
-        }
         46 => Instruction::CallNative {
             destination: reader.index()?,
             import: reader.index()?,

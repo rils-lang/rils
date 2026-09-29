@@ -5,11 +5,7 @@
 
 ## Unreleased
 
-- 新编译的标准库调用（包括 `Clone`）统一使用符号导入，HIR/MIR 不再产生旧数字调用；实验性历史字节码仍可读取旧数字指令。
-
-- 新编译的数值 intrinsic 调用改用符号原生导入；整数关联函数的目标宽度随符号保存，字节码验证器会校验该路径与签名。旧数字 intrinsic 指令仍可读取。
-
-- 新编译的标准库 runtime 方法调用统一写入规范符号原生导入；旧数字调用仍可由实验性 v8 字节码读取。格式版本保持 v8。
+- **破坏性字节码变更：** 标准库调用（包括 `Clone`）和数值 intrinsic 统一使用符号原生导入；整数关联函数的目标宽度随符号保存，字节码验证器校验路径与签名。旧 `CallRuntime` / `CallIntrinsic` 操作码已移除。包含这些指令的实验性 v8 `.rilbc` 文件必须从源码重新编译；格式版本暂保持 v8。
 
 - **破坏性变更：** `VecDeque<T>`、`BinaryHeap<T>`、`BTreeSet<T>` 与 `HashSet<T>` 的 `into_iter()` 现在分别返回 `VecDequeIntoIter<T>`、`BinaryHeapIntoIter<T>`、`BTreeSetIntoIter<T>` 和 `HashSetIntoIter<T>`，直接接管各自的 Rust 容器迭代器。显式标注旧 `Iter<T>` 的代码请改用对应具体类型；依赖推断的 `for` 无需修改。
 
