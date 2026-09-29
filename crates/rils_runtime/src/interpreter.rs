@@ -36,10 +36,10 @@ use crate::{
     value::{
         BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance,
         EnumPayload, EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod,
-        HostFunction, HostFunctionHandler, HostObject, HostType, IndexedStorage, ModuleValue,
-        NativeFunction, NativeFunctionBody, ReferenceValue, StructFields, StructInstance,
-        StructType, TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value,
-        VariantConstructor, enum_variant_name, native_range,
+        HostFunction, HostFunctionHandler, HostType, IndexedStorage, ModuleValue, NativeFunction,
+        NativeFunctionBody, ReferenceValue, StructFields, StructInstance, StructType,
+        TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value, VariantConstructor,
+        enum_variant_name, native_range,
     },
 };
 

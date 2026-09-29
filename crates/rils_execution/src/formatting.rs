@@ -2,48 +2,21 @@ use rils_frontend::format::{
     FormatAlignment, FormatKind, FormatPiece, FormatSpec, parse_format_string,
 };
 
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
+use std::rc::Rc;
+
+pub use rils_stdlib::stdlib::fmt::FormatterBuffer;
 
 use crate::Value;
 
-#[derive(Default)]
-pub struct FormatterBuffer {
-    output: RefCell<String>,
-    alternate: Cell<bool>,
-    depth: Cell<usize>,
-}
-
-impl FormatterBuffer {
-    pub fn new(alternate: bool) -> Self {
-        Self {
-            output: RefCell::new(String::new()),
-            alternate: Cell::new(alternate),
-            depth: Cell::new(0),
-        }
-    }
-
-    pub fn write_str(&self, value: &str) {
-        self.output.borrow_mut().push_str(value);
-    }
-
-    pub fn finish(&self) -> String {
-        self.output.borrow().clone()
-    }
-
-    pub fn alternate(&self) -> bool {
-        self.alternate.get()
-    }
-
-    pub fn depth(&self) -> usize {
-        self.depth.get()
-    }
-
-    pub fn set_depth(&self, depth: usize) {
-        self.depth.set(depth);
-    }
+pub fn formatter_value(buffer: Rc<FormatterBuffer>) -> Result<Value, String> {
+    use rils_value::{DynamicLayout, DynamicType, DynamicValue};
+    let ty = crate::Type::named("Formatter");
+    let layout = DynamicLayout::of::<rils_stdlib::stdlib::fmt::Formatter>(ty);
+    let value = DynamicValue::from_rust(
+        layout.clone(),
+        rils_stdlib::stdlib::fmt::Formatter::from_buffer(buffer),
+    )?;
+    crate::value::DynamicObject::new(Rc::new(DynamicType::new(layout)), value).map(Value::Dynamic)
 }
 
 pub fn buffer_from_value(value: &Value) -> Result<Rc<FormatterBuffer>, String> {
@@ -51,14 +24,23 @@ pub fn buffer_from_value(value: &Value) -> Result<Rc<FormatterBuffer>, String> {
     while let Value::Reference(reference) = value {
         value = reference.read()?;
     }
-    let Value::HostObject(object) = value else {
-        return Err("formatter receiver is not a Formatter".into());
-    };
-    object
-        .payload
-        .downcast_ref::<Rc<FormatterBuffer>>()
-        .cloned()
-        .ok_or_else(|| "invalid Formatter payload".into())
+    match value {
+        Value::Dynamic(object) => object
+            .with(|value| {
+                value
+                    .view()
+                    .with_rust::<rils_stdlib::stdlib::fmt::Formatter, _>(|formatter| {
+                        formatter.buffer()
+                    })
+            })
+            .and_then(|value| value),
+        Value::HostObject(object) => object
+            .payload
+            .downcast_ref::<Rc<FormatterBuffer>>()
+            .cloned()
+            .ok_or_else(|| "invalid Formatter payload".into()),
+        _ => Err("formatter receiver is not a Formatter".into()),
+    }
 }
 
 pub fn format_arguments(format: &str, arguments: &[Value]) -> Result<String, String> {

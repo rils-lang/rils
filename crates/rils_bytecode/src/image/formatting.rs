@@ -78,15 +78,8 @@ impl VirtualMachine<'_> {
         }
         let self_slot = Rc::new(RefCell::new(StorageSlot::uninitialized(false)));
         self_slot.borrow_mut().initialize(value.clone());
-        let formatter = Value::HostObject(Rc::new(crate::value::HostObject {
-            type_definition: Rc::new(crate::value::HostType {
-                name: "Formatter".into(),
-                base_types: HashSet::new(),
-                copy: false,
-                methods: RefCell::new(HashMap::new()),
-            }),
-            payload: Rc::new(buffer),
-        }));
+        let formatter = crate::formatting::formatter_value(buffer)
+            .map_err(|message| BytecodeError::new(message, span))?;
         let formatter_slot = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
         formatter_slot.borrow_mut().initialize(formatter);
         let arguments = vec![

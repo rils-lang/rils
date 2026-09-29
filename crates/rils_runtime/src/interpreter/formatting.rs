@@ -85,10 +85,8 @@ impl Interpreter {
         self_storage.borrow_mut().initialize(value.clone());
         let self_reference =
             Value::Reference(Rc::new(ReferenceValue::new_storage(self_storage, false)));
-        let formatter_value = Value::HostObject(Rc::new(HostObject {
-            type_definition: self.formatter_type(span)?,
-            payload: Rc::new(buffer),
-        }));
+        let formatter_value = crate::formatting::formatter_value(buffer)
+            .map_err(|message| RuntimeError::new(message, span))?;
         let formatter_storage = Rc::new(RefCell::new(
             crate::environment::StorageSlot::uninitialized(true),
         ));
@@ -143,16 +141,6 @@ impl Interpreter {
                 .and_then(|methods| methods.get("fmt"))
                 .cloned(),
             _ => None,
-        }
-    }
-
-    fn formatter_type(&self, span: Span) -> Result<Rc<HostType>, RuntimeError> {
-        match self.globals.borrow().get("Formatter") {
-            Some(Value::HostType(definition)) => Ok(definition),
-            _ => Err(RuntimeError::new(
-                "Formatter runtime type is unavailable",
-                span,
-            )),
         }
     }
 
