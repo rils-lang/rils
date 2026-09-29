@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use crate::{
     environment::AssignError,
     types::Type,
-    value::{FieldSlot, IndexedStorage, OwnedIteratorValue, Value, WeakValue},
+    value::{FieldSlot, IndexedStorage, OwnedIteratorValue, Value},
 };
 
 mod binary_heap;
@@ -133,10 +133,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     if let Some(result) = native_map::call(id, arguments) {
         return result;
     }
-    if let Some(result) = rc_native::call(id, arguments) {
-        return result;
-    }
-
     if id == rils_builtins::BuiltinId::VecExtend
         && let Some(result) = vector_dynamic::extend(arguments)
     {
@@ -144,64 +140,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     }
 
     match id {
-        BuiltinId::RcNew => {
-            let value = arguments
-                .first()
-                .cloned()
-                .ok_or_else(|| "Rc::new expects one value".to_owned())?;
-            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
-            Ok(Value::Rc(Rc::new(crate::value::RcValue {
-                value,
-                type_argument,
-            })))
-        }
-        BuiltinId::RcStrongCount => match import_receiver(&arguments[0])? {
-            Value::Rc(value) => Ok(crate::numeric::native_usize(Rc::strong_count(&value))),
-            Value::Struct(value) if value.type_definition.name == "Rc" => {
-                Ok(crate::numeric::native_usize(Rc::strong_count(&value)))
-            }
-            value => Err(format!(
-                "Rc::strong_count expects Rc, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::RcDowngrade => match import_receiver(&arguments[0])? {
-            Value::Rc(value) => Ok(Value::Weak(Rc::new(WeakValue {
-                value: Rc::downgrade(&value),
-                type_argument: value.type_argument.clone(),
-            }))),
-            value => Err(format!(
-                "Rc::downgrade expects Rc, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::WeakUpgrade => match import_receiver(&arguments[0])? {
-            Value::Weak(value) => Ok(Value::Option {
-                value: value.value.upgrade().map(Value::Rc).map(Rc::new),
-                element_type: Some(Type::Named {
-                    name: "Rc".into(),
-                    arguments: vec![value.type_argument.clone()],
-                }),
-            }),
-            value => Err(format!(
-                "Weak::upgrade expects Weak, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::WeakStrongCount => match import_receiver(&arguments[0])? {
-            Value::Weak(value) => Ok(crate::numeric::native_usize(value.value.strong_count())),
-            value => Err(format!(
-                "Weak::strong_count expects Weak, found {}",
-                value.type_name()
-            )),
-        },
-        BuiltinId::WeakWeakCount => match import_receiver(&arguments[0])? {
-            Value::Weak(value) => Ok(crate::numeric::native_usize(value.value.weak_count())),
-            value => Err(format!(
-                "Weak::weak_count expects Weak, found {}",
-                value.type_name()
-            )),
-        },
         BuiltinId::BtreeSetNew
         | BuiltinId::BtreeSetLen
         | BuiltinId::BtreeSetIsEmpty

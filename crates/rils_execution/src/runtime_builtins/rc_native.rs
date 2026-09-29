@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 
-use rils_builtins::BuiltinId;
 use rils_stdlib::stdlib::rc::{ErasedRc, ErasedWeak};
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
@@ -155,11 +154,6 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             _ => unreachable!(),
         }
     })())
-}
-
-pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, String>> {
-    let symbol = id.canonical_path()?;
-    call_symbol(symbol, arguments)
 }
 
 fn native_value(layout: Rc<DynamicLayout>, value: DynamicValue) -> Result<Value, String> {
