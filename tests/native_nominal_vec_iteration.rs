@@ -129,3 +129,23 @@ fn native_set_owned_iterator_keeps_elements() {
     "#;
     assert_both(hashed, Value::from_i32(7));
 }
+
+#[test]
+fn borrowed_map_iterator_reads_user_value_fields() {
+    for map_type in ["BTreeMap", "HashMap"] {
+        let source = format!(
+            r#"
+            struct Item {{ value: i32 }}
+            fn run() -> i32 {{
+                let mut map: {map_type}<i32, Item> = {map_type}::new();
+                map.insert(3, Item {{ value: 39 }});
+                let mut iterator = map.iter();
+                let entry = iterator.next().unwrap();
+                *entry.0 + entry.1.value
+            }}
+            run()
+        "#
+        );
+        assert_both(&source, Value::from_i32(42));
+    }
+}

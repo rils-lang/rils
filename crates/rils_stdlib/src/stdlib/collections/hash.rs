@@ -106,6 +106,7 @@ mod native {
         }
         /// Borrows each element without consuming the set.
         #[export_rils]
+        #[rils_native_bridge]
         #[rils_legacy_id(core::hash_set::iter)]
         pub fn iter(&self) -> Iter<&T> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
@@ -220,6 +221,7 @@ mod native {
         }
         /// Borrows each key-value pair without consuming the map.
         #[export_rils]
+        #[rils_native_bridge]
         #[rils_legacy_id(core::hash_map::iter)]
         pub fn iter(&self) -> Iter<(&K, &V)> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())

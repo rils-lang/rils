@@ -36,8 +36,22 @@ fn owned_into_iter_kind(symbol: &str) -> Option<MapKind> {
         })
 }
 
+fn borrowed_iter_kind(symbol: &str) -> Option<MapKind> {
+    [("HashMap", MapKind::Hash), ("BTreeMap", MapKind::BTree)]
+        .into_iter()
+        .find_map(|(name, kind)| {
+            builtin(name)?
+                .members
+                .iter()
+                .any(|member| member.name == "iter" && member.native_symbol == Some(symbol))
+                .then_some(kind)
+        })
+}
+
 pub(super) fn is_owned_symbol(symbol: &str) -> bool {
-    owned_insert_kind(symbol).is_some() || owned_into_iter_kind(symbol).is_some()
+    owned_insert_kind(symbol).is_some()
+        || owned_into_iter_kind(symbol).is_some()
+        || borrowed_iter_kind(symbol).is_some()
 }
 
 pub(super) fn call_owned_symbol(
@@ -45,6 +59,11 @@ pub(super) fn call_owned_symbol(
     arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if borrowed_iter_kind(symbol).is_some() {
+        return Some(super::indexed_iter::borrow_map_with_context(
+            &arguments, context,
+        ));
+    }
     if let Some(kind) = owned_into_iter_kind(symbol) {
         return Some((|| {
             if arguments.len() != 1 {

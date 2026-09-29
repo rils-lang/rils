@@ -47,6 +47,13 @@ pub(super) fn borrow_map(arguments: &[Value]) -> Result<Value, String> {
     borrow_inner(arguments, true, None)
 }
 
+pub(super) fn borrow_map_with_context(
+    arguments: &[Value],
+    context: &NativeOwnedContext,
+) -> Result<Value, String> {
+    borrow_inner(arguments, true, Some(context))
+}
+
 fn borrow_inner(
     arguments: &[Value],
     map_entries: bool,

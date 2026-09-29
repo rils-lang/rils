@@ -200,7 +200,7 @@ impl ReferenceValue {
         )
     }
 
-    fn new_guarded_dynamic_indexed_field_with_codec(
+    pub fn new_guarded_dynamic_indexed_field_with_codec(
         sequence: DynamicObject,
         index: usize,
         field: Option<usize>,

@@ -239,12 +239,13 @@ impl BorrowedIndexedIteratorValue {
             };
             let fields = (0..2)
                 .map(|field| {
-                    ReferenceValue::new_guarded_dynamic_indexed_field(
+                    ReferenceValue::new_guarded_dynamic_indexed_field_with_codec(
                         object.clone(),
                         index,
                         Some(field),
                         false,
                         Some(self.source.clone()),
+                        self.native_codec.clone(),
                     )
                     .map(|reference| Value::Reference(Rc::new(reference)))
                 })
