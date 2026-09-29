@@ -301,8 +301,13 @@ impl<'a> FunctionLowerer<'a> {
                         });
                     }
                     if trait_name == "Clone" && member == "clone" && arguments.len() == 1 {
-                        return Ok(HirExpression::CallRuntime {
-                            builtin: rils_frontend::BuiltinId::Clone,
+                        let symbol = rils_builtins::builtin_function("clone")
+                            .and_then(|function| function.native_symbol)
+                            .ok_or_else(|| {
+                                CompileError::unsupported("Clone has no native symbol", *span)
+                            })?;
+                        return Ok(HirExpression::CallNative {
+                            symbol: symbol.to_owned(),
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))

@@ -579,6 +579,14 @@ fn builtin_associated_import(path: &str) -> Option<ResolvedCall> {
     let owner = owner_path.rsplit("::").next()?;
     let member = rils_builtins::builtin_member(owner, member_name)?;
     if member.receiver.is_none()
+        && let Some(symbol) = member.native_symbol
+    {
+        return Some(ResolvedCall::Native {
+            symbol,
+            receiver: None,
+        });
+    }
+    if member.receiver.is_none()
         && let Some(id) = member.builtin_id
     {
         return Some(ResolvedCall::Builtin {

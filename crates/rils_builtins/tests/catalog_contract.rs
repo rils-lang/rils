@@ -483,7 +483,7 @@ fn native_function_aliases_resolve_to_exported_methods() {
                 .map(|symbol| (function, symbol))
         })
         .collect::<Vec<_>>();
-    assert_eq!(aliases.len(), 4);
+    assert_eq!(aliases.len(), 5);
     for (function, symbol) in aliases {
         assert_eq!(function.kind, BuiltinKind::Function);
         let method = native_member(symbol).expect("native alias targets an exported method");

@@ -5,7 +5,6 @@ use crate::{
     source::{SourceFile, Span},
     types::{FunctionSignature, IntegerType, Type},
 };
-use rils_builtins::BuiltinId;
 
 pub type LocalId = usize;
 pub type FunctionId = usize;
@@ -217,19 +216,8 @@ pub enum HirExpression {
         arguments: Vec<HirExpression>,
         span: Span,
     },
-    CallRuntime {
-        builtin: BuiltinId,
-        arguments: Vec<HirExpression>,
-        span: Span,
-    },
     CallNative {
         symbol: String,
-        arguments: Vec<HirExpression>,
-        span: Span,
-    },
-    CallIntrinsic {
-        intrinsic: BuiltinId,
-        target: Option<IntegerType>,
         arguments: Vec<HirExpression>,
         span: Span,
     },

@@ -9,10 +9,11 @@ fn every_native_member_has_a_bridge_and_rejects_missing_arguments() {
             let Some(symbol) = member.native_symbol else {
                 continue;
             };
-            assert!(
-                member.builtin_id.is_none() || requires_owned_native_call(symbol),
-                "{symbol}"
-            );
+            if member.signature.is_some_and(|signature| {
+                signature.parameters.is_empty() && member.receiver.is_none()
+            }) {
+                continue;
+            }
             assert!(member.runtime_import.is_none(), "{symbol}");
             let result = if requires_owned_native_call(symbol) {
                 call_native_owned_symbol(

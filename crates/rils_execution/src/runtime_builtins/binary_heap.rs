@@ -26,7 +26,7 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
     let member = rils_builtins::builtin("BinaryHeap")?
         .members
         .iter()
-        .find(|member| member.native_symbol == Some(symbol))?;
+        .find(|member| member.native_symbol == Some(symbol) && member.receiver.is_some())?;
     Some(call_named(member.name, arguments))
 }
 

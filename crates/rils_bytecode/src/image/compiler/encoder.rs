@@ -324,15 +324,6 @@ fn encode_function(
                             arguments,
                         }
                     }
-                    MirInstruction::CallRuntime {
-                        destination,
-                        builtin,
-                        arguments,
-                    } => Instruction::CallRuntime {
-                        destination,
-                        builtin,
-                        arguments,
-                    },
                     MirInstruction::CallNative {
                         destination,
                         symbol,
@@ -369,17 +360,6 @@ fn encode_function(
                             arguments,
                         }
                     }
-                    MirInstruction::CallIntrinsic {
-                        destination,
-                        intrinsic,
-                        target,
-                        arguments,
-                    } => Instruction::CallIntrinsic {
-                        destination,
-                        intrinsic,
-                        target,
-                        arguments,
-                    },
                     MirInstruction::ConstructRecord {
                         destination,
                         type_id,

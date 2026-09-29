@@ -630,9 +630,11 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     super::method_binding::MethodBinding::Native => {
                         (quote!(None), quote!(None), quote!(Some(#id_path)))
                     }
-                    super::method_binding::MethodBinding::Legacy(path) => {
-                        (quote!(Some(builtin_id!(#path))), quote!(None), quote!(None))
-                    }
+                    super::method_binding::MethodBinding::Legacy(path) => (
+                        quote!(Some(builtin_id!(#path))),
+                        quote!(None),
+                        quote!(Some(#id_path)),
+                    ),
                     super::method_binding::MethodBinding::Import(path) => {
                         (quote!(None), quote!(Some(#path)), quote!(None))
                     }

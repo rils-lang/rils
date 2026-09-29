@@ -110,7 +110,10 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
         choice.member("is_some").unwrap().builtin_id,
         Some(BuiltinId::VecExtend)
     );
-    assert_eq!(choice.member("is_some").unwrap().native_symbol, None);
+    assert_eq!(
+        choice.member("is_some").unwrap().native_symbol,
+        Some("core::fixture::choice::is_some")
+    );
     assert_eq!(
         tagged.member("tag").unwrap().kind,
         BuiltinMemberKind::Method

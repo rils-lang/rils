@@ -126,10 +126,6 @@ fn hir_lowering_distinguishes_calls_with_the_same_span() {
                 expression: crate::hir::HirExpression::CallNative { symbol, .. },
                 ..
             } => Some(symbol.as_str()),
-            crate::hir::HirStatement::Expression {
-                expression: crate::hir::HirExpression::CallRuntime { builtin, .. },
-                ..
-            } => builtin.canonical_path(),
             _ => None,
         })
         .collect::<Vec<_>>();

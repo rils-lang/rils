@@ -932,7 +932,7 @@ fn links_and_executes_core_imports() {
         .iter()
         .map(|import| import.name.as_str())
         .collect::<HashSet<_>>();
-    assert_eq!(names, HashSet::from(["clone", "type_of", "unwrap_or"]));
+    assert_eq!(names, HashSet::from(["type_of", "unwrap_or"]));
     assert_eq!(
         module
             .native_imports
@@ -940,6 +940,7 @@ fn links_and_executes_core_imports() {
             .map(|import| import.symbol.as_str())
             .collect::<HashSet<_>>(),
         HashSet::from([
+            "core::clone",
             "core::option::option::is_some",
             "core::option::option::is_none",
         ])

@@ -507,26 +507,6 @@ impl Builder {
                 );
                 Ok(destination)
             }
-            HirExpression::CallRuntime {
-                builtin,
-                arguments,
-                span,
-            } => {
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| self.expression(argument))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let destination = self.register();
-                self.emit(
-                    MirInstruction::CallRuntime {
-                        destination,
-                        builtin: *builtin,
-                        arguments,
-                    },
-                    *span,
-                );
-                Ok(destination)
-            }
             HirExpression::CallNative {
                 symbol,
                 arguments,
@@ -541,28 +521,6 @@ impl Builder {
                     MirInstruction::CallNative {
                         destination,
                         symbol: symbol.clone(),
-                        arguments,
-                    },
-                    *span,
-                );
-                Ok(destination)
-            }
-            HirExpression::CallIntrinsic {
-                intrinsic,
-                target,
-                arguments,
-                span,
-            } => {
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| self.expression(argument))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let destination = self.register();
-                self.emit(
-                    MirInstruction::CallIntrinsic {
-                        destination,
-                        intrinsic: *intrinsic,
-                        target: *target,
                         arguments,
                     },
                     *span,

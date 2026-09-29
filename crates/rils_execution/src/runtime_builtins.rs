@@ -66,7 +66,23 @@ pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
                 arguments,
             ));
         }
-        let id = rils_builtins::native_member(symbol)?.builtin_id?;
+        if rils_builtins::builtin_function(symbol)
+            .is_some_and(|function| function.native_symbol == Some(symbol))
+            && symbol == rils_builtins::BuiltinId::Clone.canonical_path()?
+        {
+            return Some(call(rils_builtins::BuiltinId::Clone, arguments));
+        }
+        let member = rils_builtins::native_member(symbol)?;
+        let id = member.builtin_id?;
+        if let Some(signature) = member.signature {
+            let expected = signature.parameters.len() + usize::from(member.receiver.is_some());
+            if arguments.len() != expected {
+                return Some(Err(format!(
+                    "native method `{symbol}` expects {expected} arguments, found {}",
+                    arguments.len()
+                )));
+            }
+        }
         Some(call(id, arguments))
     })
 }

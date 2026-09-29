@@ -7,7 +7,6 @@ use crate::{
     source::{SourceFile, Span},
     types::{IntegerType, Type},
 };
-use rils_builtins::BuiltinId;
 
 pub type BlockId = usize;
 pub type Register = usize;
@@ -169,20 +168,9 @@ pub enum MirInstruction {
         capability: String,
         arguments: Vec<Register>,
     },
-    CallRuntime {
-        destination: Register,
-        builtin: BuiltinId,
-        arguments: Vec<Register>,
-    },
     CallNative {
         destination: Register,
         symbol: String,
-        arguments: Vec<Register>,
-    },
-    CallIntrinsic {
-        destination: Register,
-        intrinsic: BuiltinId,
-        target: Option<IntegerType>,
         arguments: Vec<Register>,
     },
     ConstructRecord {

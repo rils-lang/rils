@@ -179,7 +179,7 @@ section 拒绝加载，未知可选 section 在完成边界验证后跳过。
 格式 v8 为已迁移的标准库原生方法使用独立的 native imports 表，表项保存规范符号路径和签名；
 `CallNative` 按表索引调用生成的 Rust 桥接实现。verifier 检查符号、签名、实参数和索引。
 Option/Result 的回调方法及带原生适配器的标准库自由函数也使用此指令；VM 把 Rils 函数值交给原生桥接时，在同一模块和调用预算内执行回调，并保留回调中的错误位置。原生导入表与 verifier 从导出声明校验自由函数的擦除签名。旧 `CallRuntime` 数字 ID 仍保留读取兼容，执行时按当前声明转向原生符号。
-新编译的标准库 runtime 成员和数值 intrinsic 调用会以规范路径写入 native imports，并编码为 `CallNative`；带目标类型的整数关联函数将目标宽度写入符号路径。尚未实现独立原生桥接的成员由符号分发层转接现有运行时实现。少数编译器内建 trait 调用仍以 32 位 `BuiltinId` 编码 `CallRuntime`；旧 `CallIntrinsic` 仅用于读取实验性历史字节码。
+新编译的标准库 runtime 成员、数值 intrinsic 和 `Clone` 调用会以规范路径写入 native imports，并编码为 `CallNative`；带目标类型的整数关联函数将目标宽度写入符号路径。尚未实现独立原生桥接的成员由符号分发层转接现有运行时实现。HIR/MIR 已不再生成数字调用；旧 `CallRuntime` / `CallIntrinsic` 仅用于读取实验性历史字节码。
 loader 仍拒绝未知或不支持对应调用方式的 ID。`std` 和宿主 Manifest 导入使用独立的 host imports 表。
 
 格式 v6 在 v5 的 trait implementation 表之外增加带显式 `IntegerType` 的 `IntegerBinary` 指令。

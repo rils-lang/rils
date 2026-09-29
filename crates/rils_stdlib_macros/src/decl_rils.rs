@@ -396,7 +396,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     }
                     (quote!(Some(#id_path)), quote!(None))
                 }
-                method_binding::MethodBinding::Legacy(path) => (quote!(None), quote!(Some(builtin_id!(#path)))),
+                method_binding::MethodBinding::Legacy(path) => (quote!(Some(#id_path)), quote!(Some(builtin_id!(#path)))),
                 method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
             };
             let receiver = method.sig.receiver().ok_or_else(|| {
