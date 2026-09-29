@@ -1,11 +1,10 @@
 //! Native methods generated from the shared Rust standard-library definitions.
 
-use std::collections::VecDeque;
+use std::rc::Rc;
 
-use crate::{IntegerType, Type, Value};
+use crate::{IntegerType, Type, Value, value::OwnedIteratorValue};
 use rils_stdlib::stdlib::{
-    option::Option as NativeOption,
-    string::{Iterator, String as NativeString},
+    iterator::Iter, option::Option as NativeOption, string::String as NativeString,
 };
 
 pub(crate) fn string_input(value: &Value) -> Result<NativeString, String> {
@@ -78,37 +77,31 @@ impl StringOutput for NativeOption<NativeString> {
         }
     }
 }
-impl StringOutput for Iterator<char> {
+impl StringOutput for Iter<char> {
     fn into_value(self) -> Result<Value, String> {
-        Ok(super::owned_iterator_value(
-            self.0
-                .into_iter()
-                .map(crate::value::native_char)
-                .collect::<VecDeque<_>>(),
-            Type::Char,
-        ))
+        Ok(Value::OwnedIterator(Rc::new(
+            OwnedIteratorValue::from_generator(self.map(crate::value::native_char), Type::Char),
+        )))
     }
 }
-impl StringOutput for Iterator<u8> {
+impl StringOutput for Iter<u8> {
     fn into_value(self) -> Result<Value, String> {
-        Ok(super::owned_iterator_value(
-            self.0
-                .into_iter()
-                .map(Value::from_u8)
-                .collect::<VecDeque<_>>(),
-            Type::Integer(IntegerType::U8),
-        ))
+        Ok(Value::OwnedIterator(Rc::new(
+            OwnedIteratorValue::from_generator(
+                self.map(Value::from_u8),
+                Type::Integer(IntegerType::U8),
+            ),
+        )))
     }
 }
-impl StringOutput for Iterator<NativeString> {
+impl StringOutput for Iter<NativeString> {
     fn into_value(self) -> Result<Value, String> {
-        Ok(super::owned_iterator_value(
-            self.0
-                .into_iter()
-                .map(|value| crate::value::native_string(std::string::String::from(value)))
-                .collect::<VecDeque<_>>(),
-            Type::String,
-        ))
+        Ok(Value::OwnedIterator(Rc::new(
+            OwnedIteratorValue::from_generator(
+                self.map(|value| crate::value::native_string(std::string::String::from(value))),
+                Type::String,
+            ),
+        )))
     }
 }
 

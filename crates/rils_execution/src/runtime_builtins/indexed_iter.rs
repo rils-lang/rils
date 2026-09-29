@@ -128,6 +128,7 @@ pub(super) fn next(arguments: &[Value]) -> Result<Value, String> {
         return Err("Iter::next requires `&mut self`".into());
     }
     let (value, item_type) = match receiver.read()? {
+        Value::OwnedIterator(iterator) => (iterator.next()?, iterator.element_type.clone()),
         Value::BorrowedIndexedIterator(iterator) => (iterator.next()?, iterator.item_type()),
         Value::BorrowedMapIterator(iterator) => (iterator.next()?, iterator.item_type()),
         Value::BorrowedSetIterator(iterator) => (iterator.next()?, iterator.item_type()),

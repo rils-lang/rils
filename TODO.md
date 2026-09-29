@@ -58,7 +58,7 @@
 - 为标准库原生桥接补齐 `&mut self` 的 place 代理与写回，以及泛型返回值的类型见证和所有权转换；完成后移除相应旧 ID 适配。
 - 增加结构化数值转换错误类型和更完整的浮点转换入口。
 - 评估 HashMap/HashSet 的借用查询与索引 place，遵守 Rils 引用不能逃逸的规则。
-- 将 VecDeque 和 BinaryHeap 接入借用迭代器，补齐 `iter_mut()`；让 `take/skip/enumerate/map/filter` 等适配器在调用 `next()` 时再计算元素。目前拥有型数组、Vec、VecDeque 和 BinaryHeap 已按需取值，适配器和字符串迭代仍会预先收集结果。
+- 将 VecDeque 和 BinaryHeap 接入借用迭代器，补齐 `iter_mut()`；让 `take/skip/enumerate/map/filter` 等适配器在调用 `next()` 时再计算元素。目前拥有型数组、Vec、VecDeque 和 BinaryHeap 已按需取值，字符串迭代也按需生成元素；默认适配器仍会预先收集结果。
 - 补充常用字符串解析、格式化和 Unicode 操作，但不引入隐式深拷贝。
 
 ## 新特性

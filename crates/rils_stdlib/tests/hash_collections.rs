@@ -35,8 +35,8 @@ fn hash_map_preserves_replaced_values_and_entries() {
     assert_eq!(value(values.insert(2, "second")), None);
     assert_eq!(value(values.insert(1, "replacement")), Some("first"));
     assert_eq!(value(values.get_cloned(&1)), Some("replacement"));
-    assert_eq!(values.keys_cloned().0.len(), 2);
-    assert_eq!(values.values_cloned().0.len(), 2);
+    assert_eq!(values.keys_cloned().count(), 2);
+    assert_eq!(values.values_cloned().count(), 2);
     assert_eq!(values.iter().count(), 2);
     assert_eq!(value(values.remove(&2)), Some("second"));
     assert_eq!(values.into_iter().collect::<Vec<_>>(), [(1, "replacement")]);

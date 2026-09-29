@@ -48,7 +48,7 @@ mod native {
         /// Consumes the Vec and creates an iterator.
         #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
-            Iterator(self.0.into())
+            Iter::from(self.0)
         }
     }
 

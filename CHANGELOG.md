@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `Vec<T>` 的消费式迭代和原生容器迭代直接接管原有元素存储，不再为遍历复制到新的 `VecDeque`；字符串的 `chars/bytes/lines/split` 改为按需产生元素。
+
 - `VecDeque<T>` 和 `BinaryHeap<T>` 现在支持消费式 `into_iter()` 与 `for`；队列按队首到队尾遍历，堆的遍历顺序不保证排序。`Iterator` 声明不再重复包含 `into_iter`，迭代器仍通过 `IntoIterator` 的 blanket 关系获得该方法。
 
 - `BinaryHeap<T>` 的实例方法改为从标准库定义生成的原生符号调用；`push` 现在消费字符串等非 Copy 元素，并保持原有最大堆排序结果。

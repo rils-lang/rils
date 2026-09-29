@@ -3,8 +3,8 @@
 use std::{cell::RefMut, rc::Rc};
 
 use rils_stdlib::stdlib::{
-    collections::vector::Vec as NativeVec, option::Option as NativeOption,
-    string::Iterator as NativeIterator,
+    collections::vector::Vec as NativeVec, iterator::Iter as NativeIterator,
+    option::Option as NativeOption,
 };
 
 use crate::{
@@ -410,7 +410,10 @@ pub(super) fn into_iter(
         .unwrap_or(Type::Unknown);
     let elements = std::mem::take(&mut *sequence.elements.borrow_mut());
     let native = <NativeVec<FieldSlot> as From<Vec<FieldSlot>>>::from(elements);
+    let items = call(native)
+        .into_inner()
+        .ok_or("Vec::into_iter did not return the owned Vec storage")?;
     Ok(Value::OwnedIterator(Rc::new(
-        OwnedIteratorValue::from_slots(call(native).0, element_type),
+        OwnedIteratorValue::from_slots(items, element_type),
     )))
 }

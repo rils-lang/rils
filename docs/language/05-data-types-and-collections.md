@@ -122,7 +122,7 @@ let characters = "R世".chars().count(); // 2
 `collect_vec()` 收集为 `Vec<T>`。实现 `Iterator` 时必须声明 `Item` 并实现 `next`；上述其他方法均提供默认行为，也可以在 impl 中按原签名重写。它们的元素类型由 `Item` 决定，不要求它是类型的第一个泛型参数。`any/all/find/position`
 会短路。`filter/find` 的谓词接收 `&T`，筛选拥有型非 Copy 元素时不需要 Clone。
 
-除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。`take/skip/rev` 的返回类型是 `Iterator<Item>`，与产生的新迭代器一致，不再是原 receiver 的 `Self`。数组和 Vec 的拥有型 `into_iter()` 在调用 `next()` 时逐项移出元素；当前转换适配器和字符串迭代会先收集结果，再生成拥有型内建迭代器。这些默认行为由标准库的 trait 方法体导出，解释器和字节码共用同一份定义。
+除 `next/nth` 会推进现有迭代器外，上述方法会消费 receiver。`take/skip/rev` 的返回类型是 `Iterator<Item>`，与产生的新迭代器一致，不再是原 receiver 的 `Self`。数组和 Vec 的拥有型 `into_iter()` 接管原有元素存储，并在调用 `next()` 时逐项移出；`iter()` 借用元素，保留原集合的长度和索引。字符串的 `chars/bytes/lines/split` 按需生成下一项，不预先收集全部结果。`take/skip/rev/map/filter/filter_map/enumerate` 的默认实现目前仍会预先收集结果。这些默认行为由标准库的 trait 方法体导出，解释器和字节码共用同一份定义。
 
 ## VecDeque 与 BinaryHeap
 

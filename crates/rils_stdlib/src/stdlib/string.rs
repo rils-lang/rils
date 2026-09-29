@@ -1,18 +1,10 @@
 //! Native methods for the built-in owned UTF-8 string.
 
-use super::prelude::Option;
+use super::{iterator::Iter, prelude::Option};
 use rils_stdlib_macros::decl_rils;
 
-/// An owned iterator of values produced by standard-library methods.
-pub struct Iterator<T>(pub std::collections::VecDeque<T>);
-
-impl<T> std::iter::Iterator for Iterator<T> {
-    type Item = T;
-
-    fn next(&mut self) -> std::option::Option<T> {
-        self.0.pop_front()
-    }
-}
+/// The exported string methods use the common iterator adapter.
+pub type Iterator<T> = Iter<T>;
 
 fn optional<T>(value: std::option::Option<T>) -> Option<T> {
     match value {
@@ -23,7 +15,7 @@ fn optional<T>(value: std::option::Option<T>) -> Option<T> {
 
 #[decl_rils(core::string)]
 mod native {
-    use super::{Iterator, Option, optional};
+    use super::{Iter, Iterator, Option, optional};
 
     /// An owned UTF-8 string.
     #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -123,27 +115,74 @@ mod native {
         /// Iterates over Unicode scalar values.
         #[export_rils]
         pub fn chars(&self) -> Iterator<char> {
-            Iterator(self.0.chars().collect())
+            let source = self.0.clone();
+            let mut offset = 0;
+            Iter::from_generator(std::iter::from_fn(move || {
+                let value = source.get(offset..)?.chars().next()?;
+                offset += value.len_utf8();
+                Some(value)
+            }))
         }
         /// Iterates over UTF-8 bytes.
         #[export_rils]
         pub fn bytes(&self) -> Iterator<u8> {
-            Iterator(self.0.bytes().collect())
+            let source = self.0.clone();
+            let mut offset = 0;
+            Iter::from_generator(std::iter::from_fn(move || {
+                let value = source.as_bytes().get(offset).copied()?;
+                offset += 1;
+                Some(value)
+            }))
         }
         /// Iterates over lines without their terminators.
         #[export_rils]
         pub fn lines(&self) -> Iterator<String> {
-            Iterator(self.0.lines().map(|line| Self(line.to_owned())).collect())
+            let source = self.0.clone();
+            let mut offset = 0;
+            Iter::from_generator(std::iter::from_fn(move || {
+                let rest = source.get(offset..)?;
+                if rest.is_empty() {
+                    return None;
+                }
+                let end = rest.find('\n').unwrap_or(rest.len());
+                let line = &rest[..end];
+                offset += end + usize::from(end < rest.len());
+                Some(Self(line.strip_suffix('\r').unwrap_or(line).to_owned()))
+            }))
         }
         /// Iterates over substrings separated by the pattern.
         #[export_rils]
         pub fn split(&self, pattern: String) -> Iterator<String> {
-            Iterator(
-                self.0
-                    .split(&pattern.0)
-                    .map(|part| Self(part.to_owned()))
-                    .collect(),
-            )
+            let source = self.0.clone();
+            let pattern = pattern.0;
+            let mut offset = 0;
+            let mut started = false;
+            let mut finished = false;
+            Iter::from_generator(std::iter::from_fn(move || {
+                if finished {
+                    return None;
+                }
+                if pattern.is_empty() {
+                    if !started {
+                        started = true;
+                        return Some(Self(std::string::String::new()));
+                    }
+                    if let Some(value) = source[offset..].chars().next() {
+                        offset += value.len_utf8();
+                        return Some(Self(value.to_string()));
+                    }
+                    finished = true;
+                    return Some(Self(std::string::String::new()));
+                }
+                let rest = &source[offset..];
+                if let Some(end) = rest.find(&pattern) {
+                    offset += end + pattern.len();
+                    Some(Self(rest[..end].to_owned()))
+                } else {
+                    finished = true;
+                    Some(Self(rest.to_owned()))
+                }
+            }))
         }
     }
 

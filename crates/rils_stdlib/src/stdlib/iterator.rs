@@ -4,13 +4,53 @@ use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::iter)]
 mod native {
-    /// An iterator borrowing elements from a sequence.
+    /// An iterator over owned or borrowed sequence elements.
     #[rils_struct]
-    pub struct Iter<T>(std::vec::IntoIter<T>);
+    pub struct Iter<T>(IterStorage<T>);
+
+    enum IterStorage<T> {
+        Owned(std::vec::IntoIter<T>),
+        Queue(std::collections::vec_deque::IntoIter<T>),
+        Heap(std::collections::binary_heap::IntoIter<T>),
+        OrderedSet(std::collections::btree_set::IntoIter<T>),
+        HashSet(std::collections::hash_set::IntoIter<T>),
+        Generated(std::boxed::Box<dyn std::iter::Iterator<Item = T>>),
+    }
 
     impl<T> From<std::vec::Vec<T>> for Iter<T> {
         fn from(values: std::vec::Vec<T>) -> Self {
-            Self(values.into_iter())
+            Self(IterStorage::Owned(values.into_iter()))
+        }
+    }
+
+    impl<T> Iter<T> {
+        pub fn into_inner(self) -> std::option::Option<std::vec::IntoIter<T>> {
+            match self.0 {
+                IterStorage::Owned(values) => Some(values),
+                _ => None,
+            }
+        }
+
+        pub fn from_vec_deque(values: std::collections::VecDeque<T>) -> Self {
+            Self(IterStorage::Queue(values.into_iter()))
+        }
+
+        pub fn from_binary_heap(values: std::collections::BinaryHeap<T>) -> Self {
+            Self(IterStorage::Heap(values.into_iter()))
+        }
+
+        pub fn from_btree_set(values: std::collections::BTreeSet<T>) -> Self {
+            Self(IterStorage::OrderedSet(values.into_iter()))
+        }
+
+        pub fn from_hash_set(values: std::collections::HashSet<T>) -> Self {
+            Self(IterStorage::HashSet(values.into_iter()))
+        }
+    }
+
+    impl<T: 'static> Iter<T> {
+        pub fn from_generator(items: impl std::iter::Iterator<Item = T> + 'static) -> Self {
+            Self(IterStorage::Generated(std::boxed::Box::new(items)))
         }
     }
 
@@ -20,7 +60,14 @@ mod native {
 
         /// Advances the iterator and borrows its next item.
         fn next(&mut self) -> std::option::Option<T> {
-            self.0.next()
+            match &mut self.0 {
+                IterStorage::Owned(items) => items.next(),
+                IterStorage::Queue(items) => items.next(),
+                IterStorage::Heap(items) => items.next(),
+                IterStorage::OrderedSet(items) => items.next(),
+                IterStorage::HashSet(items) => items.next(),
+                IterStorage::Generated(items) => items.next(),
+            }
         }
     }
 

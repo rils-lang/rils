@@ -38,7 +38,7 @@ mod native {
         #[rils_native_bridge]
         #[rils_legacy_id(core::hash_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iterator(self.0.into_iter().collect())
+            Iter::from_hash_set(self.0)
         }
     }
 
@@ -171,7 +171,7 @@ mod native {
         #[rils_native_bridge]
         #[rils_legacy_id(core::hash_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iterator(self.0.into_iter().collect())
+            Iter::from(self.0.into_iter().collect::<std::vec::Vec<_>>())
         }
     }
 
@@ -239,7 +239,7 @@ mod native {
         #[export_rils]
         #[rils_legacy_id(core::hash_map::values_cloned)]
         pub fn values_cloned(&self) -> Iterator<V> {
-            Iterator(self.0.values().cloned().collect())
+            Iter::from(self.0.values().cloned().collect::<std::vec::Vec<_>>())
         }
     }
 
@@ -248,7 +248,7 @@ mod native {
         #[export_rils]
         #[rils_legacy_id(core::hash_map::keys_cloned)]
         pub fn keys_cloned(&self) -> Iterator<K> {
-            Iterator(self.0.keys().cloned().collect())
+            Iter::from(self.0.keys().cloned().collect::<std::vec::Vec<_>>())
         }
     }
 }

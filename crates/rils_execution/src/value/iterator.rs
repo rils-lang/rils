@@ -13,9 +13,10 @@ use super::{
 #[derive(Clone)]
 pub struct OwnedIteratorValue {
     pub items: RefCell<VecDeque<Value>>,
-    native_items: Option<Rc<RefCell<VecDeque<DynamicValue>>>>,
+    native_items: Option<Rc<RefCell<std::vec::IntoIter<DynamicValue>>>>,
     native_codec: Option<Rc<NativeRecordCodec>>,
-    slots: Option<RefCell<VecDeque<FieldSlot>>>,
+    generated_items: Option<Rc<RefCell<Box<dyn Iterator<Item = Value>>>>>,
+    slots: Option<RefCell<std::vec::IntoIter<FieldSlot>>>,
     pub element_type: Type,
     pub source: Option<Rc<IndexedStorage>>,
     pub cursor: std::cell::Cell<usize>,
@@ -27,6 +28,7 @@ impl OwnedIteratorValue {
             items: RefCell::new(VecDeque::new()),
             native_items: None,
             native_codec: None,
+            generated_items: None,
             slots: None,
             element_type,
             source: Some(source),
@@ -39,6 +41,7 @@ impl OwnedIteratorValue {
             items: RefCell::new(items),
             native_items: None,
             native_codec: None,
+            generated_items: None,
             slots: None,
             element_type,
             source: None,
@@ -46,11 +49,12 @@ impl OwnedIteratorValue {
         }
     }
 
-    pub fn from_slots(slots: VecDeque<FieldSlot>, element_type: Type) -> Self {
+    pub fn from_slots(slots: std::vec::IntoIter<FieldSlot>, element_type: Type) -> Self {
         Self {
             items: RefCell::new(VecDeque::new()),
             native_items: None,
             native_codec: None,
+            generated_items: None,
             slots: Some(RefCell::new(slots)),
             element_type,
             source: None,
@@ -59,14 +63,31 @@ impl OwnedIteratorValue {
     }
 
     pub fn from_native(
-        items: VecDeque<DynamicValue>,
+        items: Vec<DynamicValue>,
         element_type: Type,
         codec: NativeRecordCodec,
     ) -> Self {
         Self {
             items: RefCell::new(VecDeque::new()),
-            native_items: Some(Rc::new(RefCell::new(items))),
+            native_items: Some(Rc::new(RefCell::new(items.into_iter()))),
             native_codec: Some(Rc::new(codec)),
+            generated_items: None,
+            slots: None,
+            element_type,
+            source: None,
+            cursor: std::cell::Cell::new(0),
+        }
+    }
+
+    pub fn from_generator(
+        items: impl Iterator<Item = Value> + 'static,
+        element_type: Type,
+    ) -> Self {
+        Self {
+            items: RefCell::new(VecDeque::new()),
+            native_items: None,
+            native_codec: None,
+            generated_items: Some(Rc::new(RefCell::new(Box::new(items)))),
             slots: None,
             element_type,
             source: None,
@@ -81,7 +102,7 @@ impl OwnedIteratorValue {
         if let Some(items) = &self.native_items {
             return items
                 .borrow_mut()
-                .pop_front()
+                .next()
                 .map(|item| {
                     self.native_codec
                         .as_ref()
@@ -90,10 +111,13 @@ impl OwnedIteratorValue {
                 })
                 .transpose();
         }
+        if let Some(items) = &self.generated_items {
+            return Ok(items.borrow_mut().next());
+        }
         if let Some(slots) = &self.slots {
             return slots
                 .borrow_mut()
-                .pop_front()
+                .next()
                 .map(|slot| {
                     slot.value
                         .ok_or_else(|| "cannot iterate a partially moved collection".to_owned())
@@ -124,15 +148,21 @@ impl OwnedIteratorValue {
                 .expect("native iterator has a codec");
             let mut native_items = native_items.borrow_mut();
             let mut items = self.items.borrow_mut();
-            while let Some(item) = native_items.pop_front() {
+            for item in native_items.by_ref() {
                 items.push_back(codec.from_native(item)?);
             }
+            return Ok(());
+        }
+        if let Some(generated_items) = &self.generated_items {
+            self.items
+                .borrow_mut()
+                .extend(generated_items.borrow_mut().by_ref());
             return Ok(());
         }
         if let Some(slots) = &self.slots {
             let mut slots = slots.borrow_mut();
             let mut items = self.items.borrow_mut();
-            while let Some(slot) = slots.pop_front() {
+            for slot in slots.by_ref() {
                 items.push_back(
                     slot.value
                         .ok_or_else(|| "cannot iterate a partially moved collection".to_owned())?,
@@ -157,11 +187,13 @@ impl OwnedIteratorValue {
     }
 
     pub fn contains_reference(&self) -> bool {
-        (self.native_items.is_some() && self.element_type.contains_reference())
+        ((self.native_items.is_some() || self.generated_items.is_some())
+            && self.element_type.contains_reference())
             || self.items.borrow().iter().any(Value::contains_reference)
             || self.slots.as_ref().is_some_and(|slots| {
                 slots
                     .borrow()
+                    .as_slice()
                     .iter()
                     .filter_map(|slot| slot.value.as_ref())
                     .any(Value::contains_reference)

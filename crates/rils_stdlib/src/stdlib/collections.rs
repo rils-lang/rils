@@ -75,7 +75,7 @@ mod native {
         /// Consumes the queue from front to back.
         #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
-            Iterator(self.0)
+            Iter::from_vec_deque(self.0)
         }
     }
 
@@ -198,7 +198,7 @@ mod native {
         /// Consumes the heap in its storage order.
         #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
-            Iterator(self.0.into_iter().collect())
+            Iter::from_binary_heap(self.0)
         }
     }
 
@@ -290,7 +290,7 @@ mod native {
         #[rils_native_bridge]
         #[rils_legacy_id(core::btree_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iterator(self.0.into_iter().collect())
+            Iter::from_btree_set(self.0)
         }
     }
 
@@ -435,7 +435,7 @@ mod native {
         #[rils_native_bridge]
         #[rils_legacy_id(core::btree_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iterator(self.0.into_iter().collect())
+            Iter::from(self.0.into_iter().collect::<std::vec::Vec<_>>())
         }
     }
 

@@ -128,7 +128,7 @@ pub(crate) fn native_sequence_into_iterator(
     let items = object.with_mut(|payload| payload.take_all_sequence_items())??;
     let codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
     Ok(Value::OwnedIterator(Rc::new(
-        OwnedIteratorValue::from_native(items.into(), item_type, codec),
+        OwnedIteratorValue::from_native(items, item_type, codec),
     )))
 }
 
