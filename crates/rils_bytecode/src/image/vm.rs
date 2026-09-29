@@ -182,6 +182,21 @@ impl<'a> VirtualMachine<'a> {
                         value = value
                             .apply_declared_storage(&expected)
                             .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                        if matches!(&expected, Type::Named { name, .. } if name == "Vec") {
+                            let mut structs = Vec::new();
+                            let mut enums = Vec::new();
+                            for definition in &self.module.types {
+                                match definition {
+                                    RuntimeType::Struct(definition) => {
+                                        structs.push(definition.clone())
+                                    }
+                                    RuntimeType::Enum(definition) => enums.push(definition.clone()),
+                                }
+                            }
+                            value = crate::value::dynamic_sequence::promote_empty_with_definitions(
+                                value, &expected, &structs, &enums,
+                            );
+                        }
                     }
                     self.frame().locals[local].borrow_mut().initialize(value);
                 }
@@ -281,8 +296,22 @@ impl<'a> VirtualMachine<'a> {
                     source,
                 } => {
                     let source = self.take_register(source, instruction.span)?;
-                    let iterator = match rils_execution::iteration::into_iterator(source)
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?
+                    let mut context = crate::runtime_builtins::NativeOwnedContext {
+                        structs: Vec::new(),
+                        enums: Vec::new(),
+                    };
+                    for definition in &self.module.types {
+                        match definition {
+                            RuntimeType::Struct(definition) => {
+                                context.structs.push(definition.clone())
+                            }
+                            RuntimeType::Enum(definition) => context.enums.push(definition.clone()),
+                        }
+                    }
+                    let iterator = match rils_execution::iteration::into_iterator_with_context(
+                        source, &context,
+                    )
+                    .map_err(|message| BytecodeError::new(message, instruction.span))?
                     {
                         rils_execution::iteration::IntoIteratorResult::Ready(iterator) => iterator,
                         rils_execution::iteration::IntoIteratorResult::UserDefined(value) => {

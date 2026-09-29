@@ -1,6 +1,6 @@
 //! Vec operations over declaration-derived native sequences.
 
-use std::{collections::VecDeque, rc::Rc};
+use std::rc::Rc;
 
 use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern, builtin};
 
@@ -25,8 +25,30 @@ fn owned_member(symbol: &str) -> Option<&'static BuiltinMember> {
     })
 }
 
+fn into_iter_member(symbol: &str) -> bool {
+    builtin("Vec").is_some_and(|declaration| {
+        declaration
+            .members
+            .iter()
+            .any(|member| member.name == "into_iter" && member.native_symbol == Some(symbol))
+    })
+}
+
+fn owned_output_member(symbol: &str) -> Option<&'static str> {
+    builtin("Vec")?
+        .members
+        .iter()
+        .find(|member| {
+            matches!(member.name, "pop" | "remove" | "swap_remove")
+                && member.native_symbol == Some(symbol)
+        })
+        .map(|member| member.name)
+}
+
 pub(crate) fn is_owned_symbol(symbol: &str) -> bool {
     owned_member(symbol).is_some()
+        || into_iter_member(symbol)
+        || owned_output_member(symbol).is_some()
 }
 
 pub(crate) fn call_owned_symbol(
@@ -34,6 +56,85 @@ pub(crate) fn call_owned_symbol(
     mut arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if into_iter_member(symbol) {
+        return Some((|| {
+            if arguments.len() != 1 {
+                return Err("Vec::into_iter expects one receiver".into());
+            }
+            let receiver = arguments.into_iter().next().expect("arity checked");
+            match receiver {
+                Value::Dynamic(object)
+                    if crate::value::native_layouts::vec::matches(
+                        object.descriptor().layout().rils_type(),
+                    ) =>
+                {
+                    into_iterator_with_context(object, context)
+                }
+                value => match crate::iteration::into_iterator(value)? {
+                    crate::iteration::IntoIteratorResult::Ready(iterator) => Ok(iterator),
+                    crate::iteration::IntoIteratorResult::UserDefined(_) => {
+                        Err("Vec::into_iter expects a Vec receiver".into())
+                    }
+                },
+            }
+        })());
+    }
+    if let Some(name) = owned_output_member(symbol) {
+        return Some((|| {
+            let expected = if name == "pop" { 1 } else { 2 };
+            if arguments.len() != expected {
+                return Err(format!("Vec::{name} expects {expected} runtime arguments"));
+            }
+            if !matches!(arguments.first(), Some(Value::Reference(reference)) if reference.mutable)
+            {
+                return Err(format!("Vec::{name} requires `&mut self`"));
+            }
+            let receiver = import_receiver(&arguments[0])?;
+            let Value::Dynamic(object) = receiver else {
+                return super::native::call_symbol(symbol, &arguments)
+                    .unwrap_or_else(|| Err(format!("Vec::{name} has no runtime adapter")));
+            };
+            if !crate::value::native_layouts::vec::matches(object.descriptor().layout().rils_type())
+            {
+                return Err(format!("Vec::{name} requires a Vec receiver"));
+            }
+            let item_type = object
+                .descriptor()
+                .layout()
+                .sequence_item()
+                .ok_or("native Vec has no item layout")?
+                .rils_type()
+                .clone();
+            let codec =
+                record_codec::NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+            if name == "pop" {
+                let item = object.with_mut(|payload| {
+                    let length = payload.sequence_len()?;
+                    if length == 0 {
+                        Ok(None)
+                    } else {
+                        payload.take_sequence_item(length - 1).map(Some)
+                    }
+                })??;
+                Ok(Value::Option {
+                    value: item
+                        .map(|item| codec.from_native(item).map(Rc::new))
+                        .transpose()?,
+                    element_type: Some(item_type),
+                })
+            } else {
+                let position = index(&arguments, 1)?;
+                let item = object.with_mut(|payload| {
+                    if name == "remove" {
+                        payload.take_sequence_item(position)
+                    } else {
+                        payload.swap_remove_sequence_item(position)
+                    }
+                })??;
+                codec.from_native(item)
+            }
+        })());
+    }
     let member = owned_member(symbol)?;
     Some((|| {
         let arity = member
@@ -107,7 +208,31 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
 }
 
 pub(crate) fn into_iterator(object: DynamicObject) -> Result<Value, String> {
-    call("into_iter", &[Value::Dynamic(object.clone())], &object)
+    into_iterator_with_context(
+        object,
+        &NativeOwnedContext {
+            structs: Vec::new(),
+            enums: Vec::new(),
+        },
+    )
+}
+
+pub(crate) fn into_iterator_with_context(
+    object: DynamicObject,
+    context: &NativeOwnedContext,
+) -> Result<Value, String> {
+    let item_type = object
+        .descriptor()
+        .layout()
+        .sequence_item()
+        .ok_or("native Vec has no item layout")?
+        .rils_type()
+        .clone();
+    let items = object.with_mut(|payload| payload.take_all_sequence_items())??;
+    let codec = record_codec::NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+    Ok(Value::OwnedIterator(Rc::new(
+        OwnedIteratorValue::from_native(items.into(), item_type, codec),
+    )))
 }
 
 pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
@@ -277,16 +402,7 @@ fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value
         }
         "iter" => indexed_iter::borrow(arguments),
         "extend" => extend(arguments).expect("native Vec receiver was checked"),
-        "into_iter" => {
-            let values = object.with_mut(|payload| payload.take_all_sequence_items())??;
-            let values = values
-                .into_iter()
-                .map(record_codec::from_native)
-                .collect::<Result<VecDeque<_>, _>>()?;
-            Ok(Value::OwnedIterator(Rc::new(
-                OwnedIteratorValue::from_items(values, item_type),
-            )))
-        }
+        "into_iter" => into_iterator(object.clone()),
         _ => Err(format!("native Vec method `{name}` is not supported")),
     }
 }

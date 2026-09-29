@@ -1,9 +1,10 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use rils_value::SequenceIteratorLease;
+use rils_value::{DynamicValue, SequenceIteratorLease};
 
 use crate::types::Type;
 
+use super::record_codec::NativeRecordCodec;
 use super::{
     DynamicObject, FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue,
     SetCollection, Value,
@@ -12,6 +13,8 @@ use super::{
 #[derive(Clone)]
 pub struct OwnedIteratorValue {
     pub items: RefCell<VecDeque<Value>>,
+    native_items: Option<Rc<RefCell<VecDeque<DynamicValue>>>>,
+    native_codec: Option<Rc<NativeRecordCodec>>,
     slots: Option<RefCell<VecDeque<FieldSlot>>>,
     pub element_type: Type,
     pub source: Option<Rc<IndexedStorage>>,
@@ -22,6 +25,8 @@ impl OwnedIteratorValue {
     pub fn from_indexed(source: Rc<IndexedStorage>, element_type: Type) -> Self {
         Self {
             items: RefCell::new(VecDeque::new()),
+            native_items: None,
+            native_codec: None,
             slots: None,
             element_type,
             source: Some(source),
@@ -32,6 +37,8 @@ impl OwnedIteratorValue {
     pub fn from_items(items: VecDeque<Value>, element_type: Type) -> Self {
         Self {
             items: RefCell::new(items),
+            native_items: None,
+            native_codec: None,
             slots: None,
             element_type,
             source: None,
@@ -42,7 +49,25 @@ impl OwnedIteratorValue {
     pub fn from_slots(slots: VecDeque<FieldSlot>, element_type: Type) -> Self {
         Self {
             items: RefCell::new(VecDeque::new()),
+            native_items: None,
+            native_codec: None,
             slots: Some(RefCell::new(slots)),
+            element_type,
+            source: None,
+            cursor: std::cell::Cell::new(0),
+        }
+    }
+
+    pub fn from_native(
+        items: VecDeque<DynamicValue>,
+        element_type: Type,
+        codec: NativeRecordCodec,
+    ) -> Self {
+        Self {
+            items: RefCell::new(VecDeque::new()),
+            native_items: Some(Rc::new(RefCell::new(items))),
+            native_codec: Some(Rc::new(codec)),
+            slots: None,
             element_type,
             source: None,
             cursor: std::cell::Cell::new(0),
@@ -52,6 +77,18 @@ impl OwnedIteratorValue {
     pub fn next(&self) -> Result<Option<Value>, String> {
         if let Some(value) = self.items.borrow_mut().pop_front() {
             return Ok(Some(value));
+        }
+        if let Some(items) = &self.native_items {
+            return items
+                .borrow_mut()
+                .pop_front()
+                .map(|item| {
+                    self.native_codec
+                        .as_ref()
+                        .expect("native iterator has a codec")
+                        .from_native(item)
+                })
+                .transpose();
         }
         if let Some(slots) = &self.slots {
             return slots
@@ -80,6 +117,18 @@ impl OwnedIteratorValue {
     }
 
     pub fn materialize(&self) -> Result<(), String> {
+        if let Some(native_items) = &self.native_items {
+            let codec = self
+                .native_codec
+                .as_ref()
+                .expect("native iterator has a codec");
+            let mut native_items = native_items.borrow_mut();
+            let mut items = self.items.borrow_mut();
+            while let Some(item) = native_items.pop_front() {
+                items.push_back(codec.from_native(item)?);
+            }
+            return Ok(());
+        }
         if let Some(slots) = &self.slots {
             let mut slots = slots.borrow_mut();
             let mut items = self.items.borrow_mut();
@@ -108,7 +157,8 @@ impl OwnedIteratorValue {
     }
 
     pub fn contains_reference(&self) -> bool {
-        self.items.borrow().iter().any(Value::contains_reference)
+        (self.native_items.is_some() && self.element_type.contains_reference())
+            || self.items.borrow().iter().any(Value::contains_reference)
             || self.slots.as_ref().is_some_and(|slots| {
                 slots
                     .borrow()

@@ -219,7 +219,15 @@ impl Interpreter {
                         *span,
                     ));
                 }
-                let value = apply_type_owned(type_annotation.as_ref(), value, *span, name)?;
+                let mut value = apply_type_owned(type_annotation.as_ref(), value, *span, name)?;
+                if let Some(expected @ Type::Named { name, .. }) = type_annotation.as_ref()
+                    && name == "Vec"
+                {
+                    let (structs, enums) = environment.borrow().visible_type_definitions();
+                    value = crate::value::dynamic_sequence::promote_empty_with_definitions(
+                        value, expected, &structs, &enums,
+                    );
+                }
                 environment
                     .borrow_mut()
                     .define(name.clone(), value, *mutable, type_annotation);
@@ -902,7 +910,7 @@ impl Interpreter {
                     .is_some_and(|ty| type_implements_trait(&ty, "IntoIterator", &environment))
                 {
                     let method = self.resolve_member(value, "into_iter", *span)?;
-                    self.call(method, &[], *span)?
+                    self.call_owned(method, Vec::new(), *span, environment.clone())?
                 } else {
                     value
                 };

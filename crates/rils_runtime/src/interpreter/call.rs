@@ -483,8 +483,13 @@ impl Interpreter {
                     && (matches!(actual_target, Type::Array { .. })
                         || matches!(actual_target, Type::Named { name, .. } if name == "Vec"))
                 {
-                    return match rils_execution::iteration::into_iterator(receiver.clone())
-                        .map_err(|message| RuntimeError::new(message, span))?
+                    let (structs, enums) = selector.environment.borrow().visible_type_definitions();
+                    let context = crate::runtime_builtins::NativeOwnedContext { structs, enums };
+                    return match rils_execution::iteration::into_iterator_with_context(
+                        receiver.clone(),
+                        &context,
+                    )
+                    .map_err(|message| RuntimeError::new(message, span))?
                     {
                         rils_execution::iteration::IntoIteratorResult::Ready(value) => Ok(value),
                         rils_execution::iteration::IntoIteratorResult::UserDefined(_) => Err(

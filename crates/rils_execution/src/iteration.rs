@@ -13,6 +13,19 @@ pub enum IntoIteratorResult {
 }
 
 pub fn into_iterator(value: Value) -> Result<IntoIteratorResult, String> {
+    into_iterator_with_context(
+        value,
+        &runtime_builtins::NativeOwnedContext {
+            structs: Vec::new(),
+            enums: Vec::new(),
+        },
+    )
+}
+
+pub fn into_iterator_with_context(
+    value: Value,
+    context: &runtime_builtins::NativeOwnedContext,
+) -> Result<IntoIteratorResult, String> {
     let iterator = match value {
         value @ Value::Native(_) if native_ops::is_iterator(&value) => value,
         value @ (Value::OwnedIterator(_)
@@ -25,7 +38,7 @@ pub fn into_iterator(value: Value) -> Result<IntoIteratorResult, String> {
                 object.descriptor().layout().rils_type(),
             ) =>
         {
-            runtime_builtins::vector_dynamic::into_iterator(object)?
+            runtime_builtins::vector_dynamic::into_iterator_with_context(object, context)?
         }
         Value::Dynamic(object)
             if crate::value::native_layouts::btree_set::matches(

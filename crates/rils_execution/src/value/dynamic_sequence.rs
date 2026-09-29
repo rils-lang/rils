@@ -6,11 +6,22 @@ use rils_value::{DynamicPathStep, DynamicType, DynamicValue};
 
 use crate::Type;
 
-use super::{DynamicObject, Value, record_codec, record_layout::RecordLayoutResolver};
+use super::{
+    DynamicObject, EnumType, StructType, Value, record_codec, record_layout::RecordLayoutResolver,
+};
 
 /// An unshared collection can acquire its concrete layout when a binding gives
 /// an otherwise untyped constructor its type argument.
 pub fn promote_empty(value: Value, expected: &Type) -> Value {
+    promote_empty_with_definitions(value, expected, &[], &[])
+}
+
+pub fn promote_empty_with_definitions(
+    value: Value,
+    expected: &Type,
+    structs: &[Rc<StructType>],
+    enums: &[Rc<EnumType>],
+) -> Value {
     let supported = match (&value, expected) {
         (Value::Vec(_), Type::Named { name, arguments }) => name == "Vec" && arguments.len() == 1,
         (Value::VecDeque(_), Type::Named { name, arguments }) => {
@@ -63,7 +74,8 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
     if !empty_and_unique {
         return value;
     }
-    let Ok(layout) = RecordLayoutResolver::new(&[]).resolve(expected) else {
+    let mut resolver = RecordLayoutResolver::with_enums(structs, enums);
+    let Ok(layout) = resolver.resolve(expected) else {
         return value;
     };
     let Ok(payload) = DynamicValue::sequence(layout.clone(), Vec::new()) else {
