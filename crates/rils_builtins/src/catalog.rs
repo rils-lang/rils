@@ -28,21 +28,7 @@ impl BuiltinId {
     /// Returns whether this runtime member has a direct bytecode instruction.
     pub fn has_direct_runtime_call(self) -> bool {
         runtime_member(self).is_some()
-            && !matches!(
-                self,
-                Self::IteratorIntoIter
-                    | Self::IteratorMap
-                    | Self::IteratorFilter
-                    | Self::IteratorFilterMap
-                    | Self::IteratorFold
-                    | Self::IteratorForEach
-                    | Self::IteratorAny
-                    | Self::IteratorAll
-                    | Self::IteratorFind
-                    | Self::IteratorPosition
-                    | Self::IteratorEnumerate
-                    | Self::RangeIntoIter
-            )
+            && !matches!(self, Self::IteratorIntoIter | Self::RangeIntoIter)
     }
 
     /// Returns whether two member IDs use the same type-erased runtime implementation.
@@ -290,24 +276,7 @@ pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] = &[
     BuiltinId::VecInsert,
     BuiltinId::VecRemove,
     BuiltinId::VecSwapRemove,
-    BuiltinId::IteratorCount,
     BuiltinId::IteratorIntoIter,
-    BuiltinId::IteratorLast,
-    BuiltinId::IteratorNth,
-    BuiltinId::IteratorCollectVec,
-    BuiltinId::IteratorTake,
-    BuiltinId::IteratorSkip,
-    BuiltinId::IteratorRev,
-    BuiltinId::IteratorMap,
-    BuiltinId::IteratorFilter,
-    BuiltinId::IteratorFilterMap,
-    BuiltinId::IteratorFold,
-    BuiltinId::IteratorForEach,
-    BuiltinId::IteratorAny,
-    BuiltinId::IteratorAll,
-    BuiltinId::IteratorFind,
-    BuiltinId::IteratorPosition,
-    BuiltinId::IteratorEnumerate,
 ];
 
 pub fn is_iterator_default_method(name: &str) -> bool {

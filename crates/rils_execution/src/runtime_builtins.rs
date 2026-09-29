@@ -1,10 +1,16 @@
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::rc::Rc;
+
+#[cfg(test)]
+use std::{cell::RefCell, collections::VecDeque};
 
 use crate::{
     environment::AssignError,
     types::Type,
-    value::{FieldSlot, IndexedStorage, OwnedIteratorValue, Value},
+    value::{FieldSlot, Value},
 };
+
+#[cfg(test)]
+use crate::value::{IndexedStorage, OwnedIteratorValue};
 
 mod binary_heap;
 mod boxed;
@@ -432,97 +438,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 element_type: Some(element_type),
             })
         }
-        BuiltinId::IteratorCount
-        | BuiltinId::IteratorLast
-        | BuiltinId::IteratorNth
-        | BuiltinId::IteratorCollectVec
-        | BuiltinId::IteratorTake
-        | BuiltinId::IteratorSkip
-        | BuiltinId::IteratorRev
-        | BuiltinId::IteratorEnumerate => {
-            let Value::OwnedIterator(iterator) = import_receiver(&arguments[0])? else {
-                return Err("iterator method receiver is not a built-in iterator".into());
-            };
-            let element_type = iterator.element_type.clone();
-            iterator.materialize()?;
-            let mut items = iterator.items.borrow_mut();
-            let count = || match arguments.get(1) {
-                Some(value) => value.as_usize().ok_or_else(|| {
-                    format!("iterator count must be usize, found {}", value.type_name())
-                }),
-                None => Err("missing iterator count".into()),
-            };
-            match id {
-                BuiltinId::IteratorCount => {
-                    let count = items.len();
-                    items.clear();
-                    Ok(crate::numeric::native_usize(count))
-                }
-                BuiltinId::IteratorLast => {
-                    let value = items.pop_back().map(Rc::new);
-                    items.clear();
-                    Ok(Value::Option {
-                        value,
-                        element_type: Some(element_type),
-                    })
-                }
-                BuiltinId::IteratorNth => {
-                    let count = count()?;
-                    let skipped = count.min(items.len());
-                    items.drain(..skipped);
-                    let value = (skipped == count)
-                        .then(|| items.pop_front())
-                        .flatten()
-                        .map(Rc::new);
-                    Ok(Value::Option {
-                        value,
-                        element_type: Some(element_type),
-                    })
-                }
-                BuiltinId::IteratorCollectVec => {
-                    let elements = items
-                        .drain(..)
-                        .map(|value| FieldSlot {
-                            value: Some(value),
-                            type_annotation: element_type.clone(),
-                            references: 0,
-                        })
-                        .collect();
-                    Ok(Value::Vec(Rc::new(IndexedStorage {
-                        active_iterators: std::cell::Cell::new(0),
-                        elements: RefCell::new(elements),
-                        element_type: RefCell::new(Some(element_type)),
-                    })))
-                }
-                BuiltinId::IteratorTake | BuiltinId::IteratorSkip => {
-                    let count = count()?.min(items.len());
-                    let selected = if id == BuiltinId::IteratorTake {
-                        let selected = items.drain(..count).collect();
-                        items.clear();
-                        selected
-                    } else {
-                        items.drain(..count);
-                        items.drain(..).collect()
-                    };
-                    Ok(owned_iterator_value(selected, element_type))
-                }
-                BuiltinId::IteratorRev => Ok(owned_iterator_value(
-                    items.drain(..).rev().collect(),
-                    element_type,
-                )),
-                BuiltinId::IteratorEnumerate => Ok(owned_iterator_value(
-                    items
-                        .drain(..)
-                        .enumerate()
-                        .map(|(index, value)| {
-                            tuple_value(vec![crate::numeric::native_usize(index), value])
-                        })
-                        .collect(),
-                    Type::Tuple(vec![Type::USIZE, element_type]),
-                )),
-                _ => unreachable!("iterator built-in was matched above"),
-            }
-        }
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),
@@ -544,29 +459,9 @@ fn call_owned_option_unwrap(mut arguments: Vec<Value>) -> Result<Value, String> 
         .and_then(|item| item.ok_or_else(|| "called `unwrap` on `None`".to_owned()))
 }
 
+#[cfg(test)]
 fn owned_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value {
     Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(items, element_type)))
-}
-
-fn tuple_value(values: Vec<Value>) -> Value {
-    let element_types = values
-        .iter()
-        .map(|value| Type::of_value(value).unwrap_or(Type::Unknown))
-        .collect();
-    Value::Tuple(Rc::new(IndexedStorage {
-        active_iterators: std::cell::Cell::new(0),
-        elements: RefCell::new(
-            values
-                .into_iter()
-                .map(|value| FieldSlot {
-                    type_annotation: Type::of_value(&value).unwrap_or(Type::Unknown),
-                    value: Some(value),
-                    references: 0,
-                })
-                .collect(),
-        ),
-        element_type: RefCell::new(Some(Type::Tuple(element_types))),
-    }))
 }
 
 fn import_receiver(value: &Value) -> Result<Value, String> {
@@ -799,28 +694,5 @@ mod tests {
             .unwrap_err()
             .contains("mutable binding")
         );
-    }
-
-    #[test]
-    fn enumerate_uses_the_shared_builtin_iterator_path() {
-        use rils_builtins::BuiltinId;
-
-        let enumerated = call(
-            BuiltinId::IteratorEnumerate,
-            &[owned_iterator_value(
-                VecDeque::from([Value::from_i32(9)]),
-                Type::I32,
-            )],
-        )
-        .unwrap();
-        let Value::OwnedIterator(iterator) = enumerated else {
-            panic!("enumerate must return a built-in iterator");
-        };
-        let Value::Tuple(tuple) = iterator.items.borrow_mut().pop_front().unwrap() else {
-            panic!("enumerate item must be a tuple");
-        };
-        let fields = tuple.elements.borrow();
-        assert_eq!(fields[0].value, Some(Value::Usize(0)));
-        assert_eq!(fields[1].value, Some(Value::from_i32(9)));
     }
 }
