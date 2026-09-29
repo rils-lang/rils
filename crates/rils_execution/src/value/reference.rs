@@ -155,9 +155,6 @@ impl ReferenceValue {
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
-        if !super::native_layouts::vec::matches(sequence.descriptor().layout().rils_type()) {
-            return Err("dynamic value is not a Vec".into());
-        }
         sequence
             .descriptor()
             .layout()

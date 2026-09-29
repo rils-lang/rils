@@ -48,16 +48,12 @@ pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
                 element_type,
             )
         }
-        Value::Dynamic(object)
-            if crate::value::native_layouts::vec::matches(
-                object.descriptor().layout().rils_type(),
-            ) =>
-        {
+        Value::Dynamic(object) if object.descriptor().layout().sequence_item().is_some() => {
             let element_type = object
                 .descriptor()
                 .layout()
                 .sequence_item()
-                .ok_or("native Vec has no item layout")?
+                .ok_or("native sequence has no item layout")?
                 .rils_type()
                 .clone();
             let (length, ledger) = object.with(|payload| {
@@ -73,7 +69,7 @@ pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
                 element_type,
             )
         }
-        _ => return Err("iter receiver is not an array or Vec".into()),
+        _ => return Err("iter receiver is not an indexed sequence".into()),
     };
     Ok(Value::BorrowedIndexedIterator(Rc::new(
         BorrowedIndexedIteratorValue {
