@@ -298,7 +298,7 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
             // its declaration moves to a native symbol.
             assert_eq!(id.member_name(), Some(member.name));
         } else if rils_builtins::RETIRED_COMPATIBILITY_IDS.contains(&id) {
-            assert_eq!(id.member_name(), Some("into_iter"));
+            assert!(id.member_name().is_some());
         } else {
             let intrinsic = intrinsic(id).unwrap_or_else(|| {
                 panic!(
@@ -400,12 +400,13 @@ fn exported_trait_impl_methods_keep_public_names_and_range_next_is_native() {
 #[test]
 fn migrated_ref_cell_exposes_lexical_reference_signatures() {
     let cell = builtin("RefCell").expect("native RefCell declaration");
-    for (name, mutable, id) in [
-        ("borrow", false, BuiltinId::RefCellBorrow),
-        ("borrow_mut", true, BuiltinId::RefCellBorrowMut),
-    ] {
+    for (name, mutable) in [("borrow", false), ("borrow_mut", true)] {
         let method = cell.member(name).expect("borrow method");
-        assert_eq!(method.builtin_id, Some(id));
+        assert_eq!(method.builtin_id, None);
+        let symbol = method.native_symbol.expect("native method symbol");
+        let (owner, resolved) = rils_builtins::native_member_owner(symbol).unwrap();
+        assert_eq!(owner.path, cell.path);
+        assert!(std::ptr::eq(resolved, method));
         assert_eq!(
             method.signature.unwrap().result,
             TypePattern::Reference {

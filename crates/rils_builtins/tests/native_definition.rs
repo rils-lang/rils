@@ -63,16 +63,13 @@ fn shared_handle_methods_use_the_existing_runtime_ids() {
 }
 
 #[test]
-fn cell_methods_use_the_existing_runtime_ids() {
+fn cell_methods_export_native_symbols_without_runtime_ids() {
     let published = builtin("Cell").expect("Cell is in the public catalog");
     assert_eq!(published.path, native_definitions::cell::DECLARATION.path);
     for method in ["new", "get", "set", "replace"] {
         let member = published.member(method).expect("Cell method");
-        assert!(member.builtin_id.is_some());
-        assert_eq!(
-            member.native_symbol,
-            member.builtin_id.and_then(|id| id.canonical_path())
-        );
+        assert_eq!(member.builtin_id, None);
+        assert!(member.native_symbol.is_some());
     }
 }
 

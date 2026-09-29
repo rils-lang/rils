@@ -2,7 +2,6 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use rils_builtins::BuiltinId;
 use rils_stdlib::stdlib::cell::{ErasedCell, ErasedRefCell};
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
@@ -13,25 +12,44 @@ use crate::{
 
 use super::NativeOwnedContext;
 
-fn symbol(id: BuiltinId) -> &'static str {
-    rils_builtins::runtime_member(id)
-        .and_then(|(_, member)| member.native_symbol)
-        .expect("Cell native method has a declaration path")
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Operation {
+    CellNew,
+    CellGet,
+    CellSet,
+    CellReplace,
+    RefCellNew,
+    RefCellBorrow,
+    RefCellBorrowMut,
+    RefCellReplace,
+}
+
+fn operation(path: &str) -> Option<Operation> {
+    let (owner, method) = rils_builtins::native_member_owner(path)?;
+    if method.builtin_id.is_some() || method.native_symbol != Some(path) {
+        return None;
+    }
+    let cell = rils_builtins::builtin("Cell")?;
+    let ref_cell = rils_builtins::builtin("RefCell")?;
+    match (
+        std::ptr::eq(owner, cell),
+        std::ptr::eq(owner, ref_cell),
+        method.name,
+    ) {
+        (true, _, "new") => Some(Operation::CellNew),
+        (true, _, "get") => Some(Operation::CellGet),
+        (true, _, "set") => Some(Operation::CellSet),
+        (true, _, "replace") => Some(Operation::CellReplace),
+        (_, true, "new") => Some(Operation::RefCellNew),
+        (_, true, "borrow") => Some(Operation::RefCellBorrow),
+        (_, true, "borrow_mut") => Some(Operation::RefCellBorrowMut),
+        (_, true, "replace") => Some(Operation::RefCellReplace),
+        _ => None,
+    }
 }
 
 pub(super) fn is_owned_symbol(path: &str) -> bool {
-    [
-        BuiltinId::CellNew,
-        BuiltinId::CellGet,
-        BuiltinId::CellSet,
-        BuiltinId::CellReplace,
-        BuiltinId::RefCellNew,
-        BuiltinId::RefCellBorrow,
-        BuiltinId::RefCellBorrowMut,
-        BuiltinId::RefCellReplace,
-    ]
-    .into_iter()
-    .any(|id| symbol(id) == path)
+    operation(path).is_some()
 }
 
 pub(super) fn call_symbol(path: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
@@ -46,20 +64,9 @@ pub(super) fn call_owned_symbol(
     mut arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
-    let id = [
-        BuiltinId::CellNew,
-        BuiltinId::CellGet,
-        BuiltinId::CellSet,
-        BuiltinId::CellReplace,
-        BuiltinId::RefCellNew,
-        BuiltinId::RefCellBorrow,
-        BuiltinId::RefCellBorrowMut,
-        BuiltinId::RefCellReplace,
-    ]
-    .into_iter()
-    .find(|id| symbol(*id) == path)?;
+    let operation = operation(path)?;
     Some((|| {
-        if matches!(id, BuiltinId::CellNew | BuiltinId::RefCellNew) {
+        if matches!(operation, Operation::CellNew | Operation::RefCellNew) {
             if arguments.len() != 1 {
                 return Err("Cell::new expects one value".into());
             }
@@ -69,7 +76,7 @@ pub(super) fn call_owned_symbol(
                 RecordLayoutResolver::with_enums(&context.structs, &context.enums).resolve(&ty)?;
             let native = NativeRecordCodec::with_definitions(&context.structs, &context.enums)
                 .into_native(value, item_layout.clone())?;
-            let (layout, payload) = if id == BuiltinId::CellNew {
+            let (layout, payload) = if operation == Operation::CellNew {
                 let layout = DynamicLayout::of::<ErasedCell>(Type::Named {
                     name: "Cell".into(),
                     arguments: vec![ty],
@@ -95,10 +102,10 @@ pub(super) fn call_owned_symbol(
             return native_value(layout, payload);
         }
         if matches!(
-            id,
-            BuiltinId::RefCellBorrow | BuiltinId::RefCellBorrowMut | BuiltinId::RefCellReplace
+            operation,
+            Operation::RefCellBorrow | Operation::RefCellBorrowMut | Operation::RefCellReplace
         ) {
-            let expected = if id == BuiltinId::RefCellReplace {
+            let expected = if operation == Operation::RefCellReplace {
                 2
             } else {
                 1
@@ -125,18 +132,18 @@ pub(super) fn call_owned_symbol(
                 return Err("expected RefCell receiver".into());
             }
             let item_ty = types.first().ok_or("RefCell has no item type")?;
-            return match id {
-                BuiltinId::RefCellBorrow | BuiltinId::RefCellBorrowMut => {
+            return match operation {
+                Operation::RefCellBorrow | Operation::RefCellBorrowMut => {
                     let reference = ReferenceValue::new_dynamic_cell(
                         object,
-                        id == BuiltinId::RefCellBorrowMut,
+                        operation == Operation::RefCellBorrowMut,
                         guard,
                         context.structs.clone(),
                         context.enums.clone(),
                     )?;
                     Ok(Value::Reference(Rc::new(reference)))
                 }
-                BuiltinId::RefCellReplace => {
+                Operation::RefCellReplace => {
                     let layout = RecordLayoutResolver::with_enums(&context.structs, &context.enums)
                         .resolve(item_ty)?;
                     let mut codec =
@@ -157,7 +164,13 @@ pub(super) fn call_owned_symbol(
                 _ => unreachable!(),
             };
         }
-        if arguments.len() != if id == BuiltinId::CellGet { 1 } else { 2 } {
+        if arguments.len()
+            != if operation == Operation::CellGet {
+                1
+            } else {
+                2
+            }
+        {
             return Err("Cell method received the wrong number of arguments".into());
         }
         let receiver = super::import_receiver(&arguments[0])?;
@@ -178,8 +191,8 @@ pub(super) fn call_owned_symbol(
         let item_layout =
             RecordLayoutResolver::with_enums(&context.structs, &context.enums).resolve(item_ty)?;
         let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
-        match id {
-            BuiltinId::CellGet => {
+        match operation {
+            Operation::CellGet => {
                 if !item_layout.is_copy() {
                     return Err("Cell::get requires a Copy value".into());
                 }
@@ -188,7 +201,7 @@ pub(super) fn call_owned_symbol(
                 })???;
                 codec.from_native(item)
             }
-            BuiltinId::CellSet | BuiltinId::CellReplace => {
+            Operation::CellSet | Operation::CellReplace => {
                 let value = arguments.pop().expect("checked argument count");
                 let native = codec.into_native(value, item_layout)?;
                 let old = object.with(|payload| {
@@ -196,7 +209,7 @@ pub(super) fn call_owned_symbol(
                         std::mem::replace(&mut *cell.0.borrow_mut(), native)
                     })
                 })??;
-                if id == BuiltinId::CellSet {
+                if operation == Operation::CellSet {
                     Ok(Value::Unit)
                 } else {
                     codec.from_native(old)

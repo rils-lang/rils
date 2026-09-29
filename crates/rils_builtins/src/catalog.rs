@@ -291,8 +291,16 @@ pub fn is_iterator_default_builtin(id: BuiltinId) -> bool {
         .is_some_and(is_iterator_default_method)
 }
 
-/// IDs retired from declarations but still accepted by older bytecode.
+/// IDs retired from declarations while the remaining runtime dispatch is migrated.
 pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] = &[
+    BuiltinId::CellNew,
+    BuiltinId::CellGet,
+    BuiltinId::CellSet,
+    BuiltinId::CellReplace,
+    BuiltinId::RefCellNew,
+    BuiltinId::RefCellBorrow,
+    BuiltinId::RefCellBorrowMut,
+    BuiltinId::RefCellReplace,
     BuiltinId::RangeIntoIter,
     BuiltinId::RangeNext,
     BuiltinId::VecPush,
@@ -356,12 +364,21 @@ pub fn runtime_member(id: BuiltinId) -> Option<(&'static str, &'static BuiltinMe
         })
 }
 
+pub fn native_member_owner(
+    symbol: &str,
+) -> Option<(&'static BuiltinDeclaration, &'static BuiltinMember)> {
+    BUILTINS.iter().find_map(|owner| {
+        owner
+            .members
+            .iter()
+            .find(|member| {
+                member.native_symbol == Some(symbol)
+                    || member.builtin_id.and_then(BuiltinId::canonical_path) == Some(symbol)
+            })
+            .map(|member| (owner, member))
+    })
+}
+
 pub fn native_member(symbol: &str) -> Option<&'static BuiltinMember> {
-    BUILTINS
-        .iter()
-        .flat_map(|owner| owner.members)
-        .find(|member| {
-            member.native_symbol == Some(symbol)
-                || member.builtin_id.and_then(BuiltinId::canonical_path) == Some(symbol)
-        })
+    native_member_owner(symbol).map(|(_, member)| member)
 }

@@ -23,7 +23,8 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
         .iter()
         .chain(exported_trait_methods(definition).map(|(method, _)| method))
         .map(|method| {
-            if !matches!(super::super::method_binding::MethodBinding::parse(method)?, super::super::method_binding::MethodBinding::Native) {
+            if !matches!(super::super::method_binding::MethodBinding::parse(method)?, super::super::method_binding::MethodBinding::Native)
+                || method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge")) {
                 return Ok(quote!());
             }
             let name = &method.sig.ident;
@@ -71,7 +72,8 @@ fn boxed_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream
         .methods
         .iter()
         .map(|method| {
-            if !matches!(super::super::method_binding::MethodBinding::parse(method)?, super::super::method_binding::MethodBinding::Native) {
+            if !matches!(super::super::method_binding::MethodBinding::parse(method)?, super::super::method_binding::MethodBinding::Native)
+                || method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge")) {
                 return Ok(quote!());
             }
             let name = &method.sig.ident;

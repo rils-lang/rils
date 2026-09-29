@@ -25,7 +25,6 @@ mod native {
     impl<T> Cell<T> {
         /// Creates a cell containing a value.
         #[export_rils]
-        #[rils_legacy_id(core::cell::cell::new)]
         #[rils_native_bridge]
         pub fn new(value: T) -> Self {
             Self(std::cell::Cell::new(value))
@@ -33,7 +32,6 @@ mod native {
 
         /// Copies the current value.
         #[export_rils]
-        #[rils_legacy_id(core::cell::cell::get)]
         #[rils_native_bridge]
         pub fn get(&self) -> T
         where
@@ -44,7 +42,6 @@ mod native {
 
         /// Replaces the current value.
         #[export_rils]
-        #[rils_legacy_id(core::cell::cell::set)]
         #[rils_native_bridge]
         pub fn set(&self, value: T) {
             self.0.set(value);
@@ -52,7 +49,6 @@ mod native {
 
         /// Replaces and returns the previous value.
         #[export_rils]
-        #[rils_legacy_id(core::cell::cell::replace)]
         #[rils_native_bridge]
         pub fn replace(&self, value: T) -> T {
             self.0.replace(value)
@@ -80,7 +76,6 @@ mod native {
     impl<T> RefCell<T> {
         /// Creates a dynamically checked cell.
         #[export_rils]
-        #[rils_legacy_id(core::ref_cell::new)]
         #[rils_native_bridge]
         pub fn new(value: T) -> Self {
             Self(std::cell::RefCell::new(value))
@@ -88,7 +83,6 @@ mod native {
 
         /// Borrows the contained value for reading.
         #[export_rils]
-        #[rils_legacy_id(core::ref_cell::borrow)]
         #[rils_native_bridge]
         #[rils_return(&T)]
         pub fn borrow(&self) -> std::cell::Ref<'_, T> {
@@ -97,7 +91,6 @@ mod native {
 
         /// Borrows the contained value for writing.
         #[export_rils]
-        #[rils_legacy_id(core::ref_cell::borrow_mut)]
         #[rils_native_bridge]
         #[rils_return(&mut T)]
         pub fn borrow_mut(&self) -> std::cell::RefMut<'_, T> {
@@ -106,7 +99,6 @@ mod native {
 
         /// Replaces and returns the previous value.
         #[export_rils]
-        #[rils_legacy_id(core::ref_cell::replace)]
         #[rils_native_bridge]
         pub fn replace(&self, value: T) -> T {
             self.0.replace(value)
