@@ -46,7 +46,7 @@ mod native {
 
         /// Returns the Ok value or fails.
         #[export_rils]
-        #[rils_legacy_id(core::result::result::unwrap)]
+        #[rils_native_bridge]
         pub fn unwrap(self) -> T
         where
             E: std::fmt::Display,
@@ -59,7 +59,7 @@ mod native {
 
         /// Returns the Ok value or the supplied default.
         #[export_rils]
-        #[rils_legacy_id(core::result::result::unwrap_or)]
+        #[rils_native_bridge]
         pub fn unwrap_or(self, default: T) -> T {
             match self {
                 Self::Ok(value) => value,
@@ -69,7 +69,7 @@ mod native {
 
         /// Returns the Ok value or fails with the supplied message.
         #[export_rils]
-        #[rils_legacy_id(core::result::result::expect)]
+        #[rils_native_bridge]
         pub fn expect(self, message: String) -> T
         where
             E: std::fmt::Display,
@@ -82,7 +82,7 @@ mod native {
 
         /// Returns the Err value or fails when the Result is Ok.
         #[export_rils]
-        #[rils_legacy_id(core::result::result::unwrap_err)]
+        #[rils_native_bridge]
         pub fn unwrap_err(self) -> E
         where
             T: std::fmt::Display,
@@ -95,7 +95,7 @@ mod native {
 
         /// Returns the Err value or fails with the supplied message when the Result is Ok.
         #[export_rils]
-        #[rils_legacy_id(core::result::result::expect_err)]
+        #[rils_native_bridge]
         pub fn expect_err(self, message: String) -> E
         where
             T: std::fmt::Display,

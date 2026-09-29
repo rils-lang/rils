@@ -44,13 +44,11 @@ fn option_value(value: OptionValue, element_type: Option<Type>) -> Value {
     }
 }
 
-pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    use rils_builtins::BuiltinId;
-
-    match id {
-        BuiltinId::OptionUnwrap => {
+pub(super) fn call(owner: &str, method: &str, arguments: &[Value]) -> Result<Value, String> {
+    match (owner, method) {
+        ("Option", "unwrap") => {
             if matches!(import_receiver(&arguments[0])?, Value::Result { .. }) {
-                return call(BuiltinId::ResultUnwrap, arguments);
+                return call("Result", "unwrap", arguments);
             }
             let (value, _) = option_state(&arguments[0])?;
             if value.is_none() {
@@ -58,16 +56,16 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             }
             value.unwrap().clone_owned()
         }
-        BuiltinId::ResultUnwrap => {
+        ("Result", "unwrap") => {
             let (value, _, _) = result_state(&arguments[0])?;
             if let NativeResult::Err(error) = &value {
                 return Err(format!("called `unwrap` on Err({error})"));
             }
             value.unwrap().clone_owned()
         }
-        BuiltinId::OptionUnwrapOr => {
+        ("Option", "unwrap_or") => {
             if matches!(import_receiver(&arguments[0])?, Value::Result { .. }) {
-                return call(BuiltinId::ResultUnwrapOr, arguments);
+                return call("Result", "unwrap_or", arguments);
             }
             let (value, element_type) = option_state(&arguments[0])?;
             let default = &arguments[1];
@@ -81,7 +79,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             }
             value.unwrap_or(Rc::new(default.clone())).clone_owned()
         }
-        BuiltinId::ResultUnwrapOr => {
+        ("Result", "unwrap_or") => {
             let (value, ok_type, _) = result_state(&arguments[0])?;
             let default = &arguments[1];
             if let Some(expected) = ok_type
@@ -94,9 +92,9 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             }
             value.unwrap_or(Rc::new(default.clone())).clone_owned()
         }
-        BuiltinId::OptionExpect => {
+        ("Option", "expect") => {
             if matches!(import_receiver(&arguments[0])?, Value::Result { .. }) {
-                return call(BuiltinId::ResultExpect, arguments);
+                return call("Result", "expect", arguments);
             }
             let message = arguments[1]
                 .as_string()
@@ -107,7 +105,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             }
             value.expect(message.to_string()).clone_owned()
         }
-        BuiltinId::ResultExpect => {
+        ("Result", "expect") => {
             let message = arguments[1]
                 .as_string()
                 .ok_or("expect message must be string")?;
@@ -117,14 +115,14 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
             }
             value.expect(message.to_string()).clone_owned()
         }
-        BuiltinId::ResultUnwrapErr => {
+        ("Result", "unwrap_err") => {
             let (value, _, _) = result_state(&arguments[0])?;
             if let NativeResult::Ok(ok) = &value {
                 return Err(format!("called `unwrap_err` on Ok({ok})"));
             }
             value.unwrap_err().clone_owned()
         }
-        BuiltinId::ResultExpectErr => {
+        ("Result", "expect_err") => {
             let (value, _, _) = result_state(&arguments[0])?;
             if let NativeResult::Ok(ok) = &value {
                 let message = arguments[1]
@@ -137,7 +135,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 .ok_or("expect_err message must be string")?;
             value.expect_err(message.to_string()).clone_owned()
         }
-        BuiltinId::OptionTake => {
+        ("Option", "take") => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("Option::take requires a mutable binding".into());
             };
@@ -151,7 +149,7 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 .map_err(assignment_error_message)?;
             Ok(option_value(previous, element_type))
         }
-        BuiltinId::OptionOr | BuiltinId::OptionXor => {
+        ("Option", "or" | "xor") => {
             let (left, left_type) = option_state(&arguments[0])?;
             let (right, right_type) = option_state(&arguments[1])?;
             let element_type = crate::types::merge_types(
@@ -159,14 +157,14 @@ pub(super) fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<
                 right_type.as_ref().unwrap_or(&Type::Unknown),
             )
             .ok_or_else(|| "Option operand types do not match".to_string())?;
-            let result = if id == BuiltinId::OptionOr {
+            let result = if method == "or" {
                 left.or(right)
             } else {
                 left.xor(right)
             };
             Ok(option_value(result, Some(element_type)))
         }
-        BuiltinId::OptionReplace => {
+        ("Option", "replace") => {
             let Value::Reference(reference) = &arguments[0] else {
                 return Err("replace receiver must be a reference".into());
             };

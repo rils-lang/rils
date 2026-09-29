@@ -90,18 +90,23 @@ pub fn call_native_owned_symbol(
     arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
-    if rils_builtins::native_member(symbol).and_then(|member| member.builtin_id)
-        == Some(rils_builtins::BuiltinId::OptionUnwrap)
-    {
+    if is_option_unwrap_symbol(symbol) {
         return call_owned(rils_builtins::BuiltinId::OptionUnwrap, arguments);
     }
     native::call_owned_symbol(symbol, arguments, context)
 }
 
 pub fn requires_owned_native_call(symbol: &str) -> bool {
-    rils_builtins::native_member(symbol).and_then(|member| member.builtin_id)
-        == Some(rils_builtins::BuiltinId::OptionUnwrap)
-        || native::is_owned_symbol(symbol)
+    is_option_unwrap_symbol(symbol) || native::is_owned_symbol(symbol)
+}
+
+fn is_option_unwrap_symbol(symbol: &str) -> bool {
+    let Some((owner, member)) = rils_builtins::native_member_owner(symbol) else {
+        return false;
+    };
+    rils_builtins::builtin("Option").is_some_and(|option| {
+        std::ptr::eq(owner, option) && member.name == "unwrap" && member.native_bridge
+    })
 }
 
 pub fn call_native_symbol_with_callback<E>(

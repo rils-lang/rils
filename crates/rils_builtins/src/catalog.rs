@@ -94,6 +94,8 @@ pub struct BuiltinMember {
     pub runtime_import: Option<&'static str>,
     /// Generated native implementation path, when this method has a direct bridge.
     pub native_symbol: Option<&'static str>,
+    /// The declaration explicitly supplies a type-erased native adapter.
+    pub native_bridge: bool,
     /// Whether a trait member must be supplied by user implementations.
     pub required: bool,
     pub type_parameters: &'static [&'static str],

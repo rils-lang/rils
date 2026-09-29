@@ -368,6 +368,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     indexed_view: false,
                     runtime_import: None,
                     native_symbol: None,
+                    native_bridge: false,
                     required: false,
                     type_parameters: &[],
                     documentation: #documentation,
@@ -431,6 +432,10 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                 .type_params()
                 .map(|parameter| parameter.ident.to_string())
                 .collect::<Vec<_>>();
+            let native_bridge = method
+                .attrs
+                .iter()
+                .any(|attribute| attribute.path().is_ident("rils_native_bridge"));
             Ok(quote! {
                 crate::BuiltinMember {
                     name: #name,
@@ -446,6 +451,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     indexed_view: false,
                     runtime_import: None,
                     native_symbol: #native_symbol,
+                    native_bridge: #native_bridge,
                     required: true,
                     type_parameters: &[#(#type_parameters),*],
                     documentation: #documentation,
@@ -512,6 +518,13 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
 }
 
 fn supports_direct_bridge(item: &ItemEnum, method: &ImplItemFn) -> bool {
+    if method
+        .attrs
+        .iter()
+        .any(|attribute| attribute.path().is_ident("rils_native_bridge"))
+    {
+        return true;
+    }
     if callback_operation(item, method).is_some() {
         return true;
     }
@@ -671,6 +684,7 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         .collect::<Vec<_>>();
     let implementations = definition.methods.iter().map(|method| {
         let name = &method.sig.ident;
+        let owner = definition.item.ident.to_string();
         let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
         if callback_operation(&definition.item, method).is_some() {
             return Ok(quote! { #id_path => Some(Err("native callback context is unavailable".to_owned())) });
@@ -689,6 +703,16 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
             method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
             method_binding::MethodBinding::Native if !supports_direct_bridge(&definition.item, method) => return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion")),
             method_binding::MethodBinding::Native => {}
+        }
+        if method.attrs.iter().any(|attribute| attribute.path().is_ident("rils_native_bridge")) {
+            let arity = method.sig.inputs.len();
+            return Ok(quote! {
+                #id_path => Some(if arguments.len() == #arity {
+                    super::super::option_result::call(#owner, stringify!(#name), arguments)
+                } else {
+                    Err(format!("native method expects {} arguments, found {}", #arity, arguments.len()))
+                })
+            });
         }
         if method.sig.inputs.len() != 1 {
             return Err(Error::new_spanned(&method.sig, "native bridge supports methods without arguments"));

@@ -48,6 +48,7 @@ struct BuiltinMember {
     indexed_view: bool,
     runtime_import: Option<&'static str>,
     native_symbol: Option<&'static str>,
+    native_bridge: bool,
     required: bool,
     type_parameters: &'static [&'static str],
     documentation: &'static str,
@@ -103,6 +104,12 @@ fn rils_source_generates_variants_methods_signatures_docs_and_ids() {
             .members
             .iter()
             .all(|member| member.native_symbol.is_none())
+    );
+    assert!(
+        FIXTURE_BUILTIN
+            .members
+            .iter()
+            .all(|member| !member.native_bridge)
     );
     assert!(
         FIXTURE_BUILTIN

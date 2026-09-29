@@ -599,6 +599,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     indexed_view: false,
                     runtime_import: None,
                     native_symbol: None,
+                    native_bridge: false,
                     required: false,
                     type_parameters: &[],
                     documentation: #docs,
@@ -625,6 +626,10 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                 .attrs
                 .iter()
                 .any(|attr| attr.path().is_ident("rils_indexed_view"));
+            let native_bridge = method
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("rils_native_bridge"));
             let (builtin_id, runtime_import, native_symbol) =
                 match super::method_binding::MethodBinding::parse(method)? {
                     super::method_binding::MethodBinding::Native => {
@@ -721,6 +726,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     indexed_view: #indexed_view,
                     runtime_import: #runtime_import,
                     native_symbol: #native_symbol,
+                    native_bridge: #native_bridge,
                     required: true,
                     type_parameters: &[#(#generics),*],
                     documentation: #method_docs,

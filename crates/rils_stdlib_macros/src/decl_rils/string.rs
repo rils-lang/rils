@@ -238,6 +238,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
                 indexed_view: false,
                 runtime_import: None,
                 native_symbol: Some(#id_path),
+                native_bridge: false,
                 required: true,
                 type_parameters: &[],
                 documentation: #docs,

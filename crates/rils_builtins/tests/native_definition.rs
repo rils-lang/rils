@@ -105,6 +105,33 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
     assert_eq!(is_some.builtin_id, None);
     assert_eq!(is_some.native_symbol, Some("core::option::option::is_some"));
     assert_eq!(is_some.signature.unwrap().result, TypePattern::Bool);
+    assert!(!is_some.native_bridge);
+    for (owner, methods) in [
+        (
+            "Option",
+            &[
+                "unwrap",
+                "unwrap_or",
+                "expect",
+                "take",
+                "or",
+                "xor",
+                "replace",
+            ][..],
+        ),
+        (
+            "Result",
+            &["unwrap", "unwrap_or", "expect", "unwrap_err", "expect_err"][..],
+        ),
+    ] {
+        let declaration = builtin(owner).unwrap();
+        for method in methods {
+            let member = declaration.member(method).unwrap();
+            assert!(member.native_bridge, "{owner}::{method}");
+            assert_eq!(member.builtin_id, None);
+            assert!(member.native_symbol.is_some());
+        }
+    }
     assert_eq!(
         is_some.documentation,
         "Returns true when a value is present."

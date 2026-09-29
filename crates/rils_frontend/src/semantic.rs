@@ -1020,12 +1020,34 @@ fn unqualified_builtin_member(name: &str) -> Option<&'static rils_builtins::Buil
         .iter()
         .flat_map(|declaration| declaration.members)
         .filter(|member| member.name == name && member.builtin_id.is_some());
+    if let Some(first) = candidates.next() {
+        let first_id = first.builtin_id?;
+        return (!candidates.any(|candidate| {
+            candidate.receiver != first.receiver
+                || candidate.builtin_id.is_none_or(|candidate_id| {
+                    !first_id.shares_direct_runtime_implementation(candidate_id)
+                })
+        }))
+        .then_some(first);
+    }
+
+    // The two exported sum types use one erased adapter for their extraction
+    // methods. An unknown receiver can use that adapter when their signatures
+    // agree; the concrete value selects the Option or Result branch at runtime.
+    let mut candidates = rils_builtins::BUILTINS
+        .iter()
+        .filter(|declaration| declaration.kind == rils_builtins::BuiltinKind::Enum)
+        .flat_map(|declaration| declaration.members)
+        .filter(|member| member.name == name && member.native_bridge);
     let first = candidates.next()?;
-    let first_id = first.builtin_id?;
     (!candidates.any(|candidate| {
         candidate.receiver != first.receiver
-            || candidate.builtin_id.is_none_or(|candidate_id| {
-                !first_id.shares_direct_runtime_implementation(candidate_id)
+            || candidate.signature.is_none_or(|signature| {
+                first.signature.is_none_or(|first_signature| {
+                    signature.parameters != first_signature.parameters
+                        || signature.result != first_signature.result
+                        || signature.variadic != first_signature.variadic
+                })
             })
     }))
     .then_some(first)

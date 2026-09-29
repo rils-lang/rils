@@ -20,8 +20,11 @@ fn float_intrinsic_types_preserve_concrete_float_type() {
 }
 
 #[test]
-fn runtime_and_native_signatures_keep_their_distinct_results() {
-    let option = erased_runtime_signature(rils_builtins::BuiltinId::OptionReplace).unwrap();
+fn sum_and_string_native_signatures_keep_their_distinct_results() {
+    let option = erased_builtin_member_signature(
+        rils_builtins::native_member("core::option::option::replace").unwrap(),
+    )
+    .unwrap();
     let string = erased_builtin_member_signature(
         rils_builtins::native_member("core::string::string::replace").unwrap(),
     )
