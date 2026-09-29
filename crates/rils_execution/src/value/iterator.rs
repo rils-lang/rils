@@ -134,6 +134,7 @@ pub struct BorrowedIndexedIteratorValue {
     pub index: std::cell::Cell<usize>,
     pub length: usize,
     pub element_type: Type,
+    pub map_entries: bool,
 }
 
 pub enum IndexedIteratorStorage {
@@ -145,6 +146,28 @@ pub enum IndexedIteratorStorage {
 }
 
 impl BorrowedIndexedIteratorValue {
+    pub fn item_type(&self) -> Type {
+        if self.map_entries {
+            let Type::Tuple(fields) = &self.element_type else {
+                unreachable!("map entry has a pair layout")
+            };
+            Type::Tuple(
+                fields
+                    .iter()
+                    .map(|field| Type::Reference {
+                        mutable: false,
+                        inner: Box::new(field.clone()),
+                    })
+                    .collect(),
+            )
+        } else {
+            Type::Reference {
+                mutable: false,
+                inner: Box::new(self.element_type.clone()),
+            }
+        }
+    }
+
     pub fn next(&self) -> Result<Option<Value>, String> {
         match (&self.storage, self.source.read()?) {
             (
@@ -158,6 +181,42 @@ impl BorrowedIndexedIteratorValue {
         let index = self.index.get();
         if index >= self.length {
             return Ok(None);
+        }
+        if self.map_entries {
+            let IndexedIteratorStorage::Native { object, .. } = &self.storage else {
+                return Err("map iterator has no native entry storage".into());
+            };
+            let fields = (0..2)
+                .map(|field| {
+                    ReferenceValue::new_guarded_dynamic_indexed_field(
+                        object.clone(),
+                        index,
+                        Some(field),
+                        false,
+                        Some(self.source.clone()),
+                    )
+                    .map(|reference| Value::Reference(Rc::new(reference)))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let types = match self.item_type() {
+                Type::Tuple(types) => types,
+                _ => unreachable!(),
+            };
+            let slots = fields
+                .into_iter()
+                .zip(types)
+                .map(|(value, type_annotation)| FieldSlot {
+                    value: Some(value),
+                    type_annotation,
+                    references: 0,
+                })
+                .collect();
+            self.index.set(index + 1);
+            return Ok(Some(Value::Tuple(Rc::new(IndexedStorage {
+                active_iterators: std::cell::Cell::new(0),
+                elements: RefCell::new(slots),
+                element_type: RefCell::new(None),
+            }))));
         }
         let reference = match &self.storage {
             IndexedIteratorStorage::Legacy(storage) => ReferenceValue::new_guarded_indexed_element(

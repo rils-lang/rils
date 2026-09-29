@@ -28,6 +28,14 @@ pub(super) fn reject_growth(sequence: &IndexedStorage) -> Result<(), String> {
 }
 
 pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
+    borrow_inner(arguments, false)
+}
+
+pub(super) fn borrow_map(arguments: &[Value]) -> Result<Value, String> {
+    borrow_inner(arguments, true)
+}
+
+fn borrow_inner(arguments: &[Value], map_entries: bool) -> Result<Value, String> {
     let Some(Value::Reference(receiver)) = arguments.first() else {
         return Err("indexed iterator method requires a borrowed receiver".into());
     };
@@ -78,6 +86,7 @@ pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
             index: Cell::new(0),
             length,
             element_type,
+            map_entries,
         },
     )))
 }
@@ -90,13 +99,7 @@ pub(super) fn next(arguments: &[Value]) -> Result<Value, String> {
         return Err("Iter::next requires `&mut self`".into());
     }
     let (value, item_type) = match receiver.read()? {
-        Value::BorrowedIndexedIterator(iterator) => (
-            iterator.next()?,
-            Type::Reference {
-                mutable: false,
-                inner: Box::new(iterator.element_type.clone()),
-            },
-        ),
+        Value::BorrowedIndexedIterator(iterator) => (iterator.next()?, iterator.item_type()),
         Value::BorrowedMapIterator(iterator) => (iterator.next()?, iterator.item_type()),
         Value::BorrowedSetIterator(iterator) => (iterator.next()?, iterator.item_type()),
         _ => return Err("next receiver is not Iter".into()),

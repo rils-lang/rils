@@ -25,6 +25,12 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
         (Value::HashSet(_), Type::Named { name, arguments }) => {
             name == "HashSet" && arguments.len() == 1
         }
+        (Value::HashMap(_), Type::Named { name, arguments }) => {
+            name == "HashMap" && arguments.len() == 2
+        }
+        (Value::BTreeMap(_), Type::Named { name, arguments }) => {
+            name == "BTreeMap" && arguments.len() == 2
+        }
         _ => false,
     };
     if !supported {
@@ -45,6 +51,12 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
         }
         Value::HashSet(set) => {
             Rc::strong_count(set) == 1 && set.borrowed.get() == 0 && set.entries.borrow().is_empty()
+        }
+        Value::HashMap(map) => {
+            Rc::strong_count(map) == 1 && map.borrowed.get() == 0 && map.entries.borrow().is_empty()
+        }
+        Value::BTreeMap(map) => {
+            Rc::strong_count(map) == 1 && map.borrowed.get() == 0 && map.entries.borrow().is_empty()
         }
         _ => false,
     };

@@ -17,6 +17,7 @@ mod callback;
 mod collection_iter;
 mod indexed_iter;
 mod native;
+mod native_map;
 mod native_set;
 pub(crate) use native::{StringOutput, string_input, usize_input as string_usize_input};
 pub mod native_value;
@@ -88,6 +89,9 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     }
 
     if let Some(result) = native_set::call(id, arguments) {
+        return result;
+    }
+    if let Some(result) = native_map::call(id, arguments) {
         return result;
     }
 
@@ -702,6 +706,10 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
             ) || crate::value::native_layouts::btree_set::matches(
                 object.descriptor().layout().rils_type(),
             ) || crate::value::native_layouts::hash_set::matches(
+                object.descriptor().layout().rils_type(),
+            ) || crate::value::native_layouts::hash_map::matches(
+                object.descriptor().layout().rils_type(),
+            ) || crate::value::native_layouts::btree_map::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {

@@ -80,6 +80,8 @@ impl Value {
                 | Self::BinaryHeap(_)
                 | Self::BTreeSet(_)
                 | Self::HashSet(_)
+                | Self::BTreeMap(_)
+                | Self::HashMap(_)
         ) {
             // The legacy constructor has no type argument until the binding
             // supplies one. Keep the unique owner so its empty storage can be
