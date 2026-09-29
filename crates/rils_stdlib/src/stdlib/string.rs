@@ -184,3 +184,14 @@ pub const NATIVE_ELEMENT_STRING: rils_native::ElementRegistration =
         matches: native_element_matches,
         clone_borrowed: clone_borrowed_element,
     };
+
+fn native_string_key(
+    item: rils_value::DynamicValueRef<'_>,
+) -> Result<rils_native::NativeKey, std::string::String> {
+    item.with_rust::<String, _>(|value| rils_native::NativeKey::String(value.as_ref().clone()))
+}
+
+pub const NATIVE_KEY_STRING: rils_native::KeyRegistration = rils_native::KeyRegistration {
+    matches: native_element_matches,
+    key: native_string_key,
+};

@@ -19,10 +19,17 @@ pub struct ElementRegistration {
     pub clone_borrowed: fn(DynamicValueRef<'_>) -> Result<DynamicValue, String>,
 }
 
+/// A native leaf's immutable identity for hash and ordered collections.
+pub struct KeyRegistration {
+    pub matches: fn(&Type) -> bool,
+    pub key: fn(DynamicValueRef<'_>) -> Result<crate::NativeKey, String>,
+}
+
 /// Immutable registration table. It stores function pointers, not runtime values.
 pub struct NativeRegistry {
     layouts: &'static [LayoutRegistration],
     elements: &'static [ElementRegistration],
+    pub(crate) keys: &'static [KeyRegistration],
 }
 
 impl NativeRegistry {
@@ -30,7 +37,23 @@ impl NativeRegistry {
         layouts: &'static [LayoutRegistration],
         elements: &'static [ElementRegistration],
     ) -> Self {
-        Self { layouts, elements }
+        Self {
+            layouts,
+            elements,
+            keys: &[],
+        }
+    }
+
+    pub const fn with_keys(
+        layouts: &'static [LayoutRegistration],
+        elements: &'static [ElementRegistration],
+        keys: &'static [KeyRegistration],
+    ) -> Self {
+        Self {
+            layouts,
+            elements,
+            keys,
+        }
     }
 
     pub fn layout(

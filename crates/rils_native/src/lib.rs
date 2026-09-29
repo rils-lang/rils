@@ -1,5 +1,7 @@
 //! Registration protocol shared by standard-library definitions and runtimes.
 
+mod key;
 mod registry;
 
-pub use registry::{ElementRegistration, LayoutRegistration, NativeRegistry};
+pub use key::NativeKey;
+pub use registry::{ElementRegistration, KeyRegistration, LayoutRegistration, NativeRegistry};

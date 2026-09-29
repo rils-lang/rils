@@ -33,6 +33,7 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
 
     let mut layouts = Vec::new();
     let mut elements = Vec::new();
+    let mut keys = Vec::new();
     let mut dependencies = Vec::new();
     for relative in files {
         let absolute = root.join(&relative);
@@ -65,6 +66,8 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                 layouts.push(quote!(#module::#ident));
             } else if name == "NATIVE_ELEMENT" || name.starts_with("NATIVE_ELEMENT_") {
                 elements.push(quote!(#module::#ident));
+            } else if name == "NATIVE_KEY" || name.starts_with("NATIVE_KEY_") {
+                keys.push(quote!(#module::#ident));
             }
         }
         let tracked = format!(
@@ -80,7 +83,8 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
         #(#dependencies)*
         static LAYOUTS: &[rils_native::LayoutRegistration] = &[#(#layouts),*];
         static ELEMENTS: &[rils_native::ElementRegistration] = &[#(#elements),*];
-        static REGISTRY: rils_native::NativeRegistry = rils_native::NativeRegistry::new(LAYOUTS, ELEMENTS);
+        static KEYS: &[rils_native::KeyRegistration] = &[#(#keys),*];
+        static REGISTRY: rils_native::NativeRegistry = rils_native::NativeRegistry::with_keys(LAYOUTS, ELEMENTS, KEYS);
 
         pub fn registry() -> &'static rils_native::NativeRegistry {
             &REGISTRY
