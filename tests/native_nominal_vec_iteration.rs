@@ -83,3 +83,49 @@ fn borrowed_iter_reads_user_struct_with_owned_string_field() {
     "#;
     assert_both(source, Value::from_usize(5));
 }
+
+#[test]
+fn native_map_moves_user_values_when_iterator_advances() {
+    let source = r#"
+        struct Item { value: i32 }
+        let mut map: HashMap<i32, Item> = HashMap::new();
+        map.insert(7, Item { value: 42 });
+        let mut iterator = map.into_iter();
+        let entry = iterator.next().unwrap();
+        entry.1.value
+    "#;
+    assert_both(source, Value::from_i32(42));
+
+    let ordered = r#"
+        struct Item { value: i32 }
+        let mut map: BTreeMap<i32, Item> = BTreeMap::new();
+        map.insert(2, Item { value: 20 });
+        map.insert(1, Item { value: 22 });
+        let mut sum = 0;
+        for entry in map { sum = sum + entry.1.value; }
+        sum
+    "#;
+    assert_both(ordered, Value::from_i32(42));
+}
+
+#[test]
+fn native_set_owned_iterator_keeps_elements() {
+    let source = r#"
+        let mut set: BTreeSet<i32> = BTreeSet::new();
+        set.insert(5);
+        set.insert(2);
+        let mut iterator = set.into_iter();
+        iterator.next().unwrap() + iterator.next().unwrap()
+    "#;
+    assert_both(source, Value::from_i32(7));
+
+    let hashed = r#"
+        let mut set: HashSet<i32> = HashSet::new();
+        set.insert(5);
+        set.insert(2);
+        let mut sum = 0;
+        for value in set { sum = sum + value; }
+        sum
+    "#;
+    assert_both(hashed, Value::from_i32(7));
+}

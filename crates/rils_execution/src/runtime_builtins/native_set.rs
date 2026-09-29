@@ -27,8 +27,20 @@ fn owned_insert_kind(symbol: &str) -> Option<SetKind> {
         })
 }
 
+fn owned_into_iter_kind(symbol: &str) -> Option<SetKind> {
+    [("HashSet", SetKind::Hash), ("BTreeSet", SetKind::BTree)]
+        .into_iter()
+        .find_map(|(name, kind)| {
+            builtin(name)?
+                .members
+                .iter()
+                .any(|member| member.name == "into_iter" && member.native_symbol == Some(symbol))
+                .then_some(kind)
+        })
+}
+
 pub(super) fn is_owned_symbol(symbol: &str) -> bool {
-    owned_insert_kind(symbol).is_some()
+    owned_insert_kind(symbol).is_some() || owned_into_iter_kind(symbol).is_some()
 }
 
 pub(super) fn call_owned_symbol(
@@ -36,6 +48,26 @@ pub(super) fn call_owned_symbol(
     arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if let Some(kind) = owned_into_iter_kind(symbol) {
+        return Some((|| {
+            if arguments.len() != 1 {
+                return Err(format!("{}::into_iter expects one receiver", kind.name()));
+            }
+            let receiver = arguments.into_iter().next().expect("arity checked");
+            match receiver {
+                Value::Dynamic(object) if kind.matches(&object) => {
+                    crate::iteration::native_sequence_into_iterator(object, context)
+                }
+                value => super::call(
+                    match kind {
+                        SetKind::Hash => BuiltinId::HashSetIntoIter,
+                        SetKind::BTree => BuiltinId::BtreeSetIntoIter,
+                    },
+                    &[value],
+                ),
+            }
+        })());
+    }
     let kind = owned_insert_kind(symbol)?;
     Some((|| {
         if arguments.len() != 2 {

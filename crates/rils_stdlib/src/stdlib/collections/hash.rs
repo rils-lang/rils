@@ -35,6 +35,7 @@ mod native {
         type Item = T;
         type IntoIter = Iterator<T>;
         /// Consumes the set and iterates over its values.
+        #[rils_native_bridge]
         #[rils_legacy_id(core::hash_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
             Iterator(self.0.into_iter().collect())
@@ -166,6 +167,7 @@ mod native {
         type Item = (K, V);
         type IntoIter = Iterator<(K, V)>;
         /// Consumes the map and iterates over owned key-value pairs.
+        #[rils_native_bridge]
         #[rils_legacy_id(core::hash_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
             Iterator(self.0.into_iter().collect())

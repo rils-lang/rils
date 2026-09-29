@@ -4,7 +4,10 @@ use std::rc::Rc;
 
 use crate::{
     Type, hash_collections, runtime_builtins,
-    value::{IndexedStorage, OwnedIteratorValue, Value, native_ops},
+    value::{
+        DynamicObject, IndexedStorage, OwnedIteratorValue, Value, native_ops,
+        record_codec::NativeRecordCodec,
+    },
 };
 
 pub enum IntoIteratorResult {
@@ -45,40 +48,28 @@ pub fn into_iterator_with_context(
                 object.descriptor().layout().rils_type(),
             ) =>
         {
-            runtime_builtins::call(
-                rils_builtins::BuiltinId::BtreeSetIntoIter,
-                &[Value::Dynamic(object)],
-            )?
+            native_sequence_into_iterator(object, context)?
         }
         Value::Dynamic(object)
             if crate::value::native_layouts::hash_set::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {
-            runtime_builtins::call(
-                rils_builtins::BuiltinId::HashSetIntoIter,
-                &[Value::Dynamic(object)],
-            )?
+            native_sequence_into_iterator(object, context)?
         }
         Value::Dynamic(object)
             if crate::value::native_layouts::hash_map::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {
-            runtime_builtins::call(
-                rils_builtins::BuiltinId::HashMapIntoIter,
-                &[Value::Dynamic(object)],
-            )?
+            native_sequence_into_iterator(object, context)?
         }
         Value::Dynamic(object)
             if crate::value::native_layouts::btree_map::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {
-            runtime_builtins::call(
-                rils_builtins::BuiltinId::BtreeMapIntoIter,
-                &[Value::Dynamic(object)],
-            )?
+            native_sequence_into_iterator(object, context)?
         }
         Value::HashMap(map) => hash_collections::call(
             rils_builtins::BuiltinId::HashMapIntoIter,
@@ -99,6 +90,24 @@ pub fn into_iterator_with_context(
         value => return Ok(IntoIteratorResult::UserDefined(value)),
     };
     Ok(IntoIteratorResult::Ready(iterator))
+}
+
+pub(crate) fn native_sequence_into_iterator(
+    object: DynamicObject,
+    context: &runtime_builtins::NativeOwnedContext,
+) -> Result<Value, String> {
+    let item_type = object
+        .descriptor()
+        .layout()
+        .sequence_item()
+        .ok_or("native collection has no item layout")?
+        .rils_type()
+        .clone();
+    let items = object.with_mut(|payload| payload.take_all_sequence_items())??;
+    let codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+    Ok(Value::OwnedIterator(Rc::new(
+        OwnedIteratorValue::from_native(items.into(), item_type, codec),
+    )))
 }
 
 fn owned_indexed_iterator(storage: Rc<IndexedStorage>) -> Result<Value, String> {

@@ -6,7 +6,7 @@ use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern, builtin};
 
 use crate::{
     Type,
-    value::{DynamicObject, OwnedIteratorValue, Value, record_codec},
+    value::{DynamicObject, Value, record_codec},
 };
 
 use super::{NativeOwnedContext, import_receiver, indexed_iter, vector};
@@ -234,18 +234,7 @@ pub(crate) fn into_iterator_with_context(
     object: DynamicObject,
     context: &NativeOwnedContext,
 ) -> Result<Value, String> {
-    let item_type = object
-        .descriptor()
-        .layout()
-        .sequence_item()
-        .ok_or("native Vec has no item layout")?
-        .rils_type()
-        .clone();
-    let items = object.with_mut(|payload| payload.take_all_sequence_items())??;
-    let codec = record_codec::NativeRecordCodec::with_definitions(&context.structs, &context.enums);
-    Ok(Value::OwnedIterator(Rc::new(
-        OwnedIteratorValue::from_native(items.into(), item_type, codec),
-    )))
+    crate::iteration::native_sequence_into_iterator(object, context)
 }
 
 pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
