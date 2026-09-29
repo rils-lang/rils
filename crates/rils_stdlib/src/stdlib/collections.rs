@@ -188,28 +188,24 @@ mod native {
 
         /// Returns the number of elements.
         #[export_rils]
-        #[rils_legacy_id(core::collections::binary_heap::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
         /// Returns whether the queue is empty.
         #[export_rils]
-        #[rils_legacy_id(core::collections::binary_heap::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
 
         /// Inserts an element, rejecting unsupported ordering types.
         #[export_rils]
-        #[rils_legacy_id(core::collections::binary_heap::push)]
         pub fn push(&mut self, value: T) {
             self.0.push(value);
         }
 
         /// Removes and returns the greatest element.
         #[export_rils]
-        #[rils_legacy_id(core::collections::binary_heap::pop)]
         pub fn pop(&mut self) -> Option<T> {
             match self.0.pop() {
                 Some(value) => Option::Some(value),
@@ -219,7 +215,6 @@ mod native {
 
         /// Explicitly clones the highest-priority element.
         #[export_rils]
-        #[rils_legacy_id(core::collections::binary_heap::peek_cloned)]
         pub fn peek_cloned(&self) -> Option<T> {
             match self.0.peek() {
                 Some(value) => Option::Some(value.clone()),
@@ -229,7 +224,6 @@ mod native {
 
         /// Removes all elements.
         #[export_rils]
-        #[rils_legacy_id(core::collections::binary_heap::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }

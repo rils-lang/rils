@@ -178,6 +178,7 @@ pub fn call_symbol(
         })
         .or_else(|| string::call_symbol(symbol, arguments))
         .or_else(|| super::vec_deque::call_symbol(symbol, arguments))
+        .or_else(|| super::binary_heap::call_symbol(symbol, arguments))
         .or_else(|| super::vector_dynamic::call_symbol(symbol, arguments))
         .or_else(|| vector::call_symbol(symbol, arguments))
         .or_else(|| range::call_symbol(symbol, arguments))
@@ -193,6 +194,8 @@ pub fn call_owned_symbol(
         boxed::call_owned_symbol(symbol, arguments, context)
     } else if super::vec_deque::is_owned_symbol(symbol) {
         super::vec_deque::call_owned_symbol(symbol, arguments, context)
+    } else if super::binary_heap::is_owned_symbol(symbol) {
+        super::binary_heap::call_owned_symbol(symbol, arguments, context)
     } else {
         super::vector_dynamic::call_owned_symbol(symbol, arguments, context)
     }
@@ -201,6 +204,7 @@ pub fn call_owned_symbol(
 pub fn is_owned_symbol(symbol: &str) -> bool {
     boxed::is_owned_symbol(symbol)
         || super::vec_deque::is_owned_symbol(symbol)
+        || super::binary_heap::is_owned_symbol(symbol)
         || super::vector_dynamic::is_owned_symbol(symbol)
 }
 

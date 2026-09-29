@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `BinaryHeap<T>` 的实例方法改为从标准库定义生成的原生符号调用；`push` 现在消费字符串等非 Copy 元素，并保持原有最大堆排序结果。
+
 - `VecDeque<T>` 的实例方法改为从标准库定义生成的原生符号调用；`push_front`、`push_back` 可直接移入 `Box<Node>` 等递归用户值，并从两端取回。
 
 - `Vec<T>::push` 和 `insert` 现在直接移入原生元素；`Vec<Box<Node>>` 及 `Vec<Node>` 中的递归用户类型可在解释器、VM 和字节码重载后正确存取。

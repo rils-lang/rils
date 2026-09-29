@@ -1,6 +1,6 @@
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
-use rils_builtins::BuiltinId;
+use rils_builtins::{BuiltinId, BuiltinMember, ReceiverMode, TypePattern};
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::DynamicValue;
 
@@ -16,11 +16,107 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             element_type: RefCell::new(Some(Type::Unknown)),
         })));
     }
+    call_named(
+        id.member_name().ok_or("unknown BinaryHeap operation")?,
+        arguments,
+    )
+}
+
+pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    let member = rils_builtins::builtin("BinaryHeap")?
+        .members
+        .iter()
+        .find(|member| member.native_symbol == Some(symbol))?;
+    Some(call_named(member.name, arguments))
+}
+
+fn owned_member(symbol: &str) -> Option<&'static BuiltinMember> {
+    let declaration = rils_builtins::builtin("BinaryHeap")?;
+    declaration.members.iter().find(|member| {
+        member.native_symbol == Some(symbol)
+            && member.receiver == Some(ReceiverMode::Mutable)
+            && member.signature.is_some_and(|signature| {
+                signature
+                    .parameters
+                    .iter()
+                    .any(|parameter| matches!(parameter, TypePattern::Generic(name) if declaration.type_parameters.contains(name)))
+            })
+    })
+}
+
+pub(super) fn is_owned_symbol(symbol: &str) -> bool {
+    owned_member(symbol).is_some()
+}
+
+pub(super) fn call_owned_symbol(
+    symbol: &str,
+    mut arguments: Vec<Value>,
+    context: &super::NativeOwnedContext,
+) -> Option<Result<Value, String>> {
+    let member = owned_member(symbol)?;
+    Some((|| {
+        if member.name != "push" {
+            return Err(format!(
+                "owned native BinaryHeap method `{}` is not supported",
+                member.name
+            ));
+        }
+        if arguments.len() != 2 {
+            return Err(format!(
+                "native method `{symbol}` expects 2 arguments, found {}",
+                arguments.len()
+            ));
+        }
+        let receiver = &arguments[0];
+        if !matches!(receiver, Value::Reference(reference) if reference.mutable) {
+            return Err("BinaryHeap mutation requires a mutable reference".into());
+        }
+        let receiver = match receiver {
+            Value::Reference(reference) => reference.read()?,
+            value => value.clone(),
+        };
+        let item = arguments.pop().expect("arity checked");
+        if !orderable(&item) {
+            return Err(format!(
+                "BinaryHeap does not support ordering {}",
+                item.type_name()
+            ));
+        }
+        match receiver {
+            Value::Dynamic(object)
+                if crate::value::native_layouts::binary_heap::matches(
+                    object.descriptor().layout().rils_type(),
+                ) =>
+            {
+                let layout = object
+                    .descriptor()
+                    .layout()
+                    .sequence_item()
+                    .ok_or("BinaryHeap has no native element layout")?
+                    .clone();
+                if !layout.rils_type().accepts(&item) {
+                    return Err(format!(
+                        "BinaryHeap expects {}, found {}",
+                        layout.rils_type(),
+                        item.type_name()
+                    ));
+                }
+                let mut codec = crate::value::record_codec::NativeRecordCodec::with_definitions(
+                    &context.structs,
+                    &context.enums,
+                );
+                let item = codec.into_native(item, layout)?;
+                push_dynamic_item(&object, item)
+            }
+            Value::BinaryHeap(heap) => push_heap_item(&heap, item),
+            _ => Err("expected BinaryHeap receiver".into()),
+        }
+    })())
+}
+
+fn call_named(name: &str, arguments: &[Value]) -> Result<Value, String> {
     let receiver = arguments.first().ok_or("missing BinaryHeap receiver")?;
-    let mutating = matches!(
-        id,
-        BuiltinId::BinaryHeapPush | BuiltinId::BinaryHeapPop | BuiltinId::BinaryHeapClear
-    );
+    let mutating = matches!(name, "push" | "pop" | "clear");
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("BinaryHeap mutation requires a mutable reference".into());
     }
@@ -33,16 +129,16 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             object.descriptor().layout().rils_type(),
         )
     {
-        return call_dynamic(id, arguments, &object);
+        return call_dynamic(name, arguments, &object);
     }
     let Value::BinaryHeap(heap) = super::import_receiver(receiver)? else {
         return Err("expected BinaryHeap receiver".into());
     };
-    call_heap(id, arguments, &heap)
+    call_heap(name, arguments, &heap)
 }
 
 fn call_dynamic(
-    id: BuiltinId,
+    name: &str,
     arguments: &[Value],
     object: &crate::value::DynamicObject,
 ) -> Result<Value, String> {
@@ -52,14 +148,14 @@ fn call_dynamic(
         .sequence_item()
         .ok_or("BinaryHeap has no native element layout")?;
     let item_type = item_layout.rils_type().clone();
-    match id {
-        BuiltinId::BinaryHeapLen => Ok(crate::numeric::native_usize(
+    match name {
+        "len" => Ok(crate::numeric::native_usize(
             object.with(|value| value.sequence_len())??,
         )),
-        BuiltinId::BinaryHeapIsEmpty => Ok(Value::Bool(
+        "is_empty" => Ok(Value::Bool(
             object.with(|value| value.sequence_len())?? == 0,
         )),
-        BuiltinId::BinaryHeapPush => {
+        "push" => {
             let item = arguments.get(1).ok_or("missing BinaryHeap element")?;
             if !orderable(item) {
                 return Err(format!(
@@ -68,22 +164,9 @@ fn call_dynamic(
                 ));
             }
             let item = crate::value::record_codec::into_native(item.clone(), item_layout.clone())?;
-            object.with_mut(|value| {
-                value.push_sequence_item(item)?;
-                let mut index = value.sequence_len()? - 1;
-                while index > 0 {
-                    let parent = (index - 1) / 2;
-                    if compare_native_items(value, index, parent)? != Ordering::Greater {
-                        break;
-                    }
-                    value.swap_sequence_items(index, parent)?;
-                    index = parent;
-                }
-                Ok::<(), String>(())
-            })??;
-            Ok(Value::Unit)
+            push_dynamic_item(object, item)
         }
-        BuiltinId::BinaryHeapPop => {
+        "pop" => {
             let item = object.with_mut(|value| {
                 let length = value.sequence_len()?;
                 if length == 0 {
@@ -118,7 +201,7 @@ fn call_dynamic(
                 element_type: Some(item_type),
             })
         }
-        BuiltinId::BinaryHeapPeekCloned => {
+        "peek_cloned" => {
             let value = object.with(|value| {
                 if value.sequence_len()? == 0 {
                     Ok(None)
@@ -133,12 +216,55 @@ fn call_dynamic(
                 element_type: Some(item_type),
             })
         }
-        BuiltinId::BinaryHeapClear => {
+        "clear" => {
             object.with_mut(|value| value.clear_sequence())??;
             Ok(Value::Unit)
         }
         _ => Err("unsupported BinaryHeap operation".into()),
     }
+}
+
+fn push_dynamic_item(
+    object: &crate::value::DynamicObject,
+    item: DynamicValue,
+) -> Result<Value, String> {
+    object.with_mut(|value| {
+        value.push_sequence_item(item)?;
+        let mut index = value.sequence_len()? - 1;
+        while index > 0 {
+            let parent = (index - 1) / 2;
+            if compare_native_items(value, index, parent)? != Ordering::Greater {
+                break;
+            }
+            value.swap_sequence_items(index, parent)?;
+            index = parent;
+        }
+        Ok::<(), String>(())
+    })??;
+    Ok(Value::Unit)
+}
+
+fn push_heap_item(heap: &BinaryHeapValue, item: Value) -> Result<Value, String> {
+    let actual = Type::of_value(&item).unwrap_or(Type::Unknown);
+    let expected = heap.element_type.borrow().clone().unwrap_or(Type::Unknown);
+    let ty = merge_types(&expected, &actual)
+        .ok_or_else(|| format!("BinaryHeap expects {expected}, found {actual}"))?;
+    let mut elements = heap.elements.borrow_mut();
+    if elements.iter().any(Value::has_active_references) {
+        return Err("cannot reorder referenced BinaryHeap elements".into());
+    }
+    elements.push(item);
+    let mut index = elements.len() - 1;
+    while index > 0 {
+        let parent = (index - 1) / 2;
+        if compare(&elements[index], &elements[parent])? != Ordering::Greater {
+            break;
+        }
+        elements.swap(index, parent);
+        index = parent;
+    }
+    *heap.element_type.borrow_mut() = Some(ty);
+    Ok(Value::Unit)
 }
 
 fn compare_native_items(
@@ -161,11 +287,11 @@ fn native_key(value: &DynamicValue) -> Result<HashKey, String> {
     HashKey::from_ordered_value(&value)
 }
 
-fn call_heap(id: BuiltinId, arguments: &[Value], heap: &BinaryHeapValue) -> Result<Value, String> {
-    match id {
-        BuiltinId::BinaryHeapLen => Ok(crate::numeric::native_usize(heap.elements.borrow().len())),
-        BuiltinId::BinaryHeapIsEmpty => Ok(Value::Bool(heap.elements.borrow().is_empty())),
-        BuiltinId::BinaryHeapPush => {
+fn call_heap(name: &str, arguments: &[Value], heap: &BinaryHeapValue) -> Result<Value, String> {
+    match name {
+        "len" => Ok(crate::numeric::native_usize(heap.elements.borrow().len())),
+        "is_empty" => Ok(Value::Bool(heap.elements.borrow().is_empty())),
+        "push" => {
             let item = arguments.get(1).ok_or("missing BinaryHeap element")?;
             if !orderable(item) {
                 return Err(format!(
@@ -180,24 +306,9 @@ fn call_heap(id: BuiltinId, arguments: &[Value], heap: &BinaryHeapValue) -> Resu
             let item = ty
                 .constrain(item)
                 .ok_or("invalid BinaryHeap element type")?;
-            let mut elements = heap.elements.borrow_mut();
-            if elements.iter().any(Value::has_active_references) {
-                return Err("cannot reorder referenced BinaryHeap elements".into());
-            }
-            elements.push(item);
-            let mut index = elements.len() - 1;
-            while index > 0 {
-                let parent = (index - 1) / 2;
-                if compare(&elements[index], &elements[parent])? != Ordering::Greater {
-                    break;
-                }
-                elements.swap(index, parent);
-                index = parent;
-            }
-            *heap.element_type.borrow_mut() = Some(ty);
-            Ok(Value::Unit)
+            push_heap_item(heap, item)
         }
-        BuiltinId::BinaryHeapPop => {
+        "pop" => {
             let mut elements = heap.elements.borrow_mut();
             if elements.iter().any(Value::has_active_references) {
                 return Err("cannot remove referenced BinaryHeap elements".into());
@@ -232,7 +343,7 @@ fn call_heap(id: BuiltinId, arguments: &[Value], heap: &BinaryHeapValue) -> Resu
                 element_type: heap.element_type.borrow().clone(),
             })
         }
-        BuiltinId::BinaryHeapPeekCloned => Ok(Value::Option {
+        "peek_cloned" => Ok(Value::Option {
             value: heap
                 .elements
                 .borrow()
@@ -242,7 +353,7 @@ fn call_heap(id: BuiltinId, arguments: &[Value], heap: &BinaryHeapValue) -> Resu
                 .map(Rc::new),
             element_type: heap.element_type.borrow().clone(),
         }),
-        BuiltinId::BinaryHeapClear => {
+        "clear" => {
             let mut elements = heap.elements.borrow_mut();
             if elements.iter().any(Value::has_active_references) {
                 return Err("cannot clear referenced BinaryHeap elements".into());

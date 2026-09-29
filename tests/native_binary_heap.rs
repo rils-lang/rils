@@ -95,3 +95,25 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
         assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
     }
 }
+
+#[test]
+fn native_binary_heap_moves_string_arguments_and_keeps_order() {
+    let source = r#"
+        let mut heap: BinaryHeap<string> = BinaryHeap::new();
+        let largest: string = "zebra";
+        heap.push(largest);
+        heap.push("apple");
+        let top = heap.peek_cloned().unwrap();
+        let first = heap.pop().unwrap();
+        if top == "zebra" && first == "zebra" { heap.pop().unwrap() } else { "wrong" }
+    "#;
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        assert_eq!(value, Value::from_string("apple"));
+    }
+}

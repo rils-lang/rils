@@ -113,6 +113,12 @@ fn native_symbols_are_unique_and_resolve_to_their_declarations() {
         queue_push.native_symbol,
         Some("core::collections::vec_deque::push_back")
     );
+    let heap_push = builtin_member("BinaryHeap", "push").expect("BinaryHeap::push is exported");
+    assert_eq!(heap_push.builtin_id, None);
+    assert_eq!(
+        heap_push.native_symbol,
+        Some("core::collections::binary_heap::push")
+    );
     let mut symbols = std::collections::HashSet::new();
     for declaration in BUILTINS {
         for member in declaration.members {
