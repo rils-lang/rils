@@ -411,33 +411,6 @@ impl Interpreter {
                         span,
                     );
                 }
-                if matches!(actual_target, Type::Named { name, .. } if name == "Range") {
-                    let method = match (selector.trait_name.as_str(), selector.method_name.as_str())
-                    {
-                        ("Iterator", "next") => BuiltinMethod::Native(
-                            rils_builtins::builtin_member("Range", "next")
-                                .and_then(|member| member.native_symbol)
-                                .expect("Range::next exports a native symbol"),
-                        ),
-                        _ => {
-                            return Err(RuntimeError::new(
-                                format!(
-                                    "trait `{}` has no method `{}` for Range",
-                                    selector.trait_name, selector.method_name
-                                ),
-                                span,
-                            ));
-                        }
-                    };
-                    return self.call(
-                        Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(receiver.clone()),
-                            method,
-                        })),
-                        &arguments[1..],
-                        span,
-                    );
-                }
                 if selector.trait_name == "IntoIterator"
                     && selector.method_name == "into_iter"
                     && (matches!(actual_target, Type::Array { .. })
@@ -457,25 +430,25 @@ impl Interpreter {
                         ),
                     };
                 }
-                let iterator_method = match (
-                    selector.trait_name.as_str(),
-                    selector.method_name.as_str(),
-                    actual_target,
-                ) {
-                    ("Iterator", "next", Type::Named { name, arguments })
-                        if name == "OwnedIterator" && arguments.len() == 1 =>
-                    {
-                        Some(BuiltinMethod::Runtime(
-                            rils_builtins::BuiltinId::IteratorNext,
-                        ))
-                    }
-                    _ => None,
-                };
-                if let Some(method) = iterator_method {
+                let trait_name = selector
+                    .trait_name
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or(&selector.trait_name);
+                if let Some(trait_member) = rils_builtins::builtin(trait_name)
+                    .filter(|declaration| declaration.kind == rils_builtins::BuiltinKind::Trait)
+                    .and_then(|declaration| declaration.member(&selector.method_name))
+                    && rils_frontend::standard_library::builtin_member_for_type(
+                        actual_target,
+                        &selector.method_name,
+                    )
+                    .is_some()
+                    && let Some(symbol) = trait_member.native_symbol
+                {
                     return self.call(
                         Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(receiver.clone()),
-                            method,
+                            method: BuiltinMethod::Native(symbol),
                         })),
                         &arguments[1..],
                         span,

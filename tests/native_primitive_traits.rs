@@ -51,3 +51,13 @@ fn integer_and_string_keys_work_and_float_keys_are_rejected() {
         assert!(compile(&source).is_err(), "{source}");
     }
 }
+
+#[test]
+fn clone_trait_path_call_matches_interpreter_and_vm() {
+    let source = include_str!("fixtures/trait_path_clone.rils");
+    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    assert_eq!(
+        compile(source).unwrap().execute_value().unwrap(),
+        Value::Bool(true)
+    );
+}

@@ -1,0 +1,2 @@
+let mut iterator = [20, 22].into_iter();
+unwrap(Iterator::next(&mut iterator)) + unwrap(Iterator::next(&mut iterator))

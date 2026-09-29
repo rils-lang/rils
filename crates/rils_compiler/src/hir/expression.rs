@@ -422,6 +422,31 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
+                    if let [.., trait_name, member_name] = segments.as_slice()
+                        && rils_builtins::builtin(trait_name).is_some_and(|declaration| {
+                            declaration.kind == rils_builtins::BuiltinKind::Trait
+                        })
+                        && let Some(trait_member) =
+                            rils_builtins::builtin_member(trait_name, member_name)
+                        && trait_member.receiver.is_some()
+                        && let Some(symbol) = trait_member.native_symbol.or_else(|| {
+                            (trait_name == "Clone" && member_name == "clone")
+                                .then(|| {
+                                    rils_builtins::builtin_function("clone")
+                                        .and_then(|function| function.native_symbol)
+                                })
+                                .flatten()
+                        })
+                    {
+                        return Ok(HirExpression::CallNative {
+                            symbol: symbol.to_owned(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| self.expression(argument))
+                                .collect::<Result<_, _>>()?,
+                            span: *span,
+                        });
+                    }
                     let (type_id, variant) = self.enum_variant_path(&segments, *span)?;
                     return Ok(HirExpression::ConstructTupleVariant {
                         type_id,

@@ -1,0 +1,12 @@
+fn test() -> i32 {
+    let values = [20, 22];
+    let mut iterator = values.iter();
+    if *unwrap(Iterator::next(&mut iterator)) == 20
+        && *unwrap(Iterator::next(&mut iterator)) == 22
+    {
+        42
+    } else {
+        0
+    }
+}
+test()

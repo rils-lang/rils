@@ -309,6 +309,7 @@ impl Input {
                 })
             })
             .collect::<Vec<_>>();
+        let trait_name = self.item.ident.to_string();
         let methods = self.methods()?.into_iter().map(|method| {
             let name = method.sig.ident.to_string();
             let docs = super::documentation(&method.attrs);
@@ -337,6 +338,13 @@ impl Input {
                 quote!(Some(builtin_id!(#path)))
             } else if name == "clone" { quote!(Some(builtin_id!("core::clone"))) } else { quote!(None) };
             let required = method.default.is_none();
+            let native_bridge = method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge"));
+            let native_symbol = if native_bridge {
+                let symbol = format!("{trait_name}::{name}");
+                quote!(Some(#symbol))
+            } else {
+                quote!(None)
+            };
             let type_parameters = method.sig.generics.type_params().map(|parameter| parameter.ident.to_string()).collect::<Vec<_>>();
             Ok(quote! {
                 crate::BuiltinMember {
@@ -348,8 +356,8 @@ impl Input {
                     builtin_id: #builtin_id,
                     indexed_view: false,
                     runtime_import: None,
-                    native_symbol: None,
-                    native_bridge: false,
+                    native_symbol: #native_symbol,
+                    native_bridge: #native_bridge,
                     required: #required,
                     type_parameters: &[#(#type_parameters),*],
                     documentation: #docs,

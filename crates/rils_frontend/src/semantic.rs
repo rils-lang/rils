@@ -385,7 +385,10 @@ pub(crate) fn resolve_project_calls(
                 {
                     results.resolve_value(id, definition);
                 }
-                let Expr::Call { callee, .. } = expression else {
+                let Expr::Call {
+                    callee, arguments, ..
+                } = expression
+                else {
                     return;
                 };
                 let context = CallResolutionContext {
@@ -399,7 +402,7 @@ pub(crate) fn resolve_project_calls(
                     self_type,
                     host_types: &host_types,
                 };
-                if let Some(call) = resolve_callee(callee, &context) {
+                if let Some(call) = resolve_callee(callee, arguments, &context) {
                     results.resolve_call(id, call);
                 }
             },
@@ -419,7 +422,11 @@ struct CallResolutionContext<'a> {
     host_types: &'a crate::HostTypeResolutionView<'a>,
 }
 
-fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<ResolvedCall> {
+fn resolve_callee(
+    callee: &Expr,
+    arguments: &[Expr],
+    context: &CallResolutionContext<'_>,
+) -> Option<ResolvedCall> {
     let CallResolutionContext {
         definitions,
         callables,
@@ -435,6 +442,30 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
         callables.resolve(callee, expression_ids, results, namespace, *self_type)
     {
         return Some(ResolvedCall::Definition(definition));
+    }
+    if let Expr::Path { segments, .. } = callee
+        && let [.., trait_name, member] = segments.as_slice()
+        && let Some(receiver) = arguments.first()
+        && let Some(receiver_type) = expression_ids
+            .get(receiver)
+            .and_then(|id| results.expression_type(id))
+    {
+        let receiver_type = match receiver_type {
+            Type::Reference { inner, .. } => inner.as_ref(),
+            receiver_type => receiver_type,
+        };
+        if let Type::Named { name: owner, .. } = receiver_type
+            && let Some(definition) = unique_method(callables.methods.iter().filter(|method| {
+                owner_matches(&method.owner, owner)
+                    && method
+                        .trait_name
+                        .as_deref()
+                        .is_some_and(|name| owner_matches(name, trait_name))
+                    && method.name == *member
+            }))
+        {
+            return Some(ResolvedCall::Definition(definition));
+        }
     }
     if let Expr::Member { object, .. } = callee
         && expression_ids

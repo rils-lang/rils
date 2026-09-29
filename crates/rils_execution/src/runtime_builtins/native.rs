@@ -196,14 +196,27 @@ fn iterator_next_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Valu
     if !symbols.contains(symbol) {
         return None;
     }
-    if arguments.is_empty() {
-        return Some(Err("iterator method requires a receiver".into()));
+    if arguments.len() != 1 {
+        return Some(Err(format!(
+            "iterator method expects one receiver, found {} arguments",
+            arguments.len()
+        )));
     }
-    if !matches!(arguments.first(), Some(Value::Reference(reference)) if matches!(reference.read(), Ok(Value::OwnedIterator(_))))
-    {
+    let Value::Reference(reference) = &arguments[0] else {
         return None;
+    };
+    match reference.read() {
+        Ok(
+            Value::OwnedIterator(_)
+            | Value::BorrowedIndexedIterator(_)
+            | Value::BorrowedMapIterator(_)
+            | Value::BorrowedSetIterator(_),
+        ) => Some(super::indexed_iter::next(arguments)),
+        Ok(value) if crate::value::native_ops::is_iterator(&value) => {
+            Some(super::range::next(arguments))
+        }
+        _ => None,
     }
-    Some(super::indexed_iter::next(arguments))
 }
 
 pub fn call_owned_symbol(

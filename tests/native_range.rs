@@ -32,9 +32,13 @@ fn native_range_steps_match_in_interpreter_and_vm() {
 }
 
 #[test]
-fn trait_qualified_range_next_uses_the_native_symbol_in_the_interpreter() {
-    let source = "let mut range = 1i8..3i8; if Iterator::next(&mut range) == Some(1i8) && Iterator::next(&mut range) == Some(2i8) && Iterator::next(&mut range) == None { 42 } else { 0 }";
+fn trait_qualified_range_next_uses_the_native_symbol_in_both_backends() {
+    let source = include_str!("fixtures/trait_path_range.rils");
     assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    let compiled = compile(source).unwrap();
+    assert_eq!(compiled.execute_value().unwrap(), Value::from_i32(42));
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(42));
 }
 
 #[test]

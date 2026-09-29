@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `Iterator::next(&mut iterator)` 和 `Clone::clone(&value)` 等 trait 路径调用现可编译为字节码；标准库原生方法通过 trait 导出符号分派，用户类型调用其对应的 trait 实现。覆盖拥有型、借用型及 `Range<T>` 迭代器。
+
 - **破坏性字节码变更：** 标准库调用（包括 `Clone`）和数值 intrinsic 统一使用符号原生导入；整数关联函数的目标宽度随符号保存，字节码验证器校验路径与签名。旧 `CallRuntime` / `CallIntrinsic` 操作码已移除。包含这些指令的实验性 v8 `.rilbc` 文件必须从源码重新编译；格式版本暂保持 v8。
 
 - **破坏性变更：** `VecDeque<T>`、`BinaryHeap<T>`、`BTreeSet<T>` 与 `HashSet<T>` 的 `into_iter()` 现在分别返回 `VecDequeIntoIter<T>`、`BinaryHeapIntoIter<T>`、`BTreeSetIntoIter<T>` 和 `HashSetIntoIter<T>`，直接接管各自的 Rust 容器迭代器。显式标注旧 `Iter<T>` 的代码请改用对应具体类型；依赖推断的 `for` 无需修改。

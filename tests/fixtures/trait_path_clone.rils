@@ -1,0 +1,3 @@
+let text = "answer";
+let cloned = Clone::clone(&text);
+cloned == text

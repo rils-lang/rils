@@ -1,0 +1,17 @@
+struct Counter { value: i32 }
+
+impl Iterator for Counter {
+    type Item = i32;
+
+    fn next(&mut self) -> Option<i32> {
+        self.value = self.value + 1;
+        Some(self.value)
+    }
+}
+
+fn run() -> i32 {
+    let mut counter = Counter { value: 41 };
+    unwrap(Iterator::next(&mut counter))
+}
+
+run()

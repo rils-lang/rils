@@ -1,0 +1,9 @@
+let mut range = 1i8..3i8;
+if Iterator::next(&mut range) == Some(1i8)
+    && Iterator::next(&mut range) == Some(2i8)
+    && Iterator::next(&mut range) == None
+{
+    42
+} else {
+    0
+}

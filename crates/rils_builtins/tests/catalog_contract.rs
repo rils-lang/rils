@@ -867,6 +867,13 @@ fn derived_vec_is_empty_has_no_numeric_id() {
 fn trait_requirements_and_provided_methods_come_from_stdlib() {
     let iterator = builtin("Iterator").expect("Iterator declaration");
     assert!(iterator.member("next").expect("Iterator::next").required);
+    assert_eq!(
+        iterator
+            .member("next")
+            .expect("Iterator::next")
+            .native_symbol,
+        Some("Iterator::next")
+    );
     assert!(
         iterator
             .members

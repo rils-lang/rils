@@ -54,6 +54,7 @@ mod native {
         type Item;
 
         /// Advances the iterator.
+        #[rils_native_bridge]
         #[rils_legacy_id(core::iterator::next)]
         fn next(&mut self) -> Option<<Self as Iterator>::Item>;
         /// Consumes the iterator and returns the remaining item count.

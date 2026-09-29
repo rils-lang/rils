@@ -293,6 +293,8 @@ Left::value(&both);
 
 固有方法始终优先于同名 trait 方法。UFCS 不执行接收器自动借用，因此 `&self` 和
 `&mut self` 方法需要显式传入引用。
+`Iterator::next(&mut iterator)`、`Clone::clone(&value)` 等 trait 路径调用可在解释器和字节码 VM 中使用；
+标准库原生方法按 trait 导出符号分派，脚本类型则调用其对应的 trait impl。
 
 泛型参数支持一个或多个 trait bound：
 
@@ -399,7 +401,6 @@ impl core::fmt::Display for Point {
 
 当前暂不支持：
 
-- 默认 trait 方法体
 - 同一类型对同一泛型 trait 的不同类型实参分别实现
 - 泛型 trait 的限定关联类型与带类型实参的 trait UFCS 路径
 - trait 对象和 `dyn Trait`
