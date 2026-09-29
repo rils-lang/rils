@@ -85,11 +85,25 @@ pub mod vec_deque {
     rils_stdlib::vecdeque_definition!(decl_rils_trait_impls);
 }
 
+pub mod vec_deque_into_iter {
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::vecdequeintoiter_definition!(decl_rils_metadata);
+    rils_stdlib::vecdequeintoiter_definition!(decl_rils_trait_impls);
+}
+
 pub mod binary_heap {
     use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
 
     rils_stdlib::binaryheap_definition!(decl_rils_metadata);
     rils_stdlib::binaryheap_definition!(decl_rils_trait_impls);
+}
+
+pub mod binary_heap_into_iter {
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::binaryheapintoiter_definition!(decl_rils_metadata);
+    rils_stdlib::binaryheapintoiter_definition!(decl_rils_trait_impls);
 }
 
 pub mod btree_map {
@@ -111,6 +125,13 @@ pub mod btree_set {
     rils_stdlib::btreeset_definition!(decl_rils_metadata);
 }
 
+pub mod btree_set_into_iter {
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::btreesetintoiter_definition!(decl_rils_metadata);
+    rils_stdlib::btreesetintoiter_definition!(decl_rils_trait_impls);
+}
+
 pub mod hash_map {
     use rils_stdlib_macros::decl_rils_metadata;
 
@@ -128,6 +149,13 @@ pub mod hash_set {
     use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::hashset_definition!(decl_rils_metadata);
+}
+
+pub mod hash_set_into_iter {
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::hashsetintoiter_definition!(decl_rils_metadata);
+    rils_stdlib::hashsetintoiter_definition!(decl_rils_trait_impls);
 }
 
 pub mod vec {

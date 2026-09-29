@@ -35,11 +35,25 @@ heap_elements!(
 
 #[decl_rils(core::collections)]
 mod native {
-    use super::{HeapElement, Iter, Iterator, Option};
+    use super::{HeapElement, Iter, Option};
 
     /// A growable double-ended queue.
     #[rils_struct]
     pub struct VecDeque<T>(std::collections::VecDeque<T>);
+
+    /// An owning iterator over queue elements.
+    #[rils_struct]
+    pub struct VecDequeIntoIter<T>(std::collections::vec_deque::IntoIter<T>);
+
+    #[rils_impl]
+    impl<T> std::iter::Iterator for VecDequeIntoIter<T> {
+        type Item = T;
+
+        /// Returns the next owned element from the front.
+        fn next(&mut self) -> std::option::Option<T> {
+            self.0.next()
+        }
+    }
 
     impl<T> std::ops::Deref for VecDeque<T> {
         type Target = std::collections::VecDeque<T>;
@@ -70,12 +84,12 @@ mod native {
     #[rils_impl]
     impl<T> std::iter::IntoIterator for VecDeque<T> {
         type Item = T;
-        type IntoIter = Iterator<T>;
+        type IntoIter = VecDequeIntoIter<T>;
 
         /// Consumes the queue from front to back.
         #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
-            Iter::from_vec_deque(self.0)
+            VecDequeIntoIter(self.0.into_iter())
         }
     }
 
@@ -190,15 +204,29 @@ mod native {
     #[rils_struct]
     pub struct BinaryHeap<T>(std::collections::BinaryHeap<T>);
 
+    /// An owning iterator over heap elements in storage order.
+    #[rils_struct]
+    pub struct BinaryHeapIntoIter<T>(std::collections::binary_heap::IntoIter<T>);
+
+    #[rils_impl]
+    impl<T> std::iter::Iterator for BinaryHeapIntoIter<T> {
+        type Item = T;
+
+        /// Returns the next owned element in storage order.
+        fn next(&mut self) -> std::option::Option<T> {
+            self.0.next()
+        }
+    }
+
     #[rils_impl]
     impl<T> std::iter::IntoIterator for BinaryHeap<T> {
         type Item = T;
-        type IntoIter = Iterator<T>;
+        type IntoIter = BinaryHeapIntoIter<T>;
 
         /// Consumes the heap in its storage order.
         #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
-            Iter::from_binary_heap(self.0)
+            BinaryHeapIntoIter(self.0.into_iter())
         }
     }
 
@@ -263,6 +291,20 @@ mod native {
     #[rils_struct]
     pub struct BTreeSet<T>(std::collections::BTreeSet<T>);
 
+    /// An owning iterator over ordered set elements.
+    #[rils_struct]
+    pub struct BTreeSetIntoIter<T>(std::collections::btree_set::IntoIter<T>);
+
+    #[rils_impl]
+    impl<T> std::iter::Iterator for BTreeSetIntoIter<T> {
+        type Item = T;
+
+        /// Returns the next owned element in ascending order.
+        fn next(&mut self) -> std::option::Option<T> {
+            self.0.next()
+        }
+    }
+
     impl<T> std::ops::Deref for BTreeSet<T> {
         type Target = std::collections::BTreeSet<T>;
         fn deref(&self) -> &Self::Target {
@@ -285,12 +327,12 @@ mod native {
     #[rils_impl]
     impl<T> std::iter::IntoIterator for BTreeSet<T> {
         type Item = T;
-        type IntoIter = Iterator<T>;
+        type IntoIter = BTreeSetIntoIter<T>;
         /// Consumes the set and iterates over owned elements in order.
         #[rils_native_bridge]
         #[rils_legacy_id(core::btree_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iter::from_btree_set(self.0)
+            BTreeSetIntoIter(self.0.into_iter())
         }
     }
 
@@ -537,8 +579,11 @@ mod native {
     }
 }
 
-pub use hash::{HashMap, HashMapIntoIter, HashSet};
-pub use native::{BTreeMap, BTreeMapIntoIter, BTreeSet, BinaryHeap, VecDeque};
+pub use hash::{HashMap, HashMapIntoIter, HashSet, HashSetIntoIter};
+pub use native::{
+    BTreeMap, BTreeMapIntoIter, BTreeSet, BTreeSetIntoIter, BinaryHeap, BinaryHeapIntoIter,
+    VecDeque, VecDequeIntoIter,
+};
 
 mod vecdeque_layout {
     use rils_stdlib_macros::decl_rils_layout;

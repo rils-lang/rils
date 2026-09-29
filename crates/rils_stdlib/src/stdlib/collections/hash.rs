@@ -11,6 +11,20 @@ mod native {
     #[rils_struct]
     pub struct HashSet<T>(std::collections::HashSet<T>);
 
+    /// An owning iterator over hash set elements.
+    #[rils_struct]
+    pub struct HashSetIntoIter<T>(std::collections::hash_set::IntoIter<T>);
+
+    #[rils_impl]
+    impl<T> std::iter::Iterator for HashSetIntoIter<T> {
+        type Item = T;
+
+        /// Returns the next owned element.
+        fn next(&mut self) -> std::option::Option<T> {
+            self.0.next()
+        }
+    }
+
     impl<T> std::ops::Deref for HashSet<T> {
         type Target = std::collections::HashSet<T>;
         fn deref(&self) -> &Self::Target {
@@ -33,12 +47,12 @@ mod native {
     #[rils_impl]
     impl<T> IntoIterator for HashSet<T> {
         type Item = T;
-        type IntoIter = Iterator<T>;
+        type IntoIter = HashSetIntoIter<T>;
         /// Consumes the set and iterates over its values.
         #[rils_native_bridge]
         #[rils_legacy_id(core::hash_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iter::from_hash_set(self.0)
+            HashSetIntoIter(self.0.into_iter())
         }
     }
 
@@ -267,7 +281,7 @@ mod native {
     }
 }
 
-pub use native::{HashMap, HashMapIntoIter, HashSet};
+pub use native::{HashMap, HashMapIntoIter, HashSet, HashSetIntoIter};
 
 mod hashset_layout {
     use rils_stdlib_macros::decl_rils_layout;

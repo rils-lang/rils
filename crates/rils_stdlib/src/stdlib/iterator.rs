@@ -10,10 +10,6 @@ mod native {
 
     enum IterStorage<T> {
         Owned(std::vec::IntoIter<T>),
-        Queue(std::collections::vec_deque::IntoIter<T>),
-        Heap(std::collections::binary_heap::IntoIter<T>),
-        OrderedSet(std::collections::btree_set::IntoIter<T>),
-        HashSet(std::collections::hash_set::IntoIter<T>),
         Generated(std::boxed::Box<dyn std::iter::Iterator<Item = T>>),
     }
 
@@ -29,22 +25,6 @@ mod native {
                 IterStorage::Owned(values) => Some(values),
                 _ => None,
             }
-        }
-
-        pub fn from_vec_deque(values: std::collections::VecDeque<T>) -> Self {
-            Self(IterStorage::Queue(values.into_iter()))
-        }
-
-        pub fn from_binary_heap(values: std::collections::BinaryHeap<T>) -> Self {
-            Self(IterStorage::Heap(values.into_iter()))
-        }
-
-        pub fn from_btree_set(values: std::collections::BTreeSet<T>) -> Self {
-            Self(IterStorage::OrderedSet(values.into_iter()))
-        }
-
-        pub fn from_hash_set(values: std::collections::HashSet<T>) -> Self {
-            Self(IterStorage::HashSet(values.into_iter()))
         }
     }
 
@@ -62,10 +42,6 @@ mod native {
         fn next(&mut self) -> std::option::Option<T> {
             match &mut self.0 {
                 IterStorage::Owned(items) => items.next(),
-                IterStorage::Queue(items) => items.next(),
-                IterStorage::Heap(items) => items.next(),
-                IterStorage::OrderedSet(items) => items.next(),
-                IterStorage::HashSet(items) => items.next(),
                 IterStorage::Generated(items) => items.next(),
             }
         }

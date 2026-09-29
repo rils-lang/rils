@@ -168,6 +168,10 @@ pub fn native_implements_with(
         crate::native_definitions::rc::TRAIT_IMPLS,
         crate::native_definitions::btree_map_into_iter::TRAIT_IMPLS,
         crate::native_definitions::hash_map_into_iter::TRAIT_IMPLS,
+        crate::native_definitions::vec_deque_into_iter::TRAIT_IMPLS,
+        crate::native_definitions::binary_heap_into_iter::TRAIT_IMPLS,
+        crate::native_definitions::btree_set_into_iter::TRAIT_IMPLS,
+        crate::native_definitions::hash_set_into_iter::TRAIT_IMPLS,
     ]
     .into_iter()
     .flatten()

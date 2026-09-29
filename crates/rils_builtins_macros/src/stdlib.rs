@@ -238,17 +238,29 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
     declaration_items.push(quote!(crate::native_definitions::bit_flags::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::range::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::vec_deque::DECLARATION));
+    declaration_items.push(quote!(
+        crate::native_definitions::vec_deque_into_iter::DECLARATION
+    ));
     declaration_items.push(quote!(crate::native_definitions::binary_heap::DECLARATION));
+    declaration_items.push(quote!(
+        crate::native_definitions::binary_heap_into_iter::DECLARATION
+    ));
     declaration_items.push(quote!(crate::native_definitions::btree_map::DECLARATION));
     declaration_items.push(quote!(
         crate::native_definitions::btree_map_into_iter::DECLARATION
     ));
     declaration_items.push(quote!(crate::native_definitions::btree_set::DECLARATION));
+    declaration_items.push(quote!(
+        crate::native_definitions::btree_set_into_iter::DECLARATION
+    ));
     declaration_items.push(quote!(crate::native_definitions::hash_map::DECLARATION));
     declaration_items.push(quote!(
         crate::native_definitions::hash_map_into_iter::DECLARATION
     ));
     declaration_items.push(quote!(crate::native_definitions::hash_set::DECLARATION));
+    declaration_items.push(quote!(
+        crate::native_definitions::hash_set_into_iter::DECLARATION
+    ));
     declaration_items.push(quote!(crate::native_definitions::vec::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::iter::DECLARATION));
     declaration_items.push(quote!(crate::native_definitions::iterator::DECLARATION));

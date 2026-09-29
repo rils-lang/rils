@@ -127,10 +127,10 @@ let characters = "R世".chars().count(); // 2
 ## VecDeque 与 BinaryHeap
 
 `VecDeque<T>` 提供双端 `push_front/push_back`、`pop_front/pop_back`、`front_cloned/back_cloned`，
-适合队列。`VecDeque<T>::into_iter()` 或 `for` 会消费队列，并从队首到队尾产出元素。
+适合队列。`VecDeque<T>::into_iter()` 返回 `core::collections::VecDequeIntoIter<T>`；`for` 也会消费队列，并从队首到队尾产出元素。
 `BinaryHeap<T>` 是最大优先队列，提供 `new/len/is_empty/push/pop/peek_cloned/clear`；
 `pop` 每次取出最大元素，`peek_cloned` 显式克隆堆顶。它目前支持整数、`char` 和 `string` 元素；
-不支持的类型在 `push` 时返回明确错误。`BinaryHeap<T>::into_iter()` 和 `for` 会消费堆，遍历顺序不保证排序；需要从大到小取值时使用 `pop`。
+不支持的类型在 `push` 时返回明确错误。`BinaryHeap<T>::into_iter()` 返回 `core::collections::BinaryHeapIntoIter<T>`；`for` 也会消费堆，遍历顺序不保证排序；需要从大到小取值时使用 `pop`。
 两个类型都可由 prelude 或 `std::collections` 访问。
 
 ```rust
@@ -164,7 +164,7 @@ for entry in scores {
 `BTreeSet<T>` 使用相同的有序元素约束，提供
 `new/len/is_empty/clear/contains/insert/remove`、`first_cloned/last_cloned`，
 以及 `is_subset/is_superset/is_disjoint/union/intersection/difference/symmetric_difference`。
-集合运算返回新的拥有型 Set；`into_iter()` 或直接用于 `for` 会消费 Set 并按升序遍历。
+集合运算返回新的拥有型 Set；`into_iter()` 返回 `core::collections::BTreeSetIntoIter<T>`，直接用于 `for` 也会消费 Set 并按升序遍历。
 `iter()` 产生按升序排列的 `&T`，且保留原 Set。
 
 ```rust
@@ -181,7 +181,7 @@ for value in values {
 `HashMap<K, V>` 和 `HashSet<T>` 位于 prelude，也可通过 `std::collections` 访问。当前可作为键或
 集合元素的类型是实现内建 `Eq + Hash` 的 `bool`、整数、`char`、`string`，以及字段可递归作为键的
 非泛型 struct 和 enum。后两者可用 `#[derive(Eq, Hash)]`；浮点数会在静态分析阶段拒绝。
-`HashMap<K, V>::into_iter()` 返回 `core::collections::HashMapIntoIter<K, V>`，逐项移出键值对。
+`HashMap<K, V>::into_iter()` 返回 `core::collections::HashMapIntoIter<K, V>`，逐项移出键值对；`HashSet<T>::into_iter()` 返回 `core::collections::HashSetIntoIter<T>`，逐项移出元素。
 两种容器都提供 `iter()`：Map 产生 `(&K, &V)`，Set 产生 `&T`；哈希容器的遍历顺序不保证固定。
 借用迭代器或其产出的引用仍存活时，不能结构修改原集合。
 
