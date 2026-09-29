@@ -144,6 +144,20 @@ mod native {
     #[rils_struct]
     pub struct HashMap<K, V>(std::collections::HashMap<K, V>);
 
+    /// An owning iterator over hash map entries.
+    #[rils_struct]
+    pub struct HashMapIntoIter<K, V>(std::collections::hash_map::IntoIter<K, V>);
+
+    #[rils_impl]
+    impl<K, V> std::iter::Iterator for HashMapIntoIter<K, V> {
+        type Item = (K, V);
+
+        /// Returns the next owned entry.
+        fn next(&mut self) -> std::option::Option<(K, V)> {
+            self.0.next()
+        }
+    }
+
     impl<K, V> std::ops::Deref for HashMap<K, V> {
         type Target = std::collections::HashMap<K, V>;
         fn deref(&self) -> &Self::Target {
@@ -166,12 +180,12 @@ mod native {
     #[rils_impl]
     impl<K, V> IntoIterator for HashMap<K, V> {
         type Item = (K, V);
-        type IntoIter = Iterator<(K, V)>;
+        type IntoIter = HashMapIntoIter<K, V>;
         /// Consumes the map and iterates over owned key-value pairs.
         #[rils_native_bridge]
         #[rils_legacy_id(core::hash_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iter::from(self.0.into_iter().collect::<std::vec::Vec<_>>())
+            HashMapIntoIter(self.0.into_iter())
         }
     }
 
@@ -253,7 +267,7 @@ mod native {
     }
 }
 
-pub use native::{HashMap, HashSet};
+pub use native::{HashMap, HashMapIntoIter, HashSet};
 
 mod hashset_layout {
     use rils_stdlib_macros::decl_rils_layout;

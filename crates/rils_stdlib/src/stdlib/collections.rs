@@ -408,6 +408,20 @@ mod native {
     #[rils_struct]
     pub struct BTreeMap<K, V>(std::collections::BTreeMap<K, V>);
 
+    /// An owning iterator over ordered map entries.
+    #[rils_struct]
+    pub struct BTreeMapIntoIter<K, V>(std::collections::btree_map::IntoIter<K, V>);
+
+    #[rils_impl]
+    impl<K, V> std::iter::Iterator for BTreeMapIntoIter<K, V> {
+        type Item = (K, V);
+
+        /// Returns the next owned entry in key order.
+        fn next(&mut self) -> std::option::Option<(K, V)> {
+            self.0.next()
+        }
+    }
+
     impl<K, V> std::ops::Deref for BTreeMap<K, V> {
         type Target = std::collections::BTreeMap<K, V>;
         fn deref(&self) -> &Self::Target {
@@ -430,12 +444,12 @@ mod native {
     #[rils_impl]
     impl<K, V> std::iter::IntoIterator for BTreeMap<K, V> {
         type Item = (K, V);
-        type IntoIter = Iterator<(K, V)>;
+        type IntoIter = BTreeMapIntoIter<K, V>;
         /// Consumes the map and iterates over owned entries in key order.
         #[rils_native_bridge]
         #[rils_legacy_id(core::btree_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
-            Iter::from(self.0.into_iter().collect::<std::vec::Vec<_>>())
+            BTreeMapIntoIter(self.0.into_iter())
         }
     }
 
@@ -523,8 +537,8 @@ mod native {
     }
 }
 
-pub use hash::{HashMap, HashSet};
-pub use native::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
+pub use hash::{HashMap, HashMapIntoIter, HashSet};
+pub use native::{BTreeMap, BTreeMapIntoIter, BTreeSet, BinaryHeap, VecDeque};
 
 mod vecdeque_layout {
     use rils_stdlib_macros::decl_rils_layout;

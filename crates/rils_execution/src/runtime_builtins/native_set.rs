@@ -9,9 +9,7 @@ use rils_builtins::{BuiltinId, builtin};
 use rils_native::NativeKey;
 use rils_value::{DynamicLayout, DynamicType, DynamicValue};
 
-use crate::value::{
-    DynamicObject, HashKey, OwnedIteratorValue, Value, record_codec::NativeRecordCodec,
-};
+use crate::value::{DynamicObject, HashKey, Value, record_codec::NativeRecordCodec};
 
 use super::{NativeOwnedContext, import_receiver};
 
@@ -383,16 +381,13 @@ fn dispatch(
         }
         BuiltinId::BtreeSetIter | BuiltinId::HashSetIter => super::indexed_iter::borrow(arguments),
         BuiltinId::BtreeSetIntoIter | BuiltinId::HashSetIntoIter => {
-            let items = object
-                .with_mut(DynamicValue::take_all_sequence_items)?
-                .map_err(|error| mutation_error(kind, error))?;
-            let values = items
-                .into_iter()
-                .map(crate::value::record_codec::from_native)
-                .collect::<Result<_, _>>()?;
-            Ok(Value::OwnedIterator(Rc::new(
-                OwnedIteratorValue::from_items(values, item_layout.rils_type().clone()),
-            )))
+            crate::iteration::native_sequence_into_iterator(
+                object.clone(),
+                &NativeOwnedContext {
+                    structs: Vec::new(),
+                    enums: Vec::new(),
+                },
+            )
         }
         _ => unreachable!(),
     }

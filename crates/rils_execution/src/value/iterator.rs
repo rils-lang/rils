@@ -18,6 +18,7 @@ pub struct OwnedIteratorValue {
     generated_items: Option<Rc<RefCell<Box<dyn Iterator<Item = Value>>>>>,
     slots: Option<RefCell<std::vec::IntoIter<FieldSlot>>>,
     pub element_type: Type,
+    pub iterator_type: Option<Type>,
     pub source: Option<Rc<IndexedStorage>>,
     pub cursor: std::cell::Cell<usize>,
 }
@@ -31,6 +32,7 @@ impl OwnedIteratorValue {
             generated_items: None,
             slots: None,
             element_type,
+            iterator_type: None,
             source: Some(source),
             cursor: std::cell::Cell::new(0),
         }
@@ -44,6 +46,7 @@ impl OwnedIteratorValue {
             generated_items: None,
             slots: None,
             element_type,
+            iterator_type: None,
             source: None,
             cursor: std::cell::Cell::new(0),
         }
@@ -57,6 +60,7 @@ impl OwnedIteratorValue {
             generated_items: None,
             slots: Some(RefCell::new(slots)),
             element_type,
+            iterator_type: None,
             source: None,
             cursor: std::cell::Cell::new(0),
         }
@@ -74,6 +78,7 @@ impl OwnedIteratorValue {
             generated_items: None,
             slots: None,
             element_type,
+            iterator_type: None,
             source: None,
             cursor: std::cell::Cell::new(0),
         }
@@ -90,9 +95,15 @@ impl OwnedIteratorValue {
             generated_items: Some(Rc::new(RefCell::new(Box::new(items)))),
             slots: None,
             element_type,
+            iterator_type: None,
             source: None,
             cursor: std::cell::Cell::new(0),
         }
+    }
+
+    pub fn with_iterator_type(mut self, iterator_type: Type) -> Self {
+        self.iterator_type = Some(iterator_type);
+        self
     }
 
     pub fn next(&self) -> Result<Option<Value>, String> {

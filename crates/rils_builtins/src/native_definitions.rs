@@ -98,6 +98,13 @@ pub mod btree_map {
     rils_stdlib::btreemap_definition!(decl_rils_metadata);
 }
 
+pub mod btree_map_into_iter {
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::btreemapintoiter_definition!(decl_rils_metadata);
+    rils_stdlib::btreemapintoiter_definition!(decl_rils_trait_impls);
+}
+
 pub mod btree_set {
     use rils_stdlib_macros::decl_rils_metadata;
 
@@ -108,6 +115,13 @@ pub mod hash_map {
     use rils_stdlib_macros::decl_rils_metadata;
 
     rils_stdlib::hashmap_definition!(decl_rils_metadata);
+}
+
+pub mod hash_map_into_iter {
+    use rils_stdlib_macros::{decl_rils_metadata, decl_rils_trait_impls};
+
+    rils_stdlib::hashmapintoiter_definition!(decl_rils_metadata);
+    rils_stdlib::hashmapintoiter_definition!(decl_rils_trait_impls);
 }
 
 pub mod hash_set {

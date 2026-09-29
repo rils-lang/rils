@@ -130,18 +130,22 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             reject_referenced_map(&map)?;
             let key_type = map.key_type.borrow().clone();
             let value_type = map.value_type.borrow().clone();
-            let values = map
-                .entries
-                .borrow_mut()
-                .drain()
-                .map(|(key, slot)| {
-                    tuple(vec![
-                        key.to_value(),
-                        slot.value.expect("unreferenced HashMap value is present"),
-                    ])
-                })
-                .collect();
-            Ok(iterator(values, Type::Tuple(vec![key_type, value_type])))
+            let entries = std::mem::take(&mut *map.entries.borrow_mut());
+            let values = entries.into_iter().map(|(key, slot)| {
+                tuple(vec![
+                    key.to_value(),
+                    slot.value.expect("unreferenced HashMap value is present"),
+                ])
+            });
+            let collection_type = Type::Named {
+                name: "HashMap".into(),
+                arguments: vec![key_type.clone(), value_type.clone()],
+            };
+            Ok(crate::iteration::generated_collection_iterator(
+                values,
+                Type::Tuple(vec![key_type, value_type]),
+                &collection_type,
+            ))
         }
         _ => Err(format!("unknown HashMap built-in `{id:?}`")),
     }
@@ -234,13 +238,16 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
         }
         BuiltinId::HashSetIntoIter => {
             let element_type = set.element_type.borrow().clone();
-            let values = set
-                .entries
-                .borrow_mut()
-                .drain()
-                .map(|key| key.to_value())
-                .collect();
-            Ok(iterator(values, element_type))
+            let entries = std::mem::take(&mut *set.entries.borrow_mut());
+            let collection_type = Type::Named {
+                name: "HashSet".into(),
+                arguments: vec![element_type.clone()],
+            };
+            Ok(crate::iteration::generated_collection_iterator(
+                entries.into_iter().map(|key| key.to_value()),
+                element_type,
+                &collection_type,
+            ))
         }
         _ => Err(format!("unknown HashSet built-in `{id:?}`")),
     }

@@ -166,6 +166,8 @@ pub fn native_implements_with(
         crate::native_definitions::float::TRAIT_IMPLS,
         crate::native_definitions::string::TRAIT_IMPLS,
         crate::native_definitions::rc::TRAIT_IMPLS,
+        crate::native_definitions::btree_map_into_iter::TRAIT_IMPLS,
+        crate::native_definitions::hash_map_into_iter::TRAIT_IMPLS,
     ]
     .into_iter()
     .flatten()
@@ -247,6 +249,26 @@ pub fn builtin_module_members(path: &str) -> &'static [&'static str] {
                     && let Some((module, name)) = declaration.path.rsplit_once("::")
                 {
                     members.entry(module).or_default().push(name);
+                } else if matches!(declaration.kind, BuiltinKind::Struct | BuiltinKind::Enum)
+                    && let Some(module) = declaration
+                        .members
+                        .iter()
+                        .filter_map(|member| member.native_symbol)
+                        .find_map(|symbol| {
+                            symbol
+                                .rsplit_once("::")?
+                                .0
+                                .rsplit_once("::")
+                                .map(|(module, _)| module)
+                        })
+                {
+                    members.entry(module).or_default().push(
+                        declaration
+                            .path
+                            .rsplit("::")
+                            .next()
+                            .unwrap_or(declaration.path),
+                    );
                 }
             }
             for names in members.values_mut() {

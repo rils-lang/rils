@@ -69,3 +69,19 @@ fn native_map_methods_preserve_values_and_borrows() {
         Value::from_i32(60),
     );
 }
+
+#[test]
+fn owned_map_iterators_move_entries_in_both_backends() {
+    for (source, expected) in [
+        (
+            "let mut map: HashMap<i32, string> = HashMap::new(); map.insert(1, \"one\"); let mut entries: core::collections::HashMapIntoIter<i32, string> = map.into_iter(); let entry: (i32, string) = entries.next().unwrap(); entry.0 == 1 && entry.1 == \"one\" && entries.next().is_none()",
+            true,
+        ),
+        (
+            "let mut map: BTreeMap<i32, string> = BTreeMap::new(); map.insert(2, \"two\"); map.insert(1, \"one\"); let mut entries: core::collections::BTreeMapIntoIter<i32, string> = map.into_iter(); let first = entries.next().unwrap(); let second = entries.next().unwrap(); first.0 == 1 && first.1 == \"one\" && second.0 == 2 && second.1 == \"two\" && entries.next().is_none()",
+            true,
+        ),
+    ] {
+        assert_both(source, Value::Bool(expected));
+    }
+}

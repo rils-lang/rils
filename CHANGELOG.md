@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- **破坏性变更：** `HashMap<K, V>` 与 `BTreeMap<K, V>` 的消费式迭代器分别改为 `HashMapIntoIter<K, V>` 和 `BTreeMapIntoIter<K, V>`，直接接管 Map 存储并逐项移出键值对。显式写过旧 `OwnedIterator<(K, V)>` 类型的代码请改用对应具体类型；依赖类型推断的 `for` 和 `.into_iter()` 无需修改。
+
 - `Vec<T>` 的消费式迭代和原生容器迭代直接接管原有元素存储，不再为遍历复制到新的 `VecDeque`；字符串的 `chars/bytes/lines/split` 改为按需产生元素。
 
 - `VecDeque<T>` 和 `BinaryHeap<T>` 现在支持消费式 `into_iter()` 与 `for`；队列按队首到队尾遍历，堆的遍历顺序不保证排序。`Iterator` 声明不再重复包含 `into_iter`，迭代器仍通过 `IntoIterator` 的 blanket 关系获得该方法。

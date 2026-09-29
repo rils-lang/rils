@@ -7,7 +7,7 @@ use rils_builtins::BuiltinId;
 
 use crate::{
     types::{Type, merge_types},
-    value::{BTreeMapValue, FieldSlot, HashKey, IndexedStorage, OwnedIteratorValue, Value},
+    value::{BTreeMapValue, FieldSlot, HashKey, IndexedStorage, Value},
 };
 
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
@@ -103,18 +103,21 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             let key_type = map.key_type.borrow().clone();
             let value_type = map.value_type.borrow().clone();
             let entries = std::mem::take(&mut *map.entries.borrow_mut());
-            let values = entries
-                .into_iter()
-                .map(|(key, slot)| {
-                    tuple(vec![
-                        key.to_value(),
-                        slot.value.expect("unreferenced BTreeMap entry is present"),
-                    ])
-                })
-                .collect();
-            Ok(Value::OwnedIterator(Rc::new(
-                OwnedIteratorValue::from_items(values, Type::Tuple(vec![key_type, value_type])),
-            )))
+            let values = entries.into_iter().map(|(key, slot)| {
+                tuple(vec![
+                    key.to_value(),
+                    slot.value.expect("unreferenced BTreeMap entry is present"),
+                ])
+            });
+            let collection_type = Type::Named {
+                name: "BTreeMap".into(),
+                arguments: vec![key_type.clone(), value_type.clone()],
+            };
+            Ok(crate::iteration::generated_collection_iterator(
+                values,
+                Type::Tuple(vec![key_type, value_type]),
+                &collection_type,
+            ))
         }
         _ => Err("unsupported BTreeMap operation".into()),
     }

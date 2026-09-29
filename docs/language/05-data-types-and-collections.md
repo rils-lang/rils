@@ -145,7 +145,8 @@ let highest = priorities.pop(); // Some(5)
 `BTreeMap<K, V>` 是按键排序的拥有型 Map，可从 prelude 或 `std::collections` 访问。
 支持 `new/len/is_empty/clear/contains_key/insert/get_cloned/remove`，
 `first_key_cloned/last_key_cloned` 返回两端键的显式克隆；`into_iter()` 或直接用于 `for` 会消费 Map，
-按键从小到大产生 `(K, V)`。`iter()` 则按键顺序借用并产生 `(&K, &V)`，不会消费 Map。
+按键从小到大产生 `(K, V)`，返回的具体类型是 `core::collections::BTreeMapIntoIter<K, V>`。
+`iter()` 则按键顺序借用并产生 `(&K, &V)`，不会消费 Map。
 当前键类型限于 `bool`、整数、`char` 和 `string`；
 浮点键等不支持的类型会在操作时返回错误。Rils 尚未提供通用 `Ord` trait，
 因此自定义类型暂不能作为有序 Map 的键。
@@ -180,6 +181,7 @@ for value in values {
 `HashMap<K, V>` 和 `HashSet<T>` 位于 prelude，也可通过 `std::collections` 访问。当前可作为键或
 集合元素的类型是实现内建 `Eq + Hash` 的 `bool`、整数、`char`、`string`，以及字段可递归作为键的
 非泛型 struct 和 enum。后两者可用 `#[derive(Eq, Hash)]`；浮点数会在静态分析阶段拒绝。
+`HashMap<K, V>::into_iter()` 返回 `core::collections::HashMapIntoIter<K, V>`，逐项移出键值对。
 两种容器都提供 `iter()`：Map 产生 `(&K, &V)`，Set 产生 `&T`；哈希容器的遍历顺序不保证固定。
 借用迭代器或其产出的引用仍存活时，不能结构修改原集合。
 

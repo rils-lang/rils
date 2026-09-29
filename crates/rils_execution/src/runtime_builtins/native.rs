@@ -1,6 +1,6 @@
 //! Native methods generated from the shared Rust standard-library definitions.
 
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc, sync::OnceLock};
 
 use crate::{IntegerType, Type, Value, value::OwnedIteratorValue};
 use rils_stdlib::stdlib::{
@@ -178,6 +178,30 @@ pub fn call_symbol(
         .or_else(|| vector::call_symbol(symbol, arguments))
         .or_else(|| range::call_symbol(symbol, arguments))
         .or_else(|| indexed_iterator::call_symbol(symbol, arguments))
+        .or_else(|| iterator_next_symbol(symbol, arguments))
+}
+
+fn iterator_next_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    static NEXT_SYMBOLS: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    let symbols = NEXT_SYMBOLS.get_or_init(|| {
+        rils_builtins::BUILTINS
+            .iter()
+            .flat_map(|declaration| declaration.members)
+            .filter(|member| member.name == "next")
+            .filter_map(|member| member.native_symbol)
+            .collect()
+    });
+    if !symbols.contains(symbol) {
+        return None;
+    }
+    if arguments.is_empty() {
+        return Some(Err("iterator method requires a receiver".into()));
+    }
+    if !matches!(arguments.first(), Some(Value::Reference(reference)) if matches!(reference.read(), Ok(Value::OwnedIterator(_))))
+    {
+        return None;
+    }
+    Some(super::indexed_iter::next(arguments))
 }
 
 pub fn call_owned_symbol(

@@ -213,6 +213,19 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         {
             arguments.len() == 1 && merge_types(&arguments[0], &iterator.element_type).is_some()
         }
+        (Type::Named { name, arguments }, Value::OwnedIterator(iterator)) => {
+            matches!(
+                &iterator.iterator_type,
+                Some(Type::Named {
+                    name: actual_name,
+                    arguments: actual_arguments,
+                }) if name.rsplit("::").next() == actual_name.rsplit("::").next()
+                    && arguments.len() == actual_arguments.len()
+                    && arguments.iter().zip(actual_arguments).all(|(expected, actual)| {
+                        merge_types(expected, actual).is_some()
+                    })
+            )
+        }
         (Type::Named { name, arguments }, Value::BorrowedIndexedIterator(iterator))
             if name == "Iter" =>
         {
@@ -654,10 +667,12 @@ fn type_of_value(value: &Value) -> Option<Type> {
             name: "BTreeSet".into(),
             arguments: vec![set.element_type.borrow().clone()],
         }),
-        Value::OwnedIterator(iterator) => Some(Type::Named {
-            name: "OwnedIterator".into(),
-            arguments: vec![iterator.element_type.clone()],
-        }),
+        Value::OwnedIterator(iterator) => Some(iterator.iterator_type.clone().unwrap_or_else(
+            || Type::Named {
+                name: "OwnedIterator".into(),
+                arguments: vec![iterator.element_type.clone()],
+            },
+        )),
         Value::BorrowedIndexedIterator(iterator) => Some(Type::Named {
             name: "Iter".into(),
             arguments: vec![Type::Reference {

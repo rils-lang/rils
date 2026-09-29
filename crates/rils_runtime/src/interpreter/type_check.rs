@@ -371,6 +371,12 @@ pub(super) fn type_implements_trait(
             let Type::Named { name, .. } = actual else {
                 return false;
             };
+            if rils_builtins::native_implements(
+                name.rsplit("::").next().unwrap_or(name),
+                trait_name,
+            ) {
+                return true;
+            }
             match environment.borrow().get(name) {
                 Some(Value::StructType(definition)) => {
                     definition.implemented_traits.borrow().contains(trait_name)

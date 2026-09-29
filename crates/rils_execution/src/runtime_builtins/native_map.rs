@@ -376,16 +376,13 @@ fn dispatch(
             super::indexed_iter::borrow_map(arguments)
         }
         BuiltinId::HashMapIntoIter | BuiltinId::BtreeMapIntoIter => {
-            let entries = object
-                .with_mut(DynamicValue::take_all_sequence_items)?
-                .map_err(|error| mutation_error(kind, error))?;
-            let values = entries
-                .into_iter()
-                .map(crate::value::record_codec::from_native)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::OwnedIterator(Rc::new(
-                OwnedIteratorValue::from_items(values.into(), pair_layout.rils_type().clone()),
-            )))
+            crate::iteration::native_sequence_into_iterator(
+                object.clone(),
+                &NativeOwnedContext {
+                    structs: Vec::new(),
+                    enums: Vec::new(),
+                },
+            )
         }
         _ => unreachable!(),
     }
