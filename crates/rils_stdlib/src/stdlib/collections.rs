@@ -67,6 +67,18 @@ mod native {
         }
     }
 
+    #[rils_impl]
+    impl<T> std::iter::IntoIterator for VecDeque<T> {
+        type Item = T;
+        type IntoIter = Iterator<T>;
+
+        /// Consumes the queue from front to back.
+        #[rils_indexed_view]
+        fn into_iter(self) -> Self::IntoIter {
+            Iterator(self.0)
+        }
+    }
+
     impl<T> VecDeque<T> {
         pub fn clone_front_with<E>(
             values: &std::collections::VecDeque<T>,
@@ -177,6 +189,18 @@ mod native {
     /// An owned max-priority queue. Elements must be orderable integers, char, or string.
     #[rils_struct]
     pub struct BinaryHeap<T>(std::collections::BinaryHeap<T>);
+
+    #[rils_impl]
+    impl<T> std::iter::IntoIterator for BinaryHeap<T> {
+        type Item = T;
+        type IntoIter = Iterator<T>;
+
+        /// Consumes the heap in its storage order.
+        #[rils_indexed_view]
+        fn into_iter(self) -> Self::IntoIter {
+            Iterator(self.0.into_iter().collect())
+        }
+    }
 
     impl<T: HeapElement> BinaryHeap<T> {
         /// Creates an empty max-priority queue.

@@ -127,9 +127,11 @@ let characters = "R世".chars().count(); // 2
 ## VecDeque 与 BinaryHeap
 
 `VecDeque<T>` 提供双端 `push_front/push_back`、`pop_front/pop_back`、`front_cloned/back_cloned`，
-适合队列。`BinaryHeap<T>` 是最大优先队列，提供 `new/len/is_empty/push/pop/peek_cloned/clear`；
+适合队列。`VecDeque<T>::into_iter()` 或 `for` 会消费队列，并从队首到队尾产出元素。
+`BinaryHeap<T>` 是最大优先队列，提供 `new/len/is_empty/push/pop/peek_cloned/clear`；
 `pop` 每次取出最大元素，`peek_cloned` 显式克隆堆顶。它目前支持整数、`char` 和 `string` 元素；
-不支持的类型在 `push` 时返回明确错误。两个类型都可由 prelude 或 `std::collections` 访问。
+不支持的类型在 `push` 时返回明确错误。`BinaryHeap<T>::into_iter()` 和 `for` 会消费堆，遍历顺序不保证排序；需要从大到小取值时使用 `pop`。
+两个类型都可由 prelude 或 `std::collections` 访问。
 
 ```rust
 let mut priorities: BinaryHeap<i32> = BinaryHeap::new();

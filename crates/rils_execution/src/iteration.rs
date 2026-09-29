@@ -36,6 +36,19 @@ pub fn into_iterator_with_context(
         | Value::BorrowedMapIterator(_)
         | Value::BorrowedSetIterator(_)) => value,
         Value::Array(storage) | Value::Vec(storage) => owned_indexed_iterator(storage)?,
+        Value::VecDeque(queue) => {
+            let element_type = queue.element_type.borrow().clone().unwrap_or(Type::Unknown);
+            let items = std::mem::take(&mut *queue.elements.borrow_mut());
+            Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(items, element_type)))
+        }
+        Value::BinaryHeap(heap) => {
+            let element_type = heap.element_type.borrow().clone().unwrap_or(Type::Unknown);
+            let items = std::mem::take(&mut *heap.elements.borrow_mut());
+            Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(
+                items.into(),
+                element_type,
+            )))
+        }
         Value::Dynamic(object)
             if crate::value::native_layouts::vec::matches(
                 object.descriptor().layout().rils_type(),
@@ -45,6 +58,15 @@ pub fn into_iterator_with_context(
         }
         Value::Dynamic(object)
             if crate::value::native_layouts::btree_set::matches(
+                object.descriptor().layout().rils_type(),
+            ) =>
+        {
+            native_sequence_into_iterator(object, context)?
+        }
+        Value::Dynamic(object)
+            if crate::value::native_layouts::vec_deque::matches(
+                object.descriptor().layout().rils_type(),
+            ) || crate::value::native_layouts::binary_heap::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {

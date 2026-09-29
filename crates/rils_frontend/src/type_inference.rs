@@ -1618,9 +1618,8 @@ impl<'a> Inferencer<'a> {
             Type::Reference { inner, .. } => self.iterable_item_type_inner(inner, depth + 1),
             Type::Array { element, .. } => (**element).clone(),
             Type::Named { name, arguments } => match name.as_str() {
-                "Vec" | "HashSet" | "BTreeSet" | "OwnedIterator" | "Iter" | "Range" => {
-                    arguments.first().cloned().unwrap_or(Type::Unknown)
-                }
+                "Vec" | "VecDeque" | "BinaryHeap" | "HashSet" | "BTreeSet" | "OwnedIterator"
+                | "Iter" | "Range" => arguments.first().cloned().unwrap_or(Type::Unknown),
                 "HashMap" | "BTreeMap" if arguments.len() == 2 => Type::Tuple(arguments.clone()),
                 _ => {
                     let Some(definition) = self.types.get(name) else {

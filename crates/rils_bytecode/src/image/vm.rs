@@ -182,7 +182,7 @@ impl<'a> VirtualMachine<'a> {
                         value = value
                             .apply_declared_storage(&expected)
                             .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                        if matches!(&expected, Type::Named { name, .. } if matches!(name.as_str(), "Vec" | "HashSet" | "BTreeSet" | "HashMap" | "BTreeMap"))
+                        if matches!(&expected, Type::Named { name, .. } if matches!(name.as_str(), "Vec" | "VecDeque" | "BinaryHeap" | "HashSet" | "BTreeSet" | "HashMap" | "BTreeMap"))
                         {
                             let mut structs = Vec::new();
                             let mut enums = Vec::new();

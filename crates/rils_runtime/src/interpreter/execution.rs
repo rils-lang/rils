@@ -223,7 +223,13 @@ impl Interpreter {
                 if let Some(expected @ Type::Named { name, .. }) = type_annotation.as_ref()
                     && matches!(
                         name.as_str(),
-                        "Vec" | "HashSet" | "BTreeSet" | "HashMap" | "BTreeMap"
+                        "Vec"
+                            | "VecDeque"
+                            | "BinaryHeap"
+                            | "HashSet"
+                            | "BTreeSet"
+                            | "HashMap"
+                            | "BTreeMap"
                     )
                 {
                     let (structs, enums) = environment.borrow().visible_type_definitions();

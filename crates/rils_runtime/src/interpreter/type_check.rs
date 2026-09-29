@@ -339,6 +339,9 @@ pub(super) fn type_implements_trait(
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Vec" && arguments.len() == 1) => {
             true
         }
+        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if matches!(name.as_str(), "VecDeque" | "BinaryHeap") && arguments.len() == 1) => {
+            true
+        }
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashMap" && arguments.len() == 2) => {
             true
         }

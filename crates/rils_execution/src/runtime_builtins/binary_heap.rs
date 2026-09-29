@@ -44,8 +44,17 @@ fn owned_member(symbol: &str) -> Option<&'static BuiltinMember> {
     })
 }
 
+fn into_iter_member(symbol: &str) -> bool {
+    rils_builtins::builtin("BinaryHeap").is_some_and(|declaration| {
+        declaration
+            .members
+            .iter()
+            .any(|member| member.name == "into_iter" && member.native_symbol == Some(symbol))
+    })
+}
+
 pub(super) fn is_owned_symbol(symbol: &str) -> bool {
-    owned_member(symbol).is_some()
+    owned_member(symbol).is_some() || into_iter_member(symbol)
 }
 
 pub(super) fn call_owned_symbol(
@@ -53,6 +62,20 @@ pub(super) fn call_owned_symbol(
     mut arguments: Vec<Value>,
     context: &super::NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if into_iter_member(symbol) {
+        return Some((|| {
+            if arguments.len() != 1 {
+                return Err("BinaryHeap::into_iter expects one receiver".into());
+            }
+            let receiver = arguments.into_iter().next().expect("arity checked");
+            match crate::iteration::into_iterator_with_context(receiver, context)? {
+                crate::iteration::IntoIteratorResult::Ready(iterator) => Ok(iterator),
+                crate::iteration::IntoIteratorResult::UserDefined(_) => {
+                    Err("BinaryHeap::into_iter expects a BinaryHeap receiver".into())
+                }
+            }
+        })());
+    }
     let member = owned_member(symbol)?;
     Some((|| {
         if member.name != "push" {
