@@ -17,16 +17,16 @@ pub(super) fn resolve_numeric_member(
         | Value::U64(_)
         | Value::U128(_)
         | Value::Usize(_) => rils_builtins::integer_method(name)
-            .map(|method| BuiltinMethod::IntegerIntrinsic(method.id)),
+            .and_then(|method| method.id.canonical_path().map(BuiltinMethod::Native)),
         Value::Native(object) if matches!(object.descriptor().rils_type(), Type::Integer(_)) => {
             rils_builtins::integer_method(name)
-                .map(|method| BuiltinMethod::IntegerIntrinsic(method.id))
+                .and_then(|method| method.id.canonical_path().map(BuiltinMethod::Native))
         }
-        Value::F32(_) | Value::F64(_) => {
-            rils_builtins::float_method(name).map(|method| BuiltinMethod::FloatIntrinsic(method.id))
-        }
+        Value::F32(_) | Value::F64(_) => rils_builtins::float_method(name)
+            .and_then(|method| method.id.canonical_path().map(BuiltinMethod::Native)),
         Value::Native(object) if matches!(object.descriptor().rils_type(), Type::Float(_)) => {
-            rils_builtins::float_method(name).map(|method| BuiltinMethod::FloatIntrinsic(method.id))
+            rils_builtins::float_method(name)
+                .and_then(|method| method.id.canonical_path().map(BuiltinMethod::Native))
         }
         _ => return Ok(None),
     }

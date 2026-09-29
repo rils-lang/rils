@@ -285,8 +285,6 @@ pub struct BoundMethod {
 pub enum BuiltinMethod {
     Native(&'static str),
     Runtime(rils_builtins::BuiltinId),
-    IntegerIntrinsic(rils_builtins::BuiltinId),
-    FloatIntrinsic(rils_builtins::BuiltinId),
 }
 
 #[derive(Clone, Copy)]
@@ -312,7 +310,7 @@ pub enum BuiltinFunction {
     BTreeMapNew,
     BTreeSetNew,
     IntegerIntrinsic {
-        id: rils_builtins::BuiltinId,
+        symbol: &'static str,
         target: crate::IntegerType,
     },
 }

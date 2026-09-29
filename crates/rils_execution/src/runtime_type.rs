@@ -754,117 +754,46 @@ fn type_of_value(value: &Value) -> Option<Type> {
             }
             Some(signature)
         }
-        Value::BuiltinBoundMethod(method) => Some(match method.method {
-            crate::value::BuiltinMethod::Native(symbol) => {
-                let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
-                let receiver = match receiver {
-                    Type::Reference { inner, .. } => *inner,
-                    receiver => receiver,
-                };
-                rils_frontend::standard_library::builtin_member_type(
-                    &receiver,
-                    rils_builtins::native_member(symbol)?.name,
-                )
-                .unwrap_or_else(Type::opaque_function)
-            }
-            crate::value::BuiltinMethod::Runtime(id) => {
-                let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
-                let receiver = match receiver {
-                    Type::Reference { inner, .. } => *inner,
-                    receiver => receiver,
-                };
-                rils_frontend::standard_library::builtin_member_type(
-                    &receiver,
-                    rils_builtins::runtime_member(id)?.1.name,
-                )
-                .unwrap_or_else(Type::opaque_function)
-            }
-            crate::value::BuiltinMethod::IntegerIntrinsic(id)
-            | crate::value::BuiltinMethod::FloatIntrinsic(id) => {
-                let Some(intrinsic) = rils_builtins::intrinsic(id) else {
-                    return Some(Type::opaque_function());
-                };
-                let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
-                fn resolve(kind: rils_builtins::TypePattern, receiver: &Type) -> Type {
-                    use rils_builtins::TypePattern;
-                    match kind {
-                        rils_builtins::TypePattern::BoundGeneric { .. }
-                        | rils_builtins::TypePattern::Array { .. }
-                        | rils_builtins::TypePattern::ArrayParameter { .. }
-                        | rils_builtins::TypePattern::Slice(_) => {
-                            rils_frontend::standard_library::resolve_type_pattern(kind)
+        Value::BuiltinBoundMethod(method) => {
+            let receiver = Type::of_value(method.receiver.as_ref()).unwrap_or(Type::Unknown);
+            let receiver = match receiver {
+                Type::Reference { inner, .. } => *inner,
+                receiver => receiver,
+            };
+            let signature = match method.method {
+                crate::value::BuiltinMethod::Native(symbol) => {
+                    if let Some((intrinsic, _)) = rils_builtins::intrinsic_by_symbol(symbol) {
+                        match receiver {
+                            Type::Integer(integer) => {
+                                rils_frontend::standard_library::integer_intrinsic_type(
+                                    intrinsic, integer,
+                                )
+                            }
+                            Type::Float(float) => {
+                                rils_frontend::standard_library::float_intrinsic_type(
+                                    intrinsic, float,
+                                )
+                            }
+                            _ => Type::opaque_function(),
                         }
-                        TypePattern::SelfType => receiver.clone(),
-                        TypePattern::AnyInteger | TypePattern::Unknown => Type::Unknown,
-                        TypePattern::Generic(name) => Type::Variable(name.into()),
-                        TypePattern::Unit => Type::Unit,
-                        TypePattern::Bool => Type::Bool,
-                        TypePattern::Char => Type::Char,
-                        TypePattern::String => Type::String,
-                        TypePattern::F32 => Type::Float(crate::FloatType::F32),
-                        TypePattern::F64 => Type::Float(crate::FloatType::F64),
-                        TypePattern::U32 => Type::Integer(crate::IntegerType::U32),
-                        TypePattern::U8 => Type::Integer(crate::IntegerType::U8),
-                        TypePattern::Usize => Type::USIZE,
-                        TypePattern::Named { path, arguments } => Type::Named {
-                            name: path.into(),
-                            arguments: arguments
-                                .iter()
-                                .map(|value| resolve(*value, receiver))
-                                .collect(),
-                        },
-                        TypePattern::Option(inner) => {
-                            Type::Option(Box::new(resolve(*inner, receiver)))
-                        }
-                        TypePattern::Result { ok, error } => Type::Result(
-                            Box::new(resolve(*ok, receiver)),
-                            Box::new(resolve(*error, receiver)),
-                        ),
-                        TypePattern::Tuple(values) => Type::Tuple(
-                            values
-                                .iter()
-                                .map(|value| resolve(*value, receiver))
-                                .collect(),
-                        ),
-                        TypePattern::Function { parameters, result } => Type::function(
-                            parameters
-                                .iter()
-                                .map(|value| resolve(*value, receiver))
-                                .collect(),
-                            resolve(*result, receiver),
-                        ),
-                        TypePattern::Reference { mutable, inner } => Type::Reference {
-                            mutable,
-                            inner: Box::new(resolve(*inner, receiver)),
-                        },
-                        TypePattern::Associated {
-                            base,
-                            trait_name,
-                            name,
-                            arguments,
-                        } => Type::Associated {
-                            base: Box::new(resolve(*base, receiver)),
-                            trait_name: trait_name.map(str::to_owned),
-                            name: name.into(),
-                            arguments: arguments
-                                .iter()
-                                .map(|value| resolve(*value, receiver))
-                                .collect(),
-                        },
+                    } else {
+                        rils_frontend::standard_library::builtin_member_type(
+                            &receiver,
+                            rils_builtins::native_member(symbol)?.name,
+                        )
+                        .unwrap_or_else(Type::opaque_function)
                     }
                 }
-                Type::function(
-                    intrinsic
-                        .signature
-                        .parameters
-                        .iter()
-                        .copied()
-                        .map(|value| resolve(value, &receiver))
-                        .collect(),
-                    resolve(intrinsic.signature.result, &receiver),
-                )
-            }
-        }),
+                crate::value::BuiltinMethod::Runtime(id) => {
+                    rils_frontend::standard_library::builtin_member_type(
+                        &receiver,
+                        rils_builtins::runtime_member(id)?.1.name,
+                    )
+                    .unwrap_or_else(Type::opaque_function)
+                }
+            };
+            Some(signature)
+        }
         Value::TraitMethodSelector(_) => Some(Type::opaque_function()),
         Value::Option { element_type, .. } => Some(Type::Option(Box::new(
             element_type.clone().unwrap_or(Type::Unknown),

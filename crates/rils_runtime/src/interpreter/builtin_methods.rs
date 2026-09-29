@@ -8,15 +8,17 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         let arity = match method.method {
-            BuiltinMethod::IntegerIntrinsic(id) | BuiltinMethod::FloatIntrinsic(id) => {
-                rils_builtins::intrinsic(id).map_or(0, |item| item.signature.parameters.len())
-            }
             BuiltinMethod::Runtime(id) => rils_builtins::runtime_member(id)
                 .and_then(|(_, member)| member.signature)
                 .map_or(0, |signature| signature.parameters.len()),
             BuiltinMethod::Native(symbol) => rils_builtins::native_member(symbol)
                 .and_then(|member| member.signature)
-                .map_or(0, |signature| signature.parameters.len()),
+                .map(|signature| signature.parameters.len())
+                .or_else(|| {
+                    rils_builtins::intrinsic_by_symbol(symbol)
+                        .map(|(item, _)| item.signature.parameters.len())
+                })
+                .unwrap_or(0),
         };
         check_arity("builtin method", arity, arity, arguments.len(), span)?;
         if let BuiltinMethod::Runtime(id) = method.method
@@ -42,20 +44,6 @@ impl Interpreter {
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
                 self.call_native_symbol(symbol, &values, span)
-            }
-            BuiltinMethod::IntegerIntrinsic(id) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::numeric::execute_integer_intrinsic(id, None, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::FloatIntrinsic(id) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::numeric::execute_intrinsic(id, None, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
                 rils_builtins::BuiltinId::RangeIntoIter

@@ -43,7 +43,10 @@ pub(super) fn resolve_associated_path(
                     )
                 })?;
             Ok(Value::BuiltinFunction(BuiltinFunction::IntegerIntrinsic {
-                id: intrinsic.id,
+                symbol: intrinsic
+                    .id
+                    .canonical_path()
+                    .expect("integer intrinsic has a canonical symbol"),
                 target,
             }))
         }

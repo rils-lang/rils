@@ -224,9 +224,11 @@ impl Interpreter {
                         type_argument,
                     })))
                 }
-                BuiltinFunction::IntegerIntrinsic { id, target } => {
+                BuiltinFunction::IntegerIntrinsic { symbol, target } => {
                     check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
-                    crate::numeric::execute_integer_intrinsic(id, Some(target), arguments)
+                    let (intrinsic, _) = rils_builtins::intrinsic_by_symbol(symbol)
+                        .expect("integer intrinsic symbol remains registered");
+                    crate::numeric::execute_integer_intrinsic(intrinsic.id, Some(target), arguments)
                         .map_err(|message| RuntimeError::new(message, span))
                 }
             },
