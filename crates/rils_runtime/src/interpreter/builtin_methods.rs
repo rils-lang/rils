@@ -238,17 +238,6 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::CellGet
-                | rils_builtins::BuiltinId::CellSet
-                | rils_builtins::BuiltinId::CellReplace),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::VecDequeLen
                 | rils_builtins::BuiltinId::BtreeSetLen
                 | rils_builtins::BuiltinId::BtreeSetIsEmpty
@@ -289,10 +278,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::VecDequePopBack
                 | rils_builtins::BuiltinId::VecDequeFrontCloned
                 | rils_builtins::BuiltinId::VecDequeBackCloned
-                | rils_builtins::BuiltinId::VecDequeClear
-                | rils_builtins::BuiltinId::RefCellBorrow
-                | rils_builtins::BuiltinId::RefCellBorrowMut
-                | rils_builtins::BuiltinId::RefCellReplace),
+                | rils_builtins::BuiltinId::VecDequeClear),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
