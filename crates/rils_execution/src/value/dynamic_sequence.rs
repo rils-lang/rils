@@ -132,6 +132,15 @@ pub fn borrowed_item(object: &DynamicObject, index: usize) -> Result<Value, Stri
     record_codec::from_native(item)
 }
 
+pub fn borrowed_item_with_codec(
+    object: &DynamicObject,
+    index: usize,
+    codec: &record_codec::NativeRecordCodec,
+) -> Result<Value, String> {
+    let item = object.with(|payload| payload.with_sequence_item(index, clone_item))???;
+    codec.from_native(item)
+}
+
 fn clone_item(item: &DynamicValue) -> Result<DynamicValue, String> {
     rils_stdlib::native::registry().clone_borrowed_element(item)
 }

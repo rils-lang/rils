@@ -34,6 +34,15 @@ fn into_iter_member(symbol: &str) -> bool {
     })
 }
 
+fn iter_member(symbol: &str) -> bool {
+    builtin("Vec").is_some_and(|declaration| {
+        declaration
+            .members
+            .iter()
+            .any(|member| member.name == "iter" && member.native_symbol == Some(symbol))
+    })
+}
+
 fn owned_output_member(symbol: &str) -> Option<&'static str> {
     builtin("Vec")?
         .members
@@ -48,6 +57,7 @@ fn owned_output_member(symbol: &str) -> Option<&'static str> {
 pub(crate) fn is_owned_symbol(symbol: &str) -> bool {
     owned_member(symbol).is_some()
         || into_iter_member(symbol)
+        || iter_member(symbol)
         || owned_output_member(symbol).is_some()
 }
 
@@ -56,6 +66,9 @@ pub(crate) fn call_owned_symbol(
     mut arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if iter_member(symbol) {
+        return Some(indexed_iter::borrow_with_context(&arguments, context));
+    }
     if into_iter_member(symbol) {
         return Some((|| {
             if arguments.len() != 1 {

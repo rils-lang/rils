@@ -5,6 +5,7 @@ use rils_value::{DynamicValueRef, SequenceItemLease};
 
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
+use super::record_codec::NativeRecordCodec;
 use super::{
     DynamicObject, EnumType, HashKey, IndexedStorage, MapCollection, SetCollection, StructInstance,
     StructType, Value,
@@ -31,6 +32,7 @@ enum ReferenceTarget {
         index: usize,
         field: Option<usize>,
         _lease: SequenceItemLease,
+        codec: Option<Rc<NativeRecordCodec>>,
     },
     DynamicCell {
         cell: DynamicObject,
@@ -174,12 +176,37 @@ impl ReferenceValue {
         Self::new_guarded_dynamic_indexed_field(sequence, index, None, mutable, guard)
     }
 
+    pub fn new_guarded_dynamic_indexed_element_with_codec(
+        sequence: DynamicObject,
+        index: usize,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+        codec: Option<Rc<NativeRecordCodec>>,
+    ) -> Result<Self, String> {
+        Self::new_guarded_dynamic_indexed_field_with_codec(
+            sequence, index, None, mutable, guard, codec,
+        )
+    }
+
     pub fn new_guarded_dynamic_indexed_field(
         sequence: DynamicObject,
         index: usize,
         field: Option<usize>,
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<Self, String> {
+        Self::new_guarded_dynamic_indexed_field_with_codec(
+            sequence, index, field, mutable, guard, None,
+        )
+    }
+
+    fn new_guarded_dynamic_indexed_field_with_codec(
+        sequence: DynamicObject,
+        index: usize,
+        field: Option<usize>,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+        codec: Option<Rc<NativeRecordCodec>>,
     ) -> Result<Self, String> {
         sequence
             .descriptor()
@@ -200,6 +227,7 @@ impl ReferenceValue {
                 index,
                 field,
                 _lease: lease,
+                codec,
             },
             _guard: guard,
         })
@@ -323,13 +351,15 @@ impl ReferenceValue {
                 sequence,
                 index,
                 field,
+                codec,
                 ..
-            } => Self::new_guarded_dynamic_indexed_field(
+            } => Self::new_guarded_dynamic_indexed_field_with_codec(
                 sequence.clone(),
                 *index,
                 *field,
                 mutable,
                 self._guard.clone(),
+                codec.clone(),
             ),
             ReferenceTarget::DynamicCell {
                 cell,
@@ -392,16 +422,27 @@ impl ReferenceValue {
                 sequence,
                 index,
                 field,
+                codec,
                 ..
             } => match field {
                 Some(field) => sequence.with(|value| {
                     value.with_sequence_item(*index, |item| {
                         let view = item.view().field(*field)?;
                         let cloned = rils_stdlib::native::registry().clone_borrowed_view(view)?;
-                        super::record_codec::from_native(cloned)
+                        if let Some(codec) = codec {
+                            codec.from_native(cloned)
+                        } else {
+                            super::record_codec::from_native(cloned)
+                        }
                     })
                 })??,
-                None => super::dynamic_sequence::borrowed_item(sequence, *index),
+                None => {
+                    if let Some(codec) = codec {
+                        super::dynamic_sequence::borrowed_item_with_codec(sequence, *index, codec)
+                    } else {
+                        super::dynamic_sequence::borrowed_item(sequence, *index)
+                    }
+                }
             },
             ReferenceTarget::DynamicCell {
                 cell,

@@ -50,3 +50,36 @@ fn explicit_into_iter_decodes_user_struct_on_next() {
     "#;
     assert_both(source, Value::from_i32(42));
 }
+
+#[test]
+fn borrowed_iter_reads_user_struct_without_moving_collection() {
+    let source = r#"
+        struct Item { value: i32 }
+        fn run() -> i32 {
+            let mut items: Vec<Item> = Vec::new();
+            items.push(Item { value: 19 });
+            let mut iterator = items.iter();
+            let item = iterator.next().unwrap();
+            if items.len() == 1 { item.value } else { 0 }
+        }
+        run()
+    "#;
+    assert_both(source, Value::from_i32(19));
+}
+
+#[test]
+fn borrowed_iter_reads_user_struct_with_owned_string_field() {
+    let source = r#"
+        struct Item { value: string }
+        fn run() -> usize {
+            let mut items: Vec<Item> = Vec::new();
+            items.push(Item { value: "hello" });
+            let mut iterator = items.iter();
+            let item = iterator.next().unwrap();
+            let text = &item.value;
+            text.len()
+        }
+        run()
+    "#;
+    assert_both(source, Value::from_usize(5));
+}

@@ -2,8 +2,13 @@ use std::{cell::Cell, rc::Rc};
 
 use crate::{
     types::Type,
-    value::{BorrowedIndexedIteratorValue, IndexedIteratorStorage, IndexedStorage, Value},
+    value::{
+        BorrowedIndexedIteratorValue, IndexedIteratorStorage, IndexedStorage, Value,
+        record_codec::NativeRecordCodec,
+    },
 };
+
+use super::NativeOwnedContext;
 
 pub(super) fn reject_mutation(sequence: &IndexedStorage) -> Result<(), String> {
     if sequence.active_iterators.get() > 0 {
@@ -28,14 +33,25 @@ pub(super) fn reject_growth(sequence: &IndexedStorage) -> Result<(), String> {
 }
 
 pub(super) fn borrow(arguments: &[Value]) -> Result<Value, String> {
-    borrow_inner(arguments, false)
+    borrow_inner(arguments, false, None)
+}
+
+pub(super) fn borrow_with_context(
+    arguments: &[Value],
+    context: &NativeOwnedContext,
+) -> Result<Value, String> {
+    borrow_inner(arguments, false, Some(context))
 }
 
 pub(super) fn borrow_map(arguments: &[Value]) -> Result<Value, String> {
-    borrow_inner(arguments, true)
+    borrow_inner(arguments, true, None)
 }
 
-fn borrow_inner(arguments: &[Value], map_entries: bool) -> Result<Value, String> {
+fn borrow_inner(
+    arguments: &[Value],
+    map_entries: bool,
+    context: Option<&NativeOwnedContext>,
+) -> Result<Value, String> {
     let Some(Value::Reference(receiver)) = arguments.first() else {
         return Err("indexed iterator method requires a borrowed receiver".into());
     };
@@ -87,6 +103,12 @@ fn borrow_inner(arguments: &[Value], map_entries: bool) -> Result<Value, String>
             length,
             element_type,
             map_entries,
+            native_codec: context.map(|context| {
+                Rc::new(NativeRecordCodec::with_definitions(
+                    &context.structs,
+                    &context.enums,
+                ))
+            }),
         },
     )))
 }

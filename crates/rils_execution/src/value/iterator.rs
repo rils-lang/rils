@@ -185,6 +185,7 @@ pub struct BorrowedIndexedIteratorValue {
     pub length: usize,
     pub element_type: Type,
     pub map_entries: bool,
+    pub native_codec: Option<Rc<NativeRecordCodec>>,
 }
 
 pub enum IndexedIteratorStorage {
@@ -276,11 +277,12 @@ impl BorrowedIndexedIteratorValue {
                 Some(self.source.clone()),
             )?,
             IndexedIteratorStorage::Native { object, .. } => {
-                ReferenceValue::new_guarded_dynamic_indexed_element(
+                ReferenceValue::new_guarded_dynamic_indexed_element_with_codec(
                     object.clone(),
                     index,
                     false,
                     Some(self.source.clone()),
+                    self.native_codec.clone(),
                 )?
             }
         };
