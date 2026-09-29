@@ -1,4 +1,4 @@
-//! B-tree set operations over declaration-derived native sequence storage.
+//! Hash and B-tree set operations over declaration-derived native storage.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -13,8 +13,50 @@ use crate::value::{
     DynamicObject, HashKey, OwnedIteratorValue, Value, record_codec::NativeRecordCodec,
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SetKind {
+    Hash,
+    BTree,
+}
+
+impl SetKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Hash => "HashSet",
+            Self::BTree => "BTreeSet",
+        }
+    }
+
+    fn matches(self, object: &DynamicObject) -> bool {
+        let ty = object.descriptor().layout().rils_type();
+        match self {
+            Self::Hash => crate::value::native_layouts::hash_set::matches(ty),
+            Self::BTree => crate::value::native_layouts::btree_set::matches(ty),
+        }
+    }
+}
+
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, String>> {
-    if !matches!(
+    let kind = if matches!(
+        id,
+        BuiltinId::HashSetLen
+            | BuiltinId::HashSetIsEmpty
+            | BuiltinId::HashSetClear
+            | BuiltinId::HashSetContains
+            | BuiltinId::HashSetInsert
+            | BuiltinId::HashSetRemove
+            | BuiltinId::HashSetIsSubset
+            | BuiltinId::HashSetIsSuperset
+            | BuiltinId::HashSetIsDisjoint
+            | BuiltinId::HashSetUnion
+            | BuiltinId::HashSetIntersection
+            | BuiltinId::HashSetDifference
+            | BuiltinId::HashSetSymmetricDifference
+            | BuiltinId::HashSetIter
+            | BuiltinId::HashSetIntoIter
+    ) {
+        SetKind::Hash
+    } else if matches!(
         id,
         BuiltinId::BtreeSetLen
             | BuiltinId::BtreeSetIsEmpty
@@ -34,19 +76,22 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
             | BuiltinId::BtreeSetIter
             | BuiltinId::BtreeSetIntoIter
     ) {
+        SetKind::BTree
+    } else {
         return None;
-    }
+    };
     let receiver = arguments.first()?;
     let Value::Dynamic(object) = super::import_receiver(receiver).ok()? else {
         return None;
     };
-    if !crate::value::native_layouts::btree_set::matches(object.descriptor().layout().rils_type()) {
+    if !kind.matches(&object) {
         return None;
     }
-    Some(dispatch(id, arguments, receiver, &object))
+    Some(dispatch(kind, id, arguments, receiver, &object))
 }
 
 fn dispatch(
+    kind: SetKind,
     id: BuiltinId,
     arguments: &[Value],
     receiver: &Value,
@@ -56,51 +101,70 @@ fn dispatch(
         .descriptor()
         .layout()
         .sequence_item()
-        .ok_or("BTreeSet has no native item layout")?
+        .ok_or("set has no native item layout")?
         .clone();
     let mutating = matches!(
         id,
-        BuiltinId::BtreeSetClear | BuiltinId::BtreeSetInsert | BuiltinId::BtreeSetRemove
+        BuiltinId::BtreeSetClear
+            | BuiltinId::BtreeSetInsert
+            | BuiltinId::BtreeSetRemove
+            | BuiltinId::HashSetClear
+            | BuiltinId::HashSetInsert
+            | BuiltinId::HashSetRemove
     );
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
-        return Err("BTreeSet mutation requires a mutable reference".into());
+        return Err(format!(
+            "{} mutation requires a mutable reference",
+            kind.name()
+        ));
     }
     match id {
-        BuiltinId::BtreeSetLen => Ok(crate::numeric::native_usize(
+        BuiltinId::BtreeSetLen | BuiltinId::HashSetLen => Ok(crate::numeric::native_usize(
             object.with(DynamicValue::sequence_len)??,
         )),
-        BuiltinId::BtreeSetIsEmpty => {
+        BuiltinId::BtreeSetIsEmpty | BuiltinId::HashSetIsEmpty => {
             Ok(Value::Bool(object.with(DynamicValue::sequence_len)?? == 0))
         }
-        BuiltinId::BtreeSetClear => {
+        BuiltinId::BtreeSetClear | BuiltinId::HashSetClear => {
             object
                 .with_mut(DynamicValue::clear_sequence)?
-                .map_err(mutation_error)?;
+                .map_err(|error| mutation_error(kind, error))?;
             Ok(Value::Unit)
         }
-        BuiltinId::BtreeSetContains | BuiltinId::BtreeSetInsert | BuiltinId::BtreeSetRemove => {
-            let item = arguments.get(1).ok_or("missing BTreeSet element")?;
-            let (key, native) = encode_key(item, item_layout)?;
+        BuiltinId::BtreeSetContains
+        | BuiltinId::BtreeSetInsert
+        | BuiltinId::BtreeSetRemove
+        | BuiltinId::HashSetContains
+        | BuiltinId::HashSetInsert
+        | BuiltinId::HashSetRemove => {
+            let item = arguments.get(1).ok_or("missing set element")?;
+            let (key, native) = encode_key(kind, item, item_layout)?;
             let index = object.with(|set| find(set, &key))??;
             match id {
-                BuiltinId::BtreeSetContains => Ok(Value::Bool(index.is_some())),
-                BuiltinId::BtreeSetInsert => {
+                BuiltinId::BtreeSetContains | BuiltinId::HashSetContains => {
+                    Ok(Value::Bool(index.is_some()))
+                }
+                BuiltinId::BtreeSetInsert | BuiltinId::HashSetInsert => {
                     if index.is_some() {
                         return Ok(Value::Bool(false));
                     }
                     object
                         .with_mut(|set| {
-                            let position = insertion_index(set, &key)?;
+                            let position = if kind == SetKind::BTree {
+                                insertion_index(set, &key)?
+                            } else {
+                                set.sequence_len()?
+                            };
                             set.insert_sequence_item(position, native)
                         })?
-                        .map_err(mutation_error)?;
+                        .map_err(|error| mutation_error(kind, error))?;
                     Ok(Value::Bool(true))
                 }
-                BuiltinId::BtreeSetRemove => {
+                BuiltinId::BtreeSetRemove | BuiltinId::HashSetRemove => {
                     if let Some(index) = index {
                         object
                             .with_mut(|set| set.take_sequence_item(index))?
-                            .map_err(mutation_error)?;
+                            .map_err(|error| mutation_error(kind, error))?;
                         Ok(Value::Bool(true))
                     } else {
                         Ok(Value::Bool(false))
@@ -130,37 +194,49 @@ fn dispatch(
         | BuiltinId::BtreeSetUnion
         | BuiltinId::BtreeSetIntersection
         | BuiltinId::BtreeSetDifference
-        | BuiltinId::BtreeSetSymmetricDifference => {
-            let other = other_set(arguments.get(1).ok_or("missing other BTreeSet")?)?;
+        | BuiltinId::BtreeSetSymmetricDifference
+        | BuiltinId::HashSetIsSubset
+        | BuiltinId::HashSetIsSuperset
+        | BuiltinId::HashSetIsDisjoint
+        | BuiltinId::HashSetUnion
+        | BuiltinId::HashSetIntersection
+        | BuiltinId::HashSetDifference
+        | BuiltinId::HashSetSymmetricDifference => {
+            let other = other_set(kind, arguments.get(1).ok_or("missing other set")?)?;
             if !object
                 .descriptor()
                 .layout()
                 .compatible_with(other.descriptor().layout())
             {
-                return Err("BTreeSet element types do not match".into());
+                return Err(format!("{} element types do not match", kind.name()));
             }
             let left_keys = object.with(keys)??;
             let right_keys = other.with(keys)??;
             match id {
-                BuiltinId::BtreeSetIsSubset => Ok(Value::Bool(left_keys.is_subset(&right_keys))),
-                BuiltinId::BtreeSetIsSuperset => {
+                BuiltinId::BtreeSetIsSubset | BuiltinId::HashSetIsSubset => {
+                    Ok(Value::Bool(left_keys.is_subset(&right_keys)))
+                }
+                BuiltinId::BtreeSetIsSuperset | BuiltinId::HashSetIsSuperset => {
                     Ok(Value::Bool(left_keys.is_superset(&right_keys)))
                 }
-                BuiltinId::BtreeSetIsDisjoint => {
+                BuiltinId::BtreeSetIsDisjoint | BuiltinId::HashSetIsDisjoint => {
                     Ok(Value::Bool(left_keys.is_disjoint(&right_keys)))
                 }
                 _ => {
                     let left = object.with(snapshot)??;
                     let right = other.with(snapshot)??;
                     let keys: BTreeSet<_> = match id {
-                        BuiltinId::BtreeSetUnion => left_keys.union(&right_keys).cloned().collect(),
-                        BuiltinId::BtreeSetIntersection => {
+                        BuiltinId::BtreeSetUnion | BuiltinId::HashSetUnion => {
+                            left_keys.union(&right_keys).cloned().collect()
+                        }
+                        BuiltinId::BtreeSetIntersection | BuiltinId::HashSetIntersection => {
                             left_keys.intersection(&right_keys).cloned().collect()
                         }
-                        BuiltinId::BtreeSetDifference => {
+                        BuiltinId::BtreeSetDifference | BuiltinId::HashSetDifference => {
                             left_keys.difference(&right_keys).cloned().collect()
                         }
-                        BuiltinId::BtreeSetSymmetricDifference => left_keys
+                        BuiltinId::BtreeSetSymmetricDifference
+                        | BuiltinId::HashSetSymmetricDifference => left_keys
                             .symmetric_difference(&right_keys)
                             .cloned()
                             .collect(),
@@ -175,11 +251,11 @@ fn dispatch(
                 }
             }
         }
-        BuiltinId::BtreeSetIter => super::indexed_iter::borrow(arguments),
-        BuiltinId::BtreeSetIntoIter => {
+        BuiltinId::BtreeSetIter | BuiltinId::HashSetIter => super::indexed_iter::borrow(arguments),
+        BuiltinId::BtreeSetIntoIter | BuiltinId::HashSetIntoIter => {
             let items = object
                 .with_mut(DynamicValue::take_all_sequence_items)?
-                .map_err(mutation_error)?;
+                .map_err(|error| mutation_error(kind, error))?;
             let values = items
                 .into_iter()
                 .map(crate::value::record_codec::from_native)
@@ -192,22 +268,26 @@ fn dispatch(
     }
 }
 
-fn other_set(value: &Value) -> Result<DynamicObject, String> {
+fn other_set(kind: SetKind, value: &Value) -> Result<DynamicObject, String> {
     let Value::Dynamic(object) = super::import_receiver(value)? else {
-        return Err("expected BTreeSet receiver".into());
+        return Err(format!("expected {} receiver", kind.name()));
     };
-    if !crate::value::native_layouts::btree_set::matches(object.descriptor().layout().rils_type()) {
-        return Err("expected BTreeSet receiver".into());
+    if !kind.matches(&object) {
+        return Err(format!("expected {} receiver", kind.name()));
     }
     Ok(object)
 }
 
 fn encode_key(
+    kind: SetKind,
     value: &Value,
     layout: Rc<DynamicLayout>,
 ) -> Result<(NativeKey, DynamicValue), String> {
-    let key = HashKey::from_ordered_value(value)
-        .map_err(|_| "BTreeSet elements must be bool, integer, char, or string".to_owned())?;
+    let key = match kind {
+        SetKind::Hash => HashKey::from_value(value)?,
+        SetKind::BTree => HashKey::from_ordered_value(value)
+            .map_err(|_| "BTreeSet elements must be bool, integer, char, or string".to_owned())?,
+    };
     let native = NativeRecordCodec::new().into_native(key.to_value(), layout)?;
     let identity = rils_stdlib::native::registry().key(native.view())?;
     Ok((identity, native))
@@ -286,9 +366,12 @@ fn native_option(
     native_value(layout, value)
 }
 
-fn mutation_error(message: String) -> String {
+fn mutation_error(kind: SetKind, message: String) -> String {
     if message.contains("referenced") || message.contains("iterator") {
-        format!("cannot mutate BTreeSet while it is borrowed: {message}")
+        format!(
+            "cannot mutate {} while it is borrowed: {message}",
+            kind.name()
+        )
     } else {
         message
     }

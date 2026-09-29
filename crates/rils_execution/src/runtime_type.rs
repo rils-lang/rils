@@ -75,7 +75,11 @@ impl Value {
         }
         if matches!(
             self,
-            Self::Vec(_) | Self::VecDeque(_) | Self::BinaryHeap(_) | Self::BTreeSet(_)
+            Self::Vec(_)
+                | Self::VecDeque(_)
+                | Self::BinaryHeap(_)
+                | Self::BTreeSet(_)
+                | Self::HashSet(_)
         ) {
             // The legacy constructor has no type argument until the binding
             // supplies one. Keep the unique owner so its empty storage can be

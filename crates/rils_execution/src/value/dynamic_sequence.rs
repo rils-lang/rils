@@ -22,6 +22,9 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
         (Value::BTreeSet(_), Type::Named { name, arguments }) => {
             name == "BTreeSet" && arguments.len() == 1
         }
+        (Value::HashSet(_), Type::Named { name, arguments }) => {
+            name == "HashSet" && arguments.len() == 1
+        }
         _ => false,
     };
     if !supported {
@@ -38,6 +41,9 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
         }
         Value::BinaryHeap(heap) => Rc::strong_count(heap) == 1 && heap.elements.borrow().is_empty(),
         Value::BTreeSet(set) => {
+            Rc::strong_count(set) == 1 && set.borrowed.get() == 0 && set.entries.borrow().is_empty()
+        }
+        Value::HashSet(set) => {
             Rc::strong_count(set) == 1 && set.borrowed.get() == 0 && set.entries.borrow().is_empty()
         }
         _ => false,

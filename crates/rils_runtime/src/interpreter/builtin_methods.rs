@@ -115,7 +115,7 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
                 values.extend_from_slice(arguments);
-                crate::hash_collections::call(id, &values)
+                crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeNext) => {

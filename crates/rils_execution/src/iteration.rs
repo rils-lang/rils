@@ -37,6 +37,16 @@ pub fn into_iterator(value: Value) -> Result<IntoIteratorResult, String> {
                 &[Value::Dynamic(object)],
             )?
         }
+        Value::Dynamic(object)
+            if crate::value::native_layouts::hash_set::matches(
+                object.descriptor().layout().rils_type(),
+            ) =>
+        {
+            runtime_builtins::call(
+                rils_builtins::BuiltinId::HashSetIntoIter,
+                &[Value::Dynamic(object)],
+            )?
+        }
         Value::HashMap(map) => hash_collections::call(
             rils_builtins::BuiltinId::HashMapIntoIter,
             &[Value::HashMap(map)],

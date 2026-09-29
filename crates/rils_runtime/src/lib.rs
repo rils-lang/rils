@@ -6,9 +6,6 @@ mod error;
 mod formatting {
     pub(crate) use rils_execution::formatting::*;
 }
-mod hash_collections {
-    pub(crate) use rils_execution::hash_collections::*;
-}
 mod interpreter;
 mod native_type;
 mod numeric {

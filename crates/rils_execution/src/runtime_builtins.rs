@@ -13,11 +13,11 @@ mod binary_heap;
 mod boxed;
 mod btree_map;
 mod btree_set;
-mod btree_set_native;
 mod callback;
 mod collection_iter;
 mod indexed_iter;
 mod native;
+mod native_set;
 pub(crate) use native::{StringOutput, string_input, usize_input as string_usize_input};
 pub mod native_value;
 mod option_result;
@@ -87,7 +87,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         return result;
     }
 
-    if let Some(result) = btree_set_native::call(id, arguments) {
+    if let Some(result) = native_set::call(id, arguments) {
         return result;
     }
 
@@ -700,6 +700,8 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
             if crate::value::native_layouts::vec::matches(
                 object.descriptor().layout().rils_type(),
             ) || crate::value::native_layouts::btree_set::matches(
+                object.descriptor().layout().rils_type(),
+            ) || crate::value::native_layouts::hash_set::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {
