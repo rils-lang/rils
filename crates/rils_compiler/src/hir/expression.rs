@@ -240,6 +240,7 @@ impl<'a> FunctionLowerer<'a> {
                 if let Some((name, signature, capability)) = self.resolved_import(expression_id) {
                     if let Some(symbol) = rils_builtins::builtin_function(name)
                         .and_then(|declaration| declaration.native_symbol)
+                        .or_else(|| rils_builtins::native_member(name).map(|_| name))
                     {
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),
@@ -326,6 +327,18 @@ impl<'a> FunctionLowerer<'a> {
                         None,
                     )) = self.resolved_builtin(expression_id)
                     {
+                        if let Some(symbol) = builtin.canonical_path()
+                            && rils_builtins::native_member(symbol).is_some()
+                        {
+                            return Ok(HirExpression::CallNative {
+                                symbol: symbol.to_owned(),
+                                arguments: arguments
+                                    .iter()
+                                    .map(|argument| self.expression(argument))
+                                    .collect::<Result<_, _>>()?,
+                                span: *span,
+                            });
+                        }
                         return Ok(HirExpression::CallRuntime {
                             builtin,
                             arguments: arguments

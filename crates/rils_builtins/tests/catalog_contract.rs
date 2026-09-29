@@ -7,6 +7,17 @@ use rils_builtins::{
 use rils_stdlib_macros::decl_rils_source;
 
 #[test]
+fn owned_native_bridge_keeps_legacy_id_and_exports_a_symbol() {
+    let constructor = builtin_member("Rc", "new").expect("Rc::new is declared");
+    let path = BuiltinId::RcNew
+        .canonical_path()
+        .expect("stable compatibility path");
+    assert_eq!(constructor.builtin_id, Some(BuiltinId::RcNew));
+    assert_eq!(constructor.native_symbol, Some(path));
+    assert!(std::ptr::eq(native_member(path).unwrap(), constructor));
+}
+
+#[test]
 fn stdlib_directory_generates_source_and_module_metadata() {
     let mut discovered = Vec::new();
     collect_rils_files(

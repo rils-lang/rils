@@ -23,6 +23,7 @@ pub(crate) use native::{StringOutput, string_input, usize_input as string_usize_
 pub mod native_value;
 mod option_result;
 mod range;
+mod rc_native;
 mod vec_deque;
 mod vector;
 pub(crate) mod vector_dynamic;
@@ -92,6 +93,9 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         return result;
     }
     if let Some(result) = native_map::call(id, arguments) {
+        return result;
+    }
+    if let Some(result) = rc_native::call(id, arguments) {
         return result;
     }
 
@@ -711,7 +715,7 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
                 object.descriptor().layout().rils_type(),
             ) || crate::value::native_layouts::btree_map::matches(
                 object.descriptor().layout().rils_type(),
-            ) =>
+            ) || matches!(object.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Rc" || name == "Weak") =>
         {
             Ok(value.clone())
         }

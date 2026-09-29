@@ -49,6 +49,7 @@ mod native {
         /// Creates a new reference-counted handle.
         #[export_rils]
         #[rils_legacy_id(core::rc::rc::new)]
+        #[rils_native_bridge]
         pub fn new(value: T) -> Self {
             Self(std::rc::Rc::new(value))
         }
@@ -126,3 +127,77 @@ mod native {
 }
 
 pub use native::{Rc, Weak};
+
+/// Type-erased storage for a concrete Rils `Rc<T>` instantiation.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ErasedRc(pub std::rc::Rc<rils_value::DynamicValue>);
+
+/// Type-erased storage for a concrete Rils `Weak<T>` instantiation.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ErasedWeak(pub std::rc::Weak<rils_value::DynamicValue>);
+
+fn rc_matches(ty: &rils_syntax::Type) -> bool {
+    matches!(ty, rils_syntax::Type::Named { name, arguments } if name == "Rc" && arguments.len() == 1)
+}
+
+fn weak_matches(ty: &rils_syntax::Type) -> bool {
+    matches!(ty, rils_syntax::Type::Named { name, arguments } if name == "Weak" && arguments.len() == 1)
+}
+
+fn rc_layout(
+    ty: &rils_syntax::Type,
+    resolve: &mut rils_native::LayoutResolver<'_>,
+) -> std::option::Option<Result<std::rc::Rc<rils_value::DynamicLayout>, std::string::String>> {
+    let rils_syntax::Type::Named { arguments, .. } = ty else {
+        return std::option::Option::None;
+    };
+    rc_matches(ty).then(|| {
+        resolve(&arguments[0]).map(|_| rils_value::DynamicLayout::of::<ErasedRc>(ty.clone()))
+    })
+}
+
+fn weak_layout(
+    ty: &rils_syntax::Type,
+    resolve: &mut rils_native::LayoutResolver<'_>,
+) -> std::option::Option<Result<std::rc::Rc<rils_value::DynamicLayout>, std::string::String>> {
+    let rils_syntax::Type::Named { arguments, .. } = ty else {
+        return std::option::Option::None;
+    };
+    weak_matches(ty).then(|| {
+        resolve(&arguments[0]).map(|_| rils_value::DynamicLayout::of::<ErasedWeak>(ty.clone()))
+    })
+}
+
+fn clone_rc(view: rils_value::DynamicValueRef<'_>) -> Result<rils_value::DynamicValue, String> {
+    rils_value::DynamicValue::from_rust(
+        view.layout()?,
+        view.with_rust::<ErasedRc, _>(Clone::clone)?,
+    )
+}
+
+fn clone_weak(view: rils_value::DynamicValueRef<'_>) -> Result<rils_value::DynamicValue, String> {
+    rils_value::DynamicValue::from_rust(
+        view.layout()?,
+        view.with_rust::<ErasedWeak, _>(Clone::clone)?,
+    )
+}
+
+pub const NATIVE_LAYOUT_RC: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
+    matches: rc_matches,
+    layout: rc_layout,
+};
+pub const NATIVE_LAYOUT_WEAK: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
+    matches: weak_matches,
+    layout: weak_layout,
+};
+pub const NATIVE_ELEMENT_RC: rils_native::ElementRegistration = rils_native::ElementRegistration {
+    matches: rc_matches,
+    clone_borrowed: clone_rc,
+};
+pub const NATIVE_ELEMENT_WEAK: rils_native::ElementRegistration =
+    rils_native::ElementRegistration {
+        matches: weak_matches,
+        clone_borrowed: clone_weak,
+    };

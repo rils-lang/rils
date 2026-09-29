@@ -57,7 +57,14 @@ fn shared_handle_methods_use_the_existing_runtime_ids() {
         for method in methods {
             let member = published.member(method).expect("shared handle method");
             assert!(member.builtin_id.is_some());
-            assert!(member.native_symbol.is_none());
+            if name == "Rc" && *method == "new" {
+                assert_eq!(
+                    member.native_symbol,
+                    member.builtin_id.and_then(|id| id.canonical_path())
+                );
+            } else {
+                assert!(member.native_symbol.is_none());
+            }
         }
     }
 }

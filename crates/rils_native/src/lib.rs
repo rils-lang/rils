@@ -4,4 +4,6 @@ mod key;
 mod registry;
 
 pub use key::NativeKey;
-pub use registry::{ElementRegistration, KeyRegistration, LayoutRegistration, NativeRegistry};
+pub use registry::{
+    ElementRegistration, KeyRegistration, LayoutRegistration, LayoutResolver, NativeRegistry,
+};

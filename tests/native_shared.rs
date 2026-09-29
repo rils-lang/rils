@@ -21,6 +21,23 @@ fn shared_handles_match_in_interpreter_and_vm() {
 
 #[test]
 fn shared_handle_can_be_held_by_an_option() {
+    for source in [
+        "let owner: core::rc::Rc<i32> = core::rc::Rc::new(40); owner",
+        "let owner: core::rc::Rc<string> = core::rc::Rc::new(\"text\"); owner",
+        "struct Item { value: i32 } let owner: core::rc::Rc<Item> = core::rc::Rc::new(Item { value: 5 }); owner",
+    ] {
+        assert!(
+            matches!(eval_value(source).unwrap(), Value::Dynamic(_)),
+            "{source}"
+        );
+        assert!(
+            matches!(
+                compile(source).unwrap().execute_value().unwrap(),
+                Value::Dynamic(_)
+            ),
+            "{source}"
+        );
+    }
     let source = r#"
         let owner: core::rc::Rc<i32> = core::rc::Rc::new(40);
         let holder: Option<core::rc::Rc<i32>> = Some(owner);
@@ -31,6 +48,16 @@ fn shared_handle_can_be_held_by_an_option() {
         compile(source).unwrap().execute_value().unwrap(),
         Value::Bool(true)
     );
+}
+
+#[test]
+fn weak_handles_use_native_storage() {
+    let source = "let owner: core::rc::Rc<i32> = core::rc::Rc::new(5); owner.downgrade()";
+    assert!(matches!(eval_value(source).unwrap(), Value::Dynamic(_)));
+    assert!(matches!(
+        compile(source).unwrap().execute_value().unwrap(),
+        Value::Dynamic(_)
+    ));
 }
 
 #[test]

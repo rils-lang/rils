@@ -625,7 +625,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                 .attrs
                 .iter()
                 .any(|attr| attr.path().is_ident("rils_indexed_view"));
-            let (builtin_id, runtime_import, native_symbol) =
+            let (builtin_id, runtime_import, mut native_symbol) =
                 match super::method_binding::MethodBinding::parse(method)? {
                     super::method_binding::MethodBinding::Native => {
                         (quote!(None), quote!(None), quote!(Some(#id_path)))
@@ -637,6 +637,23 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                         (quote!(None), quote!(Some(#path)), quote!(None))
                     }
                 };
+            if method
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("rils_native_bridge"))
+            {
+                if !method
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("rils_legacy_id"))
+                {
+                    return Err(syn::Error::new_spanned(
+                        &method.sig,
+                        "#[rils_native_bridge] requires #[rils_legacy_id(...)]",
+                    ));
+                }
+                native_symbol = quote!(Some(#id_path));
+            }
             let (kind, receiver_mode, parameter_start) =
                 if let Some(receiver) = method.sig.receiver() {
                     let mode = if receiver.reference.is_some() {
