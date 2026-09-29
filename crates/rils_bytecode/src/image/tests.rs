@@ -438,10 +438,13 @@ fn option_result_callbacks_compile_to_native_imports() {
             "core::option::option::or_else",
             "core::option::option::filter",
             "core::option::option::is_none",
+            "core::option::option::unwrap",
             "core::result::result::map",
             "core::result::result::map_err",
             "core::result::result::and_then",
             "core::result::result::or_else",
+            "core::result::result::unwrap",
+            "core::result::result::unwrap_err",
         ])
     );
     assert!(
@@ -1045,10 +1048,10 @@ fn vec_is_empty_uses_native_body_without_legacy_runtime_id() {
 }
 
 #[test]
-fn native_calls_precede_legacy_builtin_calls_and_survive_round_trip() {
+fn native_calls_include_legacy_adapters_and_survive_round_trip() {
     let source = "let present = Some(5); present.is_some() && Some(6).unwrap() == 6";
     let module = compile(source).unwrap();
-    assert_eq!(module.native_imports.len(), 1);
+    assert_eq!(module.native_imports.len(), 2);
     assert_eq!(
         module.native_imports[0].symbol,
         "core::option::option::is_some"
@@ -1065,13 +1068,7 @@ fn native_calls_precede_legacy_builtin_calls_and_survive_round_trip() {
             .functions
             .iter()
             .flat_map(|function| &function.instructions)
-            .any(|instruction| matches!(
-                instruction.instruction,
-                Instruction::CallRuntime {
-                    builtin: rils_builtins::BuiltinId::OptionUnwrap,
-                    ..
-                }
-            ))
+            .all(|instruction| !matches!(instruction.instruction, Instruction::CallRuntime { .. }))
     );
     assert_eq!(
         module.execute_value().unwrap(),
@@ -1212,6 +1209,7 @@ fn option_result_native_methods_and_global_helpers_match_interpreter() {
             "core::result::result::is_err",
             "core::result::result::ok",
             "core::result::result::err",
+            "core::option::option::unwrap",
         ])
     );
     assert_eq!(

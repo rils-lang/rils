@@ -360,5 +360,8 @@ pub fn native_member(symbol: &str) -> Option<&'static BuiltinMember> {
     BUILTINS
         .iter()
         .flat_map(|owner| owner.members)
-        .find(|member| member.native_symbol == Some(symbol))
+        .find(|member| {
+            member.native_symbol == Some(symbol)
+                || member.builtin_id.and_then(BuiltinId::canonical_path) == Some(symbol)
+        })
 }

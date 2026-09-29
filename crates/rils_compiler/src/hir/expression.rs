@@ -339,14 +339,20 @@ impl<'a> FunctionLowerer<'a> {
                                 span: *span,
                             });
                         }
-                        return Ok(HirExpression::CallRuntime {
-                            builtin,
-                            arguments: arguments
-                                .iter()
-                                .map(|argument| self.expression(argument))
-                                .collect::<Result<_, _>>()?,
-                            span: *span,
-                        });
+                        if let Some(symbol) = builtin.canonical_path() {
+                            return Ok(HirExpression::CallNative {
+                                symbol: symbol.to_owned(),
+                                arguments: arguments
+                                    .iter()
+                                    .map(|argument| self.expression(argument))
+                                    .collect::<Result<_, _>>()?,
+                                span: *span,
+                            });
+                        }
+                        return Err(CompileError::unsupported(
+                            format!("runtime built-in `{builtin:?}` has no symbol"),
+                            *span,
+                        ));
                     }
                     if let Some(callable) = self.resolved_definition(expression_id) {
                         return Ok(HirExpression::Call {
@@ -586,11 +592,17 @@ impl<'a> FunctionLowerer<'a> {
                                     .map(|argument| self.expression(argument))
                                     .collect::<Result<Vec<_>, _>>()?,
                             );
-                            return Ok(HirExpression::CallRuntime {
-                                builtin,
-                                arguments: lowered,
-                                span: *span,
-                            });
+                            if let Some(symbol) = builtin.canonical_path() {
+                                return Ok(HirExpression::CallNative {
+                                    symbol: symbol.to_owned(),
+                                    arguments: lowered,
+                                    span: *span,
+                                });
+                            }
+                            return Err(CompileError::unsupported(
+                                format!("runtime built-in `{builtin:?}` has no symbol"),
+                                *span,
+                            ));
                         }
                     }
                     if self.resolved_host(expression_id).is_some()

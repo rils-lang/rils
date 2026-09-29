@@ -58,7 +58,10 @@ impl<E> From<&str> for NativeCallError<E> {
 /// Calls a native standard-library method by the path generated from its declaration.
 /// Returns `None` when no native bridge has been generated for the symbol yet.
 pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
-    native::call_symbol(symbol, arguments)
+    native::call_symbol(symbol, arguments).or_else(|| {
+        let id = rils_builtins::native_member(symbol)?.builtin_id?;
+        Some(call(id, arguments))
+    })
 }
 
 /// Dispatches a native method that consumes its arguments without cloning them.
@@ -67,11 +70,18 @@ pub fn call_native_owned_symbol(
     arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if rils_builtins::native_member(symbol).and_then(|member| member.builtin_id)
+        == Some(rils_builtins::BuiltinId::OptionUnwrap)
+    {
+        return call_owned(rils_builtins::BuiltinId::OptionUnwrap, arguments);
+    }
     native::call_owned_symbol(symbol, arguments, context)
 }
 
 pub fn requires_owned_native_call(symbol: &str) -> bool {
-    native::is_owned_symbol(symbol)
+    rils_builtins::native_member(symbol).and_then(|member| member.builtin_id)
+        == Some(rils_builtins::BuiltinId::OptionUnwrap)
+        || native::is_owned_symbol(symbol)
 }
 
 pub fn call_native_symbol_with_callback<E>(
@@ -80,7 +90,7 @@ pub fn call_native_symbol_with_callback<E>(
     callback: &mut NativeCallback<'_, E>,
 ) -> Option<Result<Value, NativeCallError<E>>> {
     native::call_callback_symbol(symbol, arguments, callback)
-        .or_else(|| native::call_symbol(symbol, arguments).map(|result| result.map_err(Into::into)))
+        .or_else(|| call_native_symbol(symbol, arguments).map(|result| result.map_err(Into::into)))
 }
 
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {

@@ -7,6 +7,33 @@ impl VirtualMachine<'_> {
         arguments: &[Value],
         span: Span,
     ) -> Result<Value, BytecodeError> {
+        match rils_builtins::native_member(symbol).and_then(|member| member.builtin_id) {
+            Some(rils_builtins::BuiltinId::FormatterWriteStr) => {
+                let [buffer, value] = arguments else {
+                    return Err(BytecodeError::new(
+                        "Formatter::write_str expects a receiver and string",
+                        span,
+                    ));
+                };
+                let buffer = crate::formatting::buffer_from_value(buffer)
+                    .map_err(|message| BytecodeError::new(message, span))?;
+                let value = value.as_string().ok_or_else(|| {
+                    BytecodeError::new("Formatter::write_str expects string", span)
+                })?;
+                buffer.write_str(&value);
+                return Ok(super::super::formatting::format_ok());
+            }
+            Some(rils_builtins::BuiltinId::FormatterWriteDerivedDebug) => {
+                let [buffer, value] = arguments else {
+                    return Err(BytecodeError::new(
+                        "Formatter::write_derived_debug expects two arguments",
+                        span,
+                    ));
+                };
+                return self.write_derived_debug_builtin(buffer, value, span);
+            }
+            _ => {}
+        }
         let result = crate::runtime_builtins::call_native_symbol_with_callback(
             symbol,
             arguments,

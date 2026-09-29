@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 新编译的标准库 runtime 方法调用统一写入规范符号原生导入；旧数字调用仍可由实验性 v8 字节码读取。格式版本保持 v8。
+
 - **破坏性变更：** `VecDeque<T>`、`BinaryHeap<T>`、`BTreeSet<T>` 与 `HashSet<T>` 的 `into_iter()` 现在分别返回 `VecDequeIntoIter<T>`、`BinaryHeapIntoIter<T>`、`BTreeSetIntoIter<T>` 和 `HashSetIntoIter<T>`，直接接管各自的 Rust 容器迭代器。显式标注旧 `Iter<T>` 的代码请改用对应具体类型；依赖推断的 `for` 无需修改。
 
 - **破坏性变更：** `HashMap<K, V>` 与 `BTreeMap<K, V>` 的消费式迭代器分别改为 `HashMapIntoIter<K, V>` 和 `BTreeMapIntoIter<K, V>`，直接接管 Map 存储并逐项移出键值对。显式写过旧 `OwnedIterator<(K, V)>` 类型的代码请改用对应具体类型；依赖类型推断的 `for` 和 `.into_iter()` 无需修改。
