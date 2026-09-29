@@ -1518,6 +1518,23 @@ fn compiles_custom_iterator_and_into_iterator_traits() {
 }
 
 #[test]
+fn inherent_into_iter_precedes_blanket_trait_method() {
+    assert_matches_interpreter(
+        r#"
+            struct Counter;
+            impl Iterator for Counter {
+                type Item = i32;
+                fn next(&mut self) -> Option<i32> { None }
+            }
+            impl Counter {
+                fn into_iter(self) -> i32 { 42 }
+            }
+            (Counter {}).into_iter()
+        "#,
+    );
+}
+
+#[test]
 fn rejects_explicit_into_iterator_for_an_iterator() {
     let error = match compile(
         r#"

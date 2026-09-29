@@ -485,6 +485,15 @@ fn resolve_callee(callee: &Expr, context: &CallResolutionContext<'_>) -> Option<
                     receiver: Some(rils_builtins::ReceiverMode::Owned),
                 });
             }
+            if name == "into_iter"
+                && matches!(receiver, Type::Named { name: owner, .. } if iterator_types.contains(owner))
+            {
+                return Some(ResolvedCall::Builtin {
+                    id: rils_builtins::BuiltinId::IteratorIntoIter,
+                    kind: BuiltinCallKind::Runtime,
+                    receiver: Some(rils_builtins::ReceiverMode::Owned),
+                });
+            }
             let iterator_member = match receiver {
                 Type::Named { name: owner, .. } if iterator_types.contains(owner) => {
                     rils_builtins::builtin_member("Iterator", name)

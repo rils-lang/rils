@@ -264,10 +264,6 @@ mod native {
             }
             values.into_iter()
         }
-        /// Returns this iterator unchanged.
-        fn into_iter(self) -> Self {
-            self
-        }
     }
 
     /// Conversion into an iterator.

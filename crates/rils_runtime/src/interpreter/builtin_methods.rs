@@ -57,9 +57,10 @@ impl Interpreter {
                 crate::numeric::execute_intrinsic(id, None, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::RangeIntoIter) => {
-                Ok((*method.receiver).clone())
-            }
+            BuiltinMethod::Runtime(
+                rils_builtins::BuiltinId::RangeIntoIter
+                | rils_builtins::BuiltinId::IteratorIntoIter,
+            ) => Ok((*method.receiver).clone()),
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone) => {
                 let value = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference

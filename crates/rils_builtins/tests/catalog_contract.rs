@@ -915,6 +915,12 @@ fn trait_requirements_and_provided_methods_come_from_stdlib() {
 
     let into_iterator = builtin("IntoIterator").expect("IntoIterator declaration");
     assert!(
+        builtin("Iterator")
+            .expect("Iterator declaration")
+            .member("into_iter")
+            .is_none()
+    );
+    assert!(
         into_iterator
             .member("into_iter")
             .expect("IntoIterator::into_iter")

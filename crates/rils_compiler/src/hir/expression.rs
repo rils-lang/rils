@@ -560,6 +560,12 @@ impl<'a> FunctionLowerer<'a> {
                                 span: *span,
                             });
                         }
+                        if name == "into_iter"
+                            && arguments.is_empty()
+                            && builtin == rils_builtins::BuiltinId::IteratorIntoIter
+                        {
+                            return self.expression(object);
+                        }
                         if builtin.has_direct_runtime_call()
                             && let Some(receiver) = receiver.map(|receiver| match receiver {
                                 rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,

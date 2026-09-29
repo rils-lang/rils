@@ -717,6 +717,38 @@ impl Interpreter {
         if let Some(member) = member::take_struct_field(&object, name, span)? {
             return Ok(member);
         }
+        if name == "into_iter"
+            && (matches!(
+                &object,
+                Value::OwnedIterator(_)
+                    | Value::BorrowedIndexedIterator(_)
+                    | Value::BorrowedMapIterator(_)
+                    | Value::BorrowedSetIterator(_)
+            ) || match &object {
+                Value::Struct(instance) => {
+                    instance
+                        .type_definition
+                        .implemented_traits
+                        .borrow()
+                        .contains("Iterator")
+                        && !instance.type_definition.methods.borrow().contains_key(name)
+                }
+                Value::Enum(instance) => {
+                    instance
+                        .type_definition
+                        .implemented_traits
+                        .borrow()
+                        .contains("Iterator")
+                        && !instance.type_definition.methods.borrow().contains_key(name)
+                }
+                _ => false,
+            })
+        {
+            return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                receiver: Rc::new(object),
+                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter),
+            })));
+        }
         match &object {
             Value::Struct(instance) => member::bind_rils_method(
                 object.clone(),
