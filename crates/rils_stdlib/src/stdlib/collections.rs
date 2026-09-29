@@ -97,35 +97,30 @@ mod native {
 
         /// Returns the number of elements.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::len)]
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
         /// Returns whether the queue is empty.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::is_empty)]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
 
         /// Adds an element at the front.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::push_front)]
         pub fn push_front(&mut self, value: T) {
             self.0.push_front(value);
         }
 
         /// Adds an element at the back.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::push_back)]
         pub fn push_back(&mut self, value: T) {
             self.0.push_back(value);
         }
 
         /// Removes the front element.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::pop_front)]
         pub fn pop_front(&mut self) -> Option<T> {
             match self.0.pop_front() {
                 Some(value) => Option::Some(value),
@@ -135,7 +130,6 @@ mod native {
 
         /// Removes the back element.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::pop_back)]
         pub fn pop_back(&mut self) -> Option<T> {
             match self.0.pop_back() {
                 Some(value) => Option::Some(value),
@@ -145,7 +139,6 @@ mod native {
 
         /// Clones the front element.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::front_cloned)]
         pub fn front_cloned(&self) -> Option<T>
         where
             T: Clone,
@@ -158,7 +151,6 @@ mod native {
 
         /// Clones the back element.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::back_cloned)]
         pub fn back_cloned(&self) -> Option<T>
         where
             T: Clone,
@@ -171,7 +163,6 @@ mod native {
 
         /// Removes all elements.
         #[export_rils]
-        #[rils_legacy_id(core::collections::vec_deque::clear)]
         pub fn clear(&mut self) {
             self.0.clear();
         }

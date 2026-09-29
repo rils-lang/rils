@@ -177,6 +177,7 @@ pub fn call_symbol(
             object.call(symbol, &arguments[1..])
         })
         .or_else(|| string::call_symbol(symbol, arguments))
+        .or_else(|| super::vec_deque::call_symbol(symbol, arguments))
         .or_else(|| super::vector_dynamic::call_symbol(symbol, arguments))
         .or_else(|| vector::call_symbol(symbol, arguments))
         .or_else(|| range::call_symbol(symbol, arguments))
@@ -190,13 +191,17 @@ pub fn call_owned_symbol(
 ) -> Option<Result<crate::Value, String>> {
     if boxed::is_owned_symbol(symbol) {
         boxed::call_owned_symbol(symbol, arguments, context)
+    } else if super::vec_deque::is_owned_symbol(symbol) {
+        super::vec_deque::call_owned_symbol(symbol, arguments, context)
     } else {
         super::vector_dynamic::call_owned_symbol(symbol, arguments, context)
     }
 }
 
 pub fn is_owned_symbol(symbol: &str) -> bool {
-    boxed::is_owned_symbol(symbol) || super::vector_dynamic::is_owned_symbol(symbol)
+    boxed::is_owned_symbol(symbol)
+        || super::vec_deque::is_owned_symbol(symbol)
+        || super::vector_dynamic::is_owned_symbol(symbol)
 }
 
 mod callable_functions {

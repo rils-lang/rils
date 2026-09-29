@@ -106,6 +106,13 @@ fn native_symbols_are_unique_and_resolve_to_their_declarations() {
     let extend = builtin_member("Vec", "extend").expect("Vec::extend is exported");
     assert_eq!(extend.builtin_id, None);
     assert_eq!(extend.native_symbol, Some("core::collections::vec::extend"));
+    let queue_push =
+        builtin_member("VecDeque", "push_back").expect("VecDeque::push_back is exported");
+    assert_eq!(queue_push.builtin_id, None);
+    assert_eq!(
+        queue_push.native_symbol,
+        Some("core::collections::vec_deque::push_back")
+    );
     let mut symbols = std::collections::HashSet::new();
     for declaration in BUILTINS {
         for member in declaration.members {

@@ -109,3 +109,28 @@ fn cloning_a_noncopy_composite_element_keeps_native_queue_storage() {
         assert_eq!(value, Value::from_i32(42));
     }
 }
+
+#[test]
+fn native_vec_deque_moves_recursive_user_values_from_both_ends() {
+    for (push, pop) in [("push_front", "pop_front"), ("push_back", "pop_back")] {
+        let source = format!(
+            r#"
+                struct Node {{ value: i32, next: Option<Box<Node>> }}
+                let node: Node = Node {{ value: 42, next: None }};
+                let mut queue: VecDeque<Box<Node>> = VecDeque::new();
+                queue.{push}(Box::new(node));
+                let restored: Node = queue.{pop}().unwrap().into_inner();
+                restored.value
+            "#
+        );
+        let compiled = compile(&source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(&source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_eq!(value, Value::from_i32(42), "{push}/{pop}");
+        }
+    }
+}

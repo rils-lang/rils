@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `VecDeque<T>` 的实例方法改为从标准库定义生成的原生符号调用；`push_front`、`push_back` 可直接移入 `Box<Node>` 等递归用户值，并从两端取回。
+
 - `Vec<T>::push` 和 `insert` 现在直接移入原生元素；`Vec<Box<Node>>` 及 `Vec<Node>` 中的递归用户类型可在解释器、VM 和字节码重载后正确存取。
 
 - 内建 `Box<T>` 现在从 Rust 定义导出 `Box::new(value)` 与消费式 `into_inner()`；`Box::<T>::new(value)` 和由实参推导的 `Box::new(value)` 均可用。原生拥有型调用桥保留泛型实参所有权，支持字符串、组合值及递归用户类型，在解释器、VM 和字节码重载后保持一致。迁移：将旧的 `Box { value }` 改为 `Box::new(value)`，取出值时使用 `into_inner()`。
