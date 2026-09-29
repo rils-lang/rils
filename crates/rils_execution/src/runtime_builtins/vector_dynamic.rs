@@ -2,14 +2,94 @@
 
 use std::{collections::VecDeque, rc::Rc};
 
-use rils_builtins::builtin;
+use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern, builtin};
 
 use crate::{
     Type,
     value::{DynamicObject, OwnedIteratorValue, Value, record_codec},
 };
 
-use super::{import_receiver, indexed_iter};
+use super::{NativeOwnedContext, import_receiver, indexed_iter, vector};
+
+fn owned_member(symbol: &str) -> Option<&'static BuiltinMember> {
+    let declaration = builtin("Vec")?;
+    declaration.members.iter().find(|member| {
+        member.native_symbol == Some(symbol)
+            && member.receiver == Some(ReceiverMode::Mutable)
+            && member.signature.is_some_and(|signature| {
+                signature
+                    .parameters
+                    .iter()
+                    .any(|parameter| matches!(parameter, TypePattern::Generic(name) if declaration.type_parameters.contains(name)))
+            })
+    })
+}
+
+pub(crate) fn is_owned_symbol(symbol: &str) -> bool {
+    owned_member(symbol).is_some()
+}
+
+pub(crate) fn call_owned_symbol(
+    symbol: &str,
+    mut arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+) -> Option<Result<Value, String>> {
+    let member = owned_member(symbol)?;
+    Some((|| {
+        let arity = member
+            .signature
+            .expect("owned method has a signature")
+            .parameters
+            .len()
+            + 1;
+        if arguments.len() != arity {
+            return Err(format!(
+                "native method `{symbol}` expects {arity} arguments, found {}",
+                arguments.len()
+            ));
+        }
+        if !matches!(arguments.first(), Some(Value::Reference(reference)) if reference.mutable) {
+            return Err("Vec method requires `&mut self`".into());
+        }
+        let receiver = import_receiver(&arguments[0])?;
+        let Value::Dynamic(object) = receiver else {
+            return match member.name {
+                "push" => vector::push_owned(arguments),
+                "insert" => vector::insert_owned(arguments),
+                name => Err(format!("owned native Vec method `{name}` is not supported")),
+            };
+        };
+        if !crate::value::native_layouts::vec::matches(object.descriptor().layout().rils_type()) {
+            return Err("native Vec method requires a Vec receiver".into());
+        }
+        let item_layout = object
+            .descriptor()
+            .layout()
+            .sequence_item()
+            .ok_or("native Vec has no item layout")?
+            .clone();
+        let value = arguments.pop().expect("arity checked");
+        if !item_layout.rils_type().accepts(&value) {
+            return Err(format!(
+                "Vec expects {}, found {}",
+                item_layout.rils_type(),
+                value.type_name()
+            ));
+        }
+        let mut codec =
+            record_codec::NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+        let value = codec.into_native(value, item_layout)?;
+        match member.name {
+            "push" => object.with_mut(|payload| payload.push_sequence_item(value))??,
+            "insert" => {
+                let index = index(&arguments, 1)?;
+                object.with_mut(|payload| payload.insert_sequence_item(index, value))??;
+            }
+            name => return Err(format!("owned native Vec method `{name}` is not supported")),
+        }
+        Ok(Value::Unit)
+    })())
+}
 
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let receiver = arguments.first()?;

@@ -131,6 +131,29 @@ pub(super) fn push(
     Ok(Value::Unit)
 }
 
+pub(super) fn push_owned(mut arguments: Vec<Value>) -> Result<Value, String> {
+    let sequence = receiver(&arguments, 2, true)?;
+    indexed_iter::reject_growth(&sequence)?;
+    let value = arguments.pop().expect("arity checked");
+    let current = sequence
+        .elements
+        .borrow()
+        .first()
+        .map(|slot| slot.type_annotation.clone())
+        .or_else(|| sequence.element_type.borrow().clone())
+        .unwrap_or(Type::Unknown);
+    let actual = Type::of_value(&value).unwrap_or(Type::Unknown);
+    let element_type = merge_types(&current, &actual)
+        .ok_or_else(|| format!("Vec element type is `{current}`, found `{actual}`"))?;
+    Receiver::new(&sequence).native.push(FieldSlot {
+        value: Some(value),
+        type_annotation: element_type.clone(),
+        references: 0,
+    });
+    *sequence.element_type.borrow_mut() = Some(element_type);
+    Ok(Value::Unit)
+}
+
 pub(super) fn pop(
     arguments: &[Value],
     call: impl FnOnce(&mut NativeVec<FieldSlot>) -> NativeOption<FieldSlot>,
@@ -241,6 +264,32 @@ pub(super) fn insert(
         index,
         FieldSlot {
             value: Some(arguments[2].clone()),
+            type_annotation: element_type.clone(),
+            references: 0,
+        },
+    );
+    *sequence.element_type.borrow_mut() = Some(element_type);
+    Ok(Value::Unit)
+}
+
+pub(super) fn insert_owned(mut arguments: Vec<Value>) -> Result<Value, String> {
+    let (sequence, index) = reorder_receiver(&arguments, 3)?;
+    if index > sequence.elements.borrow().len() {
+        return Err(format!("index {index} is out of bounds for insertion"));
+    }
+    let value = arguments.pop().expect("arity checked");
+    let expected = sequence
+        .element_type
+        .borrow()
+        .clone()
+        .unwrap_or(Type::Unknown);
+    let actual = Type::of_value(&value).unwrap_or(Type::Unknown);
+    let element_type = merge_types(&expected, &actual)
+        .ok_or_else(|| format!("Vec element type is `{expected}`, found `{actual}`"))?;
+    Receiver::new(&sequence).native.insert(
+        index,
+        FieldSlot {
+            value: Some(value),
             type_annotation: element_type.clone(),
             references: 0,
         },

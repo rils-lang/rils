@@ -188,11 +188,15 @@ pub fn call_owned_symbol(
     arguments: Vec<crate::Value>,
     context: &super::NativeOwnedContext,
 ) -> Option<Result<crate::Value, String>> {
-    boxed::call_owned_symbol(symbol, arguments, context)
+    if boxed::is_owned_symbol(symbol) {
+        boxed::call_owned_symbol(symbol, arguments, context)
+    } else {
+        super::vector_dynamic::call_owned_symbol(symbol, arguments, context)
+    }
 }
 
 pub fn is_owned_symbol(symbol: &str) -> bool {
-    boxed::is_owned_symbol(symbol)
+    boxed::is_owned_symbol(symbol) || super::vector_dynamic::is_owned_symbol(symbol)
 }
 
 mod callable_functions {

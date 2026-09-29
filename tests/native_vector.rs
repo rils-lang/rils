@@ -180,6 +180,44 @@ fn native_vec_extend_moves_nested_non_copy_elements() {
 }
 
 #[test]
+fn native_vec_moves_boxed_user_values_into_push_and_insert() {
+    for operation in ["push(Box::new(tail))", "insert(0usize, Box::new(tail))"] {
+        let source = format!(
+            r#"
+                struct Node {{ value: i32, next: Option<Box<Node>> }}
+                let tail: Node = Node {{ value: 42, next: None }};
+                let mut values: Vec<Box<Node>> = Vec::new();
+                values.{operation};
+                let restored: Node = values.pop().unwrap().into_inner();
+                restored.value
+            "#
+        );
+        for value in run_both(&source) {
+            assert_eq!(value.as_i32(), Some(42), "{operation}");
+        }
+    }
+}
+
+#[test]
+fn native_vec_moves_user_records_into_push_and_insert() {
+    for operation in ["push(tail)", "insert(0usize, tail)"] {
+        let source = format!(
+            r#"
+                struct Node {{ value: i32, next: Option<Box<Node>> }}
+                let tail: Node = Node {{ value: 42, next: None }};
+                let mut values: Vec<Node> = Vec::new();
+                values.{operation};
+                let restored: Node = values.pop().unwrap();
+                restored.value
+            "#
+        );
+        for value in run_both(&source) {
+            assert_eq!(value.as_i32(), Some(42), "{operation}");
+        }
+    }
+}
+
+#[test]
 fn native_string_vec_rejects_growth_during_borrowed_iteration() {
     let source = "fn result() -> usize { let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let mut it = v.iter(); let item = it.next().unwrap(); v.push(\"second\"); item.len() } result()";
     let compiled = compile(source).unwrap();

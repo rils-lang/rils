@@ -3,7 +3,6 @@
 ## Native boxed references
 
 - Add Rils `Deref` / `DerefMut` support for `Box<T>` so scripts can borrow its child with `*box` and mutate it through a lexical reference. `Box::new` and `into_inner` already move the child through the owned native call bridge.
-- Move native `Vec<T>::push` arguments without reading `T` through a borrowed value; `Vec<Box<Node>>::push` currently fails because `Box<Node>` cannot be materialized from an element reference.
 
 本文档记录尚未完成的优化、新特性和生态工作。条目按主题归类，不绑定具体版本；实际排期
 会根据使用场景、兼容性和测试结果调整。已完成的能力应从这里移除，并同步到正式文档。

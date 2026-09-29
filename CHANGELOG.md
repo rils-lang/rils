@@ -5,13 +5,15 @@
 
 ## Unreleased
 
+- `Vec<T>::push` 和 `insert` 现在直接移入原生元素；`Vec<Box<Node>>` 及 `Vec<Node>` 中的递归用户类型可在解释器、VM 和字节码重载后正确存取。
+
 - 内建 `Box<T>` 现在从 Rust 定义导出 `Box::new(value)` 与消费式 `into_inner()`；`Box::<T>::new(value)` 和由实参推导的 `Box::new(value)` 均可用。原生拥有型调用桥保留泛型实参所有权，支持字符串、组合值及递归用户类型，在解释器、VM 和字节码重载后保持一致。迁移：将旧的 `Box { value }` 改为 `Box::new(value)`，取出值时使用 `into_inner()`。
 
 - **破坏性变更：** 原生包装类型的私有字段不再允许用结构体字面量构造，内建 `Box<T>` 的 `Box { value: ... }` 写法现会报错。
 
 - 非 Copy 组合值的原生 Clone 改为按布局递归处理 `Option`、`Result`、record 和序列；`Result<Option<string>, string>` 现在可使用原生布局。`VecDeque<Option<string>>` 的端点克隆与原生 `Option` 复合子值读取不再把整个容器转换为旧 `Value`。删除借用能力的 `can_read_element` 预判；实际读取按具体布局和叶子注册执行。
 - Rust 宿主结果句柄新增 `with_native_view`，可在回调内沿布局读取非 Copy 泛型组合值及原生序列元素引用，无需先转换为拥有型 `Value`。视图提供 record 字段、`Option` 子值、带标签变体和序列元素投影；视图借用受回调范围约束。
-- 类型化空 `Vec<T>` 现可对可解析布局的非 Copy 复合元素使用原生序列，已验证 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。`push`、`pop`、`remove`、消费式迭代和元素替换在解释器与 VM 中保持一致；索引引用与借用迭代可建立并阻止借用期间的结构性修改。内部解引用非 Copy 复合元素仍需通用借用视图，用户定义元素仍需接入声明上下文。
+- 类型化空 `Vec<T>` 现可对可解析布局的非 Copy 复合元素使用原生序列，已验证 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。`push`、`pop`、`remove`、消费式迭代和元素替换在解释器与 VM 中保持一致；索引引用与借用迭代可建立并阻止借用期间的结构性修改。内部解引用非 Copy 复合元素仍需通用借用视图。
 - **破坏性 Rust API 更新：** `eval`、`Engine::eval` / `eval_file` 及 `BytecodeModule::execute` / `call` 系列现在返回 `RilsValue` 句柄。宿主代码将原先对返回 `Value` 的读取改为 `with_ref::<T, _>(...)`、`get_cloned::<T>()` 或 `into_owned::<T>()`；移出失败时错误中保留原句柄。类型化访问覆盖基础标量和字符串；脚本结构体可用 `field(index)` 取得字段引用句柄。动态组合类型的视图和用户类型映射尚待补齐；C ABI 未改变。
 - 类型化空 `Vec<string>` 也改用原生序列负载；字符串元素可通过 `&` / `&mut` 索引引用及 `iter()` 访问，`push`、`pop`、`extend` 和拥有型迭代可直接使用原生序列。读取借用的字符串会在现有 `Value` 接口边界克隆文本；直接按索引移出非 Copy 字符串仍会报错。Rust 宿主使用 `Value::as_vec()` 读取新旧表示。
 - 具体元素布局为 Copy 的 `Vec<T>` 类型化空构造现在使用原生序列负载；索引引用、常用方法、借用与拥有型迭代、`for` 和 `extend` 在解释器与 VM 中均可使用。元素引用持有容器句柄及索引，读写时只短暂借用 Rust 负载；有活动元素引用或迭代器时，结构性修改会报错。Rust 宿主若直接匹配 `Value::Vec`，需改用 `Value::as_vec()` 或同时处理 `Value::Dynamic`；无法解析布局的 Vec 仍使用旧表示。
