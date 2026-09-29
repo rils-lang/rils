@@ -27,6 +27,7 @@ enum ReferenceTarget {
     DynamicIndexedElement {
         sequence: DynamicObject,
         index: usize,
+        field: Option<usize>,
         _lease: SequenceItemLease,
     },
     MapKey {
@@ -155,11 +156,26 @@ impl ReferenceValue {
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
+        Self::new_guarded_dynamic_indexed_field(sequence, index, None, mutable, guard)
+    }
+
+    pub fn new_guarded_dynamic_indexed_field(
+        sequence: DynamicObject,
+        index: usize,
+        field: Option<usize>,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<Self, String> {
         sequence
             .descriptor()
             .layout()
             .sequence_item()
             .ok_or("dynamic value is not an indexed sequence")?;
+        if let Some(field) = field {
+            sequence.with(|value| {
+                value.with_sequence_item(index, |item| item.view().field(field).map(|_| ()))
+            })???;
+        }
         let ledger = sequence.with(|value| value.sequence_borrows())??;
         let lease = ledger.reference(index)?;
         Ok(Self {
@@ -167,6 +183,7 @@ impl ReferenceValue {
             target: ReferenceTarget::DynamicIndexedElement {
                 sequence,
                 index,
+                field,
                 _lease: lease,
             },
             _guard: guard,
@@ -244,10 +261,14 @@ impl ReferenceValue {
                 )
             }
             ReferenceTarget::DynamicIndexedElement {
-                sequence, index, ..
-            } => Self::new_guarded_dynamic_indexed_element(
+                sequence,
+                index,
+                field,
+                ..
+            } => Self::new_guarded_dynamic_indexed_field(
                 sequence.clone(),
                 *index,
+                *field,
                 mutable,
                 self._guard.clone(),
             ),
@@ -285,8 +306,20 @@ impl ReferenceValue {
                 .and_then(|slot| slot.value.clone())
                 .ok_or_else(|| format!("reference target element {index} has been moved")),
             ReferenceTarget::DynamicIndexedElement {
-                sequence, index, ..
-            } => super::dynamic_sequence::borrowed_item(sequence, *index),
+                sequence,
+                index,
+                field,
+                ..
+            } => match field {
+                Some(field) => sequence.with(|value| {
+                    value.with_sequence_item(*index, |item| {
+                        let view = item.view().field(*field)?;
+                        let cloned = rils_stdlib::native::registry().clone_borrowed_view(view)?;
+                        super::record_codec::from_native(cloned)
+                    })
+                })??,
+                None => super::dynamic_sequence::borrowed_item(sequence, *index),
+            },
             ReferenceTarget::MapKey { map, key } => map
                 .contains_key(key)
                 .then(|| key.to_value())
@@ -326,9 +359,16 @@ impl ReferenceValue {
                 crate::host_value::with_rust_value(value, callback)
             }
             ReferenceTarget::DynamicIndexedElement {
-                sequence, index, ..
-            } => sequence
-                .with(|value| value.with_sequence_item(*index, |item| item.with(callback)))??,
+                sequence,
+                index,
+                field,
+                ..
+            } => sequence.with(|value| {
+                value.with_sequence_item(*index, |item| match field {
+                    Some(field) => item.view().field(*field)?.with_rust(callback),
+                    None => item.with(callback),
+                })
+            })??,
             _ => Err("reference target has no direct Rust borrow view".into()),
         }
     }
@@ -342,9 +382,16 @@ impl ReferenceValue {
                 .borrow()
                 .with_value(|value| crate::host_value::with_native_value(value, callback)),
             ReferenceTarget::DynamicIndexedElement {
-                sequence, index, ..
-            } => sequence
-                .with(|value| value.with_sequence_item(*index, |item| callback(item.view())))?,
+                sequence,
+                index,
+                field,
+                ..
+            } => sequence.with(|value| {
+                value.with_sequence_item(*index, |item| match field {
+                    Some(field) => Ok(callback(item.view().field(*field)?)),
+                    None => Ok(callback(item.view())),
+                })
+            })??,
             _ => Err("reference target has no native layout view".into()),
         }
     }
@@ -380,8 +427,14 @@ impl ReferenceValue {
                 Ok(())
             }
             ReferenceTarget::DynamicIndexedElement {
-                sequence, index, ..
+                sequence,
+                index,
+                field,
+                ..
             } => {
+                if field.is_some() {
+                    return Err(AssignError::Immutable);
+                }
                 let layout = sequence
                     .descriptor()
                     .layout()
