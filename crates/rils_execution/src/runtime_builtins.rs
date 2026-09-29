@@ -145,8 +145,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     }
 
     match id {
-        BuiltinId::BtreeSetNew
-        | BuiltinId::BtreeSetLen
+        BuiltinId::BtreeSetLen
         | BuiltinId::BtreeSetIsEmpty
         | BuiltinId::BtreeSetClear
         | BuiltinId::BtreeSetContains
@@ -162,8 +161,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeSetDifference
         | BuiltinId::BtreeSetSymmetricDifference
         | BuiltinId::BtreeSetIntoIter => btree_set::call(id, arguments),
-        BuiltinId::BtreeMapNew
-        | BuiltinId::BtreeMapLen
+        BuiltinId::BtreeMapLen
         | BuiltinId::BtreeMapIsEmpty
         | BuiltinId::BtreeMapClear
         | BuiltinId::BtreeMapContainsKey

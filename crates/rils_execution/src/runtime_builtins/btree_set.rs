@@ -11,13 +11,6 @@ use crate::{
 };
 
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    if id == BuiltinId::BtreeSetNew {
-        return Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
-            borrowed: std::cell::Cell::new(0),
-            entries: RefCell::new(Default::default()),
-            element_type: RefCell::new(Type::Unknown),
-        })));
-    }
     let receiver = arguments.first().ok_or("missing BTreeSet receiver")?;
     let mutating = matches!(
         id,
@@ -122,6 +115,25 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
         }
         _ => Err("unsupported BTreeSet operation".into()),
     }
+}
+
+pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    let member = rils_builtins::builtin_member("BTreeSet", "new")?;
+    if member.native_symbol != Some(symbol) {
+        return None;
+    }
+    Some(if arguments.is_empty() {
+        Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
+            borrowed: std::cell::Cell::new(0),
+            entries: RefCell::new(Default::default()),
+            element_type: RefCell::new(Type::Unknown),
+        })))
+    } else {
+        Err(format!(
+            "BTreeSet::new expects 0 arguments, found {}",
+            arguments.len()
+        ))
+    })
 }
 
 fn key(arguments: &[Value], index: usize) -> Result<HashKey, String> {

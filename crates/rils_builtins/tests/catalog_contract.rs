@@ -319,7 +319,7 @@ fn range_next_keeps_its_numeric_id() {
 
 #[test]
 fn collection_constructors_export_native_symbols_without_ids() {
-    for owner in ["VecDeque", "BinaryHeap"] {
+    for owner in ["VecDeque", "BinaryHeap", "BTreeMap", "BTreeSet"] {
         let constructor = builtin_member(owner, "new").expect("constructor");
         let symbol = constructor.native_symbol.expect("native symbol");
         assert_eq!(constructor.builtin_id, None);

@@ -174,6 +174,8 @@ pub fn call_symbol(
         .or_else(|| string::call_symbol(symbol, arguments))
         .or_else(|| super::vec_deque::call_symbol(symbol, arguments))
         .or_else(|| super::binary_heap::call_symbol(symbol, arguments))
+        .or_else(|| super::btree_map::call_symbol(symbol, arguments))
+        .or_else(|| super::btree_set::call_symbol(symbol, arguments))
         .or_else(|| super::vector_dynamic::call_symbol(symbol, arguments))
         .or_else(|| vector::call_symbol(symbol, arguments))
         .or_else(|| range::call_symbol(symbol, arguments))

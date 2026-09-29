@@ -337,7 +337,6 @@ mod native {
     impl<T: Ord> BTreeSet<T> {
         /// Creates an empty set.
         #[export_rils]
-        #[rils_legacy_id(core::btree_set::new)]
         pub fn new() -> Self {
             Self(std::collections::BTreeSet::new())
         }
@@ -496,7 +495,6 @@ mod native {
     impl<K: Ord, V> BTreeMap<K, V> {
         /// Creates an empty map.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::new)]
         pub fn new() -> Self {
             Self(std::collections::BTreeMap::new())
         }

@@ -59,12 +59,6 @@ pub(super) fn resolve_associated_path(
             })?;
             Ok(crate::numeric::float_constant(target, constant.id))
         }
-        Value::StructType(definition) if definition.name == "BTreeMap" && member == "new" => {
-            Ok(Value::BuiltinFunction(BuiltinFunction::BTreeMapNew))
-        }
-        Value::StructType(definition) if definition.name == "BTreeSet" && member == "new" => {
-            Ok(Value::BuiltinFunction(BuiltinFunction::BTreeSetNew))
-        }
         Value::StructType(definition) => {
             if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
                 && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction

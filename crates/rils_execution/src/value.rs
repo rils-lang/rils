@@ -305,8 +305,6 @@ pub enum BuiltinFunction {
     RcNew,
     CellNew,
     RefCellNew,
-    BTreeMapNew,
-    BTreeSetNew,
     IntegerIntrinsic {
         symbol: &'static str,
         target: crate::IntegerType,

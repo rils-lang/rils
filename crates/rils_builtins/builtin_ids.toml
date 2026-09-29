@@ -179,7 +179,6 @@ clear = 0x1106
 
 # Ordered map operations: 0x1200-0x12FF.
 [core.btree_map]
-new = 0x1200
 len = 0x1201
 is_empty = 0x1202
 clear = 0x1203
@@ -194,7 +193,6 @@ iter = 0x120B
 
 # Ordered set operations: 0x1300-0x13FF.
 [core.btree_set]
-new = 0x1300
 len = 0x1301
 is_empty = 0x1302
 clear = 0x1303
