@@ -2,13 +2,109 @@
 
 use std::rc::Rc;
 
-use rils_builtins::BuiltinId;
+use rils_builtins::{BuiltinId, builtin};
 use rils_native::NativeKey;
 use rils_value::{DynamicLayout, DynamicPathStep, DynamicType, DynamicValue};
 
 use crate::value::{
     DynamicObject, HashKey, OwnedIteratorValue, Value, record_codec::NativeRecordCodec,
 };
+
+use super::{NativeOwnedContext, import_receiver};
+
+fn owned_insert_kind(symbol: &str) -> Option<MapKind> {
+    [("HashMap", MapKind::Hash), ("BTreeMap", MapKind::BTree)]
+        .into_iter()
+        .find_map(|(name, kind)| {
+            builtin(name)?
+                .members
+                .iter()
+                .any(|member| member.name == "insert" && member.native_symbol == Some(symbol))
+                .then_some(kind)
+        })
+}
+
+pub(super) fn is_owned_symbol(symbol: &str) -> bool {
+    owned_insert_kind(symbol).is_some()
+}
+
+pub(super) fn call_owned_symbol(
+    symbol: &str,
+    arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+) -> Option<Result<Value, String>> {
+    let kind = owned_insert_kind(symbol)?;
+    Some((|| {
+        if arguments.len() != 3 {
+            return Err(format!("{}::insert expects a key and value", kind.name()));
+        }
+        if !matches!(&arguments[0], Value::Reference(reference) if reference.mutable) {
+            return Err(format!("{}::insert requires `&mut self`", kind.name()));
+        }
+        let receiver = import_receiver(&arguments[0])?;
+        let Value::Dynamic(object) = receiver else {
+            let id = match kind {
+                MapKind::Hash => BuiltinId::HashMapInsert,
+                MapKind::BTree => BuiltinId::BtreeMapInsert,
+            };
+            return super::call(id, &arguments);
+        };
+        if !kind.matches(&object) {
+            return Err(format!(
+                "{}::insert received the wrong collection",
+                kind.name()
+            ));
+        }
+        let pair_layout = object
+            .descriptor()
+            .layout()
+            .sequence_item()
+            .ok_or("map has no entry layout")?
+            .clone();
+        let fields = pair_layout
+            .record_fields()
+            .ok_or("map entry is not a pair")?;
+        if fields.len() != 2 {
+            return Err("map entry is not a pair".into());
+        }
+        let key_layout = fields[0].layout_handle();
+        let value_layout = fields[1].layout_handle();
+        let mut values = arguments.into_iter();
+        values.next();
+        let key = values.next().expect("arity checked");
+        let value = values.next().expect("arity checked");
+        if kind == MapKind::BTree {
+            HashKey::from_ordered_value(&key)
+                .map_err(|_| "BTreeMap key must be bool, integer, char, or string")?;
+        }
+        let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+        let native_key = codec.into_native(key, key_layout)?;
+        let identity = rils_stdlib::native::registry().key(native_key.view())?;
+        let native_value = codec.into_native(value, value_layout.clone())?;
+        let pair = DynamicValue::record(pair_layout, vec![native_key, native_value])?;
+        let index = object.with(|map| find(map, &identity))??;
+        let previous = object
+            .with_mut(|map| -> Result<Option<DynamicValue>, String> {
+                map.sequence_borrows()?.check_structural_mutation()?;
+                if let Some(index) = index {
+                    let mut previous = map.replace_sequence_item(index, pair)?;
+                    Ok(Some(
+                        previous.take_path_field(&[DynamicPathStep::Field(1)])?,
+                    ))
+                } else {
+                    let position = if kind == MapKind::BTree {
+                        insertion_index(map, &identity)?
+                    } else {
+                        map.sequence_len()?
+                    };
+                    map.insert_sequence_item(position, pair)?;
+                    Ok(None)
+                }
+            })?
+            .map_err(|error| mutation_error(kind, error))?;
+        native_option(previous, value_layout)
+    })())
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MapKind {

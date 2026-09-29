@@ -194,6 +194,10 @@ pub fn call_owned_symbol(
 ) -> Option<Result<crate::Value, String>> {
     if super::cell_native::is_owned_symbol(symbol) {
         super::cell_native::call_owned_symbol(symbol, arguments, context)
+    } else if super::native_set::is_owned_symbol(symbol) {
+        super::native_set::call_owned_symbol(symbol, arguments, context)
+    } else if super::native_map::is_owned_symbol(symbol) {
+        super::native_map::call_owned_symbol(symbol, arguments, context)
     } else if super::rc_native::is_owned_symbol(symbol) {
         super::rc_native::call_owned_symbol(symbol, arguments, context)
     } else if boxed::is_owned_symbol(symbol) {
@@ -209,6 +213,8 @@ pub fn call_owned_symbol(
 
 pub fn is_owned_symbol(symbol: &str) -> bool {
     super::cell_native::is_owned_symbol(symbol)
+        || super::native_set::is_owned_symbol(symbol)
+        || super::native_map::is_owned_symbol(symbol)
         || super::rc_native::is_owned_symbol(symbol)
         || boxed::is_owned_symbol(symbol)
         || super::vec_deque::is_owned_symbol(symbol)

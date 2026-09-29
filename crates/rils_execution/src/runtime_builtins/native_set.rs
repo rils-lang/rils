@@ -5,13 +5,92 @@ use std::{
     rc::Rc,
 };
 
-use rils_builtins::BuiltinId;
+use rils_builtins::{BuiltinId, builtin};
 use rils_native::NativeKey;
 use rils_value::{DynamicLayout, DynamicType, DynamicValue};
 
 use crate::value::{
     DynamicObject, HashKey, OwnedIteratorValue, Value, record_codec::NativeRecordCodec,
 };
+
+use super::{NativeOwnedContext, import_receiver};
+
+fn owned_insert_kind(symbol: &str) -> Option<SetKind> {
+    [("HashSet", SetKind::Hash), ("BTreeSet", SetKind::BTree)]
+        .into_iter()
+        .find_map(|(name, kind)| {
+            builtin(name)?
+                .members
+                .iter()
+                .any(|member| member.name == "insert" && member.native_symbol == Some(symbol))
+                .then_some(kind)
+        })
+}
+
+pub(super) fn is_owned_symbol(symbol: &str) -> bool {
+    owned_insert_kind(symbol).is_some()
+}
+
+pub(super) fn call_owned_symbol(
+    symbol: &str,
+    arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+) -> Option<Result<Value, String>> {
+    let kind = owned_insert_kind(symbol)?;
+    Some((|| {
+        if arguments.len() != 2 {
+            return Err(format!("{}::insert expects one element", kind.name()));
+        }
+        if !matches!(&arguments[0], Value::Reference(reference) if reference.mutable) {
+            return Err(format!("{}::insert requires `&mut self`", kind.name()));
+        }
+        let receiver = import_receiver(&arguments[0])?;
+        let Value::Dynamic(object) = receiver else {
+            let id = match kind {
+                SetKind::Hash => BuiltinId::HashSetInsert,
+                SetKind::BTree => BuiltinId::BtreeSetInsert,
+            };
+            return super::call(id, &arguments);
+        };
+        if !kind.matches(&object) {
+            return Err(format!(
+                "{}::insert received the wrong collection",
+                kind.name()
+            ));
+        }
+        let item_layout = object
+            .descriptor()
+            .layout()
+            .sequence_item()
+            .ok_or("set has no native item layout")?
+            .clone();
+        let mut values = arguments.into_iter();
+        values.next();
+        let value = values.next().expect("arity checked");
+        if kind == SetKind::BTree {
+            HashKey::from_ordered_value(&value)
+                .map_err(|_| "BTreeSet elements must be bool, integer, char, or string")?;
+        }
+        let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+        let native = codec.into_native(value, item_layout)?;
+        let key = rils_stdlib::native::registry().key(native.view())?;
+        let index = object.with(|set| find(set, &key))??;
+        if index.is_some() {
+            return Ok(Value::Bool(false));
+        }
+        object
+            .with_mut(|set| {
+                let position = if kind == SetKind::BTree {
+                    insertion_index(set, &key)?
+                } else {
+                    set.sequence_len()?
+                };
+                set.insert_sequence_item(position, native)
+            })?
+            .map_err(|error| mutation_error(kind, error))?;
+        Ok(Value::Bool(true))
+    })())
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SetKind {

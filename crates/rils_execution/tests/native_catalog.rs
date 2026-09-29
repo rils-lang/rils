@@ -1,4 +1,6 @@
-use rils_execution::runtime_builtins::{call_native_symbol, requires_owned_native_call};
+use rils_execution::runtime_builtins::{
+    NativeOwnedContext, call_native_owned_symbol, call_native_symbol, requires_owned_native_call,
+};
 
 #[test]
 fn every_native_member_has_a_bridge_and_rejects_missing_arguments() {
@@ -12,8 +14,19 @@ fn every_native_member_has_a_bridge_and_rejects_missing_arguments() {
                 "{symbol}"
             );
             assert!(member.runtime_import.is_none(), "{symbol}");
-            let result = call_native_symbol(symbol, &[])
-                .unwrap_or_else(|| panic!("missing generated native bridge for {symbol}"));
+            let result = if requires_owned_native_call(symbol) {
+                call_native_owned_symbol(
+                    symbol,
+                    Vec::new(),
+                    &NativeOwnedContext {
+                        structs: Vec::new(),
+                        enums: Vec::new(),
+                    },
+                )
+            } else {
+                call_native_symbol(symbol, &[])
+            }
+            .unwrap_or_else(|| panic!("missing generated native bridge for {symbol}"));
             assert!(result.is_err(), "{symbol} accepted a missing receiver");
         }
     }

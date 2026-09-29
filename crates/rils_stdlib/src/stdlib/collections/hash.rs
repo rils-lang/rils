@@ -75,6 +75,7 @@ mod native {
         /// Inserts a value and reports whether it was new.
         #[export_rils]
         #[rils_legacy_id(core::hash_set::insert)]
+        #[rils_native_bridge]
         pub fn insert(&mut self, value: T) -> bool {
             self.0.insert(value)
         }
@@ -205,6 +206,7 @@ mod native {
         /// Inserts a key-value pair and returns the previous value.
         #[export_rils]
         #[rils_legacy_id(core::hash_map::insert)]
+        #[rils_native_bridge]
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             self.0.insert(key, value).map_or(Option::None, Option::Some)
         }
