@@ -26,7 +26,6 @@ mod native {
 
         /// Returns the present value or fails.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn unwrap(self) -> T {
             match self {
                 Self::Some(value) => value,
@@ -36,7 +35,6 @@ mod native {
 
         /// Returns the present value or the supplied default.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn unwrap_or(self, default: T) -> T {
             match self {
                 Self::Some(value) => value,
@@ -46,7 +44,6 @@ mod native {
 
         /// Returns the present value or fails with the supplied message.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn expect(self, message: String) -> T {
             match self {
                 Self::Some(value) => value,
@@ -56,14 +53,12 @@ mod native {
 
         /// Moves the value out, leaving None.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn take(&mut self) -> Self {
             std::mem::replace(self, Self::None)
         }
 
         /// Returns this Option when present, otherwise the supplied Option.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn or(self, other: Self) -> Self {
             match self {
                 Self::Some(_) => self,
@@ -73,7 +68,6 @@ mod native {
 
         /// Returns the present Option only when exactly one operand is present.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn xor(self, other: Self) -> Self {
             match (self, other) {
                 (Self::Some(value), Self::None) | (Self::None, Self::Some(value)) => {
@@ -85,7 +79,6 @@ mod native {
 
         /// Replaces the contained value and returns the previous Option.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn replace(&mut self, value: T) -> Self {
             std::mem::replace(self, Self::Some(value))
         }

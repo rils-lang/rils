@@ -118,13 +118,8 @@ fn owned_sum_member(
             member.receiver,
             Some(rils_builtins::ReceiverMode::Owned | rils_builtins::ReceiverMode::Mutable)
         )
-        && (member.native_bridge
-            || (owner.path == "Result"
-                && member.receiver == Some(rils_builtins::ReceiverMode::Owned)
-                && member.signature.is_some_and(|signature| {
-                    matches!(signature.result, rils_builtins::TypePattern::Option(_))
-                }))))
-    .then_some((owner, member))
+        && member.native_bridge)
+        .then_some((owner, member))
 }
 
 pub fn call_native_symbol_with_callback<E>(

@@ -30,7 +30,7 @@ Option/Result 的回调方法已直接在带 `FnOnce` 约束、返回普通 Rust
 `#[export_rils]` 只可标在固有 impl 的方法上。Rust trait impl 必须在整个 impl 块上
 标记 `#[rils_impl]`，由宏一并导出 trait 身份、方法和关联类型；trait 方法不能单独标记
 `#[export_rils]`。集合的 `IntoIterator` 和迭代器的 `Iterator` 使用这种形式。
-原生方法按导出的符号路径注册。宿主提供的方法显式写 `#[rils_import(...)]`。
+原生方法按导出的符号路径注册。宿主方法由 `#[export_rils]` 声明导出，并在调用边界适配参数和返回值。
 未提供所需转换或适配器时，
 桥接生成会在编译期间报错。例如 `Vec::is_empty` 由 `len()` 计算，并通过原生符号调用。
 Rils 的 `IntoIterator` 与 Rust 一样声明 `Item` 和 `IntoIter`，标记后的 impl 会导出

@@ -425,10 +425,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                 .type_params()
                 .map(|parameter| parameter.ident.to_string())
                 .collect::<Vec<_>>();
-            let native_bridge = method
-                .attrs
-                .iter()
-                .any(|attribute| attribute.path().is_ident("rils_native_bridge"));
+            let native_bridge = uses_sum_adapter(&definition.item, method);
             Ok(quote! {
                 crate::BuiltinMember {
                     name: #name,
@@ -509,11 +506,7 @@ fn documentation(attributes: &[syn::Attribute]) -> String {
 }
 
 fn supports_direct_bridge(item: &ItemEnum, method: &ImplItemFn) -> bool {
-    if method
-        .attrs
-        .iter()
-        .any(|attribute| attribute.path().is_ident("rils_native_bridge"))
-    {
+    if uses_sum_adapter(item, method) {
         return true;
     }
     if callback_operation(item, method).is_some() {
@@ -550,6 +543,41 @@ fn supports_direct_bridge(item: &ItemEnum, method: &ImplItemFn) -> bool {
         return false;
     };
     matches!(arguments.args.first(), Some(syn::GenericArgument::Type(Type::Path(path))) if path.path.is_ident("T") || path.path.is_ident("E"))
+}
+
+fn uses_sum_adapter(item: &ItemEnum, method: &ImplItemFn) -> bool {
+    if method
+        .attrs
+        .iter()
+        .any(|attribute| attribute.path().is_ident("rils_native_bridge"))
+    {
+        return true;
+    }
+    let Some(receiver) = method.sig.receiver() else {
+        return false;
+    };
+    let owner = item.ident.to_string();
+    let name = method.sig.ident.to_string();
+    matches!(
+        (
+            owner.as_str(),
+            receiver.reference.is_some(),
+            receiver.mutability.is_some(),
+            name.as_str(),
+        ),
+        (
+            "Option",
+            false,
+            _,
+            "unwrap" | "unwrap_or" | "expect" | "or" | "xor"
+        ) | ("Option", true, true, "take" | "replace")
+            | (
+                "Result",
+                false,
+                _,
+                "unwrap" | "unwrap_or" | "expect" | "unwrap_err" | "expect_err" | "ok" | "err",
+            )
+    )
 }
 
 fn callback_operation(item: &ItemEnum, method: &ImplItemFn) -> Option<Tokens> {
@@ -683,7 +711,9 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         if !supports_direct_bridge(&definition.item, method) {
             return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion"));
         }
-        if method.attrs.iter().any(|attribute| attribute.path().is_ident("rils_native_bridge")) {
+        if uses_sum_adapter(&definition.item, method)
+            && !(definition.item.ident == "Result" && matches!(name.to_string().as_str(), "ok" | "err"))
+        {
             let arity = method.sig.inputs.len();
             return Ok(quote! {
                 #id_path => Some(if arguments.len() == #arity {
@@ -844,9 +874,16 @@ mod tests {
         assert!(supports_direct_bridge(&option, &state_query));
         assert!(supports_direct_bridge(&result, &state_query));
         assert!(supports_direct_bridge(&result, &extraction));
-        assert!(!supports_direct_bridge(&option, &mutable));
-        assert!(!supports_direct_bridge(&result, &generic));
+        assert!(supports_direct_bridge(&option, &mutable));
+        assert!(supports_direct_bridge(&result, &generic));
         assert!(supports_direct_bridge(&option, &callback));
+        let unsupported: ImplItemFn = syn::parse_quote!(
+            #[export_rils]
+            pub fn unknown(self) -> T {
+                loop {}
+            }
+        );
+        assert!(!supports_direct_bridge(&option, &unsupported));
 
         let module: ItemMod = syn::parse_quote! {
             mod native {
@@ -858,12 +895,7 @@ mod tests {
             }
         };
         let definition = Definition::parse(syn::parse_quote!(core::option), &module).unwrap();
-        assert!(
-            metadata_tokens(&definition)
-                .unwrap_err()
-                .to_string()
-                .contains("no native conversion")
-        );
+        assert!(metadata_tokens(&definition).is_ok());
     }
 
     #[test]
