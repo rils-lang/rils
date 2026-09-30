@@ -69,7 +69,7 @@ pub(super) fn resolve_host_or_builtin_member(
         return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
             BuiltinBoundMethod {
                 receiver: Rc::new(value.clone()),
-                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter),
+                method: BuiltinMethod::IteratorIdentity,
             },
         ))));
     }

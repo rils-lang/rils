@@ -273,8 +273,8 @@ impl<'a> FunctionLowerer<'a> {
                         && member == "into_iter"
                         && arguments.len() == 1
                         && matches!(
-                            self.resolved_builtin(expression_id),
-                            Some((rils_builtins::BuiltinId::IteratorIntoIter, _, None))
+                            self.typeck_results.resolved_call(expression_id),
+                            Some(rils_frontend::semantic::ResolvedCall::IteratorIdentity)
                         )
                     {
                         return self.expression(&arguments[0]);
@@ -569,6 +569,15 @@ impl<'a> FunctionLowerer<'a> {
                             } => Some((*id, *kind, *receiver)),
                             _ => None,
                         });
+                    if name == "into_iter"
+                        && arguments.is_empty()
+                        && matches!(
+                            self.typeck_results.resolved_call(expression_id),
+                            Some(rils_frontend::semantic::ResolvedCall::IteratorIdentity)
+                        )
+                    {
+                        return self.expression(object);
+                    }
                     let intrinsic = semantic_builtin
                         .filter(|(_, kind, _)| {
                             *kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
@@ -595,12 +604,6 @@ impl<'a> FunctionLowerer<'a> {
                     if let Some((builtin, _, receiver)) = semantic_builtin.filter(|(_, kind, _)| {
                         *kind == rils_frontend::semantic::BuiltinCallKind::Runtime
                     }) {
-                        if name == "into_iter"
-                            && arguments.is_empty()
-                            && builtin == rils_builtins::BuiltinId::IteratorIntoIter
-                        {
-                            return self.expression(object);
-                        }
                         if builtin.has_direct_runtime_call()
                             && let Some(receiver) = receiver.map(|receiver| match receiver {
                                 rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,

@@ -791,6 +791,9 @@ fn type_of_value(value: &Value) -> Option<Type> {
                     )
                     .unwrap_or_else(Type::opaque_function)
                 }
+                crate::value::BuiltinMethod::IteratorIdentity => {
+                    Type::function(Vec::new(), receiver)
+                }
             };
             Some(signature)
         }

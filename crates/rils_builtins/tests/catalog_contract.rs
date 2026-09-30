@@ -294,8 +294,6 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
             // An old numeric ID remains reserved for bytecode compatibility after
             // its declaration moves to a native symbol.
             assert_eq!(id.member_name(), Some(member.name));
-        } else if rils_builtins::RETIRED_COMPATIBILITY_IDS.contains(&id) {
-            assert!(id.member_name().is_some());
         } else {
             let intrinsic = intrinsic(id).unwrap_or_else(|| {
                 panic!(
@@ -451,6 +449,7 @@ fn legacy_sequence_ids_are_no_longer_defined() {
     for raw in (0x0100..=0x0105)
         .chain(0x0200..=0x0207)
         .chain(std::iter::once(0x0300))
+        .chain(std::iter::once(0x0308))
         .chain(std::iter::once(0x0401))
     {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());

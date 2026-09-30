@@ -403,9 +403,7 @@ impl Interpreter {
                     return self.call(
                         Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(receiver.clone()),
-                            method: BuiltinMethod::Runtime(
-                                rils_builtins::BuiltinId::IteratorIntoIter,
-                            ),
+                            method: BuiltinMethod::IteratorIdentity,
                         })),
                         &arguments[1..],
                         span,
@@ -679,7 +677,7 @@ impl Interpreter {
         {
             return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(object),
-                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter),
+                method: BuiltinMethod::IteratorIdentity,
             })));
         }
         match &object {

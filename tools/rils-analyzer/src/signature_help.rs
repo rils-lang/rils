@@ -171,6 +171,13 @@ fn semantic_signature_at_call(
             let definition = analysis.def_map.definition(*definition)?;
             function_signature(definition.name.clone(), definition.inferred_type.clone()?)
         }
+        rils_frontend::ResolvedCall::IteratorIdentity => {
+            let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
+            Some((
+                "into_iter".into(),
+                FunctionSignature::fixed(Vec::new(), receiver_type.clone()),
+            ))
+        }
         rils_frontend::ResolvedCall::TraitDefault { method, .. } => {
             let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
             let member_type =

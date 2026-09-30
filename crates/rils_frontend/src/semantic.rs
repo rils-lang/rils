@@ -184,6 +184,7 @@ pub enum BuiltinCallKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedCall {
     Definition(DefId),
+    IteratorIdentity,
     TraitDefault {
         trait_name: &'static str,
         method: &'static str,
@@ -492,11 +493,7 @@ fn resolve_callee(
             && member == "into_iter"
             && iterator_types.contains(owner) =>
         {
-            Some(ResolvedCall::Builtin {
-                id: rils_builtins::BuiltinId::IteratorIntoIter,
-                kind: BuiltinCallKind::Runtime,
-                receiver: None,
-            })
+            Some(ResolvedCall::IteratorIdentity)
         }
         Expr::Member { object, name, .. } => {
             let receiver = results.expression_type(expression_ids.get(object)?)?;
@@ -519,11 +516,7 @@ fn resolve_callee(
             if name == "into_iter"
                 && matches!(receiver, Type::Named { name: owner, .. } if iterator_types.contains(owner))
             {
-                return Some(ResolvedCall::Builtin {
-                    id: rils_builtins::BuiltinId::IteratorIntoIter,
-                    kind: BuiltinCallKind::Runtime,
-                    receiver: Some(rils_builtins::ReceiverMode::Owned),
-                });
+                return Some(ResolvedCall::IteratorIdentity);
             }
             let iterator_member = match receiver {
                 Type::Named { name: owner, .. } if iterator_types.contains(owner) => {

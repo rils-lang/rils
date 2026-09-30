@@ -123,13 +123,6 @@ pub fn call_native_symbol_with_callback<E>(
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     use rils_builtins::BuiltinId;
 
-    if id == BuiltinId::IteratorIntoIter {
-        return match arguments {
-            [iterator] => Ok(iterator.clone()),
-            _ => Err("IntoIterator::into_iter expects one iterator".into()),
-        };
-    }
-
     if let Some(result) = native::call(id, arguments) {
         return result;
     }

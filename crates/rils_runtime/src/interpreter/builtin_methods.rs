@@ -8,6 +8,7 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         let arity = match method.method {
+            BuiltinMethod::IteratorIdentity => 0,
             BuiltinMethod::Runtime(id) => rils_builtins::runtime_member(id)
                 .and_then(|(_, member)| member.signature)
                 .map_or(0, |signature| signature.parameters.len()),
@@ -45,9 +46,7 @@ impl Interpreter {
                 values.extend_from_slice(arguments);
                 self.call_native_symbol(symbol, &values, span)
             }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter) => {
-                Ok((*method.receiver).clone())
-            }
+            BuiltinMethod::IteratorIdentity => Ok((*method.receiver).clone()),
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone) => {
                 let value = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference

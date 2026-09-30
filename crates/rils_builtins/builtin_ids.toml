@@ -4,10 +4,6 @@
 [core]
 clone = 0x0001
 
-# Iterator operations: 0x0300-0x03FF.
-[core.iterator]
-into_iter = 0x0308
-
 # HashMap operations: 0x0500-0x05FF.
 [core.hash_map]
 len = 0x0500
