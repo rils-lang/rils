@@ -22,7 +22,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
     let Value::BTreeSet(set) = super::import_receiver(receiver)? else {
         return Err("expected BTreeSet receiver".into());
     };
-    if (mutating || id == BuiltinId::BtreeSetIntoIter) && set.borrowed.get() > 0 {
+    if mutating && set.borrowed.get() > 0 {
         return Err("cannot mutate BTreeSet while it is borrowed by an iterator".into());
     }
     match id {
@@ -100,21 +100,25 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 }
             }
         }
-        BuiltinId::BtreeSetIntoIter => {
-            let element_type = set.element_type.borrow().clone();
-            let entries = std::mem::take(&mut *set.entries.borrow_mut());
-            let collection_type = Type::Named {
-                name: "BTreeSet".into(),
-                arguments: vec![element_type.clone()],
-            };
-            Ok(crate::iteration::generated_collection_iterator(
-                entries.into_iter().map(|key| key.to_value()),
-                element_type,
-                &collection_type,
-            ))
-        }
         _ => Err("unsupported BTreeSet operation".into()),
     }
+}
+
+pub(crate) fn into_iter(set: Rc<BTreeSetValue>) -> Result<Value, String> {
+    if set.borrowed.get() > 0 {
+        return Err("cannot mutate BTreeSet while it is borrowed by an iterator".into());
+    }
+    let element_type = set.element_type.borrow().clone();
+    let entries = std::mem::take(&mut *set.entries.borrow_mut());
+    let collection_type = Type::Named {
+        name: "BTreeSet".into(),
+        arguments: vec![element_type.clone()],
+    };
+    Ok(crate::iteration::generated_collection_iterator(
+        entries.into_iter().map(|key| key.to_value()),
+        element_type,
+        &collection_type,
+    ))
 }
 
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {

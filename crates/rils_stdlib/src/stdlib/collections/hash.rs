@@ -50,7 +50,6 @@ mod native {
         type IntoIter = HashSetIntoIter<T>;
         /// Consumes the set and iterates over its values.
         #[rils_native_bridge]
-        #[rils_legacy_id(core::hash_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
             HashSetIntoIter(self.0.into_iter())
         }
@@ -196,7 +195,6 @@ mod native {
         type IntoIter = HashMapIntoIter<K, V>;
         /// Consumes the map and iterates over owned key-value pairs.
         #[rils_native_bridge]
-        #[rils_legacy_id(core::hash_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
             HashMapIntoIter(self.0.into_iter())
         }

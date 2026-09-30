@@ -454,7 +454,9 @@ fn legacy_sequence_ids_are_no_longer_defined() {
         .chain(std::iter::once(0x0300))
         .chain(std::iter::once(0x0308))
         .chain(std::iter::once(0x0401))
-        .chain([0x050A, 0x060E, 0x120B, 0x1311])
+        .chain([
+            0x0509, 0x050A, 0x060D, 0x060E, 0x120A, 0x120B, 0x1310, 0x1311,
+        ])
     {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
@@ -701,14 +703,22 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
         None
     );
     for owner in ["HashMap", "BTreeMap", "HashSet", "BTreeSet"] {
-        let iter = builtin(owner)
-            .expect("map or set declaration")
+        let declaration = builtin(owner).expect("map or set declaration");
+        let iter = declaration
             .member("iter")
             .expect("borrowed iteration method");
         assert_eq!(iter.builtin_id, None);
         assert!(std::ptr::eq(
             native_member(iter.native_symbol.unwrap()).unwrap(),
             iter
+        ));
+        let into_iter = declaration
+            .member("into_iter")
+            .expect("owned iteration method");
+        assert_eq!(into_iter.builtin_id, None);
+        assert!(std::ptr::eq(
+            native_member(into_iter.native_symbol.unwrap()).unwrap(),
+            into_iter
         ));
     }
 

@@ -22,8 +22,7 @@ pub fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
         | BuiltinId::HashMapGetCloned
         | BuiltinId::HashMapRemove
         | BuiltinId::HashMapKeysCloned
-        | BuiltinId::HashMapValuesCloned
-        | BuiltinId::HashMapIntoIter => call_map(id, arguments),
+        | BuiltinId::HashMapValuesCloned => call_map(id, arguments),
         BuiltinId::HashSetLen
         | BuiltinId::HashSetIsEmpty
         | BuiltinId::HashSetClear
@@ -36,8 +35,7 @@ pub fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
         | BuiltinId::HashSetUnion
         | BuiltinId::HashSetIntersection
         | BuiltinId::HashSetDifference
-        | BuiltinId::HashSetSymmetricDifference
-        | BuiltinId::HashSetIntoIter => call_set(id, arguments),
+        | BuiltinId::HashSetSymmetricDifference => call_set(id, arguments),
         _ => Err(format!("unknown hash collection built-in `{id:?}`")),
     }
 }
@@ -126,27 +124,6 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 .collect::<Result<_, _>>()?,
             map.value_type.borrow().clone(),
         )),
-        BuiltinId::HashMapIntoIter => {
-            reject_referenced_map(&map)?;
-            let key_type = map.key_type.borrow().clone();
-            let value_type = map.value_type.borrow().clone();
-            let entries = std::mem::take(&mut *map.entries.borrow_mut());
-            let values = entries.into_iter().map(|(key, slot)| {
-                tuple(vec![
-                    key.to_value(),
-                    slot.value.expect("unreferenced HashMap value is present"),
-                ])
-            });
-            let collection_type = Type::Named {
-                name: "HashMap".into(),
-                arguments: vec![key_type.clone(), value_type.clone()],
-            };
-            Ok(crate::iteration::generated_collection_iterator(
-                values,
-                Type::Tuple(vec![key_type, value_type]),
-                &collection_type,
-            ))
-        }
         _ => Err(format!("unknown HashMap built-in `{id:?}`")),
     }
 }
@@ -159,10 +136,7 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     )?;
     if matches!(
         id,
-        BuiltinId::HashSetClear
-            | BuiltinId::HashSetInsert
-            | BuiltinId::HashSetRemove
-            | BuiltinId::HashSetIntoIter
+        BuiltinId::HashSetClear | BuiltinId::HashSetInsert | BuiltinId::HashSetRemove
     ) && set.borrowed.get() > 0
     {
         return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
@@ -236,21 +210,47 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 element_type: RefCell::new(element_type),
             })))
         }
-        BuiltinId::HashSetIntoIter => {
-            let element_type = set.element_type.borrow().clone();
-            let entries = std::mem::take(&mut *set.entries.borrow_mut());
-            let collection_type = Type::Named {
-                name: "HashSet".into(),
-                arguments: vec![element_type.clone()],
-            };
-            Ok(crate::iteration::generated_collection_iterator(
-                entries.into_iter().map(|key| key.to_value()),
-                element_type,
-                &collection_type,
-            ))
-        }
         _ => Err(format!("unknown HashSet built-in `{id:?}`")),
     }
+}
+
+pub(crate) fn into_iter_map(map: Rc<HashMapValue>) -> Result<Value, String> {
+    reject_referenced_map(&map)?;
+    let key_type = map.key_type.borrow().clone();
+    let value_type = map.value_type.borrow().clone();
+    let entries = std::mem::take(&mut *map.entries.borrow_mut());
+    let values = entries.into_iter().map(|(key, slot)| {
+        tuple(vec![
+            key.to_value(),
+            slot.value.expect("unreferenced HashMap value is present"),
+        ])
+    });
+    let collection_type = Type::Named {
+        name: "HashMap".into(),
+        arguments: vec![key_type.clone(), value_type.clone()],
+    };
+    Ok(crate::iteration::generated_collection_iterator(
+        values,
+        Type::Tuple(vec![key_type, value_type]),
+        &collection_type,
+    ))
+}
+
+pub(crate) fn into_iter_set(set: Rc<HashSetValue>) -> Result<Value, String> {
+    if set.borrowed.get() > 0 {
+        return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
+    }
+    let element_type = set.element_type.borrow().clone();
+    let entries = std::mem::take(&mut *set.entries.borrow_mut());
+    let collection_type = Type::Named {
+        name: "HashSet".into(),
+        arguments: vec![element_type.clone()],
+    };
+    Ok(crate::iteration::generated_collection_iterator(
+        entries.into_iter().map(|key| key.to_value()),
+        element_type,
+        &collection_type,
+    ))
 }
 
 fn hash_argument(arguments: &[Value], index: usize) -> Result<HashKey, String> {

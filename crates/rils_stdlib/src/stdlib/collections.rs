@@ -328,7 +328,6 @@ mod native {
         type IntoIter = BTreeSetIntoIter<T>;
         /// Consumes the set and iterates over owned elements in order.
         #[rils_native_bridge]
-        #[rils_legacy_id(core::btree_set::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
             BTreeSetIntoIter(self.0.into_iter())
         }
@@ -485,7 +484,6 @@ mod native {
         type IntoIter = BTreeMapIntoIter<K, V>;
         /// Consumes the map and iterates over owned entries in key order.
         #[rils_native_bridge]
-        #[rils_legacy_id(core::btree_map::into_iter)]
         fn into_iter(self) -> Self::IntoIter {
             BTreeMapIntoIter(self.0.into_iter())
         }

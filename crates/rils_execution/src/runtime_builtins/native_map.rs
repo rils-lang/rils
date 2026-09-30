@@ -76,13 +76,14 @@ pub(super) fn call_owned_symbol(
                 Value::Dynamic(object) if kind.matches(&object) => {
                     crate::iteration::native_sequence_into_iterator(object, context)
                 }
-                value => super::call(
-                    match kind {
-                        MapKind::Hash => BuiltinId::HashMapIntoIter,
-                        MapKind::BTree => BuiltinId::BtreeMapIntoIter,
-                    },
-                    &[value],
-                ),
+                Value::HashMap(map) if kind == MapKind::Hash => {
+                    crate::hash_collections::into_iter_map(map)
+                }
+                Value::BTreeMap(map) if kind == MapKind::BTree => super::btree_map::into_iter(map),
+                _ => Err(format!(
+                    "{}::into_iter received the wrong collection",
+                    kind.name()
+                )),
             }
         })());
     }
@@ -193,7 +194,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
             | BuiltinId::HashMapRemove
             | BuiltinId::HashMapKeysCloned
             | BuiltinId::HashMapValuesCloned
-            | BuiltinId::HashMapIntoIter
     ) {
         MapKind::Hash
     } else if matches!(
@@ -207,7 +207,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
             | BuiltinId::BtreeMapRemove
             | BuiltinId::BtreeMapFirstKeyCloned
             | BuiltinId::BtreeMapLastKeyCloned
-            | BuiltinId::BtreeMapIntoIter
     ) {
         MapKind::BTree
     } else {
@@ -371,15 +370,6 @@ fn dispatch(
             Ok(Value::OwnedIterator(Rc::new(
                 OwnedIteratorValue::from_items(values.into(), layout.rils_type().clone()),
             )))
-        }
-        BuiltinId::HashMapIntoIter | BuiltinId::BtreeMapIntoIter => {
-            crate::iteration::native_sequence_into_iterator(
-                object.clone(),
-                &NativeOwnedContext {
-                    structs: Vec::new(),
-                    enums: Vec::new(),
-                },
-            )
         }
         _ => unreachable!(),
     }

@@ -10,8 +10,8 @@ use crate::value::{IndexedStorage, OwnedIteratorValue};
 
 mod binary_heap;
 mod boxed;
-mod btree_map;
-mod btree_set;
+pub(crate) mod btree_map;
+pub(crate) mod btree_set;
 mod callback;
 mod cell_native;
 mod collection_iter;
@@ -156,8 +156,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeSetUnion
         | BuiltinId::BtreeSetIntersection
         | BuiltinId::BtreeSetDifference
-        | BuiltinId::BtreeSetSymmetricDifference
-        | BuiltinId::BtreeSetIntoIter => btree_set::call(id, arguments),
+        | BuiltinId::BtreeSetSymmetricDifference => btree_set::call(id, arguments),
         BuiltinId::BtreeMapLen
         | BuiltinId::BtreeMapIsEmpty
         | BuiltinId::BtreeMapClear
@@ -166,8 +165,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeMapGetCloned
         | BuiltinId::BtreeMapRemove
         | BuiltinId::BtreeMapFirstKeyCloned
-        | BuiltinId::BtreeMapLastKeyCloned
-        | BuiltinId::BtreeMapIntoIter => btree_map::call(id, arguments),
+        | BuiltinId::BtreeMapLastKeyCloned => btree_map::call(id, arguments),
         BuiltinId::HashMapLen
         | BuiltinId::HashMapIsEmpty
         | BuiltinId::HashMapClear
@@ -177,7 +175,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::HashMapRemove
         | BuiltinId::HashMapKeysCloned
         | BuiltinId::HashMapValuesCloned
-        | BuiltinId::HashMapIntoIter
         | BuiltinId::HashSetLen
         | BuiltinId::HashSetIsEmpty
         | BuiltinId::HashSetClear
@@ -190,8 +187,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::HashSetUnion
         | BuiltinId::HashSetIntersection
         | BuiltinId::HashSetDifference
-        | BuiltinId::HashSetSymmetricDifference
-        | BuiltinId::HashSetIntoIter => crate::hash_collections::call(id, arguments),
+        | BuiltinId::HashSetSymmetricDifference => crate::hash_collections::call(id, arguments),
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),

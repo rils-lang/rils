@@ -93,22 +93,10 @@ pub fn into_iterator_with_context(
         {
             native_sequence_into_iterator(object, context)?
         }
-        Value::HashMap(map) => hash_collections::call(
-            rils_builtins::BuiltinId::HashMapIntoIter,
-            &[Value::HashMap(map)],
-        )?,
-        Value::BTreeMap(map) => runtime_builtins::call(
-            rils_builtins::BuiltinId::BtreeMapIntoIter,
-            &[Value::BTreeMap(map)],
-        )?,
-        Value::BTreeSet(set) => runtime_builtins::call(
-            rils_builtins::BuiltinId::BtreeSetIntoIter,
-            &[Value::BTreeSet(set)],
-        )?,
-        Value::HashSet(set) => hash_collections::call(
-            rils_builtins::BuiltinId::HashSetIntoIter,
-            &[Value::HashSet(set)],
-        )?,
+        Value::HashMap(map) => hash_collections::into_iter_map(map)?,
+        Value::BTreeMap(map) => runtime_builtins::btree_map::into_iter(map)?,
+        Value::BTreeSet(set) => runtime_builtins::btree_set::into_iter(set)?,
+        Value::HashSet(set) => hash_collections::into_iter_set(set)?,
         value => return Ok(IntoIteratorResult::UserDefined(value)),
     };
     Ok(IntoIteratorResult::Ready(iterator))

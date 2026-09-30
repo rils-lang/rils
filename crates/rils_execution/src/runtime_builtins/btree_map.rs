@@ -90,29 +90,30 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 map.key_type.borrow().clone(),
             )
         }
-        BuiltinId::BtreeMapIntoIter => {
-            reject_referenced(&map)?;
-            let key_type = map.key_type.borrow().clone();
-            let value_type = map.value_type.borrow().clone();
-            let entries = std::mem::take(&mut *map.entries.borrow_mut());
-            let values = entries.into_iter().map(|(key, slot)| {
-                tuple(vec![
-                    key.to_value(),
-                    slot.value.expect("unreferenced BTreeMap entry is present"),
-                ])
-            });
-            let collection_type = Type::Named {
-                name: "BTreeMap".into(),
-                arguments: vec![key_type.clone(), value_type.clone()],
-            };
-            Ok(crate::iteration::generated_collection_iterator(
-                values,
-                Type::Tuple(vec![key_type, value_type]),
-                &collection_type,
-            ))
-        }
         _ => Err("unsupported BTreeMap operation".into()),
     }
+}
+
+pub(crate) fn into_iter(map: Rc<BTreeMapValue>) -> Result<Value, String> {
+    reject_referenced(&map)?;
+    let key_type = map.key_type.borrow().clone();
+    let value_type = map.value_type.borrow().clone();
+    let entries = std::mem::take(&mut *map.entries.borrow_mut());
+    let values = entries.into_iter().map(|(key, slot)| {
+        tuple(vec![
+            key.to_value(),
+            slot.value.expect("unreferenced BTreeMap entry is present"),
+        ])
+    });
+    let collection_type = Type::Named {
+        name: "BTreeMap".into(),
+        arguments: vec![key_type.clone(), value_type.clone()],
+    };
+    Ok(crate::iteration::generated_collection_iterator(
+        values,
+        Type::Tuple(vec![key_type, value_type]),
+        &collection_type,
+    ))
 }
 
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {

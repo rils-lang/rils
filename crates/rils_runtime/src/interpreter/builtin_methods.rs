@@ -57,7 +57,6 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::HashMapRemove
                 | rils_builtins::BuiltinId::HashMapKeysCloned
                 | rils_builtins::BuiltinId::HashMapValuesCloned
-                | rils_builtins::BuiltinId::HashMapIntoIter
                 | rils_builtins::BuiltinId::HashSetLen
                 | rils_builtins::BuiltinId::HashSetIsEmpty
                 | rils_builtins::BuiltinId::HashSetClear
@@ -70,8 +69,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::HashSetUnion
                 | rils_builtins::BuiltinId::HashSetIntersection
                 | rils_builtins::BuiltinId::HashSetDifference
-                | rils_builtins::BuiltinId::HashSetSymmetricDifference
-                | rils_builtins::BuiltinId::HashSetIntoIter),
+                | rils_builtins::BuiltinId::HashSetSymmetricDifference),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
@@ -95,7 +93,6 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::BtreeSetIntersection
                 | rils_builtins::BuiltinId::BtreeSetDifference
                 | rils_builtins::BuiltinId::BtreeSetSymmetricDifference
-                | rils_builtins::BuiltinId::BtreeSetIntoIter
                 | rils_builtins::BuiltinId::BtreeMapLen
                 | rils_builtins::BuiltinId::BtreeMapIsEmpty
                 | rils_builtins::BuiltinId::BtreeMapClear
@@ -104,8 +101,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::BtreeMapGetCloned
                 | rils_builtins::BuiltinId::BtreeMapRemove
                 | rils_builtins::BuiltinId::BtreeMapFirstKeyCloned
-                | rils_builtins::BuiltinId::BtreeMapLastKeyCloned
-                | rils_builtins::BuiltinId::BtreeMapIntoIter),
+                | rils_builtins::BuiltinId::BtreeMapLastKeyCloned),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
