@@ -78,6 +78,7 @@ pub enum IntrinsicKind {
 #[derive(Clone, Copy, Debug)]
 pub struct IntrinsicDeclaration {
     pub id: BuiltinId,
+    pub symbol: &'static str,
     pub name: &'static str,
     pub kind: IntrinsicKind,
     pub signature: BuiltinSignature,
@@ -145,11 +146,11 @@ pub fn float_constant(name: &str) -> Option<&'static FloatConstantDeclaration> {
     crate::FLOAT_CONSTANTS.iter().find(|item| item.name == name)
 }
 
-pub fn intrinsic(id: BuiltinId) -> Option<&'static IntrinsicDeclaration> {
+pub fn intrinsic(symbol: &str) -> Option<&'static IntrinsicDeclaration> {
     crate::INTEGER_INTRINSICS
         .iter()
         .chain(crate::FLOAT_INTRINSICS)
-        .find(|item| item.id == id)
+        .find(|item| item.symbol == symbol)
 }
 
 /// Resolves a numeric operation path, including the target type of an
@@ -167,6 +168,6 @@ pub fn intrinsic_by_symbol(
     crate::INTEGER_INTRINSICS
         .iter()
         .chain(crate::FLOAT_INTRINSICS)
-        .find(|declaration| declaration.id.canonical_path() == Some(symbol))
+        .find(|declaration| declaration.symbol == symbol)
         .map(|declaration| (declaration, None))
 }

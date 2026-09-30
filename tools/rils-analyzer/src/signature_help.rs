@@ -188,7 +188,7 @@ fn semantic_signature_at_call(
             let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
             match kind {
                 rils_frontend::BuiltinCallKind::Intrinsic => {
-                    let intrinsic = rils_builtins::intrinsic(*id)?;
+                    let intrinsic = rils_builtins::intrinsic(id.canonical_path()?)?;
                     let member_type = match receiver_type {
                         Type::Integer(integer) => {
                             rils_frontend::standard_library::integer_intrinsic_type(

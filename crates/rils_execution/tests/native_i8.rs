@@ -1,4 +1,3 @@
-use rils_builtins::BuiltinId;
 use rils_execution::{
     Type, Value, formatting,
     numeric::{execute_integer_intrinsic, native_i8},
@@ -27,7 +26,7 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
     );
 
     let result = execute_integer_intrinsic(
-        BuiltinId::IntegerWrappingAdd,
+        "core::integer::wrapping_add",
         None,
         &[value.clone(), native_i8(1)],
     )
@@ -35,13 +34,13 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
     assert_eq!(result, native_i8(i8::MIN));
     assert!(matches!(result, Value::Native(_)));
     assert_eq!(
-        execute_integer_intrinsic(BuiltinId::IntegerWrappingAdd, None, &[value, Value::U8(1)],)
+        execute_integer_intrinsic("core::integer::wrapping_add", None, &[value, Value::U8(1)],)
             .unwrap_err(),
         "expected i8, found u8"
     );
 
     let none = execute_integer_intrinsic(
-        BuiltinId::IntegerCheckedAdd,
+        "core::integer::checked_add",
         None,
         &[native_i8(i8::MAX), native_i8(1)],
     )
@@ -58,7 +57,7 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
     assert_eq!(none.as_option(), Some((None, item_type)));
 
     let overflow = execute_integer_intrinsic(
-        BuiltinId::IntegerOverflowingAdd,
+        "core::integer::overflowing_add",
         None,
         &[native_i8(i8::MAX), native_i8(1)],
     )
@@ -72,7 +71,7 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
     assert_eq!(fields[1].value, Some(Value::Bool(true)));
 
     assert_eq!(
-        execute_integer_intrinsic(BuiltinId::IntegerAbs, None, &[native_i8(i8::MIN)]).unwrap_err(),
+        execute_integer_intrinsic("core::integer::abs", None, &[native_i8(i8::MIN)]).unwrap_err(),
         "integer overflow"
     );
 }

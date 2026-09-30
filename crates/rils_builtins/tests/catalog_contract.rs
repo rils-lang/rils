@@ -298,12 +298,13 @@ fn builtin_catalog_is_bidirectional_at_its_boundaries() {
             // its declaration moves to a native symbol.
             assert_eq!(id.member_name(), Some(member.name));
         } else {
-            let intrinsic = intrinsic(id).unwrap_or_else(|| {
-                panic!(
-                    "missing declaration for configured built-in {}",
-                    id.canonical_path().unwrap_or("<unknown>")
-                )
-            });
+            let intrinsic = intrinsic(id.canonical_path().expect("configured ID path"))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing declaration for configured built-in {}",
+                        id.canonical_path().unwrap_or("<unknown>")
+                    )
+                });
             assert_eq!(id.member_name(), Some(intrinsic.name));
         }
     }

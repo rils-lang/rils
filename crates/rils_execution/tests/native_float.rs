@@ -1,4 +1,4 @@
-use rils_builtins::{BuiltinId, FloatConstantId};
+use rils_builtins::FloatConstantId;
 use rils_execution::{
     FloatType, Value,
     numeric::{execute_intrinsic, float_constant},
@@ -11,7 +11,7 @@ fn float_family_uses_rust_methods_for_both_widths() {
         (Value::from_f64(-3.5), Value::from_f64(3.5), FloatType::F64),
     ] {
         assert_eq!(
-            execute_intrinsic(BuiltinId::FloatAbs, None, &[value]),
+            execute_intrinsic("core::float::abs", None, &[value]),
             Ok(expected)
         );
         let nan = float_constant(target, FloatConstantId::Nan);
@@ -20,7 +20,7 @@ fn float_family_uses_rust_methods_for_both_widths() {
     }
     assert_eq!(
         execute_intrinsic(
-            BuiltinId::FloatClamp,
+            "core::float::clamp",
             None,
             &[Value::F32(1.0), Value::F32(f32::NAN), Value::F32(2.0)]
         ),
@@ -35,7 +35,7 @@ fn every_float_method_and_constant_has_a_native_binding() {
             let arguments =
                 std::iter::repeat_n(receiver.clone(), method.signature.parameters.len() + 1)
                     .collect::<Vec<_>>();
-            let result = execute_intrinsic(method.id, None, &arguments);
+            let result = execute_intrinsic(method.symbol, None, &arguments);
             assert!(result.is_ok(), "{}: {result:?}", method.name);
         }
     }
@@ -51,7 +51,7 @@ fn every_float_method_and_constant_has_a_native_binding() {
     }
     assert!(
         execute_intrinsic(
-            BuiltinId::FloatCopysign,
+            "core::float::copysign",
             None,
             &[Value::F32(1.0), Value::F64(2.0)]
         )
@@ -75,11 +75,11 @@ fn native_float_values_preserve_bits_and_accept_legacy_inputs() {
     );
 
     assert_eq!(
-        execute_intrinsic(BuiltinId::FloatAbs, None, &[Value::F32(-3.5)]),
+        execute_intrinsic("core::float::abs", None, &[Value::F32(-3.5)]),
         Ok(Value::from_f32(3.5))
     );
     assert_eq!(
-        execute_intrinsic(BuiltinId::FloatAbs, None, &[Value::F64(-3.5)]),
+        execute_intrinsic("core::float::abs", None, &[Value::F64(-3.5)]),
         Ok(Value::from_f64(3.5))
     );
 }

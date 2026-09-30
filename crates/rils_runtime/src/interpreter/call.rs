@@ -193,7 +193,7 @@ impl Interpreter {
                     check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
                     let (intrinsic, _) = rils_builtins::intrinsic_by_symbol(symbol)
                         .expect("integer intrinsic symbol remains registered");
-                    crate::numeric::execute_integer_intrinsic(intrinsic.id, Some(target), arguments)
+                    crate::numeric::execute_integer_intrinsic(intrinsic.symbol, Some(target), arguments)
                         .map_err(|message| RuntimeError::new(message, span))
                 }
             },

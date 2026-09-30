@@ -60,7 +60,7 @@ pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
     native::call_symbol(symbol, arguments).or_else(|| {
         if let Some((declaration, target)) = rils_builtins::intrinsic_by_symbol(symbol) {
             return Some(crate::numeric::execute_intrinsic(
-                declaration.id,
+                declaration.symbol,
                 target,
                 arguments,
             ));

@@ -1,4 +1,3 @@
-use rils_builtins::BuiltinId;
 use rils_execution::{
     Type, Value,
     numeric::{execute_integer_intrinsic, native_usize},
@@ -23,7 +22,7 @@ fn generated_usize_descriptor_keeps_typed_inline_storage_and_method_results() {
     );
 
     let result = execute_integer_intrinsic(
-        BuiltinId::IntegerWrappingAdd,
+        "core::integer::wrapping_add",
         None,
         &[value.clone(), native_usize(1)],
     )
@@ -31,7 +30,7 @@ fn generated_usize_descriptor_keeps_typed_inline_storage_and_method_results() {
     assert_eq!(result.as_usize(), Some(0));
     assert!(matches!(result, Value::Native(_)));
     assert_eq!(
-        execute_integer_intrinsic(BuiltinId::IntegerWrappingAdd, None, &[value, Value::U32(1)],)
+        execute_integer_intrinsic("core::integer::wrapping_add", None, &[value, Value::U32(1)],)
             .unwrap_err(),
         "expected usize, found u32"
     );

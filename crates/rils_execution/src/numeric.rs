@@ -104,18 +104,17 @@ pub fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> 
 }
 
 pub fn execute_integer_intrinsic(
-    id: rils_builtins::BuiltinId,
+    symbol: &str,
     target: Option<IntegerType>,
     values: &[Value],
 ) -> Result<Value, String> {
-    use rils_builtins::builtin_ids::*;
-    if id == IntegerTryFrom && target.is_none() {
+    if symbol == "core::integer::try_from" && target.is_none() {
         return Err("integer try_from is missing its target type".into());
     }
     if target.is_none()
         && let Some(Value::Native(object)) = values.first()
         && matches!(object.descriptor().rils_type(), Type::Integer(_))
-        && let Some(declaration) = rils_builtins::intrinsic(id)
+        && let Some(declaration) = rils_builtins::intrinsic(symbol)
         && let Some(result) = object.call(
             &format!("core::integer::{}", declaration.name),
             &values[1..],
@@ -123,22 +122,22 @@ pub fn execute_integer_intrinsic(
     {
         return result;
     }
-    native::integer::call(id, target, values)
+    native::integer::call(symbol, target, values)
         .unwrap_or_else(|| Err("unknown integer intrinsic or receiver type".into()))
 }
 
 pub fn execute_intrinsic(
-    id: rils_builtins::BuiltinId,
+    symbol: &str,
     target: Option<IntegerType>,
     values: &[Value],
 ) -> Result<Value, String> {
-    if float_methods::handles(id) {
+    if float_methods::handles(symbol) {
         if target.is_some() {
             return Err("float intrinsic cannot have an integer target".into());
         }
-        return float_methods::execute(id, values);
+        return float_methods::execute(symbol, values);
     }
-    execute_integer_intrinsic(id, target, values)
+    execute_integer_intrinsic(symbol, target, values)
 }
 
 fn tuple_value(value: Value, overflowed: bool) -> Result<Value, String> {

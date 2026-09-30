@@ -381,6 +381,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
             Ok(quote! {
                 crate::IntrinsicDeclaration {
                     id: builtin_id!(#id_path),
+                    symbol: #id_path,
                     name: #name,
                     kind: #kind,
                     signature: crate::BuiltinSignature {
@@ -561,7 +562,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
                 quote!(#rust_path::#name(#(#argument_names),*))
             };
             Ok(quote! {
-                id if id == rils_builtins::builtin_id!(#id_path) => Some((|| -> Result<crate::Value, String> {
+                #id_path => Some((|| -> Result<crate::Value, String> {
                     if arguments.len() != #arity {
                         return Err(format!("{} expects {} arguments, found {}", stringify!(#name), #arity, arguments.len()));
                     }
@@ -602,8 +603,8 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     let constant_id_type = if float { quote!(rils_builtins::FloatConstantId) } else { quote!(rils_builtins::IntegerConstantId) };
     match (methods, constants) {
         (Ok(methods), Ok(constants)) => Ok(quote! {
-            fn #call_name(id: rils_builtins::BuiltinId, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
-                match id { #(#methods,)* _ => None }
+            fn #call_name(symbol: &str, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
+                match symbol { #(#methods,)* _ => None }
             }
             fn #constant_name(id: #constant_id_type) -> Option<Result<crate::Value, String>> {
                 match id { #(#constants)* }
@@ -729,12 +730,12 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         } else {
             quote!(crate::Type::Integer(crate::IntegerType::#wrapper))
         };
-        quote!(Some(#receiver_type) => #call_name(id, arguments),)
+        quote!(Some(#receiver_type) => #call_name(symbol, arguments),)
     });
     let target_dispatch = mappings.iter().map(|mapping| {
         let wrapper = mapping.variant();
         let call_name = format_ident!("call_{}", mapping.primitive);
-        quote!(Some(rils_builtins::IntegerType::#wrapper) => #call_name(id, arguments),)
+        quote!(Some(rils_builtins::IntegerType::#wrapper) => #call_name(symbol, arguments),)
     });
     let constant_dispatch = mappings.iter().map(|mapping| {
         let wrapper = mapping.variant();
@@ -750,7 +751,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         return quote! {
             #(#bindings)*
             #(#descriptors)*
-            pub fn call(id: rils_builtins::BuiltinId, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
+            pub fn call(symbol: &str, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
                 match arguments.first().and_then(crate::Type::of_value) { #(#receiver_dispatch)* _ => None }
             }
             pub fn constant(target: crate::FloatType, id: rils_builtins::FloatConstantId) -> Option<Result<crate::Value, String>> {
@@ -762,11 +763,11 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         #(#bindings)*
         #(#descriptors)*
         pub fn call(
-            id: rils_builtins::BuiltinId,
+            symbol: &str,
             target: Option<rils_builtins::IntegerType>,
             arguments: &[crate::Value],
         ) -> Option<Result<crate::Value, String>> {
-            if id == rils_builtins::BuiltinId::IntegerTryFrom {
+            if symbol == "core::integer::try_from" {
                 match target { #(#target_dispatch)* _ => None }
             } else {
                 match arguments.first().and_then(crate::Type::of_value) { #(#receiver_dispatch)* _ => None }

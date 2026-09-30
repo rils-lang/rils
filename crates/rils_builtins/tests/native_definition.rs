@@ -289,7 +289,7 @@ fn integer_family_matches_the_existing_integer_api() {
     let generated = &native_definitions::integer::INTRINSICS;
     assert_eq!(generated.len(), rils_builtins::INTEGER_INTRINSICS.len());
     for method in *generated {
-        let published = rils_builtins::intrinsic(method.id).unwrap();
+        let published = rils_builtins::intrinsic(method.symbol).unwrap();
         assert_eq!(method.name, published.name);
         assert_eq!(method.kind, published.kind);
         assert_eq!(method.signature.parameters, published.signature.parameters);
@@ -325,7 +325,7 @@ fn float_family_and_string_match_the_public_catalog() {
         rils_builtins::FLOAT_INTRINSICS.len()
     );
     for method in native_definitions::float::INTRINSICS {
-        let published = rils_builtins::intrinsic(method.id).unwrap();
+        let published = rils_builtins::intrinsic(method.symbol).unwrap();
         assert_eq!(method.name, published.name);
         assert_eq!(method.kind, published.kind);
         assert_eq!(method.signature.parameters, published.signature.parameters);

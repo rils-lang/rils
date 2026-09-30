@@ -11,14 +11,14 @@ pub(super) fn constant(
         .expect("float constants cannot fail")
 }
 
-pub(super) fn handles(id: rils_builtins::BuiltinId) -> bool {
+pub(super) fn handles(symbol: &str) -> bool {
     rils_builtins::FLOAT_INTRINSICS
         .iter()
-        .any(|item| item.id == id)
+        .any(|item| item.symbol == symbol)
 }
 
-pub(super) fn execute(id: rils_builtins::BuiltinId, values: &[Value]) -> Result<Value, String> {
-    super::native::float::call(id, values).unwrap_or_else(|| match values.first() {
+pub(super) fn execute(symbol: &str, values: &[Value]) -> Result<Value, String> {
+    super::native::float::call(symbol, values).unwrap_or_else(|| match values.first() {
         Some(value) => Err(format!(
             "float intrinsic expects a float receiver, found {}",
             value.type_name()
