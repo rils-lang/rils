@@ -319,6 +319,18 @@ fn collection_constructors_export_native_symbols_without_ids() {
 }
 
 #[test]
+fn queue_and_heap_members_use_native_symbols_without_ids() {
+    for owner in ["VecDeque", "BinaryHeap"] {
+        let declaration = builtin(owner).expect("collection declaration");
+        for member in declaration.members {
+            assert_eq!(member.builtin_id, None, "{owner}::{}", member.name);
+            let symbol = member.native_symbol.expect("native symbol");
+            assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
+        }
+    }
+}
+
+#[test]
 fn migrated_hash_constructors_keep_imports_and_iterator_ids() {
     for (name, constructor, iterator) in [
         ("HashMap", "core::hash_map::new", BuiltinId::HashMapIter),

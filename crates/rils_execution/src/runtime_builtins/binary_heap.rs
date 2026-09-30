@@ -1,6 +1,6 @@
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
-use rils_builtins::{BuiltinId, BuiltinMember, ReceiverMode, TypePattern};
+use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern};
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::DynamicValue;
 
@@ -8,13 +8,6 @@ use crate::{
     types::{Type, merge_types},
     value::{BinaryHeapValue, HashKey, Value},
 };
-
-pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    call_named(
-        id.member_name().ok_or("unknown BinaryHeap operation")?,
-        arguments,
-    )
-}
 
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let member = rils_builtins::builtin("BinaryHeap")?

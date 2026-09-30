@@ -163,8 +163,7 @@ impl Interpreter {
                 .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::VecDequeLen
-                | rils_builtins::BuiltinId::BtreeSetLen
+                id @ (rils_builtins::BuiltinId::BtreeSetLen
                 | rils_builtins::BuiltinId::BtreeSetIsEmpty
                 | rils_builtins::BuiltinId::BtreeSetClear
                 | rils_builtins::BuiltinId::BtreeSetContains
@@ -189,21 +188,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::BtreeMapRemove
                 | rils_builtins::BuiltinId::BtreeMapFirstKeyCloned
                 | rils_builtins::BuiltinId::BtreeMapLastKeyCloned
-                | rils_builtins::BuiltinId::BtreeMapIntoIter
-                | rils_builtins::BuiltinId::BinaryHeapLen
-                | rils_builtins::BuiltinId::BinaryHeapIsEmpty
-                | rils_builtins::BuiltinId::BinaryHeapPush
-                | rils_builtins::BuiltinId::BinaryHeapPop
-                | rils_builtins::BuiltinId::BinaryHeapPeekCloned
-                | rils_builtins::BuiltinId::BinaryHeapClear
-                | rils_builtins::BuiltinId::VecDequeIsEmpty
-                | rils_builtins::BuiltinId::VecDequePushFront
-                | rils_builtins::BuiltinId::VecDequePushBack
-                | rils_builtins::BuiltinId::VecDequePopFront
-                | rils_builtins::BuiltinId::VecDequePopBack
-                | rils_builtins::BuiltinId::VecDequeFrontCloned
-                | rils_builtins::BuiltinId::VecDequeBackCloned
-                | rils_builtins::BuiltinId::VecDequeClear),
+                | rils_builtins::BuiltinId::BtreeMapIntoIter),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());

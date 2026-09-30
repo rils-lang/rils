@@ -177,21 +177,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeMapFirstKeyCloned
         | BuiltinId::BtreeMapLastKeyCloned
         | BuiltinId::BtreeMapIntoIter => btree_map::call(id, arguments),
-        BuiltinId::BinaryHeapLen
-        | BuiltinId::BinaryHeapIsEmpty
-        | BuiltinId::BinaryHeapPush
-        | BuiltinId::BinaryHeapPop
-        | BuiltinId::BinaryHeapPeekCloned
-        | BuiltinId::BinaryHeapClear => binary_heap::call(id, arguments),
-        BuiltinId::VecDequeLen
-        | BuiltinId::VecDequeIsEmpty
-        | BuiltinId::VecDequePushFront
-        | BuiltinId::VecDequePushBack
-        | BuiltinId::VecDequePopFront
-        | BuiltinId::VecDequePopBack
-        | BuiltinId::VecDequeFrontCloned
-        | BuiltinId::VecDequeBackCloned
-        | BuiltinId::VecDequeClear => vec_deque::call(id, arguments),
         BuiltinId::Clone => match &arguments[0] {
             Value::Reference(reference) => reference.read()?.clone_owned(),
             value => Err(format!(

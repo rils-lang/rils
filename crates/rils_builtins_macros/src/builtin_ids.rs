@@ -205,16 +205,6 @@ mod tests {
     #[test]
     fn module_path_does_not_rename_existing_rust_id_constants() {
         assert_eq!(
-            rust_name(&[
-                "core".into(),
-                "collections".into(),
-                "binary_heap".into(),
-                "len".into(),
-            ])
-            .unwrap(),
-            "BinaryHeapLen"
-        );
-        assert_eq!(
             rust_name(&["core".into(), "btree_map".into(), "len".into()]).unwrap(),
             "BtreeMapLen"
         );

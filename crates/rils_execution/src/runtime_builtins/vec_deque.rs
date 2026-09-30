@@ -1,19 +1,12 @@
 use std::{cell::RefCell, rc::Rc};
 
-use rils_builtins::{BuiltinId, BuiltinMember, ReceiverMode, TypePattern};
+use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern};
 use rils_stdlib::stdlib::{prelude::Option as NativeOption, vec_deque::VecDeque as NativeVecDeque};
 
 use crate::{
     types::{Type, merge_types},
     value::{Value, VecDequeValue},
 };
-
-pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    call_named(
-        id.member_name().ok_or("unknown VecDeque operation")?,
-        arguments,
-    )
-}
 
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let member = rils_builtins::builtin("VecDeque")?

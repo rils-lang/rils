@@ -138,27 +138,6 @@ max = 0x0C11
 clamp = 0x0C12
 mul_add = 0x0C13
 
-# Double-ended queue operations: 0x1000-0x10FF.
-[core.collections.vec_deque]
-len = 0x1001
-is_empty = 0x1002
-push_front = 0x1003
-push_back = 0x1004
-pop_front = 0x1005
-pop_back = 0x1006
-front_cloned = 0x1007
-back_cloned = 0x1008
-clear = 0x1009
-
-# Max-priority queue operations: 0x1100-0x11FF.
-[core.collections.binary_heap]
-len = 0x1101
-is_empty = 0x1102
-push = 0x1103
-pop = 0x1104
-peek_cloned = 0x1105
-clear = 0x1106
-
 # Ordered map operations: 0x1200-0x12FF.
 [core.btree_map]
 len = 0x1201
