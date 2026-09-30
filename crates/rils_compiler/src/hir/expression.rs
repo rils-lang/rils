@@ -390,14 +390,29 @@ impl<'a> FunctionLowerer<'a> {
                         && let Some(trait_member) =
                             rils_builtins::builtin_member(trait_name, member_name)
                         && trait_member.receiver.is_some()
-                        && let Some(symbol) = trait_member.native_symbol.or_else(|| {
-                            (trait_name == "Clone" && member_name == "clone")
-                                .then(|| {
-                                    rils_builtins::builtin_function("clone")
-                                        .and_then(|function| function.native_symbol)
-                                })
-                                .flatten()
-                        })
+                        && let Some(symbol) = arguments
+                            .first()
+                            .and_then(|receiver| self.expression_type(receiver))
+                            .and_then(|receiver| {
+                                let receiver = match receiver {
+                                    Type::Reference { inner, .. } => *inner,
+                                    receiver => receiver,
+                                };
+                                rils_frontend::standard_library::builtin_member_for_type(
+                                    &receiver,
+                                    member_name,
+                                )
+                                .and_then(|member| member.native_symbol)
+                            })
+                            .or(trait_member.native_symbol)
+                            .or_else(|| {
+                                (trait_name == "Clone" && member_name == "clone")
+                                    .then(|| {
+                                        rils_builtins::builtin_function("clone")
+                                            .and_then(|function| function.native_symbol)
+                                    })
+                                    .flatten()
+                            })
                     {
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),

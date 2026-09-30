@@ -110,3 +110,16 @@ fn type_paths_can_call_trait_default_methods() {
     assert_eq!(eval_value(source).unwrap(), expected);
     assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
 }
+
+#[test]
+fn native_trait_paths_accept_the_receiver_explicitly() {
+    let source = r#"
+        let mut values: Vec<i32> = Vec::new();
+        values.push(7);
+        let mut iterator = IntoIterator::into_iter(values);
+        Iterator::next(&mut iterator).unwrap()
+    "#;
+    let expected = Value::from_i32(7);
+    assert_eq!(eval_value(source).unwrap(), expected);
+    assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
+}
