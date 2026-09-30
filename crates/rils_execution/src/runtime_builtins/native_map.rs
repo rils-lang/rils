@@ -60,9 +60,11 @@ pub(super) fn call_owned_symbol(
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
     if borrowed_iter_kind(symbol).is_some() {
-        return Some(super::indexed_iter::borrow_map_with_context(
-            &arguments, context,
-        ));
+        return super::collection_iter::call_symbol(symbol, &arguments).or_else(|| {
+            Some(super::indexed_iter::borrow_map_with_context(
+                &arguments, context,
+            ))
+        });
     }
     if let Some(kind) = owned_into_iter_kind(symbol) {
         return Some((|| {
@@ -191,7 +193,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
             | BuiltinId::HashMapRemove
             | BuiltinId::HashMapKeysCloned
             | BuiltinId::HashMapValuesCloned
-            | BuiltinId::HashMapIter
             | BuiltinId::HashMapIntoIter
     ) {
         MapKind::Hash
@@ -206,7 +207,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
             | BuiltinId::BtreeMapRemove
             | BuiltinId::BtreeMapFirstKeyCloned
             | BuiltinId::BtreeMapLastKeyCloned
-            | BuiltinId::BtreeMapIter
             | BuiltinId::BtreeMapIntoIter
     ) {
         MapKind::BTree
@@ -371,9 +371,6 @@ fn dispatch(
             Ok(Value::OwnedIterator(Rc::new(
                 OwnedIteratorValue::from_items(values.into(), layout.rils_type().clone()),
             )))
-        }
-        BuiltinId::HashMapIter | BuiltinId::BtreeMapIter => {
-            super::indexed_iter::borrow_map(arguments)
         }
         BuiltinId::HashMapIntoIter | BuiltinId::BtreeMapIntoIter => {
             crate::iteration::native_sequence_into_iterator(

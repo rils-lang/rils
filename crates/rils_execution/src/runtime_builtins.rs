@@ -168,10 +168,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeMapFirstKeyCloned
         | BuiltinId::BtreeMapLastKeyCloned
         | BuiltinId::BtreeMapIntoIter => btree_map::call(id, arguments),
-        BuiltinId::HashMapIter
-        | BuiltinId::BtreeMapIter
-        | BuiltinId::HashSetIter
-        | BuiltinId::BtreeSetIter => collection_iter::call(id, arguments),
         BuiltinId::HashMapLen
         | BuiltinId::HashMapIsEmpty
         | BuiltinId::HashMapClear

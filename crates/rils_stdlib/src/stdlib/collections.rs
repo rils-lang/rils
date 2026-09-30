@@ -398,7 +398,6 @@ mod native {
         /// Borrows each element in ascending order.
         #[export_rils]
         #[rils_native_bridge]
-        #[rils_legacy_id(core::btree_set::iter)]
         pub fn iter(&self) -> Iter<&T> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -538,7 +537,6 @@ mod native {
         /// Borrows each key-value pair in key order.
         #[export_rils]
         #[rils_native_bridge]
-        #[rils_legacy_id(core::btree_map::iter)]
         pub fn iter(&self) -> Iter<(&K, &V)> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }

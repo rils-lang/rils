@@ -329,19 +329,21 @@ fn queue_and_heap_members_use_native_symbols_without_ids() {
 }
 
 #[test]
-fn migrated_hash_constructors_keep_imports_and_iterator_ids() {
-    for (name, constructor, iterator) in [
-        ("HashMap", "core::hash_map::new", BuiltinId::HashMapIter),
-        ("HashSet", "core::hash_set::new", BuiltinId::HashSetIter),
+fn migrated_hash_constructors_keep_imports_and_native_iterators() {
+    for (name, constructor) in [
+        ("HashMap", "core::hash_map::new"),
+        ("HashSet", "core::hash_set::new"),
     ] {
         let declaration = builtin(name).expect("migrated hash collection");
         let new = declaration.member("new").expect("constructor");
         assert_eq!(new.runtime_import, Some(constructor));
         assert!(new.builtin_id.is_none());
-        assert_eq!(
-            declaration.member("iter").unwrap().builtin_id,
-            Some(iterator)
-        );
+        let iter = declaration.member("iter").unwrap();
+        assert!(iter.builtin_id.is_none());
+        assert!(std::ptr::eq(
+            native_member(iter.native_symbol.unwrap()).unwrap(),
+            iter
+        ));
     }
 }
 
@@ -452,6 +454,7 @@ fn legacy_sequence_ids_are_no_longer_defined() {
         .chain(std::iter::once(0x0300))
         .chain(std::iter::once(0x0308))
         .chain(std::iter::once(0x0401))
+        .chain([0x050A, 0x060E, 0x120B, 0x1311])
     {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
@@ -697,20 +700,16 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
             .builtin_id,
         None
     );
-    for (owner, id) in [
-        ("HashMap", BuiltinId::HashMapIter),
-        ("BTreeMap", BuiltinId::BtreeMapIter),
-        ("HashSet", BuiltinId::HashSetIter),
-        ("BTreeSet", BuiltinId::BtreeSetIter),
-    ] {
-        assert_eq!(
-            builtin(owner)
-                .expect("map or set declaration")
-                .member("iter")
-                .expect("borrowed iteration method")
-                .builtin_id,
-            Some(id)
-        );
+    for owner in ["HashMap", "BTreeMap", "HashSet", "BTreeSet"] {
+        let iter = builtin(owner)
+            .expect("map or set declaration")
+            .member("iter")
+            .expect("borrowed iteration method");
+        assert_eq!(iter.builtin_id, None);
+        assert!(std::ptr::eq(
+            native_member(iter.native_symbol.unwrap()).unwrap(),
+            iter
+        ));
     }
 
     assert!(builtin("Array").is_none());

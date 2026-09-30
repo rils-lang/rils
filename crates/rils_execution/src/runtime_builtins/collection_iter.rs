@@ -1,7 +1,5 @@
 use std::{cell::Cell, rc::Rc};
 
-use rils_builtins::BuiltinId;
-
 use crate::{
     types::Type,
     value::{
@@ -10,19 +8,35 @@ use crate::{
     },
 };
 
-pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    let owner = ["HashMap", "BTreeMap", "HashSet", "BTreeSet"]
+        .into_iter()
+        .find(|owner| {
+            rils_builtins::builtin_member(owner, "iter")
+                .is_some_and(|member| member.native_symbol == Some(symbol))
+        })?;
+    call(owner, arguments)
+}
+
+fn call(owner: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let Some(Value::Reference(source)) = arguments.first() else {
-        return Err("collection iter requires a borrowed receiver".into());
+        return Some(Err("collection iter requires a borrowed receiver".into()));
     };
-    let collection = source.read()?;
-    match (id, collection) {
-        (BuiltinId::HashMapIter, Value::HashMap(map)) => {
+    let collection = match source.read() {
+        Ok(collection) => collection,
+        Err(message) => return Some(Err(message)),
+    };
+    if matches!(collection, Value::Dynamic(_)) {
+        return None;
+    }
+    Some(match (owner, collection) {
+        ("HashMap", Value::HashMap(map)) => {
             let keys = map.entries.borrow().keys().cloned().collect();
             let key_type = map.key_type.borrow().clone();
             let value_type = map.value_type.borrow().clone();
             borrowed_map(source, MapCollection::Hash(map), keys, key_type, value_type)
         }
-        (BuiltinId::BtreeMapIter, Value::BTreeMap(map)) => {
+        ("BTreeMap", Value::BTreeMap(map)) => {
             let keys = map.entries.borrow().keys().cloned().collect();
             let key_type = map.key_type.borrow().clone();
             let value_type = map.value_type.borrow().clone();
@@ -34,18 +48,18 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 value_type,
             )
         }
-        (BuiltinId::HashSetIter, Value::HashSet(set)) => {
+        ("HashSet", Value::HashSet(set)) => {
             let keys = set.entries.borrow().iter().cloned().collect();
             let element_type = set.element_type.borrow().clone();
             borrowed_set(source, SetCollection::Hash(set), keys, element_type)
         }
-        (BuiltinId::BtreeSetIter, Value::BTreeSet(set)) => {
+        ("BTreeSet", Value::BTreeSet(set)) => {
             let keys = set.entries.borrow().iter().cloned().collect();
             let element_type = set.element_type.borrow().clone();
             borrowed_set(source, SetCollection::BTree(set), keys, element_type)
         }
         _ => Err("iter receiver has the wrong collection type".into()),
-    }
+    })
 }
 
 fn borrowed_map(

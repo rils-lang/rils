@@ -61,9 +61,11 @@ pub(super) fn call_owned_symbol(
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
     if borrowed_iter_kind(symbol).is_some() {
-        return Some(super::indexed_iter::borrow_with_context(
-            &arguments, context,
-        ));
+        return super::collection_iter::call_symbol(symbol, &arguments).or_else(|| {
+            Some(super::indexed_iter::borrow_with_context(
+                &arguments, context,
+            ))
+        });
     }
     if let Some(kind) = owned_into_iter_kind(symbol) {
         return Some((|| {
@@ -180,7 +182,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
             | BuiltinId::HashSetIntersection
             | BuiltinId::HashSetDifference
             | BuiltinId::HashSetSymmetricDifference
-            | BuiltinId::HashSetIter
             | BuiltinId::HashSetIntoIter
     ) {
         SetKind::Hash
@@ -201,7 +202,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
             | BuiltinId::BtreeSetIntersection
             | BuiltinId::BtreeSetDifference
             | BuiltinId::BtreeSetSymmetricDifference
-            | BuiltinId::BtreeSetIter
             | BuiltinId::BtreeSetIntoIter
     ) {
         SetKind::BTree
@@ -379,7 +379,6 @@ fn dispatch(
                 }
             }
         }
-        BuiltinId::BtreeSetIter | BuiltinId::HashSetIter => super::indexed_iter::borrow(arguments),
         BuiltinId::BtreeSetIntoIter | BuiltinId::HashSetIntoIter => {
             crate::iteration::native_sequence_into_iterator(
                 object.clone(),
