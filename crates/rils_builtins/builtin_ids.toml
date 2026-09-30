@@ -4,17 +4,6 @@
 [core]
 clone = 0x0001
 
-# Vec operations: 0x0200-0x02FF.
-[core.vec]
-push = 0x0200
-pop = 0x0201
-clear = 0x0202
-truncate = 0x0203
-insert = 0x0204
-remove = 0x0205
-swap_remove = 0x0206
-extend = 0x0207
-
 # Iterator operations: 0x0300-0x03FF.
 [core.iterator]
 next = 0x0300

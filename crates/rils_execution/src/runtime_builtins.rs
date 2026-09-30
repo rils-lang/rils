@@ -3,11 +3,7 @@ use std::rc::Rc;
 #[cfg(test)]
 use std::{cell::RefCell, collections::VecDeque};
 
-use crate::{
-    environment::AssignError,
-    types::Type,
-    value::{FieldSlot, Value},
-};
+use crate::{environment::AssignError, types::Type, value::Value};
 
 #[cfg(test)]
 use crate::value::{IndexedStorage, OwnedIteratorValue};
@@ -144,12 +140,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
     if let Some(result) = native_map::call(id, arguments) {
         return result;
     }
-    if id == rils_builtins::BuiltinId::VecExtend
-        && let Some(result) = vector_dynamic::extend(arguments)
-    {
-        return result;
-    }
-
     match id {
         BuiltinId::BtreeSetLen
         | BuiltinId::BtreeSetIsEmpty
@@ -184,189 +174,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
                 value.type_name()
             )),
         },
-        BuiltinId::VecPush => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Vec::push requires a mutable binding".into());
-            };
-            if !reference.mutable {
-                return Err("Vec::push requires `&mut self`".into());
-            }
-            let Value::Vec(sequence) = reference.read()? else {
-                return Err("push receiver is not Vec".into());
-            };
-            indexed_iter::reject_growth(&sequence)?;
-            let value = &arguments[1];
-            let current = sequence
-                .elements
-                .borrow()
-                .first()
-                .map(|slot| slot.type_annotation.clone())
-                .or_else(|| sequence.element_type.borrow().clone())
-                .unwrap_or(Type::Unknown);
-            let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-            let element_type = crate::types::merge_types(&current, &actual)
-                .ok_or_else(|| format!("Vec element type is `{current}`, found `{actual}`"))?;
-            *sequence.element_type.borrow_mut() = Some(element_type.clone());
-            sequence.elements.borrow_mut().push(FieldSlot {
-                value: Some(value.clone()),
-                type_annotation: element_type,
-                references: 0,
-            });
-            Ok(Value::Unit)
-        }
-        BuiltinId::VecPop => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Vec::pop requires a mutable binding".into());
-            };
-            if !reference.mutable {
-                return Err("Vec::pop requires `&mut self`".into());
-            }
-            let Value::Vec(sequence) = reference.read()? else {
-                return Err("pop receiver is not Vec".into());
-            };
-            indexed_iter::reject_mutation(&sequence)?;
-            let element_type = sequence
-                .element_type
-                .borrow()
-                .clone()
-                .unwrap_or(Type::Unknown);
-            let value = {
-                let mut elements = sequence.elements.borrow_mut();
-                if elements.last().is_some_and(|slot| slot.references > 0) {
-                    return Err("cannot pop a referenced Vec element".into());
-                }
-                elements.pop().and_then(|slot| slot.value).map(Rc::new)
-            };
-            Ok(Value::Option {
-                value,
-                element_type: Some(element_type),
-            })
-        }
-        BuiltinId::VecClear | BuiltinId::VecTruncate => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Vec mutation requires a mutable binding".into());
-            };
-            if !reference.mutable {
-                return Err("Vec mutation requires `&mut self`".into());
-            }
-            let Value::Vec(sequence) = reference.read()? else {
-                return Err("receiver is not Vec".into());
-            };
-            indexed_iter::reject_mutation(&sequence)?;
-            let length = if id == BuiltinId::VecClear {
-                0
-            } else {
-                let Some(length) = arguments[1].as_usize() else {
-                    return Err("Vec::truncate length must be usize".into());
-                };
-                length
-            };
-            let mut elements = sequence.elements.borrow_mut();
-            if elements
-                .get(length..)
-                .is_some_and(|tail| tail.iter().any(|slot| slot.references > 0))
-            {
-                return Err("cannot remove a referenced Vec element".into());
-            }
-            elements.truncate(length);
-            Ok(Value::Unit)
-        }
-        BuiltinId::VecInsert | BuiltinId::VecRemove | BuiltinId::VecSwapRemove => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Vec mutation requires a mutable binding".into());
-            };
-            if !reference.mutable {
-                return Err("Vec mutation requires `&mut self`".into());
-            }
-            let Value::Vec(sequence) = reference.read()? else {
-                return Err("receiver is not Vec".into());
-            };
-            indexed_iter::reject_mutation(&sequence)?;
-            let Some(index) = arguments[1].as_usize() else {
-                return Err("Vec index must be usize".into());
-            };
-            let mut elements = sequence.elements.borrow_mut();
-            if elements.iter().any(|slot| slot.references > 0) {
-                return Err("cannot reorder a Vec while an element is referenced".into());
-            }
-            if id == BuiltinId::VecInsert {
-                if index > elements.len() {
-                    return Err(format!("index {index} is out of bounds for insertion"));
-                }
-                let value = &arguments[2];
-                let expected = sequence
-                    .element_type
-                    .borrow()
-                    .clone()
-                    .unwrap_or(Type::Unknown);
-                let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-                let element_type = crate::types::merge_types(&expected, &actual)
-                    .ok_or_else(|| format!("Vec element type is `{expected}`, found `{actual}`"))?;
-                *sequence.element_type.borrow_mut() = Some(element_type.clone());
-                elements.insert(
-                    index,
-                    FieldSlot {
-                        value: Some(value.clone()),
-                        type_annotation: element_type,
-                        references: 0,
-                    },
-                );
-                return Ok(Value::Unit);
-            }
-            if index >= elements.len() {
-                return Err(format!("index {index} is out of bounds"));
-            }
-            let slot = if id == BuiltinId::VecRemove {
-                elements.remove(index)
-            } else {
-                elements.swap_remove(index)
-            };
-            slot.value
-                .ok_or_else(|| format!("element at index {index} has been moved"))
-        }
-        BuiltinId::VecExtend => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Vec::extend requires a mutable binding".into());
-            };
-            if !reference.mutable {
-                return Err("Vec::extend requires `&mut self`".into());
-            }
-            let Value::Vec(destination) = reference.read()? else {
-                return Err("extend receiver is not Vec".into());
-            };
-            indexed_iter::reject_growth(&destination)?;
-            let Value::Vec(source) = &arguments[1] else {
-                return Err("Vec::extend source must be Vec".into());
-            };
-            if Rc::ptr_eq(&destination, source) {
-                return Err("Vec cannot extend itself".into());
-            }
-            indexed_iter::reject_mutation(source)?;
-            let mut source_elements = source.elements.borrow_mut();
-            if source_elements.iter().any(|slot| slot.references > 0) {
-                return Err("cannot move from a Vec while an element is referenced".into());
-            }
-            let destination_type = destination
-                .element_type
-                .borrow()
-                .clone()
-                .unwrap_or(Type::Unknown);
-            let source_type = source
-                .element_type
-                .borrow()
-                .clone()
-                .unwrap_or(Type::Unknown);
-            let element_type = crate::types::merge_types(&destination_type, &source_type)
-                .ok_or_else(|| {
-                    format!("Vec element type is `{destination_type}`, found `{source_type}`")
-                })?;
-            *destination.element_type.borrow_mut() = Some(element_type);
-            destination
-                .elements
-                .borrow_mut()
-                .extend(source_elements.drain(..));
-            Ok(Value::Unit)
-        }
         BuiltinId::HashMapIter
         | BuiltinId::BtreeMapIter
         | BuiltinId::HashSetIter
@@ -568,15 +375,21 @@ mod tests {
 
     #[test]
     fn mutable_members_update_their_receivers() {
-        use rils_builtins::BuiltinId;
-
         let vector = mutable_receiver(Value::Vec(Rc::new(IndexedStorage {
             active_iterators: std::cell::Cell::new(0),
             elements: RefCell::new(Vec::new()),
             element_type: RefCell::new(Some(Type::I32)),
         })));
         assert_eq!(
-            call(BuiltinId::VecPush, &[vector.clone(), Value::from_i32(7)]).unwrap(),
+            call_native_symbol(
+                rils_builtins::builtin_member("Vec", "push")
+                    .unwrap()
+                    .native_symbol
+                    .unwrap(),
+                &[vector.clone(), Value::from_i32(7)],
+            )
+            .unwrap()
+            .unwrap(),
             Value::Unit
         );
         let Value::Reference(vector) = &vector else {
@@ -619,14 +432,18 @@ mod tests {
             Type::I32,
         ));
         assert_eq!(
-            call(BuiltinId::IteratorNext, std::slice::from_ref(&iterator)).unwrap(),
+            call(
+                rils_builtins::BuiltinId::IteratorNext,
+                std::slice::from_ref(&iterator)
+            )
+            .unwrap(),
             Value::Option {
                 value: Some(Rc::new(Value::from_i32(11))),
                 element_type: Some(Type::I32),
             }
         );
         assert!(matches!(
-            call(BuiltinId::IteratorNext, &[iterator]).unwrap(),
+            call(rils_builtins::BuiltinId::IteratorNext, &[iterator]).unwrap(),
             Value::Option { value: None, .. }
         ));
 
@@ -652,12 +469,17 @@ mod tests {
 
     #[test]
     fn mutable_members_reject_non_reference_receivers() {
-        use rils_builtins::BuiltinId;
-
         assert!(
-            call(BuiltinId::VecPush, &[Value::Unit, Value::from_i32(1)])
-                .unwrap_err()
-                .contains("mutable binding")
+            call_native_symbol(
+                rils_builtins::builtin_member("Vec", "push")
+                    .unwrap()
+                    .native_symbol
+                    .unwrap(),
+                &[Value::Unit, Value::from_i32(1)],
+            )
+            .unwrap()
+            .unwrap_err()
+            .contains("&mut self")
         );
         assert!(
             call_native_symbol(
@@ -673,7 +495,7 @@ mod tests {
         );
         assert!(
             call(
-                BuiltinId::IteratorNext,
+                rils_builtins::BuiltinId::IteratorNext,
                 &[owned_iterator_value(VecDeque::new(), Type::I32)]
             )
             .unwrap_err()

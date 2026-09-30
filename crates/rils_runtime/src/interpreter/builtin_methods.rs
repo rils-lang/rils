@@ -92,47 +92,6 @@ impl Interpreter {
                 crate::runtime_builtins::call(id, &values)
                     .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPush) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(rils_builtins::BuiltinId::VecPush, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecPop) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(rils_builtins::BuiltinId::VecPop, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::VecClear | rils_builtins::BuiltinId::VecTruncate),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::VecInsert
-                | rils_builtins::BuiltinId::VecRemove
-                | rils_builtins::BuiltinId::VecSwapRemove),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::VecExtend) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(rils_builtins::BuiltinId::VecExtend, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::HashMapIter
                 | rils_builtins::BuiltinId::BtreeMapIter

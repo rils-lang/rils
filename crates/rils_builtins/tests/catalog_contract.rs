@@ -167,12 +167,12 @@ use rils_syntax::{FloatType, IntegerType, Type, ast::Stmt, lex, parse};
 
 #[test]
 fn builtin_id_macro_resolves_the_configured_stable_id() {
-    const VEC_PUSH: BuiltinId = rils_builtins::builtin_id!("core::vec::push");
+    const CLONE: BuiltinId = rils_builtins::builtin_id!("core::clone");
 
-    assert_eq!(VEC_PUSH, BuiltinId::VecPush);
-    assert_eq!(VEC_PUSH.as_raw(), 0x0200);
-    assert_eq!(VEC_PUSH.canonical_path(), Some("core::vec::push"));
-    assert_eq!(VEC_PUSH.member_name(), Some("push"));
+    assert_eq!(CLONE, BuiltinId::Clone);
+    assert_eq!(CLONE.as_raw(), 0x0001);
+    assert_eq!(CLONE.canonical_path(), Some("core::clone"));
+    assert_eq!(CLONE.member_name(), Some("clone"));
 }
 
 #[test]
@@ -373,12 +373,12 @@ fn migrated_vec_exports_indexed_methods_without_legacy_ids() {
         "insert",
         "remove",
         "swap_remove",
+        "extend",
         "into_iter",
     ] {
-        assert!(
-            vector.member(name).unwrap().native_symbol.is_some(),
-            "Vec::{name}"
-        );
+        let member = vector.member(name).unwrap();
+        assert!(member.native_symbol.is_some(), "Vec::{name}");
+        assert_eq!(member.builtin_id, None, "Vec::{name}");
     }
     assert!(vector.member("from").is_some());
 }
@@ -448,7 +448,7 @@ fn string_methods_no_longer_reserve_builtin_ids() {
 
 #[test]
 fn legacy_sequence_ids_are_no_longer_defined() {
-    for raw in 0x0100..=0x0105 {
+    for raw in (0x0100..=0x0105).chain(0x0200..=0x0207) {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
 }
@@ -867,7 +867,7 @@ fn declarations_report_member_and_runtime_coverage() {
     assert!(iterator.contains_member("next"));
     assert!(!iterator.contains_member("missing"));
     assert!(iterator.contains_builtin(BuiltinId::IteratorNext));
-    assert!(!iterator.contains_builtin(BuiltinId::VecPush));
+    assert!(!iterator.contains_builtin(BuiltinId::Clone));
 }
 
 #[test]

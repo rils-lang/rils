@@ -267,17 +267,8 @@ pub fn is_iterator_default_builtin(id: BuiltinId) -> bool {
 }
 
 /// IDs retired from declarations while the remaining runtime dispatch is migrated.
-pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] = &[
-    BuiltinId::RangeIntoIter,
-    BuiltinId::VecPush,
-    BuiltinId::VecPop,
-    BuiltinId::VecClear,
-    BuiltinId::VecTruncate,
-    BuiltinId::VecInsert,
-    BuiltinId::VecRemove,
-    BuiltinId::VecSwapRemove,
-    BuiltinId::IteratorIntoIter,
-];
+pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] =
+    &[BuiltinId::RangeIntoIter, BuiltinId::IteratorIntoIter];
 
 pub fn is_iterator_default_method(name: &str) -> bool {
     builtin_member("Iterator", name)
