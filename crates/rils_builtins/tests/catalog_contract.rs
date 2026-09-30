@@ -450,6 +450,7 @@ fn string_methods_no_longer_reserve_builtin_ids() {
 fn legacy_sequence_ids_are_no_longer_defined() {
     for raw in (0x0100..=0x0105)
         .chain(0x0200..=0x0207)
+        .chain(std::iter::once(0x0300))
         .chain(std::iter::once(0x0401))
     {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
@@ -869,7 +870,8 @@ fn declarations_report_member_and_runtime_coverage() {
 
     assert!(iterator.contains_member("next"));
     assert!(!iterator.contains_member("missing"));
-    assert!(iterator.contains_builtin(BuiltinId::IteratorNext));
+    assert_eq!(iterator.member("next").unwrap().builtin_id, None);
+    assert!(iterator.member("next").unwrap().native_symbol.is_some());
     assert!(!iterator.contains_builtin(BuiltinId::Clone));
 }
 

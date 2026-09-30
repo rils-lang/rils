@@ -237,7 +237,7 @@ fn iterator_next_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Valu
         )));
     }
     let Value::Reference(reference) = &arguments[0] else {
-        return None;
+        return Some(Err("Iterator::next requires a mutable binding".into()));
     };
     match reference.read() {
         Ok(
@@ -249,7 +249,8 @@ fn iterator_next_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Valu
         Ok(value) if crate::value::native_ops::is_iterator(&value) => {
             Some(super::range::next(arguments))
         }
-        _ => None,
+        Err(message) => Some(Err(message)),
+        _ => Some(Err("next receiver is not an iterator".into())),
     }
 }
 

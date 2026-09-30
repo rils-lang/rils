@@ -98,13 +98,6 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::BtreeSetIter),
             ) => crate::runtime_builtins::call(id, &[(*method.receiver).clone()])
                 .map_err(|message| RuntimeError::new(message, span)),
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorNext) => {
-                crate::runtime_builtins::call(
-                    rils_builtins::BuiltinId::IteratorNext,
-                    &[(*method.receiver).clone()],
-                )
-                .map_err(|message| RuntimeError::new(message, span))
-            }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::BtreeSetLen
                 | rils_builtins::BuiltinId::BtreeSetIsEmpty

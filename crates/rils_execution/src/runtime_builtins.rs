@@ -202,34 +202,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::HashSetDifference
         | BuiltinId::HashSetSymmetricDifference
         | BuiltinId::HashSetIntoIter => crate::hash_collections::call(id, arguments),
-        BuiltinId::IteratorNext => {
-            let Value::Reference(reference) = &arguments[0] else {
-                return Err("Iterator::next requires a mutable binding".into());
-            };
-            if !reference.mutable {
-                return Err("Iterator::next requires `&mut self`".into());
-            }
-            let (next, element_type) = match reference.read()? {
-                Value::OwnedIterator(iterator) => (iterator.next()?, iterator.element_type.clone()),
-                Value::BorrowedIndexedIterator(iterator) => (
-                    iterator.next()?,
-                    Type::Reference {
-                        mutable: false,
-                        inner: Box::new(iterator.element_type.clone()),
-                    },
-                ),
-                Value::BorrowedMapIterator(iterator) => (iterator.next()?, iterator.item_type()),
-                Value::BorrowedSetIterator(iterator) => (iterator.next()?, iterator.item_type()),
-                value if crate::value::native_ops::is_iterator(&value) => {
-                    return range::next(arguments);
-                }
-                _ => return Err("next receiver is not an iterator".into()),
-            };
-            Ok(Value::Option {
-                value: next.map(Rc::new),
-                element_type: Some(element_type),
-            })
-        }
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),
@@ -431,19 +403,23 @@ mod tests {
             VecDeque::from([Value::from_i32(11)]),
             Type::I32,
         ));
+        let next_symbol = rils_builtins::builtin_member("Iterator", "next")
+            .unwrap()
+            .native_symbol
+            .unwrap();
         assert_eq!(
-            call(
-                rils_builtins::BuiltinId::IteratorNext,
-                std::slice::from_ref(&iterator)
-            )
-            .unwrap(),
+            call_native_symbol(next_symbol, std::slice::from_ref(&iterator))
+                .unwrap()
+                .unwrap(),
             Value::Option {
                 value: Some(Rc::new(Value::from_i32(11))),
                 element_type: Some(Type::I32),
             }
         );
         assert!(matches!(
-            call(rils_builtins::BuiltinId::IteratorNext, &[iterator]).unwrap(),
+            call_native_symbol(next_symbol, &[iterator])
+                .unwrap()
+                .unwrap(),
             Value::Option { value: None, .. }
         ));
 
@@ -494,10 +470,14 @@ mod tests {
             .contains("mutable binding")
         );
         assert!(
-            call(
-                rils_builtins::BuiltinId::IteratorNext,
-                &[owned_iterator_value(VecDeque::new(), Type::I32)]
+            call_native_symbol(
+                rils_builtins::builtin_member("Iterator", "next")
+                    .unwrap()
+                    .native_symbol
+                    .unwrap(),
+                &[owned_iterator_value(VecDeque::new(), Type::I32)],
             )
+            .unwrap()
             .unwrap_err()
             .contains("mutable binding")
         );
