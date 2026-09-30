@@ -73,7 +73,7 @@ mod choice_metadata {
     use super::*;
     macro_rules! builtin_id {
         ("core::fixture::choice::is_some") => {
-            BuiltinId::Clone
+            BuiltinId::HashMapLen
         };
     }
     choice_definition!(decl_rils_metadata);
@@ -108,7 +108,7 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
     );
     assert_eq!(
         choice.member("is_some").unwrap().builtin_id,
-        Some(BuiltinId::Clone)
+        Some(BuiltinId::HashMapLen)
     );
     assert_eq!(
         choice.member("is_some").unwrap().native_symbol,

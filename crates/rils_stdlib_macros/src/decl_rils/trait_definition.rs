@@ -336,7 +336,7 @@ impl Input {
                 let path: Path = attribute.parse_args()?;
                 let path = path.to_token_stream().to_string().replace(' ', "");
                 quote!(Some(builtin_id!(#path)))
-            } else if name == "clone" { quote!(Some(builtin_id!("core::clone"))) } else { quote!(None) };
+            } else { quote!(None) };
             let required = method.default.is_none();
             let native_bridge = method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge"));
             let native_symbol = if native_bridge {
@@ -364,13 +364,11 @@ impl Input {
                 }
             })
         }).collect::<syn::Result<Vec<_>>>()?;
-        let backend = if name == "Clone"
-            || self.methods()?.iter().any(|method| {
-                method
-                    .attrs
-                    .iter()
-                    .any(|attr| attr.path().is_ident("rils_legacy_id"))
-            }) {
+        let backend = if self.methods()?.iter().any(|method| {
+            method.attrs.iter().any(|attr| {
+                attr.path().is_ident("rils_legacy_id") || attr.path().is_ident("rils_native_bridge")
+            })
+        }) {
             quote!(crate::BuiltinBackend::Runtime)
         } else {
             quote!(crate::BuiltinBackend::Metadata)
@@ -477,6 +475,7 @@ mod tests {
                 /// Explicit owned duplication.
                 pub trait Clone: ::core::clone::Clone {
                     /// Explicitly duplicates an owned value.
+                    #[rils_native_bridge]
                     fn clone(&self) -> Self;
                 }
             },
@@ -493,6 +492,9 @@ mod tests {
                 .to_string()
                 .contains("BuiltinKind :: Trait")
         );
+        let metadata = input.metadata().unwrap().to_string();
+        assert!(metadata.contains("native_symbol : Some"));
+        assert!(metadata.contains("builtin_id : None"));
     }
 
     #[test]

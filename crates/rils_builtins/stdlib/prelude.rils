@@ -36,5 +36,5 @@ pub fn unwrap(value: _) -> _ {}
 pub fn unwrap_or<T>(value: _, default: T) -> T {}
 
 /// Explicitly duplicates an owned value.
-#[native_method(core::clone)]
+#[native_method(Clone::clone)]
 pub fn clone<T>(value: &T) -> T {}

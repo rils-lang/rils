@@ -210,10 +210,8 @@ fn rust_trait_definitions_supply_the_public_catalog() {
     let member = clone.member("clone").unwrap();
     assert_eq!(member.kind, BuiltinMemberKind::Method);
     assert_eq!(member.receiver, Some(ReceiverMode::Shared));
-    assert_eq!(
-        member.builtin_id,
-        Some(rils_builtins::builtin_id!("core::clone"))
-    );
+    assert_eq!(member.builtin_id, None);
+    assert_eq!(member.native_symbol, Some("Clone::clone"));
     assert_eq!(member.signature.unwrap().result, TypePattern::SelfType);
     assert_eq!(
         member.documentation,

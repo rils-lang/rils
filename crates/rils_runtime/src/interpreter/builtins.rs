@@ -388,7 +388,11 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
 }
 
 fn runtime_clone(arguments: &[Value]) -> Result<Value, String> {
-    crate::runtime_builtins::call(rils_builtins::BuiltinId::Clone, arguments)
+    let symbol = rils_builtins::builtin_member("Clone", "clone")
+        .and_then(|member| member.native_symbol)
+        .expect("Clone::clone exports a native symbol");
+    crate::runtime_builtins::call_native_symbol(symbol, arguments)
+        .expect("Clone::clone native adapter is registered")
 }
 
 fn runtime_unwrap(arguments: &[Value]) -> Result<Value, String> {

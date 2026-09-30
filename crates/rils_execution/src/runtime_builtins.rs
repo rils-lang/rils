@@ -65,11 +65,19 @@ pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
                 arguments,
             ));
         }
-        if rils_builtins::builtin_function(symbol)
-            .is_some_and(|function| function.native_symbol == Some(symbol))
-            && symbol == rils_builtins::BuiltinId::Clone.canonical_path()?
+        if rils_builtins::builtin_member("Clone", "clone")
+            .is_some_and(|member| member.native_symbol == Some(symbol))
         {
-            return Some(call(rils_builtins::BuiltinId::Clone, arguments));
+            return Some(match arguments {
+                [Value::Reference(reference)] => {
+                    reference.read().and_then(|value| value.clone_owned())
+                }
+                [value] => value.clone_owned(),
+                _ => Err(format!(
+                    "Clone::clone expects one argument, found {}",
+                    arguments.len()
+                )),
+            });
         }
         let member = rils_builtins::native_member(symbol)?;
         let id = member.builtin_id?;
@@ -160,13 +168,6 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeMapFirstKeyCloned
         | BuiltinId::BtreeMapLastKeyCloned
         | BuiltinId::BtreeMapIntoIter => btree_map::call(id, arguments),
-        BuiltinId::Clone => match &arguments[0] {
-            Value::Reference(reference) => reference.read()?.clone_owned(),
-            value => Err(format!(
-                "`clone` expects a reference, found {}; use `clone(&value)`",
-                value.type_name()
-            )),
-        },
         BuiltinId::HashMapIter
         | BuiltinId::BtreeMapIter
         | BuiltinId::HashSetIter

@@ -308,7 +308,7 @@ pub(super) fn bind_rils_method(
         if name == "clone" {
             return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(receiver),
-                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
+                method: clone_method(),
             })));
         }
         return Err(RuntimeError::new(

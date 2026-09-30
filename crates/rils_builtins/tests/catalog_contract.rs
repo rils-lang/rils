@@ -167,12 +167,12 @@ use rils_syntax::{FloatType, IntegerType, Type, ast::Stmt, lex, parse};
 
 #[test]
 fn builtin_id_macro_resolves_the_configured_stable_id() {
-    const CLONE: BuiltinId = rils_builtins::builtin_id!("core::clone");
+    const HASH_MAP_LEN: BuiltinId = rils_builtins::builtin_id!("core::hash_map::len");
 
-    assert_eq!(CLONE, BuiltinId::Clone);
-    assert_eq!(CLONE.as_raw(), 0x0001);
-    assert_eq!(CLONE.canonical_path(), Some("core::clone"));
-    assert_eq!(CLONE.member_name(), Some("clone"));
+    assert_eq!(HASH_MAP_LEN, BuiltinId::HashMapLen);
+    assert_eq!(HASH_MAP_LEN.as_raw(), 0x0500);
+    assert_eq!(HASH_MAP_LEN.canonical_path(), Some("core::hash_map::len"));
+    assert_eq!(HASH_MAP_LEN.member_name(), Some("len"));
 }
 
 #[test]
@@ -446,7 +446,8 @@ fn string_methods_no_longer_reserve_builtin_ids() {
 
 #[test]
 fn legacy_sequence_ids_are_no_longer_defined() {
-    for raw in (0x0100..=0x0105)
+    for raw in std::iter::once(0x0001)
+        .chain(0x0100..=0x0105)
         .chain(0x0200..=0x0207)
         .chain(std::iter::once(0x0300))
         .chain(std::iter::once(0x0308))
@@ -871,7 +872,7 @@ fn declarations_report_member_and_runtime_coverage() {
     assert!(!iterator.contains_member("missing"));
     assert_eq!(iterator.member("next").unwrap().builtin_id, None);
     assert!(iterator.member("next").unwrap().native_symbol.is_some());
-    assert!(!iterator.contains_builtin(BuiltinId::Clone));
+    assert!(!iterator.contains_builtin(BuiltinId::HashMapLen));
 }
 
 #[test]

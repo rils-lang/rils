@@ -47,17 +47,6 @@ impl Interpreter {
                 self.call_native_symbol(symbol, &values, span)
             }
             BuiltinMethod::IteratorIdentity => Ok((*method.receiver).clone()),
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone) => {
-                let value = match method.receiver.as_ref() {
-                    Value::Reference(reference) => reference
-                        .read()
-                        .map_err(|message| RuntimeError::new(message, span))?,
-                    value => value.clone(),
-                };
-                value
-                    .clone_owned()
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::HashMapLen
                 | rils_builtins::BuiltinId::HashMapIsEmpty

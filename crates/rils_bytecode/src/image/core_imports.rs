@@ -1,9 +1,7 @@
 use super::*;
-use crate::runtime_builtins::call as call_runtime_builtin;
 
 #[derive(Clone, Copy)]
 pub(super) enum CoreImport {
-    Builtin(rils_builtins::BuiltinId),
     Native(&'static str),
     TypeOf,
     Assert,
@@ -45,15 +43,12 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
 }
 
 pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
-    use rils_builtins::BuiltinId;
-
     if let Some(symbol) = rils_builtins::builtin_function(name).and_then(|item| item.native_symbol)
     {
         return Some(CoreImport::Native(symbol));
     }
     Some(match name {
         "type_of" => CoreImport::TypeOf,
-        "clone" => CoreImport::Builtin(BuiltinId::Clone),
         "unwrap" | "unwrap_or" => {
             CoreImport::Native(rils_builtins::builtin_member("Option", name)?.native_symbol?)
         }
@@ -69,7 +64,6 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
 
 pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Result<Value, String> {
     match import {
-        CoreImport::Builtin(id) => call_runtime_builtin(id, arguments),
         CoreImport::Native(symbol) => {
             crate::runtime_builtins::call_native_symbol(symbol, arguments)
                 .ok_or_else(|| format!("native method `{symbol}` is unavailable"))?

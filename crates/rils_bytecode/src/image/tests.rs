@@ -927,7 +927,7 @@ fn links_and_executes_core_imports() {
             .map(|import| import.symbol.as_str())
             .collect::<HashSet<_>>(),
         HashSet::from([
-            "core::clone",
+            "Clone::clone",
             "core::option::option::is_some",
             "core::option::option::is_none",
         ])

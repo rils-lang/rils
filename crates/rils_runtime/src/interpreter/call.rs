@@ -11,6 +11,14 @@ use helpers::{builtin_default_value, validate_native_arguments, validate_native_
 pub(super) use helpers::{builtin_runtime_member, select_method};
 pub(super) use trait_defaults::builtin_iterator_default_receiver;
 
+fn clone_method() -> BuiltinMethod {
+    BuiltinMethod::Native(
+        rils_builtins::builtin_member("Clone", "clone")
+            .and_then(|member| member.native_symbol)
+            .expect("Clone::clone exports a native symbol"),
+    )
+}
+
 impl Interpreter {
     pub(super) fn call_owned(
         &mut self,
@@ -390,7 +398,7 @@ impl Interpreter {
                     return self.call(
                         Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(receiver.clone()),
-                            method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
+                            method: clone_method(),
                         })),
                         &arguments[1..],
                         span,
@@ -733,7 +741,7 @@ impl Interpreter {
                     _ if name == "clone" => {
                         Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(object.clone()),
-                            method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
+                            method: clone_method(),
                         })))
                     }
                     value => Err(RuntimeError::new(
@@ -744,7 +752,7 @@ impl Interpreter {
             }
             _ if name == "clone" => Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(object),
-                method: BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone),
+                method: clone_method(),
             }))),
             _ => Err(RuntimeError::new(
                 format!("{} has no member `{name}`", object.type_name()),

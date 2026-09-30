@@ -1,9 +1,5 @@
 # Stable built-in IDs. Reserve each documented 0x100 block for its module.
 
-# General core operations: 0x0000-0x00FF.
-[core]
-clone = 0x0001
-
 # HashMap operations: 0x0500-0x05FF.
 [core.hash_map]
 len = 0x0500
