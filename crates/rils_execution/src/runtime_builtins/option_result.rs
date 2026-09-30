@@ -1,5 +1,6 @@
 use super::*;
 use rils_stdlib::stdlib::{option::Option as NativeOption, result::Result as NativeResult};
+use rils_value::{DynamicType, DynamicValue};
 
 type OptionValue = NativeOption<Rc<Value>>;
 type ResultValue = NativeResult<Rc<Value>, Rc<Value>>;
@@ -42,6 +43,204 @@ fn option_value(value: OptionValue, element_type: Option<Type>) -> Value {
         },
         element_type,
     }
+}
+
+pub(super) fn call_owned(
+    owner: &str,
+    method: &str,
+    mut arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+) -> Result<Value, String> {
+    let owner = if owner == "Option"
+        && arguments
+            .first()
+            .and_then(Type::of_value)
+            .is_some_and(|ty| matches!(ty, Type::Result(_, _)))
+    {
+        "Result"
+    } else {
+        owner
+    };
+    let expected = match method {
+        "unwrap" | "unwrap_err" | "take" | "ok" | "err" => 1,
+        "unwrap_or" | "expect" | "expect_err" | "or" | "xor" | "replace" => 2,
+        _ => return Err(format!("{owner}::{method} has no consuming native adapter")),
+    };
+    if arguments.len() != expected {
+        return Err(format!(
+            "{owner}::{method} expects {expected} arguments, found {}",
+            arguments.len()
+        ));
+    }
+    let receiver = arguments.remove(0);
+    match (owner, method) {
+        ("Option", "take" | "replace") => {
+            call_owned_mutable_option(method, receiver, arguments.pop(), context)
+        }
+        ("Option", "unwrap") => crate::value::dynamic_option::take_owned(receiver)?
+            .ok_or_else(|| "called `unwrap` on `None`".into()),
+        ("Option", "unwrap_or") => {
+            let default = arguments.pop().expect("arity checked");
+            if let Some(Type::Option(item_type)) = Type::of_value(&receiver)
+                && !item_type.accepts(&default)
+            {
+                return Err(format!(
+                    "`unwrap_or` default must be {item_type}, found {}",
+                    default.type_name()
+                ));
+            }
+            Ok(crate::value::dynamic_option::take_owned(receiver)?.unwrap_or(default))
+        }
+        ("Option", "expect") => {
+            let message = arguments[0]
+                .as_string()
+                .ok_or("expect message must be string")?;
+            crate::value::dynamic_option::take_owned(receiver)?.ok_or(message)
+        }
+        ("Option", "or" | "xor") => {
+            let right = arguments.pop().expect("arity checked");
+            let left_type = Type::of_value(&receiver)
+                .and_then(|ty| match ty {
+                    Type::Option(item) => Some(*item),
+                    _ => None,
+                })
+                .unwrap_or(Type::Unknown);
+            let right_type = Type::of_value(&right)
+                .and_then(|ty| match ty {
+                    Type::Option(item) => Some(*item),
+                    _ => None,
+                })
+                .unwrap_or(Type::Unknown);
+            let item_type = crate::types::merge_types(&left_type, &right_type)
+                .ok_or_else(|| "Option operand types do not match".to_owned())?;
+            let left = crate::value::dynamic_option::take_owned(receiver)?;
+            let right = crate::value::dynamic_option::take_owned(right)?;
+            let selected = if method == "or" {
+                left.or(right)
+            } else {
+                left.xor(right)
+            };
+            match crate::value::dynamic_option::construct(selected, &item_type)? {
+                crate::value::dynamic_option::Construction::Native(value) => Ok(value),
+                crate::value::dynamic_option::Construction::Unsupported(value) => {
+                    Ok(Value::Option {
+                        value: value.map(Rc::new),
+                        element_type: Some(item_type),
+                    })
+                }
+            }
+        }
+        ("Result", "unwrap") => crate::value::dynamic_result::take_owned(receiver)?
+            .map_err(|error| format!("called `unwrap` on Err({error})")),
+        ("Result", "ok" | "err") => {
+            let Type::Result(ok_type, error_type) =
+                Type::of_value(&receiver).ok_or("Result has no concrete type")?
+            else {
+                return Err("Result receiver has the wrong type".into());
+            };
+            let item_type = if method == "ok" {
+                *ok_type
+            } else {
+                *error_type
+            };
+            let branch = crate::value::dynamic_result::take_owned(receiver)?;
+            let item = if method == "ok" {
+                branch.ok()
+            } else {
+                branch.err()
+            };
+            match crate::value::dynamic_option::construct(item, &item_type)? {
+                crate::value::dynamic_option::Construction::Native(value) => Ok(value),
+                crate::value::dynamic_option::Construction::Unsupported(item) => {
+                    Ok(Value::Option {
+                        value: item.map(Rc::new),
+                        element_type: Some(item_type),
+                    })
+                }
+            }
+        }
+        ("Result", "unwrap_or") => {
+            let default = arguments.pop().expect("arity checked");
+            if let Some(Type::Result(ok_type, _)) = Type::of_value(&receiver)
+                && !ok_type.accepts(&default)
+            {
+                return Err(format!(
+                    "`unwrap_or` default must be {ok_type}, found {}",
+                    default.type_name()
+                ));
+            }
+            Ok(crate::value::dynamic_result::take_owned(receiver)?.unwrap_or(default))
+        }
+        ("Result", "expect") => {
+            let message = arguments[0]
+                .as_string()
+                .ok_or("expect message must be string")?;
+            crate::value::dynamic_result::take_owned(receiver)?
+                .map_err(|error| format!("{message}: {error}"))
+        }
+        ("Result", "unwrap_err") => match crate::value::dynamic_result::take_owned(receiver)? {
+            Ok(value) => Err(format!("called `unwrap_err` on Ok({value})")),
+            Err(error) => Ok(error),
+        },
+        ("Result", "expect_err") => {
+            let message = arguments[0]
+                .as_string()
+                .ok_or("expect_err message must be string")?;
+            match crate::value::dynamic_result::take_owned(receiver)? {
+                Ok(value) => Err(format!("{message}: {value}")),
+                Err(error) => Ok(error),
+            }
+        }
+        _ => Err(format!("{owner}::{method} has no consuming native adapter")),
+    }
+}
+
+fn call_owned_mutable_option(
+    method: &str,
+    receiver: Value,
+    replacement: Option<Value>,
+    context: &NativeOwnedContext,
+) -> Result<Value, String> {
+    let Value::Reference(reference) = &receiver else {
+        return Err(format!("Option::{method} requires a mutable binding"));
+    };
+    if !reference.mutable {
+        return Err(format!("Option::{method} requires `&mut self`"));
+    }
+    let current = reference.read()?;
+    let Value::Dynamic(object) = current else {
+        let mut arguments = vec![receiver];
+        if let Some(replacement) = replacement {
+            arguments.push(replacement);
+        }
+        return call("Option", method, &arguments);
+    };
+    let layout = object.descriptor().layout_handle();
+    if !matches!(layout.rils_type(), Type::Option(_)) {
+        return Err(format!("Option::{method} expects Option receiver"));
+    }
+    let next = if let Some(replacement) = replacement {
+        let item_layout = layout.option_item().ok_or("Option has no item layout")?;
+        let item = crate::value::record_codec::NativeRecordCodec::with_definitions(
+            &context.structs,
+            &context.enums,
+        )
+        .into_native(replacement, item_layout.clone())?;
+        DynamicValue::some(layout.clone(), item)?
+    } else {
+        DynamicValue::none(layout.clone())?
+    };
+    if object.is_inline() {
+        let descriptor = Rc::new(DynamicType::new(layout));
+        let next = crate::value::DynamicObject::new(descriptor, next)?;
+        reference
+            .write(Value::Dynamic(next))
+            .map_err(assignment_error_message)?;
+        return Ok(Value::Dynamic(object));
+    }
+    let previous = object.with_mut(|payload| std::mem::replace(payload, next))?;
+    let descriptor = Rc::new(DynamicType::new(layout));
+    crate::value::DynamicObject::new(descriptor, previous).map(Value::Dynamic)
 }
 
 pub(super) fn call(owner: &str, method: &str, arguments: &[Value]) -> Result<Value, String> {

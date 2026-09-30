@@ -1,5 +1,58 @@
 use rils::{BytecodeModule, Value, compile, eval_value};
 
+#[test]
+fn consuming_option_methods_move_non_copy_native_payloads() {
+    for source in [
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Option<Vec<string>> = Some(items);
+            let mut recovered = value.unwrap_or(Vec::new()); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Option<Vec<string>> = Some(items);
+            let mut recovered = value.expect("missing"); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Option<Vec<string>> = Some(items);
+            let mut recovered = value.or(None).unwrap(); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Option<Vec<string>> = Some(items);
+            let mut recovered = value.xor(None).unwrap(); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let mut value: Option<Vec<string>> = Some(items);
+            let mut recovered = value.take().unwrap(); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let mut value: Option<Vec<string>> = Some(items);
+            let mut recovered = value.replace(Vec::new()).unwrap(); recovered.pop().unwrap()"#,
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_eq!(value.as_string().as_deref(), Some("first"), "{source}");
+        }
+    }
+}
+
+#[test]
+fn mutable_option_methods_write_back_inline_copy_values() {
+    let source = r#"
+        let mut value: Option<i32> = Some(10);
+        let old = value.replace(20).unwrap();
+        let taken = value.take().unwrap();
+        if old == 10 && taken == 20 && value.is_none() { 42 } else { 0 }
+    "#;
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        assert_eq!(value.as_i32(), Some(42));
+    }
+}
+
 fn assert_dynamic_option(
     value: Value,
     ty: &str,

@@ -52,6 +52,33 @@ pub fn promote(value: Value, expected: &Type) -> Result<Value, String> {
     Ok(Value::Dynamic(object))
 }
 
+/// Consume a Result and transfer its active branch without cloning its payload.
+pub fn take_owned(value: Value) -> Result<Result<Value, Value>, String> {
+    match value {
+        Value::Dynamic(object)
+            if matches!(object.descriptor().layout().rils_type(), Type::Result(_, _)) =>
+        {
+            let value = object.into_value().map_err(|failure| failure.1)?;
+            let (index, item) = value.take_variant()?;
+            let item = NativeRecordCodec::new().from_native(item)?;
+            if index == 0 {
+                Ok(Ok(item))
+            } else {
+                Ok(Err(item))
+            }
+        }
+        Value::Result { value, .. } => match value {
+            Ok(value) => Rc::try_unwrap(value)
+                .map(Ok)
+                .map_err(|_| "Result payload is shared".into()),
+            Err(value) => Rc::try_unwrap(value)
+                .map(Err)
+                .map_err(|_| "Result payload is shared".into()),
+        },
+        value => Err(format!("expected Result, found {}", value.type_name())),
+    }
+}
+
 fn read_item(payload: &DynamicValue) -> Result<Value, String> {
     let item =
         rils_stdlib::native::registry().clone_borrowed_view(payload.view().variant_payload()?)?;

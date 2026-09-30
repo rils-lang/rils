@@ -1,6 +1,43 @@
 use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
+fn consuming_result_methods_move_non_copy_native_payloads() {
+    for source in [
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Result<Vec<string>, string> = Ok(items);
+            let mut recovered = value.unwrap(); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Result<Vec<string>, string> = Ok(items);
+            let mut recovered = value.unwrap_or(Vec::new()); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Result<Vec<string>, string> = Ok(items);
+            let mut recovered = value.expect("missing"); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Result<i32, Vec<string>> = Err(items);
+            let mut recovered = value.unwrap_err(); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Result<i32, Vec<string>> = Err(items);
+            let mut recovered = value.expect_err("missing"); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Result<Vec<string>, string> = Ok(items);
+            let mut recovered = value.ok().unwrap(); recovered.pop().unwrap()"#,
+        r#"let mut items: Vec<string> = Vec::new(); items.push("first");
+            let value: Result<i32, Vec<string>> = Err(items);
+            let mut recovered = value.err().unwrap(); recovered.pop().unwrap()"#,
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_eq!(value.as_string().as_deref(), Some("first"), "{source}");
+        }
+    }
+}
+
+#[test]
 fn concrete_results_use_native_layout_in_both_backends() {
     for (source, expected, debug) in [
         (

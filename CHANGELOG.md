@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `Option` / `Result` 的消费式方法现在直接移出非 Copy 的原生泛型负载；`Option::take/replace` 也会写回原生存储。`Result::ok/err` 可将 `Vec<string>` 等值移入返回的 `Option`。
+
 - **破坏性 Rust API 变更：** 移除标准库定义中的 `#[rils_import(...)]` 与 `BuiltinMember::runtime_import`。`Vec::new/from`、`HashMap::new`、`HashSet::new` 现在通过声明生成的原生符号调用；扩展标准库时请使用 `#[export_rils]` 并提供对应的原生转换。引用这些旧导入的实验性 v8 字节码需从源码重新编译。
 
 - **破坏性 Rust API 变更：** 移除 `BuiltinId`、`builtin_ids.toml`、`builtin_id!` 和 `#[rils_legacy_id]`。标准库数值方法及容器方法统一按导出声明中的规范符号调用；嵌入端若直接使用旧 ID 类型或宏，请改用声明的 `native_symbol` / `IntrinsicDeclaration::symbol`。包含旧数字调用的实验性 v8 字节码需从源码重新编译；格式版本暂不变。

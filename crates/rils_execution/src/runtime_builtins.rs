@@ -91,23 +91,40 @@ pub fn call_native_owned_symbol(
     arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
-    if is_option_unwrap_symbol(symbol) {
-        return Some(call_owned_option_unwrap(arguments));
+    if let Some((owner, member)) = owned_sum_member(symbol) {
+        return Some(option_result::call_owned(
+            owner.path,
+            member.name,
+            arguments,
+            context,
+        ));
     }
     native::call_owned_symbol(symbol, arguments, context)
 }
 
 pub fn requires_owned_native_call(symbol: &str) -> bool {
-    is_option_unwrap_symbol(symbol) || native::is_owned_symbol(symbol)
+    owned_sum_member(symbol).is_some() || native::is_owned_symbol(symbol)
 }
 
-fn is_option_unwrap_symbol(symbol: &str) -> bool {
-    let Some((owner, member)) = rils_builtins::native_member_owner(symbol) else {
-        return false;
-    };
-    rils_builtins::builtin("Option").is_some_and(|option| {
-        std::ptr::eq(owner, option) && member.name == "unwrap" && member.native_bridge
-    })
+fn owned_sum_member(
+    symbol: &str,
+) -> Option<(
+    &'static rils_builtins::BuiltinDeclaration,
+    &'static rils_builtins::BuiltinMember,
+)> {
+    let (owner, member) = rils_builtins::native_member_owner(symbol)?;
+    (owner.kind == rils_builtins::BuiltinKind::Enum
+        && matches!(
+            member.receiver,
+            Some(rils_builtins::ReceiverMode::Owned | rils_builtins::ReceiverMode::Mutable)
+        )
+        && (member.native_bridge
+            || (owner.path == "Result"
+                && member.receiver == Some(rils_builtins::ReceiverMode::Owned)
+                && member.signature.is_some_and(|signature| {
+                    matches!(signature.result, rils_builtins::TypePattern::Option(_))
+                }))))
+    .then_some((owner, member))
 }
 
 pub fn call_native_symbol_with_callback<E>(
@@ -117,21 +134,6 @@ pub fn call_native_symbol_with_callback<E>(
 ) -> Option<Result<Value, NativeCallError<E>>> {
     native::call_callback_symbol(symbol, arguments, callback)
         .or_else(|| call_native_symbol(symbol, arguments).map(|result| result.map_err(Into::into)))
-}
-
-fn call_owned_option_unwrap(mut arguments: Vec<Value>) -> Result<Value, String> {
-    if arguments
-        .first()
-        .and_then(Type::of_value)
-        .is_some_and(|ty| matches!(ty, Type::Result(_, _)))
-    {
-        return option_result::call("Result", "unwrap", &arguments);
-    }
-    arguments
-        .pop()
-        .ok_or_else(|| "Option::unwrap expects a receiver".to_owned())
-        .and_then(crate::value::dynamic_option::take_owned)
-        .and_then(|item| item.ok_or_else(|| "called `unwrap` on `None`".to_owned()))
 }
 
 #[cfg(test)]
