@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `HashMap`、`HashSet`、`BTreeMap` 与 `BTreeSet` 的借用迭代和消费式迭代现在由标准库导出的原生符号分派，旧数字 ID 已移除。使用这些 ID 的实验性 v8 字节码需从源码重新编译。
+
 - `Iterator::next(&mut iterator)` 和 `Clone::clone(&value)` 等 trait 路径调用现可编译为字节码；标准库原生方法通过 trait 导出符号分派，用户类型调用其对应的 trait 实现。覆盖拥有型、借用型及 `Range<T>` 迭代器。
 
 - **破坏性字节码变更：** 标准库调用（包括 `Clone`）和数值 intrinsic 统一使用符号原生导入；整数关联函数的目标宽度随符号保存，字节码验证器校验路径与签名。旧 `CallRuntime` / `CallIntrinsic` 操作码已移除。包含这些指令的实验性 v8 `.rilbc` 文件必须从源码重新编译；格式版本暂保持 v8。
@@ -61,9 +63,9 @@
 
 - 移除 `#[rils_native]`：导出的固有方法与 trait impl 方法默认使用原生符号。尚未迁移的入口显式保留 `#[rils_legacy_id(...)]` / `#[rils_import(...)]`，不再隐式选择旧 ID。迁移 Rust 标准库扩展时，删除 `#[rils_native]`；未支持的签名需补充转换或明确绑定已有兼容入口。字节码格式继续保持 v8。
 
-- 带原生桥接的标准库方法不再自动登记数字 `BuiltinId`；`Vec::is_empty` 现在直接由 `len()` 的结果实现。`Vec` 其他已迁移原生方法的旧编号仍在迁移中；`Range::next` 的编号已移除，调用使用原生符号。数组与 Vec 的迭代统一由 `IntoIterator` / `Iterator` 和共享执行入口驱动，不再使用旧 Sequence 成员分派。
+- 带原生桥接的标准库方法不再自动登记数字 `BuiltinId`；`Vec::is_empty` 现在直接由 `len()` 的结果实现。`Vec` 已迁移方法与 `Range::next` 的旧编号已移除，调用使用原生符号。数组与 Vec 的迭代统一由 `IntoIterator` / `Iterator` 和共享执行入口驱动，不再使用旧 Sequence 成员分派。
 
-- Trait 方法现可在声明处提供默认方法体；`Iterator` 的默认行为由 `rils_stdlib` 的 trait 方法体自动导出，解释器与字节码执行同一份定义。默认方法按关联类型 `Item` 生成签名，不再从接收类型的第一个泛型参数猜测元素类型；自定义迭代器只需实现 `next`，也可以按 trait 签名重写默认方法。默认方法的旧数字 `BuiltinId` 已移除；`next` 仍保留运行时原语 ID。迁移：`take/skip/rev` 现在返回新的 `Iterator<Item>`，此前将结果标为原迭代器 `Self` 的代码需改用 `Iterator<Item>`。
+- Trait 方法现可在声明处提供默认方法体；`Iterator` 的默认行为由 `rils_stdlib` 的 trait 方法体自动导出，解释器与字节码执行同一份定义。默认方法按关联类型 `Item` 生成签名，不再从接收类型的第一个泛型参数猜测元素类型；自定义迭代器只需实现 `next`，也可以按 trait 签名重写默认方法。默认方法和 `next` 的旧数字 `BuiltinId` 已移除。迁移：`take/skip/rev` 现在返回新的 `Iterator<Item>`，此前将结果标为原迭代器 `Self` 的代码需改用 `Iterator<Item>`。
 
 - 标记 `#[rils_impl]` 的 Rust trait 方法现在从实际签名和关联类型推导 Rils 参数、返回类型及内建成员元数据；`Self::Item`、`Self::IntoIter` 和标准库 `Option` 等类型无需用 `#[rils_return]` 手动覆盖，trait impl 中使用该覆盖属性会报错。
 
