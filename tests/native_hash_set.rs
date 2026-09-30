@@ -57,3 +57,31 @@ fn native_hash_set_handles_composite_keys_and_set_algebra() {
         Value::from_i32(42),
     );
 }
+
+#[test]
+fn hash_set_native_symbols_cover_algebra_and_mutation() {
+    assert_both(
+        r#"
+        let mut left: HashSet<i32> = HashSet::new();
+        let mut right: HashSet<i32> = HashSet::new();
+        let empty: HashSet<i32> = HashSet::new();
+        left.insert(1); left.insert(2);
+        right.insert(2); right.insert(3);
+        let union = left.union(&right);
+        let intersection = left.intersection(&right);
+        let difference = left.difference(&right);
+        let symmetric = left.symmetric_difference(&right);
+        let one = 1; let two = 2; let three = 3;
+        let valid = left.is_subset(&union) && union.is_superset(&right)
+            && left.is_disjoint(&empty) && union.len() == 3usize
+            && intersection.contains(&two) && intersection.len() == 1usize
+            && difference.contains(&one) && difference.len() == 1usize
+            && symmetric.contains(&one) && symmetric.contains(&three)
+            && symmetric.len() == 2usize;
+        left.remove(&one);
+        left.clear();
+        valid && left.is_empty()
+        "#,
+        Value::Bool(true),
+    );
+}

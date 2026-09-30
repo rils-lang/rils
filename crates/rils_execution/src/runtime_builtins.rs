@@ -135,26 +135,10 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         return result;
     }
 
-    if let Some(result) = native_set::call(id, arguments) {
-        return result;
-    }
     if let Some(result) = native_map::call(id, arguments) {
         return result;
     }
     match id {
-        BuiltinId::BtreeSetClear
-        | BuiltinId::BtreeSetContains
-        | BuiltinId::BtreeSetInsert
-        | BuiltinId::BtreeSetRemove
-        | BuiltinId::BtreeSetFirstCloned
-        | BuiltinId::BtreeSetLastCloned
-        | BuiltinId::BtreeSetIsSubset
-        | BuiltinId::BtreeSetIsSuperset
-        | BuiltinId::BtreeSetIsDisjoint
-        | BuiltinId::BtreeSetUnion
-        | BuiltinId::BtreeSetIntersection
-        | BuiltinId::BtreeSetDifference
-        | BuiltinId::BtreeSetSymmetricDifference => btree_set::call(id, arguments),
         BuiltinId::BtreeMapClear
         | BuiltinId::BtreeMapContainsKey
         | BuiltinId::BtreeMapInsert
@@ -168,18 +152,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::HashMapGetCloned
         | BuiltinId::HashMapRemove
         | BuiltinId::HashMapKeysCloned
-        | BuiltinId::HashMapValuesCloned
-        | BuiltinId::HashSetClear
-        | BuiltinId::HashSetContains
-        | BuiltinId::HashSetInsert
-        | BuiltinId::HashSetRemove
-        | BuiltinId::HashSetIsSubset
-        | BuiltinId::HashSetIsSuperset
-        | BuiltinId::HashSetIsDisjoint
-        | BuiltinId::HashSetUnion
-        | BuiltinId::HashSetIntersection
-        | BuiltinId::HashSetDifference
-        | BuiltinId::HashSetSymmetricDifference => crate::hash_collections::call(id, arguments),
+        | BuiltinId::HashMapValuesCloned => crate::hash_collections::call(id, arguments),
         _ => Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
         )),

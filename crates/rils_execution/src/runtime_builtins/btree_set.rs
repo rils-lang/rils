@@ -3,19 +3,14 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use rils_builtins::BuiltinId;
-
 use crate::{
     types::{Type, merge_types},
     value::{BTreeSetValue, HashKey, Value},
 };
 
-pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
     let receiver = arguments.first().ok_or("missing BTreeSet receiver")?;
-    let mutating = matches!(
-        id,
-        BuiltinId::BtreeSetClear | BuiltinId::BtreeSetInsert | BuiltinId::BtreeSetRemove
-    );
+    let mutating = matches!(method, "clear" | "insert" | "remove");
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("BTreeSet mutation requires a mutable reference".into());
     }
@@ -25,16 +20,18 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
     if mutating && set.borrowed.get() > 0 {
         return Err("cannot mutate BTreeSet while it is borrowed by an iterator".into());
     }
-    match id {
-        BuiltinId::BtreeSetClear => {
+    match method {
+        "len" => Ok(crate::numeric::native_usize(set.entries.borrow().len())),
+        "is_empty" => Ok(Value::Bool(set.entries.borrow().is_empty())),
+        "clear" => {
             set.entries.borrow_mut().clear();
             Ok(Value::Unit)
         }
-        BuiltinId::BtreeSetContains => {
+        "contains" => {
             let key = key(arguments, 1)?;
             Ok(Value::Bool(set.entries.borrow().contains(&key)))
         }
-        BuiltinId::BtreeSetInsert => {
+        "insert" => {
             let key = key(arguments, 1)?;
             let element_type = merge_types(&set.element_type.borrow(), &key.ty())
                 .ok_or("BTreeSet element type mismatch")?;
@@ -42,13 +39,13 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             *set.element_type.borrow_mut() = element_type;
             Ok(Value::Bool(inserted))
         }
-        BuiltinId::BtreeSetRemove => {
+        "remove" => {
             let key = key(arguments, 1)?;
             Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
         }
-        BuiltinId::BtreeSetFirstCloned | BuiltinId::BtreeSetLastCloned => {
+        "first_cloned" | "last_cloned" => {
             let entries = set.entries.borrow();
-            let key = if id == BuiltinId::BtreeSetFirstCloned {
+            let key = if method == "first_cloned" {
                 entries.first()
             } else {
                 entries.last()
@@ -58,13 +55,13 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 element_type: Some(set.element_type.borrow().clone()),
             })
         }
-        BuiltinId::BtreeSetIsSubset
-        | BuiltinId::BtreeSetIsSuperset
-        | BuiltinId::BtreeSetIsDisjoint
-        | BuiltinId::BtreeSetUnion
-        | BuiltinId::BtreeSetIntersection
-        | BuiltinId::BtreeSetDifference
-        | BuiltinId::BtreeSetSymmetricDifference => {
+        "is_subset"
+        | "is_superset"
+        | "is_disjoint"
+        | "union"
+        | "intersection"
+        | "difference"
+        | "symmetric_difference" => {
             let other = arguments.get(1).ok_or("missing other BTreeSet")?;
             let Value::BTreeSet(other) = super::import_receiver(other)? else {
                 return Err("expected other BTreeSet".into());
@@ -74,18 +71,16 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                     .ok_or("BTreeSet element types do not match")?;
             let left = set.entries.borrow();
             let right = other.entries.borrow();
-            match id {
-                BuiltinId::BtreeSetIsSubset => Ok(Value::Bool(left.is_subset(&right))),
-                BuiltinId::BtreeSetIsSuperset => Ok(Value::Bool(left.is_superset(&right))),
-                BuiltinId::BtreeSetIsDisjoint => Ok(Value::Bool(left.is_disjoint(&right))),
+            match method {
+                "is_subset" => Ok(Value::Bool(left.is_subset(&right))),
+                "is_superset" => Ok(Value::Bool(left.is_superset(&right))),
+                "is_disjoint" => Ok(Value::Bool(left.is_disjoint(&right))),
                 _ => {
-                    let entries = match id {
-                        BuiltinId::BtreeSetUnion => left.union(&right).cloned().collect(),
-                        BuiltinId::BtreeSetIntersection => {
-                            left.intersection(&right).cloned().collect()
-                        }
-                        BuiltinId::BtreeSetDifference => left.difference(&right).cloned().collect(),
-                        BuiltinId::BtreeSetSymmetricDifference => {
+                    let entries = match method {
+                        "union" => left.union(&right).cloned().collect(),
+                        "intersection" => left.intersection(&right).cloned().collect(),
+                        "difference" => left.difference(&right).cloned().collect(),
+                        "symmetric_difference" => {
                             left.symmetric_difference(&right).cloned().collect()
                         }
                         _ => unreachable!(),

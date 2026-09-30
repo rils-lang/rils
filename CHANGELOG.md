@@ -5,7 +5,7 @@
 
 ## Unreleased
 
-- `HashMap`、`HashSet`、`BTreeMap` 与 `BTreeSet` 的 `len()`、`is_empty()`、借用迭代和消费式迭代现在由标准库导出的原生符号分派，旧数字 ID 已移除。使用这些 ID 的实验性 v8 字节码需从源码重新编译。
+- `HashSet` 与 `BTreeSet` 的所有方法，以及 `HashMap`、`BTreeMap` 的 `len()`、`is_empty()`、借用迭代和消费式迭代，现由标准库导出的原生符号分派，相关旧数字 ID 已移除。使用这些 ID 的实验性 v8 字节码需从源码重新编译。
 
 - `Iterator::next(&mut iterator)` 和 `Clone::clone(&value)` 等 trait 路径调用现可编译为字节码；标准库原生方法通过 trait 导出符号分派，用户类型调用其对应的 trait 实现。覆盖拥有型、借用型及 `Range<T>` 迭代器。
 

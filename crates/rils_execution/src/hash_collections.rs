@@ -21,17 +21,6 @@ pub fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
         | BuiltinId::HashMapRemove
         | BuiltinId::HashMapKeysCloned
         | BuiltinId::HashMapValuesCloned => call_map(id, arguments),
-        BuiltinId::HashSetClear
-        | BuiltinId::HashSetContains
-        | BuiltinId::HashSetInsert
-        | BuiltinId::HashSetRemove
-        | BuiltinId::HashSetIsSubset
-        | BuiltinId::HashSetIsSuperset
-        | BuiltinId::HashSetIsDisjoint
-        | BuiltinId::HashSetUnion
-        | BuiltinId::HashSetIntersection
-        | BuiltinId::HashSetDifference
-        | BuiltinId::HashSetSymmetricDifference => call_set(id, arguments),
         _ => Err(format!("unknown hash collection built-in `{id:?}`")),
     }
 }
@@ -122,29 +111,27 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     }
 }
 
-fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub(crate) fn call_set(method: &str, arguments: &[Value]) -> Result<Value, String> {
     let set = hash_set(
         arguments
             .first()
             .ok_or_else(|| "missing HashSet receiver".to_string())?,
     )?;
-    if matches!(
-        id,
-        BuiltinId::HashSetClear | BuiltinId::HashSetInsert | BuiltinId::HashSetRemove
-    ) && set.borrowed.get() > 0
-    {
+    if matches!(method, "clear" | "insert" | "remove") && set.borrowed.get() > 0 {
         return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
     }
-    match id {
-        BuiltinId::HashSetClear => {
+    match method {
+        "len" => Ok(crate::numeric::native_usize(set.entries.borrow().len())),
+        "is_empty" => Ok(Value::Bool(set.entries.borrow().is_empty())),
+        "clear" => {
             set.entries.borrow_mut().clear();
             Ok(Value::Unit)
         }
-        BuiltinId::HashSetContains => {
+        "contains" => {
             let key = hash_argument(arguments, 1)?;
             Ok(Value::Bool(set.entries.borrow().contains(&key)))
         }
-        BuiltinId::HashSetInsert => {
+        "insert" => {
             let key = hash_argument(arguments, 1)?;
             let element_type =
                 merge_collection_type(&set.element_type, key.ty(), "HashSet element")?;
@@ -152,13 +139,11 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             *set.element_type.borrow_mut() = element_type;
             Ok(Value::Bool(inserted))
         }
-        BuiltinId::HashSetRemove => {
+        "remove" => {
             let key = hash_argument(arguments, 1)?;
             Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
         }
-        BuiltinId::HashSetIsSubset
-        | BuiltinId::HashSetIsSuperset
-        | BuiltinId::HashSetIsDisjoint => {
+        "is_subset" | "is_superset" | "is_disjoint" => {
             let other = hash_set(
                 arguments
                     .get(1)
@@ -166,17 +151,14 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             )?;
             let left = set.entries.borrow();
             let right = other.entries.borrow();
-            Ok(Value::Bool(match id {
-                BuiltinId::HashSetIsSubset => left.is_subset(&right),
-                BuiltinId::HashSetIsSuperset => left.is_superset(&right),
-                BuiltinId::HashSetIsDisjoint => left.is_disjoint(&right),
+            Ok(Value::Bool(match method {
+                "is_subset" => left.is_subset(&right),
+                "is_superset" => left.is_superset(&right),
+                "is_disjoint" => left.is_disjoint(&right),
                 _ => unreachable!(),
             }))
         }
-        BuiltinId::HashSetUnion
-        | BuiltinId::HashSetIntersection
-        | BuiltinId::HashSetDifference
-        | BuiltinId::HashSetSymmetricDifference => {
+        "union" | "intersection" | "difference" | "symmetric_difference" => {
             let other = hash_set(
                 arguments
                     .get(1)
@@ -184,13 +166,11 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             )?;
             let left = set.entries.borrow();
             let right = other.entries.borrow();
-            let entries = match id {
-                BuiltinId::HashSetUnion => left.union(&right).cloned().collect(),
-                BuiltinId::HashSetIntersection => left.intersection(&right).cloned().collect(),
-                BuiltinId::HashSetDifference => left.difference(&right).cloned().collect(),
-                BuiltinId::HashSetSymmetricDifference => {
-                    left.symmetric_difference(&right).cloned().collect()
-                }
+            let entries = match method {
+                "union" => left.union(&right).cloned().collect(),
+                "intersection" => left.intersection(&right).cloned().collect(),
+                "difference" => left.difference(&right).cloned().collect(),
+                "symmetric_difference" => left.symmetric_difference(&right).cloned().collect(),
                 _ => unreachable!(),
             };
             let element_type =
@@ -202,7 +182,7 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 element_type: RefCell::new(element_type),
             })))
         }
-        _ => Err(format!("unknown HashSet built-in `{id:?}`")),
+        _ => Err(format!("unknown HashSet method `{method}`")),
     }
 }
 

@@ -54,18 +54,7 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::HashMapGetCloned
                 | rils_builtins::BuiltinId::HashMapRemove
                 | rils_builtins::BuiltinId::HashMapKeysCloned
-                | rils_builtins::BuiltinId::HashMapValuesCloned
-                | rils_builtins::BuiltinId::HashSetClear
-                | rils_builtins::BuiltinId::HashSetContains
-                | rils_builtins::BuiltinId::HashSetInsert
-                | rils_builtins::BuiltinId::HashSetRemove
-                | rils_builtins::BuiltinId::HashSetIsSubset
-                | rils_builtins::BuiltinId::HashSetIsSuperset
-                | rils_builtins::BuiltinId::HashSetIsDisjoint
-                | rils_builtins::BuiltinId::HashSetUnion
-                | rils_builtins::BuiltinId::HashSetIntersection
-                | rils_builtins::BuiltinId::HashSetDifference
-                | rils_builtins::BuiltinId::HashSetSymmetricDifference),
+                | rils_builtins::BuiltinId::HashMapValuesCloned),
             ) => {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push((*method.receiver).clone());
@@ -74,20 +63,7 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::BtreeSetClear
-                | rils_builtins::BuiltinId::BtreeSetContains
-                | rils_builtins::BuiltinId::BtreeSetInsert
-                | rils_builtins::BuiltinId::BtreeSetRemove
-                | rils_builtins::BuiltinId::BtreeSetFirstCloned
-                | rils_builtins::BuiltinId::BtreeSetLastCloned
-                | rils_builtins::BuiltinId::BtreeSetIsSubset
-                | rils_builtins::BuiltinId::BtreeSetIsSuperset
-                | rils_builtins::BuiltinId::BtreeSetIsDisjoint
-                | rils_builtins::BuiltinId::BtreeSetUnion
-                | rils_builtins::BuiltinId::BtreeSetIntersection
-                | rils_builtins::BuiltinId::BtreeSetDifference
-                | rils_builtins::BuiltinId::BtreeSetSymmetricDifference
-                | rils_builtins::BuiltinId::BtreeMapClear
+                id @ (rils_builtins::BuiltinId::BtreeMapClear
                 | rils_builtins::BuiltinId::BtreeMapContainsKey
                 | rils_builtins::BuiltinId::BtreeMapInsert
                 | rils_builtins::BuiltinId::BtreeMapGetCloned

@@ -76,44 +76,43 @@ mod native {
         }
         /// Removes all elements.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::clear)]
+        #[rils_native_bridge]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Returns true when the value is present.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::contains)]
+        #[rils_native_bridge]
         pub fn contains(&self, value: &T) -> bool {
             self.0.contains(value)
         }
         /// Inserts a value and reports whether it was new.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::insert)]
         #[rils_native_bridge]
         pub fn insert(&mut self, value: T) -> bool {
             self.0.insert(value)
         }
         /// Removes a value and reports whether it was present.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::remove)]
+        #[rils_native_bridge]
         pub fn remove(&mut self, value: &T) -> bool {
             self.0.remove(value)
         }
         /// Returns true when every element is in the other set.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::is_subset)]
+        #[rils_native_bridge]
         pub fn is_subset(&self, other: &HashSet<T>) -> bool {
             self.0.is_subset(&other.0)
         }
         /// Returns true when the set contains every element of the other set.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::is_superset)]
+        #[rils_native_bridge]
         pub fn is_superset(&self, other: &HashSet<T>) -> bool {
             self.0.is_superset(&other.0)
         }
         /// Returns true when the sets share no elements.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::is_disjoint)]
+        #[rils_native_bridge]
         pub fn is_disjoint(&self, other: &HashSet<T>) -> bool {
             self.0.is_disjoint(&other.0)
         }
@@ -128,25 +127,25 @@ mod native {
     impl<T: Eq + Hash + Clone> HashSet<T> {
         /// Clones the union of two sets.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::union)]
+        #[rils_native_bridge]
         pub fn union(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.union(&other.0).cloned().collect())
         }
         /// Clones the intersection of two sets.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::intersection)]
+        #[rils_native_bridge]
         pub fn intersection(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.intersection(&other.0).cloned().collect())
         }
         /// Clones values that are not in the other set.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::difference)]
+        #[rils_native_bridge]
         pub fn difference(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.difference(&other.0).cloned().collect())
         }
         /// Clones values present in exactly one set.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::symmetric_difference)]
+        #[rils_native_bridge]
         pub fn symmetric_difference(&self, other: &HashSet<T>) -> HashSet<T> {
             Self(self.0.symmetric_difference(&other.0).cloned().collect())
         }

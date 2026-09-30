@@ -346,6 +346,18 @@ fn map_and_set_size_methods_use_native_symbols_without_ids() {
 }
 
 #[test]
+fn set_methods_use_native_symbols_without_ids() {
+    for owner in ["HashSet", "BTreeSet"] {
+        for member in builtin(owner).expect("set declaration").members {
+            assert_eq!(member.builtin_id, None, "{owner}::{}", member.name);
+            if let Some(symbol) = member.native_symbol {
+                assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
+            }
+        }
+    }
+}
+
+#[test]
 fn migrated_hash_constructors_keep_imports_and_native_iterators() {
     for (name, constructor) in [
         ("HashMap", "core::hash_map::new"),
@@ -471,6 +483,8 @@ fn legacy_sequence_ids_are_no_longer_defined() {
         .chain(std::iter::once(0x0300))
         .chain(std::iter::once(0x0308))
         .chain(std::iter::once(0x0401))
+        .chain(0x0600..=0x060E)
+        .chain(0x1300..=0x1311)
         .chain([
             0x0500, 0x0501, 0x0509, 0x050A, 0x0600, 0x0601, 0x060D, 0x060E, 0x1201, 0x1202, 0x120A,
             0x120B, 0x1301, 0x1302, 0x1310, 0x1311,
@@ -645,10 +659,9 @@ fn rils_standard_library_files_supply_type_member_and_variant_metadata() {
 
     let set = builtin("HashSet").expect("HashSet declaration");
     assert_eq!(set.type_parameters, &["T"]);
-    assert_eq!(
-        set.member("union").expect("HashSet::union").builtin_id,
-        Some(BuiltinId::HashSetUnion)
-    );
+    let union = set.member("union").expect("HashSet::union");
+    assert_eq!(union.builtin_id, None);
+    assert!(union.native_symbol.is_some());
 }
 
 #[test]
