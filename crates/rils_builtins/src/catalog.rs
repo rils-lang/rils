@@ -306,10 +306,7 @@ pub fn native_member_owner(
         owner
             .members
             .iter()
-            .find(|member| {
-                member.native_symbol == Some(symbol)
-                    || member.builtin_id.and_then(BuiltinId::canonical_path) == Some(symbol)
-            })
+            .find(|member| member.native_symbol == Some(symbol))
             .map(|member| (owner, member))
     })
 }

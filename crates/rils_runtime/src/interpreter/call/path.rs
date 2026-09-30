@@ -59,15 +59,7 @@ pub(super) fn resolve_associated_path(
         Value::StructType(definition) => {
             if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
                 && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
-                && let Some(symbol) =
-                    builtin
-                        .native_symbol
-                        .or(builtin.runtime_import)
-                        .or_else(|| {
-                            builtin
-                                .builtin_id
-                                .and_then(rils_builtins::BuiltinId::canonical_path)
-                        })
+                && let Some(symbol) = builtin.native_symbol.or(builtin.runtime_import)
                 && crate::runtime_builtins::requires_owned_native_call(symbol)
                 && let Some(signature) =
                     rils_frontend::standard_library::erased_builtin_member_signature(builtin)

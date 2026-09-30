@@ -147,14 +147,6 @@ mod indexed_iterator {
     rils_stdlib::iter_definition!(decl_rils_native);
 }
 
-pub fn call(
-    id: rils_builtins::BuiltinId,
-    arguments: &[crate::Value],
-) -> Option<Result<crate::Value, String>> {
-    id.canonical_path()
-        .and_then(|symbol| call_symbol(symbol, arguments))
-}
-
 pub fn call_symbol(
     symbol: &str,
     arguments: &[crate::Value],

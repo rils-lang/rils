@@ -79,18 +79,7 @@ pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
                 )),
             });
         }
-        let member = rils_builtins::native_member(symbol)?;
-        let id = member.builtin_id?;
-        if let Some(signature) = member.signature {
-            let expected = signature.parameters.len() + usize::from(member.receiver.is_some());
-            if arguments.len() != expected {
-                return Some(Err(format!(
-                    "native method `{symbol}` expects {expected} arguments, found {}",
-                    arguments.len()
-                )));
-            }
-        }
-        Some(call(id, arguments))
+        None
     })
 }
 
@@ -126,14 +115,6 @@ pub fn call_native_symbol_with_callback<E>(
 ) -> Option<Result<Value, NativeCallError<E>>> {
     native::call_callback_symbol(symbol, arguments, callback)
         .or_else(|| call_native_symbol(symbol, arguments).map(|result| result.map_err(Into::into)))
-}
-
-pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    native::call(id, arguments).unwrap_or_else(|| {
-        Err(format!(
-            "runtime built-in `{id:?}` has no direct implementation"
-        ))
-    })
 }
 
 fn call_owned_option_unwrap(mut arguments: Vec<Value>) -> Result<Value, String> {
