@@ -563,7 +563,7 @@ impl<'a> VirtualMachine<'a> {
                     let empty_type = self.module.native_imports[import]
                         .specialized_empty_collection_type()
                         .cloned();
-                    let value = if let Some(empty_type) = empty_type {
+                    let native_empty = empty_type.and_then(|empty_type| {
                         let mut structs = Vec::new();
                         let mut enums = Vec::new();
                         for definition in &self.module.types {
@@ -577,7 +577,10 @@ impl<'a> VirtualMachine<'a> {
                             &structs,
                             &enums,
                         )
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?
+                        .ok()
+                    });
+                    let value = if let Some(value) = native_empty {
+                        value
                     } else if crate::runtime_builtins::requires_owned_native_call(&symbol) {
                         let mut context = crate::runtime_builtins::NativeOwnedContext {
                             structs: Vec::new(),

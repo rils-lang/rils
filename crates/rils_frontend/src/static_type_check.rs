@@ -489,6 +489,21 @@ impl<'a> Checker<'a> {
                 for argument in arguments {
                     self.expression(argument);
                 }
+                if arguments.is_empty()
+                    && !span.source.is_generated()
+                    && let Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } =
+                        callee.as_ref()
+                    && let [.., owner, member] = segments.as_slice()
+                    && member == "new"
+                    && crate::standard_library::empty_native_constructor_symbol(owner).is_some()
+                    && matches!(self.ty(expression), Type::Named { name, arguments }
+                        if name == *owner && arguments.contains(&Type::Unknown))
+                {
+                    self.diagnostic(
+                        format!("cannot infer the type arguments of `{owner}::new()`; add a type annotation or explicit type arguments"),
+                        *span,
+                    );
+                }
                 if let Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } =
                     callee.as_ref()
                     && let Some((method, owner)) = segments.split_last()

@@ -50,6 +50,7 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 `HashMap<K, V>` 和 `HashSet<T>`。`BinaryHeap` 是最大优先队列，使用
 `push/pop/peek_cloned` 处理整数、字符或字符串优先级；`BTreeMap` 按键排序。完整用法见
 [集合章节](docs/language/05-data-types-and-collections.md)。
+`Vec::new()` 等零参数泛型集合构造需从类型标注或显式泛型参数确定类型，例如 `let values: Vec<i32> = Vec::new();`。
 数组、`Vec<T>`、Map 和 Set 还提供 `iter()` 借用遍历，遍历后可继续使用原集合。数组和 `Vec<T>` 的拥有型 `into_iter()` 按 `next()` 的调用逐项移出元素。
 `Iterator::next(&mut iterator)` 等显式 trait 路径调用在解释器和字节码 VM 中均可用。
 Struct 和 enum 支持 `#[derive(Clone)]`、`#[derive(Copy)]`、`#[derive(Eq, Hash)]`；struct 也支持 `#[derive(Default)]`。`Clone` 逐字段调用对应 trait 实现，`Copy` 要求字段均为 Copy。

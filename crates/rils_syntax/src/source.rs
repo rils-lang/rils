@@ -5,9 +5,14 @@ pub struct SourceId(pub u32);
 
 impl SourceId {
     pub const UNKNOWN: Self = Self(0);
+    pub const GENERATED_BIT: u32 = 0x8000_0000;
 
     pub const fn new(value: u32) -> Self {
         Self(value)
+    }
+
+    pub const fn is_generated(self) -> bool {
+        self.0 & Self::GENERATED_BIT != 0
     }
 }
 

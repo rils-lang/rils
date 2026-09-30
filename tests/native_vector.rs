@@ -11,6 +11,32 @@ fn run_both(source: &str) -> [Value; 3] {
 }
 
 #[test]
+fn empty_vec_constructors_require_a_concrete_item_type() {
+    for source in [
+        "let values: Vec<i32> = Vec::new(); values",
+        "let values = Vec::<i32>::new(); values",
+    ] {
+        for value in run_both(source) {
+            assert!(matches!(value, Value::Dynamic(_)), "{source}");
+        }
+    }
+
+    let source = "let values = Vec::new(); values";
+    assert!(
+        compile(source)
+            .err()
+            .expect("untyped constructor must fail")
+            .to_string()
+            .contains("cannot infer the type arguments of `Vec::new()`")
+    );
+    let interpreted_error = eval_value(source).unwrap_err().to_string();
+    assert!(
+        interpreted_error.contains("cannot infer the type arguments of `Vec::new()`"),
+        "{interpreted_error}"
+    );
+}
+
+#[test]
 fn typed_copy_vec_uses_native_storage() {
     let source = "let mut values: Vec<i32> = Vec::new(); values.push(3); values.push(5); values";
     for value in run_both(source) {
@@ -90,7 +116,7 @@ fn native_vec_methods_and_borrowed_iteration_match_backends() {
             3,
         ),
         (
-            "let mut v: Vec<i32> = Vec::new(); let mut more = Vec::new(); more.push(3); v.extend(more); v.pop().unwrap()",
+            "let mut v: Vec<i32> = Vec::new(); let mut more: Vec<i32> = Vec::new(); more.push(3); v.extend(more); v.pop().unwrap()",
             3,
         ),
     ] {

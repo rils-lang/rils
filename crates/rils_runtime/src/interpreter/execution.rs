@@ -188,7 +188,22 @@ impl Interpreter {
                     .as_ref()
                     .map(|ty| expand_type_aliases(ty, &environment, *span))
                     .transpose()?;
-                let value = self.evaluate(initializer, environment.clone())?;
+                let inferred_type = self
+                    .semantic_expression_ids
+                    .as_ref()
+                    .and_then(|ids| ids.get(initializer))
+                    .and_then(|id| self.typeck_results.as_ref()?.expression_type(id))
+                    .cloned();
+                let contextual_type = type_annotation.as_ref().or(inferred_type.as_ref());
+                let value = match contextual_type.and_then(|expected| {
+                    self.construct_contextual_empty(initializer, expected, &environment)
+                }) {
+                    Some(value) => {
+                        self.tick(initializer.span())?;
+                        value?
+                    }
+                    None => self.evaluate(initializer, environment.clone())?,
+                };
                 if value.contains_reference() {
                     if Rc::ptr_eq(&environment, &self.globals) {
                         return Err(RuntimeError::new(

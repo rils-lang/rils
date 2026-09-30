@@ -87,6 +87,9 @@ let last = values.pop();
 let copied = Vec::from([1, 2, 3]);
 ```
 
+`Vec::new()` 等零参数泛型集合构造需要确定元素类型。可写 `let values: Vec<i32> = Vec::new();`
+或 `let values = Vec::<i32>::new();`；`let values = Vec::new();` 无法确定类型，会在编译时报错。
+
 `pop()` 返回 `Option<T>`。数组和 Vec 实现拥有型 `IntoIterator`，所以 `for value in values`
 会消费容器。`values.iter()` 返回借用型 `Iter<&T>`，可通过 `next()` 或 `for` 读取元素，
 不会消费容器：

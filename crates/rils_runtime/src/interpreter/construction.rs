@@ -1,6 +1,64 @@
 use super::*;
 
 impl Interpreter {
+    pub(super) fn construct_contextual_empty(
+        &self,
+        expression: &Expr,
+        expected: &Type,
+        environment: &EnvironmentRef,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let Type::Named {
+            name,
+            arguments: type_arguments,
+        } = expected
+        else {
+            return None;
+        };
+        let Expr::Call {
+            callee,
+            arguments,
+            span,
+        } = expression
+        else {
+            return None;
+        };
+        if !arguments.is_empty() {
+            return None;
+        }
+        let segments = match callee.as_ref() {
+            Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } => segments,
+            _ => return None,
+        };
+        let [.., owner, member] = segments.as_slice() else {
+            return None;
+        };
+        if owner != name
+            || member != "new"
+            || rils_frontend::standard_library::empty_native_constructor_symbol(owner).is_none()
+        {
+            return None;
+        }
+        if type_arguments.contains(&Type::Unknown) {
+            if span.source.is_generated() {
+                return None;
+            }
+            return Some(Err(RuntimeError::new(
+                format!(
+                    "cannot infer the type arguments of `{name}::new()`; add a type annotation or explicit type arguments"
+                ),
+                *span,
+            )));
+        }
+        if !rils_frontend::standard_library::is_concrete_native_type(expected) {
+            return None;
+        }
+        let (structs, enums) = environment.borrow().visible_type_definitions();
+        Some(
+            crate::value::dynamic_sequence::empty_with_definitions(expected, &structs, &enums)
+                .map_err(|message| RuntimeError::new(message, *span)),
+        )
+    }
+
     pub(super) fn construct_record(
         &self,
         path: &[String],

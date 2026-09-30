@@ -1115,6 +1115,24 @@ fn specialized_empty_collection_imports_check_the_declared_owner() {
 }
 
 #[test]
+fn annotated_empty_constructor_keeps_its_concrete_native_return_type() {
+    let module = compile("let values: Vec<i32> = Vec::new(); values").unwrap();
+    let import = module
+        .native_imports
+        .iter()
+        .find(|import| import.symbol.ends_with("::vec::new"))
+        .expect("Vec constructor import");
+    assert_eq!(
+        import.signature.return_type,
+        Type::Named {
+            name: "Vec".into(),
+            arguments: vec![Type::I32],
+        }
+    );
+    assert!(import.specialized_empty_collection_type().is_some());
+}
+
+#[test]
 fn exported_callback_function_native_imports_are_verified() {
     let source = "fn id(value: i32) -> i32 { value } core::ops::apply_twice(3, id)";
     let module = compile(source).unwrap();
@@ -1341,7 +1359,7 @@ fn compiles_vec_construction_methods_and_owned_iteration() {
 fn compiles_hash_collections_with_interpreter_parity() {
     assert_matches_interpreter(
         r#"
-            let mut inferred = std::collections::HashMap::new();
+            let mut inferred: HashMap<string, i32> = std::collections::HashMap::new();
             let key = "answer";
             inferred.insert(key.clone(), 42);
             inferred.get_cloned(&key).unwrap()

@@ -235,7 +235,7 @@ fn evaluates_btree_map_ordered_operations() {
     "#;
     assert_eq!(eval_value(source).unwrap(), Value::from_i32(10));
     assert_eq!(
-        eval_value(r#"let mut map = std::collections::BTreeMap::new(); map.insert("b", 2); map.insert("a", 1); map.first_key_cloned().unwrap()"#).unwrap(),
+        eval_value(r#"let mut map: BTreeMap<string, i32> = std::collections::BTreeMap::new(); map.insert("b", 2); map.insert("a", 1); map.first_key_cloned().unwrap()"#).unwrap(),
         Value::from_string("a")
     );
     assert_eq!(

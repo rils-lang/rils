@@ -290,7 +290,9 @@ fn generated_source_id(
 ) -> rils_syntax::SourceId {
     let serial = u32::try_from(generated_sources.len() + 1).expect("too many generated sources");
     assert!(serial <= u16::MAX.into(), "too many generated sources");
-    let source_id = rils_syntax::SourceId(0x8000_0000 | ((owner_source.0 & 0x7fff) << 16) | serial);
+    let source_id = rils_syntax::SourceId(
+        rils_syntax::SourceId::GENERATED_BIT | ((owner_source.0 & 0x7fff) << 16) | serial,
+    );
     generated_sources.push(rils_syntax::SourceFile {
         id: source_id,
         name: format!(

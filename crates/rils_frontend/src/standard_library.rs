@@ -2,6 +2,50 @@ use std::collections::HashMap;
 
 use crate::types::{FunctionSignature, Type};
 
+/// A declared zero-argument native `new` method whose result needs its owner
+/// type supplied by the call site.
+pub fn empty_native_constructor_symbol(owner: &str) -> Option<&'static str> {
+    let declaration = rils_builtins::builtin(owner)?;
+    let member = declaration.member("new")?;
+    (declaration.kind == rils_builtins::BuiltinKind::Struct
+        && member.receiver.is_none()
+        && member
+            .signature
+            .is_some_and(|signature| signature.parameters.is_empty()))
+    .then_some(member.native_symbol)
+    .flatten()
+}
+
+/// Whether a type has no unresolved generic, associated, or inferred part.
+pub fn is_concrete_native_type(ty: &Type) -> bool {
+    match ty {
+        Type::Unit
+        | Type::Bool
+        | Type::Integer(_)
+        | Type::Float(_)
+        | Type::Char
+        | Type::String
+        | Type::ConstUsize(_) => true,
+        Type::Named { arguments, .. } | Type::Tuple(arguments) => {
+            arguments.iter().all(is_concrete_native_type)
+        }
+        Type::Array { element, .. } | Type::Option(element) => is_concrete_native_type(element),
+        Type::Result(ok, error) => is_concrete_native_type(ok) && is_concrete_native_type(error),
+        Type::IntegerVariable(_)
+        | Type::FloatVariable(_)
+        | Type::IntegerInference(_)
+        | Type::FloatInference(_)
+        | Type::ArrayParameter { .. }
+        | Type::Slice(_)
+        | Type::Reference { .. }
+        | Type::Function { .. }
+        | Type::Associated { .. }
+        | Type::Variable(_)
+        | Type::BoundVariable { .. }
+        | Type::Unknown => false,
+    }
+}
+
 pub fn standard_function_signature(name: &str) -> Option<FunctionSignature> {
     if let Some(declaration) = rils_builtins::builtin_function(name) {
         let signature = declaration

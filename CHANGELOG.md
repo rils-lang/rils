@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- **破坏性变更：** `Vec::new()` 等零参数泛型集合构造在用户代码中必须有可确定的泛型参数；使用 `let values: Vec<i32> = Vec::new();` 或 `Vec::<i32>::new()`。原先先创建未知类型集合、再通过后续 `push` / `insert` 推断类型的写法会在编译时报错。类型可解析时，构造调用直接创建原生存储。
+
 - **破坏性变更：** 借用的数组及 `&[T]` 不再接受消费式 `into_iter()`；保留元素所有权时改用 `iter()`，需要移出元素时对拥有型数组调用 `into_iter()`。标准库定义移除了过渡性的 `#[rils_indexed_view]` 标记及 `BuiltinMember::indexed_view` 字段；数组与切片可用的方法现在根据 receiver 和 trait 签名判定。
 
 - `Type::method(receiver, ...)` 现在与 `receiver.method(...)`、`Trait::method(receiver, ...)` 一样支持脚本固有方法和唯一的 trait 方法；原生 `Vec` 等容器也可通过类型路径调用实例方法。多个 trait 的同名方法会在静态检查时报歧义，类型路径需显式传入 receiver。

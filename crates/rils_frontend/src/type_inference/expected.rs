@@ -16,6 +16,24 @@ impl Inferencer<'_> {
                 Expr::Call {
                     callee, arguments, ..
                 },
+                Type::Named { name, .. },
+            ) if arguments.is_empty()
+                && is_known(&expected)
+                && matches!(callee.as_ref(),
+                    Expr::Path { segments, .. } | Expr::GenericPath { segments, .. }
+                        if segments.len() >= 2
+                            && segments[segments.len() - 2] == *name
+                            && segments.last().is_some_and(|member| member == "new")
+                            && crate::standard_library::empty_native_constructor_symbol(name)
+                                .is_some()) =>
+            {
+                let id = self.expression_ids.id(expression);
+                self.result.expression_types_by_id.insert(id, expected);
+            }
+            (
+                Expr::Call {
+                    callee, arguments, ..
+                },
                 Type::Option(inner),
             ) if matches!(callee.as_ref(), Expr::Variable { name, .. } if name == "Some") => {
                 if let Some(argument) = arguments.first() {

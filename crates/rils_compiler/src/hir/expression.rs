@@ -380,9 +380,20 @@ impl<'a> FunctionLowerer<'a> {
                         && let Some(symbol) = rils_builtins::builtin_member(owner, member)
                             .and_then(|declaration| declaration.native_symbol)
                     {
+                        let return_type = (arguments.is_empty()
+                            && member == "new"
+                            && rils_frontend::standard_library::empty_native_constructor_symbol(
+                                owner,
+                            ) == Some(symbol))
+                        .then(|| self.expression_type(expression))
+                        .flatten()
+                        .filter(|ty| {
+                            matches!(ty, Type::Named { name, .. } if name == owner)
+                                && rils_frontend::standard_library::is_concrete_native_type(ty)
+                        });
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),
-                            return_type: None,
+                            return_type,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
