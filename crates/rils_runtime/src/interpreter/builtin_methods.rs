@@ -45,10 +45,9 @@ impl Interpreter {
                 values.extend_from_slice(arguments);
                 self.call_native_symbol(symbol, &values, span)
             }
-            BuiltinMethod::Runtime(
-                rils_builtins::BuiltinId::RangeIntoIter
-                | rils_builtins::BuiltinId::IteratorIntoIter,
-            ) => Ok((*method.receiver).clone()),
+            BuiltinMethod::Runtime(rils_builtins::BuiltinId::IteratorIntoIter) => {
+                Ok((*method.receiver).clone())
+            }
             BuiltinMethod::Runtime(rils_builtins::BuiltinId::Clone) => {
                 let value = match method.receiver.as_ref() {
                     Value::Reference(reference) => reference

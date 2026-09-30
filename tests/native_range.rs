@@ -42,6 +42,16 @@ fn trait_qualified_range_next_uses_the_native_symbol_in_both_backends() {
 }
 
 #[test]
+fn range_into_iter_uses_the_iterator_blanket_impl() {
+    let source = "let mut values = (1..3).into_iter(); values.next() == Some(1) && values.next() == Some(2) && values.next() == None";
+    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    let compiled = compile(source).unwrap();
+    assert_eq!(compiled.execute_value().unwrap(), Value::Bool(true));
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+}
+
+#[test]
 fn range_values_use_native_storage_in_both_backends() {
     let interpreted = eval_value("1..3").unwrap();
     assert!(matches!(interpreted, Value::Native(_)));

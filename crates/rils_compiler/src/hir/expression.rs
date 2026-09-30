@@ -597,15 +597,6 @@ impl<'a> FunctionLowerer<'a> {
                     }) {
                         if name == "into_iter"
                             && arguments.is_empty()
-                            && matches!(builtin, rils_builtins::BuiltinId::RangeIntoIter)
-                        {
-                            return Ok(HirExpression::IntoIterator {
-                                value: Box::new(self.expression(object)?),
-                                span: *span,
-                            });
-                        }
-                        if name == "into_iter"
-                            && arguments.is_empty()
                             && builtin == rils_builtins::BuiltinId::IteratorIntoIter
                         {
                             return self.expression(object);

@@ -27,8 +27,7 @@ rils_builtins_macros::builtin_id_declarations!("builtin_ids.toml");
 impl BuiltinId {
     /// Returns whether this runtime member has a direct bytecode instruction.
     pub fn has_direct_runtime_call(self) -> bool {
-        runtime_member(self).is_some()
-            && !matches!(self, Self::IteratorIntoIter | Self::RangeIntoIter)
+        runtime_member(self).is_some() && !matches!(self, Self::IteratorIntoIter)
     }
 
     /// Returns whether two member IDs use the same type-erased runtime implementation.
@@ -267,8 +266,7 @@ pub fn is_iterator_default_builtin(id: BuiltinId) -> bool {
 }
 
 /// IDs retired from declarations while the remaining runtime dispatch is migrated.
-pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] =
-    &[BuiltinId::RangeIntoIter, BuiltinId::IteratorIntoIter];
+pub const RETIRED_COMPATIBILITY_IDS: &[BuiltinId] = &[BuiltinId::IteratorIntoIter];
 
 pub fn is_iterator_default_method(name: &str) -> bool {
     builtin_member("Iterator", name)
