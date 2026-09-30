@@ -104,10 +104,6 @@ pub(crate) fn builtin_runtime_member(
         Value::BTreeMap(_) => "BTreeMap",
         Value::BTreeSet(_) => "BTreeSet",
         Value::HashSet(_) => "HashSet",
-        Value::Rc(_) => "Rc",
-        Value::Weak(_) => "Weak",
-        Value::Cell(_) => "Cell",
-        Value::RefCell(_) => "RefCell",
         Value::VecDeque(_) => "VecDeque",
         Value::BinaryHeap(_) => "BinaryHeap",
         Value::Native(object) => match object.descriptor().rils_type() {

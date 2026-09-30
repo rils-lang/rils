@@ -174,18 +174,6 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                 && merge_types(&arguments[0], &map.key_type.borrow()).is_some()
                 && merge_types(&arguments[1], &map.value_type.borrow()).is_some()
         }
-        (Type::Named { name, arguments }, Value::Rc(value)) if name == "Rc" => {
-            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
-        }
-        (Type::Named { name, arguments }, Value::Weak(value)) if name == "Weak" => {
-            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
-        }
-        (Type::Named { name, arguments }, Value::Cell(value)) if name == "Cell" => {
-            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
-        }
-        (Type::Named { name, arguments }, Value::RefCell(value)) if name == "RefCell" => {
-            arguments.len() == 1 && merge_types(&arguments[0], &value.type_argument).is_some()
-        }
         (Type::Named { name, arguments }, Value::VecDeque(value)) if name == "VecDeque" => {
             arguments.len() == 1
                 && merge_types(
@@ -620,22 +608,6 @@ fn type_of_value(value: &Value) -> Option<Type> {
                     .clone()
                     .unwrap_or(Type::Unknown),
             ],
-        }),
-        Value::Rc(value) => Some(Type::Named {
-            name: "Rc".into(),
-            arguments: vec![value.type_argument.clone()],
-        }),
-        Value::Weak(value) => Some(Type::Named {
-            name: "Weak".into(),
-            arguments: vec![value.type_argument.clone()],
-        }),
-        Value::Cell(value) => Some(Type::Named {
-            name: "Cell".into(),
-            arguments: vec![value.type_argument.clone()],
-        }),
-        Value::RefCell(value) => Some(Type::Named {
-            name: "RefCell".into(),
-            arguments: vec![value.type_argument.clone()],
         }),
         Value::VecDeque(value) => Some(Type::Named {
             name: "VecDeque".into(),

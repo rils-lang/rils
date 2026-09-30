@@ -5,7 +5,6 @@ pub(super) enum CoreImport {
     Native(&'static str),
     TypeOf,
     Assert,
-    RcNew,
 }
 
 pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
@@ -38,7 +37,6 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
             CoreImport::Native(rils_builtins::builtin_member("Option", name)?.native_symbol?)
         }
         "core::assert" => CoreImport::Assert,
-        "core::rc::rc::new" => CoreImport::RcNew,
         _ => return None,
     })
 }
@@ -64,16 +62,5 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             )),
             None => Err("`assert` expects at least one argument".into()),
         },
-        CoreImport::RcNew => {
-            let value = arguments
-                .first()
-                .cloned()
-                .ok_or_else(|| "Rc::new expects one value".to_owned())?;
-            let type_argument = Type::of_value(&value).unwrap_or(Type::Unknown);
-            Ok(Value::Rc(Rc::new(rils_execution::value::RcValue {
-                value,
-                type_argument,
-            })))
-        }
     }
 }

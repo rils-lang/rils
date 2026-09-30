@@ -2,7 +2,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    rc::{Rc, Weak as StdWeak},
+    rc::Rc,
 };
 
 use crate::{
@@ -218,30 +218,6 @@ pub struct IndexedStorage {
 }
 
 #[derive(Clone)]
-pub struct RcValue {
-    pub value: Value,
-    pub type_argument: Type,
-}
-
-#[derive(Clone)]
-pub struct WeakValue {
-    pub value: StdWeak<RcValue>,
-    pub type_argument: Type,
-}
-
-#[derive(Clone)]
-pub struct CellValue {
-    pub value: RefCell<Value>,
-    pub type_argument: Type,
-}
-
-#[derive(Clone)]
-pub struct RefCellValue {
-    pub storage: StorageRef,
-    pub type_argument: Type,
-}
-
-#[derive(Clone)]
 pub struct VecDequeValue {
     pub elements: RefCell<VecDeque<Value>>,
     pub element_type: RefCell<Option<Type>>,
@@ -298,9 +274,6 @@ pub enum BuiltinType {
 
 #[derive(Clone, Copy)]
 pub enum BuiltinFunction {
-    RcNew,
-    CellNew,
-    RefCellNew,
     IntegerIntrinsic {
         symbol: &'static str,
         target: crate::IntegerType,
@@ -345,10 +318,6 @@ pub enum Value {
     BTreeMap(Rc<BTreeMapValue>),
     BTreeSet(Rc<BTreeSetValue>),
     HashSet(Rc<HashSetValue>),
-    Rc(Rc<RcValue>),
-    Weak(Rc<WeakValue>),
-    Cell(Rc<CellValue>),
-    RefCell(Rc<RefCellValue>),
     VecDeque(Rc<VecDequeValue>),
     BinaryHeap(Rc<BinaryHeapValue>),
     OwnedIterator(Rc<OwnedIteratorValue>),
@@ -507,11 +476,7 @@ impl Value {
             Self::HostObject(object) => object.type_definition.copy,
             Self::Native(object) => object.descriptor().is_copy(),
             Self::Dynamic(object) => object.descriptor().layout().is_copy(),
-            Self::Rc(_)
-            | Self::Weak(_)
-            | Self::Cell(_)
-            | Self::RefCell(_)
-            | Self::VecDeque(_)
+            Self::VecDeque(_)
             | Self::BinaryHeap(_)
             | Self::Vec(_)
             | Self::HashMap(_)
@@ -916,16 +881,6 @@ impl Value {
             }
             Self::HashSet(_) => {
                 Type::of_value(self).map_or_else(|| "HashSet".into(), |ty| ty.to_string())
-            }
-            Self::Rc(_) => Type::of_value(self).map_or_else(|| "Rc".into(), |ty| ty.to_string()),
-            Self::Weak(_) => {
-                Type::of_value(self).map_or_else(|| "Weak".into(), |ty| ty.to_string())
-            }
-            Self::Cell(_) => {
-                Type::of_value(self).map_or_else(|| "Cell".into(), |ty| ty.to_string())
-            }
-            Self::RefCell(_) => {
-                Type::of_value(self).map_or_else(|| "RefCell".into(), |ty| ty.to_string())
             }
             Self::VecDeque(_) => {
                 Type::of_value(self).map_or_else(|| "VecDeque".into(), |ty| ty.to_string())
