@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use rils_stdlib::stdlib::cell::ErasedRefCell;
-use rils_value::{DynamicValueRef, SequenceItemLease};
+use rils_value::{CompactDynamicObject, DynamicValueRef, SequenceItemLease};
 
 use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
@@ -28,19 +28,19 @@ enum ReferenceTarget {
         index: usize,
     },
     DynamicIndexedElement {
-        sequence: DynamicObject,
+        sequence: CompactDynamicObject<Value>,
         index: usize,
         field: Option<usize>,
         _lease: SequenceItemLease,
         codec: Option<Rc<NativeRecordCodec>>,
     },
     DynamicCell {
-        cell: DynamicObject,
+        cell: CompactDynamicObject<Value>,
         structs: Rc<Vec<Rc<StructType>>>,
         enums: Rc<Vec<Rc<EnumType>>>,
     },
     DynamicField {
-        object: DynamicObject,
+        object: CompactDynamicObject<Value>,
         field: usize,
         structs: Rc<Vec<Rc<StructType>>>,
         enums: Rc<Vec<Rc<EnumType>>>,
@@ -223,7 +223,7 @@ impl ReferenceValue {
         Ok(Self {
             mutable,
             target: ReferenceTarget::DynamicIndexedElement {
-                sequence,
+                sequence: sequence.into_compact(),
                 index,
                 field,
                 _lease: lease,
@@ -248,7 +248,7 @@ impl ReferenceValue {
         Ok(Self {
             mutable,
             target: ReferenceTarget::DynamicCell {
-                cell,
+                cell: cell.into_compact(),
                 structs: Rc::new(structs),
                 enums: Rc::new(enums),
             },
@@ -268,7 +268,7 @@ impl ReferenceValue {
         Ok(Self {
             mutable,
             target: ReferenceTarget::DynamicField {
-                object,
+                object: object.into_compact(),
                 field,
                 structs: Rc::new(structs),
                 enums: Rc::new(enums),
@@ -353,38 +353,56 @@ impl ReferenceValue {
                 field,
                 codec,
                 ..
-            } => Self::new_guarded_dynamic_indexed_field_with_codec(
-                sequence.clone(),
-                *index,
-                *field,
-                mutable,
-                self._guard.clone(),
-                codec.clone(),
-            ),
+            } => {
+                let ledger = sequence.with(|value| value.sequence_borrows())??;
+                let lease = ledger.reference(*index)?;
+                Ok(Self {
+                    mutable,
+                    target: ReferenceTarget::DynamicIndexedElement {
+                        sequence: sequence.clone(),
+                        index: *index,
+                        field: *field,
+                        _lease: lease,
+                        codec: codec.clone(),
+                    },
+                    _guard: self._guard.clone(),
+                })
+            }
             ReferenceTarget::DynamicCell {
                 cell,
                 structs,
                 enums,
-            } => Self::new_dynamic_cell(
-                cell.clone(),
-                mutable,
-                self._guard.clone(),
-                structs.as_ref().clone(),
-                enums.as_ref().clone(),
-            ),
+            } => {
+                cell.with(|payload| {
+                    payload.with::<ErasedRefCell, _>(|value| {
+                        value.references.set(value.references.get() + 1);
+                    })
+                })??;
+                Ok(Self {
+                    mutable,
+                    target: ReferenceTarget::DynamicCell {
+                        cell: cell.clone(),
+                        structs: structs.clone(),
+                        enums: enums.clone(),
+                    },
+                    _guard: self._guard.clone(),
+                })
+            }
             ReferenceTarget::DynamicField {
                 object,
                 field,
                 structs,
                 enums,
-            } => Self::new_dynamic_field(
-                object.clone(),
-                *field,
+            } => Ok(Self {
                 mutable,
-                self._guard.clone(),
-                structs.as_ref().clone(),
-                enums.as_ref().clone(),
-            ),
+                target: ReferenceTarget::DynamicField {
+                    object: object.clone(),
+                    field: *field,
+                    structs: structs.clone(),
+                    enums: enums.clone(),
+                },
+                _guard: self._guard.clone(),
+            }),
             ReferenceTarget::MapKey { map, key } => {
                 Self::new_map_key(map.clone(), key.clone(), self._guard.clone())
             }
@@ -437,10 +455,15 @@ impl ReferenceValue {
                     })
                 })??,
                 None => {
+                    let item = sequence.with(|payload| {
+                        payload.with_sequence_item(*index, |item| {
+                            rils_stdlib::native::registry().clone_borrowed_element(item)
+                        })
+                    })???;
                     if let Some(codec) = codec {
-                        super::dynamic_sequence::borrowed_item_with_codec(sequence, *index, codec)
+                        codec.from_native(item)
                     } else {
-                        super::dynamic_sequence::borrowed_item(sequence, *index)
+                        super::record_codec::from_native(item)
                     }
                 }
             },

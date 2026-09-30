@@ -9,6 +9,64 @@ enum Storage {
     Shared(Rc<RefCell<DynamicValue>>),
 }
 
+enum CompactStorage {
+    Inline(Box<RefCell<DynamicValue>>),
+    Shared(Rc<RefCell<DynamicValue>>),
+}
+
+/// An owned, compact handle for a Rils reference. Shared native values only
+/// clone the storage pointer; inline values move behind a box when referenced.
+pub struct CompactDynamicObject<V> {
+    descriptor: Rc<DynamicType<V>>,
+    storage: CompactStorage,
+}
+
+impl<V> Clone for CompactDynamicObject<V> {
+    fn clone(&self) -> Self {
+        let storage = match &self.storage {
+            CompactStorage::Inline(value) => CompactStorage::Inline(Box::new(RefCell::new(
+                value
+                    .borrow()
+                    .copy_owned()
+                    .expect("inline dynamic layout is Copy"),
+            ))),
+            CompactStorage::Shared(value) => CompactStorage::Shared(value.clone()),
+        };
+        Self {
+            descriptor: self.descriptor.clone(),
+            storage,
+        }
+    }
+}
+
+impl<V> CompactDynamicObject<V> {
+    pub fn descriptor(&self) -> &DynamicType<V> {
+        &self.descriptor
+    }
+
+    pub fn with<R>(&self, f: impl FnOnce(&DynamicValue) -> R) -> Result<R, String> {
+        let value = match &self.storage {
+            CompactStorage::Inline(value) => value.as_ref(),
+            CompactStorage::Shared(value) => value.as_ref(),
+        };
+        value
+            .try_borrow()
+            .map(|value| f(&value))
+            .map_err(|_| "dynamic value is already mutably accessed".to_owned())
+    }
+
+    pub fn with_mut<R>(&self, f: impl FnOnce(&mut DynamicValue) -> R) -> Result<R, String> {
+        let value = match &self.storage {
+            CompactStorage::Inline(value) => value.as_ref(),
+            CompactStorage::Shared(value) => value.as_ref(),
+        };
+        value
+            .try_borrow_mut()
+            .map(|mut value| f(&mut value))
+            .map_err(|_| "dynamic value is already accessed".to_owned())
+    }
+}
+
 /// A dynamically laid-out value with the same shallow-handle semantics as
 /// `NativeObject`. Copy layouts stay inline in the handle.
 pub struct DynamicObject<V> {
@@ -35,6 +93,16 @@ impl<V> Clone for DynamicObject<V> {
 }
 
 impl<V> DynamicObject<V> {
+    pub fn into_compact(self) -> CompactDynamicObject<V> {
+        let storage = match self.storage {
+            Storage::Inline(value) => CompactStorage::Inline(Box::new(value)),
+            Storage::Shared(value) => CompactStorage::Shared(value),
+        };
+        CompactDynamicObject {
+            descriptor: self.descriptor,
+            storage,
+        }
+    }
     pub fn new(descriptor: Rc<DynamicType<V>>, value: DynamicValue) -> Result<Self, String> {
         if !value.descriptor().compatible_with(descriptor.layout()) {
             return Err("dynamic value layout does not match its type".into());

@@ -91,6 +91,9 @@ fn two_mutable_handles_to_one_native_element_use_short_borrows() {
     first.write(Value::from_i32(7)).unwrap();
     assert_eq!(second.read().unwrap().as_i32(), Some(7));
     second.write(Value::from_i32(9)).unwrap();
+    let reborrowed = second.reborrow(true).unwrap();
+    reborrowed.write(Value::from_i32(11)).unwrap();
+    assert_eq!(first.read().unwrap().as_i32(), Some(11));
     assert!(
         object
             .with_mut(|payload| payload
@@ -106,9 +109,19 @@ fn two_mutable_handles_to_one_native_element_use_short_borrows() {
             .is_err()
     );
     drop(second);
+    drop(reborrowed);
     object
         .with_mut(|payload| payload.push_sequence_item(DynamicValue::from_rust(item, 10).unwrap()))
         .unwrap()
         .unwrap();
     assert_eq!(object.with(|payload| payload.sequence_len()), Ok(Ok(2)));
+}
+
+#[test]
+fn reference_handle_stays_compact() {
+    assert!(
+        std::mem::size_of::<ReferenceValue>() <= 80,
+        "reference handle grew to {} bytes",
+        std::mem::size_of::<ReferenceValue>()
+    );
 }
