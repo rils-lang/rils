@@ -1,5 +1,5 @@
 use rils_builtins::{
-    BuiltinBackend, BuiltinDeclaration, BuiltinId, BuiltinKind, BuiltinMember, BuiltinMemberKind,
+    BuiltinBackend, BuiltinDeclaration, BuiltinKind, BuiltinMember, BuiltinMemberKind,
     BuiltinSignature, BuiltinTraitImpl, ReceiverMode, TypePattern,
 };
 use rils_stdlib_macros::{
@@ -32,7 +32,7 @@ mod native {
 
     impl Choice {
         #[export_rils]
-        #[rils_legacy_id(core::fixture::choice::is_some)]
+        #[rils_native_bridge]
         pub fn is_some(&self) -> bool {
             matches!(self, Self::Some(value) if *value >= 0)
         }
@@ -71,11 +71,6 @@ mod sample_metadata {
 
 mod choice_metadata {
     use super::*;
-    macro_rules! builtin_id {
-        ("core::fixture::choice::is_some") => {
-            BuiltinId::IntegerTryFrom
-        };
-    }
     choice_definition!(decl_rils_metadata);
 }
 
@@ -106,10 +101,7 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
         sample.member("new").unwrap().native_symbol,
         Some("core::fixture::sample::new")
     );
-    assert_eq!(
-        choice.member("is_some").unwrap().builtin_id,
-        Some(BuiltinId::IntegerTryFrom)
-    );
+    assert_eq!(choice.member("is_some").unwrap().builtin_id, None);
     assert_eq!(
         choice.member("is_some").unwrap().native_symbol,
         Some("core::fixture::choice::is_some")

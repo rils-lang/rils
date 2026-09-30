@@ -28,7 +28,7 @@ mod native {
 
     impl Legacy {
         #[export_rils]
-        #[rils_legacy_id(core::fixture::old)]
+        #[rils_import(core::fixture::old)]
         pub fn old(&self) -> usize {
             1
         }

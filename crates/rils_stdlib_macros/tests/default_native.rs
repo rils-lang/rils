@@ -75,7 +75,7 @@ fn exported_queries_invoke_the_rust_body_without_a_native_marker_or_method_list(
 }
 
 #[test]
-fn explicit_compatibility_bindings_do_not_generate_native_calls() {
+fn explicit_import_bindings_do_not_generate_native_calls() {
     assert_eq!(fixture::Legacy::new().old(), 1);
     for symbol in ["core::fixture::legacy::old", "core::fixture::legacy::new"] {
         assert_eq!(generated::legacy::call_symbol(symbol, &[]), None);

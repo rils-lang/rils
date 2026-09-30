@@ -45,7 +45,7 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
                 "Iter" => quote!(super::super::indexed_iter::#name(arguments)),
                 _ => return Err(Error::new_spanned(
                     &method.sig,
-                    "exported native receiver has no value adapter; implement its conversion or explicitly bind an existing #[rils_legacy_id(...)] or #[rils_import(...)]",
+                    "exported native receiver has no value adapter; implement its conversion or use #[rils_import(...)]",
                 )),
             };
             Ok(quote! {

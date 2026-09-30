@@ -390,14 +390,13 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             let documentation = documentation(&method.attrs);
             let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
             let binding = method_binding::MethodBinding::parse(method)?;
-            let (native_symbol, builtin_id) = match binding {
+            let native_symbol = match binding {
                 method_binding::MethodBinding::Native => {
                     if !supports_direct_bridge(&definition.item, method) {
-                        return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion; implement its bridge or explicitly bind an existing #[rils_legacy_id(...)]"));
+                        return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion; implement its bridge"));
                     }
-                    (quote!(Some(#id_path)), quote!(None))
+                    quote!(Some(#id_path))
                 }
-                method_binding::MethodBinding::Legacy(path) => (quote!(Some(#id_path)), quote!(Some(builtin_id!(#path)))),
                 method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
             };
             let receiver = method.sig.receiver().ok_or_else(|| {
@@ -447,7 +446,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     }),
                     value_type: None,
                     receiver: Some(#receiver_mode),
-                    builtin_id: #builtin_id,
+                    builtin_id: None,
                     indexed_view: false,
                     runtime_import: None,
                     native_symbol: #native_symbol,
@@ -690,16 +689,6 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
             return Ok(quote! { #id_path => Some(Err("native callback context is unavailable".to_owned())) });
         }
         match method_binding::MethodBinding::parse(method)? {
-            method_binding::MethodBinding::Legacy(path) => {
-                let arity = method.sig.inputs.len();
-                return Ok(quote! {
-                    #id_path => Some(if arguments.len() == #arity {
-                        super::super::option_result::call(rils_builtins::builtin_id!(#path), arguments)
-                    } else {
-                        Err(format!("native method expects {} arguments, found {}", #arity, arguments.len()))
-                    })
-                });
-            }
             method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
             method_binding::MethodBinding::Native if !supports_direct_bridge(&definition.item, method) => return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion")),
             method_binding::MethodBinding::Native => {}

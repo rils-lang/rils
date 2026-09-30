@@ -331,12 +331,6 @@ impl Input {
                 Some(_) => quote!(Some(crate::ReceiverMode::Shared)),
                 None => quote!(None),
             };
-            let legacy = method.attrs.iter().find(|attr| attr.path().is_ident("rils_legacy_id"));
-            let builtin_id = if let Some(attribute) = legacy {
-                let path: Path = attribute.parse_args()?;
-                let path = path.to_token_stream().to_string().replace(' ', "");
-                quote!(Some(builtin_id!(#path)))
-            } else { quote!(None) };
             let required = method.default.is_none();
             let native_bridge = method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge"));
             let native_symbol = if native_bridge {
@@ -353,7 +347,7 @@ impl Input {
                     signature: Some(crate::BuiltinSignature { parameters: &[#(#parameters),*], result: #result, variadic: false }),
                     value_type: None,
                     receiver: #receiver,
-                    builtin_id: #builtin_id,
+                    builtin_id: None,
                     indexed_view: false,
                     runtime_import: None,
                     native_symbol: #native_symbol,
@@ -365,9 +359,10 @@ impl Input {
             })
         }).collect::<syn::Result<Vec<_>>>()?;
         let backend = if self.methods()?.iter().any(|method| {
-            method.attrs.iter().any(|attr| {
-                attr.path().is_ident("rils_legacy_id") || attr.path().is_ident("rils_native_bridge")
-            })
+            method
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("rils_native_bridge"))
         }) {
             quote!(crate::BuiltinBackend::Runtime)
         } else {
