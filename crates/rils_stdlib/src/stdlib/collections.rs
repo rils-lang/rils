@@ -4,7 +4,7 @@ use rils_stdlib_macros::decl_rils;
 
 use super::{iterator::Iter, prelude::Option, string::Iterator};
 
-mod hash;
+pub mod hash;
 pub mod vector;
 
 /// Values accepted by the Rils max-priority queue.
@@ -544,50 +544,3 @@ pub use native::{
     BTreeMap, BTreeMapIntoIter, BTreeSet, BTreeSetIntoIter, BinaryHeap, BinaryHeapIntoIter,
     VecDeque, VecDequeIntoIter,
 };
-
-mod vecdeque_layout {
-    use rils_stdlib_macros::decl_rils_layout;
-    vecdeque_definition!(decl_rils_layout);
-}
-
-pub const NATIVE_LAYOUT_VECDEQUE: rils_native::LayoutRegistration =
-    rils_native::LayoutRegistration {
-        matches: vecdeque_layout::matches,
-        layout: vecdeque_layout::layout,
-    };
-
-mod binaryheap_layout {
-    use rils_stdlib_macros::decl_rils_layout;
-    binaryheap_definition!(decl_rils_layout);
-}
-
-pub const NATIVE_LAYOUT_BINARYHEAP: rils_native::LayoutRegistration =
-    rils_native::LayoutRegistration {
-        matches: binaryheap_layout::matches,
-        layout: binaryheap_layout::layout,
-    };
-
-mod btreeset_layout {
-    use rils_stdlib_macros::decl_rils_layout;
-    btreeset_definition!(decl_rils_layout);
-}
-
-pub const NATIVE_LAYOUT_BTREESET: rils_native::LayoutRegistration =
-    rils_native::LayoutRegistration {
-        matches: btreeset_layout::matches,
-        layout: btreeset_layout::layout,
-    };
-
-mod btreemap_layout {
-    use rils_stdlib_macros::decl_rils_layout;
-    btreemap_definition!(decl_rils_layout);
-}
-
-pub const NATIVE_LAYOUT_BTREEMAP: rils_native::LayoutRegistration =
-    rils_native::LayoutRegistration {
-        matches: btreemap_layout::matches,
-        layout: btreemap_layout::layout,
-    };
-
-pub const NATIVE_LAYOUT_HASHSET: rils_native::LayoutRegistration = hash::NATIVE_LAYOUT_HASHSET;
-pub const NATIVE_LAYOUT_HASHMAP: rils_native::LayoutRegistration = hash::NATIVE_LAYOUT_HASHMAP;

@@ -6,7 +6,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Attribute, Error, ImplItem, Item, ItemImpl, ItemMod, Path, Type};
 
-use super::{trait_definition, trait_impls};
+use super::{structure, trait_definition, trait_impls};
 
 const MARKERS: [&str; 4] = ["rils_struct", "rils_enum", "rils_trait", "rils_fn"];
 
@@ -104,6 +104,17 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
 }
 
 fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> {
+    // Layout registrations belong to rils_stdlib; decl_rils is also used by
+    // standalone macro fixtures that do not depend on the value runtime.
+    let emit_layouts = std::env::var("CARGO_PKG_NAME").as_deref() == Ok("rils_stdlib");
+    expand_with_layouts(path, module, emit_layouts)
+}
+
+fn expand_with_layouts(
+    path: Path,
+    module: ItemMod,
+    emit_layouts: bool,
+) -> syn::Result<proc_macro2::TokenStream> {
     let Some((_, items)) = &module.content else {
         return Err(Error::new_spanned(
             &module,
@@ -116,6 +127,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
     let mut derived = BTreeSet::new();
     let mut derive_constants = Vec::new();
     let mut trait_checks = Vec::new();
+    let mut layout_declarations = Vec::new();
 
     for item in items {
         let Some(attrs) = item_attrs(item) else {
@@ -225,6 +237,24 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                     ($emit:ident) => { $emit! { #id_path; #filtered } };
                 }
             });
+            if emit_layouts
+                && let Item::Struct(structure) = item
+                && structure::supports_layout(structure)
+            {
+                let layout_module = format_ident!("{}_layout", snake_case(&name.to_string()));
+                let registration =
+                    format_ident!("NATIVE_LAYOUT_{}", name.to_string().to_uppercase());
+                layout_declarations.push(quote! {
+                    pub mod #layout_module {
+                        use rils_stdlib_macros::decl_rils_layout;
+                        #callback!(decl_rils_layout);
+                    }
+                    pub const #registration: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
+                        matches: #layout_module::matches,
+                        layout: #layout_module::layout,
+                    };
+                });
+            }
         }
     }
     if exported.is_empty() {
@@ -392,7 +422,7 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
         emitted_items.push(syn::parse2(derived)?);
     }
     emitted_items.extend(shadow_functions);
-    Ok(quote! { #emitted #(#trait_checks)* #(#callbacks)* })
+    Ok(quote! { #emitted #(#trait_checks)* #(#callbacks)* #(#layout_declarations)* })
 }
 
 #[cfg(test)]
@@ -405,6 +435,23 @@ mod tests {
         assert_eq!(snake_case("VecDeque"), "vec_deque");
         assert_eq!(snake_case("I32"), "i32");
         assert_eq!(snake_case("BTreeMap"), "btree_map");
+    }
+
+    #[test]
+    fn supported_storage_generates_layout_registration_only_for_exported_type() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                #[rils_struct]
+                pub struct Vec<T>(std::vec::Vec<T>);
+                #[rils_struct]
+                pub struct Iter<T>(std::vec::IntoIter<T>);
+            }
+        };
+        let generated = expand_with_layouts(syn::parse_quote!(core::collections), module, true)
+            .unwrap()
+            .to_string();
+        assert!(generated.contains("NATIVE_LAYOUT_VEC"));
+        assert!(!generated.contains("NATIVE_LAYOUT_ITER"));
     }
 
     #[test]

@@ -248,25 +248,3 @@ mod native {
 }
 
 pub use native::{HashMap, HashMapIntoIter, HashSet, HashSetIntoIter};
-
-mod hashset_layout {
-    use rils_stdlib_macros::decl_rils_layout;
-    hashset_definition!(decl_rils_layout);
-}
-
-pub(super) const NATIVE_LAYOUT_HASHSET: rils_native::LayoutRegistration =
-    rils_native::LayoutRegistration {
-        matches: hashset_layout::matches,
-        layout: hashset_layout::layout,
-    };
-
-mod hashmap_layout {
-    use rils_stdlib_macros::decl_rils_layout;
-    hashmap_definition!(decl_rils_layout);
-}
-
-pub(super) const NATIVE_LAYOUT_HASHMAP: rils_native::LayoutRegistration =
-    rils_native::LayoutRegistration {
-        matches: hashmap_layout::matches,
-        layout: hashmap_layout::layout,
-    };

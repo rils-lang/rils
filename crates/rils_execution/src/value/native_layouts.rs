@@ -25,41 +25,29 @@ pub mod option {
 }
 
 pub mod vec {
-    pub use rils_stdlib::stdlib::collections::vector::is_native_vec as matches;
+    pub use rils_stdlib::stdlib::collections::vector::vec_layout::{layout, matches};
 }
 
 pub mod vec_deque {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    rils_stdlib::vecdeque_definition!(decl_rils_layout);
+    pub use rils_stdlib::stdlib::collections::vec_deque_layout::{layout, matches};
 }
 
 pub mod binary_heap {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    rils_stdlib::binaryheap_definition!(decl_rils_layout);
+    pub use rils_stdlib::stdlib::collections::binary_heap_layout::{layout, matches};
 }
 
 pub mod hash_set {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    rils_stdlib::hashset_definition!(decl_rils_layout);
+    pub use rils_stdlib::stdlib::collections::hash::hash_set_layout::{layout, matches};
 }
 
 pub mod btree_set {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    rils_stdlib::btreeset_definition!(decl_rils_layout);
+    pub use rils_stdlib::stdlib::collections::btree_set_layout::{layout, matches};
 }
 
 pub mod hash_map {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    rils_stdlib::hashmap_definition!(decl_rils_layout);
+    pub use rils_stdlib::stdlib::collections::hash::hash_map_layout::{layout, matches};
 }
 
 pub mod btree_map {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    rils_stdlib::btreemap_definition!(decl_rils_layout);
+    pub use rils_stdlib::stdlib::collections::btree_map_layout::{layout, matches};
 }

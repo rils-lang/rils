@@ -56,18 +56,47 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
             quote!(crate::stdlib::#(#path)::*)
         };
         for item in parsed.items {
-            let Item::Const(item) = item else { continue };
-            if !matches!(item.vis, syn::Visibility::Public(_)) {
-                continue;
-            }
-            let name = item.ident.to_string();
-            let ident = &item.ident;
-            if name == "NATIVE_LAYOUT" || name.starts_with("NATIVE_LAYOUT_") {
-                layouts.push(quote!(#module::#ident));
-            } else if name == "NATIVE_ELEMENT" || name.starts_with("NATIVE_ELEMENT_") {
-                elements.push(quote!(#module::#ident));
-            } else if name == "NATIVE_KEY" || name.starts_with("NATIVE_KEY_") {
-                keys.push(quote!(#module::#ident));
+            match item {
+                Item::Const(item) if matches!(item.vis, syn::Visibility::Public(_)) => {
+                    let name = item.ident.to_string();
+                    let ident = &item.ident;
+                    if name == "NATIVE_LAYOUT" || name.starts_with("NATIVE_LAYOUT_") {
+                        layouts.push(quote!(#module::#ident));
+                    } else if name == "NATIVE_ELEMENT" || name.starts_with("NATIVE_ELEMENT_") {
+                        elements.push(quote!(#module::#ident));
+                    } else if name == "NATIVE_KEY" || name.starts_with("NATIVE_KEY_") {
+                        keys.push(quote!(#module::#ident));
+                    }
+                }
+                Item::Mod(item)
+                    if item
+                        .attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("decl_rils")) =>
+                {
+                    let Some((_, declarations)) = item.content else {
+                        continue;
+                    };
+                    for declaration in declarations {
+                        let Item::Struct(structure) = declaration else {
+                            continue;
+                        };
+                        if !structure
+                            .attrs
+                            .iter()
+                            .any(|attr| attr.path().is_ident("rils_struct"))
+                            || !crate::decl_rils::structure::supports_layout(&structure)
+                        {
+                            continue;
+                        }
+                        let ident = format_ident!(
+                            "NATIVE_LAYOUT_{}",
+                            structure.ident.to_string().to_uppercase()
+                        );
+                        layouts.push(quote!(#module::#ident));
+                    }
+                }
+                _ => {}
             }
         }
         let tracked = format!(

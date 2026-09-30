@@ -53,17 +53,6 @@ mod formatting {
 pub use boxed::Box;
 pub use formatting::FormatError;
 
-mod boxed_layout {
-    use rils_stdlib_macros::decl_rils_layout;
-
-    box_definition!(decl_rils_layout);
-}
-
-pub const NATIVE_LAYOUT_BOX: rils_native::LayoutRegistration = rils_native::LayoutRegistration {
-    matches: boxed_layout::matches,
-    layout: boxed_layout::layout,
-};
-
 pub fn is_native_box(ty: &rils_syntax::Type) -> bool {
-    boxed_layout::matches(ty)
+    box_layout::matches(ty)
 }

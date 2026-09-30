@@ -68,3 +68,18 @@ fn collection_layouts_are_registered_from_stdlib_definitions() {
         }
     }
 }
+
+#[test]
+fn boxed_layout_is_registered_from_its_definition() {
+    let ty = Type::Named {
+        name: "Box".into(),
+        arguments: vec![Type::I32],
+    };
+    let layout = native::registry()
+        .layout(&ty, &mut |_| {
+            panic!("Box layout must not resolve its payload eagerly")
+        })
+        .expect("Box layout is registered")
+        .expect("Box layout is valid");
+    assert_eq!(layout.rils_type(), &ty);
+}

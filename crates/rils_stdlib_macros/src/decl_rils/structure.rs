@@ -20,38 +20,14 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
         Ok(definition) => definition,
         Err(error) => return error.into_compile_error().into(),
     };
-    let Fields::Unnamed(fields) = &definition.item.fields else {
-        return Error::new_spanned(&definition.item, "sequence layout needs one tuple field")
-            .into_compile_error()
-            .into();
-    };
-    let storage = fields.unnamed.iter().next();
-    let type_count = definition.item.generics.type_params().count();
-    let storage = storage.map(|field| field.ty.to_token_stream().to_string().replace(' ', ""));
-    let boxed = matches!(storage.as_deref(), Some("std::boxed::Box<T>"));
-    let shape: usize = match (type_count, storage.as_deref()) {
-        (
-            1,
-            Some(
-                "std::vec::Vec<T>"
-                | "std::collections::VecDeque<T>"
-                | "std::collections::BinaryHeap<T>"
-                | "std::collections::HashSet<T>"
-                | "std::collections::BTreeSet<T>",
-            ),
-        ) => 1,
-        (2, Some("std::collections::HashMap<K,V>" | "std::collections::BTreeMap<K,V>")) => 2,
-        (1, Some("std::boxed::Box<T>")) => 1,
-        _ => 0,
-    };
-    if fields.unnamed.len() != 1 || shape == 0 {
+    let Some((shape, boxed)) = layout_shape(&definition.item) else {
         return Error::new_spanned(
             &definition.item,
             "native collection layout requires one supported standard-library collection field",
         )
         .into_compile_error()
         .into();
-    }
+    };
     let name = definition.item.ident.to_string();
     let item_layout = if shape == 1 {
         quote! { resolve_child(&arguments[0]) }
@@ -98,6 +74,41 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
         }
     }
     .into()
+}
+
+pub(crate) fn supports_layout(item: &ItemStruct) -> bool {
+    layout_shape(item).is_some()
+}
+
+fn layout_shape(item: &ItemStruct) -> Option<(usize, bool)> {
+    let Fields::Unnamed(fields) = &item.fields else {
+        return None;
+    };
+    if fields.unnamed.len() != 1 {
+        return None;
+    }
+    let storage = fields
+        .unnamed
+        .first()?
+        .ty
+        .to_token_stream()
+        .to_string()
+        .replace(' ', "");
+    let type_count = item.generics.type_params().count();
+    let shape: usize = match (type_count, storage.as_str()) {
+        (
+            1,
+            "std::vec::Vec<T>"
+            | "std::collections::VecDeque<T>"
+            | "std::collections::BinaryHeap<T>"
+            | "std::collections::HashSet<T>"
+            | "std::collections::BTreeSet<T>",
+        ) => 1,
+        (2, "std::collections::HashMap<K,V>" | "std::collections::BTreeMap<K,V>") => 2,
+        (1, "std::boxed::Box<T>") => 1,
+        _ => 0,
+    };
+    (shape != 0).then_some((shape, storage == "std::boxed::Box<T>"))
 }
 
 struct Definition {

@@ -14,7 +14,7 @@ mod export_module;
 pub(crate) mod function_definition;
 mod primitive;
 mod string;
-mod structure;
+pub(crate) mod structure;
 pub(crate) mod trait_definition;
 mod trait_impls;
 
