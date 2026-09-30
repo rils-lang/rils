@@ -3,8 +3,6 @@
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use rils_builtins::BuiltinId;
-
 use crate::{
     types::{Type, merge_types},
     value::{
@@ -12,36 +10,25 @@ use crate::{
     },
 };
 
-pub fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    match id {
-        BuiltinId::HashMapClear
-        | BuiltinId::HashMapContainsKey
-        | BuiltinId::HashMapInsert
-        | BuiltinId::HashMapGetCloned
-        | BuiltinId::HashMapRemove
-        | BuiltinId::HashMapKeysCloned
-        | BuiltinId::HashMapValuesCloned => call_map(id, arguments),
-        _ => Err(format!("unknown hash collection built-in `{id:?}`")),
-    }
-}
-
-fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, String> {
     let map = hash_map(
         arguments
             .first()
             .ok_or_else(|| "missing HashMap receiver".to_string())?,
     )?;
-    match id {
-        BuiltinId::HashMapClear => {
+    match method {
+        "len" => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
+        "is_empty" => Ok(Value::Bool(map.entries.borrow().is_empty())),
+        "clear" => {
             reject_referenced_map(&map)?;
             map.entries.borrow_mut().clear();
             Ok(Value::Unit)
         }
-        BuiltinId::HashMapContainsKey => {
+        "contains_key" => {
             let key = hash_argument(arguments, 1)?;
             Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
         }
-        BuiltinId::HashMapInsert => {
+        "insert" => {
             reject_referenced_map(&map)?;
             let key_value = arguments
                 .get(1)
@@ -69,7 +56,7 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             *map.value_type.borrow_mut() = value_type.clone();
             option(previous.and_then(|slot| slot.value), value_type)
         }
-        BuiltinId::HashMapGetCloned => {
+        "get_cloned" => {
             let key = hash_argument(arguments, 1)?;
             let value = map
                 .entries
@@ -80,7 +67,7 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 .transpose()?;
             option(value, map.value_type.borrow().clone())
         }
-        BuiltinId::HashMapRemove => {
+        "remove" => {
             reject_referenced_map(&map)?;
             let key = hash_argument(arguments, 1)?;
             let value = map
@@ -90,11 +77,11 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 .and_then(|slot| slot.value);
             option(value, map.value_type.borrow().clone())
         }
-        BuiltinId::HashMapKeysCloned => Ok(iterator(
+        "keys_cloned" => Ok(iterator(
             map.entries.borrow().keys().map(HashKey::to_value).collect(),
             map.key_type.borrow().clone(),
         )),
-        BuiltinId::HashMapValuesCloned => Ok(iterator(
+        "values_cloned" => Ok(iterator(
             map.entries
                 .borrow()
                 .values()
@@ -107,7 +94,7 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
                 .collect::<Result<_, _>>()?,
             map.value_type.borrow().clone(),
         )),
-        _ => Err(format!("unknown HashMap built-in `{id:?}`")),
+        _ => Err(format!("unknown HashMap method `{method}`")),
     }
 }
 

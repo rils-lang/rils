@@ -1,15 +1,5 @@
 # Stable built-in IDs. Reserve each documented 0x100 block for its module.
 
-# HashMap operations: 0x0500-0x05FF.
-[core.hash_map]
-clear = 0x0502
-contains_key = 0x0503
-insert = 0x0504
-get_cloned = 0x0505
-remove = 0x0506
-keys_cloned = 0x0507
-values_cloned = 0x0508
-
 # Integer intrinsic operations: 0x0B00-0x0BFF.
 [core.integer]
 try_from = 0x0B00
@@ -86,13 +76,3 @@ min = 0x0C10
 max = 0x0C11
 clamp = 0x0C12
 mul_add = 0x0C13
-
-# Ordered map operations: 0x1200-0x12FF.
-[core.btree_map]
-clear = 0x1203
-contains_key = 0x1204
-insert = 0x1205
-get_cloned = 0x1206
-remove = 0x1207
-first_key_cloned = 0x1208
-last_key_cloned = 0x1209

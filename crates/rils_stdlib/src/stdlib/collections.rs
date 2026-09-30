@@ -508,26 +508,25 @@ mod native {
         }
         /// Removes all entries.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::clear)]
+        #[rils_native_bridge]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Tests whether a key is present.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::contains_key)]
+        #[rils_native_bridge]
         pub fn contains_key(&self, key: &K) -> bool {
             self.0.contains_key(key)
         }
         /// Inserts a key-value pair and returns the previous value.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::insert)]
         #[rils_native_bridge]
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             self.0.insert(key, value).map_or(Option::None, Option::Some)
         }
         /// Removes a key and returns its value.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::remove)]
+        #[rils_native_bridge]
         pub fn remove(&mut self, key: &K) -> Option<V> {
             self.0.remove(key).map_or(Option::None, Option::Some)
         }
@@ -542,7 +541,7 @@ mod native {
     impl<K: Ord, V: Clone> BTreeMap<K, V> {
         /// Clones the value for a key.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::get_cloned)]
+        #[rils_native_bridge]
         pub fn get_cloned(&self, key: &K) -> Option<V> {
             self.0.get(key).cloned().map_or(Option::None, Option::Some)
         }
@@ -551,7 +550,7 @@ mod native {
     impl<K: Ord + Clone, V> BTreeMap<K, V> {
         /// Clones the smallest key.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::first_key_cloned)]
+        #[rils_native_bridge]
         pub fn first_key_cloned(&self) -> Option<K> {
             self.0
                 .first_key_value()
@@ -560,7 +559,7 @@ mod native {
         }
         /// Clones the largest key.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::last_key_cloned)]
+        #[rils_native_bridge]
         pub fn last_key_cloned(&self) -> Option<K> {
             self.0
                 .last_key_value()

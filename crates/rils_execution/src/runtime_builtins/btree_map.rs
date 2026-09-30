@@ -3,36 +3,33 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use rils_builtins::BuiltinId;
-
 use crate::{
     types::{Type, merge_types},
     value::{BTreeMapValue, FieldSlot, HashKey, IndexedStorage, Value},
 };
 
-pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
+pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
     let receiver = arguments.first().ok_or("missing BTreeMap receiver")?;
-    let mutating = matches!(
-        id,
-        BuiltinId::BtreeMapClear | BuiltinId::BtreeMapInsert | BuiltinId::BtreeMapRemove
-    );
+    let mutating = matches!(method, "clear" | "insert" | "remove");
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("BTreeMap mutation requires a mutable reference".into());
     }
     let Value::BTreeMap(map) = super::import_receiver(receiver)? else {
         return Err("expected BTreeMap receiver".into());
     };
-    match id {
-        BuiltinId::BtreeMapClear => {
+    match method {
+        "len" => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
+        "is_empty" => Ok(Value::Bool(map.entries.borrow().is_empty())),
+        "clear" => {
             reject_referenced(&map)?;
             map.entries.borrow_mut().clear();
             Ok(Value::Unit)
         }
-        BuiltinId::BtreeMapContainsKey => {
+        "contains_key" => {
             let key = key(arguments, 1)?;
             Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
         }
-        BuiltinId::BtreeMapInsert => {
+        "insert" => {
             reject_referenced(&map)?;
             let key = key(arguments, 1)?;
             let value = arguments.get(2).ok_or("missing BTreeMap value")?.clone();
@@ -55,7 +52,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
             *map.value_type.borrow_mut() = value_type.clone();
             option(previous.and_then(|slot| slot.value), value_type)
         }
-        BuiltinId::BtreeMapGetCloned => {
+        "get_cloned" => {
             let key = key(arguments, 1)?;
             let value = map
                 .entries
@@ -66,7 +63,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 .transpose()?;
             option(value, map.value_type.borrow().clone())
         }
-        BuiltinId::BtreeMapRemove => {
+        "remove" => {
             reject_referenced(&map)?;
             let key = key(arguments, 1)?;
             let value = map
@@ -76,9 +73,9 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
                 .and_then(|slot| slot.value);
             option(value, map.value_type.borrow().clone())
         }
-        BuiltinId::BtreeMapFirstKeyCloned | BuiltinId::BtreeMapLastKeyCloned => {
+        "first_key_cloned" | "last_key_cloned" => {
             let entries = map.entries.borrow();
-            let key = if id == BuiltinId::BtreeMapFirstKeyCloned {
+            let key = if method == "first_key_cloned" {
                 entries.first_key_value()
             } else {
                 entries.last_key_value()

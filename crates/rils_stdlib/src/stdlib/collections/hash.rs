@@ -220,26 +220,25 @@ mod native {
         }
         /// Removes all entries.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::clear)]
+        #[rils_native_bridge]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Returns true when the key is present.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::contains_key)]
+        #[rils_native_bridge]
         pub fn contains_key(&self, key: &K) -> bool {
             self.0.contains_key(key)
         }
         /// Inserts a key-value pair and returns the previous value.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::insert)]
         #[rils_native_bridge]
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             self.0.insert(key, value).map_or(Option::None, Option::Some)
         }
         /// Removes a key and returns its value.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::remove)]
+        #[rils_native_bridge]
         pub fn remove(&mut self, key: &K) -> Option<V> {
             self.0.remove(key).map_or(Option::None, Option::Some)
         }
@@ -254,13 +253,13 @@ mod native {
     impl<K: Eq + Hash, V: Clone> HashMap<K, V> {
         /// Clones the value stored for a key.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::get_cloned)]
+        #[rils_native_bridge]
         pub fn get_cloned(&self, key: &K) -> Option<V> {
             self.0.get(key).cloned().map_or(Option::None, Option::Some)
         }
         /// Clones all values into an owned iterator.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::values_cloned)]
+        #[rils_native_bridge]
         pub fn values_cloned(&self) -> Iterator<V> {
             Iter::from(self.0.values().cloned().collect::<std::vec::Vec<_>>())
         }
@@ -269,7 +268,7 @@ mod native {
     impl<K: Eq + Hash + Clone, V> HashMap<K, V> {
         /// Clones all keys into an owned iterator.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::keys_cloned)]
+        #[rils_native_bridge]
         pub fn keys_cloned(&self) -> Iterator<K> {
             Iter::from(self.0.keys().cloned().collect::<std::vec::Vec<_>>())
         }

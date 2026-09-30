@@ -167,15 +167,15 @@ use rils_syntax::{FloatType, IntegerType, Type, ast::Stmt, lex, parse};
 
 #[test]
 fn builtin_id_macro_resolves_the_configured_stable_id() {
-    const HASH_MAP_CLEAR: BuiltinId = rils_builtins::builtin_id!("core::hash_map::clear");
+    const INTEGER_TRY_FROM: BuiltinId = rils_builtins::builtin_id!("core::integer::try_from");
 
-    assert_eq!(HASH_MAP_CLEAR, BuiltinId::HashMapClear);
-    assert_eq!(HASH_MAP_CLEAR.as_raw(), 0x0502);
+    assert_eq!(INTEGER_TRY_FROM, BuiltinId::IntegerTryFrom);
+    assert_eq!(INTEGER_TRY_FROM.as_raw(), 0x0B00);
     assert_eq!(
-        HASH_MAP_CLEAR.canonical_path(),
-        Some("core::hash_map::clear")
+        INTEGER_TRY_FROM.canonical_path(),
+        Some("core::integer::try_from")
     );
-    assert_eq!(HASH_MAP_CLEAR.member_name(), Some("clear"));
+    assert_eq!(INTEGER_TRY_FROM.member_name(), Some("try_from"));
 }
 
 #[test]
@@ -346,9 +346,9 @@ fn map_and_set_size_methods_use_native_symbols_without_ids() {
 }
 
 #[test]
-fn set_methods_use_native_symbols_without_ids() {
-    for owner in ["HashSet", "BTreeSet"] {
-        for member in builtin(owner).expect("set declaration").members {
+fn map_and_set_methods_use_native_symbols_without_ids() {
+    for owner in ["HashMap", "BTreeMap", "HashSet", "BTreeSet"] {
+        for member in builtin(owner).expect("collection declaration").members {
             assert_eq!(member.builtin_id, None, "{owner}::{}", member.name);
             if let Some(symbol) = member.native_symbol {
                 assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
@@ -483,12 +483,10 @@ fn legacy_sequence_ids_are_no_longer_defined() {
         .chain(std::iter::once(0x0300))
         .chain(std::iter::once(0x0308))
         .chain(std::iter::once(0x0401))
+        .chain(0x0500..=0x050A)
         .chain(0x0600..=0x060E)
+        .chain(0x1200..=0x120B)
         .chain(0x1300..=0x1311)
-        .chain([
-            0x0500, 0x0501, 0x0509, 0x050A, 0x0600, 0x0601, 0x060D, 0x060E, 0x1201, 0x1202, 0x120A,
-            0x120B, 0x1301, 0x1302, 0x1310, 0x1311,
-        ])
     {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
@@ -652,10 +650,9 @@ fn rils_standard_library_files_supply_type_member_and_variant_metadata() {
 
     let map = builtin("HashMap").expect("HashMap declaration");
     assert_eq!(map.type_parameters, &["K", "V"]);
-    assert_eq!(
-        map.member("insert").expect("HashMap::insert").builtin_id,
-        Some(BuiltinId::HashMapInsert)
-    );
+    let insert = map.member("insert").expect("HashMap::insert");
+    assert_eq!(insert.builtin_id, None);
+    assert!(insert.native_symbol.is_some());
 
     let set = builtin("HashSet").expect("HashSet declaration");
     assert_eq!(set.type_parameters, &["T"]);
@@ -912,7 +909,7 @@ fn declarations_report_member_and_runtime_coverage() {
     assert!(!iterator.contains_member("missing"));
     assert_eq!(iterator.member("next").unwrap().builtin_id, None);
     assert!(iterator.member("next").unwrap().native_symbol.is_some());
-    assert!(!iterator.contains_builtin(BuiltinId::HashMapClear));
+    assert!(!iterator.contains_builtin(BuiltinId::IntegerTryFrom));
 }
 
 #[test]

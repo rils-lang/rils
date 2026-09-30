@@ -47,36 +47,6 @@ impl Interpreter {
                 self.call_native_symbol(symbol, &values, span)
             }
             BuiltinMethod::IteratorIdentity => Ok((*method.receiver).clone()),
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::HashMapClear
-                | rils_builtins::BuiltinId::HashMapContainsKey
-                | rils_builtins::BuiltinId::HashMapInsert
-                | rils_builtins::BuiltinId::HashMapGetCloned
-                | rils_builtins::BuiltinId::HashMapRemove
-                | rils_builtins::BuiltinId::HashMapKeysCloned
-                | rils_builtins::BuiltinId::HashMapValuesCloned),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
-            BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::BtreeMapClear
-                | rils_builtins::BuiltinId::BtreeMapContainsKey
-                | rils_builtins::BuiltinId::BtreeMapInsert
-                | rils_builtins::BuiltinId::BtreeMapGetCloned
-                | rils_builtins::BuiltinId::BtreeMapRemove
-                | rils_builtins::BuiltinId::BtreeMapFirstKeyCloned
-                | rils_builtins::BuiltinId::BtreeMapLastKeyCloned),
-            ) => {
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push((*method.receiver).clone());
-                values.extend_from_slice(arguments);
-                crate::runtime_builtins::call(id, &values)
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
             BuiltinMethod::Runtime(id) => Err(RuntimeError::new(
                 format!("unknown runtime member ID {:#x}", id.as_raw()),
                 span,

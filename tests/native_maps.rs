@@ -83,6 +83,41 @@ fn native_map_methods_preserve_values_and_borrows() {
 }
 
 #[test]
+fn native_map_symbols_cover_queries_and_mutation() {
+    assert_both(
+        r#"
+        let mut map: HashMap<i32, string> = HashMap::new();
+        map.insert(7, "seven");
+        let key = 7;
+        let mut keys = map.keys_cloned();
+        let mut values = map.values_cloned();
+        let valid = map.contains_key(&key) && map.get_cloned(&key).unwrap() == "seven"
+            && keys.next().unwrap() == 7 && keys.next().is_none()
+            && values.next().unwrap() == "seven" && values.next().is_none();
+        let removed = map.remove(&key).unwrap();
+        map.insert(8, "eight");
+        map.clear();
+        valid && removed == "seven" && map.is_empty()
+        "#,
+        Value::Bool(true),
+    );
+    assert_both(
+        r#"
+        let mut map: BTreeMap<i32, string> = BTreeMap::new();
+        map.insert(2, "two"); map.insert(1, "one");
+        let key = 2;
+        let valid = map.first_key_cloned().unwrap() == 1
+            && map.last_key_cloned().unwrap() == 2
+            && map.contains_key(&key) && map.get_cloned(&key).unwrap() == "two";
+        let removed = map.remove(&key).unwrap();
+        map.clear();
+        valid && removed == "two" && map.is_empty()
+        "#,
+        Value::Bool(true),
+    );
+}
+
+#[test]
 fn owned_map_iterators_move_entries_in_both_backends() {
     for (source, expected) in [
         (

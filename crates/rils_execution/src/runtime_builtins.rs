@@ -129,34 +129,11 @@ pub fn call_native_symbol_with_callback<E>(
 }
 
 pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, String> {
-    use rils_builtins::BuiltinId;
-
-    if let Some(result) = native::call(id, arguments) {
-        return result;
-    }
-
-    if let Some(result) = native_map::call(id, arguments) {
-        return result;
-    }
-    match id {
-        BuiltinId::BtreeMapClear
-        | BuiltinId::BtreeMapContainsKey
-        | BuiltinId::BtreeMapInsert
-        | BuiltinId::BtreeMapGetCloned
-        | BuiltinId::BtreeMapRemove
-        | BuiltinId::BtreeMapFirstKeyCloned
-        | BuiltinId::BtreeMapLastKeyCloned => btree_map::call(id, arguments),
-        BuiltinId::HashMapClear
-        | BuiltinId::HashMapContainsKey
-        | BuiltinId::HashMapInsert
-        | BuiltinId::HashMapGetCloned
-        | BuiltinId::HashMapRemove
-        | BuiltinId::HashMapKeysCloned
-        | BuiltinId::HashMapValuesCloned => crate::hash_collections::call(id, arguments),
-        _ => Err(format!(
+    native::call(id, arguments).unwrap_or_else(|| {
+        Err(format!(
             "runtime built-in `{id:?}` has no direct implementation"
-        )),
-    }
+        ))
+    })
 }
 
 fn call_owned_option_unwrap(mut arguments: Vec<Value>) -> Result<Value, String> {
