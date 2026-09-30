@@ -7,8 +7,14 @@ impl VirtualMachine<'_> {
         arguments: &[Value],
         span: Span,
     ) -> Result<Value, BytecodeError> {
-        match rils_builtins::native_member(symbol).and_then(|member| member.builtin_id) {
-            Some(rils_builtins::BuiltinId::FormatterWriteStr) => {
+        let formatter_member =
+            rils_builtins::native_member_owner(symbol).and_then(|(owner, member)| {
+                rils_builtins::builtin("Formatter")
+                    .filter(|formatter| std::ptr::eq(owner, *formatter))
+                    .map(|_| member.name)
+            });
+        match formatter_member {
+            Some("write_str") => {
                 let [buffer, value] = arguments else {
                     return Err(BytecodeError::new(
                         "Formatter::write_str expects a receiver and string",
@@ -23,7 +29,7 @@ impl VirtualMachine<'_> {
                 buffer.write_str(&value);
                 return Ok(super::super::formatting::format_ok());
             }
-            Some(rils_builtins::BuiltinId::FormatterWriteDerivedDebug) => {
+            Some("write_derived_debug") => {
                 let [buffer, value] = arguments else {
                     return Err(BytecodeError::new(
                         "Formatter::write_derived_debug expects two arguments",

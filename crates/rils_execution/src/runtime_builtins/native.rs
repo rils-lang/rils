@@ -181,6 +181,40 @@ pub fn call_symbol(
         .or_else(|| range::call_symbol(symbol, arguments))
         .or_else(|| indexed_iterator::call_symbol(symbol, arguments))
         .or_else(|| iterator_next_symbol(symbol, arguments))
+        .or_else(|| formatter_symbol(symbol, arguments))
+}
+
+fn formatter_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    let (owner, member) = rils_builtins::native_member_owner(symbol)?;
+    let formatter = rils_builtins::builtin("Formatter")?;
+    if !std::ptr::eq(owner, formatter) {
+        return None;
+    }
+    Some((|| {
+        let [receiver, value] = arguments else {
+            return Err(format!(
+                "Formatter::{} expects a receiver and one argument",
+                member.name
+            ));
+        };
+        match member.name {
+            "write_str" => {
+                let value = value
+                    .as_string()
+                    .ok_or("Formatter::write_str expects string")?;
+                crate::formatting::buffer_from_value(receiver)?.write_str(&value);
+                Ok(Value::Result {
+                    value: Ok(std::rc::Rc::new(Value::Unit)),
+                    ok_type: Some(crate::Type::Unit),
+                    error_type: Some(crate::Type::named("FormatError")),
+                })
+            }
+            "write_derived_debug" => {
+                Err("Formatter::write_derived_debug requires a formatting context".into())
+            }
+            _ => Err("unsupported Formatter operation".into()),
+        }
+    })())
 }
 
 fn iterator_next_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {

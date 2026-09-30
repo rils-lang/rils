@@ -77,7 +77,6 @@ mod native {
 
         /// Appends text to this formatting destination.
         #[export_rils]
-        #[rils_legacy_id(core::fmt::write_str)]
         pub fn write_str(&mut self, value: String) -> Result<(), FormatError> {
             self.0.write_str(&std::string::String::from(value));
             Result::Ok(())
@@ -85,7 +84,6 @@ mod native {
 
         /// Writes the structural Debug representation used by derived implementations.
         #[export_rils]
-        #[rils_legacy_id(core::fmt::write_derived_debug)]
         pub fn write_derived_debug<T: std::fmt::Debug>(
             &mut self,
             value: &T,

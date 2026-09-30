@@ -60,21 +60,6 @@ impl Interpreter {
                     .clone_owned()
                     .map_err(|message| RuntimeError::new(message, span))
             }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::FormatterWriteStr) => {
-                let buffer = super::formatting::formatter_buffer(&method.receiver, span)?;
-                let Some(value) = arguments[0].as_string() else {
-                    return Err(RuntimeError::new(
-                        "Formatter::write_str expects string",
-                        span,
-                    ));
-                };
-                buffer.write_str(&value);
-                Ok(format_ok())
-            }
-            BuiltinMethod::Runtime(rils_builtins::BuiltinId::FormatterWriteDerivedDebug) => {
-                self.write_derived_debug(&method.receiver, &arguments[0], span)?;
-                Ok(format_ok())
-            }
             BuiltinMethod::Runtime(
                 id @ (rils_builtins::BuiltinId::HashMapLen
                 | rils_builtins::BuiltinId::HashMapIsEmpty

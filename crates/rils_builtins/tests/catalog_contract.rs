@@ -744,6 +744,12 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
     );
 
     let formatter = builtin("Formatter").expect("Formatter declaration");
+    for name in ["write_str", "write_derived_debug"] {
+        let member = formatter.member(name).expect("Formatter member");
+        assert_eq!(member.builtin_id, None);
+        let symbol = member.native_symbol.expect("Formatter native symbol");
+        assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
+    }
     let write_derived_debug = formatter
         .member("write_derived_debug")
         .expect("Formatter::write_derived_debug");

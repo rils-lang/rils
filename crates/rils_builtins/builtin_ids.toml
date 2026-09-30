@@ -56,11 +56,6 @@ symmetric_difference = 0x060C
 into_iter = 0x060D
 iter = 0x060E
 
-# Formatting operations: 0x0700-0x07FF.
-[core.fmt]
-write_str = 0x0700
-write_derived_debug = 0x0701
-
 # Integer intrinsic operations: 0x0B00-0x0BFF.
 [core.integer]
 try_from = 0x0B00

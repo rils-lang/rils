@@ -7,8 +7,14 @@ impl Interpreter {
         arguments: &[Value],
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        match rils_builtins::native_member(symbol).and_then(|member| member.builtin_id) {
-            Some(rils_builtins::BuiltinId::FormatterWriteStr) => {
+        let formatter_member =
+            rils_builtins::native_member_owner(symbol).and_then(|(owner, member)| {
+                rils_builtins::builtin("Formatter")
+                    .filter(|formatter| std::ptr::eq(owner, *formatter))
+                    .map(|_| member.name)
+            });
+        match formatter_member {
+            Some("write_str") => {
                 let [receiver, value] = arguments else {
                     return Err(RuntimeError::new(
                         "Formatter::write_str expects a receiver and string",
@@ -22,7 +28,7 @@ impl Interpreter {
                 buffer.write_str(&value);
                 return Ok(super::builtin_methods::format_ok());
             }
-            Some(rils_builtins::BuiltinId::FormatterWriteDerivedDebug) => {
+            Some("write_derived_debug") => {
                 let [receiver, value] = arguments else {
                     return Err(RuntimeError::new(
                         "Formatter::write_derived_debug expects two arguments",

@@ -36,9 +36,12 @@ fn sum_and_string_native_signatures_keep_their_distinct_results() {
 }
 
 #[test]
-fn derived_debug_runtime_call_has_one_reference_layer_per_argument() {
+fn derived_debug_native_call_has_one_reference_layer_per_argument() {
+    let member = rils_builtins::native_member("core::fmt::formatter::write_derived_debug")
+        .expect("Formatter::write_derived_debug native symbol");
+    assert_eq!(member.builtin_id, None);
     assert_eq!(
-        erased_runtime_signature(rils_builtins::BuiltinId::FormatterWriteDerivedDebug),
+        erased_builtin_member_signature(member),
         Some(FunctionSignature::fixed(
             vec![
                 Type::Reference {
