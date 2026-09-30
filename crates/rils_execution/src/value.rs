@@ -298,10 +298,6 @@ pub enum BuiltinType {
 
 #[derive(Clone, Copy)]
 pub enum BuiltinFunction {
-    VecNew,
-    VecFrom,
-    HashMapNew,
-    HashSetNew,
     RcNew,
     CellNew,
     RefCellNew,

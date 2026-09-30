@@ -589,21 +589,9 @@ fn builtin_associated_import(path: &str) -> Option<ResolvedCall> {
     let (owner_path, member_name) = path.rsplit_once("::")?;
     let owner = owner_path.rsplit("::").next()?;
     let member = rils_builtins::builtin_member(owner, member_name)?;
-    if member.receiver.is_none()
-        && let Some(symbol) = member.native_symbol
-    {
-        return Some(ResolvedCall::Native {
-            symbol,
-            receiver: None,
-        });
-    }
-    let name = member.runtime_import?;
-    let signature =
-        crate::standard_library::builtin_associated_function_signature(owner, member_name)?;
-    Some(ResolvedCall::Import {
-        name: name.into(),
-        signature,
-        capability: "core".into(),
+    (member.receiver.is_none()).then_some(ResolvedCall::Native {
+        symbol: member.native_symbol?,
+        receiver: None,
     })
 }
 

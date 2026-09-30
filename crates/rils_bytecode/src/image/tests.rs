@@ -958,10 +958,10 @@ fn migrated_vec_members_use_native_imports_without_host_imports() {
             .iter()
             .map(|import| import.name.as_str())
             .collect::<Vec<_>>(),
-        ["core::vec::from"]
+        [] as [&str; 0]
     );
     let vector = rils_builtins::builtin("Vec").unwrap();
-    let symbols = ["push", "len"]
+    let symbols = ["from", "push", "len"]
         .map(|name| vector.member(name).unwrap().native_symbol.unwrap())
         .into_iter()
         .collect::<HashSet<_>>();
@@ -1229,7 +1229,7 @@ fn numeric_intrinsics_compile_as_verified_symbol_imports() {
 }
 
 #[test]
-fn generated_runtime_imports_are_registered_without_a_second_catalog() {
+fn runtime_function_imports_come_from_the_builtin_catalog() {
     let registered = super::core_imports::core_imports()
         .into_iter()
         .map(|(name, _)| name)
@@ -1243,11 +1243,6 @@ fn generated_runtime_imports_are_registered_without_a_second_catalog() {
                 "{}",
                 declaration.path
             );
-        }
-        for member in declaration.members {
-            if let Some(import) = member.runtime_import {
-                assert!(registered.contains(import), "{import}");
-            }
         }
     }
     for declaration in rils_builtins::BUILTINS {

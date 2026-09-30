@@ -55,7 +55,6 @@ mod native {
     impl<T> Vec<T> {
         /// Creates a Vec from an owned array.
         #[export_rils]
-        #[rils_import(core::vec::from)]
         pub fn from<const N: usize>(values: [T; N]) -> Self {
             <Self as From<[T; N]>>::from(values)
         }
@@ -67,7 +66,6 @@ mod native {
 
         /// Creates an empty Vec.
         #[export_rils]
-        #[rils_import(core::vec::new)]
         pub fn new() -> Self {
             Self(std::vec::Vec::new())
         }

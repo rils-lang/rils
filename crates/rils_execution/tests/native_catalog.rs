@@ -14,7 +14,6 @@ fn every_native_member_has_a_bridge_and_rejects_missing_arguments() {
             }) {
                 continue;
             }
-            assert!(member.runtime_import.is_none(), "{symbol}");
             let result = if requires_owned_native_call(symbol) {
                 call_native_owned_symbol(
                     symbol,

@@ -48,7 +48,6 @@ pub struct BuiltinMember {
     pub receiver: Option<ReceiverMode>,
     /// Whether this method is also available on fixed arrays and slices.
     pub indexed_view: bool,
-    pub runtime_import: Option<&'static str>,
     /// Generated native implementation path, when this method has a direct bridge.
     pub native_symbol: Option<&'static str>,
     /// The declaration explicitly supplies a type-erased native adapter.

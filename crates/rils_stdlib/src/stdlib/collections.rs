@@ -327,7 +327,6 @@ mod native {
         type Item = T;
         type IntoIter = BTreeSetIntoIter<T>;
         /// Consumes the set and iterates over owned elements in order.
-        #[rils_native_bridge]
         fn into_iter(self) -> Self::IntoIter {
             BTreeSetIntoIter(self.0.into_iter())
         }
@@ -341,61 +340,51 @@ mod native {
         }
         /// Returns the number of elements.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns whether the set is empty.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
         /// Removes all elements.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Tests whether an element is present.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn contains(&self, value: &T) -> bool {
             self.0.contains(value)
         }
         /// Inserts an element and reports whether it was new.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn insert(&mut self, value: T) -> bool {
             self.0.insert(value)
         }
         /// Removes an element and reports whether it was present.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn remove(&mut self, value: &T) -> bool {
             self.0.remove(value)
         }
         /// Tests whether every element is present in the other set.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn is_subset(&self, other: &BTreeSet<T>) -> bool {
             self.0.is_subset(&other.0)
         }
         /// Tests whether this set contains every element of the other set.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn is_superset(&self, other: &BTreeSet<T>) -> bool {
             self.0.is_superset(&other.0)
         }
         /// Tests whether the sets share no elements.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn is_disjoint(&self, other: &BTreeSet<T>) -> bool {
             self.0.is_disjoint(&other.0)
         }
         /// Borrows each element in ascending order.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn iter(&self) -> Iter<&T> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -404,37 +393,31 @@ mod native {
     impl<T: Ord + Clone> BTreeSet<T> {
         /// Clones the smallest element.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn first_cloned(&self) -> Option<T> {
             self.0.first().cloned().map_or(Option::None, Option::Some)
         }
         /// Clones the largest element.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn last_cloned(&self) -> Option<T> {
             self.0.last().cloned().map_or(Option::None, Option::Some)
         }
         /// Clones the union into a new ordered set.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn union(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.union(&other.0).cloned().collect())
         }
         /// Clones the intersection into a new ordered set.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn intersection(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.intersection(&other.0).cloned().collect())
         }
         /// Clones elements absent from the other set.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn difference(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.difference(&other.0).cloned().collect())
         }
         /// Clones elements present in exactly one set.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn symmetric_difference(&self, other: &BTreeSet<T>) -> BTreeSet<T> {
             Self(self.0.symmetric_difference(&other.0).cloned().collect())
         }
@@ -482,7 +465,6 @@ mod native {
         type Item = (K, V);
         type IntoIter = BTreeMapIntoIter<K, V>;
         /// Consumes the map and iterates over owned entries in key order.
-        #[rils_native_bridge]
         fn into_iter(self) -> Self::IntoIter {
             BTreeMapIntoIter(self.0.into_iter())
         }
@@ -496,43 +478,36 @@ mod native {
         }
         /// Returns the number of entries.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns whether the map is empty.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
         /// Removes all entries.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn clear(&mut self) {
             self.0.clear();
         }
         /// Tests whether a key is present.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn contains_key(&self, key: &K) -> bool {
             self.0.contains_key(key)
         }
         /// Inserts a key-value pair and returns the previous value.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             self.0.insert(key, value).map_or(Option::None, Option::Some)
         }
         /// Removes a key and returns its value.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn remove(&mut self, key: &K) -> Option<V> {
             self.0.remove(key).map_or(Option::None, Option::Some)
         }
         /// Borrows each key-value pair in key order.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn iter(&self) -> Iter<(&K, &V)> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -541,7 +516,6 @@ mod native {
     impl<K: Ord, V: Clone> BTreeMap<K, V> {
         /// Clones the value for a key.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn get_cloned(&self, key: &K) -> Option<V> {
             self.0.get(key).cloned().map_or(Option::None, Option::Some)
         }
@@ -550,7 +524,6 @@ mod native {
     impl<K: Ord + Clone, V> BTreeMap<K, V> {
         /// Clones the smallest key.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn first_key_cloned(&self) -> Option<K> {
             self.0
                 .first_key_value()
@@ -559,7 +532,6 @@ mod native {
         }
         /// Clones the largest key.
         #[export_rils]
-        #[rils_native_bridge]
         pub fn last_key_cloned(&self) -> Option<K> {
             self.0
                 .last_key_value()

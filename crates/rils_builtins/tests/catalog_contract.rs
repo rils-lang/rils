@@ -85,24 +85,15 @@ fn stdlib_directory_generates_source_and_module_metadata() {
 }
 
 #[test]
-fn runtime_import_bindings_come_from_stdlib_members() {
-    let expected = [
-        ("Vec", "new", "core::vec::new"),
-        ("Vec", "from", "core::vec::from"),
-        ("HashMap", "new", "core::hash_map::new"),
-        ("HashSet", "new", "core::hash_set::new"),
-    ];
-    for (owner, member, import) in expected {
-        let declaration = builtin_member(owner, member).expect("associated built-in declaration");
-        assert_eq!(declaration.runtime_import, Some(import));
-    }
-    for declaration in BUILTINS {
-        for member in declaration.members {
-            if member.runtime_import.is_some() {
-                assert_eq!(member.kind, BuiltinMemberKind::AssociatedFunction);
-                assert!(member.signature.is_some());
-            }
-        }
+fn collection_constructors_use_native_symbols() {
+    for (owner, method) in [
+        ("Vec", "new"),
+        ("Vec", "from"),
+        ("HashMap", "new"),
+        ("HashSet", "new"),
+    ] {
+        let member = builtin_member(owner, method).expect("collection constructor");
+        assert!(member.native_symbol.is_some(), "{owner}::{method}");
     }
 }
 
@@ -128,7 +119,6 @@ fn native_symbols_are_unique_and_resolve_to_their_declarations() {
                 assert!(symbols.insert(symbol), "duplicate native symbol `{symbol}`");
                 assert!(symbol.ends_with(&format!("::{}", member.name)));
                 assert!(member.signature.is_some());
-                assert!(member.runtime_import.is_none());
                 assert_eq!(
                     rils_builtins::native_member(symbol).unwrap().name,
                     member.name
@@ -273,7 +263,7 @@ fn map_and_set_size_methods_use_native_symbols_without_ids() {
         let declaration = builtin(owner).expect("collection declaration");
         for name in ["len", "is_empty"] {
             let member = declaration.member(name).expect("size method");
-            assert!(member.native_bridge, "{owner}::{name}");
+            assert!(!member.native_bridge, "{owner}::{name}");
             let symbol = member.native_symbol.expect("native symbol");
             assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
         }
@@ -292,14 +282,14 @@ fn map_and_set_methods_use_native_symbols_without_ids() {
 }
 
 #[test]
-fn migrated_hash_constructors_keep_imports_and_native_iterators() {
-    for (name, constructor) in [
-        ("HashMap", "core::hash_map::new"),
-        ("HashSet", "core::hash_set::new"),
-    ] {
+fn migrated_hash_constructors_export_native_symbols_and_iterators() {
+    for name in ["HashMap", "HashSet"] {
         let declaration = builtin(name).expect("migrated hash collection");
         let new = declaration.member("new").expect("constructor");
-        assert_eq!(new.runtime_import, Some(constructor));
+        assert!(std::ptr::eq(
+            native_member(new.native_symbol.unwrap()).unwrap(),
+            new
+        ));
         let iter = declaration.member("iter").unwrap();
         assert!(std::ptr::eq(
             native_member(iter.native_symbol.unwrap()).unwrap(),
@@ -312,7 +302,7 @@ fn migrated_hash_constructors_keep_imports_and_native_iterators() {
 fn migrated_vec_exports_indexed_methods_without_legacy_ids() {
     let vector = builtin("Vec").expect("native Vec declaration");
     let from = vector.member("from").expect("array constructor");
-    assert_eq!(from.runtime_import, Some("core::vec::from"));
+    assert!(from.native_symbol.is_some());
     assert_eq!(
         from.signature.unwrap().parameters,
         &[TypePattern::ArrayParameter {
@@ -435,7 +425,7 @@ fn native_function_aliases_resolve_to_exported_methods() {
 }
 
 #[test]
-fn runtime_members_have_a_symbol_or_import_binding() {
+fn runtime_members_have_a_native_symbol() {
     for declaration in BUILTINS {
         if declaration.backend != rils_builtins::BuiltinBackend::Runtime {
             continue;
@@ -447,7 +437,6 @@ fn runtime_members_have_a_symbol_or_import_binding() {
             ) {
                 assert!(
                     member.native_symbol.is_some()
-                        || member.runtime_import.is_some()
                         || (declaration.kind == BuiltinKind::Trait
                             && !member.required
                             && declaration.source.is_some()),

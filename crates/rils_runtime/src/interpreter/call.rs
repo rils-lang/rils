@@ -110,54 +110,6 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match callee {
             Value::BuiltinFunction(function) => match function {
-                BuiltinFunction::VecNew => {
-                    check_arity("Vec::new", 0, 0, arguments.len(), span)?;
-                    Ok(Value::Vec(Rc::new(IndexedStorage {
-                        active_iterators: std::cell::Cell::new(0),
-                        elements: RefCell::new(Vec::new()),
-                        element_type: RefCell::new(Some(Type::Unknown)),
-                    })))
-                }
-                BuiltinFunction::VecFrom => {
-                    check_arity("Vec::from", 1, 1, arguments.len(), span)?;
-                    let Value::Array(array) = &arguments[0] else {
-                        return Err(RuntimeError::new("Vec::from expects an array", span));
-                    };
-                    if array
-                        .elements
-                        .borrow()
-                        .iter()
-                        .any(|slot| slot.references > 0)
-                    {
-                        return Err(RuntimeError::new(
-                            "cannot move an array into Vec while an element is referenced",
-                            span,
-                        ));
-                    }
-                    let elements = array.elements.borrow_mut().drain(..).collect();
-                    Ok(Value::Vec(Rc::new(IndexedStorage {
-                        active_iterators: std::cell::Cell::new(0),
-                        elements: RefCell::new(elements),
-                        element_type: RefCell::new(array.element_type.borrow().clone()),
-                    })))
-                }
-                BuiltinFunction::HashMapNew => {
-                    check_arity("HashMap::new", 0, 0, arguments.len(), span)?;
-                    Ok(Value::HashMap(Rc::new(HashMapValue {
-                        borrowed: std::cell::Cell::new(0),
-                        entries: RefCell::new(HashMap::new()),
-                        key_type: RefCell::new(Type::Unknown),
-                        value_type: RefCell::new(Type::Unknown),
-                    })))
-                }
-                BuiltinFunction::HashSetNew => {
-                    check_arity("HashSet::new", 0, 0, arguments.len(), span)?;
-                    Ok(Value::HashSet(Rc::new(HashSetValue {
-                        borrowed: std::cell::Cell::new(0),
-                        entries: RefCell::new(HashSet::new()),
-                        element_type: RefCell::new(Type::Unknown),
-                    })))
-                }
                 BuiltinFunction::RcNew => {
                     check_arity("Rc::new", 1, 1, arguments.len(), span)?;
                     let value = arguments[0].clone();

@@ -10,22 +10,22 @@ pub(super) fn resolve_associated_path(
 ) -> Result<Value, RuntimeError> {
     match base {
         Value::BuiltinType(BuiltinType::Vec) => match member {
-            "new" => Ok(Value::BuiltinFunction(BuiltinFunction::VecNew)),
-            "from" => Ok(Value::BuiltinFunction(BuiltinFunction::VecFrom)),
+            "new" => native_collection_constructor("Vec", member, span),
+            "from" => native_collection_constructor("Vec", member, span),
             _ => Err(RuntimeError::new(
                 format!("Vec has no associated function `{member}`"),
                 span,
             )),
         },
         Value::BuiltinType(BuiltinType::HashMap) => match member {
-            "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashMapNew)),
+            "new" => native_collection_constructor("HashMap", member, span),
             _ => Err(RuntimeError::new(
                 format!("HashMap has no associated function `{member}`"),
                 span,
             )),
         },
         Value::BuiltinType(BuiltinType::HashSet) => match member {
-            "new" => Ok(Value::BuiltinFunction(BuiltinFunction::HashSetNew)),
+            "new" => native_collection_constructor("HashSet", member, span),
             _ => Err(RuntimeError::new(
                 format!("HashSet has no associated function `{member}`"),
                 span,
@@ -59,7 +59,7 @@ pub(super) fn resolve_associated_path(
         Value::StructType(definition) => {
             if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
                 && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
-                && let Some(symbol) = builtin.native_symbol.or(builtin.runtime_import)
+                && let Some(symbol) = builtin.native_symbol
                 && crate::runtime_builtins::requires_owned_native_call(symbol)
                 && let Some(signature) =
                     rils_frontend::standard_library::erased_builtin_member_signature(builtin)
@@ -153,6 +153,31 @@ pub(super) fn resolve_associated_path(
             span,
         )),
     }
+}
+
+fn native_collection_constructor(
+    owner: &str,
+    member: &str,
+    span: Span,
+) -> Result<Value, RuntimeError> {
+    let declaration = rils_builtins::builtin_member(owner, member)
+        .ok_or_else(|| RuntimeError::new(format!("{owner} has no `{member}` method"), span))?;
+    let symbol = declaration.native_symbol.ok_or_else(|| {
+        RuntimeError::new(format!("{owner}::{member} has no native symbol"), span)
+    })?;
+    let signature = rils_frontend::standard_library::erased_builtin_member_signature(declaration)
+        .ok_or_else(|| {
+        RuntimeError::new(format!("{owner}::{member} has no signature"), span)
+    })?;
+    let arity = signature.parameters.as_ref().map_or(0, Vec::len);
+    Ok(Value::NativeFunction(NativeFunction {
+        binding_name: symbol,
+        name: symbol,
+        min_arity: arity,
+        max_arity: arity,
+        signature: Some(signature),
+        body: NativeFunctionBody::Symbol(symbol),
+    }))
 }
 
 pub(super) fn resolve_qualified_path(

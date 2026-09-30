@@ -214,4 +214,4 @@ Rust 宿主可通过 `register_module`、`register_module_function` 注册多层
 数组、Vec、Option 等只有 Debug 表示的值不能直接传入；请先使用 `format!("{:?}", value)`。
 
 Rust 导出签名不再使用 `rils_any` / `rils_ref_any` 将参数降为未知类型；不支持的导出类型
-会在宏展开时报错。`rils_import` 仅选择已有运行时入口，不会放宽参数类型。
+会在宏展开时报错。标准库关联函数通过导出声明的原生符号调用，不再使用 `#[rils_import(...)]`。

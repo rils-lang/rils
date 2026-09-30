@@ -34,6 +34,19 @@ fn typed_copy_vec_uses_native_storage() {
 }
 
 #[test]
+fn native_vec_from_moves_non_copy_array_items_across_backends() {
+    let source = r#"
+        let mut values: Vec<string> = Vec::from(["first", "second"]);
+        values.pop().unwrap() == "second"
+            && values.pop().unwrap() == "first"
+            && values.is_empty()
+    "#;
+    for value in run_both(source) {
+        assert_eq!(value, Value::Bool(true));
+    }
+}
+
+#[test]
 fn native_vec_index_references_allow_sequential_alias_writes() {
     let source = r#"
         let mut values: Vec<i32> = Vec::new();

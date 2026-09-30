@@ -596,7 +596,6 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     value_type: Some(#value_type),
                     receiver: None,
                     indexed_view: false,
-                    runtime_import: None,
                     native_symbol: None,
                     native_bridge: false,
                     required: false,
@@ -629,15 +628,6 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                 .attrs
                 .iter()
                 .any(|attr| attr.path().is_ident("rils_native_bridge"));
-            let (runtime_import, native_symbol) =
-                match super::method_binding::MethodBinding::parse(method)? {
-                    super::method_binding::MethodBinding::Native => {
-                        (quote!(None), quote!(Some(#id_path)))
-                    }
-                    super::method_binding::MethodBinding::Import(path) => {
-                        (quote!(Some(#path)), quote!(None))
-                    }
-                };
             let (kind, receiver_mode, parameter_start) =
                 if let Some(receiver) = method.sig.receiver() {
                     let mode = if receiver.reference.is_some() {
@@ -717,8 +707,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                     value_type: None,
                     receiver: #receiver_mode,
                     indexed_view: #indexed_view,
-                    runtime_import: #runtime_import,
-                    native_symbol: #native_symbol,
+                    native_symbol: Some(#id_path),
                     native_bridge: #native_bridge,
                     required: true,
                     type_parameters: &[#(#generics),*],

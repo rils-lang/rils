@@ -149,12 +149,10 @@ pub(super) fn builtin_default_hir(
                 span,
             },
             DefaultPlan::EmptyCollection { name, .. } => {
-                let (name, signature) = collection_import_signature(&format!("{name}::new"))
-                    .expect("default collection has a constructor import");
-                HirExpression::CallImport {
-                    name: name.into(),
-                    signature,
-                    capability: "core".into(),
+                let symbol = collection_constructor_symbol(&format!("{name}::new"))
+                    .expect("default collection has a native constructor");
+                HirExpression::CallNative {
+                    symbol: symbol.into(),
                     arguments: Vec::new(),
                     span,
                 }

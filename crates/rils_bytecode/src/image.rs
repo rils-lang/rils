@@ -13,8 +13,8 @@ use crate::{
     types::{FunctionSignature, IntegerType, Type},
     value::{
         BytecodeFunctionValue, BytecodeIteratorValue, EnumInstance, EnumPayload, EnumType,
-        FieldSlot, HashMapValue, HashSetValue, IndexedStorage, ReferenceValue, StructFields,
-        StructInstance, StructType, Value, native_range,
+        FieldSlot, IndexedStorage, ReferenceValue, StructFields, StructInstance, StructType, Value,
+        native_range,
     },
 };
 

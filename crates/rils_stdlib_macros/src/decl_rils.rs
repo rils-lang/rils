@@ -12,7 +12,6 @@ use crate::type_patterns;
 
 mod export_module;
 pub(crate) mod function_definition;
-mod method_binding;
 mod primitive;
 mod string;
 mod structure;
@@ -365,7 +364,6 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     value_type: Some(#value_type),
                     receiver: None,
                     indexed_view: false,
-                    runtime_import: None,
                     native_symbol: None,
                     native_bridge: false,
                     required: false,
@@ -388,16 +386,13 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
             let name = method.sig.ident.to_string();
             let documentation = documentation(&method.attrs);
             let id_path = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
-            let binding = method_binding::MethodBinding::parse(method)?;
-            let native_symbol = match binding {
-                method_binding::MethodBinding::Native => {
-                    if !supports_direct_bridge(&definition.item, method) {
-                        return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion; implement its bridge"));
-                    }
-                    quote!(Some(#id_path))
-                }
-                method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
-            };
+            if !supports_direct_bridge(&definition.item, method) {
+                return Err(Error::new_spanned(
+                    &method.sig,
+                    "exported method signature has no native conversion; implement its bridge",
+                ));
+            }
+            let native_symbol = quote!(Some(#id_path));
             let receiver = method.sig.receiver().ok_or_else(|| {
                 Error::new_spanned(&method.sig, "native methods require a receiver")
             })?;
@@ -446,7 +441,6 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                     value_type: None,
                     receiver: Some(#receiver_mode),
                     indexed_view: false,
-                    runtime_import: None,
                     native_symbol: #native_symbol,
                     native_bridge: #native_bridge,
                     required: true,
@@ -686,10 +680,8 @@ fn native_tokens(definition: &Definition) -> syn::Result<Tokens> {
         if callback_operation(&definition.item, method).is_some() {
             return Ok(quote! { #id_path => Some(Err("native callback context is unavailable".to_owned())) });
         }
-        match method_binding::MethodBinding::parse(method)? {
-            method_binding::MethodBinding::Import(_) => return Err(Error::new_spanned(&method.sig, "enum receiver methods cannot use runtime imports")),
-            method_binding::MethodBinding::Native if !supports_direct_bridge(&definition.item, method) => return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion")),
-            method_binding::MethodBinding::Native => {}
+        if !supports_direct_bridge(&definition.item, method) {
+            return Err(Error::new_spanned(&method.sig, "exported method signature has no native conversion"));
         }
         if method.attrs.iter().any(|attribute| attribute.path().is_ident("rils_native_bridge")) {
             let arity = method.sig.inputs.len();

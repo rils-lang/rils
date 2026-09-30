@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- **破坏性 Rust API 变更：** 移除标准库定义中的 `#[rils_import(...)]` 与 `BuiltinMember::runtime_import`。`Vec::new/from`、`HashMap::new`、`HashSet::new` 现在通过声明生成的原生符号调用；扩展标准库时请使用 `#[export_rils]` 并提供对应的原生转换。引用这些旧导入的实验性 v8 字节码需从源码重新编译。
+
 - **破坏性 Rust API 变更：** 移除 `BuiltinId`、`builtin_ids.toml`、`builtin_id!` 和 `#[rils_legacy_id]`。标准库数值方法及容器方法统一按导出声明中的规范符号调用；嵌入端若直接使用旧 ID 类型或宏，请改用声明的 `native_symbol` / `IntrinsicDeclaration::symbol`。包含旧数字调用的实验性 v8 字节码需从源码重新编译；格式版本暂不变。
 
 - `HashMap`、`HashSet`、`BTreeMap` 与 `BTreeSet` 的所有方法现由标准库导出的原生符号分派，相关旧数字 ID 已移除。使用这些 ID 的实验性 v8 字节码需从源码重新编译。
@@ -63,7 +65,7 @@
 - The unfrozen v8 bytecode type encoding now includes symbolic array lengths and bounded generic parameters. Recompile previously generated v8 files; the format version remains 8.
 
 
-- 移除 `#[rils_native]`：导出的固有方法与 trait impl 方法默认使用原生符号。尚未迁移的入口显式保留 `#[rils_legacy_id(...)]` / `#[rils_import(...)]`，不再隐式选择旧 ID。迁移 Rust 标准库扩展时，删除 `#[rils_native]`；未支持的签名需补充转换或明确绑定已有兼容入口。字节码格式继续保持 v8。
+- 移除 `#[rils_native]`：导出的固有方法与 trait impl 方法默认使用原生符号。未支持的签名需补充原生转换；字节码格式继续保持 v8。
 
 - 带原生桥接的标准库方法不再自动登记数字 `BuiltinId`；`Vec::is_empty` 现在直接由 `len()` 的结果实现。`Vec` 已迁移方法与 `Range::next` 的旧编号已移除，调用使用原生符号。数组与 Vec 的迭代统一由 `IntoIterator` / `Iterator` 和共享执行入口驱动，不再使用旧 Sequence 成员分派。
 

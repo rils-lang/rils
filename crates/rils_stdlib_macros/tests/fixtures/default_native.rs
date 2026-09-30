@@ -22,23 +22,6 @@ mod native {
             !self.0.is_empty()
         }
     }
-
-    #[rils_struct]
-    pub struct Legacy;
-
-    impl Legacy {
-        #[export_rils]
-        #[rils_import(core::fixture::old)]
-        pub fn old(&self) -> usize {
-            1
-        }
-
-        #[export_rils]
-        #[rils_import(core::fixture::new)]
-        pub fn new() -> Self {
-            Self
-        }
-    }
 }
 
-pub use native::{Legacy, Vec};
+pub use native::Vec;

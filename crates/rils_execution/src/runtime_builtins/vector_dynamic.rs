@@ -25,6 +25,12 @@ fn owned_member(symbol: &str) -> Option<&'static BuiltinMember> {
     })
 }
 
+fn from_array_member(symbol: &str) -> bool {
+    builtin("Vec")
+        .and_then(|declaration| declaration.member("from"))
+        .is_some_and(|member| member.native_symbol == Some(symbol))
+}
+
 fn into_iter_member(symbol: &str) -> bool {
     builtin("Vec").is_some_and(|declaration| {
         declaration
@@ -55,7 +61,8 @@ fn owned_output_member(symbol: &str) -> Option<&'static str> {
 }
 
 pub(crate) fn is_owned_symbol(symbol: &str) -> bool {
-    owned_member(symbol).is_some()
+    from_array_member(symbol)
+        || owned_member(symbol).is_some()
         || into_iter_member(symbol)
         || iter_member(symbol)
         || owned_output_member(symbol).is_some()
@@ -66,6 +73,9 @@ pub(crate) fn call_owned_symbol(
     mut arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if from_array_member(symbol) {
+        return Some(super::collection_constructor::from_array(arguments));
+    }
     if iter_member(symbol) {
         return Some(indexed_iter::borrow_with_context(&arguments, context));
     }

@@ -5,10 +5,6 @@ pub(super) enum CoreImport {
     Native(&'static str),
     TypeOf,
     Assert,
-    VecNew,
-    VecFrom,
-    HashMapNew,
-    HashSetNew,
     RcNew,
 }
 
@@ -27,17 +23,6 @@ pub(super) fn core_imports() -> Vec<(&'static str, FunctionSignature)> {
             )
         })
         .collect::<Vec<_>>();
-    imports.extend(rils_builtins::BUILTINS.iter().flat_map(|declaration| {
-        declaration.members.iter().filter_map(|member| {
-            Some((
-                member.runtime_import?,
-                rils_frontend::standard_library::builtin_associated_function_signature(
-                    declaration.path,
-                    member.name,
-                )?,
-            ))
-        })
-    }));
     imports.push(("core::assert", FunctionSignature::variadic(Type::Unit)));
     imports
 }
@@ -53,10 +38,6 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
             CoreImport::Native(rils_builtins::builtin_member("Option", name)?.native_symbol?)
         }
         "core::assert" => CoreImport::Assert,
-        "core::vec::new" => CoreImport::VecNew,
-        "core::vec::from" => CoreImport::VecFrom,
-        "core::hash_map::new" => CoreImport::HashMapNew,
-        "core::hash_set::new" => CoreImport::HashSetNew,
         "core::rc::rc::new" => CoreImport::RcNew,
         _ => return None,
     })
@@ -83,22 +64,6 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             )),
             None => Err("`assert` expects at least one argument".into()),
         },
-        CoreImport::VecNew => Ok(Value::Vec(Rc::new(IndexedStorage {
-            active_iterators: std::cell::Cell::new(0),
-            elements: RefCell::new(Vec::new()),
-            element_type: RefCell::new(Some(Type::Unknown)),
-        }))),
-        CoreImport::HashMapNew => Ok(Value::HashMap(Rc::new(HashMapValue {
-            borrowed: std::cell::Cell::new(0),
-            entries: RefCell::new(HashMap::new()),
-            key_type: RefCell::new(Type::Unknown),
-            value_type: RefCell::new(Type::Unknown),
-        }))),
-        CoreImport::HashSetNew => Ok(Value::HashSet(Rc::new(HashSetValue {
-            borrowed: std::cell::Cell::new(0),
-            entries: RefCell::new(HashSet::new()),
-            element_type: RefCell::new(Type::Unknown),
-        }))),
         CoreImport::RcNew => {
             let value = arguments
                 .first()
@@ -108,25 +73,6 @@ pub(super) fn call_core_import(import: CoreImport, arguments: &[Value]) -> Resul
             Ok(Value::Rc(Rc::new(rils_execution::value::RcValue {
                 value,
                 type_argument,
-            })))
-        }
-        CoreImport::VecFrom => {
-            let Value::Array(array) = &arguments[0] else {
-                return Err("Vec::from expects an array".into());
-            };
-            if array
-                .elements
-                .borrow()
-                .iter()
-                .any(|slot| slot.references > 0)
-            {
-                return Err("cannot move an array into Vec while an element is referenced".into());
-            }
-            let elements = array.elements.borrow_mut().drain(..).collect();
-            Ok(Value::Vec(Rc::new(IndexedStorage {
-                active_iterators: std::cell::Cell::new(0),
-                elements: RefCell::new(elements),
-                element_type: RefCell::new(array.element_type.borrow().clone()),
             })))
         }
     }
