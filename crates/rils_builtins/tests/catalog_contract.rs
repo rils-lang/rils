@@ -1,8 +1,7 @@
 use rils_builtins::{
-    BUILTIN_MODULES, BUILTIN_SOURCES, BUILTINS, BuiltinBackend, BuiltinId, BuiltinKind,
-    BuiltinMemberKind, BuiltinSourceKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS, INTEGER_CONSTANTS,
-    INTEGER_INTRINSICS, IntrinsicKind, TypePattern, builtin, builtin_member,
-    builtin_module_members, intrinsic, native_member, runtime_member,
+    BUILTIN_MODULES, BUILTIN_SOURCES, BUILTINS, BuiltinBackend, BuiltinKind, BuiltinMemberKind,
+    BuiltinSourceKind, FLOAT_CONSTANTS, FLOAT_INTRINSICS, INTEGER_CONSTANTS, INTEGER_INTRINSICS,
+    IntrinsicKind, TypePattern, builtin, builtin_member, builtin_module_members, native_member,
 };
 use rils_stdlib_macros::decl_rils_source;
 
@@ -10,7 +9,6 @@ use rils_stdlib_macros::decl_rils_source;
 fn owned_native_bridge_exports_a_symbol_without_legacy_id() {
     let constructor = builtin_member("Rc", "new").expect("Rc::new is declared");
     let symbol = constructor.native_symbol.expect("native symbol");
-    assert_eq!(constructor.builtin_id, None);
     assert!(std::ptr::eq(native_member(symbol).unwrap(), constructor));
 }
 
@@ -97,7 +95,6 @@ fn runtime_import_bindings_come_from_stdlib_members() {
     for (owner, member, import) in expected {
         let declaration = builtin_member(owner, member).expect("associated built-in declaration");
         assert_eq!(declaration.runtime_import, Some(import));
-        assert_eq!(declaration.builtin_id, None);
     }
     for declaration in BUILTINS {
         for member in declaration.members {
@@ -112,17 +109,14 @@ fn runtime_import_bindings_come_from_stdlib_members() {
 #[test]
 fn native_symbols_are_unique_and_resolve_to_their_declarations() {
     let extend = builtin_member("Vec", "extend").expect("Vec::extend is exported");
-    assert_eq!(extend.builtin_id, None);
     assert_eq!(extend.native_symbol, Some("core::collections::vec::extend"));
     let queue_push =
         builtin_member("VecDeque", "push_back").expect("VecDeque::push_back is exported");
-    assert_eq!(queue_push.builtin_id, None);
     assert_eq!(
         queue_push.native_symbol,
         Some("core::collections::vec_deque::push_back")
     );
     let heap_push = builtin_member("BinaryHeap", "push").expect("BinaryHeap::push is exported");
-    assert_eq!(heap_push.builtin_id, None);
     assert_eq!(
         heap_push.native_symbol,
         Some("core::collections::binary_heap::push")
@@ -164,19 +158,6 @@ fn collect_rils_files(directory: &std::path::Path, files: &mut Vec<String>) {
     }
 }
 use rils_syntax::{FloatType, IntegerType, Type, ast::Stmt, lex, parse};
-
-#[test]
-fn builtin_id_macro_resolves_the_configured_stable_id() {
-    const INTEGER_TRY_FROM: BuiltinId = rils_builtins::builtin_id!("core::integer::try_from");
-
-    assert_eq!(INTEGER_TRY_FROM, BuiltinId::IntegerTryFrom);
-    assert_eq!(INTEGER_TRY_FROM.as_raw(), 0x0B00);
-    assert_eq!(
-        INTEGER_TRY_FROM.canonical_path(),
-        Some("core::integer::try_from")
-    );
-    assert_eq!(INTEGER_TRY_FROM.member_name(), Some("try_from"));
-}
 
 #[test]
 fn type_pattern_macro_resolves_nested_types_without_manual_construction() {
@@ -251,19 +232,6 @@ fn declarations_have_unique_stable_identity_and_complete_metadata() {
 }
 
 #[test]
-fn direct_runtime_members_resolve_without_import_names() {
-    for declaration in BUILTINS {
-        for member in declaration.members {
-            let Some(id) = member.builtin_id.filter(|id| id.has_direct_runtime_call()) else {
-                continue;
-            };
-            assert!(id.canonical_path().is_some());
-            assert!(runtime_member(id).is_some());
-        }
-    }
-}
-
-#[test]
 fn exported_option_result_callbacks_use_native_symbols() {
     for (type_name, methods) in [
         ("Option", &["map", "and_then", "or_else", "filter"][..]),
@@ -275,37 +243,6 @@ fn exported_option_result_callbacks_use_native_symbols() {
                 .member(method)
                 .expect("exported callback method");
             assert!(member.native_symbol.is_some(), "{type_name}::{method}");
-            assert!(member.builtin_id.is_none(), "{type_name}::{method}");
-        }
-    }
-}
-
-#[test]
-fn builtin_catalog_is_bidirectional_at_its_boundaries() {
-    for declaration in BUILTINS {
-        for member in declaration.members {
-            if let Some(id) = member.builtin_id {
-                let (_, found) = runtime_member(id).expect("runtime member declaration");
-                assert_eq!(found.builtin_id, Some(id));
-            }
-        }
-    }
-    for &id in BuiltinId::ALL {
-        if let Some((_, member)) = runtime_member(id) {
-            assert_eq!(id.member_name(), Some(member.name));
-        } else if let Some(member) = id.canonical_path().and_then(native_member) {
-            // An old numeric ID remains reserved for bytecode compatibility after
-            // its declaration moves to a native symbol.
-            assert_eq!(id.member_name(), Some(member.name));
-        } else {
-            let intrinsic = intrinsic(id.canonical_path().expect("configured ID path"))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "missing declaration for configured built-in {}",
-                        id.canonical_path().unwrap_or("<unknown>")
-                    )
-                });
-            assert_eq!(id.member_name(), Some(intrinsic.name));
         }
     }
 }
@@ -315,7 +252,6 @@ fn collection_constructors_export_native_symbols_without_ids() {
     for owner in ["VecDeque", "BinaryHeap", "BTreeMap", "BTreeSet"] {
         let constructor = builtin_member(owner, "new").expect("constructor");
         let symbol = constructor.native_symbol.expect("native symbol");
-        assert_eq!(constructor.builtin_id, None);
         assert!(std::ptr::eq(native_member(symbol).unwrap(), constructor));
     }
 }
@@ -325,7 +261,6 @@ fn queue_and_heap_members_use_native_symbols_without_ids() {
     for owner in ["VecDeque", "BinaryHeap"] {
         let declaration = builtin(owner).expect("collection declaration");
         for member in declaration.members {
-            assert_eq!(member.builtin_id, None, "{owner}::{}", member.name);
             let symbol = member.native_symbol.expect("native symbol");
             assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
         }
@@ -338,7 +273,6 @@ fn map_and_set_size_methods_use_native_symbols_without_ids() {
         let declaration = builtin(owner).expect("collection declaration");
         for name in ["len", "is_empty"] {
             let member = declaration.member(name).expect("size method");
-            assert_eq!(member.builtin_id, None, "{owner}::{name}");
             assert!(member.native_bridge, "{owner}::{name}");
             let symbol = member.native_symbol.expect("native symbol");
             assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
@@ -350,7 +284,6 @@ fn map_and_set_size_methods_use_native_symbols_without_ids() {
 fn map_and_set_methods_use_native_symbols_without_ids() {
     for owner in ["HashMap", "BTreeMap", "HashSet", "BTreeSet"] {
         for member in builtin(owner).expect("collection declaration").members {
-            assert_eq!(member.builtin_id, None, "{owner}::{}", member.name);
             if let Some(symbol) = member.native_symbol {
                 assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
             }
@@ -367,9 +300,7 @@ fn migrated_hash_constructors_keep_imports_and_native_iterators() {
         let declaration = builtin(name).expect("migrated hash collection");
         let new = declaration.member("new").expect("constructor");
         assert_eq!(new.runtime_import, Some(constructor));
-        assert!(new.builtin_id.is_none());
         let iter = declaration.member("iter").unwrap();
-        assert!(iter.builtin_id.is_none());
         assert!(std::ptr::eq(
             native_member(iter.native_symbol.unwrap()).unwrap(),
             iter
@@ -389,8 +320,6 @@ fn migrated_vec_exports_indexed_methods_without_legacy_ids() {
             length: "N"
         }]
     );
-    assert!(vector.member("len").unwrap().builtin_id.is_none());
-    assert!(vector.member("iter").unwrap().builtin_id.is_none());
     assert!(vector.member("len").unwrap().indexed_view);
     assert!(vector.member("iter").unwrap().indexed_view);
     for name in [
@@ -408,7 +337,6 @@ fn migrated_vec_exports_indexed_methods_without_legacy_ids() {
     ] {
         let member = vector.member(name).unwrap();
         assert!(member.native_symbol.is_some(), "Vec::{name}");
-        assert_eq!(member.builtin_id, None, "Vec::{name}");
     }
     assert!(vector.member("from").is_some());
 }
@@ -418,7 +346,6 @@ fn exported_trait_impl_methods_keep_public_names_and_range_next_is_native() {
     let range = builtin("Range").unwrap();
     let next = range.member("next").unwrap();
     assert!(next.native_symbol.is_some());
-    assert_eq!(next.builtin_id, None);
     assert!(rils_builtins::BLANKET_TRAIT_IMPLS.contains(&("Iterator", "IntoIterator")));
 
     let borrowed = builtin("Iter").unwrap();
@@ -430,7 +357,6 @@ fn migrated_ref_cell_exposes_lexical_reference_signatures() {
     let cell = builtin("RefCell").expect("native RefCell declaration");
     for (name, mutable) in [("borrow", false), ("borrow_mut", true)] {
         let method = cell.member(name).expect("borrow method");
-        assert_eq!(method.builtin_id, None);
         let symbol = method.native_symbol.expect("native method symbol");
         let (owner, resolved) = rils_builtins::native_member_owner(symbol).unwrap();
         assert_eq!(owner.path, cell.path);
@@ -466,35 +392,14 @@ fn filesystem_functions_come_from_native_declarations() {
 }
 
 #[test]
-fn string_methods_no_longer_reserve_builtin_ids() {
+fn string_methods_export_native_symbols() {
     for member in builtin("string").unwrap().members {
-        assert!(member.builtin_id.is_none(), "string::{}", member.name);
         assert!(member.native_symbol.is_some(), "string::{}", member.name);
     }
-    for raw in 0x0A00..=0x0A13 {
-        assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
-    }
 }
 
 #[test]
-fn legacy_sequence_ids_are_no_longer_defined() {
-    for raw in std::iter::once(0x0001)
-        .chain(0x0100..=0x0105)
-        .chain(0x0200..=0x0207)
-        .chain(std::iter::once(0x0300))
-        .chain(std::iter::once(0x0308))
-        .chain(std::iter::once(0x0401))
-        .chain(0x0500..=0x050A)
-        .chain(0x0600..=0x060E)
-        .chain(0x1200..=0x120B)
-        .chain(0x1300..=0x1311)
-    {
-        assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
-    }
-}
-
-#[test]
-fn direct_option_result_methods_no_longer_reserve_builtin_ids() {
+fn direct_option_result_methods_export_native_symbols() {
     for (type_name, methods) in [
         ("Option", &["is_some", "is_none"][..]),
         ("Result", &["is_ok", "is_err", "ok", "err"][..]),
@@ -502,12 +407,8 @@ fn direct_option_result_methods_no_longer_reserve_builtin_ids() {
         let declaration = builtin(type_name).unwrap();
         for &name in methods {
             let member = declaration.member(name).unwrap();
-            assert!(member.builtin_id.is_none(), "{type_name}::{name}");
             assert!(member.native_symbol.is_some(), "{type_name}::{name}");
         }
-    }
-    for raw in [0x0800, 0x0801, 0x0805, 0x0806, 0x0900, 0x0901] {
-        assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
     }
 }
 
@@ -534,7 +435,7 @@ fn native_function_aliases_resolve_to_exported_methods() {
 }
 
 #[test]
-fn runtime_members_have_a_native_or_legacy_binding() {
+fn runtime_members_have_a_symbol_or_import_binding() {
     for declaration in BUILTINS {
         if declaration.backend != rils_builtins::BuiltinBackend::Runtime {
             continue;
@@ -546,7 +447,6 @@ fn runtime_members_have_a_native_or_legacy_binding() {
             ) {
                 assert!(
                     member.native_symbol.is_some()
-                        || member.builtin_id.is_some()
                         || member.runtime_import.is_some()
                         || (declaration.kind == BuiltinKind::Trait
                             && !member.required
@@ -635,19 +535,15 @@ fn rils_standard_library_files_supply_type_member_and_variant_metadata() {
         vec.member("new").expect("Vec::new").kind,
         BuiltinMemberKind::AssociatedFunction
     );
-    assert_eq!(vec.member("new").expect("Vec::new").builtin_id, None);
-    assert_eq!(vec.member("len").expect("Vec::len").builtin_id, None);
 
     let map = builtin("HashMap").expect("HashMap declaration");
     assert_eq!(map.type_parameters, &["K", "V"]);
     let insert = map.member("insert").expect("HashMap::insert");
-    assert_eq!(insert.builtin_id, None);
     assert!(insert.native_symbol.is_some());
 
     let set = builtin("HashSet").expect("HashSet declaration");
     assert_eq!(set.type_parameters, &["T"]);
     let union = set.member("union").expect("HashSet::union");
-    assert_eq!(union.builtin_id, None);
     assert!(union.native_symbol.is_some());
 }
 
@@ -662,7 +558,6 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
     );
     let map = iterator.member("map").expect("Iterator::map");
     assert_eq!(map.type_parameters, &["U"]);
-    assert_eq!(map.builtin_id, None);
     assert!(!map.required);
     let source = iterator.source.expect("Iterator exports its source");
     let program =
@@ -698,34 +593,20 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
         into_iterator.member("IntoIter").unwrap().kind,
         BuiltinMemberKind::AssociatedType
     );
-    assert_eq!(into_iterator.member("into_iter").unwrap().builtin_id, None);
 
     let borrowed = builtin("Iter").expect("borrowed indexed iterator declaration");
     assert_eq!(borrowed.type_parameters, &["T"]);
-    assert_eq!(
-        borrowed.member("next").expect("Iter::next").builtin_id,
-        None
-    );
     assert!(borrowed.member("next").unwrap().native_symbol.is_some());
     assert_eq!(
         borrowed.member("next").unwrap().signature.unwrap().result,
         TypePattern::Option(&TypePattern::Generic("T"))
     );
 
-    assert_eq!(
-        builtin("Vec")
-            .expect("Vec declaration")
-            .member("iter")
-            .expect("borrowed iteration method")
-            .builtin_id,
-        None
-    );
     for owner in ["HashMap", "BTreeMap", "HashSet", "BTreeSet"] {
         let declaration = builtin(owner).expect("map or set declaration");
         let iter = declaration
             .member("iter")
             .expect("borrowed iteration method");
-        assert_eq!(iter.builtin_id, None);
         assert!(std::ptr::eq(
             native_member(iter.native_symbol.unwrap()).unwrap(),
             iter
@@ -733,7 +614,6 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
         let into_iter = declaration
             .member("into_iter")
             .expect("owned iteration method");
-        assert_eq!(into_iter.builtin_id, None);
         assert!(std::ptr::eq(
             native_member(into_iter.native_symbol.unwrap()).unwrap(),
             into_iter
@@ -777,7 +657,6 @@ fn rils_standard_library_files_supply_traits_modules_and_free_functions() {
     let formatter = builtin("Formatter").expect("Formatter declaration");
     for name in ["write_str", "write_derived_debug"] {
         let member = formatter.member(name).expect("Formatter member");
-        assert_eq!(member.builtin_id, None);
         let symbol = member.native_symbol.expect("Formatter native symbol");
         assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
     }
@@ -897,9 +776,7 @@ fn declarations_report_member_and_runtime_coverage() {
 
     assert!(iterator.contains_member("next"));
     assert!(!iterator.contains_member("missing"));
-    assert_eq!(iterator.member("next").unwrap().builtin_id, None);
     assert!(iterator.member("next").unwrap().native_symbol.is_some());
-    assert!(!iterator.contains_builtin(BuiltinId::IntegerTryFrom));
 }
 
 #[test]
@@ -908,7 +785,6 @@ fn derived_vec_is_empty_has_no_numeric_id() {
         .expect("Vec declaration")
         .member("is_empty")
         .expect("Vec::is_empty declaration");
-    assert_eq!(member.builtin_id, None);
     assert!(member.native_symbol.is_some());
     assert!(member.indexed_view);
 }

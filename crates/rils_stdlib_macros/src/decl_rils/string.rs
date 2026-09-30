@@ -234,7 +234,6 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
                 signature: Some(crate::BuiltinSignature { parameters: &[#(#parameters),*], result: #result, variadic: false }),
                 value_type: None,
                 receiver: Some(crate::ReceiverMode::Shared),
-                builtin_id: None,
                 indexed_view: false,
                 runtime_import: None,
                 native_symbol: Some(#id_path),

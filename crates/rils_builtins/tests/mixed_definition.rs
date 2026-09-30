@@ -96,12 +96,10 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
         sample.member("value").unwrap().kind,
         BuiltinMemberKind::Field
     );
-    assert_eq!(sample.member("new").unwrap().builtin_id, None);
     assert_eq!(
         sample.member("new").unwrap().native_symbol,
         Some("core::fixture::sample::new")
     );
-    assert_eq!(choice.member("is_some").unwrap().builtin_id, None);
     assert_eq!(
         choice.member("is_some").unwrap().native_symbol,
         Some("core::fixture::choice::is_some")

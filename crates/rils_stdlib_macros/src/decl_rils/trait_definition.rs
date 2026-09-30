@@ -298,7 +298,6 @@ impl Input {
                     signature: None,
                     value_type: Some(TypePattern::Unknown),
                     receiver: None,
-                    builtin_id: None,
                     indexed_view: false,
                     runtime_import: None,
                     native_symbol: None,
@@ -347,7 +346,6 @@ impl Input {
                     signature: Some(crate::BuiltinSignature { parameters: &[#(#parameters),*], result: #result, variadic: false }),
                     value_type: None,
                     receiver: #receiver,
-                    builtin_id: None,
                     indexed_view: false,
                     runtime_import: None,
                     native_symbol: #native_symbol,
@@ -489,7 +487,6 @@ mod tests {
         );
         let metadata = input.metadata().unwrap().to_string();
         assert!(metadata.contains("native_symbol : Some"));
-        assert!(metadata.contains("builtin_id : None"));
     }
 
     #[test]

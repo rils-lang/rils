@@ -203,8 +203,8 @@ DefMap + TypeckResults
 
 ### Interpreter 与 VM 的 runtime builtin 重复实现（纯运行时分发已收敛）
 
-纯运行时 builtin 已集中到后端中立的 `src/runtime_builtins.rs` 及其子模块。解释器、bytecode core
-import 和 VM 通过稳定 `BuiltinId` 进入同一 dispatcher；数值、Range、HashMap/HashSet、String、
+纯运行时 builtin 已集中到后端中立的 `rils_execution::runtime_builtins` 及其子模块。解释器和 VM
+通过标准库声明中的规范符号进入共享 dispatcher；数值、Range、HashMap/HashSet、String、
 Vec、Option/Result 和无 callback 的内建 Iterator 操作不再各自维护行为实现。
 
 需要调用 Rils 函数值的 Option/Result combinator 和自定义 Iterator 操作仍通过解释器或 VM 各自的
@@ -221,17 +221,17 @@ runtime builtin 目录。
 
 ### Bytecode core import 字符串分发（标准 core import 已完成）
 
-`src/bytecode/core_imports.rs` 的 import 声明列表从 `rils_builtins` 生成。`BytecodeHost::standard` 在初始化时将每个标准 core import 名称解析为 `CoreImport`（其中 runtime member 是稳定 `BuiltinId`），handler 闭包只保存该 ID；VM 热路径不再按函数名字符串匹配。字符串仍保留在源码解析、链接、诊断和磁盘导入描述中。
+标准库的原生导入从共享声明取得规范符号和签名。字节码保存导入表索引，加载时校验符号及签名；VM 调用共享原生执行入口。未来可在加载时把符号链接为进程内调用槽位，以减少执行时的路径查找。
 
 宿主链接阶段仍可继续把其他内建或外部导入解析为明确类别：
 
 ```text
-Builtin(BuiltinId)
+NativeSymbol(path)
 Host(HostImportId)
 External(...)
 ```
 
-VM 热路径应继续按 ID 或已解析 handler 分发。字符串只保留在源码解析、诊断和磁盘导入描述中，不应成为内部 builtin 调用主键。
+宿主导入继续使用独立的 ABI ID；标准库导入使用声明生成的符号身份。
 
 ### Analyzer 的文本解析兜底
 
@@ -330,7 +330,7 @@ rils
 4. 已完成：compiler 与 AST 解释器直接按 semantic type 具体化 numeric literal；Host type side table 已由 compiler、Analyzer、静态检查和 HIR 消费；numeric、Host type rewrite 和 Host enum synthetic injection 均已删除。
 5. AST 解释器消费共享 `TypeckResults`，配置项目入口使用项目 `DefMap` 并以 frontend error diagnostic 作为执行前 gate；frontend 在项目级按模块路径解析 trait 声明与 `use` 导入，将完成 supertrait、associated type 声明、coherence 和方法契约检查的 impl 记录为稳定 `ImplId`，项目解释器对这些 impl 复用验证结果。associated type 检查覆盖缺失成员、额外成员和泛型参数数量；暂不支持的条件 trait impl 也由 frontend 在带 bound 的泛型参数处统一诊断。coherence 使用项目声明的 trait/type `DefId`，因此跨模块别名指向同一身份时能检测重复 impl，不同模块的同名声明不会误碰撞；内建与 Host 身份视为外部身份并执行孤儿规则。普通 `eval` 或无法由项目语义解析的动态路径继续保留运行时防御。剩余类型兼容检查和名称查找收缩属于后续独立迭代。
 6. 已完成：数值、Range、HashMap/HashSet、String、Vec、Option/Result，以及内建 `OwnedIterator` 的无 callback 操作（含 `enumerate`）已共享根 runtime dispatcher；解释器、bytecode core import 和 VM 均直接调用该后端中立层。需要调用 Rils 函数值的 Option/Result 和自定义 Iterator callback adapter 刻意保留在解释器中，属于执行用户回调而非纯 runtime builtin 分发。
-7. 已完成：标准 bytecode core import 在 host 初始化时解析为稳定 ID 或专用操作，执行热路径不再按字符串分发。
+7. 已完成：标准库数字 ID 与旧数字调用操作码已移除，原生导入以规范符号和签名验证；进程内调用槽位仍待实现。
 8. 已完成：职责过重的 frontend、HIR、Host、VM、C API 等入口已机械拆分；根 `rils` facade 已通过
    整体迁入 `rils_runtime` 收窄为薄转发层。
 9. 已完成：从 `rils_runtime` 抽出 `rils_bytecode`，建立 `rils_bytecode → rils_runtime` 单向依赖；
@@ -345,7 +345,7 @@ rils
 本轮迁移以“源码节点和定义拥有稳定语义身份，项目、compiler、解释器与 Analyzer 能共享对应分析
 结果”为完成条件。Host Contract 独立层、结构化项目 session、`DefId`/`BodyId`/`ImplId`/`ExprId`、
 类型与 Host 解析 side table、项目 frontend gate、trait impl 契约复用，以及纯 runtime builtin 的
-稳定 ID dispatcher 均已进入这一边界。
+共享标准库原生 dispatcher 均已进入这一边界。
 
 以下事项建立在该基础上，但具有各自独立的验收条件，不属于本轮退出条件：
 

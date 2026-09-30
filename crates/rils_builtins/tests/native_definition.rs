@@ -56,7 +56,6 @@ fn shared_handle_methods_export_native_symbols_without_runtime_ids() {
         assert_eq!(published.path, definition.path);
         for method in methods {
             let member = published.member(method).expect("shared handle method");
-            assert_eq!(member.builtin_id, None);
             assert!(member.native_symbol.is_some(), "{name}::{method}");
         }
     }
@@ -68,7 +67,6 @@ fn cell_methods_export_native_symbols_without_runtime_ids() {
     assert_eq!(published.path, native_definitions::cell::DECLARATION.path);
     for method in ["new", "get", "set", "replace"] {
         let member = published.member(method).expect("Cell method");
-        assert_eq!(member.builtin_id, None);
         assert!(member.native_symbol.is_some());
     }
 }
@@ -90,7 +88,6 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         assert_eq!(member.kind, original.kind);
         assert_eq!(member.value_type, original.value_type);
         assert_eq!(member.receiver, original.receiver);
-        assert_eq!(member.builtin_id, original.builtin_id);
         assert_eq!(member.documentation, original.documentation);
         if let (Some(left), Some(right)) = (member.signature, original.signature) {
             assert_eq!(left.parameters, right.parameters);
@@ -102,7 +99,6 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
     assert!(generated.member("has_value").is_none());
     assert_eq!(is_some.kind, BuiltinMemberKind::Method);
     assert_eq!(is_some.receiver, Some(ReceiverMode::Shared));
-    assert_eq!(is_some.builtin_id, None);
     assert_eq!(is_some.native_symbol, Some("core::option::option::is_some"));
     assert_eq!(is_some.signature.unwrap().result, TypePattern::Bool);
     assert!(!is_some.native_bridge);
@@ -128,7 +124,6 @@ fn rust_option_definition_matches_the_existing_public_catalog() {
         for method in methods {
             let member = declaration.member(method).unwrap();
             assert!(member.native_bridge, "{owner}::{method}");
-            assert_eq!(member.builtin_id, None);
             assert!(member.native_symbol.is_some());
         }
     }
@@ -148,7 +143,6 @@ fn rust_range_definition_matches_the_public_catalog() {
     assert_eq!(generated.documentation, "A half-open integer range.");
     let method = generated.member("next").expect("generated method");
     let public = published.member("next").expect("published method");
-    assert_eq!(method.builtin_id, public.builtin_id);
     assert_eq!(method.receiver, public.receiver);
     let generated_signature = method.signature.expect("generated signature");
     let public_signature = public.signature.expect("published signature");
@@ -166,7 +160,6 @@ fn rust_vec_deque_definition_matches_the_public_catalog() {
     for method in generated.members {
         let public = published.member(method.name).expect("published method");
         assert_eq!(method.kind, public.kind);
-        assert_eq!(method.builtin_id, public.builtin_id);
         assert_eq!(method.receiver, public.receiver);
         let generated_signature = method.signature.expect("generated signature");
         let public_signature = public.signature.expect("published signature");
@@ -185,7 +178,6 @@ fn rust_binary_heap_definition_matches_the_public_catalog() {
     for method in generated.members {
         let public = published.member(method.name).expect("published method");
         assert_eq!(method.kind, public.kind);
-        assert_eq!(method.builtin_id, public.builtin_id);
         assert_eq!(method.receiver, public.receiver);
         assert_eq!(method.documentation, public.documentation);
         let generated_signature = method.signature.expect("generated signature");
@@ -210,7 +202,6 @@ fn rust_trait_definitions_supply_the_public_catalog() {
     let member = clone.member("clone").unwrap();
     assert_eq!(member.kind, BuiltinMemberKind::Method);
     assert_eq!(member.receiver, Some(ReceiverMode::Shared));
-    assert_eq!(member.builtin_id, None);
     assert_eq!(member.native_symbol, Some("Clone::clone"));
     assert_eq!(member.signature.unwrap().result, TypePattern::SelfType);
     assert_eq!(
@@ -241,7 +232,6 @@ fn grouped_native_traits_match_the_public_catalog() {
                 .expect("trait member is exported");
             assert_eq!(member.kind, original.kind);
             assert_eq!(member.receiver, original.receiver);
-            assert_eq!(member.builtin_id, original.builtin_id);
             match (member.signature, original.signature) {
                 (Some(left), Some(right)) => {
                     assert_eq!(left.parameters, right.parameters);
@@ -272,7 +262,6 @@ fn rust_result_definition_matches_the_existing_public_catalog() {
         assert_eq!(member.kind, original.kind);
         assert_eq!(member.value_type, original.value_type);
         assert_eq!(member.receiver, original.receiver);
-        assert_eq!(member.builtin_id, original.builtin_id);
         assert_eq!(member.documentation, original.documentation);
         if let (Some(left), Some(right)) = (member.signature, original.signature) {
             assert_eq!(left.parameters, right.parameters);
@@ -343,7 +332,6 @@ fn float_family_and_string_match_the_public_catalog() {
     assert_eq!(string.members.len(), native.members.len());
     for member in native.members {
         let published = string.member(member.name).unwrap();
-        assert_eq!(member.builtin_id, published.builtin_id);
         assert_eq!(member.receiver, published.receiver);
         assert_eq!(
             member.signature.unwrap().parameters,

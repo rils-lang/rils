@@ -6,21 +6,17 @@
 声明分为两部分：
 
 - `BUILTINS` 描述 module、primitive、struct、enum、trait、function 及其成员；
-- `INTEGER_INTRINSICS` 和 `FLOAT_INTRINSICS` 描述由稳定 `BuiltinId` 执行的数值方法；
-- `builtin_ids.toml` 为 runtime 成员和 intrinsic 分配同一套稳定 ID。
+- `INTEGER_INTRINSICS` 和 `FLOAT_INTRINSICS` 描述按规范符号路径调用的数值方法。
 
 `TypePattern` 是独立于 frontend `Type` 的递归类型表达式，可表示泛型、嵌套名义类型、
 Option/Result、tuple、函数和引用。`BuiltinBackend` 明确区分 runtime、intrinsic、host-backed 和纯
 metadata 项，因此“编译器认识一个符号”不等同于“runtime 自己实现该符号”。
 
-未迁移的内建 API 由 `stdlib/**/*.rils` 源码声明；Option、Result、Rc、Weak、整数、浮点数和 string API 的元信息
-直接由 `rils_stdlib` 的 Rust 定义生成。类型模式使用 `type_pattern!`，ID 使用
-`builtin_id!("core::...")` 在编译期解析。执行逻辑留在对应的 runtime、intrinsic 或宿主层；稳定
-`BuiltinId` 不能复用。
+内建类型和方法的元信息由 `rils_stdlib` 的 Rust 定义生成；`stdlib/` 目前保留模块树与
+prelude 函数声明。类型模式使用 `type_pattern!`，原生方法与数值操作以声明中的规范符号路径定位。
 
-构建期宏使用共享 `rils_syntax` lexer/parser 解析 `stdlib/**/*.rils`，
-并把 enum variant、struct/primitive 成员、完整数值 primitive 矩阵、intrinsic、常量、receiver、泛型和文档转换为声明表；
-TOML 只保留稳定 ID，运行时仍按 ID 绑定实现。
+构建期宏使用共享 `rils_syntax` lexer/parser 解析保留的 `.rils` 声明；
+`decl_rils` 从 Rust 定义生成类型、成员、数值 intrinsic、常量、receiver、泛型和文档元信息。
 
 Rust 定义迁移已开始：`rils_stdlib/src/stdlib/option.rs` 和 `result.rs` 使用 `#[decl_rils]` 同时定义
 所有 Option/Result 成员方法的签名和 `#[export_rils]` 标记的普通 Rust 原生实现。宏分别为本 crate 生成

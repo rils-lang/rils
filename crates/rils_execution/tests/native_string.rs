@@ -42,7 +42,6 @@ fn all_string_members_have_native_bindings() {
     };
     for method in declaration.members {
         let symbol = method.native_symbol.unwrap();
-        assert!(method.builtin_id.is_none());
         assert!(receiver.descriptor().has_method(symbol));
         let signature = method.signature.unwrap();
         let mut arguments = vec![string(" abc abc ")];

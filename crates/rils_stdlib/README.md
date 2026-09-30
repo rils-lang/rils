@@ -1,6 +1,6 @@
 # rils_stdlib
 
-`rils_stdlib_macros` owns the declaration procedural macros; `rils_builtins_macros` retains the legacy ID and catalog generation macros. Native layout and element-read registrations are defined beside their Rust types as public `NATIVE_LAYOUT[_NAME]` and `NATIVE_ELEMENT[_NAME]` constants. `native_registry!("src/stdlib")` collects them into `src/native.rs` through the `rils_native` protocol, so adding a registered type does not require editing a central type list. The registry currently covers the Vec layout and string element reads; other layouts and execution adapters are still being migrated.
+`rils_stdlib_macros` owns the declaration procedural macros; `rils_builtins_macros` generates the remaining module and prelude catalog. Native layout and element-read registrations are defined beside their Rust types as public `NATIVE_LAYOUT[_NAME]` and `NATIVE_ELEMENT[_NAME]` constants. `native_registry!("src/stdlib")` collects them into `src/native.rs` through the `rils_native` protocol.
 
 ## Free functions
 
@@ -30,8 +30,8 @@ Option/Result 的回调方法已直接在带 `FnOnce` 约束、返回普通 Rust
 `#[export_rils]` 只可标在固有 impl 的方法上。Rust trait impl 必须在整个 impl 块上
 标记 `#[rils_impl]`，由宏一并导出 trait 身份、方法和关联类型；trait 方法不能单独标记
 `#[export_rils]`。集合的 `IntoIterator` 和迭代器的 `Iterator` 使用这种形式。
-原生方法不登记数字 ID。仍需要旧入口的方法显式写 `#[rils_legacy_id(...)]` 或
-`#[rils_import(...)]`，不会因签名无法转换而自动退回旧 ID。未提供所需转换或适配器时，
+原生方法按导出的符号路径注册。宿主提供的方法显式写 `#[rils_import(...)]`。
+未提供所需转换或适配器时，
 桥接生成会在编译期间报错。例如 `Vec::is_empty` 由 `len()` 计算，并通过原生符号调用。
 Rils 的 `IntoIterator` 与 Rust 一样声明 `Item` 和 `IntoIter`，标记后的 impl 会导出
 这两个关联类型。`Vec::from` 由固有方法导出，其 Rust `From<[T; N]>` 实现保持内部使用。
@@ -43,8 +43,7 @@ Rust `Iterator`，其 `IntoIterator` 来自 blanket impl；Rils 也在标准库�
 拥有型标准库迭代器以 `VecDeque` 保存剩余元素，并实现 Rust 的 `Iterator` trait。
 `#[rils_trait]` 的方法体会导出为 Rils 默认方法，缺少重写的 impl 自动获得该实现。
 `Iterator` 的默认方法在 trait 定义处编写，由解释器和字节码从同一份生成源码执行；
-这些方法不再分配 `BuiltinId`。`next` 仍是推进迭代器的底层原语，旧默认方法 ID
-只保留旧字节码的读取兼容。
+`next` 仍是推进迭代器的底层原语。旧数字调用操作码已移除，旧字节码需重新编译。
 
 一个 `#[decl_rils(core::collections)]` 模块可以定义一个或多个导出项。类型和 trait
 必须分别标记 `#[rils_struct]`、`#[rils_enum]`、`#[rils_trait]`；未标记的项仅供
@@ -65,7 +64,7 @@ mod native {
 }
 ```
 
-方法 ID 前缀及生成的 `.rils` 资源路径由 `decl_rils` 的模块路径和类型的
+方法符号前缀及生成的 `.rils` 资源路径由 `decl_rils` 的模块路径和类型的
 snake_case 名称组成，例如 `core::collections::binary_heap` 与
 `core/collections/binary_heap.rils`。
 derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内标记导出的 trait。
@@ -86,7 +85,7 @@ derive 函数写作 `#[rils_derive(TraitName)]`，明确关联模块内标记导
 未标记的方法保留为普通 Rust 辅助方法，不进入 Rils 的元信息或运行时绑定。
 内部定义可通过 `stdlib::prelude` 引用其他已定义的 Rust 标准库类型；这个模块只服务于 Rust 实现，不改变 Rils 侧的 prelude。
 运行时适配器把 Rils 值转换为该 Rust 类型，然后调用真实的方法；解释器的回调适配器使用同一方法的可失败辅助实现。
-`builtin_ids.toml` 仍是稳定 ID 的来源。`rils_builtins` 直接使用这些 Rust 定义生成
+`rils_builtins` 直接使用这些 Rust 定义生成
 Option、Result、整数、浮点数和 string API 的静态元信息，不再从对应的 `.rils` 文件重新解析元信息。
 Analyzer 目前仍加载未迁移的 `.rils` 语言包；已迁移的类型不再生成并提交重复源码。
 导出宏可按需从 Rust 定义生成声明文本供解析测试使用，但不保存 `RILS_SOURCE` 常量。
@@ -96,12 +95,12 @@ Analyzer 目前仍加载未迁移的 `.rils` 语言包；已迁移的类型不�
 宏在 Rust 侧生成一个 `Number<T>` 包装类型及各具体整数的实现；Rils 侧只生成
 `impl i8`、`impl i32` 等原有类型的方法声明，不新增包装类型。有符号与无符号数的
 `abs`、`saturating_neg` 等差异由内部适配 trait 处理。整数方法和常量的 `.rils`
-声明从这份 Rust 定义生成；稳定 ID 继续取自 `builtin_ids.toml`。
+声明从这份 Rust 定义生成；调用按声明中的规范符号路径分派。
 
 `f32` 和 `f64` 复用数值族模板；`string` 使用普通 Rust 包装类型定义方法。
 `string` 的拥有型迭代器结果通过原生绑定映射到 Rils 的 `Iterator<T>`。
 `Rc<T>` 和 `Weak<T>` 的声明及 Rust 方法体集中在 `src/stdlib/rc.rs`，Rils 公开路径为
-`core::rc::Rc` 和 `core::rc::Weak`；当前执行链仍使用对应的稳定 ID 适配器。
+`core::rc::Rc` 和 `core::rc::Weak`；当前执行链按导出的原生符号调用适配器。
 `Cell<T>` 的声明与 Rust 方法体在 `src/stdlib/cell.rs`，Rils 公开路径为 `core::cell::Cell`。
 Rust 包装类型通过 `Deref` / `DerefMut` 访问底层容器或句柄；拥有型转换使用 `From` / `Into`。
 

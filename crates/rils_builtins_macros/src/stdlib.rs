@@ -6,13 +6,10 @@ use std::{
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use rils_syntax::ast::{Attribute, Stmt};
+use rils_syntax::ast::Stmt;
 use syn::{Error, Ident, LitStr, Token, parse::Parse, parse_macro_input};
 
-use crate::builtin_ids;
-
 struct Input {
-    config_path: LitStr,
     directory: LitStr,
     visibility: syn::Visibility,
     builtins: Ident,
@@ -22,8 +19,6 @@ struct Input {
 
 impl Parse for Input {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let config_path = input.parse()?;
-        input.parse::<Token![;]>()?;
         let directory = input.parse()?;
         input.parse::<Token![;]>()?;
         let visibility = input.parse()?;
@@ -35,7 +30,6 @@ impl Parse for Input {
         let sources = input.parse()?;
         input.parse::<Token![;]>()?;
         Ok(Self {
-            config_path,
             directory,
             visibility,
             builtins,
@@ -103,14 +97,11 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
         });
     }
 
-    let (_, configured) = builtin_ids::load(&input.config_path.value())
-        .map_err(|error| Error::new(input.config_path.span(), error))?;
     let mut declarations = Vec::new();
     let mut declaration_items = Vec::new();
     let mut module_members = BTreeMap::<String, BTreeSet<String>>::new();
     let mut tracked_sources = Vec::new();
     let mut source_entries = Vec::new();
-    let config_path = input.config_path.clone();
 
     for (index, file) in files.iter().enumerate() {
         let absolute = LitStr::new(&file.absolute.to_string_lossy(), input.directory.span());
@@ -135,7 +126,16 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
         }
 
         let name = format_ident!("__STDLIB_DECLARATIONS_{index}");
-        if is_catalog(&file.program.statements) {
+        if !is_catalog(&file.program.statements) {
+            return Err(Error::new(
+                input.directory.span(),
+                format!(
+                    "`{}` must contain only module and function declarations",
+                    file.relative
+                ),
+            ));
+        }
+        {
             if stem != "modules" {
                 source_entries.push(source_entry(
                     &file.relative,
@@ -170,60 +170,6 @@ fn expand_input(input: Input) -> syn::Result<proc_macro2::TokenStream> {
                 &prefix
             };
             collect_catalog_exports(&file.program.statements, export_module, &mut module_members);
-        } else {
-            source_entries.push(source_entry(
-                &file.relative,
-                &source_module,
-                quote!(Type),
-                input.directory.span(),
-            ));
-            let (prefix, declared_ids) = infer_builtin_prefix(file, &configured)?;
-            let configured_ids = configured
-                .keys()
-                .filter(|path| direct_member(path, &prefix).is_some())
-                .cloned()
-                .collect::<BTreeSet<_>>();
-            let completeness = if !configured_ids.is_empty() && configured_ids == declared_ids {
-                quote!(complete)
-            } else {
-                quote!(partial)
-            };
-            let backend = if declared_ids.is_empty() {
-                quote!(Metadata)
-            } else {
-                quote!(Runtime)
-            };
-            let kind = primary_declaration_name(&file.program.statements)
-                .filter(|name| *name == "Array")
-                .map(|_| quote!(kind Primitive;));
-            let declaration_path = primary_declaration_name(&file.program.statements)
-                .filter(|_| {
-                    file.relative
-                        .strip_prefix("stdlib/")
-                        .unwrap_or(&file.relative)
-                        .split('/')
-                        .count()
-                        > 2
-                })
-                .map(|name| {
-                    let path =
-                        LitStr::new(&format!("{source_module}::{name}"), input.directory.span());
-                    quote!(path #path;)
-                });
-            let prefix_literal = LitStr::new(&prefix, input.directory.span());
-            declarations.push(quote! {
-                rils_builtins_macros::builtin_file! {
-                    #config_path;
-                    #relative_literal;
-                    #completeness #prefix_literal;
-                    #kind
-                    #declaration_path
-                    backend #backend;
-                    const #name;
-                }
-            });
-            declaration_items.push(quote!(#name));
-            collect_type_exports(file, &mut module_members);
         }
     }
 
@@ -394,125 +340,6 @@ fn catalog_declaration_count(statements: &[Stmt]) -> usize {
         .count()
 }
 
-fn infer_builtin_prefix(
-    file: &SourceFile,
-    configured: &builtin_ids::Members,
-) -> syn::Result<(String, BTreeSet<String>)> {
-    let mut explicit = BTreeSet::new();
-    let mut method_names = Vec::new();
-    for statement in &file.program.statements {
-        match statement {
-            Stmt::Impl { methods, .. } => {
-                for method in methods {
-                    collect_method_path(
-                        &method.name,
-                        &method.attributes,
-                        &mut explicit,
-                        &mut method_names,
-                    )?;
-                }
-            }
-            Stmt::Trait { methods, .. } => {
-                for method in methods {
-                    collect_method_path(
-                        &method.name,
-                        &method.attributes,
-                        &mut explicit,
-                        &mut method_names,
-                    )?;
-                }
-            }
-            _ => {}
-        }
-    }
-    let mut scores = BTreeMap::<String, usize>::new();
-    for name in &method_names {
-        for path in configured.keys() {
-            if path
-                .rsplit_once("::")
-                .is_some_and(|(_, member)| member == name)
-            {
-                let prefix = path.rsplit_once("::").unwrap().0;
-                *scores.entry(prefix.to_owned()).or_default() += 1;
-            }
-        }
-    }
-    let fallback = file
-        .relative
-        .strip_prefix("stdlib/")
-        .unwrap_or(&file.relative)
-        .trim_end_matches(".rils")
-        .replace('/', "::");
-    let explicit_prefix = explicit
-        .iter()
-        .filter_map(|path| path.rsplit_once("::").map(|(prefix, _)| prefix))
-        .next()
-        .map(str::to_owned);
-    let prefix = if scores.contains_key(&fallback) {
-        fallback
-    } else {
-        scores
-            .into_iter()
-            .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(&left.0)))
-            .map(|(prefix, _)| prefix)
-            .or(explicit_prefix)
-            .unwrap_or(fallback)
-    };
-    let mut declared = explicit;
-    for name in method_names {
-        let path = format!("{prefix}::{name}");
-        if configured.contains_key(&path) {
-            declared.insert(path);
-        }
-    }
-    Ok((prefix, declared))
-}
-
-fn collect_method_path(
-    name: &str,
-    attributes: &[Attribute],
-    explicit: &mut BTreeSet<String>,
-    defaults: &mut Vec<String>,
-) -> syn::Result<()> {
-    if let Some(attribute) = attributes
-        .iter()
-        .find(|attribute| attribute.path.as_slice() == ["runtime"])
-    {
-        let [path] = attribute.arguments.as_slice() else {
-            return Err(Error::new(
-                proc_macro2::Span::call_site(),
-                format!("runtime attribute on `{name}` requires one path"),
-            ));
-        };
-        explicit.insert(path.join("::"));
-    } else if !attributes
-        .iter()
-        .any(|attribute| attribute.path.as_slice() == ["metadata"])
-    {
-        defaults.push(name.to_owned());
-    }
-    Ok(())
-}
-
-fn direct_member<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
-    path.strip_prefix(prefix)?
-        .strip_prefix("::")
-        .filter(|name| !name.contains("::"))
-}
-
-fn primary_declaration_name(statements: &[Stmt]) -> Option<&str> {
-    statements.iter().find_map(|statement| match statement {
-        Stmt::Enum { name, .. } | Stmt::Struct { name, .. } | Stmt::Trait { name, .. } => {
-            Some(name.as_str())
-        }
-        Stmt::Impl {
-            target: rils_syntax::Type::String,
-            ..
-        } => Some("string"),
-        _ => None,
-    })
-}
-
 fn collect_module_tree(
     statements: &[Stmt],
     parent: &str,
@@ -565,42 +392,6 @@ fn collect_catalog_exports(
                 .entry(prefix.to_owned())
                 .or_default()
                 .insert(name.clone());
-        }
-    }
-}
-
-fn collect_type_exports(file: &SourceFile, modules: &mut BTreeMap<String, BTreeSet<String>>) {
-    let relative = file
-        .relative
-        .strip_prefix("stdlib/")
-        .unwrap_or(&file.relative)
-        .trim_end_matches(".rils");
-    let segments = relative.split('/').collect::<Vec<_>>();
-    let module = if segments.len() > 2 {
-        segments[..segments.len() - 1].join("::")
-    } else {
-        relative.replace('/', "::")
-    };
-    for statement in &file.program.statements {
-        match statement {
-            Stmt::Enum { name, variants, .. } => {
-                let members = modules.entry(module.clone()).or_default();
-                members.insert(name.clone());
-                for variant in variants {
-                    members.insert(match variant {
-                        rils_syntax::ast::EnumVariant::Unit { name, .. }
-                        | rils_syntax::ast::EnumVariant::Tuple { name, .. }
-                        | rils_syntax::ast::EnumVariant::Record { name, .. } => name.clone(),
-                    });
-                }
-            }
-            Stmt::Struct { name, .. } | Stmt::Trait { name, .. } => {
-                modules
-                    .entry(module.clone())
-                    .or_default()
-                    .insert(name.clone());
-            }
-            _ => {}
         }
     }
 }

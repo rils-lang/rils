@@ -12,7 +12,7 @@ pub enum BuiltinKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinBackend {
-    /// Implemented by the Rils runtime through its built-in ID.
+    /// Implemented by the Rils runtime.
     Runtime,
     /// Implemented as a compiler or VM intrinsic.
     Intrinsic,
@@ -20,20 +20,6 @@ pub enum BuiltinBackend {
     Host(&'static str),
     /// A namespace or semantic declaration with no independently callable body.
     Metadata,
-}
-
-rils_builtins_macros::builtin_id_declarations!("builtin_ids.toml");
-
-impl BuiltinId {
-    /// Returns whether this runtime member has a direct bytecode instruction.
-    pub fn has_direct_runtime_call(self) -> bool {
-        runtime_member(self).is_some()
-    }
-
-    /// Returns whether two member IDs use the same type-erased runtime implementation.
-    pub fn shares_direct_runtime_implementation(self, other: Self) -> bool {
-        self == other
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,7 +46,6 @@ pub struct BuiltinMember {
     pub signature: Option<BuiltinSignature>,
     pub value_type: Option<TypePattern>,
     pub receiver: Option<ReceiverMode>,
-    pub builtin_id: Option<BuiltinId>,
     /// Whether this method is also available on fixed arrays and slices.
     pub indexed_view: bool,
     pub runtime_import: Option<&'static str>,
@@ -167,16 +152,9 @@ impl BuiltinDeclaration {
     pub fn contains_member(&self, name: &str) -> bool {
         self.member(name).is_some()
     }
-
-    pub fn contains_builtin(&self, id: BuiltinId) -> bool {
-        self.members
-            .iter()
-            .any(|member| member.builtin_id == Some(id))
-    }
 }
 
 rils_builtins_macros::builtin_stdlib! {
-    "builtin_ids.toml";
     "stdlib";
     pub const BUILTINS, BUILTIN_MODULES, BUILTIN_SOURCES;
 }
@@ -259,44 +237,9 @@ pub fn builtin_module_members(path: &str) -> &'static [&'static str] {
         .map_or(&[], Vec::as_slice)
 }
 
-pub fn is_iterator_default_builtin(id: BuiltinId) -> bool {
-    id.canonical_path()
-        .and_then(|path| path.strip_prefix("core::iterator::"))
-        .is_some_and(is_iterator_default_method)
-}
-
 pub fn is_iterator_default_method(name: &str) -> bool {
     builtin_member("Iterator", name)
         .is_some_and(|member| member.kind == BuiltinMemberKind::Method && !member.required)
-}
-
-pub fn runtime_member(id: BuiltinId) -> Option<(&'static str, &'static BuiltinMember)> {
-    BUILTINS
-        .iter()
-        .find_map(|owner| {
-            owner
-                .members
-                .iter()
-                .find(|member| member.builtin_id == Some(id))
-                .map(|member| (owner.path, member))
-        })
-        .or_else(|| {
-            if let Some(name) = id
-                .canonical_path()
-                .and_then(|path| path.strip_prefix("core::vec::"))
-            {
-                return builtin_member("Vec", name).map(|member| ("Vec", member));
-            }
-            if let Some(name) = id
-                .canonical_path()
-                .and_then(|path| path.strip_prefix("core::iter::range::"))
-            {
-                return builtin_member("Range", name).map(|member| ("Range", member));
-            }
-            let name = id.canonical_path()?.strip_prefix("core::iterator::")?;
-            let member = builtin_member("Iterator", name)?;
-            (!member.required).then_some(("Iterator", member))
-        })
 }
 
 pub fn native_member_owner(

@@ -1,32 +1,13 @@
 # rils_builtins_macros
 
-Compile-time implementation details for `rils_builtins`. This crate parses the
-stable built-in ID configuration owned by `rils_builtins` and expands its typed IDs
-and lookup macro. It does not define built-in members or own their stable IDs.
+Compile-time catalog generation for `rils_builtins`. `builtin_stdlib!` reads the
+remaining `.rils` module tree and prelude declarations, then emits the builtin
+catalog, module relationship index, and source inventory. `builtin_catalog_file!`
+uses the shared `rils_syntax` parser for each file.
 
-`builtin_file!` parses a `.rils` standard-library declaration with the shared
-`rils_syntax` lexer and parser, then emits the same metadata while checking that
-every configured ID has exactly one method declaration. Standard-library files
-may mark metadata-only associated functions with `#[metadata]` and reuse a
-cross-module ID with an attribute such as `#[runtime(core::iterator::next)]`.
-Associated functions implemented through an internal runtime import declare that
-binding beside the signature with `#[import(core::vec::new)]`. Trait methods
-supplied by compiler lowering use `#[provided]`; every other trait method is a
-required implementation. Struct fields, enum variants, and associated types are
-also emitted into the shared catalog rather than reconstructed by consumers.
+Types and methods come from the Rust definitions in `rils_stdlib`; numeric
+operations are keyed by their exported symbol paths. This crate does not assign
+numeric builtin IDs.
 
-`builtin_numeric_file!` verifies that `.rils` declarations cover every concrete
-integer primitive (`i8` through `usize`) or both floating-point primitives, and
-generates their shared intrinsic and constant tables while preserving the
-separate intrinsic execution backend.
-
-`builtin_stdlib!` is the crate-level entry point. It recursively discovers every
-`.rils` file under the standard-library directory, parses each file, infers its
-declaration group from the source and stable-ID table, and generates `BUILTINS`,
-the module relationship index, the numeric tables, and the source inventory.
-Nested `mod` and `use` declarations in `modules.rils` define public module
-relationships; Rust code does not maintain a second module-member table.
-
-`type_pattern!` converts the same Rust-style type syntax into a static
-`TypePattern`, including generics, references, tuples, callbacks, `Option`,
-`Result`, iterators, and fully qualified named types.
+`type_pattern!` converts Rust-style type syntax into a static `TypePattern`,
+including generics, references, tuples, callbacks, `Option`, and `Result`.

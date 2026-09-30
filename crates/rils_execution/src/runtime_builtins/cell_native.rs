@@ -26,7 +26,7 @@ enum Operation {
 
 fn operation(path: &str) -> Option<Operation> {
     let (owner, method) = rils_builtins::native_member_owner(path)?;
-    if method.builtin_id.is_some() || method.native_symbol != Some(path) {
+    if method.native_symbol != Some(path) {
         return None;
     }
     let cell = rils_builtins::builtin("Cell")?;

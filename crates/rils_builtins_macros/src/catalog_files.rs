@@ -5,7 +5,7 @@ use quote::quote;
 use rils_syntax::{Span, ast::Stmt};
 use syn::{Error, Ident, LitStr, Token, parenthesized, parse::Parse, parse_macro_input};
 
-use crate::builtin_files;
+use crate::source_helpers;
 
 mod keyword {
     syn::custom_keyword!(backend);
@@ -204,12 +204,12 @@ fn declaration_tokens(
                                 format!("parameter `{}` requires a type", parameter.name),
                             )
                         })
-                        .and_then(builtin_files::type_tokens)
+                        .and_then(source_helpers::type_tokens)
                 })
                 .collect::<syn::Result<Vec<_>>>()?;
             let result = return_type
                 .as_ref()
-                .map(builtin_files::type_tokens)
+                .map(source_helpers::type_tokens)
                 .transpose()?
                 .unwrap_or_else(|| quote!(TypePattern::Unit));
             let type_parameters = generic_parameters
@@ -280,7 +280,7 @@ fn path_literal(prefix: &str, name: &str) -> LitStr {
 
 fn documentation_literal(source: &str, span: Span) -> LitStr {
     LitStr::new(
-        &builtin_files::documentation(source, span),
+        &source_helpers::documentation(source, span),
         proc_macro2::Span::call_site(),
     )
 }

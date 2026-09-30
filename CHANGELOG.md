@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- **破坏性 Rust API 变更：** 移除 `BuiltinId`、`builtin_ids.toml`、`builtin_id!` 和 `#[rils_legacy_id]`。标准库数值方法及容器方法统一按导出声明中的规范符号调用；嵌入端若直接使用旧 ID 类型或宏，请改用声明的 `native_symbol` / `IntrinsicDeclaration::symbol`。包含旧数字调用的实验性 v8 字节码需从源码重新编译；格式版本暂不变。
+
 - `HashMap`、`HashSet`、`BTreeMap` 与 `BTreeSet` 的所有方法现由标准库导出的原生符号分派，相关旧数字 ID 已移除。使用这些 ID 的实验性 v8 字节码需从源码重新编译。
 
 - `Iterator::next(&mut iterator)` 和 `Clone::clone(&value)` 等 trait 路径调用现可编译为字节码；标准库原生方法通过 trait 导出符号分派，用户类型调用其对应的 trait 实现。覆盖拥有型、借用型及 `Range<T>` 迭代器。

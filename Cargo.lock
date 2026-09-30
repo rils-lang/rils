@@ -612,7 +612,6 @@ dependencies = [
  "quote",
  "rils_syntax",
  "syn 2.0.117",
- "toml",
 ]
 
 [[package]]
