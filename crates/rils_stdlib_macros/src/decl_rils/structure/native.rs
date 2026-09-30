@@ -57,9 +57,6 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
                     #symbol => super::super::sequence_receiver::clear(#owner, arguments),
                 });
             }
-            if method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge")) {
-                return Ok(quote!());
-            }
             let call = match definition.item.ident.to_string().as_str() {
                 "HashSet" => quote!(super::super::native_set::call_symbol(symbol, arguments)?),
                 "HashMap" => quote!(super::super::native_map::call_symbol(symbol, arguments)?),
@@ -116,9 +113,6 @@ fn boxed_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream
         .methods
         .iter()
         .map(|method| {
-            if method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge")) {
-                return Ok(quote!());
-            }
             let name = &method.sig.ident;
             let symbol = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
             owned_symbols.push(symbol.clone());

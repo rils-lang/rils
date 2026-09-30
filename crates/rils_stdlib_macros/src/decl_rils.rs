@@ -548,13 +548,6 @@ fn supports_direct_bridge(item: &ItemEnum, method: &ImplItemFn) -> bool {
 }
 
 fn uses_sum_adapter(item: &ItemEnum, method: &ImplItemFn) -> bool {
-    if method
-        .attrs
-        .iter()
-        .any(|attribute| attribute.path().is_ident("rils_native_bridge"))
-    {
-        return true;
-    }
     let Some(receiver) = method.sig.receiver() else {
         return false;
     };

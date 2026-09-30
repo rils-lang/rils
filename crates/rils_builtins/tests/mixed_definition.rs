@@ -30,14 +30,6 @@ mod native {
         Some(i32),
     }
 
-    impl Choice {
-        #[export_rils]
-        #[rils_native_bridge]
-        pub fn is_some(&self) -> bool {
-            matches!(self, Self::Some(value) if *value >= 0)
-        }
-    }
-
     #[rils_trait]
     pub trait Tagged: super::Tagged {
         fn tag(&self) -> i32;
@@ -101,8 +93,8 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
         Some("core::fixture::sample::new")
     );
     assert_eq!(
-        choice.member("is_some").unwrap().native_symbol,
-        Some("core::fixture::choice::is_some")
+        choice.member("Some").unwrap().kind,
+        BuiltinMemberKind::Variant
     );
     assert_eq!(
         tagged.member("tag").unwrap().kind,
@@ -121,6 +113,9 @@ fn mixed_module_metadata_tracks_each_export_and_explicit_impl() {
         }),
         0
     );
-    assert!(!native::Choice::None.is_some());
-    assert!(native::Choice::Some(1).is_some());
+    assert!(matches!(native::Choice::None, native::Choice::None));
+    let native::Choice::Some(value) = native::Choice::Some(1) else {
+        unreachable!();
+    };
+    assert_eq!(value, 1);
 }

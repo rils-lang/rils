@@ -329,7 +329,6 @@ fn expand(path: Path, module: ItemMod) -> syn::Result<proc_macro2::TokenStream> 
                         }
                         method.attrs.retain(|attr| {
                             !attr.path().is_ident("export_rils")
-                                && !attr.path().is_ident("rils_native_bridge")
                                 && !attr.path().is_ident("rils_indexed_view")
                                 && !attr.path().is_ident("rils_return")
                         });
