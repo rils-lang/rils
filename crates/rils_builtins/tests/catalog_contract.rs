@@ -309,7 +309,7 @@ fn migrated_hash_constructors_export_native_symbols_and_iterators() {
 }
 
 #[test]
-fn migrated_vec_exports_indexed_methods_without_legacy_ids() {
+fn migrated_vec_exports_sequence_methods_without_legacy_ids() {
     let vector = builtin("Vec").expect("native Vec declaration");
     let from = vector.member("from").expect("array constructor");
     assert!(from.native_symbol.is_some());
@@ -320,8 +320,24 @@ fn migrated_vec_exports_indexed_methods_without_legacy_ids() {
             length: "N"
         }]
     );
-    assert!(vector.member("len").unwrap().indexed_view);
-    assert!(vector.member("iter").unwrap().indexed_view);
+    for name in ["len", "iter", "contains", "is_empty"] {
+        assert!(rils_builtins::sequence_view_member(
+            vector.member(name).unwrap(),
+            false
+        ));
+    }
+    assert!(rils_builtins::sequence_view_member(
+        vector.member("into_iter").unwrap(),
+        true
+    ));
+    assert!(!rils_builtins::sequence_view_member(
+        vector.member("into_iter").unwrap(),
+        false
+    ));
+    assert!(!rils_builtins::sequence_view_member(
+        vector.member("push").unwrap(),
+        true
+    ));
     for name in [
         "len",
         "is_empty",
@@ -785,7 +801,7 @@ fn derived_vec_is_empty_has_no_numeric_id() {
         .member("is_empty")
         .expect("Vec::is_empty declaration");
     assert!(member.native_symbol.is_some());
-    assert!(member.indexed_view);
+    assert!(rils_builtins::sequence_view_member(member, false));
 }
 
 #[test]

@@ -46,7 +46,6 @@ mod native {
         type Item = T;
         type IntoIter = Iterator<T>;
         /// Consumes the Vec and creates an iterator.
-        #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
             Iter::from(self.0)
         }
@@ -72,14 +71,12 @@ mod native {
 
         /// Returns the element count.
         #[export_rils]
-        #[rils_indexed_view]
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
         /// Returns true when the Vec has no elements.
         #[export_rils]
-        #[rils_indexed_view]
         pub fn is_empty(&self) -> bool {
             self.len() == 0
         }
@@ -134,7 +131,6 @@ mod native {
 
         /// Borrows each element without consuming the Vec.
         #[export_rils]
-        #[rils_indexed_view]
         pub fn iter(&self) -> Iter<&T> {
             Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
         }
@@ -143,7 +139,6 @@ mod native {
     impl<T: PartialEq> Vec<T> {
         /// Returns true when an equal element is present.
         #[export_rils]
-        #[rils_indexed_view]
         pub fn contains(&self, value: &T) -> bool {
             self.0.contains(value)
         }

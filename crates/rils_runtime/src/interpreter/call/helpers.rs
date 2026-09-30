@@ -142,7 +142,7 @@ pub(crate) fn builtin_runtime_member(
             .then(|| rils_builtins::builtin_member("Iterator", name))
             .flatten()
     })?;
-    if matches!(value, Value::Array(_)) && !member.indexed_view {
+    if matches!(value, Value::Array(_)) && !rils_builtins::sequence_view_member(member, true) {
         return None;
     }
     let method = BuiltinMethod::Native(member.native_symbol?);

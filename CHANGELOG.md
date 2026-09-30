@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- **破坏性变更：** 借用的数组及 `&[T]` 不再接受消费式 `into_iter()`；保留元素所有权时改用 `iter()`，需要移出元素时对拥有型数组调用 `into_iter()`。标准库定义移除了过渡性的 `#[rils_indexed_view]` 标记及 `BuiltinMember::indexed_view` 字段；数组与切片可用的方法现在根据 receiver 和 trait 签名判定。
+
 - `Type::method(receiver, ...)` 现在与 `receiver.method(...)`、`Trait::method(receiver, ...)` 一样支持脚本固有方法和唯一的 trait 方法；原生 `Vec` 等容器也可通过类型路径调用实例方法。多个 trait 的同名方法会在静态检查时报歧义，类型路径需显式传入 receiver。
 
 - `Option` / `Result` 的消费式方法现在直接移出非 Copy 的原生泛型负载；`Option::take/replace` 也会写回原生存储。`Result::ok/err` 可将 `Vec<string>` 等值移入返回的 `Option`。

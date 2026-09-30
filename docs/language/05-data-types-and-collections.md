@@ -70,6 +70,8 @@ let values: [i32; 3] = [7, 8, 9];
 let result = first(&values);
 ```
 
+数组和切片可调用 `len()`、`is_empty()`、`contains()`、`iter()` 等共享读取方法。只有拥有型数组可调用消费式 `into_iter()`；对 `&[T]` 或 `&[T; N]` 请使用 `iter()` 借用遍历。
+
 数组元素必须同型，索引必须是 `usize`。无后缀整数字面量及由它初始化的绑定可从索引用法推导为 `usize`。索引表达式只复制 `Copy` 元素；非 Copy 元素不能
 通过索引移出，但可以通过 `&values[index]` 或 `&mut values[index]` 局部借用。
 

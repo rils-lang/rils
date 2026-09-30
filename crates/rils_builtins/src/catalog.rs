@@ -48,8 +48,6 @@ pub struct BuiltinMember {
     pub signature: Option<BuiltinSignature>,
     pub value_type: Option<TypePattern>,
     pub receiver: Option<ReceiverMode>,
-    /// Whether this method is also available on fixed arrays and slices.
-    pub indexed_view: bool,
     /// Generated native implementation path, when this method has a direct bridge.
     pub native_symbol: Option<&'static str>,
     /// The declaration explicitly supplies a type-erased native adapter.
@@ -189,6 +187,15 @@ pub fn standard_host_capabilities() -> Vec<&'static str> {
 
 pub fn builtin_member(owner: &str, name: &str) -> Option<&'static BuiltinMember> {
     builtin(owner)?.member(name)
+}
+
+/// Fixed arrays and slices share Vec's read-only sequence operations. Only an
+/// owned fixed array can use the consuming IntoIterator implementation.
+pub fn sequence_view_member(member: &BuiltinMember, owned_array: bool) -> bool {
+    member.receiver == Some(ReceiverMode::Shared)
+        || (owned_array
+            && member.receiver == Some(ReceiverMode::Owned)
+            && member.trait_name == Some("IntoIterator"))
 }
 
 pub fn builtin_module_members(path: &str) -> &'static [&'static str] {

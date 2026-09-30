@@ -87,7 +87,6 @@ mod native {
         type IntoIter = VecDequeIntoIter<T>;
 
         /// Consumes the queue from front to back.
-        #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
             VecDequeIntoIter(self.0.into_iter())
         }
@@ -223,7 +222,6 @@ mod native {
         type IntoIter = BinaryHeapIntoIter<T>;
 
         /// Consumes the heap in its storage order.
-        #[rils_indexed_view]
         fn into_iter(self) -> Self::IntoIter {
             BinaryHeapIntoIter(self.0.into_iter())
         }

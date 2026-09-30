@@ -707,7 +707,7 @@ impl<'a> Checker<'a> {
         let Expr::Member { object, name, .. } = callee else {
             return false;
         };
-        if crate::standard_library::unsupported_indexed_view_member(&self.ty(object), name) {
+        if crate::standard_library::unsupported_sequence_member(&self.ty(object), name) {
             self.diagnostic(
                 format!("method `{name}` is not available on arrays or slices"),
                 span,

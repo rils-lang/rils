@@ -14,6 +14,35 @@ fn fixed_arrays_keep_sequence_methods_without_an_array_type() {
 }
 
 #[test]
+fn arrays_and_slices_share_read_only_sequence_methods() {
+    let source = r#"
+        fn inspect(values: &[i32]) -> bool {
+            let needle = 2i32;
+            !values.is_empty() && values.contains(&needle) && values.iter().count() == 3usize
+        }
+        let values: [i32; 3] = [1, 2, 3];
+        let needle = 2i32;
+        inspect(&values) && values.len() == 3usize && values.contains(&needle)
+    "#;
+    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    assert_eq!(
+        compile(source).unwrap().execute_value().unwrap(),
+        Value::Bool(true)
+    );
+}
+
+#[test]
+fn borrowed_arrays_and_slices_cannot_use_consuming_iteration() {
+    for source in [
+        "let values: [i32; 2] = [1, 2]; (&values).into_iter()",
+        "fn invalid(values: &[i32]) -> usize { values.into_iter().count() } invalid(&[1, 2])",
+    ] {
+        assert!(eval_value(source).is_err(), "{source}");
+        assert!(compile(source).is_err(), "{source}");
+    }
+}
+
+#[test]
 fn removed_array_type_and_vec_mutation_are_rejected() {
     let obsolete = "let values: Array<i32> = [1, 2]; values.len()";
     assert!(eval_value(obsolete).is_err());

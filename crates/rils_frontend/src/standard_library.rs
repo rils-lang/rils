@@ -179,7 +179,9 @@ pub fn builtin_member_for_type(
 ) -> Option<&'static rils_builtins::BuiltinMember> {
     let (owner, _, _) = builtin_owner(object)?;
     let member = rils_builtins::builtin_member(owner, name)?;
-    if is_indexed_view(object) && !member.indexed_view {
+    if sequence_view_ownership(object)
+        .is_some_and(|owned_array| !rils_builtins::sequence_view_member(member, owned_array))
+    {
         return None;
     }
     Some(member)
@@ -195,24 +197,28 @@ pub fn builtin_trait_member_for_type(
         .members
         .iter()
         .find(|member| member.name == name && member.trait_name == Some(trait_name))?;
-    if is_indexed_view(object) && !member.indexed_view {
+    if sequence_view_ownership(object)
+        .is_some_and(|owned_array| !rils_builtins::sequence_view_member(member, owned_array))
+    {
         return None;
     }
     Some(member)
 }
 
-pub fn unsupported_indexed_view_member(object: &Type, name: &str) -> bool {
-    is_indexed_view(object)
-        && builtin_owner(object)
+pub fn unsupported_sequence_member(object: &Type, name: &str) -> bool {
+    sequence_view_ownership(object).is_some_and(|owned_array| {
+        builtin_owner(object)
             .and_then(|(owner, _, _)| rils_builtins::builtin_member(owner, name))
-            .is_some_and(|member| !member.indexed_view)
+            .is_some_and(|member| !rils_builtins::sequence_view_member(member, owned_array))
+    })
 }
 
-fn is_indexed_view(ty: &Type) -> bool {
+fn sequence_view_ownership(ty: &Type) -> Option<bool> {
     match ty {
-        Type::Reference { inner, .. } => is_indexed_view(inner),
-        Type::Array { .. } | Type::Slice(_) => true,
-        _ => false,
+        Type::Reference { inner, .. } => sequence_view_ownership(inner).map(|_| false),
+        Type::Array { .. } => Some(true),
+        Type::Slice(_) => Some(false),
+        _ => None,
     }
 }
 
