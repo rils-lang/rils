@@ -74,7 +74,9 @@ pub(crate) fn call_owned_symbol(
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
     if from_array_member(symbol) {
-        return Some(super::collection_constructor::from_array(arguments));
+        return Some(super::collection_constructor::from_array(
+            arguments, context,
+        ));
     }
     if iter_member(symbol) {
         return Some(indexed_iter::borrow_with_context(&arguments, context));

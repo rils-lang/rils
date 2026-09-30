@@ -3005,7 +3005,7 @@ fn collection_mutation_respects_active_element_references() {
     .unwrap_err();
     assert!(
         pop.to_string()
-            .contains("cannot pop a referenced Vec element")
+            .contains("cannot structurally mutate a sequence while an element is referenced")
     );
 }
 

@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use rils_execution::{
     Type, Value,
     environment::StorageSlot,
-    runtime_builtins::call_native_symbol,
+    runtime_builtins::{NativeOwnedContext, call_native_owned_symbol, call_native_symbol},
     value::{FieldSlot, IndexedStorage, ReferenceValue},
 };
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
@@ -15,6 +15,44 @@ fn symbol(name: &str) -> &'static str {
         .unwrap()
         .native_symbol
         .unwrap()
+}
+
+#[test]
+fn vec_from_typed_array_constructs_native_storage() {
+    for items in [vec![], vec![2, 5]] {
+        let length = items.len();
+        let array = Value::Array(Rc::new(IndexedStorage {
+            elements: RefCell::new(
+                items
+                    .into_iter()
+                    .map(|item| FieldSlot {
+                        value: Some(Value::from_i32(item)),
+                        type_annotation: Type::I32,
+                        references: 0,
+                    })
+                    .collect(),
+            ),
+            element_type: RefCell::new(Some(Type::I32)),
+            active_iterators: std::cell::Cell::new(0),
+        }));
+        let value = call_native_owned_symbol(
+            symbol("from"),
+            vec![array],
+            &NativeOwnedContext {
+                structs: Vec::new(),
+                enums: Vec::new(),
+            },
+        )
+        .unwrap()
+        .unwrap();
+        let Value::Dynamic(object) = value else {
+            panic!("Vec::from must construct native storage");
+        };
+        assert_eq!(
+            object.with(|payload| payload.sequence_len()),
+            Ok(Ok(length))
+        );
+    }
 }
 
 #[test]

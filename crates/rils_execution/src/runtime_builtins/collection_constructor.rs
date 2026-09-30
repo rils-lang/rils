@@ -8,8 +8,15 @@ use std::{
 
 use crate::{
     Type, Value,
-    value::{HashMapValue, HashSetValue, IndexedStorage},
+    value::{
+        DynamicObject, HashMapValue, HashSetValue, IndexedStorage, record_codec::NativeRecordCodec,
+        record_layout::RecordLayoutResolver,
+    },
 };
+
+use rils_value::{DynamicType, DynamicValue};
+
+use super::NativeOwnedContext;
 
 pub(super) fn empty(owner: &str) -> Result<Value, String> {
     let value = match owner {
@@ -34,7 +41,10 @@ pub(super) fn empty(owner: &str) -> Result<Value, String> {
     Ok(value)
 }
 
-pub(super) fn from_array(mut arguments: Vec<Value>) -> Result<Value, String> {
+pub(super) fn from_array(
+    mut arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+) -> Result<Value, String> {
     if arguments.len() != 1 {
         return Err(format!(
             "Vec::from expects one array, found {} arguments",
@@ -52,8 +62,36 @@ pub(super) fn from_array(mut arguments: Vec<Value>) -> Result<Value, String> {
     {
         return Err("cannot move an array into Vec while an element is referenced".into());
     }
-    let elements = array.elements.borrow_mut().drain(..).collect();
     let element_type = array.element_type.borrow().clone();
+    if let Some(element_type) = &element_type {
+        let ty = Type::Named {
+            name: "Vec".into(),
+            arguments: vec![element_type.clone()],
+        };
+        let mut resolver = RecordLayoutResolver::with_enums(&context.structs, &context.enums);
+        if let Ok(layout) = resolver.resolve(&ty) {
+            let item_layout = layout
+                .sequence_item()
+                .ok_or("Vec layout has no element layout")?
+                .clone();
+            let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+            let values = array
+                .elements
+                .borrow_mut()
+                .drain(..)
+                .map(|slot| {
+                    let value = slot.value.ok_or("cannot move a partially moved array")?;
+                    codec.into_native(value, item_layout.clone())
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let payload = DynamicValue::sequence(layout.clone(), values)?;
+            return Ok(Value::Dynamic(DynamicObject::new(
+                Rc::new(DynamicType::new(layout)),
+                payload,
+            )?));
+        }
+    }
+    let elements = array.elements.borrow_mut().drain(..).collect();
     Ok(Value::Vec(Rc::new(IndexedStorage {
         active_iterators: Cell::new(0),
         elements: RefCell::new(elements),

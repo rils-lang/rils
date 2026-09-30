@@ -432,7 +432,17 @@ fn stdlib_vec_declaration_registers_nested_native_record_layout() {
         codec.from_native(replaced).unwrap(),
         Value::from_string("third")
     );
-    assert_eq!(codec.from_native(native).unwrap(), make());
+    let Value::Dynamic(restored) = codec.from_native(native).unwrap() else {
+        panic!("decoded Vec should retain native storage");
+    };
+    assert_eq!(restored.with(|value| value.sequence_len()), Ok(Ok(2)));
+    let first = restored.with(|value| {
+        value.with_path::<rils_stdlib::stdlib::string::String, _>(
+            &[DynamicPathStep::Index(0), DynamicPathStep::Field(0)],
+            |text| std::string::String::from(text.clone()),
+        )
+    });
+    assert_eq!(first, Ok(Ok("first".into())));
 }
 
 #[test]
@@ -479,14 +489,19 @@ fn stdlib_vecdeque_layout_round_trips_nested_optional_records() {
         }),
         Ok("front".into())
     );
-    let Value::VecDeque(restored) = codec.from_native(native).unwrap() else {
-        panic!("VecDeque round trip")
+    let Value::Dynamic(restored) = codec.from_native(native).unwrap() else {
+        panic!("VecDeque should retain native storage")
     };
-    assert_eq!(*restored.element_type.borrow(), Some(option_type));
-    let elements = restored.elements.borrow();
-    assert_eq!(elements.len(), 2);
-    assert!(matches!(&elements[0], Value::Option { value: Some(_), .. }));
-    assert!(matches!(&elements[1], Value::Option { value: None, .. }));
+    assert_eq!(restored.descriptor().layout().rils_type(), &ty);
+    assert_eq!(restored.with(|value| value.sequence_len()), Ok(Ok(2)));
+    assert_eq!(
+        restored.with(|value| value.view().sequence_item(0)?.option_is_some()),
+        Ok(Ok(true))
+    );
+    assert_eq!(
+        restored.with(|value| value.view().sequence_item(1)?.option_is_some()),
+        Ok(Ok(false))
+    );
 }
 
 #[test]
@@ -502,18 +517,21 @@ fn stdlib_binary_heap_layout_keeps_owned_elements_and_empty_type() {
         vec![],
         vec![Value::from_i32(7), Value::from_i32(-4), Value::from_i32(2)],
     ] {
-        let expected = values.clone();
+        let expected_len = values.len();
         let heap = Value::BinaryHeap(Rc::new(BinaryHeapValue {
             elements: RefCell::new(values),
             element_type: RefCell::new(Some(Type::I32)),
         }));
         let mut codec = record_codec::NativeRecordCodec::new();
         let native = codec.into_native(heap, layout.clone()).unwrap();
-        let Value::BinaryHeap(restored) = codec.from_native(native).unwrap() else {
-            panic!("BinaryHeap round trip")
+        let Value::Dynamic(restored) = codec.from_native(native).unwrap() else {
+            panic!("BinaryHeap should retain native storage")
         };
-        assert_eq!(*restored.element_type.borrow(), Some(Type::I32));
-        assert_eq!(*restored.elements.borrow(), expected);
+        assert_eq!(restored.descriptor().layout().rils_type(), &ty);
+        assert_eq!(
+            restored.with(|value| value.sequence_len()),
+            Ok(Ok(expected_len))
+        );
     }
 }
 
@@ -592,14 +610,17 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
         ),
     ];
     for (ty, value) in cases {
-        let expected = value.clone_owned().unwrap();
         let mut resolver = RecordLayoutResolver::new(&[]);
         let layout = resolver.resolve(&ty).unwrap();
         assert!(layout.sequence_item().is_some());
         let mut codec = record_codec::NativeRecordCodec::new();
         let native = codec.into_native(value, layout).unwrap();
         assert_eq!(native.sequence_len(), Ok(1));
-        assert_eq!(codec.from_native(native).unwrap(), expected, "{ty}");
+        let Value::Dynamic(restored) = codec.from_native(native).unwrap() else {
+            panic!("{ty} should retain native storage");
+        };
+        assert_eq!(restored.descriptor().layout().rils_type(), &ty);
+        assert_eq!(restored.with(|value| value.sequence_len()), Ok(Ok(1)));
     }
 }
 

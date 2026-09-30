@@ -4,11 +4,7 @@
 //! wrappers at the execution boundary. Nominal declarations are retained in
 //! the codec so nested structs and enums can be reconstructed after a move.
 
-use std::{
-    cell::{Cell, RefCell},
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
@@ -16,9 +12,8 @@ use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 use crate::{Type, ast::EnumVariant};
 
 use super::{
-    BTreeMapValue, BTreeSetValue, BinaryHeapValue, EnumInstance, EnumPayload, EnumType, FieldSlot,
-    HashKey, HashMapValue, HashSetValue, IndexedStorage, StructFields, StructInstance, StructType,
-    Value, VecDequeValue, native_layouts, native_string,
+    EnumInstance, EnumPayload, EnumType, FieldSlot, HashKey, IndexedStorage, StructFields,
+    StructInstance, StructType, Value, native_layouts, native_string,
 };
 
 #[derive(Default)]
@@ -526,100 +521,12 @@ impl NativeRecordCodec {
                     active_iterators: Default::default(),
                 })))
             }
-            ty if native_layouts::vec::matches(&ty) => {
-                let Type::Named { arguments, .. } = ty else {
-                    unreachable!("generated Vec matcher checks a named type")
-                };
-                let item_type = arguments[0].clone();
-                let length = value.sequence_len()?;
-                let mut slots = Vec::with_capacity(length);
-                for _ in 0..length {
-                    let item = self.decode(value.take_sequence_item(0)?)?;
-                    slots.push(FieldSlot {
-                        value: Some(item),
-                        type_annotation: item_type.clone(),
-                        references: 0,
-                    });
-                }
-                Ok(Value::Vec(Rc::new(IndexedStorage {
-                    elements: RefCell::new(slots),
-                    element_type: RefCell::new(Some(item_type)),
-                    active_iterators: Default::default(),
-                })))
-            }
-            ty if native_layouts::vec_deque::matches(&ty) => {
-                let Type::Named { arguments, .. } = ty else {
-                    unreachable!("generated VecDeque matcher checks a named type")
-                };
-                let length = value.sequence_len()?;
-                let mut elements = VecDeque::with_capacity(length);
-                for _ in 0..length {
-                    elements.push_back(self.decode(value.take_sequence_item(0)?)?);
-                }
-                Ok(Value::VecDeque(Rc::new(VecDequeValue {
-                    elements: RefCell::new(elements),
-                    element_type: RefCell::new(Some(arguments[0].clone())),
-                })))
-            }
-            ty if native_layouts::binary_heap::matches(&ty) => {
-                let Type::Named { arguments, .. } = ty else {
-                    unreachable!("generated BinaryHeap matcher checks a named type")
-                };
-                let length = value.sequence_len()?;
-                let mut elements = Vec::with_capacity(length);
-                for _ in 0..length {
-                    elements.push(self.decode(value.take_sequence_item(0)?)?);
-                }
-                Ok(Value::BinaryHeap(Rc::new(BinaryHeapValue {
-                    elements: RefCell::new(elements),
-                    element_type: RefCell::new(Some(arguments[0].clone())),
-                })))
-            }
-            ty if native_layouts::hash_set::matches(&ty) => {
-                let Type::Named { arguments, .. } = ty else {
-                    unreachable!("generated HashSet matcher checks a named type")
-                };
-                let entries = self.decode_set(&mut value, false)?;
-                Ok(Value::HashSet(Rc::new(HashSetValue {
-                    borrowed: Cell::new(0),
-                    entries: RefCell::new(entries.into_iter().collect::<HashSet<_>>()),
-                    element_type: RefCell::new(arguments[0].clone()),
-                })))
-            }
-            ty if native_layouts::btree_set::matches(&ty) => {
-                let Type::Named { arguments, .. } = ty else {
-                    unreachable!("generated BTreeSet matcher checks a named type")
-                };
-                let entries = self.decode_set(&mut value, true)?;
-                Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
-                    borrowed: Cell::new(0),
-                    entries: RefCell::new(entries.into_iter().collect::<BTreeSet<_>>()),
-                    element_type: RefCell::new(arguments[0].clone()),
-                })))
-            }
-            ty if native_layouts::hash_map::matches(&ty) => {
-                let Type::Named { arguments, .. } = ty else {
-                    unreachable!("generated HashMap matcher checks a named type")
-                };
-                let entries = self.decode_map(&mut value, &arguments[1], false)?;
-                Ok(Value::HashMap(Rc::new(HashMapValue {
-                    borrowed: Cell::new(0),
-                    entries: RefCell::new(entries.into_iter().collect::<HashMap<_, _>>()),
-                    key_type: RefCell::new(arguments[0].clone()),
-                    value_type: RefCell::new(arguments[1].clone()),
-                })))
-            }
-            ty if native_layouts::btree_map::matches(&ty) => {
-                let Type::Named { arguments, .. } = ty else {
-                    unreachable!("generated BTreeMap matcher checks a named type")
-                };
-                let entries = self.decode_map(&mut value, &arguments[1], true)?;
-                Ok(Value::BTreeMap(Rc::new(BTreeMapValue {
-                    borrowed: Cell::new(0),
-                    entries: RefCell::new(entries.into_iter().collect::<BTreeMap<_, _>>()),
-                    key_type: RefCell::new(arguments[0].clone()),
-                    value_type: RefCell::new(arguments[1].clone()),
-                })))
+            _ if value.descriptor().sequence_item().is_some() => {
+                let layout = value.layout_handle();
+                Ok(Value::Dynamic(super::DynamicObject::new(
+                    Rc::new(rils_value::DynamicType::new(layout)),
+                    value,
+                )?))
             }
             Type::Named { name, arguments } if self.structs.contains_key(&name) => {
                 let definition = self.structs[&name].clone();
@@ -735,7 +642,9 @@ impl NativeRecordCodec {
                 native_layouts::float::field_value(value, &ty)
                     .ok_or_else(|| format!("no float codec for {ty}"))?
             }
-            _ if value.descriptor().is_rust_value() => {
+            _ if value.descriptor().is_rust_value()
+                || value.descriptor().record_fields().is_some() =>
+            {
                 let layout = value.layout_handle();
                 let descriptor = Rc::new(rils_value::DynamicType::new(layout));
                 Ok(Value::Dynamic(super::DynamicObject::new(
@@ -770,48 +679,5 @@ impl NativeRecordCodec {
                 })
             })
             .collect()
-    }
-
-    fn decode_set(&self, value: &mut DynamicValue, ordered: bool) -> Result<Vec<HashKey>, String> {
-        let length = value.sequence_len()?;
-        let mut keys = Vec::with_capacity(length);
-        for _ in 0..length {
-            let key = self.decode(value.take_sequence_item(0)?)?;
-            keys.push(if ordered {
-                HashKey::from_ordered_value(&key)?
-            } else {
-                HashKey::from_value(&key)?
-            });
-        }
-        Ok(keys)
-    }
-
-    fn decode_map(
-        &self,
-        value: &mut DynamicValue,
-        value_type: &Type,
-        ordered: bool,
-    ) -> Result<Vec<(HashKey, FieldSlot)>, String> {
-        let length = value.sequence_len()?;
-        let mut entries = Vec::with_capacity(length);
-        for _ in 0..length {
-            let mut pair = value.take_sequence_item(0)?;
-            let key = self.decode(pair.take_field(0)?)?;
-            let key = if ordered {
-                HashKey::from_ordered_value(&key)?
-            } else {
-                HashKey::from_value(&key)?
-            };
-            let item = self.decode(pair.take_field(1)?)?;
-            entries.push((
-                key,
-                FieldSlot {
-                    value: Some(item),
-                    type_annotation: value_type.clone(),
-                    references: 0,
-                },
-            ));
-        }
-        Ok(entries)
     }
 }
