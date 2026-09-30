@@ -81,6 +81,13 @@ pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
                 )),
             });
         }
+        if let Some((declaration, _)) = rils_builtins::native_member_owner(symbol)
+            && declaration.kind == rils_builtins::BuiltinKind::Trait
+        {
+            return Some(Err(format!(
+                "trait method `{symbol}` has no native adapter for this receiver"
+            )));
+        }
         None
     })
 }

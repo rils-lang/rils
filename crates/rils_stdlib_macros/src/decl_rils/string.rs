@@ -230,6 +230,7 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
         Ok(quote! {
             crate::BuiltinMember {
                 name: #name,
+                trait_name: None,
                 kind: crate::BuiltinMemberKind::Method,
                 signature: Some(crate::BuiltinSignature { parameters: &[#(#parameters),*], result: #result, variadic: false }),
                 value_type: None,

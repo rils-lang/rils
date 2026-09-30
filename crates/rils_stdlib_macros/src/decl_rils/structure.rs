@@ -592,6 +592,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
                 crate::BuiltinMember {
                     name: #name,
                     kind: crate::BuiltinMemberKind::Field,
+                    trait_name: None,
                     signature: None,
                     value_type: Some(#value_type),
                     receiver: None,
@@ -615,6 +616,14 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
         )
         .map(|(method, implementation)| {
             let method_name = method.sig.ident.to_string();
+            let trait_name = implementation
+                .and_then(|item| item.trait_.as_ref())
+                .and_then(|(_, path, _)| path.segments.last())
+                .map(|segment| {
+                    let name = segment.ident.to_string();
+                    quote!(Some(#name))
+                })
+                .unwrap_or_else(|| quote!(None));
             let method_docs = super::documentation(&method.attrs);
             let id_path = format!(
                 "{}::{method_name}",
@@ -698,6 +707,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             Ok(quote! {
                 crate::BuiltinMember {
                     name: #method_name,
+                    trait_name: #trait_name,
                     kind: #kind,
                     signature: Some(crate::BuiltinSignature {
                         parameters: &[#(#parameters),*],
@@ -829,6 +839,7 @@ mod tests {
         let metadata = metadata_tokens(&definition).unwrap().to_string();
         assert!(metadata.contains("TypePattern :: Option"));
         assert!(metadata.contains("TypePattern :: Generic"));
+        assert!(metadata.contains("trait_name : Some (\"Iterator\")"));
     }
 
     #[test]

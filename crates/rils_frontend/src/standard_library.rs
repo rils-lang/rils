@@ -185,6 +185,22 @@ pub fn builtin_member_for_type(
     Some(member)
 }
 
+pub fn builtin_trait_member_for_type(
+    object: &Type,
+    trait_name: &str,
+    name: &str,
+) -> Option<&'static rils_builtins::BuiltinMember> {
+    let (owner, _, _) = builtin_owner(object)?;
+    let member = rils_builtins::builtin(owner)?
+        .members
+        .iter()
+        .find(|member| member.name == name && member.trait_name == Some(trait_name))?;
+    if is_indexed_view(object) && !member.indexed_view {
+        return None;
+    }
+    Some(member)
+}
+
 pub fn unsupported_indexed_view_member(object: &Type, name: &str) -> bool {
     is_indexed_view(object)
         && builtin_owner(object)

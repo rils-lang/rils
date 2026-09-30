@@ -42,6 +42,8 @@ pub enum BuiltinMemberKind {
 #[derive(Clone, Copy, Debug)]
 pub struct BuiltinMember {
     pub name: &'static str,
+    /// Trait identity for a method exported from a concrete trait implementation.
+    pub trait_name: Option<&'static str>,
     pub kind: BuiltinMemberKind,
     pub signature: Option<BuiltinSignature>,
     pub value_type: Option<TypePattern>,

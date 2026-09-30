@@ -263,7 +263,6 @@ pub(crate) mod clone_native {
     #[rils_trait]
     pub trait Clone: ::core::clone::Clone {
         /// Explicitly duplicates an owned value.
-        #[rils_native_bridge]
         fn clone(&self) -> Self;
     }
 

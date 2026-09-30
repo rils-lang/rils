@@ -360,6 +360,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                 crate::BuiltinMember {
                     name: #name,
                     kind: crate::BuiltinMemberKind::Variant,
+                    trait_name: None,
                     signature: None,
                     value_type: Some(#value_type),
                     receiver: None,
@@ -430,6 +431,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<Tokens> {
                 crate::BuiltinMember {
                     name: #name,
                     kind: crate::BuiltinMemberKind::Method,
+                    trait_name: None,
                     signature: Some(crate::BuiltinSignature {
                         parameters: &[#(#parameters),*],
                         result: #result,

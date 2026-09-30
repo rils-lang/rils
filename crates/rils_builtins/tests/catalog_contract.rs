@@ -13,6 +13,16 @@ fn owned_native_bridge_exports_a_symbol_without_legacy_id() {
 }
 
 #[test]
+fn exported_trait_methods_keep_their_trait_identity() {
+    let into_iter = builtin_member("Vec", "into_iter").expect("Vec iterator implementation");
+    assert_eq!(into_iter.trait_name, Some("IntoIterator"));
+    let next = builtin_member("Iter", "next").expect("Iter iterator implementation");
+    assert_eq!(next.trait_name, Some("Iterator"));
+    let inherent = builtin_member("Vec", "len").expect("Vec inherent method");
+    assert_eq!(inherent.trait_name, None);
+}
+
+#[test]
 fn stdlib_directory_generates_source_and_module_metadata() {
     let mut discovered = Vec::new();
     collect_rils_files(

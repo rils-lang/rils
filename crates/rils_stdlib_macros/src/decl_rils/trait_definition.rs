@@ -294,6 +294,7 @@ impl Input {
                 let docs = super::documentation(&item.attrs);
                 quote!(crate::BuiltinMember {
                     name: #name,
+                    trait_name: None,
                     kind: crate::BuiltinMemberKind::AssociatedType,
                     signature: None,
                     value_type: Some(TypePattern::Unknown),
@@ -330,8 +331,7 @@ impl Input {
                 None => quote!(None),
             };
             let required = method.default.is_none();
-            let native_bridge = method.attrs.iter().any(|attr| attr.path().is_ident("rils_native_bridge"));
-            let native_symbol = if native_bridge {
+            let native_symbol = if required && has_receiver {
                 let symbol = format!("{trait_name}::{name}");
                 quote!(Some(#symbol))
             } else {
@@ -341,13 +341,14 @@ impl Input {
             Ok(quote! {
                 crate::BuiltinMember {
                     name: #name,
+                    trait_name: None,
                     kind: #kind,
                     signature: Some(crate::BuiltinSignature { parameters: &[#(#parameters),*], result: #result, variadic: false }),
                     value_type: None,
                     receiver: #receiver,
                     indexed_view: false,
                     native_symbol: #native_symbol,
-                    native_bridge: #native_bridge,
+                    native_bridge: false,
                     required: #required,
                     type_parameters: &[#(#type_parameters),*],
                     documentation: #docs,
@@ -355,10 +356,8 @@ impl Input {
             })
         }).collect::<syn::Result<Vec<_>>>()?;
         let backend = if self.methods()?.iter().any(|method| {
-            method
-                .attrs
-                .iter()
-                .any(|attr| attr.path().is_ident("rils_native_bridge"))
+            method.default.is_none()
+                && matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)))
         }) {
             quote!(crate::BuiltinBackend::Runtime)
         } else {
@@ -466,7 +465,6 @@ mod tests {
                 /// Explicit owned duplication.
                 pub trait Clone: ::core::clone::Clone {
                     /// Explicitly duplicates an owned value.
-                    #[rils_native_bridge]
                     fn clone(&self) -> Self;
                 }
             },

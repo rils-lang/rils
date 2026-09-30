@@ -371,6 +371,9 @@ impl<'a> FunctionLowerer<'a> {
                         });
                     }
                     if let [.., owner, member] = segments.as_slice()
+                        && !rils_builtins::builtin(owner).is_some_and(|declaration| {
+                            declaration.kind == rils_builtins::BuiltinKind::Trait
+                        })
                         && let Some(symbol) = rils_builtins::builtin_member(owner, member)
                             .and_then(|declaration| declaration.native_symbol)
                     {
@@ -398,8 +401,9 @@ impl<'a> FunctionLowerer<'a> {
                                     Type::Reference { inner, .. } => *inner,
                                     receiver => receiver,
                                 };
-                                rils_frontend::standard_library::builtin_member_for_type(
+                                rils_frontend::standard_library::builtin_trait_member_for_type(
                                     &receiver,
+                                    trait_name,
                                     member_name,
                                 )
                                 .and_then(|member| member.native_symbol)
