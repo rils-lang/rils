@@ -167,12 +167,44 @@ impl SetKind {
     }
 }
 
+pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    let (kind, method) = [("HashSet", SetKind::Hash), ("BTreeSet", SetKind::BTree)]
+        .into_iter()
+        .find_map(|(owner, kind)| {
+            ["len", "is_empty"].into_iter().find_map(|method| {
+                (builtin(owner)?.member(method)?.native_symbol == Some(symbol))
+                    .then_some((kind, method))
+            })
+        })?;
+    Some((|| {
+        let [receiver] = arguments else {
+            return Err(format!("{}::{method} expects one receiver", kind.name()));
+        };
+        let length = match import_receiver(receiver)? {
+            Value::Dynamic(object) if kind.matches(&object) => {
+                object.with(DynamicValue::sequence_len)??
+            }
+            Value::HashSet(set) if kind == SetKind::Hash => set.entries.borrow().len(),
+            Value::BTreeSet(set) if kind == SetKind::BTree => set.entries.borrow().len(),
+            _ => {
+                return Err(format!(
+                    "{}::{method} received the wrong collection",
+                    kind.name()
+                ));
+            }
+        };
+        Ok(match method {
+            "len" => crate::numeric::native_usize(length),
+            "is_empty" => Value::Bool(length == 0),
+            _ => unreachable!(),
+        })
+    })())
+}
+
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, String>> {
     let kind = if matches!(
         id,
-        BuiltinId::HashSetLen
-            | BuiltinId::HashSetIsEmpty
-            | BuiltinId::HashSetClear
+        BuiltinId::HashSetClear
             | BuiltinId::HashSetContains
             | BuiltinId::HashSetInsert
             | BuiltinId::HashSetRemove
@@ -187,9 +219,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
         SetKind::Hash
     } else if matches!(
         id,
-        BuiltinId::BtreeSetLen
-            | BuiltinId::BtreeSetIsEmpty
-            | BuiltinId::BtreeSetClear
+        BuiltinId::BtreeSetClear
             | BuiltinId::BtreeSetContains
             | BuiltinId::BtreeSetInsert
             | BuiltinId::BtreeSetRemove
@@ -246,12 +276,6 @@ fn dispatch(
         ));
     }
     match id {
-        BuiltinId::BtreeSetLen | BuiltinId::HashSetLen => Ok(crate::numeric::native_usize(
-            object.with(DynamicValue::sequence_len)??,
-        )),
-        BuiltinId::BtreeSetIsEmpty | BuiltinId::HashSetIsEmpty => {
-            Ok(Value::Bool(object.with(DynamicValue::sequence_len)?? == 0))
-        }
         BuiltinId::BtreeSetClear | BuiltinId::HashSetClear => {
             object
                 .with_mut(DynamicValue::clear_sequence)?

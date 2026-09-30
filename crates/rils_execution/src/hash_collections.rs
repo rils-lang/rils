@@ -14,18 +14,14 @@ use crate::{
 
 pub fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
     match id {
-        BuiltinId::HashMapLen
-        | BuiltinId::HashMapIsEmpty
-        | BuiltinId::HashMapClear
+        BuiltinId::HashMapClear
         | BuiltinId::HashMapContainsKey
         | BuiltinId::HashMapInsert
         | BuiltinId::HashMapGetCloned
         | BuiltinId::HashMapRemove
         | BuiltinId::HashMapKeysCloned
         | BuiltinId::HashMapValuesCloned => call_map(id, arguments),
-        BuiltinId::HashSetLen
-        | BuiltinId::HashSetIsEmpty
-        | BuiltinId::HashSetClear
+        BuiltinId::HashSetClear
         | BuiltinId::HashSetContains
         | BuiltinId::HashSetInsert
         | BuiltinId::HashSetRemove
@@ -47,8 +43,6 @@ fn call_map(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
             .ok_or_else(|| "missing HashMap receiver".to_string())?,
     )?;
     match id {
-        BuiltinId::HashMapLen => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
-        BuiltinId::HashMapIsEmpty => Ok(Value::Bool(map.entries.borrow().is_empty())),
         BuiltinId::HashMapClear => {
             reject_referenced_map(&map)?;
             map.entries.borrow_mut().clear();
@@ -142,8 +136,6 @@ fn call_set(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> {
         return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
     }
     match id {
-        BuiltinId::HashSetLen => Ok(crate::numeric::native_usize(set.entries.borrow().len())),
-        BuiltinId::HashSetIsEmpty => Ok(Value::Bool(set.entries.borrow().is_empty())),
         BuiltinId::HashSetClear => {
             set.entries.borrow_mut().clear();
             Ok(Value::Unit)

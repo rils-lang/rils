@@ -167,12 +167,15 @@ use rils_syntax::{FloatType, IntegerType, Type, ast::Stmt, lex, parse};
 
 #[test]
 fn builtin_id_macro_resolves_the_configured_stable_id() {
-    const HASH_MAP_LEN: BuiltinId = rils_builtins::builtin_id!("core::hash_map::len");
+    const HASH_MAP_CLEAR: BuiltinId = rils_builtins::builtin_id!("core::hash_map::clear");
 
-    assert_eq!(HASH_MAP_LEN, BuiltinId::HashMapLen);
-    assert_eq!(HASH_MAP_LEN.as_raw(), 0x0500);
-    assert_eq!(HASH_MAP_LEN.canonical_path(), Some("core::hash_map::len"));
-    assert_eq!(HASH_MAP_LEN.member_name(), Some("len"));
+    assert_eq!(HASH_MAP_CLEAR, BuiltinId::HashMapClear);
+    assert_eq!(HASH_MAP_CLEAR.as_raw(), 0x0502);
+    assert_eq!(
+        HASH_MAP_CLEAR.canonical_path(),
+        Some("core::hash_map::clear")
+    );
+    assert_eq!(HASH_MAP_CLEAR.member_name(), Some("clear"));
 }
 
 #[test]
@@ -329,6 +332,20 @@ fn queue_and_heap_members_use_native_symbols_without_ids() {
 }
 
 #[test]
+fn map_and_set_size_methods_use_native_symbols_without_ids() {
+    for owner in ["HashMap", "BTreeMap", "HashSet", "BTreeSet"] {
+        let declaration = builtin(owner).expect("collection declaration");
+        for name in ["len", "is_empty"] {
+            let member = declaration.member(name).expect("size method");
+            assert_eq!(member.builtin_id, None, "{owner}::{name}");
+            assert!(member.native_bridge, "{owner}::{name}");
+            let symbol = member.native_symbol.expect("native symbol");
+            assert!(std::ptr::eq(native_member(symbol).unwrap(), member));
+        }
+    }
+}
+
+#[test]
 fn migrated_hash_constructors_keep_imports_and_native_iterators() {
     for (name, constructor) in [
         ("HashMap", "core::hash_map::new"),
@@ -455,7 +472,8 @@ fn legacy_sequence_ids_are_no_longer_defined() {
         .chain(std::iter::once(0x0308))
         .chain(std::iter::once(0x0401))
         .chain([
-            0x0509, 0x050A, 0x060D, 0x060E, 0x120A, 0x120B, 0x1310, 0x1311,
+            0x0500, 0x0501, 0x0509, 0x050A, 0x0600, 0x0601, 0x060D, 0x060E, 0x1201, 0x1202, 0x120A,
+            0x120B, 0x1301, 0x1302, 0x1310, 0x1311,
         ])
     {
         assert!(BuiltinId::from_raw(raw).canonical_path().is_none());
@@ -881,7 +899,7 @@ fn declarations_report_member_and_runtime_coverage() {
     assert!(!iterator.contains_member("missing"));
     assert_eq!(iterator.member("next").unwrap().builtin_id, None);
     assert!(iterator.member("next").unwrap().native_symbol.is_some());
-    assert!(!iterator.contains_builtin(BuiltinId::HashMapLen));
+    assert!(!iterator.contains_builtin(BuiltinId::HashMapClear));
 }
 
 #[test]

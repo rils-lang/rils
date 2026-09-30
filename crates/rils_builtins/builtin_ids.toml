@@ -2,8 +2,6 @@
 
 # HashMap operations: 0x0500-0x05FF.
 [core.hash_map]
-len = 0x0500
-is_empty = 0x0501
 clear = 0x0502
 contains_key = 0x0503
 insert = 0x0504
@@ -14,8 +12,6 @@ values_cloned = 0x0508
 
 # HashSet operations: 0x0600-0x06FF.
 [core.hash_set]
-len = 0x0600
-is_empty = 0x0601
 clear = 0x0602
 contains = 0x0603
 insert = 0x0604
@@ -107,8 +103,6 @@ mul_add = 0x0C13
 
 # Ordered map operations: 0x1200-0x12FF.
 [core.btree_map]
-len = 0x1201
-is_empty = 0x1202
 clear = 0x1203
 contains_key = 0x1204
 insert = 0x1205
@@ -119,8 +113,6 @@ last_key_cloned = 0x1209
 
 # Ordered set operations: 0x1300-0x13FF.
 [core.btree_set]
-len = 0x1301
-is_empty = 0x1302
 clear = 0x1303
 contains = 0x1304
 insert = 0x1305

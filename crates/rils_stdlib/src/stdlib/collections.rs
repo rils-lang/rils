@@ -341,13 +341,13 @@ mod native {
         }
         /// Returns the number of elements.
         #[export_rils]
-        #[rils_legacy_id(core::btree_set::len)]
+        #[rils_native_bridge]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns whether the set is empty.
         #[export_rils]
-        #[rils_legacy_id(core::btree_set::is_empty)]
+        #[rils_native_bridge]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
@@ -497,13 +497,13 @@ mod native {
         }
         /// Returns the number of entries.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::len)]
+        #[rils_native_bridge]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns whether the map is empty.
         #[export_rils]
-        #[rils_legacy_id(core::btree_map::is_empty)]
+        #[rils_native_bridge]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }

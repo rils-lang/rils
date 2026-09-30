@@ -39,6 +39,18 @@ fn typed_maps_use_native_storage() {
 }
 
 #[test]
+fn native_map_and_set_size_queries_match_all_backends() {
+    for source in [
+        "let mut values: HashMap<i32, i32> = HashMap::new(); let empty = values.is_empty() && values.len() == 0usize; values.insert(1, 2); empty && !values.is_empty() && values.len() == 1usize",
+        "let mut values: BTreeMap<i32, i32> = BTreeMap::new(); let empty = values.is_empty() && values.len() == 0usize; values.insert(1, 2); empty && !values.is_empty() && values.len() == 1usize",
+        "let mut values: HashSet<i32> = HashSet::new(); let empty = values.is_empty() && values.len() == 0usize; values.insert(1); empty && !values.is_empty() && values.len() == 1usize",
+        "let mut values: BTreeSet<i32> = BTreeSet::new(); let empty = values.is_empty() && values.len() == 0usize; values.insert(1); empty && !values.is_empty() && values.len() == 1usize",
+    ] {
+        assert_both(source, Value::Bool(true));
+    }
+}
+
+#[test]
 fn native_map_methods_preserve_values_and_borrows() {
     assert_both(
         r#"

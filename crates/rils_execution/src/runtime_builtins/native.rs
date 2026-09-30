@@ -164,6 +164,8 @@ pub fn call_symbol(
         .or_else(|| super::cell_native::call_symbol(symbol, arguments))
         .or_else(|| option::call_symbol(symbol, arguments))
         .or_else(|| result::call_symbol(symbol, arguments))
+        .or_else(|| super::native_map::call_symbol(symbol, arguments))
+        .or_else(|| super::native_set::call_symbol(symbol, arguments))
         .or_else(|| {
             let receiver = super::import_receiver(arguments.first()?).ok()?;
             let Value::Native(object) = receiver else {

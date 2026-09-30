@@ -142,9 +142,7 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         return result;
     }
     match id {
-        BuiltinId::BtreeSetLen
-        | BuiltinId::BtreeSetIsEmpty
-        | BuiltinId::BtreeSetClear
+        BuiltinId::BtreeSetClear
         | BuiltinId::BtreeSetContains
         | BuiltinId::BtreeSetInsert
         | BuiltinId::BtreeSetRemove
@@ -157,26 +155,20 @@ pub fn call(id: rils_builtins::BuiltinId, arguments: &[Value]) -> Result<Value, 
         | BuiltinId::BtreeSetIntersection
         | BuiltinId::BtreeSetDifference
         | BuiltinId::BtreeSetSymmetricDifference => btree_set::call(id, arguments),
-        BuiltinId::BtreeMapLen
-        | BuiltinId::BtreeMapIsEmpty
-        | BuiltinId::BtreeMapClear
+        BuiltinId::BtreeMapClear
         | BuiltinId::BtreeMapContainsKey
         | BuiltinId::BtreeMapInsert
         | BuiltinId::BtreeMapGetCloned
         | BuiltinId::BtreeMapRemove
         | BuiltinId::BtreeMapFirstKeyCloned
         | BuiltinId::BtreeMapLastKeyCloned => btree_map::call(id, arguments),
-        BuiltinId::HashMapLen
-        | BuiltinId::HashMapIsEmpty
-        | BuiltinId::HashMapClear
+        BuiltinId::HashMapClear
         | BuiltinId::HashMapContainsKey
         | BuiltinId::HashMapInsert
         | BuiltinId::HashMapGetCloned
         | BuiltinId::HashMapRemove
         | BuiltinId::HashMapKeysCloned
         | BuiltinId::HashMapValuesCloned
-        | BuiltinId::HashSetLen
-        | BuiltinId::HashSetIsEmpty
         | BuiltinId::HashSetClear
         | BuiltinId::HashSetContains
         | BuiltinId::HashSetInsert

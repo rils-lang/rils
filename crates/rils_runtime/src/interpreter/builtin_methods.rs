@@ -48,17 +48,13 @@ impl Interpreter {
             }
             BuiltinMethod::IteratorIdentity => Ok((*method.receiver).clone()),
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::HashMapLen
-                | rils_builtins::BuiltinId::HashMapIsEmpty
-                | rils_builtins::BuiltinId::HashMapClear
+                id @ (rils_builtins::BuiltinId::HashMapClear
                 | rils_builtins::BuiltinId::HashMapContainsKey
                 | rils_builtins::BuiltinId::HashMapInsert
                 | rils_builtins::BuiltinId::HashMapGetCloned
                 | rils_builtins::BuiltinId::HashMapRemove
                 | rils_builtins::BuiltinId::HashMapKeysCloned
                 | rils_builtins::BuiltinId::HashMapValuesCloned
-                | rils_builtins::BuiltinId::HashSetLen
-                | rils_builtins::BuiltinId::HashSetIsEmpty
                 | rils_builtins::BuiltinId::HashSetClear
                 | rils_builtins::BuiltinId::HashSetContains
                 | rils_builtins::BuiltinId::HashSetInsert
@@ -78,9 +74,7 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             }
             BuiltinMethod::Runtime(
-                id @ (rils_builtins::BuiltinId::BtreeSetLen
-                | rils_builtins::BuiltinId::BtreeSetIsEmpty
-                | rils_builtins::BuiltinId::BtreeSetClear
+                id @ (rils_builtins::BuiltinId::BtreeSetClear
                 | rils_builtins::BuiltinId::BtreeSetContains
                 | rils_builtins::BuiltinId::BtreeSetInsert
                 | rils_builtins::BuiltinId::BtreeSetRemove
@@ -93,8 +87,6 @@ impl Interpreter {
                 | rils_builtins::BuiltinId::BtreeSetIntersection
                 | rils_builtins::BuiltinId::BtreeSetDifference
                 | rils_builtins::BuiltinId::BtreeSetSymmetricDifference
-                | rils_builtins::BuiltinId::BtreeMapLen
-                | rils_builtins::BuiltinId::BtreeMapIsEmpty
                 | rils_builtins::BuiltinId::BtreeMapClear
                 | rils_builtins::BuiltinId::BtreeMapContainsKey
                 | rils_builtins::BuiltinId::BtreeMapInsert

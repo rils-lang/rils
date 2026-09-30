@@ -182,12 +182,44 @@ impl MapKind {
     }
 }
 
+pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    let (kind, method) = [("HashMap", MapKind::Hash), ("BTreeMap", MapKind::BTree)]
+        .into_iter()
+        .find_map(|(owner, kind)| {
+            ["len", "is_empty"].into_iter().find_map(|method| {
+                (builtin(owner)?.member(method)?.native_symbol == Some(symbol))
+                    .then_some((kind, method))
+            })
+        })?;
+    Some((|| {
+        let [receiver] = arguments else {
+            return Err(format!("{}::{method} expects one receiver", kind.name()));
+        };
+        let length = match import_receiver(receiver)? {
+            Value::Dynamic(object) if kind.matches(&object) => {
+                object.with(DynamicValue::sequence_len)??
+            }
+            Value::HashMap(map) if kind == MapKind::Hash => map.entries.borrow().len(),
+            Value::BTreeMap(map) if kind == MapKind::BTree => map.entries.borrow().len(),
+            _ => {
+                return Err(format!(
+                    "{}::{method} received the wrong collection",
+                    kind.name()
+                ));
+            }
+        };
+        Ok(match method {
+            "len" => crate::numeric::native_usize(length),
+            "is_empty" => Value::Bool(length == 0),
+            _ => unreachable!(),
+        })
+    })())
+}
+
 pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, String>> {
     let kind = if matches!(
         id,
-        BuiltinId::HashMapLen
-            | BuiltinId::HashMapIsEmpty
-            | BuiltinId::HashMapClear
+        BuiltinId::HashMapClear
             | BuiltinId::HashMapContainsKey
             | BuiltinId::HashMapInsert
             | BuiltinId::HashMapGetCloned
@@ -198,9 +230,7 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Option<Result<Value, S
         MapKind::Hash
     } else if matches!(
         id,
-        BuiltinId::BtreeMapLen
-            | BuiltinId::BtreeMapIsEmpty
-            | BuiltinId::BtreeMapClear
+        BuiltinId::BtreeMapClear
             | BuiltinId::BtreeMapContainsKey
             | BuiltinId::BtreeMapInsert
             | BuiltinId::BtreeMapGetCloned
@@ -259,12 +289,6 @@ fn dispatch(
         ));
     }
     match id {
-        BuiltinId::HashMapLen | BuiltinId::BtreeMapLen => Ok(crate::numeric::native_usize(
-            object.with(DynamicValue::sequence_len)??,
-        )),
-        BuiltinId::HashMapIsEmpty | BuiltinId::BtreeMapIsEmpty => {
-            Ok(Value::Bool(object.with(DynamicValue::sequence_len)?? == 0))
-        }
         BuiltinId::HashMapClear | BuiltinId::BtreeMapClear => {
             object
                 .with_mut(DynamicValue::clear_sequence)?

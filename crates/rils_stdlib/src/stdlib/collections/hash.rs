@@ -64,13 +64,13 @@ mod native {
         }
         /// Returns the element count.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::len)]
+        #[rils_native_bridge]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns true when the set has no elements.
         #[export_rils]
-        #[rils_legacy_id(core::hash_set::is_empty)]
+        #[rils_native_bridge]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
@@ -209,13 +209,13 @@ mod native {
         }
         /// Returns the entry count.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::len)]
+        #[rils_native_bridge]
         pub fn len(&self) -> usize {
             self.0.len()
         }
         /// Returns true when the map has no entries.
         #[export_rils]
-        #[rils_legacy_id(core::hash_map::is_empty)]
+        #[rils_native_bridge]
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }

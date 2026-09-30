@@ -23,8 +23,6 @@ pub(super) fn call(id: BuiltinId, arguments: &[Value]) -> Result<Value, String> 
         return Err("expected BTreeMap receiver".into());
     };
     match id {
-        BuiltinId::BtreeMapLen => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
-        BuiltinId::BtreeMapIsEmpty => Ok(Value::Bool(map.entries.borrow().is_empty())),
         BuiltinId::BtreeMapClear => {
             reject_referenced(&map)?;
             map.entries.borrow_mut().clear();
