@@ -8,9 +8,25 @@ use rils_value::{DynamicLayout, DynamicType, DynamicValue};
 use crate::Type;
 
 use super::{
-    DynamicObject, Value, native_layouts, record_codec::NativeRecordCodec,
+    DynamicObject, EnumType, StructType, Value, native_layouts, record_codec::NativeRecordCodec,
     record_layout::RecordLayoutResolver,
 };
+
+/// Construct `None` using the concrete item layout, including nominal types.
+pub fn none_with_definitions(
+    item_type: &Type,
+    structs: &[Rc<StructType>],
+    enums: &[Rc<EnumType>],
+) -> Result<Value, String> {
+    let mut resolver = RecordLayoutResolver::with_enums(structs, enums);
+    let option_type = Type::Option(Box::new(item_type.clone()));
+    let layout = resolver.resolve(&option_type)?;
+    let payload = DynamicValue::none(layout.clone())?;
+    Ok(Value::Dynamic(DynamicObject::new(
+        Rc::new(DynamicType::new(layout)),
+        payload,
+    )?))
+}
 
 /// A native option, or the original item when its type has no native layout.
 pub enum Construction {

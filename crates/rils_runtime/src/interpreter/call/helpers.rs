@@ -69,10 +69,13 @@ pub(super) fn builtin_default_value(
                 *sequence.element_type.borrow_mut() = Some(element_type.clone());
                 Value::Array(sequence)
             }
-            DefaultPlan::Option(inner) => Value::Option {
-                value: None,
-                element_type: Some(inner.clone()),
-            },
+            DefaultPlan::Option(inner) => {
+                crate::value::dynamic_option::none_with_definitions(inner, structs, enums)
+                    .unwrap_or_else(|_| Value::Option {
+                        value: None,
+                        element_type: Some(inner.clone()),
+                    })
+            }
             DefaultPlan::EmptyCollection { name, arguments } => {
                 let ty = Type::Named {
                     name: name.clone(),

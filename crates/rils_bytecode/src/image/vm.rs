@@ -785,21 +785,25 @@ impl<'a> VirtualMachine<'a> {
                     destination,
                     item_type,
                 } => {
+                    let mut structs = Vec::new();
+                    let mut enums = Vec::new();
+                    for definition in &self.module.types {
+                        match definition {
+                            RuntimeType::Struct(definition) => structs.push(definition.clone()),
+                            RuntimeType::Enum(definition) => enums.push(definition.clone()),
+                        }
+                    }
                     let constructed = item_type
                         .as_ref()
                         .map(|item_type| {
-                            rils_execution::value::dynamic_option::construct(None, item_type)
+                            rils_execution::value::dynamic_option::none_with_definitions(
+                                item_type, &structs, &enums,
+                            )
                         })
-                        .transpose()
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                        .transpose();
                     self.frame_mut().registers[destination] = Some(match constructed {
-                        Some(rils_execution::value::dynamic_option::Construction::Native(
-                            value,
-                        )) => value,
-                        Some(rils_execution::value::dynamic_option::Construction::Unsupported(
-                            _,
-                        ))
-                        | None => Value::Option {
+                        Ok(Some(value)) => value,
+                        Ok(None) | Err(_) => Value::Option {
                             value: None,
                             element_type: item_type,
                         },

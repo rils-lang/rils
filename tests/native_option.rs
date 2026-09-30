@@ -523,6 +523,20 @@ fn typed_none_preserves_option_semantics() {
 }
 
 #[test]
+fn nominal_option_defaults_construct_native_none_directly() {
+    let source = "struct Item { value: i32 } <Option<Item> as Default>::default()";
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for (stage, value) in [
+        ("interpreter", eval_value(source).unwrap()),
+        ("VM", compiled.execute_value().unwrap()),
+        ("loaded VM", loaded.execute_value().unwrap()),
+    ] {
+        assert_dynamic_option(value, "Option<Item>", true, "None", "None", stage);
+    }
+}
+
+#[test]
 fn contextual_none_uses_native_storage_across_backends() {
     for (source, ty, inline) in [
         (
