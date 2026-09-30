@@ -16,6 +16,24 @@ pub fn promote_empty(value: Value, expected: &Type) -> Value {
     promote_empty_with_definitions(value, expected, &[], &[])
 }
 
+/// Construct an empty collection from its concrete declared type.
+pub fn empty_with_definitions(
+    ty: &Type,
+    structs: &[Rc<StructType>],
+    enums: &[Rc<EnumType>],
+) -> Result<Value, String> {
+    let mut resolver = RecordLayoutResolver::with_enums(structs, enums);
+    let layout = resolver.resolve(ty)?;
+    if layout.sequence_item().is_none() {
+        return Err(format!("{ty} has no native collection layout"));
+    }
+    let payload = DynamicValue::sequence(layout.clone(), Vec::new())?;
+    Ok(Value::Dynamic(DynamicObject::new(
+        Rc::new(DynamicType::new(layout)),
+        payload,
+    )?))
+}
+
 pub fn promote_empty_with_definitions(
     value: Value,
     expected: &Type,
@@ -74,18 +92,7 @@ pub fn promote_empty_with_definitions(
     if !empty_and_unique {
         return value;
     }
-    let mut resolver = RecordLayoutResolver::with_enums(structs, enums);
-    let Ok(layout) = resolver.resolve(expected) else {
-        return value;
-    };
-    let Ok(payload) = DynamicValue::sequence(layout.clone(), Vec::new()) else {
-        return value;
-    };
-    let descriptor = Rc::new(DynamicType::new(layout));
-    match DynamicObject::new(descriptor, payload) {
-        Ok(object) => Value::Dynamic(object),
-        Err(_) => value,
-    }
+    empty_with_definitions(expected, structs, enums).unwrap_or(value)
 }
 
 pub fn copy_items(object: &DynamicObject) -> Result<Vec<Value>, String> {

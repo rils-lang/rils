@@ -35,11 +35,10 @@ use crate::{
     types::{FunctionSignature, Type, merge_types},
     value::{
         BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumInstance,
-        EnumPayload, EnumType, FieldSlot, HashMapValue, HashSetValue, HostBoundMethod,
-        HostFunction, HostFunctionHandler, HostType, IndexedStorage, ModuleValue, NativeFunction,
-        NativeFunctionBody, ReferenceValue, StructFields, StructInstance, StructType,
-        TraitMethodSelector, TraitType, TypeAliasType, UserFunction, Value, VariantConstructor,
-        enum_variant_name, native_range,
+        EnumPayload, EnumType, FieldSlot, HostBoundMethod, HostFunction, HostFunctionHandler,
+        HostType, IndexedStorage, ModuleValue, NativeFunction, NativeFunctionBody, ReferenceValue,
+        StructFields, StructInstance, StructType, TraitMethodSelector, TraitType, TypeAliasType,
+        UserFunction, Value, VariantConstructor, enum_variant_name, native_range,
     },
 };
 

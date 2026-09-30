@@ -30,8 +30,7 @@ impl BytecodeModule {
                 Span::default(),
             ));
         }
-        let mut native_symbols = HashSet::new();
-        for import in &self.native_imports {
+        for (index, import) in self.native_imports.iter().enumerate() {
             let expected = rils_builtins::native_member(&import.symbol)
                 .and_then(rils_frontend::standard_library::erased_builtin_member_signature)
                 .or_else(|| {
@@ -48,9 +47,12 @@ impl BytecodeModule {
                             )
                         })
                 });
-            if !native_symbols.insert(import.symbol.as_str())
+            let specialized_empty_collection = import.specialized_empty_collection_type().is_some();
+            if self.native_imports[..index]
+                .iter()
+                .any(|previous| previous == import)
                 || !self.valid_signature(&import.signature)
-                || expected.as_ref() != Some(&import.signature)
+                || (expected.as_ref() != Some(&import.signature) && !specialized_empty_collection)
             {
                 return Err(BytecodeError::new(
                     format!("invalid native import `{}`", import.symbol),

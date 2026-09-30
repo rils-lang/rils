@@ -1083,6 +1083,38 @@ fn native_calls_include_legacy_adapters_and_survive_round_trip() {
 }
 
 #[test]
+fn specialized_empty_collection_imports_check_the_declared_owner() {
+    let source = "<Vec<i32> as Default>::default()";
+    let module = compile(source).unwrap();
+    assert!(module.verify().is_ok());
+
+    let mut wrong_owner = module.clone();
+    wrong_owner.native_imports[0].signature.return_type = Type::Named {
+        name: "HashSet".into(),
+        arguments: vec![Type::I32],
+    };
+    assert!(
+        wrong_owner
+            .verify()
+            .unwrap_err()
+            .message
+            .contains("invalid native import")
+    );
+
+    let mut duplicate = module;
+    duplicate
+        .native_imports
+        .push(duplicate.native_imports[0].clone());
+    assert!(
+        duplicate
+            .verify()
+            .unwrap_err()
+            .message
+            .contains("invalid native import")
+    );
+}
+
+#[test]
 fn exported_callback_function_native_imports_are_verified() {
     let source = "fn id(value: i32) -> i32 { value } core::ops::apply_twice(3, id)";
     let module = compile(source).unwrap();

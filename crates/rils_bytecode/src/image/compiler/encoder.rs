@@ -22,7 +22,7 @@ pub(super) fn encode(program: MirProgram) -> Result<BytecodeModule, CompileError
     let mut imports = Vec::new();
     let mut import_ids = HashMap::new();
     let mut native_imports = Vec::new();
-    let mut native_import_ids = HashMap::new();
+    let mut native_import_ids = Vec::new();
     let mut functions = Vec::with_capacity(program.functions.len());
     for function in program.functions {
         functions.push(encode_function(
@@ -109,7 +109,7 @@ fn encode_function(
     imports: &mut Vec<BytecodeImport>,
     import_ids: &mut HashMap<String, usize>,
     native_imports: &mut Vec<BytecodeNativeImport>,
-    native_import_ids: &mut HashMap<String, usize>,
+    native_import_ids: &mut Vec<(String, Option<Type>, usize)>,
 ) -> Result<BytecodeFunction, CompileError> {
     let mut offsets = Vec::with_capacity(program.blocks.len());
     let mut offset = 0;
@@ -327,12 +327,18 @@ fn encode_function(
                     MirInstruction::CallNative {
                         destination,
                         symbol,
+                        return_type,
                         arguments,
                     } => {
-                        let import = if let Some(index) = native_import_ids.get(&symbol).copied() {
-                            index
+                        let import = if let Some((_, _, index)) = native_import_ids
+                            .iter()
+                            .find(|(known, known_return, _)| {
+                                known == &symbol && known_return == &return_type
+                            })
+                        {
+                            *index
                         } else {
-                            let signature = rils_builtins::native_member(&symbol)
+                            let mut signature = rils_builtins::native_member(&symbol)
                                 .and_then(rils_frontend::standard_library::erased_builtin_member_signature)
                                 .or_else(|| rils_frontend::standard_library::erased_intrinsic_symbol_signature(&symbol))
                                 .or_else(|| {
@@ -346,12 +352,15 @@ fn encode_function(
                                         instruction.span,
                                     )
                                 })?;
+                            if let Some(return_type) = &return_type {
+                                signature.return_type = return_type.clone();
+                            }
                             let index = native_imports.len();
                             native_imports.push(BytecodeNativeImport {
                                 symbol: symbol.clone(),
                                 signature,
                             });
-                            native_import_ids.insert(symbol, index);
+                            native_import_ids.push((symbol, return_type, index));
                             index
                         };
                         Instruction::CallNative {

@@ -218,6 +218,7 @@ pub enum HirExpression {
     },
     CallNative {
         symbol: String,
+        return_type: Option<Type>,
         arguments: Vec<HirExpression>,
         span: Span,
     },

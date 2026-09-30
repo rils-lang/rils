@@ -71,6 +71,24 @@ struct BytecodeNativeImport {
     signature: FunctionSignature,
 }
 
+impl BytecodeNativeImport {
+    fn specialized_empty_collection_type(&self) -> Option<&Type> {
+        let (owner, member) = rils_builtins::native_member_owner(&self.symbol)?;
+        let erased = rils_frontend::standard_library::erased_builtin_member_signature(member)?;
+        let Type::Named { name, arguments } = &self.signature.return_type else {
+            return None;
+        };
+        (member.name == "new"
+            && member.receiver.is_none()
+            && erased.parameters.as_deref() == Some(&[])
+            && erased.return_type == Type::Unknown
+            && self.signature.parameters == erased.parameters
+            && owner.path.rsplit("::").next() == Some(name.as_str())
+            && arguments.len() == owner.type_parameters.len())
+        .then_some(&self.signature.return_type)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BytecodeTraitImplementation {
     target: String,

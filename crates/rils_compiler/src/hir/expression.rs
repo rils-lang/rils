@@ -244,6 +244,7 @@ impl<'a> FunctionLowerer<'a> {
                     {
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),
+                            return_type: None,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -308,6 +309,7 @@ impl<'a> FunctionLowerer<'a> {
                             })?;
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),
+                            return_type: None,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -349,6 +351,7 @@ impl<'a> FunctionLowerer<'a> {
                             .expect("intrinsic path has a member");
                         return Ok(HirExpression::CallNative {
                             symbol: format!("core::integer::{}::{method}", target.name()),
+                            return_type: None,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -379,6 +382,7 @@ impl<'a> FunctionLowerer<'a> {
                     {
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),
+                            return_type: None,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -420,6 +424,7 @@ impl<'a> FunctionLowerer<'a> {
                     {
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),
+                            return_type: None,
                             arguments: arguments
                                 .iter()
                                 .map(|argument| self.expression(argument))
@@ -488,6 +493,7 @@ impl<'a> FunctionLowerer<'a> {
                         );
                         return Ok(HirExpression::CallNative {
                             symbol: (*symbol).to_owned(),
+                            return_type: None,
                             arguments: lowered,
                             span: *span,
                         });
@@ -562,6 +568,7 @@ impl<'a> FunctionLowerer<'a> {
                         );
                         return Ok(HirExpression::CallNative {
                             symbol: (*symbol).to_owned(),
+                            return_type: None,
                             arguments: lowered,
                             span: *span,
                         });

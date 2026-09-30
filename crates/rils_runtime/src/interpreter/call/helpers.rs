@@ -1,9 +1,17 @@
 use super::*;
 
-pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
+pub(super) fn builtin_default_value(
+    ty: &Type,
+    structs: &[Rc<StructType>],
+    enums: &[Rc<EnumType>],
+) -> Option<Value> {
     use rils_frontend::default::DefaultPlan;
 
-    fn materialize(plan: &DefaultPlan) -> Option<Value> {
+    fn materialize(
+        plan: &DefaultPlan,
+        structs: &[Rc<StructType>],
+        enums: &[Rc<EnumType>],
+    ) -> Option<Value> {
         let sequence = |values: Vec<(Value, Type)>| {
             Rc::new(IndexedStorage {
                 active_iterators: std::cell::Cell::new(0),
@@ -43,7 +51,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
                 elements
                     .iter()
                     .map(|element| {
-                        let value = materialize(element)?;
+                        let value = materialize(element, structs, enums)?;
                         let ty = Type::of_value(&value)?;
                         Some((value, ty))
                     })
@@ -55,7 +63,7 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
                 length,
             } => {
                 let values = (0..*length)
-                    .map(|_| Some((materialize(element)?, element_type.clone())))
+                    .map(|_| Some((materialize(element, structs, enums)?, element_type.clone())))
                     .collect::<Option<Vec<_>>>()?;
                 let sequence = sequence(values);
                 *sequence.element_type.borrow_mut() = Some(element_type.clone());
@@ -65,32 +73,17 @@ pub(super) fn builtin_default_value(ty: &Type) -> Option<Value> {
                 value: None,
                 element_type: Some(inner.clone()),
             },
-            DefaultPlan::EmptyCollection { name, arguments } if name == "Vec" => {
-                Value::Vec(Rc::new(IndexedStorage {
-                    active_iterators: std::cell::Cell::new(0),
-                    elements: RefCell::new(Vec::new()),
-                    element_type: RefCell::new(Some(arguments[0].clone())),
-                }))
+            DefaultPlan::EmptyCollection { name, arguments } => {
+                let ty = Type::Named {
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                };
+                crate::value::dynamic_sequence::empty_with_definitions(&ty, structs, enums).ok()?
             }
-            DefaultPlan::EmptyCollection { name, arguments } if name == "HashMap" => {
-                Value::HashMap(Rc::new(HashMapValue {
-                    borrowed: std::cell::Cell::new(0),
-                    entries: RefCell::new(std::collections::HashMap::new()),
-                    key_type: RefCell::new(arguments[0].clone()),
-                    value_type: RefCell::new(arguments[1].clone()),
-                }))
-            }
-            DefaultPlan::EmptyCollection { name, arguments } if name == "HashSet" => {
-                Value::HashSet(Rc::new(HashSetValue {
-                    borrowed: std::cell::Cell::new(0),
-                    entries: RefCell::new(std::collections::HashSet::new()),
-                    element_type: RefCell::new(arguments[0].clone()),
-                }))
-            }
-            DefaultPlan::EmptyCollection { .. } | DefaultPlan::TraitCall(_) => return None,
+            DefaultPlan::TraitCall(_) => return None,
         })
     }
-    materialize(&rils_frontend::default::default_plan(ty)?)
+    materialize(&rils_frontend::default::default_plan(ty)?, structs, enums)
 }
 
 pub(crate) fn builtin_runtime_member(

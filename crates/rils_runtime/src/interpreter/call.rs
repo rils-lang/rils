@@ -230,7 +230,8 @@ impl Interpreter {
                         )
                     })?;
                     let target = expand_type_aliases(target, &selector.environment, span)?;
-                    if let Some(value) = builtin_default_value(&target) {
+                    let (structs, enums) = selector.environment.borrow().visible_type_definitions();
+                    if let Some(value) = builtin_default_value(&target, &structs, &enums) {
                         return Ok(value);
                     }
                     let Type::Named { name, .. } = &target else {

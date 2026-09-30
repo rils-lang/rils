@@ -171,6 +171,7 @@ pub enum MirInstruction {
     CallNative {
         destination: Register,
         symbol: String,
+        return_type: Option<crate::types::Type>,
         arguments: Vec<Register>,
     },
     ConstructRecord {

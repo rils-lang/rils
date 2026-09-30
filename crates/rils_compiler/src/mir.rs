@@ -509,6 +509,7 @@ impl Builder {
             }
             HirExpression::CallNative {
                 symbol,
+                return_type,
                 arguments,
                 span,
             } => {
@@ -521,6 +522,7 @@ impl Builder {
                     MirInstruction::CallNative {
                         destination,
                         symbol: symbol.clone(),
+                        return_type: return_type.clone(),
                         arguments,
                     },
                     *span,

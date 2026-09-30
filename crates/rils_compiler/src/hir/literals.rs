@@ -148,11 +148,15 @@ pub(super) fn builtin_default_hir(
                 item_type: Some(inner.clone()),
                 span,
             },
-            DefaultPlan::EmptyCollection { name, .. } => {
+            DefaultPlan::EmptyCollection { name, arguments } => {
                 let symbol = collection_constructor_symbol(&format!("{name}::new"))
                     .expect("default collection has a native constructor");
                 HirExpression::CallNative {
                     symbol: symbol.into(),
+                    return_type: Some(Type::Named {
+                        name: name.clone(),
+                        arguments: arguments.clone(),
+                    }),
                     arguments: Vec::new(),
                     span,
                 }

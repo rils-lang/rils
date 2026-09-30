@@ -560,7 +560,25 @@ impl<'a> VirtualMachine<'a> {
                         .map(|register| self.take_register(register, instruction.span))
                         .collect::<Result<Vec<_>, _>>()?;
                     let symbol = self.module.native_imports[import].symbol.clone();
-                    let value = if crate::runtime_builtins::requires_owned_native_call(&symbol) {
+                    let empty_type = self.module.native_imports[import]
+                        .specialized_empty_collection_type()
+                        .cloned();
+                    let value = if let Some(empty_type) = empty_type {
+                        let mut structs = Vec::new();
+                        let mut enums = Vec::new();
+                        for definition in &self.module.types {
+                            match definition {
+                                RuntimeType::Struct(definition) => structs.push(definition.clone()),
+                                RuntimeType::Enum(definition) => enums.push(definition.clone()),
+                            }
+                        }
+                        crate::value::dynamic_sequence::empty_with_definitions(
+                            &empty_type,
+                            &structs,
+                            &enums,
+                        )
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?
+                    } else if crate::runtime_builtins::requires_owned_native_call(&symbol) {
                         let mut context = crate::runtime_builtins::NativeOwnedContext {
                             structs: Vec::new(),
                             enums: Vec::new(),
