@@ -254,6 +254,7 @@ fn check_project_impls(
                 };
                 let contract_valid = check_contract(
                     requirement,
+                    target,
                     trait_arguments,
                     associated_types,
                     methods,
@@ -458,7 +459,7 @@ fn check_impls(
                 generic_parameters,
                 trait_name: Some(trait_name),
                 trait_arguments,
-                target: Type::Named { name, .. },
+                target: target @ Type::Named { name, .. },
                 associated_types,
                 methods,
                 span,
@@ -498,6 +499,7 @@ fn check_impls(
                 }
                 let contract_valid = check_contract(
                     requirement,
+                    target,
                     trait_arguments,
                     associated_types,
                     methods,
@@ -532,6 +534,7 @@ fn check_impl_generic_bounds(
 
 fn check_contract(
     requirement: &TraitRequirement,
+    target: &Type,
     trait_arguments: &[Type],
     associated_types: &[AssociatedType],
     methods: &[ImplMethod],
@@ -551,12 +554,13 @@ fn check_contract(
         ));
         return false;
     }
-    let substitutions = requirement
+    let mut substitutions = requirement
         .generic_parameters
         .iter()
         .zip(trait_arguments)
         .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
         .collect::<HashMap<_, _>>();
+    substitutions.insert("Self".to_owned(), target.clone());
     check_associated_types(requirement, associated_types, impl_span, diagnostics);
     check_methods(requirement, &substitutions, methods, diagnostics);
     diagnostics.len() == diagnostics_start
@@ -697,6 +701,7 @@ fn method_signature_matches(
     substitutions: &HashMap<String, Type>,
 ) -> bool {
     let mut substitutions = substitutions.clone();
+    let target = substitutions.get("Self").cloned().unwrap_or(Type::Unknown);
     for parameter in &required.generic_parameters {
         substitutions.insert(
             parameter.name.clone(),
@@ -718,18 +723,38 @@ fn method_signature_matches(
             .zip(&implementation.parameters)
             .all(|(required, actual)| {
                 required.name == actual.name
-                    && required
-                        .type_annotation
-                        .as_ref()
-                        .map(|ty| ty.substitute(&substitutions))
-                        == actual.type_annotation
+                    && required.type_annotation.as_ref().map(|ty| {
+                        crate::trait_defaults::resolve_associated_type(
+                            ty.substitute(&substitutions),
+                            &target,
+                            "",
+                            &[],
+                        )
+                    }) == actual.type_annotation.as_ref().map(|ty| {
+                        crate::trait_defaults::resolve_associated_type(
+                            ty.substitute(&substitutions),
+                            &target,
+                            "",
+                            &[],
+                        )
+                    })
                     && required.mutable == actual.mutable
             })
-        && required
-            .return_type
-            .as_ref()
-            .map(|ty| ty.substitute(&substitutions))
-            == implementation.return_type
+        && required.return_type.as_ref().map(|ty| {
+            crate::trait_defaults::resolve_associated_type(
+                ty.substitute(&substitutions),
+                &target,
+                "",
+                &[],
+            )
+        }) == implementation.return_type.as_ref().map(|ty| {
+            crate::trait_defaults::resolve_associated_type(
+                ty.substitute(&substitutions),
+                &target,
+                "",
+                &[],
+            )
+        })
 }
 
 fn qualified(path: &[String], name: &str) -> String {

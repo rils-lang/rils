@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `Type::method(receiver, ...)` 现在与 `receiver.method(...)`、`Trait::method(receiver, ...)` 一样支持脚本固有方法和唯一的 trait 方法；原生 `Vec` 等容器也可通过类型路径调用实例方法。多个 trait 的同名方法会在静态检查时报歧义，类型路径需显式传入 receiver。
+
 - `Option` / `Result` 的消费式方法现在直接移出非 Copy 的原生泛型负载；`Option::take/replace` 也会写回原生存储。`Result::ok/err` 可将 `Vec<string>` 等值移入返回的 `Option`。
 
 - **破坏性 Rust API 变更：** 移除标准库定义中的 `#[rils_import(...)]` 与 `BuiltinMember::runtime_import`。`Vec::new/from`、`HashMap::new`、`HashSet::new` 现在通过声明生成的原生符号调用；扩展标准库时请使用 `#[export_rils]` 并提供对应的原生转换。引用这些旧导入的实验性 v8 字节码需从源码重新编译。

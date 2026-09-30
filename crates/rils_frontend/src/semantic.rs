@@ -673,11 +673,18 @@ impl CallableDefinitions {
                     return Some(*definition);
                 }
                 let (owner, name) = path.rsplit_once("::")?;
-                unique_method(self.methods.iter().filter(|method| {
+                let inherent = unique_method(self.methods.iter().filter(|method| {
                     owner_matches(&method.owner, owner)
                         && method.name == name
                         && method.trait_name.is_none()
-                }))
+                }));
+                inherent.or_else(|| {
+                    unique_method(self.methods.iter().filter(|method| {
+                        owner_matches(&method.owner, owner)
+                            && method.name == name
+                            && method.trait_name.is_some()
+                    }))
+                })
             }
             Expr::QualifiedPath {
                 target,

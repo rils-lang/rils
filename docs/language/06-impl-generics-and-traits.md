@@ -291,7 +291,8 @@ Left::value(&both);
 <Both as Right>::value(&both);
 ```
 
-固有方法始终优先于同名 trait 方法。UFCS 不执行接收器自动借用，因此 `&self` 和
+`Type::method(receiver, ...)` 可调用固有方法或唯一的 trait 方法；多个 trait 同名时必须指定 trait。
+固有方法始终优先于同名 trait 方法。类型路径和 UFCS 不执行接收器自动借用，因此 `&self` 和
 `&mut self` 方法需要显式传入引用。
 `Iterator::next(&mut iterator)`、`Clone::clone(&value)` 等 trait 路径调用可在解释器和字节码 VM 中使用；
 标准库原生方法按 trait 导出符号分派，脚本类型则调用其对应的 trait impl。

@@ -329,7 +329,7 @@ fn resolve_block_types(
     }
 }
 
-fn resolve_associated_type(
+pub(crate) fn resolve_associated_type(
     ty: Type,
     target: &Type,
     trait_name: &str,

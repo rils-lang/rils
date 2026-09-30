@@ -29,6 +29,7 @@ struct Checker<'a> {
     associated_items: HashMap<(String, String), Alias>,
     iterator_types: HashSet<String>,
     opaque_types: HashMap<String, bool>,
+    method_candidates: HashMap<(String, String), Vec<Option<String>>>,
     return_types: Vec<Option<Type>>,
     self_types: Vec<Option<Type>>,
     diagnostics: Vec<AnalysisDiagnostic>,
@@ -48,12 +49,14 @@ impl<'a> Checker<'a> {
             associated_items: HashMap::new(),
             iterator_types: HashSet::new(),
             opaque_types: HashMap::new(),
+            method_candidates: HashMap::new(),
             return_types: Vec::new(),
             self_types: Vec::new(),
             diagnostics: Vec::new(),
             host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
         };
         checker.collect_aliases(&program.statements);
+        checker.collect_method_candidates(&program.statements);
         checker.collect_opaque_types(&program.statements, &mut Vec::new());
         crate::semantic::collect_trait_implementations(
             &program.statements,
@@ -67,6 +70,31 @@ impl<'a> Checker<'a> {
     fn run(mut self, program: &Program) -> Vec<AnalysisDiagnostic> {
         self.statements(&program.statements);
         self.diagnostics
+    }
+
+    fn collect_method_candidates(&mut self, statements: &[Stmt]) {
+        for statement in statements {
+            match statement {
+                Stmt::Module {
+                    statements: Some(statements),
+                    ..
+                } => self.collect_method_candidates(statements),
+                Stmt::Impl {
+                    target: Type::Named { name, .. },
+                    trait_name,
+                    methods,
+                    ..
+                } => {
+                    for method in methods {
+                        self.method_candidates
+                            .entry((name.clone(), method.name.clone()))
+                            .or_default()
+                            .push(trait_name.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     fn collect_aliases(&mut self, statements: &[Stmt]) {
@@ -460,6 +488,32 @@ impl<'a> Checker<'a> {
                 self.expression(callee);
                 for argument in arguments {
                     self.expression(argument);
+                }
+                if let Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } =
+                    callee.as_ref()
+                    && let Some((method, owner)) = segments.split_last()
+                    && !owner.is_empty()
+                    && let Some(candidates) = self
+                        .method_candidates
+                        .get(&(owner.join("::"), method.clone()))
+                    && !candidates.contains(&None)
+                    && candidates
+                        .iter()
+                        .filter_map(Option::as_ref)
+                        .collect::<HashSet<_>>()
+                        .len()
+                        > 1
+                {
+                    self.diagnostic(
+                        format!(
+                            "method `{}` is ambiguous for `{}`; use `Trait::{method}` or `<{} as Trait>::{method}`",
+                            method,
+                            owner.join("::"),
+                            owner.join("::")
+                        ),
+                        *span,
+                    );
+                    return;
                 }
                 if let Expr::Member { object, name, .. } = callee.as_ref()
                     && rils_builtins::integer_method(name).is_some()

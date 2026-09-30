@@ -9,28 +9,13 @@ pub(super) fn resolve_associated_path(
     span: Span,
 ) -> Result<Value, RuntimeError> {
     match base {
-        Value::BuiltinType(BuiltinType::Vec) => match member {
-            "new" => native_collection_constructor("Vec", member, span),
-            "from" => native_collection_constructor("Vec", member, span),
-            _ => Err(RuntimeError::new(
-                format!("Vec has no associated function `{member}`"),
-                span,
-            )),
-        },
-        Value::BuiltinType(BuiltinType::HashMap) => match member {
-            "new" => native_collection_constructor("HashMap", member, span),
-            _ => Err(RuntimeError::new(
-                format!("HashMap has no associated function `{member}`"),
-                span,
-            )),
-        },
-        Value::BuiltinType(BuiltinType::HashSet) => match member {
-            "new" => native_collection_constructor("HashSet", member, span),
-            _ => Err(RuntimeError::new(
-                format!("HashSet has no associated function `{member}`"),
-                span,
-            )),
-        },
+        Value::BuiltinType(BuiltinType::Vec) => native_collection_member("Vec", member, span),
+        Value::BuiltinType(BuiltinType::HashMap) => {
+            native_collection_member("HashMap", member, span)
+        }
+        Value::BuiltinType(BuiltinType::HashSet) => {
+            native_collection_member("HashSet", member, span)
+        }
         Value::BuiltinType(BuiltinType::Integer(target)) => {
             if let Some(constant) = rils_builtins::integer_constant(member) {
                 return Ok(crate::numeric::integer_constant(target, constant.id));
@@ -90,21 +75,37 @@ pub(super) fn resolve_associated_path(
                     body: NativeFunctionBody::Symbol(symbol),
                 }));
             }
-            definition
-                .methods
-                .borrow()
-                .get(member)
-                .cloned()
-                .map(Value::Function)
-                .ok_or_else(|| {
+            let method = select_method(&definition.methods, &definition.trait_methods, member)
+                .map_err(|traits| {
                     RuntimeError::new(
-                        format!("struct `{root}` has no associated function `{member}`"),
+                        format!(
+                            "method `{member}` is ambiguous for `{root}`: {}",
+                            traits.join(", ")
+                        ),
                         span,
                     )
-                })
+                })?;
+            method.map(Value::Function).ok_or_else(|| {
+                RuntimeError::new(
+                    format!("struct `{root}` has no associated function `{member}`"),
+                    span,
+                )
+            })
         }
         Value::EnumType(definition) => {
-            if let Some(method) = definition.methods.borrow().get(member).cloned() {
+            if let Some(method) =
+                select_method(&definition.methods, &definition.trait_methods, member).map_err(
+                    |traits| {
+                        RuntimeError::new(
+                            format!(
+                                "method `{member}` is ambiguous for `{root}`: {}",
+                                traits.join(", ")
+                            ),
+                            span,
+                        )
+                    },
+                )?
+            {
                 return Ok(Value::Function(method));
             }
             let variant = definition
@@ -155,11 +156,7 @@ pub(super) fn resolve_associated_path(
     }
 }
 
-fn native_collection_constructor(
-    owner: &str,
-    member: &str,
-    span: Span,
-) -> Result<Value, RuntimeError> {
+fn native_collection_member(owner: &str, member: &str, span: Span) -> Result<Value, RuntimeError> {
     let declaration = rils_builtins::builtin_member(owner, member)
         .ok_or_else(|| RuntimeError::new(format!("{owner} has no `{member}` method"), span))?;
     let symbol = declaration.native_symbol.ok_or_else(|| {

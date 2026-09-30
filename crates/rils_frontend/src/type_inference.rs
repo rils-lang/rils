@@ -38,6 +38,7 @@ struct TypeDefinition {
     fields: HashMap<String, Type>,
     variants: HashMap<String, VariantDefinition>,
     methods: HashMap<String, Type>,
+    method_receivers: HashMap<String, Type>,
     implemented_traits: HashSet<String>,
     associated_types: HashMap<(String, String), Type>,
 }
@@ -462,6 +463,7 @@ impl<'a> Inferencer<'a> {
                             .collect(),
                         variants: HashMap::new(),
                         methods: HashMap::new(),
+                        method_receivers: HashMap::new(),
                         implemented_traits: HashSet::new(),
                         associated_types: HashMap::new(),
                     };
@@ -540,6 +542,21 @@ impl<'a> Inferencer<'a> {
                         }
                     }
                     for method in methods {
+                        let receiver = method
+                            .parameters
+                            .first()
+                            .filter(|parameter| parameter.name == "self")
+                            .map(|parameter| {
+                                parameter.type_annotation.as_ref().map_or_else(
+                                    || target.clone(),
+                                    |ty| {
+                                        resolve_impl_self(
+                                            &self.host_types.resolved_type(ty),
+                                            &target,
+                                        )
+                                    },
+                                )
+                            });
                         let parameters = method
                             .parameters
                             .iter()
@@ -556,15 +573,20 @@ impl<'a> Inferencer<'a> {
                                     })
                             })
                             .collect();
-                        definition.methods.insert(
-                            method.name.clone(),
-                            Type::function(
-                                parameters,
-                                method.return_type.as_ref().map_or(Type::Unknown, |ty| {
-                                    resolve_impl_self(&self.host_types.resolved_type(ty), &target)
-                                }),
-                            ),
+                        let function = Type::function(
+                            parameters,
+                            method.return_type.as_ref().map_or(Type::Unknown, |ty| {
+                                resolve_impl_self(&self.host_types.resolved_type(ty), &target)
+                            }),
                         );
+                        if trait_name.is_none() || !definition.methods.contains_key(&method.name) {
+                            definition.methods.insert(method.name.clone(), function);
+                            if let Some(receiver) = receiver {
+                                definition
+                                    .method_receivers
+                                    .insert(method.name.clone(), receiver);
+                            }
+                        }
                     }
                 }
                 _ => {}
@@ -988,7 +1010,20 @@ impl<'a> Inferencer<'a> {
                         } else {
                             type_name.as_str()
                         };
-                        self.types.get(owner)?.methods.get(member).cloned()
+                        let definition = self.types.get(owner)?;
+                        let method = definition.methods.get(member)?.clone();
+                        if let Some(receiver) = definition.method_receivers.get(member)
+                            && let Type::Function {
+                                parameters: Some(parameters),
+                                return_type,
+                            } = method
+                        {
+                            let mut parameters = parameters;
+                            parameters.insert(0, receiver.clone());
+                            Some(Type::function(parameters, *return_type))
+                        } else {
+                            Some(method)
+                        }
                     })
                     .or_else(|| {
                         segments
