@@ -234,11 +234,6 @@ pub fn erased_builtin_member_signature(
     ))
 }
 
-pub fn erased_runtime_signature(id: rils_builtins::BuiltinId) -> Option<FunctionSignature> {
-    let (_, member) = rils_builtins::runtime_member(id)?;
-    erased_builtin_member_signature(member)
-}
-
 /// Signature stored in a native import for a numeric operation.
 pub fn erased_intrinsic_symbol_signature(symbol: &str) -> Option<FunctionSignature> {
     let (declaration, target) = rils_builtins::intrinsic_by_symbol(symbol)?;

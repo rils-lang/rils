@@ -326,39 +326,6 @@ impl<'a> FunctionLowerer<'a> {
                     callee.as_ref()
                 {
                     let segments = self.resolve_self_path(segments);
-                    if let Some((
-                        builtin,
-                        rils_frontend::semantic::BuiltinCallKind::Runtime,
-                        None,
-                    )) = self.resolved_builtin(expression_id)
-                    {
-                        if let Some(symbol) = rils_builtins::runtime_member(builtin)
-                            .and_then(|(_, member)| member.native_symbol)
-                        {
-                            return Ok(HirExpression::CallNative {
-                                symbol: symbol.to_owned(),
-                                arguments: arguments
-                                    .iter()
-                                    .map(|argument| self.expression(argument))
-                                    .collect::<Result<_, _>>()?,
-                                span: *span,
-                            });
-                        }
-                        if let Some(symbol) = builtin.canonical_path() {
-                            return Ok(HirExpression::CallNative {
-                                symbol: symbol.to_owned(),
-                                arguments: arguments
-                                    .iter()
-                                    .map(|argument| self.expression(argument))
-                                    .collect::<Result<_, _>>()?,
-                                span: *span,
-                            });
-                        }
-                        return Err(CompileError::unsupported(
-                            format!("runtime built-in `{builtin:?}` has no symbol"),
-                            *span,
-                        ));
-                    }
                     if let Some(callable) = self.resolved_definition(expression_id) {
                         return Ok(HirExpression::Call {
                             function: callable.function,
@@ -371,18 +338,12 @@ impl<'a> FunctionLowerer<'a> {
                     }
                     if let [type_name, _] = segments.as_slice()
                         && let Some(target) = crate::types::IntegerType::from_name(type_name)
-                        && let Some(intrinsic) =
-                            self.resolved_builtin(expression_id)
-                                .and_then(|(id, kind, receiver)| {
-                                    (kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
-                                        && receiver.is_none())
-                                    .then_some(id)
-                                })
+                        && let Some(rils_frontend::semantic::ResolvedCall::NumericIntrinsic {
+                            symbol,
+                            receiver: None,
+                        }) = self.typeck_results.resolved_call(expression_id)
                     {
-                        let base = intrinsic.canonical_path().ok_or_else(|| {
-                            CompileError::unsupported("numeric intrinsic has no symbol", *span)
-                        })?;
-                        let method = base
+                        let method = symbol
                             .rsplit("::")
                             .next()
                             .expect("intrinsic path has a member");
@@ -558,17 +519,6 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    let semantic_builtin = self
-                        .typeck_results
-                        .resolved_call(expression_id)
-                        .and_then(|call| match call {
-                            rils_frontend::semantic::ResolvedCall::Builtin {
-                                id,
-                                kind,
-                                receiver,
-                            } => Some((*id, *kind, *receiver)),
-                            _ => None,
-                        });
                     if name == "into_iter"
                         && arguments.is_empty()
                         && matches!(
@@ -578,12 +528,11 @@ impl<'a> FunctionLowerer<'a> {
                     {
                         return self.expression(object);
                     }
-                    let intrinsic = semantic_builtin
-                        .filter(|(_, kind, _)| {
-                            *kind == rils_frontend::semantic::BuiltinCallKind::Intrinsic
-                        })
-                        .map(|(id, _, _)| id);
-                    if let Some(intrinsic) = intrinsic {
+                    if let Some(rils_frontend::semantic::ResolvedCall::NumericIntrinsic {
+                        symbol,
+                        receiver: Some(_),
+                    }) = self.typeck_results.resolved_call(expression_id)
+                    {
                         let mut lowered = Vec::with_capacity(arguments.len() + 1);
                         lowered.push(self.expression(object)?);
                         lowered.extend(
@@ -592,50 +541,11 @@ impl<'a> FunctionLowerer<'a> {
                                 .map(|argument| self.expression(argument))
                                 .collect::<Result<Vec<_>, _>>()?,
                         );
-                        let symbol = intrinsic.canonical_path().ok_or_else(|| {
-                            CompileError::unsupported("numeric intrinsic has no symbol", *span)
-                        })?;
                         return Ok(HirExpression::CallNative {
-                            symbol: symbol.to_owned(),
+                            symbol: (*symbol).to_owned(),
                             arguments: lowered,
                             span: *span,
                         });
-                    }
-                    if let Some((builtin, _, receiver)) = semantic_builtin.filter(|(_, kind, _)| {
-                        *kind == rils_frontend::semantic::BuiltinCallKind::Runtime
-                    }) {
-                        if builtin.has_direct_runtime_call()
-                            && let Some(receiver) = receiver.map(|receiver| match receiver {
-                                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
-                                rils_builtins::ReceiverMode::Shared => {
-                                    ReceiverMode::Reference { mutable: false }
-                                }
-                                rils_builtins::ReceiverMode::Mutable => {
-                                    ReceiverMode::Reference { mutable: true }
-                                }
-                            })
-                        {
-                            let receiver = self.method_receiver(object, receiver)?;
-                            let mut lowered = Vec::with_capacity(arguments.len() + 1);
-                            lowered.push(receiver);
-                            lowered.extend(
-                                arguments
-                                    .iter()
-                                    .map(|argument| self.expression(argument))
-                                    .collect::<Result<Vec<_>, _>>()?,
-                            );
-                            if let Some(symbol) = builtin.canonical_path() {
-                                return Ok(HirExpression::CallNative {
-                                    symbol: symbol.to_owned(),
-                                    arguments: lowered,
-                                    span: *span,
-                                });
-                            }
-                            return Err(CompileError::unsupported(
-                                format!("runtime built-in `{builtin:?}` has no symbol"),
-                                *span,
-                            ));
-                        }
                     }
                     if self.resolved_host(expression_id).is_some()
                         && let Some(host) = self.host_method(object, name, arguments, *span)?

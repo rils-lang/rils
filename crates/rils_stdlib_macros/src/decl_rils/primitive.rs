@@ -380,7 +380,6 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
             };
             Ok(quote! {
                 crate::IntrinsicDeclaration {
-                    id: builtin_id!(#id_path),
                     symbol: #id_path,
                     name: #name,
                     kind: #kind,

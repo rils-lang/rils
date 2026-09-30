@@ -784,13 +784,6 @@ fn type_of_value(value: &Value) -> Option<Type> {
                         .unwrap_or_else(Type::opaque_function)
                     }
                 }
-                crate::value::BuiltinMethod::Runtime(id) => {
-                    rils_frontend::standard_library::builtin_member_type(
-                        &receiver,
-                        rils_builtins::runtime_member(id)?.1.name,
-                    )
-                    .unwrap_or_else(Type::opaque_function)
-                }
                 crate::value::BuiltinMethod::IteratorIdentity => {
                     Type::function(Vec::new(), receiver)
                 }

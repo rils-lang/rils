@@ -228,22 +228,6 @@ impl<'a> FunctionLowerer<'a> {
         self.resolved_definitions.get(&definition).copied()
     }
 
-    pub(super) fn resolved_builtin(
-        &self,
-        expression: rils_frontend::ExprId,
-    ) -> Option<(
-        rils_builtins::BuiltinId,
-        rils_frontend::semantic::BuiltinCallKind,
-        Option<rils_builtins::ReceiverMode>,
-    )> {
-        let rils_frontend::semantic::ResolvedCall::Builtin { id, kind, receiver } =
-            self.typeck_results.resolved_call(expression)?
-        else {
-            return None;
-        };
-        Some((*id, *kind, *receiver))
-    }
-
     pub(super) fn resolved_import(
         &self,
         id: rils_frontend::ExprId,

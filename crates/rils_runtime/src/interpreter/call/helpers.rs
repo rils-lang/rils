@@ -145,11 +145,7 @@ pub(crate) fn builtin_runtime_member(
     if matches!(value, Value::Array(_)) && !member.indexed_view {
         return None;
     }
-    let method = if let Some(symbol) = member.native_symbol {
-        BuiltinMethod::Native(symbol)
-    } else {
-        BuiltinMethod::Runtime(member.builtin_id?)
-    };
+    let method = BuiltinMethod::Native(member.native_symbol?);
     Some((method, member.receiver?))
 }
 

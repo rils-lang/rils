@@ -51,6 +51,5 @@ pub use rils_syntax::{
 };
 pub use rils_syntax::{LexError, ParseCapabilities, ParseError, lex, lex_with_source_id};
 pub use semantic::{
-    BuiltinCallKind, DefMap, DefinitionData, ResolvedCall, SymbolContainer, SymbolKind,
-    TypeckResults,
+    DefMap, DefinitionData, ResolvedCall, SymbolContainer, SymbolKind, TypeckResults,
 };

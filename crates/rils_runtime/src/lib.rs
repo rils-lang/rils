@@ -29,9 +29,7 @@ pub mod analysis {
         AnalysisDiagnostic, DiagnosticSeverity, DocumentAnalysis, InlayTypeHint, SymbolKind,
         SymbolOccurrence,
     };
-    pub use rils_frontend::semantic::{
-        BuiltinCallKind, DefMap, DefinitionData, ResolvedCall, TypeckResults,
-    };
+    pub use rils_frontend::semantic::{DefMap, DefinitionData, ResolvedCall, TypeckResults};
 
     pub fn analyze(source: &str) -> Result<DocumentAnalysis, crate::RilsError> {
         rils_frontend::analysis::analyze(source).map_err(Into::into)

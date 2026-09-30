@@ -175,12 +175,6 @@ impl SemanticOwnerIds {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BuiltinCallKind {
-    Runtime,
-    Intrinsic,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedCall {
     Definition(DefId),
@@ -194,9 +188,8 @@ pub enum ResolvedCall {
         symbol: &'static str,
         receiver: Option<rils_builtins::ReceiverMode>,
     },
-    Builtin {
-        id: rils_builtins::BuiltinId,
-        kind: BuiltinCallKind,
+    NumericIntrinsic {
+        symbol: &'static str,
         receiver: Option<rils_builtins::ReceiverMode>,
     },
     Host {
@@ -507,9 +500,8 @@ fn resolve_callee(
                 _ => None,
             };
             if let Some(intrinsic) = intrinsic {
-                return Some(ResolvedCall::Builtin {
-                    id: intrinsic.id,
-                    kind: BuiltinCallKind::Intrinsic,
+                return Some(ResolvedCall::NumericIntrinsic {
+                    symbol: intrinsic.symbol,
                     receiver: Some(rils_builtins::ReceiverMode::Owned),
                 });
             }
@@ -549,11 +541,7 @@ fn resolve_callee(
                         receiver: member.receiver?,
                     });
                 }
-                return Some(ResolvedCall::Builtin {
-                    id: member.builtin_id?,
-                    kind: BuiltinCallKind::Runtime,
-                    receiver: member.receiver,
-                });
+                return None;
             }
             let Type::Named { name: owner, .. } = receiver else {
                 return None;
@@ -572,9 +560,8 @@ fn resolve_callee(
                 && crate::IntegerType::from_name(type_name).is_some()
                 && let Some(intrinsic) = rils_builtins::integer_associated_function(member)
             {
-                return Some(ResolvedCall::Builtin {
-                    id: intrinsic.id,
-                    kind: BuiltinCallKind::Intrinsic,
+                return Some(ResolvedCall::NumericIntrinsic {
+                    symbol: intrinsic.symbol,
                     receiver: None,
                 });
             }
@@ -607,15 +594,6 @@ fn builtin_associated_import(path: &str) -> Option<ResolvedCall> {
     {
         return Some(ResolvedCall::Native {
             symbol,
-            receiver: None,
-        });
-    }
-    if member.receiver.is_none()
-        && let Some(id) = member.builtin_id
-    {
-        return Some(ResolvedCall::Builtin {
-            id,
-            kind: BuiltinCallKind::Runtime,
             receiver: None,
         });
     }
@@ -1040,21 +1018,6 @@ pub(crate) fn collect_trait_implementations(
 }
 
 fn unqualified_builtin_member(name: &str) -> Option<&'static rils_builtins::BuiltinMember> {
-    let mut candidates = rils_builtins::BUILTINS
-        .iter()
-        .flat_map(|declaration| declaration.members)
-        .filter(|member| member.name == name && member.builtin_id.is_some());
-    if let Some(first) = candidates.next() {
-        let first_id = first.builtin_id?;
-        return (!candidates.any(|candidate| {
-            candidate.receiver != first.receiver
-                || candidate.builtin_id.is_none_or(|candidate_id| {
-                    !first_id.shares_direct_runtime_implementation(candidate_id)
-                })
-        }))
-        .then_some(first);
-    }
-
     // The two exported sum types use one erased adapter for their extraction
     // methods. An unknown receiver can use that adapter when their signatures
     // agree; the concrete value selects the Option or Result branch at runtime.

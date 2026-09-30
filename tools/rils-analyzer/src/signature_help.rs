@@ -184,33 +184,19 @@ fn semantic_signature_at_call(
                 rils_frontend::standard_library::builtin_member_type(receiver_type, method)?;
             function_signature((*method).into(), member_type)
         }
-        rils_frontend::ResolvedCall::Builtin { id, kind, .. } => {
+        rils_frontend::ResolvedCall::NumericIntrinsic { symbol, .. } => {
             let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;
-            match kind {
-                rils_frontend::BuiltinCallKind::Intrinsic => {
-                    let intrinsic = rils_builtins::intrinsic(id.canonical_path()?)?;
-                    let member_type = match receiver_type {
-                        Type::Integer(integer) => {
-                            rils_frontend::standard_library::integer_intrinsic_type(
-                                intrinsic, *integer,
-                            )
-                        }
-                        Type::Float(float) => {
-                            rils_frontend::standard_library::float_intrinsic_type(intrinsic, *float)
-                        }
-                        _ => return None,
-                    };
-                    function_signature(intrinsic.name.into(), member_type)
+            let intrinsic = rils_builtins::intrinsic(symbol)?;
+            let member_type = match receiver_type {
+                Type::Integer(integer) => {
+                    rils_frontend::standard_library::integer_intrinsic_type(intrinsic, *integer)
                 }
-                rils_frontend::BuiltinCallKind::Runtime => {
-                    let (_, member) = rils_builtins::runtime_member(*id)?;
-                    let member_type = rils_frontend::standard_library::builtin_member_type(
-                        receiver_type,
-                        member.name,
-                    )?;
-                    function_signature(member.name.into(), member_type)
+                Type::Float(float) => {
+                    rils_frontend::standard_library::float_intrinsic_type(intrinsic, *float)
                 }
-            }
+                _ => return None,
+            };
+            function_signature(intrinsic.name.into(), member_type)
         }
         rils_frontend::ResolvedCall::Native { symbol, .. } => {
             let (_, receiver_type) = member_call_receiver(analysis, source, text, open)?;

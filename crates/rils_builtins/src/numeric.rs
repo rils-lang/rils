@@ -4,7 +4,6 @@
 //! runtimes share these declarations while choosing their own implementation
 //! strategy for runtime, intrinsic and host-backed items.
 
-use crate::BuiltinId;
 pub use rils_syntax::IntegerType;
 
 /// A recursive type expression independent of the frontend's concrete `Type`.
@@ -77,7 +76,6 @@ pub enum IntrinsicKind {
 
 #[derive(Clone, Copy, Debug)]
 pub struct IntrinsicDeclaration {
-    pub id: BuiltinId,
     pub symbol: &'static str,
     pub name: &'static str,
     pub kind: IntrinsicKind,

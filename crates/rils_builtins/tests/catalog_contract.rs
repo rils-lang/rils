@@ -207,7 +207,7 @@ fn declarations_have_unique_stable_identity_and_complete_metadata() {
         assert!(
             intrinsics[index + 1..]
                 .iter()
-                .all(|right| left.id != right.id)
+                .all(|right| left.symbol != right.symbol)
         );
     }
     for declarations in [INTEGER_INTRINSICS, FLOAT_INTRINSICS] {
@@ -561,29 +561,18 @@ fn runtime_members_have_a_native_or_legacy_binding() {
 }
 
 #[test]
-fn numeric_intrinsics_use_their_reserved_builtin_id_blocks() {
-    assert_eq!(
-        rils_builtins::builtin_id!("core::integer::try_from").as_raw(),
-        0x0B00
-    );
-    assert_eq!(
-        rils_builtins::builtin_id!("core::integer::reverse_bits").as_raw(),
-        0x0B5B
-    );
-    assert_eq!(
-        rils_builtins::builtin_id!("core::float::is_nan").as_raw(),
-        0x0C00
-    );
-    assert_eq!(
-        rils_builtins::builtin_id!("core::float::mul_add").as_raw(),
-        0x0C13
-    );
-
+fn numeric_intrinsics_use_their_declared_symbols() {
     for declaration in INTEGER_INTRINSICS {
-        assert_eq!(declaration.id.as_raw() & 0xFF00, 0x0B00);
+        assert_eq!(
+            declaration.symbol,
+            format!("core::integer::{}", declaration.name)
+        );
     }
     for declaration in FLOAT_INTRINSICS {
-        assert_eq!(declaration.id.as_raw() & 0xFF00, 0x0C00);
+        assert_eq!(
+            declaration.symbol,
+            format!("core::float::{}", declaration.name)
+        );
     }
 }
 
