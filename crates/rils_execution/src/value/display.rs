@@ -5,6 +5,9 @@ use crate::ast::EnumVariant;
 use super::hash::{display_hash_map, display_hash_set};
 use super::{BuiltinType, EnumPayload, IndexedStorage, Value, enum_variant_name};
 
+#[path = "display/native_view.rs"]
+mod native_view;
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -76,10 +79,9 @@ impl fmt::Display for Value {
                     Err(_) => write!(f, "<{}>", self.type_name()),
                 }
             }
-            Self::Dynamic(_) => match self.materialize_native_sum() {
+            Self::Dynamic(object) => match self.materialize_native_sum() {
                 Some(Ok(value)) => write!(f, "{value}"),
-                Some(Err(_)) => write!(f, "<{}>", self.type_name()),
-                None => write!(f, "<{}>", self.type_name()),
+                Some(Err(_)) | None => native_view::display(object, f),
             },
             Self::HostBoundMethod(method) => write!(f, "<bound host fn {}>", method.function.name),
             Self::BuiltinType(BuiltinType::Vec) => write!(f, "<type Vec>"),
@@ -233,9 +235,9 @@ impl fmt::Debug for Value {
                         Err(_) => write!(f, "<{}>", self.type_name()),
                     }
                 }
-                Self::Dynamic(_) => match self.materialize_native_sum() {
+                Self::Dynamic(object) => match self.materialize_native_sum() {
                     Some(Ok(value)) => write!(f, "{value:?}"),
-                    _ => write!(f, "<{}>", self.type_name()),
+                    _ => native_view::debug(object, f),
                 },
                 Self::Result {
                     value: Ok(value), ..
@@ -317,13 +319,13 @@ impl fmt::Debug for Value {
                     Err(_) => write!(f, "<{}>", self.type_name()),
                 }
             }
-            Self::Dynamic(_) => match super::dynamic_option::view(self) {
+            Self::Dynamic(object) => match super::dynamic_option::view(self) {
                 Some(Ok((Some(value), _))) => f.debug_tuple("Some").field(&value).finish(),
                 Some(Ok((None, _))) => f.write_str("None"),
                 _ => match super::dynamic_result::view(self) {
                     Some(Ok((Ok(value), _, _))) => f.debug_tuple("Ok").field(&value).finish(),
                     Some(Ok((Err(value), _, _))) => f.debug_tuple("Err").field(&value).finish(),
-                    _ => write!(f, "<{}>", self.type_name()),
+                    _ => native_view::debug(object, f),
                 },
             },
             _ => write!(f, "{self}"),

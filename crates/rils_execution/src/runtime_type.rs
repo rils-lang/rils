@@ -30,39 +30,7 @@ impl Value {
     /// the shared frontend has checked the binding. Only values whose
     /// representation still needs a concrete type witness are changed.
     pub fn apply_declared_storage(self, expected: &Type) -> Result<Self, String> {
-        if matches!((&self, expected), (Self::Result { .. }, Type::Result(_, _)))
-            && !expected.accepts(&self)
-        {
-            return Err(format!(
-                "declared {expected} does not accept {}",
-                self.type_name()
-            ));
-        }
-        let value = match (self, expected) {
-            (
-                Self::Result {
-                    value,
-                    ok_type,
-                    error_type,
-                },
-                Type::Result(expected_ok, expected_error),
-            ) => Self::Result {
-                value,
-                ok_type: Some(
-                    merge_types(expected_ok, &ok_type.unwrap_or(Type::Unknown))
-                        .ok_or("Result Ok type does not match declaration")?,
-                ),
-                error_type: Some(
-                    merge_types(expected_error, &error_type.unwrap_or(Type::Unknown))
-                        .ok_or("Result Err type does not match declaration")?,
-                ),
-            },
-            (value, _) => value,
-        };
-        let value = crate::value::dynamic_result::promote(value, expected)?;
-        Ok(crate::value::dynamic_sequence::promote_empty(
-            value, expected,
-        ))
+        crate::value::storage::TypedStorageContext::new(&[], &[]).apply_declared(self, expected)
     }
 
     /// Preserve unique ownership for an already concrete native or nominal

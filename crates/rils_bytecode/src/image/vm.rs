@@ -2,6 +2,7 @@ use super::*;
 
 mod calls;
 mod places;
+mod records;
 mod setup;
 
 pub(super) struct Frame {
@@ -179,25 +180,12 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let mut value = self.take_register(source, instruction.span)?;
                     if let Some(expected) = type_annotation {
-                        value = value
-                            .apply_declared_storage(&expected)
-                            .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                        if matches!(&expected, Type::Named { name, .. } if matches!(name.as_str(), "Vec" | "VecDeque" | "BinaryHeap" | "HashSet" | "BTreeSet" | "HashMap" | "BTreeMap"))
-                        {
-                            let mut structs = Vec::new();
-                            let mut enums = Vec::new();
-                            for definition in &self.module.types {
-                                match definition {
-                                    RuntimeType::Struct(definition) => {
-                                        structs.push(definition.clone())
-                                    }
-                                    RuntimeType::Enum(definition) => enums.push(definition.clone()),
-                                }
-                            }
-                            value = crate::value::dynamic_sequence::promote_empty_with_definitions(
-                                value, &expected, &structs, &enums,
-                            );
-                        }
+                        let (structs, enums) = self.type_definitions();
+                        value = rils_execution::value::storage::TypedStorageContext::new(
+                            &structs, &enums,
+                        )
+                        .apply_declared(value, &expected)
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     }
                     self.frame().locals[local].borrow_mut().initialize(value);
                 }
@@ -612,80 +600,8 @@ impl<'a> VirtualMachine<'a> {
                     variant,
                     fields,
                 } => {
-                    let mut values = fields
-                        .into_iter()
-                        .map(|(name, register)| {
-                            Ok((name, self.take_register(register, instruction.span)?))
-                        })
-                        .collect::<Result<HashMap<_, _>, BytecodeError>>()?;
-                    let value = match (&self.module.types[type_id], variant) {
-                        (RuntimeType::Struct(definition), None) => {
-                            if definition.opaque_native {
-                                return Err(BytecodeError::new(
-                                    format!(
-                                        "cannot construct opaque type `{}` from fields",
-                                        definition.name
-                                    ),
-                                    instruction.span,
-                                ));
-                            }
-                            let type_arguments = infer_generic_arguments(
-                                &definition.generic_parameters,
-                                &definition.fields,
-                                &values,
-                            );
-                            let slots = definition
-                                .fields
-                                .iter()
-                                .map(|field| {
-                                    let value = values.remove(&field.name).ok_or_else(|| {
-                                        BytecodeError::new(
-                                            format!(
-                                                "record constructor is missing field `{}`",
-                                                field.name
-                                            ),
-                                            instruction.span,
-                                        )
-                                    })?;
-                                    let annotation =
-                                        if matches!(field.type_annotation, Type::Variable(_)) {
-                                            Type::of_value(&value).unwrap_or(Type::Unknown)
-                                        } else {
-                                            field.type_annotation.clone()
-                                        };
-                                    Ok((
-                                        field.name.clone(),
-                                        FieldSlot {
-                                            value: Some(value),
-                                            type_annotation: annotation,
-                                            references: 0,
-                                        },
-                                    ))
-                                })
-                                .collect::<Result<HashMap<_, _>, BytecodeError>>()?;
-                            let fields = StructFields::from_map(definition.clone(), slots)
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                            Value::Struct(Rc::new(StructInstance {
-                                type_definition: definition.clone(),
-                                fields: RefCell::new(fields),
-                                type_arguments,
-                            }))
-                        }
-                        (RuntimeType::Enum(definition), Some(variant)) => {
-                            Value::Enum(Rc::new(EnumInstance {
-                                type_definition: definition.clone(),
-                                variant,
-                                payload: EnumPayload::Record(values),
-                                type_arguments: Vec::new(),
-                            }))
-                        }
-                        _ => {
-                            return Err(BytecodeError::new(
-                                "record constructor does not match its type",
-                                instruction.span,
-                            ));
-                        }
-                    };
+                    let value =
+                        self.construct_record(type_id, variant, fields, instruction.span)?;
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::ConstructTupleVariant {
@@ -788,14 +704,7 @@ impl<'a> VirtualMachine<'a> {
                     destination,
                     item_type,
                 } => {
-                    let mut structs = Vec::new();
-                    let mut enums = Vec::new();
-                    for definition in &self.module.types {
-                        match definition {
-                            RuntimeType::Struct(definition) => structs.push(definition.clone()),
-                            RuntimeType::Enum(definition) => enums.push(definition.clone()),
-                        }
-                    }
+                    let (structs, enums) = self.type_definitions();
                     let constructed = item_type
                         .as_ref()
                         .map(|item_type| {

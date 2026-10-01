@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::Value;
 use crate::value::ReferenceValue;
+use crate::value::storage::StoredDataRef;
 use rils_stdlib::stdlib::{float::Number as FloatNumber, integer::Number as IntegerNumber};
 use rils_value::DynamicValueRef;
 
@@ -198,9 +199,17 @@ pub(crate) fn with_rust_value<T: 'static, R>(
     value: &Value,
     callback: impl FnOnce(&T) -> R,
 ) -> Result<R, String> {
+    if let Some(storage) = value.stored_data() {
+        return match storage {
+            StoredDataRef::Native(object) => object.with(callback),
+            StoredDataRef::Dynamic(object) => object.with(|value| value.with(callback))?,
+            StoredDataRef::Host(object) => Err(format!(
+                "host object {} has no registered Rust borrow view",
+                object.type_definition.name
+            )),
+        };
+    }
     match value {
-        Value::Native(object) => object.with(callback),
-        Value::Dynamic(object) => object.with(|value| value.with(callback))?,
         Value::Reference(reference) => reference.with_rust(callback),
         Value::Unit => borrow_legacy(&(), callback),
         Value::Bool(value) => borrow_legacy(value, callback),
@@ -225,8 +234,20 @@ pub(crate) fn with_native_value<R>(
     value: &Value,
     callback: impl FnOnce(DynamicValueRef<'_>) -> R,
 ) -> Result<R, String> {
+    if let Some(storage) = value.stored_data() {
+        return match storage {
+            StoredDataRef::Dynamic(object) => object.with(|value| callback(value.view())),
+            StoredDataRef::Native(object) => Err(format!(
+                "{} has no composed layout view",
+                object.descriptor().rils_type()
+            )),
+            StoredDataRef::Host(object) => Err(format!(
+                "host object {} has no composed layout view",
+                object.type_definition.name
+            )),
+        };
+    }
     match value {
-        Value::Dynamic(object) => object.with(|value| callback(value.view())),
         Value::Reference(reference) => reference.with_native_view(callback),
         _ => Err(format!("{} has no native layout view", value.type_name())),
     }

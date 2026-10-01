@@ -8,6 +8,7 @@ use super::{DropKind, DynamicLayout, DynamicValue};
 
 pub(super) struct VariantLayout {
     pub(super) alternatives: Vec<Rc<DynamicLayout>>,
+    pub(super) names: Option<Vec<String>>,
     pub(super) payload_offset: usize,
 }
 
@@ -25,8 +26,28 @@ impl DynamicLayout {
     /// Build a tagged union of concrete child layouts. The tag is a u32 and
     /// the payload starts at the maximum required alignment of all children.
     pub fn variant(ty: Type, alternatives: Vec<Rc<Self>>) -> Result<Rc<Self>, String> {
+        Self::variant_with_names(ty, alternatives, None)
+    }
+
+    /// Keep source variant names alongside a user enum's payload layouts.
+    pub fn named_variant(
+        ty: Type,
+        alternatives: Vec<(String, Rc<Self>)>,
+    ) -> Result<Rc<Self>, String> {
+        let (names, layouts): (Vec<_>, Vec<_>) = alternatives.into_iter().unzip();
+        Self::variant_with_names(ty, layouts, Some(names))
+    }
+
+    fn variant_with_names(
+        ty: Type,
+        alternatives: Vec<Rc<Self>>,
+        names: Option<Vec<String>>,
+    ) -> Result<Rc<Self>, String> {
         if alternatives.is_empty() || alternatives.len() > u32::MAX as usize {
             return Err("variant layout requires between 1 and u32::MAX alternatives".into());
+        }
+        if matches!(ty, Type::Result(_, _)) && names.is_some() {
+            return Err("result variant names are fixed by the language".into());
         }
         if let Type::Result(ok, error) = &ty {
             if alternatives.len() != 2
@@ -60,9 +81,21 @@ impl DynamicLayout {
             copy,
             drop_kind: DropKind::Variant(VariantLayout {
                 alternatives,
+                names,
                 payload_offset,
             }),
         }))
+    }
+
+    pub fn variant_name(&self, index: usize) -> Option<&str> {
+        match &self.drop_kind {
+            DropKind::Variant(variant) => variant
+                .names
+                .as_ref()
+                .and_then(|names| names.get(index))
+                .map(String::as_str),
+            _ => None,
+        }
     }
 
     pub fn variant_alternatives(&self) -> Option<&[Rc<Self>]> {

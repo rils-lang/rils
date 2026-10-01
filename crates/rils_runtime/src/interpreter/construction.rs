@@ -84,8 +84,14 @@ impl Interpreter {
                 environment,
                 span,
             )?;
-            let values =
-                validate_named_fields(&definition.fields, values, span, name, &substitutions)?;
+            let values = validate_named_fields(
+                &definition.fields,
+                values,
+                span,
+                name,
+                &substitutions,
+                environment,
+            )?;
             let slots = values
                 .into_iter()
                 .map(|(name, value)| {
@@ -139,8 +145,14 @@ impl Interpreter {
                     environment,
                     span,
                 )?;
-                let values =
-                    validate_named_fields(fields, values, span, variant_name, &substitutions)?;
+                let values = validate_named_fields(
+                    fields,
+                    values,
+                    span,
+                    variant_name,
+                    &substitutions,
+                    environment,
+                )?;
                 return Ok(Value::Enum(Rc::new(EnumInstance {
                     type_arguments: generic_arguments(
                         &definition.generic_parameters,

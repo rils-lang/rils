@@ -75,6 +75,36 @@ pub fn from_native(value: DynamicValue) -> Result<Value, String> {
     NativeRecordCodec::new().from_native(value)
 }
 
+/// Restore a user nominal value that was exposed through a legacy sum wrapper.
+/// Registered standard-library payloads retain their native handle.
+pub fn restore_owned_nominal(
+    value: Value,
+    structs: &[Rc<StructType>],
+    enums: &[Rc<EnumType>],
+) -> Result<Value, String> {
+    let Value::Dynamic(object) = value else {
+        return Ok(value);
+    };
+    let Type::Named { name, .. } = object.descriptor().layout().rils_type() else {
+        return Ok(Value::Dynamic(object));
+    };
+    let candidates = structs
+        .iter()
+        .filter(|definition| definition.name == *name)
+        .count()
+        + enums
+            .iter()
+            .filter(|definition| definition.name == *name)
+            .count();
+    match candidates {
+        0 => return Ok(Value::Dynamic(object)),
+        1 => {}
+        _ => return Err(format!("ambiguous nominal declaration for {name}")),
+    }
+    let payload = object.into_value().map_err(|failure| failure.1)?;
+    NativeRecordCodec::with_definitions(structs, enums).from_native(payload)
+}
+
 impl NativeRecordCodec {
     fn encode(&mut self, value: Value, layout: Rc<DynamicLayout>) -> Result<DynamicValue, String> {
         let ty = layout.rils_type().clone();
@@ -480,7 +510,7 @@ impl NativeRecordCodec {
                 .into_rust::<NativeString>()
                 .map(|text| native_string(std::string::String::from(text)))
                 .map_err(|error| error.1),
-            ty @ Type::Named { .. } if rils_stdlib::stdlib::basic::is_native_box(&ty) => {
+            Type::Named { .. } if value.descriptor().is_rust_value() => {
                 let layout = value.layout_handle();
                 let descriptor = Rc::new(rils_value::DynamicType::new(layout));
                 Ok(Value::Dynamic(super::DynamicObject::new(

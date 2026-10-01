@@ -53,6 +53,7 @@ mod character;
 pub use character::{char_payload, native_char};
 #[path = "value/scalar.rs"]
 mod scalar;
+pub mod storage;
 
 #[path = "value/reference.rs"]
 mod reference;

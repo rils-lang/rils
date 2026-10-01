@@ -235,22 +235,11 @@ impl Interpreter {
                     ));
                 }
                 let mut value = apply_type_owned(type_annotation.as_ref(), value, *span, name)?;
-                if let Some(expected @ Type::Named { name, .. }) = type_annotation.as_ref()
-                    && matches!(
-                        name.as_str(),
-                        "Vec"
-                            | "VecDeque"
-                            | "BinaryHeap"
-                            | "HashSet"
-                            | "BTreeSet"
-                            | "HashMap"
-                            | "BTreeMap"
-                    )
-                {
+                if let Some(expected) = type_annotation.as_ref() {
                     let (structs, enums) = environment.borrow().visible_type_definitions();
-                    value = crate::value::dynamic_sequence::promote_empty_with_definitions(
-                        value, expected, &structs, &enums,
-                    );
+                    value = crate::value::storage::TypedStorageContext::new(&structs, &enums)
+                        .apply_declared(value, expected)
+                        .map_err(|message| RuntimeError::new(message, *span))?;
                 }
                 environment
                     .borrow_mut()

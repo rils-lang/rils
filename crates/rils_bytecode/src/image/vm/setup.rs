@@ -1,6 +1,23 @@
 use super::*;
 
 impl<'a> VirtualMachine<'a> {
+    pub(super) fn type_definitions(
+        &self,
+    ) -> (
+        Vec<Rc<rils_execution::value::StructType>>,
+        Vec<Rc<rils_execution::value::EnumType>>,
+    ) {
+        let mut structs = Vec::new();
+        let mut enums = Vec::new();
+        for definition in &self.module.types {
+            match definition {
+                RuntimeType::Struct(definition) => structs.push(definition.clone()),
+                RuntimeType::Enum(definition) => enums.push(definition.clone()),
+            }
+        }
+        (structs, enums)
+    }
+
     pub(in crate::image) fn new(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,

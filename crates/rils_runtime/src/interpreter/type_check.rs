@@ -6,7 +6,9 @@ pub(super) fn validate_named_fields(
     span: Span,
     type_name: &str,
     substitutions: &HashMap<String, Type>,
+    environment: &EnvironmentRef,
 ) -> Result<HashMap<String, Value>, RuntimeError> {
+    let (structs, enums) = environment.borrow().visible_type_definitions();
     let mut validated = HashMap::new();
     for field in definitions {
         let value = values.remove(&field.name).ok_or_else(|| {
@@ -25,6 +27,9 @@ pub(super) fn validate_named_fields(
             span,
             &format!("{type_name}.{}", field.name),
         )?;
+        let value = crate::value::storage::TypedStorageContext::new(&structs, &enums)
+            .apply_declared(value, &expected)
+            .map_err(|message| RuntimeError::new(message, span))?;
         validated.insert(field.name.clone(), value);
     }
     if let Some(unexpected) = values.keys().next() {

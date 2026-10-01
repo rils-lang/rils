@@ -139,6 +139,7 @@ impl DynamicLayout {
             }
             (DropKind::Variant(left), DropKind::Variant(right)) => {
                 left.payload_offset == right.payload_offset
+                    && left.names == right.names
                     && left.alternatives.len() == right.alternatives.len()
                     && left
                         .alternatives

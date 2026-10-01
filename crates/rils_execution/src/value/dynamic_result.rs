@@ -2,65 +2,29 @@
 
 use std::rc::Rc;
 
-use rils_value::{DynamicType, DynamicValue};
+use rils_value::DynamicValue;
 
 use crate::Type;
 
-use super::{
-    DynamicObject, Value, record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver,
-};
-
-/// Promote a result after both generic arguments have been determined.
-pub fn promote(value: Value, expected: &Type) -> Result<Value, String> {
-    let Type::Result(ok_type, error_type) = expected else {
-        return Ok(value);
-    };
-    let Ok(layout) = RecordLayoutResolver::new(&[]).resolve(expected) else {
-        return Ok(value);
-    };
-    let alternatives = layout
-        .variant_alternatives()
-        .ok_or("Result has no variant layout")?;
-    let Value::Result { value: branch, .. } = value else {
-        return Ok(value);
-    };
-    let (index, item) = match branch {
-        Ok(item) => match Rc::try_unwrap(item) {
-            Ok(item) => (0, item),
-            Err(item) => {
-                return Ok(Value::Result {
-                    value: Ok(item),
-                    ok_type: Some((**ok_type).clone()),
-                    error_type: Some((**error_type).clone()),
-                });
-            }
-        },
-        Err(item) => match Rc::try_unwrap(item) {
-            Ok(item) => (1, item),
-            Err(item) => {
-                return Ok(Value::Result {
-                    value: Err(item),
-                    ok_type: Some((**ok_type).clone()),
-                    error_type: Some((**error_type).clone()),
-                });
-            }
-        },
-    };
-    let item = NativeRecordCodec::new().into_native(item, alternatives[index].clone())?;
-    let payload = DynamicValue::variant(layout.clone(), index, item)?;
-    let object = DynamicObject::new(Rc::new(DynamicType::new(layout)), payload)?;
-    Ok(Value::Dynamic(object))
-}
+use super::{EnumType, StructType, Value, record_codec::NativeRecordCodec};
 
 /// Consume a Result and transfer its active branch without cloning its payload.
 pub fn take_owned(value: Value) -> Result<Result<Value, Value>, String> {
+    take_owned_with_definitions(value, &[], &[])
+}
+
+pub fn take_owned_with_definitions(
+    value: Value,
+    structs: &[Rc<StructType>],
+    enums: &[Rc<EnumType>],
+) -> Result<Result<Value, Value>, String> {
     match value {
         Value::Dynamic(object)
             if matches!(object.descriptor().layout().rils_type(), Type::Result(_, _)) =>
         {
             let value = object.into_value().map_err(|failure| failure.1)?;
             let (index, item) = value.take_variant()?;
-            let item = NativeRecordCodec::new().from_native(item)?;
+            let item = NativeRecordCodec::with_definitions(structs, enums).from_native(item)?;
             if index == 0 {
                 Ok(Ok(item))
             } else {
@@ -68,12 +32,16 @@ pub fn take_owned(value: Value) -> Result<Result<Value, Value>, String> {
             }
         }
         Value::Result { value, .. } => match value {
-            Ok(value) => Rc::try_unwrap(value)
-                .map(Ok)
-                .map_err(|_| "Result payload is shared".into()),
-            Err(value) => Rc::try_unwrap(value)
-                .map(Err)
-                .map_err(|_| "Result payload is shared".into()),
+            Ok(value) => {
+                let value =
+                    Rc::try_unwrap(value).map_err(|_| "Result payload is shared".to_owned())?;
+                super::record_codec::restore_owned_nominal(value, structs, enums).map(Ok)
+            }
+            Err(value) => {
+                let value =
+                    Rc::try_unwrap(value).map_err(|_| "Result payload is shared".to_owned())?;
+                super::record_codec::restore_owned_nominal(value, structs, enums).map(Err)
+            }
         },
         value => Err(format!("expected Result, found {}", value.type_name())),
     }

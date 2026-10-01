@@ -1,0 +1,163 @@
+use rils::{BytecodeModule, Value, compile, eval, eval_value};
+
+#[test]
+fn declared_nominal_variants_use_composed_storage_in_both_backends() {
+    for (source, expected_type) in [
+        (
+            "struct Item { value: i32 } let wrapped: Option<Item> = Some(Item { value: 7 }); wrapped",
+            "Option<Item>",
+        ),
+        (
+            "struct Item { value: i32 } let outcome: Result<Item, string> = Ok(Item { value: 7 }); outcome",
+            "Result<Item, string>",
+        ),
+        (
+            "enum Choice { Empty, Item(i32) } let outcome: Result<Choice, string> = Ok(Choice::Item(7)); outcome",
+            "Result<Choice, string>",
+        ),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for (stage, value) in [
+            ("interpreter", eval_value(source).unwrap()),
+            ("VM", compiled.execute_value().unwrap()),
+            ("loaded VM", loaded.execute_value().unwrap()),
+        ] {
+            let Value::Dynamic(object) = value else {
+                panic!("{expected_type} should use native storage in {stage}");
+            };
+            assert_eq!(
+                object.descriptor().layout().rils_type().to_string(),
+                expected_type,
+                "{stage}"
+            );
+        }
+    }
+}
+
+#[test]
+fn nominal_option_payload_moves_out_without_a_legacy_snapshot() {
+    let source = "struct Item { value: i32 } let wrapped: Option<Item> = Some(Item { value: 7 }); let item = wrapped.unwrap(); item.value";
+    assert_eq!(eval_value(source).unwrap().as_i32(), Some(7));
+    assert_eq!(
+        compile(source).unwrap().execute_value().unwrap().as_i32(),
+        Some(7)
+    );
+}
+
+#[test]
+fn nominal_result_payload_moves_out() {
+    for (source, expected) in [
+        (
+            "struct Item { value: i32 } let outcome: Result<Item, string> = Ok(Item { value: 9 }); let item = outcome.unwrap(); item.value",
+            9,
+        ),
+        (
+            "struct Item { value: i32 } let outcome: Result<string, Item> = Err(Item { value: 11 }); let item = outcome.unwrap_err(); item.value",
+            11,
+        ),
+    ] {
+        assert_eq!(eval_value(source).unwrap().as_i32(), Some(expected));
+        assert_eq!(
+            compile(source).unwrap().execute_value().unwrap().as_i32(),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn host_borrows_nominal_option_layout_without_materializing_fields() {
+    let source =
+        "struct Item { value: i32 } let wrapped: Option<Item> = Some(Item { value: 7 }); wrapped";
+    for value in [
+        eval(source).unwrap(),
+        compile(source).unwrap().execute().unwrap(),
+    ] {
+        value
+            .with_native_view(|view| {
+                assert!(view.option_is_some().unwrap());
+                assert_eq!(
+                    view.option_item()
+                        .unwrap()
+                        .field(0)
+                        .unwrap()
+                        .layout()
+                        .unwrap()
+                        .rils_type()
+                        .to_string(),
+                    "i32"
+                );
+            })
+            .unwrap();
+    }
+}
+
+#[test]
+fn nominal_option_tag_methods_borrow_without_cloning_payload() {
+    let source = "struct Item { value: i32 } let wrapped: Option<Item> = Some(Item { value: 7 }); wrapped.is_some()";
+    assert!(matches!(eval_value(source).unwrap(), Value::Bool(true)));
+    assert!(matches!(
+        compile(source).unwrap().execute_value().unwrap(),
+        Value::Bool(true)
+    ));
+}
+
+#[test]
+fn nominal_option_in_declared_record_field_keeps_its_layout() {
+    let field_source = "struct Item { value: i32 } struct Holder { payload: Option<Item> } let holder = Holder { payload: Some(Item { value: 13 }) }; holder.payload";
+    for (stage, value) in [
+        ("interpreter", eval_value(field_source).unwrap()),
+        (
+            "VM",
+            compile(field_source).unwrap().execute_value().unwrap(),
+        ),
+    ] {
+        assert!(matches!(value, Value::Dynamic(_)), "{stage}");
+    }
+    let source = "struct Item { value: i32 } struct Holder { payload: Option<Item> } let holder = Holder { payload: Some(Item { value: 13 }) }; let item = holder.payload.unwrap(); item.value";
+    assert_eq!(eval_value(source).unwrap().as_i32(), Some(13));
+    assert_eq!(
+        compile(source).unwrap().execute_value().unwrap().as_i32(),
+        Some(13)
+    );
+}
+
+#[test]
+fn nominal_option_in_enum_record_field_moves_out() {
+    for source in [
+        "struct Item { value: i32 } enum Holder { Wrapped { payload: Option<Item> } } let holder = Holder::Wrapped { payload: Some(Item { value: 17 }) }; match holder { Holder::Wrapped { payload } => { let item = payload.unwrap(); item.value } }",
+        "struct Item { value: i32 } enum Holder<T> { Wrapped { payload: Option<T> } } let holder: Holder<Item> = Holder::Wrapped { payload: Some(Item { value: 17 }) }; match holder { Holder::Wrapped { payload } => { let item = payload.unwrap(); item.value } }",
+    ] {
+        assert_eq!(eval_value(source).unwrap().as_i32(), Some(17));
+        assert_eq!(
+            compile(source).unwrap().execute_value().unwrap().as_i32(),
+            Some(17)
+        );
+    }
+}
+
+#[test]
+fn nominal_sum_formatting_matches_legacy_value() {
+    for (definition, legacy_source, typed_source) in [
+        (
+            "struct Item { value: i32 }",
+            "Some(Item { value: 7 })",
+            "let wrapped: Option<Item> = Some(Item { value: 7 }); wrapped",
+        ),
+        (
+            "struct Item { value: i32 }",
+            "Ok(Item { value: 7 })",
+            "let outcome: Result<Item, string> = Ok(Item { value: 7 }); outcome",
+        ),
+        (
+            "enum Choice { Empty, Item(i32) }",
+            "Ok(Choice::Item(7))",
+            "let outcome: Result<Choice, string> = Ok(Choice::Item(7)); outcome",
+        ),
+    ] {
+        let legacy = eval_value(&format!("{definition} {legacy_source}")).unwrap();
+        let typed = eval_value(&format!("{definition} {typed_source}")).unwrap();
+        assert_eq!(typed.to_string(), legacy.to_string());
+        assert_eq!(format!("{typed:?}"), format!("{legacy:?}"));
+    }
+}

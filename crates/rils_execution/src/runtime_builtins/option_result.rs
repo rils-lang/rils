@@ -73,12 +73,27 @@ pub(super) fn call_owned(
         ));
     }
     let receiver = arguments.remove(0);
+    let take_option = |value| {
+        crate::value::dynamic_option::take_owned_with_definitions(
+            value,
+            &context.structs,
+            &context.enums,
+        )
+    };
+    let take_result = |value| {
+        crate::value::dynamic_result::take_owned_with_definitions(
+            value,
+            &context.structs,
+            &context.enums,
+        )
+    };
     match (owner, method) {
         ("Option", "take" | "replace") => {
             call_owned_mutable_option(method, receiver, arguments.pop(), context)
         }
-        ("Option", "unwrap") => crate::value::dynamic_option::take_owned(receiver)?
-            .ok_or_else(|| "called `unwrap` on `None`".into()),
+        ("Option", "unwrap") => {
+            take_option(receiver)?.ok_or_else(|| "called `unwrap` on `None`".into())
+        }
         ("Option", "unwrap_or") => {
             let default = arguments.pop().expect("arity checked");
             if let Some(Type::Option(item_type)) = Type::of_value(&receiver)
@@ -89,13 +104,13 @@ pub(super) fn call_owned(
                     default.type_name()
                 ));
             }
-            Ok(crate::value::dynamic_option::take_owned(receiver)?.unwrap_or(default))
+            Ok(take_option(receiver)?.unwrap_or(default))
         }
         ("Option", "expect") => {
             let message = arguments[0]
                 .as_string()
                 .ok_or("expect message must be string")?;
-            crate::value::dynamic_option::take_owned(receiver)?.ok_or(message)
+            take_option(receiver)?.ok_or(message)
         }
         ("Option", "or" | "xor") => {
             let right = arguments.pop().expect("arity checked");
@@ -113,8 +128,8 @@ pub(super) fn call_owned(
                 .unwrap_or(Type::Unknown);
             let item_type = crate::types::merge_types(&left_type, &right_type)
                 .ok_or_else(|| "Option operand types do not match".to_owned())?;
-            let left = crate::value::dynamic_option::take_owned(receiver)?;
-            let right = crate::value::dynamic_option::take_owned(right)?;
+            let left = take_option(receiver)?;
+            let right = take_option(right)?;
             let selected = if method == "or" {
                 left.or(right)
             } else {
@@ -130,8 +145,9 @@ pub(super) fn call_owned(
                 }
             }
         }
-        ("Result", "unwrap") => crate::value::dynamic_result::take_owned(receiver)?
-            .map_err(|error| format!("called `unwrap` on Err({error})")),
+        ("Result", "unwrap") => {
+            take_result(receiver)?.map_err(|error| format!("called `unwrap` on Err({error})"))
+        }
         ("Result", "ok" | "err") => {
             let Type::Result(ok_type, error_type) =
                 Type::of_value(&receiver).ok_or("Result has no concrete type")?
@@ -143,7 +159,7 @@ pub(super) fn call_owned(
             } else {
                 *error_type
             };
-            let branch = crate::value::dynamic_result::take_owned(receiver)?;
+            let branch = take_result(receiver)?;
             let item = if method == "ok" {
                 branch.ok()
             } else {
@@ -169,16 +185,15 @@ pub(super) fn call_owned(
                     default.type_name()
                 ));
             }
-            Ok(crate::value::dynamic_result::take_owned(receiver)?.unwrap_or(default))
+            Ok(take_result(receiver)?.unwrap_or(default))
         }
         ("Result", "expect") => {
             let message = arguments[0]
                 .as_string()
                 .ok_or("expect message must be string")?;
-            crate::value::dynamic_result::take_owned(receiver)?
-                .map_err(|error| format!("{message}: {error}"))
+            take_result(receiver)?.map_err(|error| format!("{message}: {error}"))
         }
-        ("Result", "unwrap_err") => match crate::value::dynamic_result::take_owned(receiver)? {
+        ("Result", "unwrap_err") => match take_result(receiver)? {
             Ok(value) => Err(format!("called `unwrap_err` on Ok({value})")),
             Err(error) => Ok(error),
         },
@@ -186,7 +201,7 @@ pub(super) fn call_owned(
             let message = arguments[0]
                 .as_string()
                 .ok_or("expect_err message must be string")?;
-            match crate::value::dynamic_result::take_owned(receiver)? {
+            match take_result(receiver)? {
                 Ok(value) => Err(format!("{message}: {value}")),
                 Err(error) => Ok(error),
             }

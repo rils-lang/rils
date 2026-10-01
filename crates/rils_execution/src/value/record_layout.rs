@@ -190,6 +190,7 @@ impl<'a> RecordLayoutResolver<'a> {
         let variants = definition.variants.clone();
         let mut alternatives = Vec::with_capacity(variants.len());
         for variant in variants {
+            let source_name = super::enum_variant_name(&variant).to_owned();
             let payload = match variant {
                 EnumVariant::Unit { .. } => DynamicLayout::copy_of::<()>(Type::Unit),
                 EnumVariant::Tuple { fields, .. } => {
@@ -225,8 +226,8 @@ impl<'a> RecordLayoutResolver<'a> {
                     DynamicLayout::record(payload_type, fields)?
                 }
             };
-            alternatives.push(payload);
+            alternatives.push((source_name, payload));
         }
-        DynamicLayout::variant(ty.clone(), alternatives)
+        DynamicLayout::named_variant(ty.clone(), alternatives)
     }
 }

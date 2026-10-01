@@ -63,3 +63,23 @@ fn variant_rejects_wrong_payload_and_preserves_it() {
         DynamicValue::variant(result, 0, DynamicValue::from_rust(unit, ()).unwrap()).unwrap();
     assert_eq!(value.variant_index(), Ok(0));
 }
+
+#[test]
+fn named_variant_layout_preserves_variant_identity() {
+    let unit = DynamicLayout::copy_of::<()>(Type::Unit);
+    let left = DynamicLayout::named_variant(
+        Type::named("Choice"),
+        vec![
+            ("First".into(), unit.clone()),
+            ("Second".into(), unit.clone()),
+        ],
+    )
+    .unwrap();
+    let swapped = DynamicLayout::named_variant(
+        Type::named("Choice"),
+        vec![("Second".into(), unit.clone()), ("First".into(), unit)],
+    )
+    .unwrap();
+    assert_eq!(left.variant_name(1), Some("Second"));
+    assert!(!left.compatible_with(&swapped));
+}

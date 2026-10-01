@@ -65,6 +65,14 @@ pub fn construct(value: Option<Value>, item_type: &Type) -> Result<Construction,
 
 /// Consumes an Option and transfers its initialized child without cloning it.
 pub fn take_owned(value: Value) -> Result<Option<Value>, String> {
+    take_owned_with_definitions(value, &[], &[])
+}
+
+pub fn take_owned_with_definitions(
+    value: Value,
+    structs: &[Rc<StructType>],
+    enums: &[Rc<EnumType>],
+) -> Result<Option<Value>, String> {
     match value {
         Value::Dynamic(object)
             if matches!(object.descriptor().layout().rils_type(), Type::Option(_)) =>
@@ -78,13 +86,17 @@ pub fn take_owned(value: Value) -> Result<Option<Value>, String> {
                         let descriptor = Rc::new(DynamicType::new(layout));
                         DynamicObject::new(descriptor, item).map(Value::Dynamic)
                     } else {
-                        NativeRecordCodec::new().from_native(item)
+                        NativeRecordCodec::with_definitions(structs, enums).from_native(item)
                     }
                 })
                 .transpose()
         }
         Value::Option { value, .. } => value
-            .map(|value| Rc::try_unwrap(value).map_err(|_| "Option item is shared".to_owned()))
+            .map(|value| {
+                let value =
+                    Rc::try_unwrap(value).map_err(|_| "Option item is shared".to_owned())?;
+                super::record_codec::restore_owned_nominal(value, structs, enums)
+            })
             .transpose(),
         value => Err(format!("expected Option, found {}", value.type_name())),
     }
