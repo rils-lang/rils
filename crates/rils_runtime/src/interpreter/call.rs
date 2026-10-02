@@ -6,6 +6,7 @@ mod member;
 mod path;
 mod trait_defaults;
 mod user_function;
+mod variant;
 
 use helpers::{builtin_default_value, validate_native_arguments, validate_native_return};
 pub(super) use helpers::{builtin_runtime_member, select_method};
@@ -87,6 +88,13 @@ impl Interpreter {
             let value = callback(arguments).map_err(|message| RuntimeError::new(message, span))?;
             return validate_native_return(function.signature.as_ref(), value, span, function.name);
         }
+        match callee {
+            Value::Function(function) => return self.call_user_function(function, arguments, span),
+            Value::VariantConstructor(constructor) => {
+                return self.construct_tuple_variant(constructor, arguments, span);
+            }
+            _ => {}
+        }
         self.call(callee, &arguments, span)
     }
 
@@ -97,7 +105,7 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         if let Value::Function(function) = callee {
-            return self.call_user_function(function, arguments, span);
+            return self.call_user_function(function, arguments.to_vec(), span);
         }
         self.call_non_user(callee, arguments, span)
     }
@@ -422,67 +430,7 @@ impl Interpreter {
                 self.call(Value::Function(function), arguments, span)
             }
             Value::VariantConstructor(constructor) => {
-                let variant = constructor
-                    .type_definition
-                    .variants
-                    .iter()
-                    .find(|variant| enum_variant_name(variant) == constructor.variant)
-                    .expect("constructor refers to declared variant");
-                let EnumVariant::Tuple { fields, .. } = variant else {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "{}::{} must be constructed with named fields",
-                            constructor.type_definition.name, constructor.variant
-                        ),
-                        span,
-                    ));
-                };
-                check_arity(
-                    &format!(
-                        "{}::{}",
-                        constructor.type_definition.name, constructor.variant
-                    ),
-                    fields.len(),
-                    fields.len(),
-                    arguments.len(),
-                    span,
-                )?;
-                let mut substitutions =
-                    generic_substitutions(&constructor.type_definition.generic_parameters);
-                for (field_type, value) in fields.iter().zip(arguments) {
-                    infer_type_from_value(field_type, value, &mut substitutions)
-                        .map_err(|message| RuntimeError::new(message, span))?;
-                }
-                validate_generic_bounds(
-                    &constructor.type_definition.generic_parameters,
-                    &substitutions,
-                    None,
-                    &constructor.environment,
-                    span,
-                )?;
-                let values = fields
-                    .iter()
-                    .zip(arguments)
-                    .enumerate()
-                    .map(|(index, (field_type, value))| {
-                        let expected = field_type.substitute(&substitutions);
-                        apply_type(
-                            Some(&expected),
-                            value,
-                            span,
-                            &format!("variant field {index}"),
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Value::Enum(Rc::new(EnumInstance {
-                    type_definition: constructor.type_definition.clone(),
-                    variant: constructor.variant.clone(),
-                    payload: EnumPayload::Tuple(values),
-                    type_arguments: generic_arguments(
-                        &constructor.type_definition.generic_parameters,
-                        &substitutions,
-                    ),
-                })))
+                self.construct_tuple_variant(constructor, arguments.to_vec(), span)
             }
             value => Err(RuntimeError::new(
                 format!("{} is not callable", value.type_name()),

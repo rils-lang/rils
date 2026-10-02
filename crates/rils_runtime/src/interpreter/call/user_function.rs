@@ -7,7 +7,7 @@ impl Interpreter {
     pub(super) fn call_user_function(
         &mut self,
         function: Rc<UserFunction>,
-        arguments: &[Value],
+        arguments: Vec<Value>,
         span: Span,
     ) -> Result<Value, RuntimeError> {
         if self.function_depth >= self.limits.max_call_depth {
@@ -29,7 +29,7 @@ impl Interpreter {
     fn call_user_function_inner(
         &mut self,
         function: Rc<UserFunction>,
-        arguments: &[Value],
+        arguments: Vec<Value>,
         span: Span,
     ) -> Result<Value, RuntimeError> {
         check_arity(
@@ -45,7 +45,7 @@ impl Interpreter {
             .iter()
             .map(|parameter| (parameter.name.clone(), Type::Unknown))
             .collect();
-        for (parameter, argument) in function.parameters.iter().zip(arguments) {
+        for (parameter, argument) in function.parameters.iter().zip(&arguments) {
             if let Some(parameter_type) = &parameter.type_annotation {
                 infer_type_from_value(parameter_type, argument, &mut substitutions)
                     .map_err(|message| RuntimeError::new(message, span))?;
@@ -54,10 +54,18 @@ impl Interpreter {
         validate_generic_bounds(
             &function.generic_parameters,
             &substitutions,
-            Some((&function.parameters, arguments)),
+            Some((&function.parameters, &arguments)),
             &function.closure,
             span,
         )?;
+        let pending_return_bounds = function
+            .generic_parameters
+            .iter()
+            .filter(|parameter| substitutions.get(&parameter.name) == Some(&Type::Unknown))
+            .cloned()
+            .collect::<Vec<_>>();
+        let (structs, enums) = function.closure.borrow().visible_type_definitions();
+        let storage = crate::value::storage::TypedStorageContext::new(&structs, &enums);
         for (parameter, argument) in function.parameters.iter().zip(arguments) {
             let expected = parameter
                 .type_annotation
@@ -66,12 +74,19 @@ impl Interpreter {
                     expand_type_aliases(&value.substitute(&substitutions), &function.closure, span)
                 })
                 .transpose()?;
-            let argument = apply_type(expected.as_ref(), argument, span, &parameter.name)?;
+            let argument = apply_type_owned(expected.as_ref(), argument, span, &parameter.name)?;
+            let argument = if let Some(expected) = &expected {
+                storage
+                    .apply_declared(argument, expected)
+                    .map_err(|message| RuntimeError::new(message, span))?
+            } else {
+                argument
+            };
             environment.borrow_mut().define(
                 parameter.name.clone(),
                 argument,
                 parameter.mutable,
-                parameter.type_annotation.clone(),
+                expected,
             );
         }
         self.function_depth += 1;
@@ -109,9 +124,9 @@ impl Interpreter {
                         .map_err(|message| RuntimeError::new(message, span))?;
                 }
                 validate_generic_bounds(
-                    &function.generic_parameters,
+                    &pending_return_bounds,
                     &substitutions,
-                    Some((&function.parameters, arguments)),
+                    None,
                     &function.closure,
                     span,
                 )?;

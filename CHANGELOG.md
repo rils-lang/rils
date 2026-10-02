@@ -5,7 +5,7 @@
 
 ## Unreleased
 
-- **破坏性 Rust API 变更：** 类型化局部绑定和记录字段中的 `Option<用户类型>`、`Result<用户类型, E>` 现按具体声明使用动态原生布局。宿主若直接匹配旧 `Value::Option` / `Value::Result`，应改用不透明 `RilsValue` 的 `with_native_view()` 借用字段；消费式方法会移动原生子负载。脚本语法和 v8 字节码格式未变。
+- **破坏性 Rust API 变更：** 类型化局部绑定、记录字段、tuple enum 字段和具体类型函数参数中的 `Option<用户类型>`、`Result<用户类型, E>` 现按具体声明使用动态原生布局。宿主若直接匹配旧 `Value::Option` / `Value::Result`，应改用不透明 `RilsValue` 的 `with_native_view()` 借用字段；消费式方法会移动原生子负载。脚本语法和 v8 字节码格式未变。
 
 - **破坏性变更：** `Vec::new()` 等零参数泛型集合构造在用户代码中必须有可确定的泛型参数；使用 `let values: Vec<i32> = Vec::new();` 或 `Vec::<i32>::new()`。原先先创建未知类型集合、再通过后续 `push` / `insert` 推断类型的写法会在编译时报错。类型可解析时，构造调用直接创建原生存储。
 

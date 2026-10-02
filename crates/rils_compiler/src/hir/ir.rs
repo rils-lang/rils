@@ -62,6 +62,7 @@ pub struct HirFunction {
     pub name: String,
     pub exported: bool,
     pub parameter_count: usize,
+    pub parameter_types: Vec<Option<Type>>,
     pub capture_count: usize,
     pub local_count: usize,
     pub local_mutability: Vec<bool>,

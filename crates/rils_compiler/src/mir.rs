@@ -60,6 +60,36 @@ impl Builder {
     }
 
     fn function(mut self, function: HirFunction) -> Result<MirFunction, CompileError> {
+        for (parameter, annotation) in function.parameter_types.iter().enumerate() {
+            let Some(annotation) = annotation else {
+                continue;
+            };
+            if !matches!(
+                annotation,
+                crate::types::Type::Option(_)
+                    | crate::types::Type::Result(_, _)
+                    | crate::types::Type::Named { .. }
+            ) {
+                continue;
+            }
+            let local = function.capture_count + parameter;
+            let source = self.register();
+            self.emit(
+                MirInstruction::TakeLocal {
+                    destination: source,
+                    local,
+                },
+                function.span,
+            );
+            self.emit(
+                MirInstruction::InitLocal {
+                    local,
+                    source,
+                    type_annotation: Some(annotation.clone()),
+                },
+                function.span,
+            );
+        }
         let result = self.statements(&function.statements)?;
         if self.is_open() {
             self.terminate(MirTerminator::Return(result), function.span);

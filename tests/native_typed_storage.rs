@@ -1,4 +1,5 @@
 use rils::{BytecodeModule, Value, compile, eval, eval_value};
+use rils_execution::value::EnumPayload;
 
 #[test]
 fn declared_nominal_variants_use_composed_storage_in_both_backends() {
@@ -133,6 +134,77 @@ fn nominal_option_in_enum_record_field_moves_out() {
             compile(source).unwrap().execute_value().unwrap().as_i32(),
             Some(17)
         );
+    }
+}
+
+#[test]
+fn nominal_sum_in_enum_tuple_field_uses_concrete_storage() {
+    for (source, expected_type) in [
+        (
+            "struct Item { value: i32 } enum Holder<T> { Wrapped(Option<T>) } Holder::Wrapped(Some(Item { value: 19 }))",
+            "Item",
+        ),
+        (
+            "struct Item { value: i32 } enum Holder { Wrapped(Result<Item, string>) } Holder::Wrapped(Ok(Item { value: 19 }))",
+            "",
+        ),
+        (
+            "struct Item { value: i32 } enum Holder<T> { Wrapped(Result<T, string>) } Holder::Wrapped(Ok(Item { value: 19 }))",
+            "Item",
+        ),
+    ] {
+        for (stage, value) in [
+            ("interpreter", eval_value(source).unwrap()),
+            ("VM", compile(source).unwrap().execute_value().unwrap()),
+        ] {
+            let Value::Enum(instance) = value else {
+                panic!("expected enum value in {stage}");
+            };
+            if !expected_type.is_empty() {
+                assert_eq!(
+                    instance.type_arguments[0].to_string(),
+                    expected_type,
+                    "{stage}"
+                );
+            }
+            let EnumPayload::Tuple(fields) = &instance.payload else {
+                panic!("expected tuple payload in {stage}");
+            };
+            assert!(matches!(fields[0], Value::Dynamic(_)), "{stage}");
+        }
+    }
+}
+
+#[test]
+fn nominal_sum_moves_out_of_enum_tuple_pattern() {
+    for source in [
+        "struct Item { value: i32 } enum Holder<T> { Wrapped(Option<T>) } let holder = Holder::Wrapped(Some(Item { value: 19 })); match holder { Holder::Wrapped(payload) => { let item = payload.unwrap(); item.value } }",
+        "struct Item { value: i32 } enum Holder { Wrapped(Result<Item, string>) } let holder = Holder::Wrapped(Ok(Item { value: 19 })); match holder { Holder::Wrapped(payload) => { let item = payload.unwrap(); item.value } }",
+        "struct Item { value: i32 } enum Holder<T> { Wrapped(Result<T, string>) } let holder = Holder::Wrapped(Ok(Item { value: 19 })); match holder { Holder::Wrapped(payload) => { let item = payload.unwrap(); item.value } }",
+    ] {
+        assert_eq!(eval_value(source).unwrap().as_i32(), Some(19));
+        assert_eq!(
+            compile(source).unwrap().execute_value().unwrap().as_i32(),
+            Some(19)
+        );
+    }
+}
+
+#[test]
+fn concrete_function_parameters_compose_nominal_sums() {
+    for source in [
+        "struct Item { value: i32 } fn pass(value: Option<Item>) -> Option<Item> { value } pass(Some(Item { value: 23 }))",
+        "struct Item { value: i32 } fn pass(value: Result<Item, string>) -> Result<Item, string> { value } pass(Ok(Item { value: 23 }))",
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for (stage, value) in [
+            ("interpreter", eval_value(source).unwrap()),
+            ("VM", compiled.execute_value().unwrap()),
+            ("loaded VM", loaded.execute_value().unwrap()),
+        ] {
+            assert!(matches!(value, Value::Dynamic(_)), "{stage}");
+        }
     }
 }
 

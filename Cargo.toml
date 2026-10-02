@@ -20,6 +20,9 @@ include = [
 rils_bytecode.workspace = true
 rils_runtime.workspace = true
 
+[dev-dependencies]
+rils_execution.workspace = true
+
 [workspace]
 members = [
     ".",

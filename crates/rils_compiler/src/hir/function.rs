@@ -48,6 +48,7 @@ impl<'a> FunctionLowerer<'a> {
             name: "<script>".into(),
             exported: false,
             parameter_count: 0,
+            parameter_types: Vec::new(),
             capture_count: 0,
             local_count: self.mutable.len(),
             local_mutability: self.mutable,
@@ -67,6 +68,11 @@ impl<'a> FunctionLowerer<'a> {
             .map_or_else(String::new, |(namespace, _)| namespace.to_string());
         self.self_type = declaration.self_type;
         self.return_type = declaration.return_type.cloned();
+        let parameter_types = declaration
+            .parameters
+            .iter()
+            .map(|parameter| parameter.type_annotation.clone())
+            .collect();
         for parameter in declaration.parameters {
             let local = self.mutable.len();
             self.mutable.push(parameter.mutable);
@@ -77,6 +83,7 @@ impl<'a> FunctionLowerer<'a> {
             name: declaration.qualified_name,
             exported: declaration.exported,
             parameter_count: declaration.parameters.len(),
+            parameter_types,
             capture_count: self.capture_count,
             local_count: self.mutable.len(),
             local_mutability: self.mutable,
