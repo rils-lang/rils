@@ -1,0 +1,5 @@
+enum Item { Number(i32) }
+fn make(value: i32) -> Result<Item, string> { Ok(Item::Number(value)) }
+let start: Result<i32, string> = Ok(31);
+let item = start.and_then(make).unwrap();
+match item { Item::Number(value) => value }

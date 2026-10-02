@@ -1,0 +1,6 @@
+struct Item { value: i32 }
+fn extract(value: Result<Item, string>) -> Result<i32, string> {
+    let item = value?;
+    Ok(item.value)
+}
+extract(Ok(Item { value: 31 })).unwrap()

@@ -41,6 +41,8 @@ pub struct MirFunction {
     pub local_count: usize,
     pub local_mutability: Vec<bool>,
     pub parameter_count: usize,
+    pub parameter_types: Vec<Option<Type>>,
+    pub return_type: Option<Type>,
     pub capture_count: usize,
     pub span: Span,
 }

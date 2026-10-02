@@ -1,0 +1,7 @@
+struct Item { value: i32 }
+fn propagate(value: Result<i32, Item>) -> Result<string, Item> {
+    let number = value?;
+    Ok("success")
+}
+let item = propagate(Err(Item { value: 31 })).unwrap_err();
+item.value

@@ -3,6 +3,7 @@ use super::*;
 mod calls;
 mod places;
 mod records;
+mod returns;
 mod setup;
 
 pub(super) struct Frame {
@@ -11,6 +12,7 @@ pub(super) struct Frame {
     locals: Vec<StorageRef>,
     instruction: usize,
     return_action: ReturnAction,
+    return_type: Option<Type>,
 }
 
 enum ReturnAction {
@@ -391,6 +393,7 @@ impl<'a> VirtualMachine<'a> {
                         .collect::<Result<Vec<_>, _>>()?;
                     let callee = &self.module.functions[function];
                     let locals = new_local_storage(callee);
+                    let return_type = returns::resolve_return_type(callee, arguments.iter());
                     for (local, argument) in locals.iter().zip(arguments) {
                         local.borrow_mut().initialize(argument);
                     }
@@ -400,6 +403,7 @@ impl<'a> VirtualMachine<'a> {
                         locals,
                         instruction: 0,
                         return_action: ReturnAction::Register(destination),
+                        return_type,
                     });
                 }
                 Instruction::CallValue {
@@ -448,6 +452,8 @@ impl<'a> VirtualMachine<'a> {
                         ));
                     }
                     let mut locals = new_local_storage(bytecode_function);
+                    let return_type =
+                        returns::resolve_return_type(bytecode_function, call_arguments.iter());
                     for (local, capture) in locals.iter_mut().zip(&callee.captures) {
                         *local = capture.clone();
                     }
@@ -464,6 +470,7 @@ impl<'a> VirtualMachine<'a> {
                         locals,
                         instruction: 0,
                         return_action: ReturnAction::Register(destination),
+                        return_type,
                     });
                 }
                 Instruction::CallImport {
@@ -764,11 +771,9 @@ impl<'a> VirtualMachine<'a> {
                     source,
                 } => {
                     let result = self.take_register(source, instruction.span)?;
-                    let result = result
-                        .materialize_native_sum()
-                        .transpose()
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?
-                        .unwrap_or(result);
+                    let (structs, enums) = self.type_definitions();
+                    let result = crate::value::owned_sum::materialize(result, &structs, &enums)
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     match result {
                         Value::Result {
                             value: Ok(value), ..
@@ -808,6 +813,11 @@ impl<'a> VirtualMachine<'a> {
                     source,
                     pattern,
                 } => {
+                    let value = self.take_register(source, instruction.span)?;
+                    let (structs, enums) = self.type_definitions();
+                    let value = crate::value::owned_sum::materialize(value, &structs, &enums)
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    self.frame_mut().registers[source] = Some(value);
                     let matched = self.frame().registers[source]
                         .as_ref()
                         .is_some_and(|value| pattern_matches(&pattern, value));

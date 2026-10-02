@@ -60,9 +60,7 @@ pub(super) fn call<E>(
                 Operation::OptionAndThen => native.__rils_try_and_then(|value| {
                     let mapped = invoke(function, &[value.as_ref().clone()])
                         .map_err(NativeCallError::Callback)?;
-                    let mapped = crate::value::dynamic_option::materialize(&mapped)
-                        .transpose()?
-                        .unwrap_or(mapped);
+                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
                     let Value::Option {
                         value,
                         element_type,
@@ -78,9 +76,7 @@ pub(super) fn call<E>(
                 })?,
                 Operation::OptionOrElse => native.__rils_try_or_else(|| {
                     let mapped = invoke(function, &[]).map_err(NativeCallError::Callback)?;
-                    let mapped = crate::value::dynamic_option::materialize(&mapped)
-                        .transpose()?
-                        .unwrap_or(mapped);
+                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
                     let Value::Option {
                         value,
                         element_type: callback_type,
@@ -167,6 +163,7 @@ pub(super) fn call<E>(
                 Operation::ResultAndThen => native.__rils_try_and_then(|value| {
                     let mapped = invoke(function, &[value.as_ref().clone()])
                         .map_err(NativeCallError::Callback)?;
+                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
                     let Value::Result {
                         value,
                         ok_type: callback_ok,
@@ -195,6 +192,7 @@ pub(super) fn call<E>(
                 Operation::ResultOrElse => native.__rils_try_or_else(|value| {
                     let mapped = invoke(function, &[value.as_ref().clone()])
                         .map_err(NativeCallError::Callback)?;
+                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
                     let Value::Result {
                         value,
                         ok_type: callback_ok,

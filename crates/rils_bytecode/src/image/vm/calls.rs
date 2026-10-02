@@ -90,6 +90,8 @@ impl VirtualMachine<'_> {
             ));
         }
         let mut locals = new_local_storage(callee);
+        let return_type =
+            returns::resolve_return_type(callee, function.bound_arguments.iter().chain(arguments));
         for (local, capture) in locals.iter_mut().zip(&function.captures) {
             *local = capture.clone();
         }
@@ -111,6 +113,7 @@ impl VirtualMachine<'_> {
                 locals,
                 instruction: 0,
                 return_action: ReturnAction::Complete,
+                return_type,
             }],
             steps: self.steps,
             max_steps: self.max_steps,
@@ -165,6 +168,7 @@ impl VirtualMachine<'_> {
             return Err(BytecodeError::new("invalid iterator method layout", span));
         }
         let locals = new_local_storage(callee);
+        let return_type = returns::resolve_return_type(callee, arguments.iter());
         for (local, argument) in locals.iter().zip(arguments) {
             local.borrow_mut().initialize(argument);
         }
@@ -174,6 +178,7 @@ impl VirtualMachine<'_> {
             locals,
             instruction: 0,
             return_action,
+            return_type,
         });
         Ok(())
     }
@@ -198,6 +203,14 @@ impl VirtualMachine<'_> {
         span: Span,
     ) -> Result<Option<Value>, BytecodeError> {
         let frame = self.frames.pop().expect("return has an active frame");
+        let value = if let Some(expected) = frame.return_type {
+            let (structs, enums) = self.type_definitions();
+            crate::value::storage::TypedStorageContext::new(&structs, &enums)
+                .apply_declared(value, &expected)
+                .map_err(|message| BytecodeError::new(message, span))?
+        } else {
+            value
+        };
         match frame.return_action {
             ReturnAction::Complete => Ok(Some(value)),
             ReturnAction::Register(destination) => {
@@ -214,20 +227,12 @@ impl VirtualMachine<'_> {
                 some_target,
                 none_target,
             } => {
-                let value = crate::value::dynamic_option::materialize(&value)
-                    .transpose()
-                    .map_err(|message| BytecodeError::new(message, span))?
-                    .unwrap_or(value);
-                let Value::Option { value, .. } = value else {
-                    return Err(BytecodeError::new(
-                        "Iterator::next must return Option",
-                        span,
-                    ));
-                };
+                let (structs, enums) = self.type_definitions();
+                let value = crate::value::dynamic_option::take_owned_with_definitions(
+                    value, &structs, &enums,
+                )
+                .map_err(|message| BytecodeError::new(message, span))?;
                 if let Some(value) = value {
-                    let value = Rc::try_unwrap(value)
-                        .or_else(|value| value.clone_owned())
-                        .map_err(|message| BytecodeError::new(message, span))?;
                     self.frame_mut().registers[destination] = Some(value);
                     self.frame_mut().instruction = some_target;
                 } else {

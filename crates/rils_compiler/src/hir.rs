@@ -19,6 +19,7 @@ mod imports;
 mod ir;
 mod literals;
 mod program;
+mod signatures;
 mod symbols;
 
 use imports::*;

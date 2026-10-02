@@ -141,13 +141,19 @@ impl Interpreter {
                         )
                     })
                     .transpose()?;
-                let value = apply_type(
+                let value = apply_type_owned(
                     expected.as_ref(),
-                    &value,
+                    value,
                     span,
                     &format!("return value of `{}`", function.name),
                 )?;
-                Ok(value)
+                if let Some(expected) = expected {
+                    storage
+                        .apply_declared(value, &expected)
+                        .map_err(|message| RuntimeError::new(message, span))
+                } else {
+                    Ok(value)
+                }
             }
             Ok(Flow::Break(_) | Flow::Continue) => Err(RuntimeError::new(
                 "loop control cannot escape a function",

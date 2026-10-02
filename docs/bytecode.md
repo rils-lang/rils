@@ -36,6 +36,8 @@ source -> lexer/parser -> static analysis -> HIR -> MIR -> bytecode -> verifier 
 类型化局部绑定中的 `VecDeque<T>` 和 `BinaryHeap<T>` 使用动态原生序列负载；`InitLocal` 指令新增可选声明类型，让 VM 在初始化时取得具体元素布局。未冻结的 v8 编码因此改变，旧 `.rilbc` 文件需从源码重新编译，格式号仍为 v8。
 同一类型信息还用于补齐 `Result<T, E>` 局部值未出现分支的类型见证，使其能继续嵌入 `Option<Result<T, E>>` 的动态布局。
 `Option<T>`、`Result<T, E>` 和可能需要布局见证的命名类型参数，会在 HIR/MIR 降低时生成函数入口的 `TakeLocal`/`InitLocal`，直接使用已有指令完成参数负载转换；执行时可从实参推断其中的具体泛型实参，标量参数不增加这些指令。VM 构造 tuple enum 字段时也使用声明类型与推断出的泛型实参组合布局。此变化不新增 v8 操作码或字段。
+
+functions 表现保存与参数数量一致的可选类型表及可选返回类型。HIR 保留解析后的用户类型路径；VM 从实参推断返回声明中的泛型参数，在普通返回和 `?` 提前返回时按具体声明组合原生负载。参数类型表受局部槽位数量上限约束，verifier 校验表长及递归类型中的 SourceId。`?`、拥有型 `match` 和用户迭代器消费原生分支，不要求用户负载实现 Clone。此调整改变尚未冻结的 v8 functions 编码；旧 `.rilbc` 需重新编译，格式号不递增。
 `BTreeMap<K, V>` 同样经共享 core builtin ID 执行；`for` 的有序迭代复用现有拥有型迭代器值。
 `BTreeSet<T>` 的集合运算和升序迭代也沿用共享 core builtin 与同一迭代器表示。
 复合值已覆盖 tuple、数组、重复数组、Range、Option 和 Result，以及局部 tuple/数组的索引读取

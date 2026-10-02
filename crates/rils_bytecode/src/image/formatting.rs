@@ -98,6 +98,8 @@ impl VirtualMachine<'_> {
             arguments,
         )?
         .execute()?;
+        let result = crate::value::owned_sum::materialize(result, &[], &[])
+            .map_err(|message| BytecodeError::new(message, span))?;
         match result {
             Value::Result {
                 value: Ok(value), ..

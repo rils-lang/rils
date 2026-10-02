@@ -103,6 +103,8 @@ impl Builder {
             local_count: self.local_count,
             local_mutability: function.local_mutability,
             parameter_count: function.parameter_count,
+            parameter_types: function.parameter_types,
+            return_type: function.return_type,
             capture_count: function.capture_count,
             span: function.span,
         })

@@ -49,6 +49,7 @@ impl<'a> FunctionLowerer<'a> {
             exported: false,
             parameter_count: 0,
             parameter_types: Vec::new(),
+            return_type: None,
             capture_count: 0,
             local_count: self.mutable.len(),
             local_mutability: self.mutable,
@@ -67,11 +68,16 @@ impl<'a> FunctionLowerer<'a> {
             .rsplit_once("::")
             .map_or_else(String::new, |(namespace, _)| namespace.to_string());
         self.self_type = declaration.self_type;
-        self.return_type = declaration.return_type.cloned();
+        self.return_type = declaration.return_type.map(|ty| self.signature_type(ty));
         let parameter_types = declaration
             .parameters
             .iter()
-            .map(|parameter| parameter.type_annotation.clone())
+            .map(|parameter| {
+                parameter
+                    .type_annotation
+                    .as_ref()
+                    .map(|ty| self.signature_type(ty))
+            })
             .collect();
         for parameter in declaration.parameters {
             let local = self.mutable.len();
@@ -84,6 +90,7 @@ impl<'a> FunctionLowerer<'a> {
             exported: declaration.exported,
             parameter_count: declaration.parameters.len(),
             parameter_types,
+            return_type: self.return_type,
             capture_count: self.capture_count,
             local_count: self.mutable.len(),
             local_mutability: self.mutable,

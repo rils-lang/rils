@@ -330,6 +330,8 @@ fn write_function(writer: &mut Writer, function: &BytecodeFunction) -> Result<()
         writer.bool(*mutable);
     }
     writer.index(function.parameter_count, "parameter count")?;
+    writer.collection(&function.parameter_types, write_optional_type)?;
+    write_optional_type(writer, &function.return_type)?;
     writer.index(function.capture_count, "capture count")?;
     writer.span(function.span)
 }
@@ -367,6 +369,12 @@ fn read_function(reader: &mut Reader<'_>) -> Result<BytecodeFunction> {
         local_count,
         local_mutability,
         parameter_count: reader.index()?,
+        parameter_types: reader.collection_limited(
+            read_optional_type,
+            MAX_LOCALS_PER_FUNCTION,
+            "function parameter types",
+        )?,
+        return_type: read_optional_type(reader)?,
         capture_count: reader.index()?,
         span: reader.span()?,
     })

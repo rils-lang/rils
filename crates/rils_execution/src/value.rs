@@ -35,6 +35,7 @@ pub type DynamicObject = rils_value::DynamicObject<Value>;
 pub mod dynamic_option;
 pub mod dynamic_result;
 pub mod dynamic_sequence;
+pub mod owned_sum;
 #[path = "value/record.rs"]
 mod record;
 pub use record::StructFields;

@@ -36,6 +36,7 @@ impl<'a> VirtualMachine<'a> {
                 locals: new_local_storage(entry),
                 instruction: 0,
                 return_action: ReturnAction::Complete,
+                return_type: None,
             }],
             steps: 0,
             max_steps: limits.max_steps,
@@ -72,6 +73,7 @@ impl<'a> VirtualMachine<'a> {
             ));
         }
         let locals = new_local_storage(callee);
+        let return_type = returns::resolve_return_type(callee, arguments.iter());
         for (local, argument) in locals.iter().zip(arguments) {
             local.borrow_mut().initialize(argument);
         }
@@ -85,6 +87,7 @@ impl<'a> VirtualMachine<'a> {
                 locals,
                 instruction: 0,
                 return_action: ReturnAction::Complete,
+                return_type,
             }],
             steps: 0,
             max_steps: limits.max_steps,

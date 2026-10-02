@@ -1,0 +1,13 @@
+struct Item { value: i32 }
+struct Items { remaining: i32 }
+impl Iterator for Items {
+    type Item = Item;
+    fn next(&mut self) -> Option<Item> {
+        if self.remaining == 0 { return None; }
+        self.remaining = 0;
+        Some(Item { value: 31 })
+    }
+}
+let mut total = 0;
+for item in Items { remaining: 1 } { total = total + item.value; }
+total

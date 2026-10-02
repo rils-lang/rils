@@ -111,12 +111,10 @@ impl Interpreter {
                         *span,
                     ));
                 }
-                let value = self.evaluate(operand, environment)?;
-                let value = value
-                    .materialize_native_sum()
-                    .transpose()
-                    .map_err(|message| RuntimeError::new(message, *span))?
-                    .unwrap_or(value);
+                let value = self.evaluate(operand, environment.clone())?;
+                let (structs, enums) = environment.borrow().visible_type_definitions();
+                let value = crate::value::owned_sum::materialize(value, &structs, &enums)
+                    .map_err(|message| RuntimeError::new(message, *span))?;
                 let Value::Result {
                     value, error_type, ..
                 } = value
@@ -150,6 +148,9 @@ impl Interpreter {
                 value, arms, span, ..
             } => {
                 let value = self.evaluate(value, environment.clone())?;
+                let (structs, enums) = environment.borrow().visible_type_definitions();
+                let value = crate::value::owned_sum::materialize(value, &structs, &enums)
+                    .map_err(|message| RuntimeError::new(message, *span))?;
                 for arm in arms {
                     self.tick(arm.pattern.span())?;
                     let mut bindings = Vec::new();

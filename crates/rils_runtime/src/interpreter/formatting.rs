@@ -100,6 +100,8 @@ impl Interpreter {
             &[self_reference, formatter_reference],
             span,
         )?;
+        let result = crate::value::owned_sum::materialize(result, &[], &[])
+            .map_err(|message| RuntimeError::new(message, span))?;
         match result {
             Value::Result {
                 value: Ok(value), ..

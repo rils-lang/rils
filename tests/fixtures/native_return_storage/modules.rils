@@ -1,0 +1,11 @@
+mod left {
+    pub struct Item { value: i32 }
+    pub fn make() -> Result<Item, string> { Ok(Item { value: 15 }) }
+}
+mod right {
+    pub enum Item { Number(i32) }
+    pub fn make() -> Option<Item> { Some(Item::Number(16)) }
+}
+let first = left::make().unwrap();
+let second = right::make().unwrap();
+first.value + match second { right::Item::Number(value) => value }

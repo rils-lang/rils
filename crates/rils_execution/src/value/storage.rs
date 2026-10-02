@@ -12,6 +12,8 @@ use super::{
     record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver,
 };
 
+mod declarations;
+
 /// The three payload families that can represent a stored script value.
 /// References, call targets, modules and declarations remain execution values.
 pub(crate) enum StoredDataRef<'a> {
@@ -45,7 +47,8 @@ impl<'a> TypedStorageContext<'a> {
     }
 
     pub fn apply_declared(&self, value: Value, expected: &Type) -> Result<Value, String> {
-        let expected = self.concrete_expected(&value, expected)?;
+        let expected = declarations::storage_type(expected);
+        let expected = self.concrete_expected(&value, &expected)?;
         let expected = &expected;
         let value = self.attach_result_witness(value, expected)?;
         let value = self.compose_variant(value, expected)?;
@@ -123,7 +126,13 @@ impl<'a> TypedStorageContext<'a> {
         };
         let payload = NativeRecordCodec::with_definitions(self.structs, self.enums)
             .into_native(value, layout.clone())?;
-        let descriptor = Rc::new(DynamicType::new(layout));
+        let codec = NativeRecordCodec::with_definitions(self.structs, self.enums);
+        let descriptor = Rc::new(
+            DynamicType::new(layout)
+                .register_owned_operation(super::owned_sum::DECODE_OPERATION, move |value| {
+                    codec.from_native(value)
+                }),
+        );
         DynamicObject::new(descriptor, payload).map(Value::Dynamic)
     }
 }

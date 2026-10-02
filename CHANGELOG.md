@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 函数声明中的具体 `Option<T>` / `Result<T, E>` 返回值现使用组合原生布局，包括从实参推断泛型后的 `None` / `Err`。`?`、`match`、回调组合器、格式化 trait 和用户迭代器按所有权消费返回负载，支持非 Clone 的用户 struct/enum 及跨模块返回。**破坏性字节码变更：** functions 表新增可选参数类型和返回类型；此前生成的实验性 v8 `.rilbc` 必须从源码重新编译，格式号仍保持 v8。直接匹配 Rust `Value::Option` / `Value::Result` 的宿主代码应使用 `RilsValue::with_native_view()`。
+
 - **破坏性 Rust API 变更：** 类型化局部绑定、记录字段、tuple enum 字段和可从实参推断具体类型的函数参数中的 `Option<用户类型>`、`Result<用户类型, E>` 现按具体声明使用动态原生布局。宿主若直接匹配旧 `Value::Option` / `Value::Result`，应改用不透明 `RilsValue` 的 `with_native_view()` 借用字段；消费式方法会移动原生子负载。脚本语法和 v8 字节码格式未变。
 
 - **破坏性变更：** `Vec::new()` 等零参数泛型集合构造在用户代码中必须有可确定的泛型参数；使用 `let values: Vec<i32> = Vec::new();` 或 `Vec::<i32>::new()`。原先先创建未知类型集合、再通过后续 `push` / `insert` 推断类型的写法会在编译时报错。类型可解析时，构造调用直接创建原生存储。

@@ -1,5 +1,17 @@
 use super::*;
 
+pub(super) fn write_optional_type(writer: &mut Writer, value: &Option<Type>) -> Result<()> {
+    writer.bool(value.is_some());
+    if let Some(value) = value {
+        write_type(writer, value, 0)?;
+    }
+    Ok(())
+}
+
+pub(super) fn read_optional_type(reader: &mut Reader<'_>) -> Result<Option<Type>> {
+    reader.bool()?.then(|| read_type(reader)).transpose()
+}
+
 pub(super) fn write_signature(writer: &mut Writer, signature: &FunctionSignature) -> Result<()> {
     writer.bool(signature.parameters.is_some());
     if let Some(parameters) = &signature.parameters {

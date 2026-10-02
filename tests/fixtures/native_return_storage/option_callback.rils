@@ -1,0 +1,4 @@
+struct Item { value: i32 }
+fn make(value: i32) -> Option<Item> { Some(Item { value: value }) }
+let item = Some(31).and_then(make).unwrap();
+item.value

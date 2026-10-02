@@ -956,30 +956,12 @@ impl Interpreter {
                         Value::Reference(Rc::new(ReferenceValue::new_storage(slot, true)));
                     let method = self.resolve_member(receiver, "next", *span)?;
                     let next = self.call(method, &[], *span)?;
-                    let next = rils_execution::value::dynamic_option::materialize(&next)
-                        .transpose()
-                        .map_err(|message| RuntimeError::new(message, *span))?
-                        .unwrap_or(next);
-                    let item = match next {
-                        Value::Option { value: None, .. } => break,
-                        Value::Option {
-                            value: Some(value), ..
-                        } => match Rc::try_unwrap(value) {
-                            Ok(value) => value,
-                            Err(value) => value
-                                .clone_owned()
-                                .map_err(|message| RuntimeError::new(message, *span))?,
-                        },
-                        value => {
-                            return Err(RuntimeError::new(
-                                format!(
-                                    "Iterator::next must return Option, found {}",
-                                    value.type_name()
-                                ),
-                                *span,
-                            ));
-                        }
-                    };
+                    let (structs, enums) = loop_environment.borrow().visible_type_definitions();
+                    let item = rils_execution::value::dynamic_option::take_owned_with_definitions(
+                        next, &structs, &enums,
+                    )
+                    .map_err(|message| RuntimeError::new(message, *span))?;
+                    let Some(item) = item else { break };
 
                     let iteration_environment = Environment::child(loop_environment.clone());
                     iteration_environment

@@ -77,6 +77,13 @@ pub fn take_owned_with_definitions(
         Value::Dynamic(object)
             if matches!(object.descriptor().layout().rils_type(), Type::Option(_)) =>
         {
+            if object
+                .descriptor()
+                .has_owned_operation(super::owned_sum::DECODE_OPERATION)
+            {
+                let value = object.call_owned(super::owned_sum::DECODE_OPERATION)?;
+                return take_owned_with_definitions(value, structs, enums);
+            }
             let value = object.into_value().map_err(|failure| failure.1)?;
             value
                 .take_option()?

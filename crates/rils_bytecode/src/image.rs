@@ -137,6 +137,8 @@ struct BytecodeFunction {
     local_count: usize,
     local_mutability: Vec<bool>,
     parameter_count: usize,
+    parameter_types: Vec<Option<Type>>,
+    return_type: Option<Type>,
     capture_count: usize,
     span: Span,
 }

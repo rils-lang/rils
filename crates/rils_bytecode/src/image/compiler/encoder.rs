@@ -550,6 +550,8 @@ fn encode_function(
         local_count: program.local_count,
         local_mutability: program.local_mutability,
         parameter_count: program.parameter_count,
+        parameter_types: program.parameter_types,
+        return_type: program.return_type,
         capture_count: program.capture_count,
         span: program.span,
     })

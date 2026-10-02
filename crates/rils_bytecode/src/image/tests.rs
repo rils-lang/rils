@@ -1,5 +1,6 @@
 use super::*;
 use crate::FloatType;
+mod returns;
 
 fn assert_matches_interpreter(source: &str) {
     let interpreted = crate::eval(source).expect("source should interpret");

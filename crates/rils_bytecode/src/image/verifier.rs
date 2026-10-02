@@ -137,6 +137,7 @@ impl BytecodeModule {
             ));
         }
         if function.instructions.is_empty()
+            || function.parameter_types.len() != function.parameter_count
             || function.parameter_count + function.capture_count > function.local_count
             || function.local_mutability.len() != function.local_count
         {
@@ -146,6 +147,21 @@ impl BytecodeModule {
             ));
         }
         let mut has_return = false;
+        if !function
+            .parameter_types
+            .iter()
+            .flatten()
+            .all(|ty| self.valid_type(ty))
+            || !function
+                .return_type
+                .as_ref()
+                .is_none_or(|ty| self.valid_type(ty))
+        {
+            return Err(BytecodeError::new(
+                "invalid function signature type",
+                function.span,
+            ));
+        }
         for instruction in &function.instructions {
             let invalid_register = |register: usize| register >= function.register_count;
             let invalid_place = |place: &BytecodePlace| {
@@ -736,6 +752,8 @@ impl BytecodeModule {
             Type::IntegerVariable(span) | Type::FloatVariable(span) => self.valid_span(*span),
             Type::Tuple(elements) => elements.iter().all(|element| self.valid_type(element)),
             Type::Array { element, .. }
+            | Type::ArrayParameter { element, .. }
+            | Type::Slice(element)
             | Type::Reference { inner: element, .. }
             | Type::Option(element) => self.valid_type(element),
             Type::Function {
@@ -751,6 +769,7 @@ impl BytecodeModule {
             Type::Named { arguments, .. } => {
                 arguments.iter().all(|argument| self.valid_type(argument))
             }
+            Type::BoundVariable { bounds, .. } => bounds.iter().all(|ty| self.valid_type(ty)),
             Type::Associated {
                 base, arguments, ..
             } => {

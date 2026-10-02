@@ -2,6 +2,70 @@ use rils::{BytecodeModule, Value, compile, eval, eval_value};
 use rils_execution::value::EnumPayload;
 
 #[test]
+fn function_returns_compose_concrete_layouts_including_inactive_branches() {
+    for (source, expected) in [
+        (
+            include_str!("fixtures/native_return_storage/option.rils"),
+            "Option<Item>",
+        ),
+        (
+            include_str!("fixtures/native_return_storage/result.rils"),
+            "Result<Item, string>",
+        ),
+        (
+            include_str!("fixtures/native_return_storage/none.rils"),
+            "Option<Item>",
+        ),
+        (
+            include_str!("fixtures/native_return_storage/error.rils"),
+            "Result<Item, string>",
+        ),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for (stage, value) in [
+            ("interpreter", eval_value(source).unwrap()),
+            ("VM", compiled.execute_value().unwrap()),
+            ("loaded VM", loaded.execute_value().unwrap()),
+        ] {
+            let Value::Dynamic(object) = value else {
+                panic!("expected native sum in {stage}: {source}");
+            };
+            assert_eq!(
+                object.descriptor().layout().rils_type().to_string(),
+                expected,
+                "{stage}"
+            );
+        }
+    }
+}
+
+#[test]
+fn native_return_consumers_move_non_clone_payloads() {
+    for source in [
+        include_str!("fixtures/native_return_storage/try_ok.rils"),
+        include_str!("fixtures/native_return_storage/try_error.rils"),
+        include_str!("fixtures/native_return_storage/option_callback.rils"),
+        include_str!("fixtures/native_return_storage/result_callback.rils"),
+        include_str!("fixtures/native_return_storage/option_fallback.rils"),
+        include_str!("fixtures/native_return_storage/result_fallback.rils"),
+        include_str!("fixtures/native_return_storage/iterator.rils"),
+        include_str!("fixtures/native_return_storage/modules.rils"),
+        include_str!("fixtures/native_return_storage/match.rils"),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for (stage, value) in [
+            ("interpreter", eval_value(source).unwrap()),
+            ("VM", compiled.execute_value().unwrap()),
+            ("loaded VM", loaded.execute_value().unwrap()),
+        ] {
+            assert_eq!(value.as_i32(), Some(31), "{stage}: {source}");
+        }
+    }
+}
+
+#[test]
 fn declared_nominal_variants_use_composed_storage_in_both_backends() {
     for (source, expected_type) in [
         (

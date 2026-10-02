@@ -1,0 +1,5 @@
+struct Item { value: i32 }
+fn recover(error: string) -> Result<Item, string> { Ok(Item { value: 31 }) }
+let start: Result<Item, string> = Err("failed");
+let item = start.or_else(recover).unwrap();
+item.value
