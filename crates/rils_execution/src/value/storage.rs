@@ -1,5 +1,6 @@
 //! The boundary between stored script data and execution-only values.
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use rils_value::DynamicType;
@@ -44,6 +45,8 @@ impl<'a> TypedStorageContext<'a> {
     }
 
     pub fn apply_declared(&self, value: Value, expected: &Type) -> Result<Value, String> {
+        let expected = self.concrete_expected(&value, expected)?;
+        let expected = &expected;
         let value = self.attach_result_witness(value, expected)?;
         let value = self.compose_variant(value, expected)?;
         Ok(dynamic_sequence::promote_empty_with_definitions(
@@ -52,6 +55,20 @@ impl<'a> TypedStorageContext<'a> {
             self.structs,
             self.enums,
         ))
+    }
+
+    fn concrete_expected(&self, value: &Value, expected: &Type) -> Result<Type, String> {
+        let Some(actual) = Type::of_value(value) else {
+            return Ok(expected.clone());
+        };
+        let mut bindings = HashMap::new();
+        if crate::types::infer_generic_arguments(expected, &actual, &mut bindings).is_err() {
+            // The frontend may have checked an alias against its underlying
+            // nominal type. Storage only needs bindings it can infer here.
+            return Ok(expected.clone());
+        }
+        bindings.retain(|_, ty| *ty != Type::Unknown);
+        Ok(expected.substitute(&bindings))
     }
 
     fn attach_result_witness(&self, value: Value, expected: &Type) -> Result<Value, String> {

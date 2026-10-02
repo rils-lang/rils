@@ -209,6 +209,25 @@ fn concrete_function_parameters_compose_nominal_sums() {
 }
 
 #[test]
+fn generic_function_parameters_resolve_nominal_sum_layouts() {
+    for source in [
+        "struct Item { value: i32 } fn pass<T>(value: Option<T>) -> Option<T> { value } pass(Some(Item { value: 29 }))",
+        "struct Item { value: i32 } fn pass<T>(value: Result<T, string>) -> Result<T, string> { value } pass(Ok(Item { value: 29 }))",
+        "struct Item { value: i32 } fn pass<T>(value: Result<Option<T>, string>) -> Result<Option<T>, string> { value } pass(Ok(Some(Item { value: 29 })))",
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for (stage, value) in [
+            ("interpreter", eval_value(source).unwrap()),
+            ("VM", compiled.execute_value().unwrap()),
+            ("loaded VM", loaded.execute_value().unwrap()),
+        ] {
+            assert!(matches!(value, Value::Dynamic(_)), "{stage}: {source}");
+        }
+    }
+}
+
+#[test]
 fn nominal_sum_formatting_matches_legacy_value() {
     for (definition, legacy_source, typed_source) in [
         (
