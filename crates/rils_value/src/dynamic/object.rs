@@ -93,6 +93,12 @@ impl<V> Clone for DynamicObject<V> {
 }
 
 impl<V> DynamicObject<V> {
+    /// Invoke a declaration-registered operation with uniquely owned storage.
+    pub fn call_owned(self, name: &str) -> Result<V, String> {
+        let descriptor = self.descriptor.clone();
+        let value = self.into_value().map_err(|failure| failure.1)?;
+        descriptor.call_owned(value, name)
+    }
     pub fn into_compact(self) -> CompactDynamicObject<V> {
         let storage = match self.storage {
             Storage::Inline(value) => CompactStorage::Inline(Box::new(value)),

@@ -4,6 +4,46 @@ use rils_syntax::Type;
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
 #[test]
+fn registered_owned_operation_moves_non_clone_child_and_drops_once() {
+    struct Probe(i32, Rc<Cell<usize>>);
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            self.1.set(self.1.get() + 1);
+        }
+    }
+    let drops = Rc::new(Cell::new(0));
+    let item = DynamicLayout::of::<Probe>(Type::named("Probe"));
+    let layout = DynamicLayout::option(item.clone()).unwrap();
+    let descriptor = Rc::new(DynamicType::new(layout.clone()).register_owned_operation(
+        "consume",
+        |value| {
+            let child = value.take_option()?.ok_or("missing child")?;
+            let probe = child.into_rust::<Probe>().map_err(|error| error.1)?;
+            Ok(probe.0)
+        },
+    ));
+    let make = || {
+        DynamicObject::new(
+            descriptor.clone(),
+            DynamicValue::some(
+                layout.clone(),
+                DynamicValue::from_rust(item.clone(), Probe(42, drops.clone())).unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(make().call_owned("consume").unwrap(), 42);
+    assert_eq!(drops.get(), 1);
+    let object = make();
+    let alias = object.clone();
+    assert!(object.call_owned("consume").is_err());
+    assert_eq!(drops.get(), 1);
+    assert_eq!(alias.call_owned("consume").unwrap(), 42);
+    assert_eq!(drops.get(), 2);
+}
+
+#[test]
 fn copy_option_uses_inline_handles_and_registered_operations() {
     let item = DynamicLayout::copy_of::<i32>(Type::I32);
     let layout = DynamicLayout::option(item.clone()).unwrap();

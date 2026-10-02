@@ -1,5 +1,7 @@
 # rils_value
 
+`DynamicType::register_owned_operation` 可登记任意消费式操作。`DynamicObject::call_owned` 把唯一拥有的 bytes 和子负载交给该操作，共享的非 Copy 句柄会报错。操作可以保留构造处的类型声明上下文，跨模块转换无需依赖接收方的类型名称查找；存储层不限定操作种类。
+
 `rils_value` 提供类型擦除的原生 Rust 值存储和操作描述。它只依赖 `rils_syntax` 中的共享 `Type`，并用泛型参数表示上层执行值，因此不依赖解释器、字节码 VM 或 `rils_execution`。
 
 `NativeType<V>` 描述 Rust 类型身份、Rils 类型和可注册的 Copy 保证。类型可通过 `register_method` 按任意名称登记操作，处理函数从 `NativeCallContext` 读取类型检查过的 receiver 与参数，也能构造同类型返回对象；存储层不预设 Clone、Equal、Display 或 Next。调用者负责把这些操作与 Rils 导出声明绑定。

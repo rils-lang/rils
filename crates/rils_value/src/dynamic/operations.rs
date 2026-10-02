@@ -5,11 +5,13 @@ use std::{collections::HashMap, rc::Rc};
 use super::{DynamicLayout, DynamicValue};
 
 type Method<V> = Rc<dyn for<'a> Fn(&mut DynamicCallContext<'a, V>) -> Result<V, String>>;
+type OwnedOperation<V> = Rc<dyn Fn(DynamicValue) -> Result<V, String>>;
 
 /// A type's layout and callable operations, suitable for generated registration.
 pub struct DynamicType<V> {
     layout: Rc<DynamicLayout>,
     methods: HashMap<String, Method<V>>,
+    owned_operations: HashMap<String, OwnedOperation<V>>,
 }
 
 impl<V> DynamicType<V> {
@@ -17,6 +19,7 @@ impl<V> DynamicType<V> {
         Self {
             layout,
             methods: HashMap::new(),
+            owned_operations: HashMap::new(),
         }
     }
 
@@ -51,6 +54,37 @@ impl<V> DynamicType<V> {
 
     pub fn has_method(&self, name: &str) -> bool {
         self.methods.contains_key(name)
+    }
+
+    /// Register an operation that consumes the native bytes and their children.
+    pub fn register_owned_operation(
+        mut self,
+        name: impl Into<String>,
+        operation: impl Fn(DynamicValue) -> Result<V, String> + 'static,
+    ) -> Self {
+        let name = name.into();
+        assert!(
+            self.owned_operations
+                .insert(name.clone(), Rc::new(operation))
+                .is_none(),
+            "dynamic owned operation {name} was registered twice"
+        );
+        self
+    }
+
+    pub fn has_owned_operation(&self, name: &str) -> bool {
+        self.owned_operations.contains_key(name)
+    }
+
+    pub fn call_owned(&self, receiver: DynamicValue, name: &str) -> Result<V, String> {
+        let operation = self
+            .owned_operations
+            .get(name)
+            .ok_or_else(|| format!("native owned operation `{name}` is unavailable"))?;
+        if !receiver.has_layout(&self.layout) {
+            return Err("native receiver layout does not match its type".into());
+        }
+        operation(receiver)
     }
 
     pub fn layout(&self) -> &DynamicLayout {
