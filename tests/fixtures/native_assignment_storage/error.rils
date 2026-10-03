@@ -1,0 +1,4 @@
+struct Item { value: i32 }
+let mut value: Result<string, Item> = Ok("ready");
+value = Err(Item { value: 37 });
+value

@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 已使用原生布局的 Option/Result 在局部变量、字段、元组/数组元素替换及可变引用写回时保留布局和注册操作；局部变量 move 后重新赋值仍保留声明见证。非 Clone 用户负载通过消费式编码移动，避免赋值后退回旧的 Option/Result 表示。字节码格式未变。
+
 - 函数声明中的具体 `Option<T>` / `Result<T, E>` 返回值现使用组合原生布局，包括从实参推断泛型后的 `None` / `Err`。`?`、`match`、回调组合器、格式化 trait 和用户迭代器按所有权消费返回负载，支持非 Clone 的用户 struct/enum 及跨模块返回。**破坏性字节码变更：** functions 表新增可选参数类型和返回类型；此前生成的实验性 v8 `.rilbc` 必须从源码重新编译，格式号仍保持 v8。直接匹配 Rust `Value::Option` / `Value::Result` 的宿主代码应使用 `RilsValue::with_native_view()`。
 
 - **破坏性 Rust API 变更：** 类型化局部绑定、记录字段、tuple enum 字段和可从实参推断具体类型的函数参数中的 `Option<用户类型>`、`Result<用户类型, E>` 现按具体声明使用动态原生布局。宿主若直接匹配旧 `Value::Option` / `Value::Result`，应改用不透明 `RilsValue` 的 `with_native_view()` 借用字段；消费式方法会移动原生子负载。脚本语法和 v8 字节码格式未变。

@@ -619,10 +619,9 @@ impl ReferenceValue {
                 let mut fields = instance.fields.borrow_mut();
                 let field = fields.get_index_mut(*index).ok_or(AssignError::Undefined)?;
                 field.value = Some(
-                    field
-                        .type_annotation
-                        .constrain(&value)
-                        .ok_or_else(|| AssignError::TypeMismatch(field.type_annotation.clone()))?,
+                    value
+                        .constrain_assignment(&field.type_annotation, field.value.as_ref())
+                        .map_err(|_| AssignError::TypeMismatch(field.type_annotation.clone()))?,
                 );
                 Ok(())
             }
@@ -633,9 +632,9 @@ impl ReferenceValue {
                 let mut elements = sequence.elements.borrow_mut();
                 let slot = elements.get_mut(*index).ok_or(AssignError::Undefined)?;
                 slot.value = Some(
-                    slot.type_annotation
-                        .constrain(&value)
-                        .ok_or_else(|| AssignError::TypeMismatch(slot.type_annotation.clone()))?,
+                    value
+                        .constrain_assignment(&slot.type_annotation, slot.value.as_ref())
+                        .map_err(|_| AssignError::TypeMismatch(slot.type_annotation.clone()))?,
                 );
                 Ok(())
             }

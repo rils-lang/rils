@@ -664,10 +664,11 @@ fn store_field_slot(
             span,
         ));
     }
-    slot.value =
-        Some(slot.type_annotation.constrain(&value).ok_or_else(|| {
-            BytecodeError::new(format!("value is incompatible with {label}"), span)
-        })?);
+    slot.value = Some(
+        value
+            .constrain_assignment(&slot.type_annotation, slot.value.as_ref())
+            .map_err(|_| BytecodeError::new(format!("value is incompatible with {label}"), span))?,
+    );
     Ok(())
 }
 

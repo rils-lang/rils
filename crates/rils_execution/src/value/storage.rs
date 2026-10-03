@@ -12,7 +12,9 @@ use super::{
     record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver,
 };
 
+mod assignment;
 mod declarations;
+pub use assignment::{constrain_assignment, native_declaration};
 
 /// The three payload families that can represent a stored script value.
 /// References, call targets, modules and declarations remain execution values.

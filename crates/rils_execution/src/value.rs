@@ -835,14 +835,10 @@ impl Value {
             }
             Self::Native(object) => Self::Native(native_ops::clone_owned(object)?),
             Self::Dynamic(object) => {
-                let layout = object.descriptor().layout_handle();
                 let payload = object.with(|payload| {
                     rils_stdlib::native::registry().clone_borrowed_element(payload)
                 })??;
-                Self::Dynamic(DynamicObject::new(
-                    Rc::new(rils_value::DynamicType::new(layout)),
-                    payload,
-                )?)
+                Self::Dynamic(DynamicObject::new(object.descriptor_handle(), payload)?)
             }
             value => value.clone(),
         })

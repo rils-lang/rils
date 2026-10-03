@@ -309,10 +309,9 @@ mod tests {
         let Value::Reference(option) = &option else {
             unreachable!();
         };
-        assert!(matches!(
-            option.read().unwrap(),
-            Value::Option { value: None, .. }
-        ));
+        let (item, item_type) = option.read().unwrap().as_option().unwrap();
+        assert!(item.is_none());
+        assert_eq!(item_type, Type::I32);
 
         let iterator = mutable_receiver(owned_iterator_value(
             VecDeque::from([Value::from_i32(11)]),

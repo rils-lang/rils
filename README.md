@@ -29,6 +29,8 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 导出方法默认使用原生桥接，兼容旧入口时需显式声明绑定，详见 [标准库定义说明](crates/rils_stdlib/README.md)。
 
 函数直接返回的具体 `Option<T>` / `Result<T, E>` 已接入组合原生存储，包含实参可确定泛型的 `None` / `Err`。`?`、`match`、回调组合器和用户迭代器按所有权取出非 Clone 内容；构造处注册的消费操作保留跨模块用户类型声明。字节码保存参数与返回类型；旧实验性 v8 文件需重新编译。
+
+已建立原生布局的 Option/Result 在局部变量、字段及元组/数组元素替换时保留布局；可变引用写回使用同一消费式入口。局部变量的声明操作表独立于负载保留，move 后重新赋值也可复用。
 独立的 [`rils_value`](crates/rils_value/README.md) crate 提供按 Rust 布局存储的原生值与类型操作注册；小型 Copy 值直接内联，其他值使用共享存储。`Range<T>`、所有标准库整数宽度、`f32`、`f64` 和 `string` 已在解释器与字节码 VM 中使用原生负载；Rust 宿主通过 `Value::from_i16` / `Value::as_i16` 等对应宽度的方法构造和读取整数，浮点与字符串分别使用 `from_f32` / `as_f32`、`from_f64` / `as_f64`、`from_string` / `as_string`。整数与浮点方法由标准库声明生成注册，并通过类型化上下文调用 Rust 方法。`type_of(1..3)` 保留泛型参数，返回 `"Range<i32>"`。
 
 子类型有可递归解析的布局时，`Option<T>` 在解释器与 VM 中使用按实际子类型布局组合的 `Value::Dynamic`；这包括基础值、嵌套标准库容器，以及类型化局部绑定、记录字段、tuple enum 字段和可从实参推断具体类型的函数参数中的用户 struct/enum。具体类型的 `Result<T, E>` 也在这些绑定处组合原生分支布局。局部声明、函数实参、赋值、字段与嵌套表达式中可确定类型的 `None` 使用原生路径；`Some(value)` 消耗原值。Rust 宿主可用 `RilsValue::with_native_view()` 借用组合负载，用 `Value::as_option()` 读取可转换的新旧 Option 表示；基础值可通过 `Value::as_i8()`、`Value::as_i32()`、`Value::as_usize()` 和 `Value::as_string()` 读取。

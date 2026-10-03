@@ -110,7 +110,7 @@ impl Place {
                         span,
                     ));
                 }
-                field.value = Some(field.type_annotation.constrain(&value).ok_or_else(|| {
+                field.value = Some(value.constrain_assignment(&field.type_annotation, field.value.as_ref()).map_err(|_| {
                     RuntimeError::new(
                         format!(
                             "cannot assign a value incompatible with field `{name}` of type {}",
@@ -149,15 +149,19 @@ impl Place {
                         span,
                     ));
                 }
-                slot.value = Some(slot.type_annotation.constrain(&value).ok_or_else(|| {
-                    RuntimeError::new(
-                        format!(
-                            "value is incompatible with element type {}",
-                            slot.type_annotation
-                        ),
-                        span,
-                    )
-                })?);
+                slot.value = Some(
+                    value
+                        .constrain_assignment(&slot.type_annotation, slot.value.as_ref())
+                        .map_err(|_| {
+                            RuntimeError::new(
+                                format!(
+                                    "value is incompatible with element type {}",
+                                    slot.type_annotation
+                                ),
+                                span,
+                            )
+                        })?,
+                );
                 Ok(())
             }
             Self::DynamicIndexedElement {

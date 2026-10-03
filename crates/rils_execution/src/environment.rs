@@ -13,6 +13,7 @@ pub struct StorageSlot {
     value: Option<Value>,
     mutable: bool,
     type_annotation: Option<Type>,
+    native_declaration: Option<Rc<rils_value::DynamicType<Value>>>,
     references: usize,
 }
 
@@ -22,16 +23,24 @@ impl StorageSlot {
             value: None,
             mutable,
             type_annotation: None,
+            native_declaration: None,
             references: 0,
         }
     }
 
     pub fn initialize(&mut self, value: Value) {
+        self.native_declaration = crate::value::storage::native_declaration(&value);
+        self.type_annotation = match Type::of_value(&value) {
+            Some(ty @ (Type::Option(_) | Type::Result(_, _))) => Some(ty),
+            _ => None,
+        };
         self.value = Some(value);
     }
 
     pub fn clear(&mut self) {
         self.value = None;
+        self.native_declaration = None;
+        self.type_annotation = None;
     }
 
     pub fn read(&self) -> Result<Value, AccessError> {
@@ -95,11 +104,17 @@ impl StorageSlot {
             return Err(AssignError::BorrowedTarget);
         }
         if let Some(expected) = &self.type_annotation {
-            value = value
-                .constrain_owned(expected)
-                .ok_or_else(|| AssignError::TypeMismatch(expected.clone()))?;
+            value = crate::value::storage::constrain_assignment(
+                value,
+                expected,
+                self.native_declaration.clone(),
+            )
+            .map_err(|_| AssignError::TypeMismatch(expected.clone()))?;
         } else if matches!(&value, Value::Option { .. }) {
             return Err(AssignError::OptionRequiresAnnotation);
+        }
+        if let Some(declaration) = crate::value::storage::native_declaration(&value) {
+            self.native_declaration = Some(declaration);
         }
         self.value = Some(value);
         Ok(())
@@ -114,9 +129,15 @@ impl StorageSlot {
             return Err(AssignError::BorrowedTarget);
         }
         if let Some(expected) = &self.type_annotation {
-            value = value
-                .constrain_owned(expected)
-                .ok_or_else(|| AssignError::TypeMismatch(expected.clone()))?;
+            value = crate::value::storage::constrain_assignment(
+                value,
+                expected,
+                self.native_declaration.clone(),
+            )
+            .map_err(|_| AssignError::TypeMismatch(expected.clone()))?;
+        }
+        if let Some(declaration) = crate::value::storage::native_declaration(&value) {
+            self.native_declaration = Some(declaration);
         }
         self.value = Some(value);
         Ok(())
@@ -240,6 +261,7 @@ impl Environment {
         self.values.insert(
             name.into(),
             Rc::new(RefCell::new(StorageSlot {
+                native_declaration: crate::value::storage::native_declaration(&value),
                 value: Some(value),
                 mutable,
                 type_annotation,

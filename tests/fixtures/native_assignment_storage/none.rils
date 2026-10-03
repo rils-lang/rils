@@ -1,0 +1,4 @@
+struct Item { value: i32 }
+let mut value: Option<Item> = Some(Item { value: 37 });
+value = None;
+value

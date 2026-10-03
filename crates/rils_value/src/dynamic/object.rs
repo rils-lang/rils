@@ -93,6 +93,10 @@ impl<V> Clone for DynamicObject<V> {
 }
 
 impl<V> DynamicObject<V> {
+    /// Retain the declaration and operations independently of a moved payload.
+    pub fn descriptor_handle(&self) -> Rc<DynamicType<V>> {
+        self.descriptor.clone()
+    }
     /// Invoke a declaration-registered operation with uniquely owned storage.
     pub fn call_owned(self, name: &str) -> Result<V, String> {
         let descriptor = self.descriptor.clone();
