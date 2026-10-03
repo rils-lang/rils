@@ -1,0 +1,11 @@
+mod producer {
+    pub struct Item { value: i32 }
+    pub struct Holder { payload: Option<Item> }
+    pub fn initial() -> Holder { Holder { payload: Some(Item { value: 1 }) } }
+    pub fn item() -> Item { Item { value: 37 } }
+}
+let mut holder = producer::initial();
+holder.payload = None;
+holder.payload = Some(producer::item());
+let item = holder.payload.unwrap();
+item.value

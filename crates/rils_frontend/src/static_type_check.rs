@@ -13,8 +13,16 @@ pub(crate) fn analyze(
     expression_types: ExpressionTypes<'_>,
     source: crate::SourceId,
     host_type_resolutions: &crate::HostTypeResolutionResults,
+    declarations: (&crate::semantic::DeclarationTypeResolver, &[String]),
 ) -> Vec<AnalysisDiagnostic> {
-    Checker::new(program, expression_types, source, host_type_resolutions).run(program)
+    Checker::new(
+        program,
+        expression_types,
+        source,
+        host_type_resolutions,
+        declarations,
+    )
+    .run(program)
 }
 
 #[derive(Clone)]
@@ -25,7 +33,6 @@ struct Alias {
 
 struct Checker<'a> {
     expression_types: ExpressionTypes<'a>,
-    aliases: HashMap<String, Alias>,
     associated_items: HashMap<(String, String), Alias>,
     iterator_types: HashSet<String>,
     opaque_types: HashMap<String, bool>,
@@ -34,18 +41,25 @@ struct Checker<'a> {
     self_types: Vec<Option<Type>>,
     diagnostics: Vec<AnalysisDiagnostic>,
     host_types: crate::HostTypeResolutionView<'a>,
+    declaration_types: crate::semantic::DeclarationTypeResolver,
+    module_path: Vec<String>,
 }
 
 impl<'a> Checker<'a> {
+    fn syntax_type(&self, ty: &Type) -> Type {
+        self.declaration_types
+            .resolve(&self.host_types.resolved_type(ty), &self.module_path)
+    }
+
     fn new(
         program: &'a Program,
         expression_types: ExpressionTypes<'a>,
         source: crate::SourceId,
         host_type_resolutions: &'a crate::HostTypeResolutionResults,
+        declarations: (&crate::semantic::DeclarationTypeResolver, &[String]),
     ) -> Self {
         let mut checker = Self {
             expression_types,
-            aliases: HashMap::new(),
             associated_items: HashMap::new(),
             iterator_types: HashSet::new(),
             opaque_types: HashMap::new(),
@@ -54,8 +68,10 @@ impl<'a> Checker<'a> {
             self_types: Vec::new(),
             diagnostics: Vec::new(),
             host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
+            declaration_types: declarations.0.clone(),
+            module_path: declarations.1.to_vec(),
         };
-        checker.collect_aliases(&program.statements);
+        checker.collect_associated_items(&program.statements);
         checker.collect_method_candidates(&program.statements);
         checker.collect_opaque_types(&program.statements, &mut Vec::new());
         crate::semantic::collect_trait_implementations(
@@ -97,30 +113,13 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn collect_aliases(&mut self, statements: &[Stmt]) {
+    fn collect_associated_items(&mut self, statements: &[Stmt]) {
         for statement in statements {
             match statement {
                 Stmt::Module {
                     statements: Some(statements),
                     ..
-                } => self.collect_aliases(statements),
-                Stmt::TypeAlias {
-                    name,
-                    generic_parameters,
-                    target,
-                    ..
-                } => {
-                    self.aliases.insert(
-                        name.clone(),
-                        Alias {
-                            parameters: generic_parameters
-                                .iter()
-                                .map(|parameter| parameter.name.clone())
-                                .collect(),
-                            target: self.host_types.resolved_type(target),
-                        },
-                    );
-                }
+                } => self.collect_associated_items(statements),
                 Stmt::Impl {
                     target: Type::Named { name, .. },
                     trait_name: Some(trait_name),
@@ -192,16 +191,21 @@ impl<'a> Checker<'a> {
     fn statement(&mut self, statement: &Stmt) {
         match statement {
             Stmt::Module {
+                name,
                 statements: Some(statements),
                 ..
-            } => self.statements(statements),
+            } => {
+                self.module_path.push(name.clone());
+                self.statements(statements);
+                self.module_path.pop();
+            }
             Stmt::Let {
                 type_annotation: Some(expected),
                 initializer,
                 ..
             } => {
                 self.expression(initializer);
-                let expected = self.host_types.resolved_type(expected);
+                let expected = self.syntax_type(expected);
                 self.expect(
                     &expected,
                     self.ty(initializer),
@@ -218,9 +222,7 @@ impl<'a> Checker<'a> {
             } => {
                 if !crate::ast::has_compiler_internal_attribute(attributes) {
                     self.function(
-                        return_type
-                            .as_ref()
-                            .map(|ty| self.host_types.resolved_type(ty)),
+                        return_type.as_ref().map(|ty| self.syntax_type(ty)),
                         body,
                         None,
                     );
@@ -234,12 +236,9 @@ impl<'a> Checker<'a> {
                         continue;
                     }
                     self.function(
-                        method
-                            .return_type
-                            .as_ref()
-                            .map(|ty| self.host_types.resolved_type(ty)),
+                        method.return_type.as_ref().map(|ty| self.syntax_type(ty)),
                         &method.body,
-                        Some(self.host_types.resolved_type(target)),
+                        Some(self.syntax_type(target)),
                     );
                 }
             }
@@ -611,8 +610,8 @@ impl<'a> Checker<'a> {
                 }
                 let mut bindings = HashMap::new();
                 for (expected, argument) in parameters.iter().zip(arguments) {
-                    let expected = self.expand(expected, &mut HashSet::new());
-                    let actual = self.expand(&self.ty(argument), &mut HashSet::new());
+                    let expected = self.expand(expected);
+                    let actual = self.expand(&self.ty(argument));
                     if let Err(message) =
                         crate::types::infer_generic_arguments(&expected, &actual, &mut bindings)
                     {
@@ -761,8 +760,8 @@ impl<'a> Checker<'a> {
     }
 
     fn expect(&mut self, expected: &Type, actual: Type, span: Span, subject: &str) {
-        let expected = self.expand(expected, &mut HashSet::new());
-        let actual = self.expand(&actual, &mut HashSet::new());
+        let expected = self.expand(&self.declaration_types.resolve(expected, &self.module_path));
+        let actual = self.expand(&self.declaration_types.resolve(&actual, &self.module_path));
         if merge_types(&expected, &actual).is_none() {
             self.diagnostic(
                 format!("{subject} expects `{expected}`, found `{actual}`"),
@@ -771,7 +770,7 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn expand(&self, ty: &Type, visiting: &mut HashSet<String>) -> Type {
+    fn expand(&self, ty: &Type) -> Type {
         let (name, arguments) = match ty {
             Type::Associated {
                 base,
@@ -779,7 +778,7 @@ impl<'a> Checker<'a> {
                 name,
                 arguments,
             } if trait_name == "IntoIterator" && name == "Item" && arguments.is_empty() => {
-                let base = self.expand(base, visiting);
+                let base = self.expand(base);
                 if let Type::Named { name, arguments } = &base {
                     for source_trait in ["IntoIterator", "Iterator"] {
                         if let Some(alias) = self
@@ -792,7 +791,7 @@ impl<'a> Checker<'a> {
                                 .cloned()
                                 .zip(arguments.iter().cloned())
                                 .collect::<HashMap<_, _>>();
-                            return self.expand(&alias.target.substitute(&substitutions), visiting);
+                            return self.expand(&alias.target.substitute(&substitutions));
                         }
                     }
                 }
@@ -811,7 +810,7 @@ impl<'a> Checker<'a> {
                 name,
                 arguments,
             } if trait_name == "IntoIterator" && name == "IntoIter" && arguments.is_empty() => {
-                let base = self.expand(base, visiting);
+                let base = self.expand(base);
                 if let Type::Named { name, .. } = &base
                     && (self.iterator_types.contains(name)
                         || rils_builtins::builtin(name)
@@ -821,31 +820,28 @@ impl<'a> Checker<'a> {
                 }
                 return ty.clone();
             }
-            Type::Option(inner) => return Type::Option(Box::new(self.expand(inner, visiting))),
+            Type::Option(inner) => return Type::Option(Box::new(self.expand(inner))),
             Type::Result(ok, error) => {
-                return Type::Result(
-                    Box::new(self.expand(ok, visiting)),
-                    Box::new(self.expand(error, visiting)),
-                );
+                return Type::Result(Box::new(self.expand(ok)), Box::new(self.expand(error)));
             }
             Type::Tuple(elements) => {
                 return Type::Tuple(
                     elements
                         .iter()
-                        .map(|element| self.expand(element, visiting))
+                        .map(|element| self.expand(element))
                         .collect(),
                 );
             }
             Type::Array { element, length } => {
                 return Type::Array {
-                    element: Box::new(self.expand(element, visiting)),
+                    element: Box::new(self.expand(element)),
                     length: *length,
                 };
             }
             Type::Reference { mutable, inner } => {
                 return Type::Reference {
                     mutable: *mutable,
-                    inner: Box::new(self.expand(inner, visiting)),
+                    inner: Box::new(self.expand(inner)),
                 };
             }
             Type::Named { name, arguments } => (name, arguments),
@@ -857,29 +853,15 @@ impl<'a> Checker<'a> {
         {
             return self_type.clone();
         }
-        let Some(alias) = self.aliases.get(name) else {
-            return Type::Named {
-                name: crate::standard_library::builtin_type_name(name)
-                    .unwrap_or(name)
-                    .into(),
-                arguments: arguments
-                    .iter()
-                    .map(|argument| self.expand(argument, visiting))
-                    .collect(),
-            };
-        };
-        if !visiting.insert(name.clone()) {
-            return ty.clone();
+        Type::Named {
+            name: crate::standard_library::builtin_type_name(name)
+                .unwrap_or(name)
+                .into(),
+            arguments: arguments
+                .iter()
+                .map(|argument| self.expand(argument))
+                .collect(),
         }
-        let substitutions = alias
-            .parameters
-            .iter()
-            .cloned()
-            .zip(arguments.iter().cloned())
-            .collect::<HashMap<_, _>>();
-        let expanded = self.expand(&alias.target.substitute(&substitutions), visiting);
-        visiting.remove(name);
-        expanded
     }
 
     fn ty(&self, expression: &Expr) -> Type {

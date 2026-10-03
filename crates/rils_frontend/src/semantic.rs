@@ -7,10 +7,12 @@ use crate::{
     types::FunctionSignature,
 };
 
+mod declaration_types;
 mod expression_ids;
 mod syntax_ids;
 mod visit;
 
+pub use declaration_types::DeclarationTypeResolver;
 pub use expression_ids::ExpressionIdentityMap;
 pub(crate) use expression_ids::{ExpressionIds, ExpressionTypes};
 pub use syntax_ids::{PatternIdentityMap, TypeIdentityMap};

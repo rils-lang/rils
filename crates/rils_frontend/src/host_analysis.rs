@@ -97,6 +97,9 @@ fn analyze_program_with_host_contract(
         host_types,
         external_exports,
         module_path,
-        Some(host),
+        crate::analysis::ModuleAnalysisContext {
+            host_contract: Some(host),
+            declaration_types: None,
+        },
     )
 }

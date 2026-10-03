@@ -18,6 +18,21 @@ fn assert_native_sum(value: &Value) {
 }
 
 #[test]
+fn separate_files_preserve_field_declarations_and_aliases() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/native_assignment_storage/files/main.rils");
+    let compiled = rils::compile_file(&entry).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        rils::Engine::new().eval_file_value(&entry).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        assert_eq!(value.as_i32(), Some(37));
+    }
+}
+
+#[test]
 fn assignments_preserve_native_sum_layouts_and_move_nominal_payloads() {
     for source in [
         include_str!("fixtures/native_assignment_storage/local.rils"),
@@ -49,14 +64,20 @@ fn assignments_preserve_native_sum_layouts_and_move_nominal_payloads() {
 
 #[test]
 fn replacement_preserves_the_producers_nominal_declaration() {
-    let source = include_str!("fixtures/native_assignment_storage/modules.rils");
-    let compiled = compile(source).unwrap();
-    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    for value in [
-        eval_value(source).unwrap(),
-        compiled.execute_value().unwrap(),
-        loaded.execute_value().unwrap(),
+    for source in [
+        include_str!("fixtures/native_assignment_storage/modules.rils"),
+        include_str!("fixtures/native_assignment_storage/module_field.rils"),
+        include_str!("fixtures/native_assignment_storage/module_none.rils"),
+        include_str!("fixtures/native_assignment_storage/alias_return.rils"),
     ] {
-        assert_eq!(value.as_i32(), Some(37));
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_eq!(value.as_i32(), Some(37));
+        }
     }
 }

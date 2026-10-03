@@ -64,6 +64,7 @@ pub(crate) fn infer_with_host_functions_and_host_types(
     host_functions: &HashMap<String, FunctionSignature>,
     host_type_resolutions: &crate::HostTypeResolutionResults,
     host_contract: Option<&rils_host::HostContract>,
+    declarations: (&crate::semantic::DeclarationTypeResolver, &[String]),
 ) -> InferenceResult {
     Inferencer::new(
         program,
@@ -71,6 +72,7 @@ pub(crate) fn infer_with_host_functions_and_host_types(
         host_functions,
         host_type_resolutions,
         host_contract,
+        declarations,
     )
     .run(program)
 }
@@ -85,6 +87,8 @@ struct Inferencer<'a> {
     numeric_fixed: HashMap<ExprId, Type>,
     host_functions: HashMap<String, FunctionSignature>,
     host_types: crate::HostTypeResolutionView<'a>,
+    declaration_types: crate::semantic::DeclarationTypeResolver,
+    module_path: Vec<String>,
 }
 
 impl<'a> Inferencer<'a> {
@@ -94,6 +98,7 @@ impl<'a> Inferencer<'a> {
         host_functions: &HashMap<String, FunctionSignature>,
         host_type_resolutions: &'a crate::HostTypeResolutionResults,
         host_contract: Option<&rils_host::HostContract>,
+        declarations: (&crate::semantic::DeclarationTypeResolver, &[String]),
     ) -> Self {
         let mut globals = HashMap::new();
         for (name, return_type) in [
@@ -171,10 +176,12 @@ impl<'a> Inferencer<'a> {
             numeric_parents: HashMap::new(),
             numeric_fixed: HashMap::new(),
             host_functions: host_functions.clone(),
+            declaration_types: declarations.0.clone(),
+            module_path: declarations.1.to_vec(),
             host_types: crate::HostTypeResolutionView::new(program, source, host_type_resolutions),
         };
         inferencer.collect_host_type_definitions(host_contract);
-        inferencer.collect_type_definitions(&program.statements, &mut Vec::new());
+        inferencer.collect_type_definitions(&program.statements, &mut declarations.1.to_vec());
         inferencer
     }
 
@@ -206,7 +213,9 @@ impl<'a> Inferencer<'a> {
     }
 
     fn syntax_type(&self, ty: &Type) -> Type {
-        let ty = self.host_types.resolved_type(ty);
+        let ty = self
+            .declaration_types
+            .resolve(&self.host_types.resolved_type(ty), &self.module_path);
         if let Type::Associated {
             base,
             trait_name: Some(trait_name),
@@ -458,7 +467,13 @@ impl<'a> Inferencer<'a> {
                         fields: fields
                             .iter()
                             .map(|field| {
-                                (field.name.clone(), self.syntax_type(&field.type_annotation))
+                                (
+                                    field.name.clone(),
+                                    self.declaration_types.resolve(
+                                        &self.host_types.resolved_type(&field.type_annotation),
+                                        prefix,
+                                    ),
+                                )
                             })
                             .collect(),
                         variants: HashMap::new(),
@@ -621,7 +636,9 @@ impl<'a> Inferencer<'a> {
             } => {
                 self.define_binding(name, *name_span, Binding { ty: Type::Unknown });
                 if let Some(statements) = statements {
+                    self.module_path.push(name.clone());
                     self.with_scope_value(|inferencer| inferencer.statements(statements, returns));
+                    self.module_path.pop();
                 }
                 Type::Unit
             }
@@ -953,6 +970,7 @@ impl<'a> Inferencer<'a> {
                 .collect();
             ty = ty.substitute(&substitutions);
         }
+        let ty = self.declaration_types.resolve(&ty, &self.module_path);
         self.result.expression_types_by_id.insert(id, ty.clone());
         ty
     }

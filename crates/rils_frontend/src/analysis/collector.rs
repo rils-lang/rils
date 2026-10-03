@@ -4,41 +4,54 @@ impl Analyzer {
     pub(super) fn collect_struct_fields(&mut self, statements: &[Stmt]) {
         fn visit(
             statements: &[Stmt],
+            prefix: &mut Vec<String>,
             output: &mut HashMap<String, Vec<HashMap<String, StructFieldSymbol>>>,
         ) {
             for statement in statements {
                 match statement {
                     Stmt::Struct { name, fields, .. } => {
-                        output.entry(name.clone()).or_default().push(
-                            fields
-                                .iter()
-                                .map(|field| {
-                                    (
-                                        field.name.clone(),
-                                        StructFieldSymbol {
-                                            span: field.span,
-                                            ty: field.type_annotation.clone(),
-                                            detail: format!(
-                                                "field {}: {}",
-                                                field.name, field.type_annotation
-                                            ),
-                                            owner: name.clone(),
-                                        },
-                                    )
-                                })
-                                .collect(),
-                        );
+                        output
+                            .entry(crate::exports::join_path(&prefix.join("::"), name))
+                            .or_default()
+                            .push(
+                                fields
+                                    .iter()
+                                    .map(|field| {
+                                        (
+                                            field.name.clone(),
+                                            StructFieldSymbol {
+                                                span: field.span,
+                                                ty: field.type_annotation.clone(),
+                                                detail: format!(
+                                                    "field {}: {}",
+                                                    field.name, field.type_annotation
+                                                ),
+                                                owner: name.clone(),
+                                            },
+                                        )
+                                    })
+                                    .collect(),
+                            );
                     }
                     Stmt::Module {
+                        name,
                         statements: Some(children),
                         ..
-                    } => visit(children, output),
+                    } => {
+                        prefix.push(name.clone());
+                        visit(children, prefix, output);
+                        prefix.pop();
+                    }
                     _ => {}
                 }
             }
         }
 
-        visit(statements, &mut self.struct_fields);
+        visit(
+            statements,
+            &mut self.module_path.clone(),
+            &mut self.struct_fields,
+        );
     }
 
     pub(super) fn enrich_member_symbols(
@@ -102,7 +115,10 @@ impl Analyzer {
                     None,
                     None,
                     Some(method_type.clone()),
-                    Some(callable_detail(&symbol.name, &method_type)),
+                    Some(
+                        self.declaration_types
+                            .display_text(&callable_detail(&symbol.name, &method_type)),
+                    ),
                     None,
                     None,
                 ));
@@ -163,7 +179,13 @@ impl Analyzer {
 
     pub(super) fn record_field_symbol(&mut self, type_name: Option<&str>, field: &RecordField) {
         let definition = type_name.and_then(|type_name| {
-            let definitions = self.struct_fields.get(type_name)?;
+            let Type::Named { name, .. } = self
+                .declaration_types
+                .resolve(&Type::named(type_name), &self.module_path)
+            else {
+                return None;
+            };
+            let definitions = self.struct_fields.get(&name)?;
             let candidates = definitions
                 .iter()
                 .filter_map(|fields| fields.get(&field.name))
@@ -261,11 +283,14 @@ impl Analyzer {
     pub(super) fn collect_inherent_methods(&mut self, statements: &[Stmt]) {
         for statement in statements {
             if let Stmt::Module {
+                name,
                 statements: Some(statements),
                 ..
             } = statement
             {
+                self.module_path.push(name.clone());
                 self.collect_inherent_methods(statements);
+                self.module_path.pop();
                 continue;
             }
             let Stmt::Impl {
@@ -282,7 +307,13 @@ impl Analyzer {
                     .entry(method.name.clone())
                     .or_default()
                     .push(InherentMethod {
-                        owner: owner.clone(),
+                        owner: match self
+                            .declaration_types
+                            .resolve(&Type::named(owner), &self.module_path)
+                        {
+                            Type::Named { name, .. } => name,
+                            _ => owner.clone(),
+                        },
                         span: method.name_span,
                         detail: impl_method_detail(method),
                     });

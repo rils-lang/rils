@@ -1,0 +1,27 @@
+struct Item { root: i32 }
+mod left {
+    pub struct Item { value: i32 }
+    pub type Payload<T> = Result<Option<T>, String>;
+    pub type Local = Payload<Item>;
+    mod nested { pub struct Holder { value: Item } }
+}
+mod right {
+    pub struct Item { value: String }
+    use crate::left::Item as Imported;
+    type Local = Option<Imported>;
+}
+mod consumer {
+    use crate::left as source;
+    use source::Local as Imported;
+}
+mod ambiguous {
+    use crate::left::*;
+    use crate::right::*;
+}
+mod cyclic {
+    use b as a;
+    use a as b;
+    use missing::*;
+    type First = Second;
+    type Second = First;
+}

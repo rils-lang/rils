@@ -4,8 +4,24 @@ use super::*;
 
 impl FunctionLowerer<'_> {
     pub(super) fn signature_type(&self, ty: &Type) -> Type {
-        let child = |ty: &Type| Box::new(self.signature_type(ty));
-        let children = |types: &[Type]| types.iter().map(|ty| self.signature_type(ty)).collect();
+        let module = self
+            .namespace
+            .split("::")
+            .filter(|segment| !segment.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let ty = self.declaration_types.resolve(ty, &module);
+        self.canonical_signature_type(&ty)
+    }
+
+    fn canonical_signature_type(&self, ty: &Type) -> Type {
+        let child = |ty: &Type| Box::new(self.canonical_signature_type(ty));
+        let children = |types: &[Type]| {
+            types
+                .iter()
+                .map(|ty| self.canonical_signature_type(ty))
+                .collect()
+        };
         match ty {
             Type::Named { name, arguments } => {
                 if name == "Self"
@@ -62,6 +78,45 @@ impl FunctionLowerer<'_> {
                 bounds: children(bounds),
             },
             _ => ty.clone(),
+        }
+    }
+}
+
+pub(super) fn resolve_field_types(
+    definitions: &mut [HirTypeDefinition],
+    resolver: &rils_frontend::semantic::DeclarationTypeResolver,
+) {
+    for definition in definitions {
+        let name = match definition {
+            HirTypeDefinition::Struct { name, .. } | HirTypeDefinition::Enum { name, .. } => name,
+        };
+        let module = name.rsplit_once("::").map_or(Vec::new(), |(module, _)| {
+            module.split("::").map(str::to_owned).collect()
+        });
+        match definition {
+            HirTypeDefinition::Struct { fields, .. } => {
+                for field in fields {
+                    field.type_annotation = resolver.resolve(&field.type_annotation, &module);
+                }
+            }
+            HirTypeDefinition::Enum { variants, .. } => {
+                for variant in variants {
+                    match variant {
+                        EnumVariant::Tuple { fields, .. } => {
+                            for field in fields {
+                                *field = resolver.resolve(field, &module);
+                            }
+                        }
+                        EnumVariant::Record { fields, .. } => {
+                            for field in fields {
+                                field.type_annotation =
+                                    resolver.resolve(&field.type_annotation, &module);
+                            }
+                        }
+                        EnumVariant::Unit { .. } => {}
+                    }
+                }
+            }
         }
     }
 }

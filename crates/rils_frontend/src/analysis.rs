@@ -222,6 +222,7 @@ pub fn analyze_program_with_host_declarations(
         module_path: &[],
         host_type_resolutions: &host_type_resolutions,
         host_contract: None,
+        declaration_types: None,
     })
     .analyze(program, program, &host_type_resolutions);
     analysis.inlay_hints.retain(|hint| {
@@ -321,7 +322,7 @@ pub fn analyze_program_with_source_id_and_external_exports_and_host_types(
         host_types,
         external_exports,
         &[],
-        None,
+        ModuleAnalysisContext::default(),
     )
 }
 
@@ -332,7 +333,7 @@ pub(crate) fn analyze_program_in_module_with_external_exports_and_host_types(
     host_types: &HashSet<String>,
     external_exports: &HashMap<String, Vec<ExternalModuleExport>>,
     module_path: &[String],
-    host_contract: Option<&rils_host::HostContract>,
+    context: ModuleAnalysisContext<'_>,
 ) -> DocumentAnalysis {
     let host_type_resolutions = crate::resolve_host_types(program, source_id, host_types);
     let resolution_errors = host_type_resolutions.errors().to_vec();
@@ -344,7 +345,8 @@ pub(crate) fn analyze_program_in_module_with_external_exports_and_host_types(
         external_exports,
         module_path,
         host_type_resolutions: &host_type_resolutions,
-        host_contract,
+        host_contract: context.host_contract,
+        declaration_types: context.declaration_types,
     })
     .analyze(program, program, &host_type_resolutions);
     analysis.inlay_hints.retain(|hint| {
@@ -394,6 +396,7 @@ struct Analyzer {
     pattern_ids: crate::semantic::PatternIdentityMap,
     host_type_resolutions: crate::HostTypeResolutionResults,
     host_contract: Option<rils_host::HostContract>,
+    declaration_types: crate::semantic::DeclarationTypeResolver,
     self_types: Vec<Option<String>>,
     self_type_references: HashMap<Span, String>,
     type_aliases: HashMap<String, TypeAliasDefinition>,
@@ -413,6 +416,13 @@ struct AnalyzerInput<'a> {
     module_path: &'a [String],
     host_type_resolutions: &'a crate::HostTypeResolutionResults,
     host_contract: Option<&'a rils_host::HostContract>,
+    declaration_types: Option<&'a crate::semantic::DeclarationTypeResolver>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct ModuleAnalysisContext<'a> {
+    pub host_contract: Option<&'a rils_host::HostContract>,
+    pub declaration_types: Option<&'a crate::semantic::DeclarationTypeResolver>,
 }
 
 impl Analyzer {
@@ -426,7 +436,12 @@ impl Analyzer {
             module_path,
             host_type_resolutions,
             host_contract,
+            declaration_types,
         } = input;
+        let mut declaration_types = declaration_types.cloned().unwrap_or_else(|| {
+            crate::semantic::DeclarationTypeResolver::from_programs([(module_path, program)])
+        });
+        declaration_types.extend_exports(external_exports);
         let definition_modules = external_exports
             .values()
             .flatten()
@@ -466,7 +481,7 @@ impl Analyzer {
                     continue;
                 }
                 struct_fields
-                    .entry(export.name.clone())
+                    .entry(crate::exports::join_path(&export.module_path, &export.name))
                     .or_insert_with(Vec::new)
                     .push(
                         export
@@ -651,6 +666,7 @@ impl Analyzer {
             self_types: vec![None],
             self_type_references: collect_self_type_references(program),
             type_aliases: HashMap::new(),
+            declaration_types,
             host_functions: host_functions.clone(),
             host_types: host_types.clone(),
             host_type_segments,
@@ -683,6 +699,7 @@ impl Analyzer {
         self.record_scope(Span::in_source(self.source_id, 0, usize::MAX));
         self.type_references(program);
         let mut inference_functions = self.host_functions.clone();
+        let declaration_types = self.declaration_types.clone();
         for (module, exports) in &self.module_exports {
             for export in exports {
                 let Some(Type::Function {
@@ -692,9 +709,20 @@ impl Analyzer {
                 else {
                     continue;
                 };
+                let declaration_module = export
+                    .module_path
+                    .split("::")
+                    .filter(|segment| !segment.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>();
                 let signature = FunctionSignature {
-                    parameters: parameters.clone(),
-                    return_type: (**return_type).clone(),
+                    parameters: parameters.as_ref().map(|types| {
+                        types
+                            .iter()
+                            .map(|ty| declaration_types.resolve(ty, &declaration_module))
+                            .collect()
+                    }),
+                    return_type: declaration_types.resolve(return_type, &declaration_module),
                 };
                 let paths = if module.is_empty() {
                     vec![export.name.clone(), format!("crate::{}", export.name)]
@@ -717,6 +745,7 @@ impl Analyzer {
             &inference_functions,
             host_type_resolutions,
             self.host_contract.as_ref(),
+            (&declaration_types, &self.module_path),
         );
         // Every checker consumes the same immutable source AST. Canonical Host
         // identities live in side tables and must not be written back into syntax.
@@ -745,6 +774,7 @@ impl Analyzer {
                 expression_types,
                 self.source_id,
                 host_type_resolutions,
+                (&declaration_types, &self.module_path),
             ));
         let trait_check = crate::trait_check::analyze_with_host_types(program, &self.host_types);
         self.result.diagnostics.extend(trait_check.diagnostics);
@@ -786,6 +816,17 @@ impl Analyzer {
                     symbol.inferred_type = Some(inferred_type.clone());
                 }
             }
+            if let Some(ty) = &symbol.inferred_type {
+                let module = match &symbol.container {
+                    Some(SymbolContainer::Module(module)) => module
+                        .split("::")
+                        .filter(|segment| !segment.is_empty() && *segment != "crate")
+                        .map(str::to_owned)
+                        .collect(),
+                    _ => self.module_path.clone(),
+                };
+                symbol.inferred_type = Some(declaration_types.resolve(ty, &module));
+            }
         }
         let definition_details = self
             .result
@@ -816,7 +857,7 @@ impl Analyzer {
             .map(|hint| InlayTypeHint {
                 position: hint.position,
                 span: hint.span,
-                label: format!("{}{ty}", hint.prefix, ty = hint.ty),
+                label: format!("{}{}", hint.prefix, declaration_types.display(&hint.ty)),
             })
             .collect();
         let def_map = crate::semantic::DefMap::from_symbols_and_owners(

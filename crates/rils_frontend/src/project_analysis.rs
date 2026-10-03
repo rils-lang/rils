@@ -65,6 +65,11 @@ fn analyze_project_with_host_declarations_and_contract_and_external_exports(
         ))
     }));
 
+    let declaration_types = crate::semantic::DeclarationTypeResolver::from_programs(
+        units
+            .iter()
+            .map(|(_, path, program)| (path.as_slice(), program)),
+    );
     let mut exports = inherited_exports.clone();
     for (_, path, program) in &units {
         collect_exports(program, path, None, path.is_empty(), &mut exports);
@@ -86,7 +91,10 @@ fn analyze_project_with_host_declarations_and_contract_and_external_exports(
                 host_types,
                 &exports,
                 path,
-                host_contract,
+                crate::analysis::ModuleAnalysisContext {
+                    host_contract,
+                    declaration_types: Some(&declaration_types),
+                },
             )
         })
         .collect::<Vec<_>>();
@@ -117,7 +125,10 @@ fn analyze_project_with_host_declarations_and_contract_and_external_exports(
                 host_types,
                 &resolved_exports,
                 path,
-                host_contract,
+                crate::analysis::ModuleAnalysisContext {
+                    host_contract,
+                    declaration_types: Some(&declaration_types),
+                },
             ),
         );
     }

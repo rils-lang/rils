@@ -17,7 +17,7 @@ impl<'a> FunctionLowerer<'a> {
             Expr::Variable { name, span } if name == "None" => {
                 let item_type = match self.typeck_results.expression_type(expression_id) {
                     Some(Type::Option(inner)) if !matches!(inner.as_ref(), Type::Unknown) => {
-                        Some(inner.as_ref().clone())
+                        Some(self.signature_type(inner))
                     }
                     _ => None,
                 };

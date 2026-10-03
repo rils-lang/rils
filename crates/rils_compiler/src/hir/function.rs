@@ -14,6 +14,7 @@ impl<'a> FunctionLowerer<'a> {
         host_contract: &'a HostContract,
         expression_ids: &'a rils_frontend::semantic::ExpressionIdentityMap,
         typeck_results: &'a rils_frontend::semantic::TypeckResults,
+        declaration_types: &'a rils_frontend::semantic::DeclarationTypeResolver,
         resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
         generated: GeneratedFunctions,
     ) -> Self {
@@ -26,6 +27,7 @@ impl<'a> FunctionLowerer<'a> {
             host_contract,
             expression_ids,
             typeck_results,
+            declaration_types,
             resolved_definitions,
             namespace: String::new(),
             self_type: None,
@@ -120,6 +122,7 @@ impl<'a> FunctionLowerer<'a> {
                 ..
             } => {
                 let mut initializer = self.expression(initializer)?;
+                let type_annotation = type_annotation.as_ref().map(|ty| self.signature_type(ty));
                 apply_option_type(&mut initializer, type_annotation.as_ref());
                 let local = self.mutable.len();
                 self.mutable.push(*mutable);
@@ -127,7 +130,7 @@ impl<'a> FunctionLowerer<'a> {
                 Ok(HirStatement::Let {
                     local,
                     initializer,
-                    type_annotation: type_annotation.clone(),
+                    type_annotation,
                     span: *span,
                 })
             }
@@ -234,6 +237,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.host_contract,
                     self.expression_ids,
                     self.typeck_results,
+                    self.declaration_types,
                     self.resolved_definitions,
                     self.generated.clone(),
                 );

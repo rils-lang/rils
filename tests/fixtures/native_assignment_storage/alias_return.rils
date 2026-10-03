@@ -1,0 +1,10 @@
+struct Item { value: i32 }
+type Maybe<T> = Option<T>;
+type Payload = Maybe<Item>;
+fn empty() -> Payload { None }
+fn initial() -> Payload { Some(Item { value: 1 }) }
+let mut value = initial();
+value = empty();
+value = Some(Item { value: 37 });
+let item = value.unwrap();
+item.value

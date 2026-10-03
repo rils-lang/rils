@@ -621,7 +621,7 @@ fn preserves_external_import_symbol_kinds() {
         .unwrap();
     assert_eq!(
         timing.inferred_type,
-        Some(Type::function(vec![Type::I32], Type::named("Event")))
+        Some(Type::function(vec![Type::I32], Type::named("event::Event")))
     );
     let timing_use = analysis
         .symbols

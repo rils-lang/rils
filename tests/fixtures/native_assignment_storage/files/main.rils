@@ -1,0 +1,6 @@
+mod producer;
+let mut holder = producer::initial();
+holder.payload = None;
+holder.payload = Some(producer::item());
+let item = holder.payload.unwrap();
+item.value
