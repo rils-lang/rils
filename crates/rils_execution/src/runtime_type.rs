@@ -332,11 +332,10 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                 .iter()
                 .zip(source.iter())
                 .map(|(expected, slot)| {
-                    Some(FieldSlot {
-                        value: Some(expected.constrain(slot.value.as_ref()?)?),
-                        type_annotation: expected.clone(),
-                        references: 0,
-                    })
+                    Some(FieldSlot::new(
+                        expected.clone(),
+                        expected.constrain(slot.value.as_ref()?)?,
+                    ))
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(Value::Tuple(Rc::new(crate::value::IndexedStorage {
@@ -353,11 +352,10 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
             let elements = source
                 .iter()
                 .map(|slot| {
-                    Some(FieldSlot {
-                        value: Some(element.constrain(slot.value.as_ref()?)?),
-                        type_annotation: (**element).clone(),
-                        references: 0,
-                    })
+                    Some(FieldSlot::new(
+                        (**element).clone(),
+                        element.constrain(slot.value.as_ref()?)?,
+                    ))
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(Value::Array(Rc::new(crate::value::IndexedStorage {
@@ -374,11 +372,10 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
             let elements = source
                 .iter()
                 .map(|slot| {
-                    Some(FieldSlot {
-                        value: Some(expected.constrain(slot.value.as_ref()?)?),
-                        type_annotation: expected.clone(),
-                        references: 0,
-                    })
+                    Some(FieldSlot::new(
+                        expected.clone(),
+                        expected.constrain(slot.value.as_ref()?)?,
+                    ))
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(Value::Vec(Rc::new(crate::value::IndexedStorage {
@@ -458,11 +455,7 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
                 let constrained = expected.constrain(value)?;
                 fields.insert(
                     definition.name.clone(),
-                    FieldSlot {
-                        value: Some(constrained),
-                        type_annotation: expected,
-                        references: 0,
-                    },
+                    FieldSlot::new(expected, constrained),
                 );
             }
             Some(Value::Struct(Rc::new(StructInstance {

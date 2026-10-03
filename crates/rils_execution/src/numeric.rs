@@ -146,16 +146,8 @@ fn tuple_value(value: Value, overflowed: bool) -> Result<Value, String> {
         crate::value::IndexedStorage {
             active_iterators: std::cell::Cell::new(0),
             elements: std::cell::RefCell::new(vec![
-                crate::value::FieldSlot {
-                    value: Some(value),
-                    type_annotation: types[0].clone(),
-                    references: 0,
-                },
-                crate::value::FieldSlot {
-                    value: Some(Value::Bool(overflowed)),
-                    type_annotation: Type::Bool,
-                    references: 0,
-                },
+                crate::value::FieldSlot::new(types[0].clone(), value),
+                crate::value::FieldSlot::new(Type::Bool, Value::Bool(overflowed)),
             ]),
             element_type: std::cell::RefCell::new(None),
         },

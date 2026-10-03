@@ -312,19 +312,11 @@ fn runtime_record_slots_follow_declaration_order_and_reject_missing_fields() {
     let slots = HashMap::from([
         (
             "second".into(),
-            FieldSlot {
-                value: Some(Value::from_i32(2)),
-                type_annotation: Type::I32,
-                references: 0,
-            },
+            FieldSlot::new(Type::I32, Value::from_i32(2)),
         ),
         (
             "first".into(),
-            FieldSlot {
-                value: Some(Value::from_i32(1)),
-                type_annotation: Type::I32,
-                references: 0,
-            },
+            FieldSlot::new(Type::I32, Value::from_i32(1)),
         ),
     ]);
     let fields = StructFields::from_map(definition.clone(), slots).unwrap();

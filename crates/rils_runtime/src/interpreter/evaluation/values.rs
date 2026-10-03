@@ -12,11 +12,7 @@ impl Interpreter {
                 for element in elements {
                     let value = self.evaluate(element, environment.clone())?;
                     let ty = Type::of_value(&value).unwrap_or(Type::Unknown);
-                    slots.push(FieldSlot {
-                        value: Some(value),
-                        type_annotation: ty,
-                        references: 0,
-                    });
+                    slots.push(FieldSlot::new(ty, value));
                 }
                 Ok(Value::Tuple(Rc::new(IndexedStorage {
                     active_iterators: std::cell::Cell::new(0),
@@ -69,11 +65,7 @@ impl Interpreter {
                 }
                 let slots = values
                     .into_iter()
-                    .map(|value| FieldSlot {
-                        value: Some(value),
-                        type_annotation: element_type.clone(),
-                        references: 0,
-                    })
+                    .map(|value| FieldSlot::new(element_type.clone(), value))
                     .collect();
                 Ok(Value::Array(Rc::new(IndexedStorage {
                     active_iterators: std::cell::Cell::new(0),

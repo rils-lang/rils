@@ -122,14 +122,7 @@ impl VirtualMachine<'_> {
                         let value = storage
                             .apply_declared(value, &annotation)
                             .map_err(|message| BytecodeError::new(message, span))?;
-                        Ok((
-                            field.name.clone(),
-                            FieldSlot {
-                                value: Some(value),
-                                type_annotation: annotation,
-                                references: 0,
-                            },
-                        ))
+                        Ok((field.name.clone(), FieldSlot::new(annotation, value)))
                     })
                     .collect::<Result<HashMap<_, _>, BytecodeError>>()?;
                 let fields = StructFields::from_map(definition.clone(), slots)

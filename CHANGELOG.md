@@ -5,9 +5,11 @@
 
 ## Unreleased
 
+- **破坏性 Rust API 变更：** `FieldSlot` 独立保存原生声明，不再支持结构体字面量构造；改用 `FieldSlot::new(type_annotation, value)`，替换负载使用 `FieldSlot::assign(value)`。原先的 `Value::constrain_assignment` 辅助方法已移除，赋值通过目标槽位执行。
+
 - 共享前端保留跨模块类型声明身份，并在函数参数、返回值、局部声明和 struct/enum 字段进入 HIR 前展开透明类型别名。跨模块 Option/Result 字段替换及直接赋值 `None` 使用正确的具体布局；支持链式泛型别名和多文件模块。Analyzer 的类型诊断和字段导航使用同一身份，类型提示仍显示简洁名称。字节码 v8 编码未变。
 
-- 已使用原生布局的 Option/Result 在局部变量、字段、元组/数组元素替换及可变引用写回时保留布局和注册操作；局部变量 move 后重新赋值仍保留声明见证。非 Clone 用户负载通过消费式编码移动，避免赋值后退回旧的 Option/Result 表示。字节码格式未变。
+- 已使用原生布局的 Option/Result 在局部变量、字段、元组/数组元素替换及可变引用写回时保留布局和注册操作；局部变量、字段及元组/数组元素 move 后重新赋值仍保留声明见证，转换失败保留槽位原值。非 Clone 用户负载通过消费式编码移动，避免赋值后退回旧的 Option/Result 表示。字节码格式未变。
 
 - 函数声明中的具体 `Option<T>` / `Result<T, E>` 返回值现使用组合原生布局，包括从实参推断泛型后的 `None` / `Err`。`?`、`match`、回调组合器、格式化 trait 和用户迭代器按所有权消费返回负载，支持非 Clone 的用户 struct/enum 及跨模块返回。**破坏性字节码变更：** functions 表新增可选参数类型和返回类型；此前生成的实验性 v8 `.rilbc` 必须从源码重新编译，格式号仍保持 v8。直接匹配 Rust `Value::Option` / `Value::Result` 的宿主代码应使用 `RilsValue::with_native_view()`。
 

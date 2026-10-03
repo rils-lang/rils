@@ -618,11 +618,9 @@ impl ReferenceValue {
             ReferenceTarget::StructField { instance, index } => {
                 let mut fields = instance.fields.borrow_mut();
                 let field = fields.get_index_mut(*index).ok_or(AssignError::Undefined)?;
-                field.value = Some(
-                    value
-                        .constrain_assignment(&field.type_annotation, field.value.as_ref())
-                        .map_err(|_| AssignError::TypeMismatch(field.type_annotation.clone()))?,
-                );
+                field
+                    .assign(value)
+                    .map_err(|_| AssignError::TypeMismatch(field.type_annotation.clone()))?;
                 Ok(())
             }
             ReferenceTarget::IndexedElement { sequence, index } => {
@@ -631,11 +629,8 @@ impl ReferenceValue {
                 }
                 let mut elements = sequence.elements.borrow_mut();
                 let slot = elements.get_mut(*index).ok_or(AssignError::Undefined)?;
-                slot.value = Some(
-                    value
-                        .constrain_assignment(&slot.type_annotation, slot.value.as_ref())
-                        .map_err(|_| AssignError::TypeMismatch(slot.type_annotation.clone()))?,
-                );
+                slot.assign(value)
+                    .map_err(|_| AssignError::TypeMismatch(slot.type_annotation.clone()))?;
                 Ok(())
             }
             ReferenceTarget::DynamicIndexedElement {

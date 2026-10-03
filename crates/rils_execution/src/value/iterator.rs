@@ -300,11 +300,7 @@ impl BorrowedIndexedIteratorValue {
             let slots = fields
                 .into_iter()
                 .zip(types)
-                .map(|(value, type_annotation)| FieldSlot {
-                    value: Some(value),
-                    type_annotation,
-                    references: 0,
-                })
+                .map(|(value, type_annotation)| FieldSlot::new(type_annotation, value))
                 .collect();
             self.index.set(index + 1);
             return Ok(Some(Value::Tuple(Rc::new(IndexedStorage {
@@ -391,16 +387,8 @@ impl BorrowedMapIteratorValue {
         Ok(Some(Value::Tuple(Rc::new(IndexedStorage {
             active_iterators: std::cell::Cell::new(0),
             elements: RefCell::new(vec![
-                FieldSlot {
-                    value: Some(key_ref),
-                    type_annotation: types[0].clone(),
-                    references: 0,
-                },
-                FieldSlot {
-                    value: Some(value_ref),
-                    type_annotation: types[1].clone(),
-                    references: 0,
-                },
+                FieldSlot::new(types[0].clone(), key_ref),
+                FieldSlot::new(types[1].clone(), value_ref),
             ]),
             element_type: RefCell::new(None),
         }))))

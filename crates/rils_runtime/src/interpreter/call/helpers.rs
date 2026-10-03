@@ -18,11 +18,7 @@ pub(super) fn builtin_default_value(
                 elements: RefCell::new(
                     values
                         .into_iter()
-                        .map(|(value, type_annotation)| FieldSlot {
-                            value: Some(value),
-                            type_annotation,
-                            references: 0,
-                        })
+                        .map(|(value, type_annotation)| FieldSlot::new(type_annotation, value))
                         .collect(),
                 ),
                 element_type: RefCell::new(None),

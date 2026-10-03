@@ -405,11 +405,7 @@ pub(super) fn clone_hash_map(map: &HashMapValue) -> Result<HashMapValue, String>
                 .ok_or_else(|| "cannot clone a partially moved HashMap".to_string())?;
             Ok((
                 key.clone(),
-                FieldSlot {
-                    value: Some(value.clone_owned()?),
-                    type_annotation: slot.type_annotation.clone(),
-                    references: 0,
-                },
+                FieldSlot::new(slot.type_annotation.clone(), value.clone_owned()?),
             ))
         })
         .collect::<Result<HashMap<_, _>, String>>()?;
@@ -433,11 +429,7 @@ pub(super) fn clone_btree_map(map: &BTreeMapValue) -> Result<BTreeMapValue, Stri
                 .ok_or("cannot clone a partially moved BTreeMap")?;
             Ok((
                 key.clone(),
-                FieldSlot {
-                    value: Some(value.clone_owned()?),
-                    type_annotation: slot.type_annotation.clone(),
-                    references: 0,
-                },
+                FieldSlot::new(slot.type_annotation.clone(), value.clone_owned()?),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, String>>()?;

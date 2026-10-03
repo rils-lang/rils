@@ -29,13 +29,3 @@ pub fn constrain_assignment(
     let payload = NativeRecordCodec::new().into_native(value, declaration.layout_handle())?;
     DynamicObject::new(declaration, payload).map(Value::Dynamic)
 }
-
-impl Value {
-    pub fn constrain_assignment(
-        self,
-        expected: &Type,
-        previous: Option<&Value>,
-    ) -> Result<Value, String> {
-        constrain_assignment(self, expected, previous.and_then(native_declaration))
-    }
-}

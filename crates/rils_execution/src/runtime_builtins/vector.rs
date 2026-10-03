@@ -121,11 +121,7 @@ pub(super) fn push(
     let mut native = Receiver::new(&sequence);
     call(
         &mut native.native,
-        FieldSlot {
-            value: Some(value.clone()),
-            type_annotation: element_type.clone(),
-            references: 0,
-        },
+        FieldSlot::new(element_type.clone(), value.clone()),
     );
     *sequence.element_type.borrow_mut() = Some(element_type);
     Ok(Value::Unit)
@@ -145,11 +141,9 @@ pub(super) fn push_owned(mut arguments: Vec<Value>) -> Result<Value, String> {
     let actual = Type::of_value(&value).unwrap_or(Type::Unknown);
     let element_type = merge_types(&current, &actual)
         .ok_or_else(|| format!("Vec element type is `{current}`, found `{actual}`"))?;
-    Receiver::new(&sequence).native.push(FieldSlot {
-        value: Some(value),
-        type_annotation: element_type.clone(),
-        references: 0,
-    });
+    Receiver::new(&sequence)
+        .native
+        .push(FieldSlot::new(element_type.clone(), value));
     *sequence.element_type.borrow_mut() = Some(element_type);
     Ok(Value::Unit)
 }
@@ -262,11 +256,7 @@ pub(super) fn insert(
     call(
         &mut Receiver::new(&sequence).native,
         index,
-        FieldSlot {
-            value: Some(arguments[2].clone()),
-            type_annotation: element_type.clone(),
-            references: 0,
-        },
+        FieldSlot::new(element_type.clone(), arguments[2].clone()),
     );
     *sequence.element_type.borrow_mut() = Some(element_type);
     Ok(Value::Unit)
@@ -286,14 +276,9 @@ pub(super) fn insert_owned(mut arguments: Vec<Value>) -> Result<Value, String> {
     let actual = Type::of_value(&value).unwrap_or(Type::Unknown);
     let element_type = merge_types(&expected, &actual)
         .ok_or_else(|| format!("Vec element type is `{expected}`, found `{actual}`"))?;
-    Receiver::new(&sequence).native.insert(
-        index,
-        FieldSlot {
-            value: Some(value),
-            type_annotation: element_type.clone(),
-            references: 0,
-        },
-    );
+    Receiver::new(&sequence)
+        .native
+        .insert(index, FieldSlot::new(element_type.clone(), value));
     *sequence.element_type.borrow_mut() = Some(element_type);
     Ok(Value::Unit)
 }

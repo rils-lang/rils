@@ -39,6 +39,8 @@ pub mod owned_sum;
 #[path = "value/record.rs"]
 mod record;
 pub use record::StructFields;
+mod slot;
+pub use slot::FieldSlot;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
 pub mod native_ops;
@@ -203,13 +205,6 @@ pub struct StructInstance {
     pub type_definition: Rc<StructType>,
     pub fields: RefCell<StructFields>,
     pub type_arguments: Vec<Type>,
-}
-
-#[derive(Clone)]
-pub struct FieldSlot {
-    pub value: Option<Value>,
-    pub type_annotation: Type,
-    pub references: usize,
 }
 
 #[derive(Clone)]
@@ -793,11 +788,7 @@ impl Value {
                     })?;
                     fields.insert(
                         name.clone(),
-                        FieldSlot {
-                            value: Some(value.clone_owned()?),
-                            type_annotation: field.type_annotation.clone(),
-                            references: 0,
-                        },
+                        FieldSlot::new(field.type_annotation.clone(), value.clone_owned()?),
                     );
                 }
                 Self::Struct(Rc::new(StructInstance {
@@ -1091,11 +1082,10 @@ fn clone_sequence(sequence: &IndexedStorage) -> Result<IndexedStorage, String> {
                 .value
                 .as_ref()
                 .ok_or_else(|| "cannot clone a partially moved collection".to_string())?;
-            Ok(FieldSlot {
-                value: Some(value.clone_owned()?),
-                type_annotation: slot.type_annotation.clone(),
-                references: 0,
-            })
+            Ok(FieldSlot::new(
+                slot.type_annotation.clone(),
+                value.clone_owned()?,
+            ))
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(IndexedStorage {

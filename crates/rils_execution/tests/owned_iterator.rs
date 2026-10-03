@@ -11,11 +11,7 @@ fn owned_indexed_iterator_moves_items_only_when_advanced() {
         elements: RefCell::new(
             [2, 3, 5]
                 .into_iter()
-                .map(|number| FieldSlot {
-                    value: Some(Value::from_i32(number)),
-                    type_annotation: Type::I32,
-                    references: 0,
-                })
+                .map(|number| FieldSlot::new(Type::I32, Value::from_i32(number)))
                 .collect(),
         ),
         element_type: RefCell::new(Some(Type::I32)),

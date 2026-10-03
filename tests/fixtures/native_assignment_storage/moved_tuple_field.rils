@@ -1,0 +1,7 @@
+struct Item { value: i32 }
+let initial: Option<Item> = Some(Item { value: 1 });
+let mut pair = (initial, 0);
+let previous = pair.0;
+pair.0 = None;
+pair.0 = Some(Item { value: 37 });
+pair.0

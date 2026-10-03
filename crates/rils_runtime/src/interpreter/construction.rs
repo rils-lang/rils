@@ -96,14 +96,7 @@ impl Interpreter {
                 .into_iter()
                 .map(|(name, value)| {
                     let type_annotation = Type::of_value(&value).unwrap_or(Type::Unknown);
-                    (
-                        name,
-                        FieldSlot {
-                            value: Some(value),
-                            type_annotation,
-                            references: 0,
-                        },
-                    )
+                    (name, FieldSlot::new(type_annotation, value))
                 })
                 .collect();
             let fields = StructFields::from_map(definition.clone(), slots)

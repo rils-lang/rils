@@ -81,3 +81,44 @@ fn replacement_preserves_the_producers_nominal_declaration() {
         }
     }
 }
+
+#[test]
+fn moved_fields_reuse_native_declarations_without_cloning_payloads() {
+    for (source, expected) in [
+        (
+            include_str!("fixtures/native_assignment_storage/moved_field_none.rils"),
+            "None",
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/moved_field_result.rils"),
+            "Err(37)",
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/moved_nested_field.rils"),
+            "Some(Item { value: 37 })",
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/moved_tuple_field.rils"),
+            "Some(Item { value: 37 })",
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/moved_field_reference.rils"),
+            "Some(Item { value: 37 })",
+        ),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert!(
+                matches!(&value, Value::Dynamic(_)),
+                "{source}: expected native sum, found {value:?}"
+            );
+            assert_native_sum(&value);
+            assert_eq!(value.to_string(), expected, "{source}");
+        }
+    }
+}

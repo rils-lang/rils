@@ -29,14 +29,15 @@ pub(super) fn sequence_value(
     }
     let elements = values
         .into_iter()
-        .map(|value| FieldSlot {
-            type_annotation: if array {
-                element_type.clone()
-            } else {
-                Type::of_value(&value).unwrap_or(Type::Unknown)
-            },
-            value: Some(value),
-            references: 0,
+        .map(|value| {
+            FieldSlot::new(
+                if array {
+                    element_type.clone()
+                } else {
+                    Type::of_value(&value).unwrap_or(Type::Unknown)
+                },
+                value,
+            )
         })
         .collect();
     let sequence = Rc::new(IndexedStorage {

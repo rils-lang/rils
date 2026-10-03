@@ -407,35 +407,32 @@ fn io_error(
     let fields = HashMap::from([
         (
             "kind".into(),
-            FieldSlot {
-                value: Some(Value::Enum(Rc::new(EnumInstance {
+            FieldSlot::new(
+                Type::named("std::io::ErrorKind"),
+                Value::Enum(Rc::new(EnumInstance {
                     type_definition: kind_definition.clone(),
                     variant: kind.into(),
                     payload: EnumPayload::Unit,
                     type_arguments: Vec::new(),
-                }))),
-                type_annotation: Type::named("std::io::ErrorKind"),
-                references: 0,
-            },
+                })),
+            ),
         ),
         (
             "message".into(),
-            FieldSlot {
-                value: Some(crate::value::native_string(source.to_string())),
-                type_annotation: Type::String,
-                references: 0,
-            },
+            FieldSlot::new(
+                Type::String,
+                crate::value::native_string(source.to_string()),
+            ),
         ),
         (
             "path".into(),
-            FieldSlot {
-                value: Some(Value::Option {
+            FieldSlot::new(
+                Type::Option(Box::new(Type::String)),
+                Value::Option {
                     value: path.map(|path| Rc::new(crate::value::native_string(path))),
                     element_type: Some(Type::String),
-                }),
-                type_annotation: Type::Option(Box::new(Type::String)),
-                references: 0,
-            },
+                },
+            ),
         ),
     ]);
     Value::Struct(Rc::new(StructInstance {
@@ -454,11 +451,7 @@ fn string_vec(values: Vec<String>) -> Value {
         elements: RefCell::new(
             values
                 .into_iter()
-                .map(|value| FieldSlot {
-                    value: Some(crate::value::native_string(value)),
-                    type_annotation: Type::String,
-                    references: 0,
-                })
+                .map(|value| FieldSlot::new(Type::String, crate::value::native_string(value)))
                 .collect(),
         ),
         element_type: RefCell::new(Some(Type::String)),

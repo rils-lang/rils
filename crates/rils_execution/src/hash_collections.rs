@@ -44,14 +44,10 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
                 Type::of_value(&value).unwrap_or(Type::Unknown),
                 "HashMap value",
             )?;
-            let previous = map.entries.borrow_mut().insert(
-                key,
-                FieldSlot {
-                    value: Some(value),
-                    type_annotation: value_type.clone(),
-                    references: 0,
-                },
-            );
+            let previous = map
+                .entries
+                .borrow_mut()
+                .insert(key, FieldSlot::new(value_type.clone(), value));
             *map.key_type.borrow_mut() = key_type;
             *map.value_type.borrow_mut() = value_type.clone();
             option(previous.and_then(|slot| slot.value), value_type)
@@ -287,11 +283,7 @@ fn tuple(values: Vec<Value>) -> Value {
         elements: RefCell::new(
             values
                 .into_iter()
-                .map(|value| FieldSlot {
-                    type_annotation: Type::of_value(&value).unwrap_or(Type::Unknown),
-                    value: Some(value),
-                    references: 0,
-                })
+                .map(|value| FieldSlot::new(Type::of_value(&value).unwrap_or(Type::Unknown), value))
                 .collect(),
         ),
         element_type: RefCell::new(None),

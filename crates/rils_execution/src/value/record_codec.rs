@@ -589,11 +589,7 @@ impl NativeRecordCodec {
                     let item = self.decode(value.take_field(index)?)?;
                     slots.insert(
                         field.name.clone(),
-                        FieldSlot {
-                            value: Some(item),
-                            type_annotation: field.type_annotation.substitute(&substitutions),
-                            references: 0,
-                        },
+                        FieldSlot::new(field.type_annotation.substitute(&substitutions), item),
                     );
                 }
                 let fields = StructFields::from_map(definition.clone(), slots)?;
@@ -709,11 +705,7 @@ impl NativeRecordCodec {
             .enumerate()
             .map(|(index, ty)| {
                 let item = self.decode(value.take_field(index)?)?;
-                Ok(FieldSlot {
-                    value: Some(item),
-                    type_annotation: ty.clone(),
-                    references: 0,
-                })
+                Ok(FieldSlot::new(ty.clone(), item))
             })
             .collect()
     }

@@ -95,11 +95,7 @@ fn indexed(values: Vec<(Value, Type)>, element_type: Option<Type>) -> Rc<Indexed
         elements: RefCell::new(
             values
                 .into_iter()
-                .map(|(value, type_annotation)| FieldSlot {
-                    value: Some(value),
-                    type_annotation,
-                    references: 0,
-                })
+                .map(|(value, type_annotation)| FieldSlot::new(type_annotation, value))
                 .collect(),
         ),
         element_type: RefCell::new(element_type),
@@ -198,11 +194,7 @@ fn instance(definition: Rc<StructType>, values: Vec<Value>) -> Value {
         .map(|(field, value)| {
             (
                 field.name.clone(),
-                FieldSlot {
-                    value: Some(value),
-                    type_annotation: field.type_annotation.clone(),
-                    references: 0,
-                },
+                FieldSlot::new(field.type_annotation.clone(), value),
             )
         })
         .collect();
@@ -346,11 +338,7 @@ fn generic_struct_fields_use_concrete_native_layouts() {
     let make = || {
         let slots = std::collections::HashMap::from([(
             "item".into(),
-            FieldSlot {
-                value: Some(Value::from_string("generic")),
-                type_annotation: Type::String,
-                references: 0,
-            },
+            FieldSlot::new(Type::String, Value::from_string("generic")),
         )]);
         Value::Struct(Rc::new(StructInstance {
             type_definition: holder.clone(),
@@ -579,11 +567,7 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
                 borrowed: Cell::new(0),
                 entries: RefCell::new(HashMap::from([(
                     HashKey::from_value(&Value::from_string("key")).unwrap(),
-                    FieldSlot {
-                        value: Some(some),
-                        type_annotation: option_type.clone(),
-                        references: 0,
-                    },
+                    FieldSlot::new(option_type.clone(), some),
                 )])),
                 key_type: RefCell::new(Type::String),
                 value_type: RefCell::new(option_type),
@@ -598,11 +582,7 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
                 borrowed: Cell::new(0),
                 entries: RefCell::new(BTreeMap::from([(
                     HashKey::from_ordered_value(&Value::from_i32(4)).unwrap(),
-                    FieldSlot {
-                        value: Some(Value::Bool(true)),
-                        type_annotation: Type::Bool,
-                        references: 0,
-                    },
+                    FieldSlot::new(Type::Bool, Value::Bool(true)),
                 )])),
                 key_type: RefCell::new(Type::I32),
                 value_type: RefCell::new(Type::Bool),

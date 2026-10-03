@@ -1,0 +1,8 @@
+struct Item { value: i32 }
+struct Holder { payload: Option<Item> }
+struct Outer { inner: Holder }
+let mut outer = Outer { inner: Holder { payload: Some(Item { value: 1 }) } };
+let previous = outer.inner.payload;
+outer.inner.payload = None;
+outer.inner.payload = Some(Item { value: 37 });
+outer.inner.payload

@@ -25,11 +25,7 @@ fn vec_from_typed_array_constructs_native_storage() {
             elements: RefCell::new(
                 items
                     .into_iter()
-                    .map(|item| FieldSlot {
-                        value: Some(Value::from_i32(item)),
-                        type_annotation: Type::I32,
-                        references: 0,
-                    })
+                    .map(|item| FieldSlot::new(Type::I32, Value::from_i32(item)))
                     .collect(),
             ),
             element_type: RefCell::new(Some(Type::I32)),
@@ -59,16 +55,12 @@ fn vec_from_typed_array_constructs_native_storage() {
 fn native_vec_receiver_preserves_referenced_slots_and_rejects_reordering() {
     let sequence = Rc::new(IndexedStorage {
         elements: RefCell::new(vec![
-            FieldSlot {
-                value: Some(Value::from_i32(1)),
-                type_annotation: Type::I32,
-                references: 1,
+            {
+                let mut slot = FieldSlot::new(Type::I32, Value::from_i32(1));
+                slot.references = 1;
+                slot
             },
-            FieldSlot {
-                value: Some(Value::from_i32(2)),
-                type_annotation: Type::I32,
-                references: 0,
-            },
+            FieldSlot::new(Type::I32, Value::from_i32(2)),
         ]),
         element_type: RefCell::new(Some(Type::I32)),
         active_iterators: std::cell::Cell::new(0),

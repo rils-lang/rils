@@ -1,0 +1,6 @@
+struct Item { value: i32 }
+struct Holder { payload: Result<Item, string> }
+let mut holder = Holder { payload: Ok(Item { value: 1 }) };
+let previous = holder.payload;
+holder.payload = Err("37");
+holder.payload
