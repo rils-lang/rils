@@ -142,11 +142,13 @@ impl ReferenceValue {
                 };
                 match value {
                     Value::Reference(reference) => return reference.native_path(),
-                    Value::Dynamic(object) if !object.is_inline() => NativePath::new(
-                        object.into_compact(),
-                        vec![],
-                        Rc::new(NativeRecordCodec::new()),
-                    )?,
+                    Value::Dynamic(object) if !object.is_inline() => {
+                        let codec = object
+                            .descriptor()
+                            .metadata::<NativeRecordCodec>()
+                            .unwrap_or_default();
+                        NativePath::new(object.into_compact(), vec![], codec)?
+                    }
                     _ => return Ok(None),
                 }
             }

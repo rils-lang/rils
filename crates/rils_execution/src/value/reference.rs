@@ -7,6 +7,8 @@ use crate::environment::{AssignError, EnvironmentRef, StorageRef};
 
 use super::record_codec::NativeRecordCodec;
 
+#[path = "reference/host_view.rs"]
+mod host_view;
 #[path = "reference/native_path.rs"]
 mod native_path;
 use super::{
@@ -263,11 +265,27 @@ impl ReferenceValue {
         structs: Vec<Rc<StructType>>,
         enums: Vec<Rc<EnumType>>,
     ) -> Result<Self, String> {
-        let path = NativePath::new(
-            object.into_compact(),
+        let codec = object
+            .descriptor()
+            .metadata::<NativeRecordCodec>()
+            .unwrap_or_else(|| Rc::new(NativeRecordCodec::with_definitions(&structs, &enums)));
+        Self::new_native_path(
+            object,
             vec![rils_value::DynamicPathStep::Field(field)],
-            Rc::new(NativeRecordCodec::with_definitions(&structs, &enums)),
-        )?;
+            mutable,
+            guard,
+            codec,
+        )
+    }
+
+    pub(super) fn new_native_path(
+        object: DynamicObject,
+        steps: Vec<rils_value::DynamicPathStep>,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+        codec: Rc<NativeRecordCodec>,
+    ) -> Result<Self, String> {
+        let path = NativePath::new(object.into_compact(), steps, codec)?;
         Ok(Self {
             mutable,
             target: ReferenceTarget::DynamicField(Box::new(path)),

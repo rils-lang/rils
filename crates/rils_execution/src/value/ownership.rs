@@ -299,6 +299,10 @@ impl Value {
 
     pub fn is_partially_moved(&self) -> bool {
         match self {
+            Self::Dynamic(object) => object
+                .with(|value| value.view().is_partially_moved())
+                .and_then(|result| result)
+                .unwrap_or(true),
             Self::Native(object) => {
                 object.is_partially_moved() || object.any_child(Value::is_partially_moved)
             }
@@ -443,10 +447,16 @@ impl Value {
             }
             Self::Native(object) => Self::Native(native_ops::clone_owned(object)?),
             Self::Dynamic(object) => {
+                if self.is_partially_moved() {
+                    return Err("cannot clone a partially moved native value".into());
+                }
                 let payload = object.with(|payload| {
                     crate::value::runtime_layouts::clone_borrowed_element(payload)
                 })??;
-                Self::Dynamic(DynamicObject::new(object.descriptor_handle(), payload)?)
+                Self::Dynamic(super::native_instance::with_descriptor(
+                    object.descriptor_handle(),
+                    payload,
+                )?)
             }
             value => value.clone(),
         })

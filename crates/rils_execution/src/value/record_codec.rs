@@ -20,6 +20,7 @@ use super::{
 pub struct NativeRecordCodec {
     structs: HashMap<String, Rc<StructType>>,
     enums: HashMap<String, Rc<EnumType>>,
+    require_owned: bool,
 }
 
 impl NativeRecordCodec {
@@ -37,7 +38,13 @@ impl NativeRecordCodec {
                 .iter()
                 .map(|definition| (definition.name.clone(), definition.clone()))
                 .collect(),
+            require_owned: false,
         }
+    }
+
+    pub(crate) fn with_owned_conversion(mut self) -> Self {
+        self.require_owned = true;
+        self
     }
 
     pub(crate) fn nominal_definition(&self, ty: &Type) -> Option<Value> {
@@ -118,6 +125,9 @@ pub fn restore_owned_nominal(
 
 impl NativeRecordCodec {
     fn encode(&mut self, value: Value, layout: Rc<DynamicLayout>) -> Result<DynamicValue, String> {
+        if self.require_owned && value.is_partially_moved() {
+            return Err("cannot move a partially moved value into native storage".into());
+        }
         let ty = layout.rils_type().clone();
         if let Value::Dynamic(object) = &value
             && matches!(ty, Type::Option(_) | Type::Result(_, _))
@@ -154,6 +164,7 @@ impl NativeRecordCodec {
                 // native sequence's item independently owned in that case.
                 let text = match object.into_rust::<NativeString>() {
                     Ok(text) => text,
+                    Err(failure) if self.require_owned => return Err(failure.1),
                     Err(failure) => failure.0.with::<NativeString, _>(Clone::clone)?,
                 };
                 DynamicValue::from_rust(layout, text)
@@ -161,6 +172,12 @@ impl NativeRecordCodec {
             (ty, Value::Dynamic(object)) if object.descriptor().layout().rils_type() == &ty => {
                 let value = match object.into_value() {
                     Ok(value) => value,
+                    Err(failure) if self.require_owned => {
+                        if !failure.0.descriptor().layout().is_copy() {
+                            return Err(failure.1);
+                        }
+                        failure.0.with(|value| value.copy_owned())??
+                    }
                     Err(failure) => {
                         let cloned = Value::Dynamic(failure.0).clone_owned()?;
                         let Value::Dynamic(cloned) = cloned else {

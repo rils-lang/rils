@@ -66,6 +66,26 @@ impl<'a> TypedStorageContext<'a> {
         crate::runtime_builtins::resolve_layout(ty, self.structs, self.enums, self.hosts)
     }
 
+    /// Consume a user struct/enum into native instance storage. Backends can
+    /// switch their constructor and place paths together using this boundary.
+    pub fn compose_nominal(&self, value: Value, expected: &Type) -> Result<Value, String> {
+        let expected = declarations::storage_type(expected);
+        let expected = self.concrete_expected(&value, &expected)?;
+        let mut codec =
+            NativeRecordCodec::with_definitions(self.structs, self.enums).with_owned_conversion();
+        if codec.nominal_definition(&expected).is_none() {
+            return Err(format!("no user instance declaration for {expected}"));
+        }
+        if !expected.accepts(&value) {
+            return Err(format!(
+                "declared {expected} does not accept {}",
+                value.type_name()
+            ));
+        }
+        let payload = codec.into_native(value, self.layout(&expected)?)?;
+        super::native_instance::from_native(payload, Rc::new(codec))
+    }
+
     pub fn apply_declared(&self, value: Value, expected: &Type) -> Result<Value, String> {
         let expected = declarations::storage_type(expected);
         let expected = self.concrete_expected(&value, &expected)?;
@@ -156,11 +176,16 @@ impl<'a> TypedStorageContext<'a> {
         };
         let payload = NativeRecordCodec::with_definitions(self.structs, self.enums)
             .into_native(value, layout.clone())?;
-        let codec = NativeRecordCodec::with_definitions(self.structs, self.enums);
+        let codec = Rc::new(NativeRecordCodec::with_definitions(
+            self.structs,
+            self.enums,
+        ));
+        let decode_codec = codec.clone();
         let descriptor = Rc::new(
             DynamicType::new(layout)
+                .register_metadata(codec)
                 .register_owned_operation(super::owned_sum::DECODE_OPERATION, move |value| {
-                    codec.from_native(value)
+                    decode_codec.from_native(value)
                 }),
         );
         DynamicObject::new(descriptor, payload).map(Value::Dynamic)

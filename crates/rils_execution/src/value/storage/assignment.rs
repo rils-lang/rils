@@ -25,7 +25,17 @@ impl NativeDeclaration {
     fn needs_conversion(&self, value: &Value) -> bool {
         match (self.0.as_ref(), value) {
             (Declaration::Dynamic(declaration), Value::Dynamic(value)) => {
-                declaration.layout().rils_type() != value.descriptor().layout().rils_type()
+                !declaration
+                    .layout()
+                    .compatible_with(value.descriptor().layout())
+                    || (declaration
+                        .metadata::<NativeRecordCodec>()
+                        .is_some_and(|codec| {
+                            codec
+                                .nominal_definition(declaration.layout().rils_type())
+                                .is_some()
+                        })
+                        && value.descriptor().metadata::<NativeRecordCodec>().is_none())
             }
             (Declaration::Indexed { ty, children }, Value::Tuple(value) | Value::Array(value)) => {
                 if let Type::Array { element, .. } = ty
@@ -61,11 +71,18 @@ impl NativeDeclaration {
         }
         match self.0.as_ref() {
             Declaration::Dynamic(declaration)
-                if matches!(expected, Type::Option(_) | Type::Result(_, _)) =>
+                if matches!(expected, Type::Option(_) | Type::Result(_, _))
+                    || declaration
+                        .metadata::<NativeRecordCodec>()
+                        .is_some_and(|codec| codec.nominal_definition(expected).is_some()) =>
             {
-                let payload =
-                    NativeRecordCodec::new().into_native(value, declaration.layout_handle())?;
-                DynamicObject::new(declaration.clone(), payload).map(Value::Dynamic)
+                let mut codec = declaration
+                    .metadata::<NativeRecordCodec>()
+                    .map(|codec| codec.as_ref().clone())
+                    .unwrap_or_default();
+                let payload = codec.into_native(value, declaration.layout_handle())?;
+                super::super::native_instance::with_descriptor(declaration.clone(), payload)
+                    .map(Value::Dynamic)
             }
             Declaration::Indexed { children, .. } => {
                 indexed::map_owned(value, expected, |value, ty, index| {

@@ -15,6 +15,15 @@ pub trait RilsHostType: Sized + 'static {
 
     fn from_native(value: Self::Native) -> Self;
     fn as_native_ref(value: &Self::Native) -> &Self;
+
+    /// Borrow a composed leaf. A type may use a different native
+    /// representation for an inline field than for its standalone wrapper.
+    fn with_composed_ref<R>(
+        view: DynamicValueRef<'_>,
+        callback: impl FnOnce(&Self) -> R,
+    ) -> Result<R, String> {
+        view.with_rust::<Self::Native, _>(|value| callback(Self::as_native_ref(value)))
+    }
 }
 
 macro_rules! direct_host_type {
@@ -37,6 +46,14 @@ macro_rules! wrapped_host_type {
 
             fn from_native(value: Self::Native) -> Self { value.0 }
             fn as_native_ref(value: &Self::Native) -> &Self { &value.0 }
+
+            fn with_composed_ref<R>(view: DynamicValueRef<'_>, callback: impl FnOnce(&Self) -> R) -> Result<R, String> {
+                if view.layout()?.is_rust_type::<Self>() {
+                    view.with_rust(callback)
+                } else {
+                    view.with_rust::<Self::Native, _>(|value| callback(&value.0))
+                }
+            }
         }
     )*};
 }
@@ -77,6 +94,35 @@ impl RilsValue {
     /// Borrow one field of a script-defined struct by declaration index.
     /// The returned handle keeps the original record alive.
     pub fn field(&self, index: usize) -> Result<Self, String> {
+        if let Value::Dynamic(object) = &self.value
+            && matches!(
+                crate::value::native_instance::definition(object),
+                Some(Value::StructType(_))
+            )
+        {
+            let name = self
+                .field_name(index)
+                .ok_or_else(|| format!("record field index {index} is out of bounds"))?;
+            let reference =
+                crate::value::native_instance::NativeInstancePlace::new(object.clone())?
+                    .field(&name)?
+                    .borrow(false, None)?;
+            return Ok(Self::new(Value::Reference(Rc::new(reference))));
+        }
+        if let Value::Reference(reference) = &self.value
+            && let Some(Value::StructType(definition)) = reference.native_type_definition()?
+        {
+            let name = definition
+                .fields
+                .get(index)
+                .ok_or_else(|| format!("record field index {index} is out of bounds"))?
+                .name
+                .as_str();
+            let projected = reference
+                .project_native_field(name)?
+                .ok_or("result has no native record field")?;
+            return Ok(Self::new(Value::Reference(Rc::new(projected))));
+        }
         let (instance, guard) = match &self.value {
             Value::Struct(instance) => (instance.clone(), None),
             Value::Reference(reference) => match reference.read()? {
@@ -91,27 +137,33 @@ impl RilsValue {
     }
 
     pub fn struct_name(&self) -> Option<String> {
-        self.struct_instance()
-            .map(|instance| instance.type_definition.name.clone())
+        self.struct_definition()
+            .map(|definition| definition.name.clone())
     }
 
     pub fn field_name(&self, index: usize) -> Option<String> {
-        self.struct_instance().and_then(|instance| {
-            instance
-                .type_definition
-                .fields
-                .get(index)
-                .map(|field| field.name.clone())
-        })
+        self.struct_definition()
+            .and_then(|definition| definition.fields.get(index).map(|field| field.name.clone()))
     }
 
-    fn struct_instance(&self) -> Option<Rc<crate::value::StructInstance>> {
+    fn struct_definition(&self) -> Option<Rc<crate::value::StructType>> {
         match &self.value {
-            Value::Struct(instance) => Some(instance.clone()),
-            Value::Reference(reference) => match reference.read().ok()? {
-                Value::Struct(instance) => Some(instance),
+            Value::Struct(instance) => Some(instance.type_definition.clone()),
+            Value::Dynamic(object) => match crate::value::native_instance::definition(object)? {
+                Value::StructType(definition) => Some(definition),
                 _ => None,
             },
+            Value::Reference(reference) => {
+                if let Some(Value::StructType(definition)) =
+                    reference.native_type_definition().ok()?
+                {
+                    return Some(definition);
+                }
+                match reference.read().ok()? {
+                    Value::Struct(instance) => Some(instance.type_definition.clone()),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -120,7 +172,7 @@ impl RilsValue {
         &self,
         callback: impl FnOnce(&T) -> R,
     ) -> Result<R, String> {
-        with_rust_value::<T::Native, _>(&self.value, |value| callback(T::as_native_ref(value)))
+        with_host_value::<T, _>(&self.value, callback)
     }
 
     /// Borrow a layout-aware view of a native composite without materializing `Value` children.
@@ -147,6 +199,12 @@ impl RilsValue {
                     })
             }
             Value::Dynamic(object) => {
+                if object.descriptor().layout().is_rust_type::<T>() {
+                    return object.into_rust::<T>().map_err(|error| {
+                        let (object, message) = *error;
+                        Box::new((Self::new(Value::Dynamic(object)), message))
+                    });
+                }
                 object
                     .into_rust::<T::Native>()
                     .map(T::from_native)
@@ -227,6 +285,19 @@ pub(crate) fn with_rust_value<T: 'static, R>(
         Value::F64(value) => borrow_legacy(value, callback),
         Value::Char(value) => borrow_legacy(value, callback),
         _ => Err(format!("{} has no Rust borrow view", value.type_name())),
+    }
+}
+
+pub(crate) fn with_host_value<T: RilsHostType, R>(
+    value: &Value,
+    callback: impl FnOnce(&T) -> R,
+) -> Result<R, String> {
+    match value {
+        Value::Dynamic(object) => {
+            object.with(|value| T::with_composed_ref(value.view(), callback))?
+        }
+        Value::Reference(reference) => reference.with_host_ref(callback),
+        _ => with_rust_value::<T::Native, _>(value, |value| callback(T::as_native_ref(value))),
     }
 }
 

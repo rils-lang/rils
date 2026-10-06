@@ -1,0 +1,8 @@
+struct Point { x: i32, y: i32 }
+struct Owned { text: string, number: i32 }
+struct Outer { inner: Owned }
+struct Holder<T> { item: T }
+enum Choice<T> { Empty, Tuple(T), Record { item: T } }
+struct Wrapped { item: Option<Choice<Owned>> }
+struct Listed { items: Vec<Owned> }
+struct HostHolder { first: Host, second: Host }
