@@ -84,6 +84,7 @@ pub struct Interpreter {
     frontend_semantics_verified: bool,
     frontend_verified_trait_impls: HashSet<rils_frontend::ImplId>,
     frontend_impl_ids: HashMap<Span, rils_frontend::ImplId>,
+    pending_value_traits: HashSet<(String, String)>,
 }
 
 impl Default for Interpreter {
@@ -110,6 +111,7 @@ impl Interpreter {
             frontend_semantics_verified: false,
             frontend_verified_trait_impls: HashSet::new(),
             frontend_impl_ids: HashMap::new(),
+            pending_value_traits: HashSet::new(),
         }
     }
 

@@ -22,13 +22,16 @@ count = count + 1;
 
 ### 所有权、移动与局部引用
 
-`()`、`bool`、`i32`、`f64` 以及只包含 Copy 值的 Option、Result、struct 和 enum 是
-Copy 值。其他值默认拥有唯一所有者，赋值、传参和返回会移动所有权：
+`()`、`bool`、整数、浮点数、函数和局部引用具备 Copy 能力；Option/Result 等标准库容器
+按其声明的 trait 约束判断。用户 struct/enum 只有显式 `impl Copy` 或 `#[derive(Copy)]`
+且实现 `Clone` 后才可复制；还需全部字段（enum 的所有变体）都为 Copy。
+仅含 Copy 字段、空类型或当前为 unit 变体不会自动获得 Copy。
+其他值默认拥有唯一所有者，赋值、传参和返回会移动所有权：
 
 ```rust
 let text = "hello";
 let moved = text;
-println!("{}", text); // 只借用 `text`，不会 move
+println!("{}", &moved); // 只借用 `moved`，不会 move
 ```
 
 需要独立副本时必须显式克隆。`clone` 接受引用，因此不会移动原值：

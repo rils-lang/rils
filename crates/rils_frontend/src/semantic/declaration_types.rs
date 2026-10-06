@@ -33,6 +33,7 @@ struct Alias {
 /// Generic variables remain variables; this table never invents a layout.
 #[derive(Clone, Debug, Default)]
 pub struct DeclarationTypeResolver {
+    copy_types: crate::copy_types::CopyTypes,
     types: HashSet<String>,
     exposed_types: HashMap<String, String>,
     aliases: HashMap<String, Alias>,
@@ -42,6 +43,9 @@ pub struct DeclarationTypeResolver {
 }
 
 impl DeclarationTypeResolver {
+    pub fn copy_types(&self) -> &crate::copy_types::CopyTypes {
+        &self.copy_types
+    }
     /// Host nominal types use the same canonical identities as source types.
     pub fn extend_host_contract(&mut self, host: &rils_host::HostContract) {
         self.types
@@ -89,6 +93,7 @@ impl DeclarationTypeResolver {
         }
         crate::exports::resolve_reexports(&mut exports, programs.iter().copied());
         result.extend_exports(&exports);
+        result.copy_types = crate::copy_types::collect(&programs, &result);
         result
     }
 

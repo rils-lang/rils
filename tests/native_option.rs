@@ -559,7 +559,7 @@ fn nominal_option_defaults_construct_native_none_directly() {
         ("VM", compiled.execute_value().unwrap()),
         ("loaded VM", loaded.execute_value().unwrap()),
     ] {
-        assert_dynamic_option(value, "Option<Item>", true, "None", "None", stage);
+        assert_dynamic_option(value, "Option<Item>", false, "None", "None", stage);
     }
 }
 

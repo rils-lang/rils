@@ -87,7 +87,7 @@ fn derives_debug_for_structs_and_enums() {
         #[derive(Debug)]
         enum Shape { Empty, Point(Point) }
         let point = Point { x: 1, y: 2 };
-        println!("point = {:#?}", point);
+        println!("point = {:#?}", &point);
         point.x
     "#;
     assert_eq!(eval_value(source).unwrap(), Value::from_i32(1));
@@ -1240,6 +1240,7 @@ fn inherent_methods_take_priority_over_trait_methods() {
 fn builtin_clone_trait_provides_clone_method_for_owned_values() {
     let value = eval_value(
         r#"
+            #[derive(Clone)]
             struct Label { text: string }
 
             let text = "Rils";
@@ -1447,6 +1448,7 @@ fn copy_structs_duplicate_their_storage() {
     assert_eq!(
         integer(
             r#"
+                #[derive(Clone, Copy)]
                 struct Counter { value: i32 }
                 let mut first = Counter { value: 1 };
                 let second = first;
@@ -2400,17 +2402,17 @@ fn generic_parameters_support_multiple_trait_bounds() {
         integer(
             r#"
                 trait Left {
-                    fn left(self) -> i32;
+                    fn left(&self) -> i32;
                 }
                 trait Right {
-                    fn right(self) -> i32;
+                    fn right(&self) -> i32;
                 }
                 struct Both { value: i32 }
                 impl Left for Both {
-                    fn left(self) -> i32 { self.value }
+                    fn left(&self) -> i32 { self.value }
                 }
                 impl Right for Both {
-                    fn right(self) -> i32 { self.value }
+                    fn right(&self) -> i32 { self.value }
                 }
                 fn sum<T: Left + Right>(value: T) -> i32 {
                     value.left() + value.right()
@@ -2479,6 +2481,7 @@ fn nominal_types_can_implement_builtin_clone_and_copy() {
     assert_eq!(
         integer(
             r#"
+                #[derive(Clone)]
                 struct Number { value: i32 }
                 impl Copy for Number {}
                 let number = Number { value: 21 };
@@ -2491,6 +2494,7 @@ fn nominal_types_can_implement_builtin_clone_and_copy() {
 
     let invalid = eval_value(
         r#"
+            #[derive(Clone)]
             struct Label { text: string }
             impl Copy for Label {}
         "#,

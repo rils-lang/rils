@@ -230,6 +230,10 @@ impl Environment {
         self.declarations.is_declared_type(name)
     }
 
+    pub fn declared_value_traits(&self, name: &str) -> std::collections::HashSet<String> {
+        self.declarations.declared_value_traits(name)
+    }
+
     pub fn inaccessible_type(&self, ty: &Type) -> Option<String> {
         self.declarations.inaccessible_type(ty, &self.module_path)
     }

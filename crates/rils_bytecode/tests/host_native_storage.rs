@@ -36,6 +36,61 @@ fn item() -> Value {
     )
 }
 
+#[test]
+fn enum_copy_checks_inactive_host_payloads_before_vm_execution() {
+    let source = include_str!("fixtures/copy/host_enum.rils");
+    let contract = contract();
+    let mut engine = Engine::new();
+    let handle = engine.register_native_type("host", "Item").unwrap();
+    let mut host = BytecodeHost::standard();
+    host.allow_capability("host");
+    host.register_host_type(handle.runtime_declaration())
+        .unwrap();
+    host.register_host_contract(&contract).unwrap();
+    host.register_function(
+        "host::item",
+        FunctionSignature::fixed(vec![], Type::named("host::Item")),
+        "host",
+        move |_| {
+            Ok(handle.value(OpaqueHostHandle {
+                object_id: 42,
+                generation: 3,
+                type_id: 7,
+            }))
+        },
+    )
+    .unwrap();
+    let module = compile_with_host(source, &contract).unwrap();
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    for module in [&module, &loaded] {
+        assert!(
+            module
+                .execute_value_with_host(&host)
+                .unwrap_err()
+                .message
+                .contains("non-Copy fields")
+        );
+    }
+    let mut portable = BytecodeHost::standard();
+    portable.allow_capability("host");
+    portable.register_host_contract(&contract).unwrap();
+    portable
+        .register_function(
+            "host::item",
+            FunctionSignature::fixed(vec![], Type::named("host::Item")),
+            "host",
+            |_| Ok(item()),
+        )
+        .unwrap();
+    assert_eq!(
+        loaded
+            .execute_value_with_host(&portable)
+            .unwrap()
+            .to_string(),
+        "Choice::Empty"
+    );
+}
+
 fn check_native(value: Value, name: &str, copy: bool) {
     assert!(
         matches!(value, Value::Dynamic(_)),
@@ -176,7 +231,7 @@ fn host_context_composes_storage_in_interpreter_vm_and_loaded_bytecode() {
                     .eval_value(source)
                     .unwrap_or_else(|error| panic!("interpreter {name} Copy={copy}: {error}")),
                 name,
-                copy,
+                copy && name != "nested_record",
             );
             let module = compile_with_host(source, &contract)
                 .unwrap_or_else(|error| panic!("compile {name}: {error}"));
@@ -185,7 +240,7 @@ fn host_context_composes_storage_in_interpreter_vm_and_loaded_bytecode() {
                     .execute_value_with_host(&host)
                     .unwrap_or_else(|error| panic!("VM {name} Copy={copy}: {error}")),
                 name,
-                copy,
+                copy && name != "nested_record",
             );
             let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
             check_native(
@@ -193,7 +248,7 @@ fn host_context_composes_storage_in_interpreter_vm_and_loaded_bytecode() {
                     .execute_value_with_host(&host)
                     .unwrap_or_else(|error| panic!("loaded VM {name} Copy={copy}: {error}")),
                 name,
-                copy,
+                copy && name != "nested_record",
             );
         }
     }

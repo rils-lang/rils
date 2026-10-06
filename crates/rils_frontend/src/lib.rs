@@ -1,5 +1,6 @@
 pub mod analysis;
 mod control_flow;
+pub mod copy_types;
 pub mod database;
 mod error;
 pub mod exports;

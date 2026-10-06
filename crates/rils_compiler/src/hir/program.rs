@@ -501,7 +501,22 @@ impl ProgramLowerer {
                 &mut unit.module_path.clone(),
                 unit.source,
                 &mut trait_implementations,
+                &self.declaration_types,
             );
+        }
+        for declaration in self
+            .host_contract
+            .types()
+            .filter(|declaration| declaration.enum_definition.is_some())
+        {
+            trait_implementations.push(HirTraitImplementation {
+                target: declaration.name.clone(),
+                trait_name: "Copy".into(),
+                source: units
+                    .first()
+                    .map_or(crate::SourceId::UNKNOWN, |unit| unit.source),
+                methods: HashMap::new(),
+            });
         }
         Ok(HirProgram {
             sources,

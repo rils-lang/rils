@@ -1,0 +1,5 @@
+#[derive(Clone)]
+struct Point { x: i32 }
+#[derive(Clone, Copy)]
+struct Outer { point: Point }
+42

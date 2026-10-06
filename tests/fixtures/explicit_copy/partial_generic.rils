@@ -1,0 +1,4 @@
+struct Tag<T> { value: i32 }
+impl Clone for Tag<i32> { fn clone(&self) -> Self { Self { value: self.value } } }
+impl Copy for Tag<i32> {}
+42

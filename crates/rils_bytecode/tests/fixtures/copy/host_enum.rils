@@ -1,0 +1,4 @@
+#[derive(Clone, Copy)]
+enum Choice { Empty, Item(host::Item) }
+let item = host::item();
+Choice::Empty

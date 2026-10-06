@@ -1,0 +1,5 @@
+#[derive(Clone, Copy)]
+struct Point { x: i32 }
+struct Text { value: string }
+enum Mixed { Empty, Text(string) }
+42

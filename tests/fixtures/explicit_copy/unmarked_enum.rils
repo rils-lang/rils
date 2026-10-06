@@ -1,0 +1,4 @@
+enum Signal { Idle, Number(i32) }
+let signal = Signal::Idle;
+let other = signal;
+match signal { Signal::Idle => 42, _ => 0 }

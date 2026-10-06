@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 struct Point { x: i32, y: i32 }
 struct Owned { text: string, number: i32 }
 struct Outer { inner: Owned }

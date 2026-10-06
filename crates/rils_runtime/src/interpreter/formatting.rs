@@ -79,12 +79,16 @@ impl Interpreter {
                 span,
             )
         })?;
-        let self_storage = Rc::new(RefCell::new(
-            crate::environment::StorageSlot::uninitialized(false),
-        ));
-        self_storage.borrow_mut().initialize(value.clone());
-        let self_reference =
-            Value::Reference(Rc::new(ReferenceValue::new_storage(self_storage, false)));
+        let self_reference = match value {
+            Value::Reference(reference) => Value::Reference(reference.clone()),
+            value => {
+                let storage = Rc::new(RefCell::new(
+                    crate::environment::StorageSlot::uninitialized(false),
+                ));
+                storage.borrow_mut().initialize(value.clone());
+                Value::Reference(Rc::new(ReferenceValue::new_storage(storage, false)))
+            }
+        };
         let formatter_value = crate::formatting::formatter_value(buffer)
             .map_err(|message| RuntimeError::new(message, span))?;
         let formatter_storage = Rc::new(RefCell::new(

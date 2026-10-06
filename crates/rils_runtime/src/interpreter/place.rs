@@ -299,7 +299,7 @@ impl Place {
         }
     }
 
-    fn projection_value(&self, span: Span) -> Result<Value, RuntimeError> {
+    pub(super) fn projection_value(&self, span: Span) -> Result<Value, RuntimeError> {
         match self {
             Self::Storage { slot, name } => {
                 let value = slot.borrow().read().map_err(|_| {

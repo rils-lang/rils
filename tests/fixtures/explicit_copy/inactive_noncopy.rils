@@ -1,0 +1,4 @@
+#[derive(Clone, Copy)]
+enum Signal { Idle, Text(string) }
+let signal = Signal::Idle;
+42

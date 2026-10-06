@@ -1,5 +1,7 @@
 use super::*;
 
+mod copy;
+
 impl BytecodeModule {
     pub(super) fn verify(&self) -> Result<(), BytecodeError> {
         let mut source_ids = HashSet::new();
@@ -108,7 +110,7 @@ impl BytecodeModule {
                     implementation.trait_name.as_str(),
                 ))
                 || (implementation.methods.is_empty()
-                    && !matches!(implementation.trait_name.as_str(), "Eq" | "Hash"))
+                    && !matches!(implementation.trait_name.as_str(), "Eq" | "Hash" | "Copy"))
                 || implementation.methods.iter().any(|(name, function)| {
                     name.is_empty()
                         || *function >= self.functions.len()
@@ -121,6 +123,7 @@ impl BytecodeModule {
                 ));
             }
         }
+        copy::verify(self)?;
         Ok(())
     }
 

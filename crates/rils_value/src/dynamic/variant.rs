@@ -38,6 +38,25 @@ impl DynamicLayout {
         Self::variant_with_names(ty, layouts, Some(names))
     }
 
+    /// Only a validated explicit declaration can make a user enum Copy.
+    pub fn named_variant_with_copy(
+        ty: Type,
+        alternatives: Vec<(String, Rc<Self>)>,
+        declared_copy: bool,
+    ) -> Result<Rc<Self>, String> {
+        let mut layout = Self::named_variant(ty, alternatives)?;
+        let descriptor = Rc::get_mut(&mut layout).expect("new variant layout has a single owner");
+        if declared_copy && !descriptor.copy {
+            return Err(format!(
+                "`{}` cannot implement Copy because it contains non-Copy fields",
+                descriptor.rils_type
+            ));
+        }
+        descriptor.copy &= declared_copy;
+        descriptor.bitwise_copy &= declared_copy;
+        Ok(layout)
+    }
+
     fn variant_with_names(
         ty: Type,
         alternatives: Vec<Rc<Self>>,

@@ -63,7 +63,7 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 `Vec::new()` 等零参数泛型集合构造需从类型标注或显式泛型参数确定类型，例如 `let values: Vec<i32> = Vec::new();`。
 数组、`Vec<T>`、Map 和 Set 还提供 `iter()` 借用遍历，遍历后可继续使用原集合。数组和 `Vec<T>` 的拥有型 `into_iter()` 按 `next()` 的调用逐项移出元素。
 `Iterator::next(&mut iterator)` 等显式 trait 路径调用在解释器和字节码 VM 中均可用。
-Struct 和 enum 支持 `#[derive(Clone)]`、`#[derive(Copy)]`、`#[derive(Eq, Hash)]`；struct 也支持 `#[derive(Default)]`。`Clone` 逐字段调用对应 trait 实现，`Copy` 要求字段均为 Copy。
+Struct 和 enum 支持 `#[derive(Clone)]`、`#[derive(Copy)]`、`#[derive(Eq, Hash)]`；struct 也支持 `#[derive(Default)]`。`Clone` 逐字段调用对应 trait 实现，用户类型必须显式实现 `Copy`，并同时实现父 trait `Clone`；所有字段（enum 的所有变体）均须为 Copy，仅含 Copy 字段不会自动获得 Copy。
 整数实现 `Clone`、`Copy`、`Default`、`Eq`、`Hash`；`f32`、`f64` 实现前三者；`string` 实现 `Clone`、`Default`、`Eq`、`Hash`。
 泛型 trait 可声明类型参数；解释器可按函数签名和捕获行为检查标准库的 `FnOnce<Args, Output>`、`FnMut<Args, Output>`、`Fn<Args, Output>` bound。字节码编译器当前会明确拒绝这组三种 bound，直到共享前端完成相同的检查。Option/Result 的 `map`、`and_then`、`or_else` 等导出方法，以及 `core::ops::apply_twice`、`combine`、`chain` 等导出自由函数，已可在解释器和字节码中调用 Rils 函数或闭包；`Option::filter` 还可把共享引用交给谓词。回调错误保留源码位置。
 

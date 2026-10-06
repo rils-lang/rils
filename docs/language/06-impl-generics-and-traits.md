@@ -215,9 +215,14 @@ let left: <Both as Left>::Item = 1;
 let right: <Both as Right>::Item = "right";
 ```
 
-基础标量、函数、引用以及仅包含 Copy 字段的 Option/struct/enum 自动满足 `Copy`。
-拥有型值自动满足 `Clone` bound；命名类型若要使用 `.clone()` 方法，需显式实现 `Clone`，
-也可以继续使用通用的 `clone(&value)` 函数。对含非 Copy 字段的类型声明 `impl Copy` 会报错。
+基础标量、函数、引用及标准库声明的条件 Copy 容器（例如 `Option<T>`）遵循各自的 trait 实现。
+用户 struct/enum 必须显式声明 `impl Copy` 或 `#[derive(Copy)]`；即使所有字段都为 Copy，
+空结构体或当前为 unit 变体的 enum 也不会自动获得 Copy，未声明的值仍按 move 处理。
+Copy 还要求实现其父 trait `Clone`，通常一起写 `#[derive(Clone, Copy)]`。
+检查以整个类型为准：struct 的全部字段、enum 所有变体的全部字段都必须为 Copy，
+嵌套用户类型也必须各自显式实现 Copy。解释器、VM、加载后的字节码及原生布局遵循同一规则。
+命名类型的 `Clone` bound 和 `.clone()` 方法也要求显式实现 `Clone`；
+通用的 `clone(&value)` 函数仍可用于显式复制拥有型值。
 
 Struct 和 enum 可通过 `#[derive(Clone)]` 生成逐字段调用 `Clone` 的实现；enum 支持 unit、tuple 和 record 变体。
 `#[derive(Copy)]` 生成标记实现，并继续检查所有字段是否为 Copy。两种派生可以组合使用：

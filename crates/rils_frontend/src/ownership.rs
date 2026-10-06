@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+mod declarations;
+mod expressions;
 mod regions;
 mod scopes;
 use regions::{RegionId, Regions};
@@ -17,8 +19,16 @@ pub(crate) fn analyze(
     binding_types: &HashMap<Span, Type>,
     expression_types: ExpressionTypes<'_>,
     host_types: &HashSet<String>,
+    declarations: (&crate::semantic::DeclarationTypeResolver, &[String]),
 ) -> Vec<AnalysisDiagnostic> {
-    Checker::new(program, binding_types, expression_types, host_types).run(program)
+    Checker::new(
+        program,
+        binding_types,
+        expression_types,
+        host_types,
+        declarations,
+    )
+    .run(program)
 }
 
 #[derive(Clone)]
@@ -56,12 +66,6 @@ impl ExpressionValue {
     }
 }
 
-#[derive(Clone)]
-struct NominalDefinition {
-    parameters: Vec<String>,
-    fields: Vec<Type>,
-}
-
 type Snapshot = (Vec<Scope>, HashMap<String, (usize, usize)>);
 
 #[derive(Clone, Copy)]
@@ -74,7 +78,8 @@ struct Checker<'a> {
     binding_types: &'a HashMap<Span, Type>,
     expression_types: ExpressionTypes<'a>,
     host_types: &'a HashSet<String>,
-    nominals: HashMap<String, NominalDefinition>,
+    declaration_types: &'a crate::semantic::DeclarationTypeResolver,
+    module_path: &'a [String],
     receivers: HashMap<(String, String), ReceiverMode>,
     scopes: Vec<Scope>,
     regions: Regions,
@@ -90,12 +95,14 @@ impl<'a> Checker<'a> {
         binding_types: &'a HashMap<Span, Type>,
         expression_types: ExpressionTypes<'a>,
         host_types: &'a HashSet<String>,
+        declarations: (&'a crate::semantic::DeclarationTypeResolver, &'a [String]),
     ) -> Self {
         let mut checker = Self {
             binding_types,
             expression_types,
             host_types,
-            nominals: HashMap::new(),
+            declaration_types: declarations.0,
+            module_path: declarations.1,
             receivers: HashMap::new(),
             scopes: vec![Scope {
                 region: Regions::ROOT,
@@ -115,117 +122,6 @@ impl<'a> Checker<'a> {
     fn run(mut self, program: &Program) -> Vec<AnalysisDiagnostic> {
         self.statements(&program.statements);
         self.diagnostics
-    }
-
-    fn collect_nominals(&mut self, statements: &[Stmt]) {
-        for statement in statements {
-            match statement {
-                Stmt::Module {
-                    statements: Some(statements),
-                    ..
-                } => self.collect_nominals(statements),
-                Stmt::Struct {
-                    name,
-                    generic_parameters,
-                    fields,
-                    ..
-                } => {
-                    self.nominals.insert(
-                        name.clone(),
-                        NominalDefinition {
-                            parameters: generic_parameters
-                                .iter()
-                                .map(|parameter| parameter.name.clone())
-                                .collect(),
-                            fields: fields
-                                .iter()
-                                .map(|field| field.type_annotation.clone())
-                                .collect(),
-                        },
-                    );
-                }
-                Stmt::Enum {
-                    name,
-                    generic_parameters,
-                    variants,
-                    ..
-                } => {
-                    let fields = variants
-                        .iter()
-                        .flat_map(|variant| match variant {
-                            EnumVariant::Unit { .. } => Vec::new(),
-                            EnumVariant::Tuple { fields, .. } => fields.clone(),
-                            EnumVariant::Record { fields, .. } => fields
-                                .iter()
-                                .map(|field| field.type_annotation.clone())
-                                .collect(),
-                        })
-                        .collect();
-                    self.nominals.insert(
-                        name.clone(),
-                        NominalDefinition {
-                            parameters: generic_parameters
-                                .iter()
-                                .map(|parameter| parameter.name.clone())
-                                .collect(),
-                            fields,
-                        },
-                    );
-                }
-                Stmt::Impl {
-                    target,
-                    trait_name,
-                    methods,
-                    ..
-                } => {
-                    let Type::Named { name, .. } = target else {
-                        continue;
-                    };
-                    if trait_name.as_deref() == Some("Iterator") {
-                        for member in rils_builtins::builtin("Iterator")
-                            .into_iter()
-                            .flat_map(|declaration| declaration.members)
-                        {
-                            if !rils_builtins::is_iterator_default_method(member.name) {
-                                continue;
-                            }
-                            let Some(receiver) = member.receiver else {
-                                continue;
-                            };
-                            let mode = match receiver {
-                                rils_builtins::ReceiverMode::Owned => ReceiverMode::Owned,
-                                rils_builtins::ReceiverMode::Shared => {
-                                    ReceiverMode::Borrowed { mutable: false }
-                                }
-                                rils_builtins::ReceiverMode::Mutable => {
-                                    ReceiverMode::Borrowed { mutable: true }
-                                }
-                            };
-                            self.receivers
-                                .insert((name.clone(), member.name.into()), mode);
-                        }
-                    }
-                    for method in methods {
-                        let Some(receiver) = method
-                            .parameters
-                            .first()
-                            .filter(|parameter| parameter.name == "self")
-                        else {
-                            continue;
-                        };
-                        let mode = match &receiver.type_annotation {
-                            Some(Type::Reference { mutable, .. }) => {
-                                ReceiverMode::Borrowed { mutable: *mutable }
-                            }
-                            _ => ReceiverMode::Owned,
-                        };
-                        self.receivers
-                            .insert((name.clone(), method.name.clone()), mode);
-                    }
-                }
-                _ => {}
-            }
-        }
     }
 
     fn statements(&mut self, statements: &[Stmt]) {
@@ -487,312 +383,6 @@ impl<'a> Checker<'a> {
         }
         self.pop_scope();
         result
-    }
-
-    fn expression(&mut self, expression: &Expr) -> ExpressionValue {
-        match expression {
-            Expr::Literal { .. }
-            | Expr::Path { .. }
-            | Expr::GenericPath { .. }
-            | Expr::QualifiedPath { .. } => self.typed_value(expression),
-            Expr::Variable { name, .. } => self.take_variable(name, expression),
-            Expr::Member { object, name, span }
-                if matches!(
-                    self.expression_types.get(expression),
-                    Some(Type::Function { .. })
-                ) =>
-            {
-                match self.receiver_mode(self.expression_types.get(object), name) {
-                    Some(ReceiverMode::Owned) => {
-                        if self
-                            .expression_types
-                            .get(object)
-                            .is_some_and(|ty| !self.is_copy(ty))
-                        {
-                            self.diagnostic(
-                                "bound method values with an owned receiver require Copy",
-                                *span,
-                            );
-                        }
-                        self.expression(object)
-                    }
-                    Some(ReceiverMode::Borrowed { .. }) => {
-                        self.diagnostic(
-                            "bound method values cannot capture a local reference",
-                            *span,
-                        );
-                        ExpressionValue::default()
-                    }
-                    None => self.typed_value(expression),
-                }
-            }
-            Expr::Member { .. } => {
-                self.read_place(expression);
-                if let Some(ty) = self.expression_types.get(expression)
-                    && !self.is_copy(ty)
-                {
-                    self.move_place(expression);
-                }
-                self.typed_value(expression)
-            }
-            Expr::Index { object, index, .. } => {
-                self.read_place(object);
-                let index = self.expression(index);
-                self.discard(index);
-                if let Some(ty) = self.expression_types.get(expression)
-                    && !self.is_copy(ty)
-                {
-                    self.diagnostic(
-                        "cannot move a non-Copy value out through indexing",
-                        expression.span(),
-                    );
-                }
-                self.typed_value(expression)
-            }
-            Expr::Tuple { elements, .. } | Expr::Array { elements, .. } => {
-                let mut values = elements
-                    .iter()
-                    .map(|element| self.expression(element))
-                    .collect::<Vec<_>>();
-                if let Expr::Array {
-                    repeat: Some(repeat),
-                    ..
-                } = expression
-                {
-                    let repeat = self.expression(repeat);
-                    self.discard(repeat);
-                }
-                let reference_region = values
-                    .iter()
-                    .filter_map(|value| value.reference_region)
-                    .reduce(|a, b| self.shorter_region(a, b));
-                let borrows = values.drain(..).flat_map(|value| value.borrows).collect();
-                ExpressionValue {
-                    reference_region,
-                    borrows,
-                }
-            }
-            Expr::Try { operand, .. } => {
-                let value = self.expression(operand);
-                if value.contains_reference() {
-                    value
-                } else {
-                    self.discard(value);
-                    self.typed_value(expression)
-                }
-            }
-            Expr::RecordLiteral { fields, .. } => {
-                let values = fields
-                    .iter()
-                    .map(|field| self.expression(&field.value))
-                    .collect::<Vec<_>>();
-                let reference_region = values
-                    .iter()
-                    .filter_map(|value| value.reference_region)
-                    .reduce(|a, b| self.shorter_region(a, b));
-                let borrows = values.into_iter().flat_map(|value| value.borrows).collect();
-                ExpressionValue {
-                    reference_region,
-                    borrows,
-                }
-            }
-            Expr::Assign {
-                target,
-                value,
-                span,
-            } => {
-                let value = self.expression(value);
-                self.assign_place(target, value.reference_region, *span);
-                if value.contains_reference() {
-                    self.retain(value.borrows);
-                } else {
-                    self.discard(value);
-                }
-                ExpressionValue::default()
-            }
-            Expr::Borrow {
-                mutable,
-                target,
-                span,
-            } => self.borrow_place(target, *mutable, *span),
-            Expr::Unary {
-                operator,
-                operand,
-                span,
-            } => {
-                let value = self.expression(operand);
-                if *operator == UnaryOp::Dereference
-                    && let Some(Type::Reference { inner, .. }) = self.expression_types.get(operand)
-                    && !self.is_copy(inner)
-                {
-                    self.diagnostic("cannot move a non-Copy value out of a reference", *span);
-                }
-                self.discard(value);
-                self.typed_value(expression)
-            }
-            Expr::Cast { operand, .. } => {
-                let value = self.expression(operand);
-                self.discard(value);
-                self.typed_value(expression)
-            }
-            Expr::Binary { left, right, .. }
-            | Expr::Logical { left, right, .. }
-            | Expr::Range {
-                start: left,
-                end: right,
-                ..
-            } => {
-                let left = self.expression(left);
-                let right = self.expression(right);
-                self.discard(left);
-                self.discard(right);
-                self.typed_value(expression)
-            }
-            Expr::Call {
-                callee,
-                arguments,
-                span: _,
-            } => {
-                if matches!(
-                    callee_name(callee),
-                    Some("#rils_native_print" | "#rils_native_println")
-                ) {
-                    let callee = self.expression(callee);
-                    self.discard(callee);
-                    for (index, argument) in arguments.iter().enumerate() {
-                        if index > 0 && place_key(argument).is_some() {
-                            let value = self.borrow_place(argument, false, argument.span());
-                            self.discard(value);
-                        } else {
-                            let value = self.expression(argument);
-                            self.discard(value);
-                        }
-                    }
-                    return self.typed_value(expression);
-                }
-                let receiver = if let Expr::Member { object, name, .. } = callee.as_ref() {
-                    self.receiver_effect(object, name)
-                } else {
-                    let callee = self.expression(callee);
-                    self.discard(callee);
-                    None
-                };
-                let values = arguments
-                    .iter()
-                    .map(|argument| self.expression(argument))
-                    .collect::<Vec<_>>();
-                let result_type = self.expression_types.get(expression);
-                let result_region =
-                    result_type
-                        .filter(|ty| ty.contains_reference())
-                        .and_then(|_| {
-                            values
-                                .iter()
-                                .filter_map(|value| value.reference_region)
-                                .chain(receiver.as_ref().and_then(|value| value.reference_region))
-                                .reduce(|a, b| self.shorter_region(a, b))
-                        });
-                let result_borrows = values
-                    .iter()
-                    .flat_map(|value| value.borrows.clone())
-                    .chain(
-                        receiver
-                            .as_ref()
-                            .into_iter()
-                            .flat_map(|value| value.borrows.clone()),
-                    )
-                    .collect::<Vec<_>>();
-                if result_region.is_none() {
-                    for value in values {
-                        self.discard(value);
-                    }
-                }
-                if result_region.is_none()
-                    && let Some(receiver) = receiver
-                {
-                    self.discard(receiver);
-                }
-                let mut result = self.typed_value(expression);
-                if result_type.is_some_and(Type::contains_reference) {
-                    result.reference_region = result_region;
-                    result.borrows = result_borrows;
-                }
-                result
-            }
-            Expr::If {
-                condition,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                let condition = self.expression(condition);
-                self.discard(condition);
-                let base = self.snapshot();
-                let then_value = self.block(then_branch);
-                let then_state = self.snapshot();
-                self.restore(base.clone());
-                let else_value = else_branch
-                    .as_deref()
-                    .map(|branch| self.expression(branch))
-                    .unwrap_or_default();
-                let else_state = self.snapshot();
-                self.restore(base);
-                self.merge_moved(&[then_state.clone(), else_state.clone()]);
-                self.merge_active_borrows(&[then_state, else_state]);
-                let mut borrows = then_value.borrows;
-                borrows.extend(else_value.borrows);
-                borrows.dedup_by(|left, right| {
-                    left.root == right.root
-                        && left.interior == right.interior
-                        && left.region == right.region
-                });
-                ExpressionValue {
-                    reference_region: [then_value.reference_region, else_value.reference_region]
-                        .into_iter()
-                        .flatten()
-                        .reduce(|a, b| self.shorter_region(a, b)),
-                    borrows,
-                }
-            }
-            Expr::Match { value, arms, .. } => {
-                let value = self.expression(value);
-                self.discard(value);
-                let base = self.snapshot();
-                let mut reference_region = None;
-                let mut borrows = Vec::new();
-                let mut states = Vec::new();
-                for arm in arms {
-                    self.restore(base.clone());
-                    self.push_scope();
-                    self.pattern(&arm.pattern);
-                    let value = self.expression(&arm.expression);
-                    reference_region = match (reference_region, value.reference_region) {
-                        (None, region) | (region, None) => region,
-                        (Some(a), Some(b)) => Some(self.shorter_region(a, b)),
-                    };
-                    if value.contains_reference() {
-                        borrows.extend(value.borrows);
-                    } else {
-                        self.discard(value);
-                    }
-                    self.pop_scope();
-                    states.push(self.snapshot());
-                }
-                self.restore(base);
-                self.merge_moved(&states);
-                self.merge_active_borrows(&states);
-                borrows.dedup_by(|left, right| {
-                    left.root == right.root
-                        && left.interior == right.interior
-                        && left.region == right.region
-                });
-                ExpressionValue {
-                    reference_region,
-                    borrows,
-                }
-            }
-            Expr::Block(block) => self.block(block),
-        }
     }
 
     fn pattern(&mut self, pattern: &Pattern) {
@@ -1140,72 +730,19 @@ impl<'a> Checker<'a> {
     }
 
     fn is_copy(&self, ty: &Type) -> bool {
-        self.is_copy_inner(ty, &mut HashSet::new())
-    }
-
-    fn is_copy_inner(&self, ty: &Type, visiting: &mut HashSet<String>) -> bool {
-        match ty {
-            Type::Unit
-            | Type::Bool
-            | Type::IntegerVariable(_)
-            | Type::IntegerInference(_)
-            | Type::FloatVariable(_)
-            | Type::FloatInference(_)
-            | Type::Char
-            | Type::Reference { .. }
-            | Type::Function { .. } => true,
-            Type::Integer(integer) => rils_builtins::native_implements(integer.name(), "Copy"),
-            Type::Float(float) => rils_builtins::native_implements(float.name(), "Copy"),
-            Type::Option(inner) => {
-                rils_builtins::native_implements_with("Option", "Copy", |parameter, bound| {
-                    parameter == "T" && bound == "Copy" && self.is_copy_inner(inner, visiting)
-                })
-            }
-            Type::Result(ok, error) => {
-                rils_builtins::native_implements_with("Result", "Copy", |parameter, bound| {
-                    bound == "Copy"
-                        && match parameter {
-                            "T" => self.is_copy_inner(ok, visiting),
-                            "E" => self.is_copy_inner(error, visiting),
-                            _ => false,
-                        }
-                })
-            }
-            Type::Tuple(elements) => elements.iter().all(|ty| self.is_copy_inner(ty, visiting)),
-            Type::Array { element, .. } | Type::ArrayParameter { element, .. } => {
-                self.is_copy_inner(element, visiting)
-            }
-            Type::Slice(_) | Type::ConstUsize(_) => false,
-            Type::Named { name, arguments } => {
-                if arguments.is_empty() && (name == "HostHandle" || self.host_types.contains(name))
-                {
-                    return true;
-                }
-                let Some(definition) = self.nominals.get(name) else {
-                    return false;
-                };
-                if !visiting.insert(name.clone()) {
-                    return false;
-                }
-                let substitutions = definition
-                    .parameters
-                    .iter()
-                    .cloned()
-                    .zip(arguments.iter().cloned())
-                    .collect::<HashMap<_, _>>();
-                let copy = definition
-                    .fields
-                    .iter()
-                    .all(|field| self.is_copy_inner(&field.substitute(&substitutions), visiting));
-                visiting.remove(name);
-                copy
-            }
+        if matches!(
+            ty,
             Type::Unknown
-            | Type::Variable(_)
-            | Type::BoundVariable { .. }
-            | Type::Associated { .. } => true,
-            Type::String => rils_builtins::native_implements("string", "Copy"),
+                | Type::Variable(_)
+                | Type::BoundVariable { .. }
+                | Type::Associated { .. }
+        ) {
+            return true;
         }
+        let ty = self.declaration_types.resolve(ty, self.module_path);
+        self.declaration_types
+            .copy_types()
+            .is_copy(&ty, self.host_types)
     }
 }
 

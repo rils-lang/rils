@@ -171,6 +171,7 @@ fn semantic_call_identity_covers_trait_ufcs_modules_and_imports() {
 
             struct Left { value: i32 }
             struct Right { value: i32 }
+            #[derive(Clone, Copy)]
             struct Owned { value: i32 }
 
             impl Owned {

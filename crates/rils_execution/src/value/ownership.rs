@@ -31,16 +31,30 @@ impl Value {
                 .borrow()
                 .iter()
                 .all(|slot| slot.value.as_ref().is_some_and(Value::is_copy)),
-            Self::Struct(instance) => instance
-                .fields
-                .borrow()
-                .values()
-                .all(|field| field.value.as_ref().is_some_and(Value::is_copy)),
-            Self::Enum(instance) => match &instance.payload {
-                EnumPayload::Unit => true,
-                EnumPayload::Tuple(values) => values.iter().all(Value::is_copy),
-                EnumPayload::Record(values) => values.values().all(Value::is_copy),
-            },
+            Self::Struct(instance) => {
+                instance
+                    .type_definition
+                    .implemented_traits
+                    .borrow()
+                    .contains("Copy")
+                    && instance
+                        .fields
+                        .borrow()
+                        .values()
+                        .all(|field| field.value.as_ref().is_some_and(Value::is_copy))
+            }
+            Self::Enum(instance) => {
+                instance
+                    .type_definition
+                    .implemented_traits
+                    .borrow()
+                    .contains("Copy")
+                    && match &instance.payload {
+                        EnumPayload::Unit => true,
+                        EnumPayload::Tuple(values) => values.iter().all(Value::is_copy),
+                        EnumPayload::Record(values) => values.values().all(Value::is_copy),
+                    }
+            }
             Self::Function(_)
             | Self::BytecodeFunction(_)
             | Self::NativeFunction(_)

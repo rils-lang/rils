@@ -457,87 +457,23 @@ fn type_is_default(actual: &Type, environment: &EnvironmentRef) -> bool {
 }
 
 fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {
-    match actual {
-        Type::Unit
-        | Type::Bool
-        | Type::Integer(_)
-        | Type::Float(_)
-        | Type::IntegerVariable(_)
-        | Type::IntegerInference(_)
-        | Type::FloatVariable(_)
-        | Type::FloatInference(_)
-        | Type::Char
-        | Type::Reference { .. } => true,
-        Type::Function { .. } => true,
-        Type::String
-        | Type::Unknown
-        | Type::Variable(_)
-        | Type::BoundVariable { .. }
-        | Type::Associated { .. } => false,
-        Type::Option(inner) => {
-            rils_builtins::native_implements_with("Option", "Copy", |parameter, bound| {
-                parameter == "T" && bound == "Copy" && type_is_copy(inner, environment)
-            })
-        }
-        Type::Result(ok, error) => {
-            rils_builtins::native_implements_with("Result", "Copy", |parameter, bound| {
-                bound == "Copy"
-                    && match parameter {
-                        "T" => type_is_copy(ok, environment),
-                        "E" => type_is_copy(error, environment),
-                        _ => false,
-                    }
-            })
-        }
-        Type::Tuple(elements) => elements.iter().all(|ty| type_is_copy(ty, environment)),
-        Type::Array { element, .. } | Type::ArrayParameter { element, .. } => {
-            type_is_copy(element, environment)
-        }
-        Type::Slice(_) | Type::ConstUsize(_) => false,
-        Type::Named { name, arguments } if name == "HostHandle" && arguments.is_empty() => true,
-        Type::Named { name, arguments } => match environment.borrow().get(name) {
-            Some(Value::StructType(definition)) => {
-                if definition.implemented_traits.borrow().contains("Copy") {
-                    return true;
-                }
-                let substitutions = definition
-                    .generic_parameters
-                    .iter()
-                    .map(|parameter| parameter.name.clone())
-                    .zip(arguments.iter().cloned())
-                    .collect::<HashMap<_, _>>();
-                definition.fields.iter().all(|field| {
-                    type_is_copy(
-                        &field.type_annotation.substitute(&substitutions),
-                        environment,
-                    )
-                })
-            }
-            Some(Value::EnumType(definition)) => {
-                if definition.implemented_traits.borrow().contains("Copy") {
-                    return true;
-                }
-                let substitutions = definition
-                    .generic_parameters
-                    .iter()
-                    .map(|parameter| parameter.name.clone())
-                    .zip(arguments.iter().cloned())
-                    .collect::<HashMap<_, _>>();
-                definition.variants.iter().all(|variant| match variant {
-                    EnumVariant::Unit { .. } => true,
-                    EnumVariant::Tuple { fields, .. } => fields
-                        .iter()
-                        .all(|field| type_is_copy(&field.substitute(&substitutions), environment)),
-                    EnumVariant::Record { fields, .. } => fields.iter().all(|field| {
-                        type_is_copy(
-                            &field.type_annotation.substitute(&substitutions),
-                            environment,
-                        )
-                    }),
-                })
-            }
-            _ => false,
-        },
+    copy_capability(actual, environment, false)
+}
+
+pub(super) fn copy_fields_eligible(actual: &Type, environment: &EnvironmentRef) -> bool {
+    copy_capability(actual, environment, true)
+}
+
+fn copy_capability(actual: &Type, environment: &EnvironmentRef, fields_only: bool) -> bool {
+    let context =
+        crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow());
+    let Ok(actual) = expand_type_aliases(actual, environment, Span::default()) else {
+        return false;
+    };
+    if fields_only {
+        context.copy_fields_eligible(&actual)
+    } else {
+        context.type_is_copy(&actual)
     }
 }
 
@@ -567,10 +503,21 @@ fn type_is_clone(actual: &Type, environment: &EnvironmentRef) -> bool {
             type_is_clone(element, environment)
         }
         Type::Named { name, .. } if name == "Vec" => true,
-        Type::Named { name, .. } => matches!(
-            environment.borrow().get(name),
-            Some(Value::StructType(_) | Value::EnumType(_))
-        ),
+        Type::Named { name, .. } => match environment.borrow().get(name) {
+            Some(Value::StructType(definition)) if definition.opaque_native => {
+                rils_builtins::native_implements(
+                    rils_frontend::standard_library::builtin_type_name(name).unwrap_or(name),
+                    "Clone",
+                )
+            }
+            Some(Value::StructType(definition)) => {
+                definition.implemented_traits.borrow().contains("Clone")
+            }
+            Some(Value::EnumType(definition)) => {
+                definition.implemented_traits.borrow().contains("Clone")
+            }
+            _ => false,
+        },
         _ => true,
     }
 }

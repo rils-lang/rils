@@ -158,7 +158,11 @@ impl<'a> RecordLayoutResolver<'a> {
             })?;
             layouts.push((field.name.clone(), layout));
         }
-        DynamicLayout::record(ty.clone(), layouts)
+        DynamicLayout::record_with_copy(
+            ty.clone(),
+            layouts,
+            definition.implemented_traits.borrow().contains("Copy"),
+        )
     }
 
     fn resolve_enum(
@@ -231,6 +235,10 @@ impl<'a> RecordLayoutResolver<'a> {
             };
             alternatives.push((source_name, payload));
         }
-        DynamicLayout::named_variant(ty.clone(), alternatives)
+        DynamicLayout::named_variant_with_copy(
+            ty.clone(),
+            alternatives,
+            definition.implemented_traits.borrow().contains("Copy"),
+        )
     }
 }

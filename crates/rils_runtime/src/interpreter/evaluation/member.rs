@@ -92,7 +92,14 @@ impl Interpreter {
                     return self.resolve_member(receiver, name, span);
                 }
             }
-            let value = place.read(span)?;
+            let value = place.projection_value(span)?;
+            if matches!(&value, Value::Struct(instance) if instance.fields.borrow().contains_key(name))
+                || matches!(&value, Value::Tuple(_) if name.parse::<usize>().is_ok())
+            {
+                // The owner is only a projection. Transfer ownership at the final
+                // field instead of moving every intermediate non-Copy record.
+                return self.resolve_member(value, name, span);
+            }
             let builtin_borrow = super::super::call::builtin_iterator_default_receiver(
                 &value, name,
             )

@@ -1,5 +1,6 @@
 use super::*;
 use crate::FloatType;
+mod copy;
 mod returns;
 mod storage;
 
@@ -817,6 +818,7 @@ fn compiles_top_level_function_values_and_indirect_calls() {
 fn compiles_bound_methods_and_general_receivers() {
     assert_matches_interpreter(
         r#"
+                #[derive(Clone)]
                 struct Number { value: i32 }
                 impl Copy for Number {}
                 impl Number {

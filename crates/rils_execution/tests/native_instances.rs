@@ -61,6 +61,31 @@ impl Declarations {
                     implemented_traits: RefCell::default(),
                     associated_types: RefCell::default(),
                 })),
+                Stmt::Impl {
+                    target: Type::Named { name, .. },
+                    trait_name: Some(trait_name),
+                    ..
+                } => {
+                    if let Some(definition) = declarations
+                        .structs
+                        .iter()
+                        .find(|definition| definition.name == name)
+                    {
+                        definition
+                            .implemented_traits
+                            .borrow_mut()
+                            .insert(trait_name);
+                    } else if let Some(definition) = declarations
+                        .enums
+                        .iter()
+                        .find(|definition| definition.name == name)
+                    {
+                        definition
+                            .implemented_traits
+                            .borrow_mut()
+                            .insert(trait_name);
+                    }
+                }
                 _ => panic!("unexpected fixture declaration"),
             }
         }
@@ -608,7 +633,10 @@ fn generic_instance_fields_keep_reference_and_callback_identities() {
             arguments: vec![callback_type]
         })
     );
-    assert!(value.is_copy());
+    assert!(
+        !value.is_copy(),
+        "the callback field is Copy, but Holder has no Copy impl"
+    );
     let Value::HostFunction(extracted) = place(&value).field("item").unwrap().take().unwrap()
     else {
         panic!("callback")
@@ -651,40 +679,59 @@ fn generic_instance_fields_keep_reference_and_callback_identities() {
 }
 
 #[test]
-fn enum_copy_requires_copy_fields_in_every_variant_even_when_empty_is_active() {
-    let declarations = Declarations::fixture();
-    for copy in [false, true] {
-        for variant in ["Empty", "Tuple", "Record"] {
-            let item_type = if copy {
-                Type::I32
-            } else {
-                Type::named("Owned")
-            };
-            let item = || {
-                if copy {
-                    Value::from_i32(42)
+fn enum_copy_requires_an_explicit_declaration_and_copy_fields_in_every_variant() {
+    for declared in [false, true] {
+        for eligible in [false, true] {
+            let declarations = Declarations::fixture();
+            if declared {
+                declarations.enums[0]
+                    .implemented_traits
+                    .borrow_mut()
+                    .extend(["Clone".into(), "Copy".into()]);
+            }
+            for variant in ["Empty", "Tuple", "Record"] {
+                let item_type = if eligible {
+                    Type::I32
                 } else {
-                    declarations.owned("non Copy")
+                    Type::named("Owned")
+                };
+                let item = || {
+                    if eligible {
+                        Value::from_i32(42)
+                    } else {
+                        declarations.owned("non Copy")
+                    }
+                };
+                let payload = match variant {
+                    "Empty" => EnumPayload::Unit,
+                    "Tuple" => EnumPayload::Tuple(vec![item()]),
+                    _ => EnumPayload::Record(HashMap::from([("item".into(), item())])),
+                };
+                let value = declarations.choice(variant, payload, item_type);
+                let ty = Type::of_value(&value).unwrap();
+                let result = declarations.context().compose_nominal(value, &ty);
+                if declared && !eligible {
+                    assert!(
+                        result.err().unwrap().contains("non-Copy fields"),
+                        "{variant}: inactive variants must be checked"
+                    );
+                    continue;
                 }
-            };
-            let payload = match variant {
-                "Empty" => EnumPayload::Unit,
-                "Tuple" => EnumPayload::Tuple(vec![item()]),
-                _ => EnumPayload::Record(HashMap::from([("item".into(), item())])),
-            };
-            let value = native(
-                &declarations,
-                declarations.choice(variant, payload, item_type),
-            );
-            assert_eq!(
-                value.is_copy(),
-                copy,
-                "{variant}: Copy depends on the whole enum"
-            );
-            let mut storage = StorageSlot::uninitialized(false);
-            storage.initialize(value);
-            drop(storage.take().unwrap());
-            assert_eq!(storage.take().is_ok(), copy, "{variant}: ownership policy");
+                let value = result.unwrap();
+                assert_eq!(
+                    value.is_copy(),
+                    declared && eligible,
+                    "{variant}: explicit Copy policy"
+                );
+                let mut storage = StorageSlot::uninitialized(false);
+                storage.initialize(value);
+                drop(storage.take().unwrap());
+                assert_eq!(
+                    storage.take().is_ok(),
+                    declared && eligible,
+                    "{variant}: ownership policy"
+                );
+            }
         }
     }
 }

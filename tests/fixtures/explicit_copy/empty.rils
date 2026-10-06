@@ -1,0 +1,5 @@
+struct Empty {}
+let first = (Empty {});
+let second = first;
+let third = first;
+42

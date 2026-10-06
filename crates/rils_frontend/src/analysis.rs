@@ -769,6 +769,13 @@ impl Analyzer {
             &inference.binding_types,
             expression_types,
             &self.host_types,
+            (&declaration_types, &self.module_path),
+        ));
+        self.result.diagnostics.extend(crate::copy_types::validate(
+            program,
+            &self.module_path,
+            &declaration_types,
+            &self.host_types,
         ));
         self.result
             .diagnostics

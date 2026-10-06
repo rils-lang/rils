@@ -418,7 +418,7 @@ impl BytecodeModule {
             host.host_value_formatter.clone(),
             host.declarations.clone(),
             limits,
-        )
+        )?
         .execute()
     }
 

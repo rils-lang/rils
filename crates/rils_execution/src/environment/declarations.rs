@@ -94,6 +94,19 @@ impl TypeDeclarations {
         self.resolver.borrow().is_declared_type(name)
     }
 
+    pub(super) fn declared_value_traits(&self, name: &str) -> std::collections::HashSet<String> {
+        let resolver = self.resolver.borrow();
+        let declarations = resolver.copy_types();
+        let mut traits = std::collections::HashSet::new();
+        if declarations.is_declared(name) {
+            traits.insert("Copy".into());
+        }
+        if declarations.has_clone(name) {
+            traits.insert("Clone".into());
+        }
+        traits
+    }
+
     pub(super) fn inaccessible_type(&self, ty: &Type, module: &[String]) -> Option<String> {
         self.resolver.borrow().inaccessible_type(ty, module)
     }

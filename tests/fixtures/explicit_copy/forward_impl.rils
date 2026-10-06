@@ -1,0 +1,7 @@
+struct Point { x: i32 }
+let point = Point { x: 21 };
+let other = point;
+let answer = point.x + other.x;
+impl Copy for Point {}
+impl Clone for Point { fn clone(&self) -> Self { Point { x: self.x } } }
+answer

@@ -1,0 +1,3 @@
+#[derive(Copy)]
+struct Point { x: i32 }
+42

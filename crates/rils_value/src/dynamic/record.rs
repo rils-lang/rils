@@ -65,6 +65,25 @@ impl DynamicLayout {
         Self::aggregate(rils_type, fields)
     }
 
+    /// Apply a declaration's explicit Copy capability to a physical record layout.
+    pub fn record_with_copy(
+        rils_type: Type,
+        fields: Vec<(String, Rc<Self>)>,
+        declared_copy: bool,
+    ) -> Result<Rc<Self>, String> {
+        let mut layout = Self::record(rils_type, fields)?;
+        let descriptor = Rc::get_mut(&mut layout).expect("new record layout has a single owner");
+        if declared_copy && !descriptor.copy {
+            return Err(format!(
+                "`{}` cannot implement Copy because it contains non-Copy fields",
+                descriptor.rils_type
+            ));
+        }
+        descriptor.copy &= declared_copy;
+        descriptor.bitwise_copy &= declared_copy;
+        Ok(layout)
+    }
+
     /// Compose a tuple or fixed array using the same movable, aligned slots as
     /// records. Each child keeps its own layout and destructor.
     pub fn aggregate(rils_type: Type, fields: Vec<(String, Rc<Self>)>) -> Result<Rc<Self>, String> {

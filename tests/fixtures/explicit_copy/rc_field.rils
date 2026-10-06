@@ -1,0 +1,6 @@
+#[derive(Clone, Copy)]
+struct Holder { item: Rc<i32> }
+let holder = Holder { item: Rc::new(42) };
+let other = holder;
+let again = holder;
+42

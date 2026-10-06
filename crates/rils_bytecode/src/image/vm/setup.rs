@@ -19,11 +19,12 @@ impl<'a> VirtualMachine<'a> {
         host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
         mut native_context: crate::runtime_builtins::NativeOwnedContext,
         limits: crate::ExecutionLimits,
-    ) -> Self {
-        register_structural_key_traits(module);
+    ) -> Result<Self, BytecodeError> {
+        register_type_traits(module);
         extend_module_types(&mut native_context, module);
+        validate_copy_types(module, &native_context)?;
         let entry = &module.functions[module.entry];
-        Self {
+        Ok(Self {
             module,
             imports,
             host_value_formatter,
@@ -40,7 +41,7 @@ impl<'a> VirtualMachine<'a> {
             max_steps: limits.max_steps,
             max_call_depth: limits.max_call_depth,
             root_is_module_entry: true,
-        }
+        })
     }
 
     pub(in crate::image) fn new_call(
@@ -52,8 +53,9 @@ impl<'a> VirtualMachine<'a> {
         function: usize,
         arguments: Vec<Value>,
     ) -> Result<Self, BytecodeError> {
-        register_structural_key_traits(module);
+        register_type_traits(module);
         extend_module_types(&mut native_context, module);
+        validate_copy_types(module, &native_context)?;
         let callee = &module.functions[function];
         if callee.capture_count != 0 {
             return Err(BytecodeError::new(
@@ -98,9 +100,9 @@ impl<'a> VirtualMachine<'a> {
     }
 }
 
-fn register_structural_key_traits(module: &BytecodeModule) {
+fn register_type_traits(module: &BytecodeModule) {
     for implementation in &module.trait_implementations {
-        if !matches!(implementation.trait_name.as_str(), "Eq" | "Hash") {
+        if !matches!(implementation.trait_name.as_str(), "Eq" | "Hash" | "Copy") {
             continue;
         }
         for ty in &module.types {
@@ -153,4 +155,43 @@ fn extend_module_types(
             }
         }
     }
+}
+
+fn validate_copy_types(
+    module: &BytecodeModule,
+    context: &crate::runtime_builtins::NativeOwnedContext,
+) -> Result<(), BytecodeError> {
+    for implementation in module
+        .trait_implementations
+        .iter()
+        .filter(|implementation| implementation.trait_name == "Copy")
+    {
+        let parameters = module
+            .types
+            .iter()
+            .find_map(|ty| match ty {
+                RuntimeType::Struct(definition) if definition.name == implementation.target => {
+                    Some(&definition.generic_parameters)
+                }
+                RuntimeType::Enum(definition) if definition.name == implementation.target => {
+                    Some(&definition.generic_parameters)
+                }
+                _ => None,
+            })
+            .expect("Copy target was verified");
+        let ty = Type::Named {
+            name: implementation.target.clone(),
+            arguments: parameters
+                .iter()
+                .map(|parameter| Type::Variable(parameter.name.clone()))
+                .collect(),
+        };
+        if !context.copy_fields_eligible(&ty) {
+            return Err(BytecodeError::new(
+                format!("`{ty}` cannot implement Copy because it contains non-Copy fields"),
+                Span::default(),
+            ));
+        }
+    }
+    Ok(())
 }

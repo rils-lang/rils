@@ -53,6 +53,39 @@ fn named(name: &str, arguments: Vec<Type>) -> Type {
     }
 }
 
+#[test]
+fn nominal_layout_copy_requires_an_explicit_valid_declaration() {
+    for (declared, field_type, expected) in [
+        (false, Type::I32, Some(false)),
+        (true, Type::I32, Some(true)),
+        (false, Type::String, Some(false)),
+        (true, Type::String, None),
+    ] {
+        let record = definition("Record", &[], vec![("field", field_type)]);
+        if declared {
+            record.implemented_traits.borrow_mut().insert("Copy".into());
+        }
+        let definitions = [record];
+        let result = RecordLayoutResolver::new(&definitions).resolve(&Type::named("Record"));
+        if let Some(copy) = expected {
+            assert_eq!(result.unwrap().is_copy(), copy);
+        } else {
+            assert!(result.err().unwrap().contains("non-Copy fields"));
+        }
+    }
+    let inner = definition("Inner", &[], vec![("field", Type::I32)]);
+    let outer = definition("Outer", &[], vec![("inner", Type::named("Inner"))]);
+    outer.implemented_traits.borrow_mut().insert("Copy".into());
+    let definitions = [inner, outer];
+    assert!(
+        RecordLayoutResolver::new(&definitions)
+            .resolve(&Type::named("Outer"))
+            .err()
+            .unwrap()
+            .contains("non-Copy fields")
+    );
+}
+
 struct VecLayoutProvider;
 
 impl NativeLayoutProvider for VecLayoutProvider {

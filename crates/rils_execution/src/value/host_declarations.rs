@@ -16,7 +16,7 @@ pub fn enum_definition(name: String, definition: &HostEnumDefinition) -> Rc<Enum
         variants: definition.rils_variants(),
         methods: RefCell::default(),
         trait_methods: RefCell::default(),
-        implemented_traits: RefCell::default(),
+        implemented_traits: RefCell::new(["Clone".into(), "Copy".into()].into_iter().collect()),
         associated_types: RefCell::default(),
     })
 }

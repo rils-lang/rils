@@ -12,6 +12,8 @@ use crate::{
 };
 use rils_value::DynamicLayout;
 
+mod copy;
+
 #[derive(Clone, Default)]
 pub struct NativeOwnedContext {
     pub structs: Vec<Rc<StructType>>,

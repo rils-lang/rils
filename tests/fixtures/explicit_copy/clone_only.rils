@@ -1,0 +1,5 @@
+#[derive(Clone)]
+struct Point { x: i32 }
+let point = Point { x: 21 };
+let other = point;
+point.x + other.x

@@ -610,6 +610,7 @@ pub(super) fn collect_marker_trait_implementations(
     prefix: &mut Vec<String>,
     source: crate::source::SourceId,
     output: &mut Vec<HirTraitImplementation>,
+    declarations: &rils_frontend::semantic::DeclarationTypeResolver,
 ) {
     for statement in statements {
         match statement {
@@ -626,13 +627,54 @@ pub(super) fn collect_marker_trait_implementations(
                     methods: HashMap::new(),
                 });
             }
+            Stmt::Impl {
+                trait_name: Some(trait_name),
+                target,
+                methods,
+                ..
+            } if methods.is_empty() => {
+                let Type::Named {
+                    name: trait_path, ..
+                } = declarations.resolve(
+                    &Type::Named {
+                        name: trait_name.clone(),
+                        arguments: vec![],
+                    },
+                    prefix,
+                )
+                else {
+                    continue;
+                };
+                if !matches!(trait_path.as_str(), "Copy" | "core::clone::Copy")
+                    || declarations.is_declared_type(&trait_path)
+                {
+                    continue;
+                }
+                let Type::Named { name, .. } = declarations.resolve(target, prefix) else {
+                    continue;
+                };
+                if declarations.copy_types().is_declared(&name) {
+                    output.push(HirTraitImplementation {
+                        target: name,
+                        trait_name: "Copy".into(),
+                        source,
+                        methods: HashMap::new(),
+                    });
+                }
+            }
             Stmt::Module {
                 name,
                 statements: Some(statements),
                 ..
             } => {
                 prefix.push(name.clone());
-                collect_marker_trait_implementations(statements, prefix, source, output);
+                collect_marker_trait_implementations(
+                    statements,
+                    prefix,
+                    source,
+                    output,
+                    declarations,
+                );
                 prefix.pop();
             }
             _ => {}

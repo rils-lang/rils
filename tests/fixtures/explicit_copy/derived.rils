@@ -1,0 +1,10 @@
+#[derive(Clone, Copy)]
+struct Point { x: i32 }
+#[derive(Clone, Copy)]
+enum Signal { Idle, Tuple(Point), Record { point: Point } }
+let point = Point { x: 21 };
+let signal = Signal::Record { point: point };
+let other = signal;
+let first = match signal { Signal::Record { point } => point.x, _ => 0 };
+let second = match other { Signal::Record { point } => point.x, _ => 0 };
+first + second

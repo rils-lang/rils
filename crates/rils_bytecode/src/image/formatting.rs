@@ -76,14 +76,20 @@ impl VirtualMachine<'_> {
                 span,
             ));
         }
-        let self_slot = Rc::new(RefCell::new(StorageSlot::uninitialized(false)));
-        self_slot.borrow_mut().initialize(value.clone());
+        let self_reference = match value {
+            Value::Reference(reference) => Value::Reference(reference.clone()),
+            value => {
+                let slot = Rc::new(RefCell::new(StorageSlot::uninitialized(false)));
+                slot.borrow_mut().initialize(value.clone());
+                Value::Reference(Rc::new(ReferenceValue::new_storage(slot, false)))
+            }
+        };
         let formatter = crate::formatting::formatter_value(buffer)
             .map_err(|message| BytecodeError::new(message, span))?;
         let formatter_slot = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
         formatter_slot.borrow_mut().initialize(formatter);
         let arguments = vec![
-            Value::Reference(Rc::new(ReferenceValue::new_storage(self_slot, false))),
+            self_reference,
             Value::Reference(Rc::new(ReferenceValue::new_storage(formatter_slot, true))),
         ];
         let result = VirtualMachine::new_call(
