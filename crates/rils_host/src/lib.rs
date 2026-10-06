@@ -5,6 +5,8 @@ use serde_json::{Map, Value, json};
 
 mod binary_v2;
 mod contract;
+mod enum_declaration;
+pub use enum_declaration::HOST_FLAGS_RAW_VARIANT;
 mod legacy_binary;
 mod manifest;
 mod manifest_json;

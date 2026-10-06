@@ -442,6 +442,9 @@ impl Analyzer {
             crate::semantic::DeclarationTypeResolver::from_programs([(module_path, program)])
         });
         declaration_types.extend_exports(external_exports);
+        if let Some(host) = host_contract {
+            declaration_types.extend_host_contract(host);
+        }
         let definition_modules = external_exports
             .values()
             .flatten()

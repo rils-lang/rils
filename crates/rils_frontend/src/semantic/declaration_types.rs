@@ -42,6 +42,12 @@ pub struct DeclarationTypeResolver {
 }
 
 impl DeclarationTypeResolver {
+    /// Host nominal types use the same canonical identities as source types.
+    pub fn extend_host_contract(&mut self, host: &rils_host::HostContract) {
+        self.types
+            .extend(host.types().map(|declaration| declaration.name.clone()));
+    }
+
     /// Whether a canonical path denotes a source type declaration.
     pub fn is_declared_type(&self, name: &str) -> bool {
         self.types.contains(name) || self.exposed_types.contains_key(name)

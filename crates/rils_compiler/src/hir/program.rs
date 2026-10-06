@@ -218,15 +218,7 @@ impl ProgramLowerer {
             type_definitions.push(HirTypeDefinition::Enum {
                 name: declaration.name.clone(),
                 generic_parameters: Vec::new(),
-                variants: host_enum
-                    .variants
-                    .keys()
-                    .cloned()
-                    .map(|name| EnumVariant::Unit {
-                        name,
-                        span: Span::default(),
-                    })
-                    .collect(),
+                variants: host_enum.rils_variants(),
             });
         }
         for unit in units {
@@ -373,11 +365,12 @@ impl ProgramLowerer {
                 unit.source,
             ));
         }
-        let declaration_types = rils_frontend::semantic::DeclarationTypeResolver::from_programs(
+        let mut declaration_types = rils_frontend::semantic::DeclarationTypeResolver::from_programs(
             units
                 .iter()
                 .map(|unit| (unit.module_path.as_slice(), unit.program)),
         );
+        declaration_types.extend_host_contract(host);
         super::signatures::resolve_field_types(&mut type_definitions, &declaration_types);
         Ok(Self {
             functions,
