@@ -1,6 +1,10 @@
 //! Arbitrary operations attached to a runtime-composed layout.
 
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    rc::Rc,
+};
 
 use super::{DynamicLayout, DynamicValue};
 
@@ -12,6 +16,7 @@ pub struct DynamicType<V> {
     layout: Rc<DynamicLayout>,
     methods: HashMap<String, Method<V>>,
     owned_operations: HashMap<String, OwnedOperation<V>>,
+    metadata: HashMap<TypeId, Rc<dyn Any>>,
 }
 
 impl<V> DynamicType<V> {
@@ -20,7 +25,27 @@ impl<V> DynamicType<V> {
             layout,
             methods: HashMap::new(),
             owned_operations: HashMap::new(),
+            metadata: HashMap::new(),
         }
+    }
+
+    /// Attach immutable declaration context to the operation table. This is
+    /// type metadata, never the bytes or children of a stored value.
+    pub fn register_metadata<T: 'static>(mut self, metadata: Rc<T>) -> Self {
+        assert!(
+            self.metadata.insert(TypeId::of::<T>(), metadata).is_none(),
+            "dynamic metadata {} was registered twice",
+            std::any::type_name::<T>()
+        );
+        self
+    }
+
+    pub fn metadata<T: 'static>(&self) -> Option<Rc<T>> {
+        self.metadata
+            .get(&TypeId::of::<T>())?
+            .clone()
+            .downcast()
+            .ok()
     }
 
     pub fn register_method(

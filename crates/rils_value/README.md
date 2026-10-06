@@ -1,5 +1,7 @@
 # rils_value
 
+`DynamicType::register_metadata` 为操作表附加按 Rust 类型查询的不可变声明上下文，多个值共享它；类型擦除仅用于元数据，数据负载仍存放在按布局管理的 bytes 中。`DynamicValueRef::is_partially_moved` 递归检查活跃分支和字段初始化标记，涵盖 Option、enum、record 与序列；重新填入字段后状态自动恢复。
+
 `DynamicType::register_owned_operation` 可登记任意消费式操作。`DynamicObject::call_owned` 把唯一拥有的 bytes 和子负载交给该操作，共享的非 Copy 句柄会报错。操作可以保留构造处的类型声明上下文，跨模块转换无需依赖接收方的类型名称查找；存储层不限定操作种类。
 
 `rils_value` 提供类型擦除的原生 Rust 值存储和操作描述。它只依赖 `rils_syntax` 中的共享 `Type`，并用泛型参数表示上层执行值，因此不依赖解释器、字节码 VM 或 `rils_execution`。
@@ -17,3 +19,5 @@
 `DynamicLayout::copy_of<T: Copy>` 登记普通字节复制；`copy_handle_of<T: Clone>` 登记 Rils 的 Copy 身份句柄，复制时调用所注册 Rust 类型的 Clone 以保留所有者，不隐式复制其所指负载。Option、record 和 variant 递归执行子布局的复制操作，普通 Copy 组合保留字节复制快路径；复制失败或 panic 会清理已经完成的子负载，部分 move 的字段保留空标记。`DynamicValueRef::any_leaf` 只遍历存活的 Rust 叶子，跳过未选中分支与已移出字段，供执行层检查原生存储中的词法引用来源。
 
 执行层的 `runtime_layouts` 为引用和调用目标登记叶子布局及消费式转换，bytes 中保存租约或调用目标句柄；`HostLayoutProvider` 从传入的宿主声明登记其布局与 Copy 策略，不把未知名称当作宿主类型。宿主声明现由执行层的 `NativeOwnedContext` 自动传入组合存储与原生构造，弱声明表按完整路径收集宿主类型，VM 与 C API 从共享 Host Contract 建立上下文。Host enum 的变体由同一声明投影生成，包含 raw flags 分支；组合字段保留不透明对象身份，借用读取不改变 Copy 策略。独立用户实例的构造仍在迁移中。
+
+原生 enum 的 Copy 保证按整个具体类型判断：所有变体的字段均为 Copy 才可复制，空变体被选中时也不放宽这一规则。普通脚本 enum 的旧活跃变体判定将在构造器迁移时同步统一。
