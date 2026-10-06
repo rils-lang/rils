@@ -7,7 +7,9 @@ use rils_syntax::Type;
 use crate::storage::RawStorage;
 
 mod copy;
+mod mutable;
 mod object;
+pub use mutable::DynamicValueMut;
 mod operations;
 mod path;
 mod path_borrows;

@@ -122,7 +122,7 @@ impl SequenceBorrowLedger {
         Ok(())
     }
 
-    fn push(&self) -> Result<(), String> {
+    pub(super) fn push(&self) -> Result<(), String> {
         self.references
             .try_borrow_mut()
             .map_err(|_| "sequence references are already accessed".to_owned())?
@@ -130,7 +130,7 @@ impl SequenceBorrowLedger {
         Ok(())
     }
 
-    fn push_front(&self) -> Result<(), String> {
+    pub(super) fn push_front(&self) -> Result<(), String> {
         self.references
             .try_borrow_mut()
             .map_err(|_| "sequence references are already accessed".to_owned())?
@@ -138,7 +138,7 @@ impl SequenceBorrowLedger {
         Ok(())
     }
 
-    fn insert(&self, index: usize) -> Result<(), String> {
+    pub(super) fn insert(&self, index: usize) -> Result<(), String> {
         self.references
             .try_borrow_mut()
             .map_err(|_| "sequence references are already accessed".to_owned())?
@@ -146,7 +146,7 @@ impl SequenceBorrowLedger {
         Ok(())
     }
 
-    fn remove(&self, index: usize) -> Result<(), String> {
+    pub(super) fn remove(&self, index: usize) -> Result<(), String> {
         self.references
             .try_borrow_mut()
             .map_err(|_| "sequence references are already accessed".to_owned())?
@@ -154,7 +154,7 @@ impl SequenceBorrowLedger {
         Ok(())
     }
 
-    fn swap_remove(&self, index: usize) -> Result<(), String> {
+    pub(super) fn swap_remove(&self, index: usize) -> Result<(), String> {
         self.references
             .try_borrow_mut()
             .map_err(|_| "sequence references are already accessed".to_owned())?
@@ -162,7 +162,7 @@ impl SequenceBorrowLedger {
         Ok(())
     }
 
-    fn truncate(&self, length: usize) -> Result<(), String> {
+    pub(super) fn truncate(&self, length: usize) -> Result<(), String> {
         self.references
             .try_borrow_mut()
             .map_err(|_| "sequence references are already accessed".to_owned())?
@@ -170,7 +170,7 @@ impl SequenceBorrowLedger {
         Ok(())
     }
 
-    fn clear(&self) -> Result<(), String> {
+    pub(super) fn clear(&self) -> Result<(), String> {
         self.references
             .try_borrow_mut()
             .map_err(|_| "sequence references are already accessed".to_owned())?
@@ -242,15 +242,6 @@ impl DynamicValue {
         Ok(unsafe { &*self.storage.pointer().cast::<SequenceStorage>() })
     }
 
-    fn sequence_storage_mut(&mut self) -> Result<&mut SequenceStorage, String> {
-        if !matches!(self.descriptor.drop_kind, DropKind::Sequence { .. }) {
-            return Err("value is not a sequence".into());
-        }
-        // SAFETY: the constructor initialized exactly one SequenceStorage and the
-        // exclusive parent borrow protects access to it.
-        Ok(unsafe { &mut *self.storage.pointer_mut().cast::<SequenceStorage>() })
-    }
-
     pub fn sequence_borrows(&self) -> Result<Rc<SequenceBorrowLedger>, String> {
         Ok(self.sequence_storage()?.borrows.clone())
     }
@@ -272,123 +263,47 @@ impl DynamicValue {
         Ok(f(item))
     }
 
-    /// Replace one item without moving the sequence or invalidating its
-    /// reference handles. Each write takes only a short Rust borrow.
-    pub fn replace_sequence_item(&mut self, index: usize, item: Self) -> Result<Self, String> {
-        self.check_path_write(&[super::DynamicPathStep::Index(index)], true)?;
-        let DropKind::Sequence { item: expected } = &self.descriptor.drop_kind else {
-            return Err("value is not a sequence".into());
-        };
-        if !expected.compatible_with(&item.descriptor) {
-            return Err("sequence item has a different layout".into());
-        }
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_element_write(index)?;
-        let slot = storage
-            .items
-            .get_mut(index)
-            .ok_or_else(|| format!("sequence index {index} is out of bounds"))?;
-        Ok(std::mem::replace(slot, item))
+    pub fn replace_sequence_item(
+        &mut self,
+        index: usize,
+        item: Self,
+    ) -> Result<DynamicValue, String> {
+        self.view_mut().replace_sequence_item(index, item)
     }
 
     pub fn push_sequence_item(&mut self, item: Self) -> Result<(), String> {
-        let DropKind::Sequence { item: expected } = &self.descriptor.drop_kind else {
-            return Err("value is not a sequence".into());
-        };
-        if !expected.compatible_with(&item.descriptor) {
-            return Err("sequence item has a different layout".into());
-        }
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        storage.borrows.push()?;
-        storage.items.push(item);
-        Ok(())
+        self.view_mut().push_sequence_item(item)
     }
 
     pub fn push_sequence_front(&mut self, item: Self) -> Result<(), String> {
-        let DropKind::Sequence { item: expected } = &self.descriptor.drop_kind else {
-            return Err("value is not a sequence".into());
-        };
-        if !expected.compatible_with(&item.descriptor) {
-            return Err("sequence item has a different layout".into());
-        }
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        storage.borrows.push_front()?;
-        storage.items.insert(0, item);
-        Ok(())
+        self.view_mut().push_sequence_front(item)
     }
 
     pub fn insert_sequence_item(&mut self, index: usize, item: Self) -> Result<(), String> {
-        let DropKind::Sequence { item: expected } = &self.descriptor.drop_kind else {
-            return Err("value is not a sequence".into());
-        };
-        if !expected.compatible_with(&item.descriptor) {
-            return Err("sequence item has a different layout".into());
-        }
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        if index > storage.items.len() {
-            return Err(format!("sequence index {index} is out of bounds"));
-        }
-        storage.borrows.insert(index)?;
-        storage.items.insert(index, item);
-        Ok(())
+        self.view_mut().insert_sequence_item(index, item)
     }
 
     pub fn truncate_sequence(&mut self, length: usize) -> Result<(), String> {
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        storage.borrows.truncate(length)?;
-        storage.items.truncate(length);
-        Ok(())
+        self.view_mut().truncate_sequence(length)
     }
 
-    pub fn take_all_sequence_items(&mut self) -> Result<Vec<Self>, String> {
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        storage.borrows.clear()?;
-        Ok(std::mem::take(&mut storage.items))
+    pub fn take_all_sequence_items(&mut self) -> Result<Vec<DynamicValue>, String> {
+        self.view_mut().take_all_sequence_items()
     }
 
     pub fn clear_sequence(&mut self) -> Result<(), String> {
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        storage.borrows.clear()?;
-        storage.items.clear();
-        Ok(())
+        self.view_mut().clear_sequence()
     }
 
     pub fn swap_sequence_items(&mut self, left: usize, right: usize) -> Result<(), String> {
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        let items = &mut storage.items;
-        if left >= items.len() || right >= items.len() {
-            return Err("sequence swap index is out of bounds".into());
-        }
-        items.swap(left, right);
-        Ok(())
+        self.view_mut().swap_sequence_items(left, right)
     }
 
-    pub fn take_sequence_item(&mut self, index: usize) -> Result<Self, String> {
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        let items = &mut storage.items;
-        if index >= items.len() {
-            return Err(format!("sequence index {index} is out of bounds"));
-        }
-        storage.borrows.remove(index)?;
-        let item = items.remove(index);
-        Ok(item)
+    pub fn take_sequence_item(&mut self, index: usize) -> Result<DynamicValue, String> {
+        self.view_mut().take_sequence_item(index)
     }
 
-    pub fn swap_remove_sequence_item(&mut self, index: usize) -> Result<Self, String> {
-        let storage = self.sequence_storage_mut()?;
-        storage.borrows.check_structural_mutation()?;
-        if index >= storage.items.len() {
-            return Err(format!("sequence index {index} is out of bounds"));
-        }
-        storage.borrows.swap_remove(index)?;
-        Ok(storage.items.swap_remove(index))
+    pub fn swap_remove_sequence_item(&mut self, index: usize) -> Result<DynamicValue, String> {
+        self.view_mut().swap_remove_sequence_item(index)
     }
 }

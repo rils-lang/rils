@@ -91,6 +91,25 @@ impl<'a> DynamicValueRef<'a> {
         Ok(index)
     }
 
+    pub fn with_sequence_item<R>(
+        &self,
+        index: usize,
+        callback: impl FnOnce(&DynamicValue) -> R,
+    ) -> Result<R, String> {
+        let (pointer, layout) = self.root.project(&self.path)?;
+        if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {
+            return Err("value is not a sequence".into());
+        }
+        // SAFETY: project checked the initialized sequence; the root borrow
+        // keeps its item allocation alive throughout the callback.
+        let storage = unsafe { &*pointer.cast::<SequenceStorage>() };
+        let item = storage
+            .items
+            .get(index)
+            .ok_or_else(|| format!("sequence index {index} is out of bounds"))?;
+        Ok(callback(item))
+    }
+
     pub fn sequence_len(&self) -> Result<usize, String> {
         let (pointer, layout) = self.root.project(&self.path)?;
         if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {
@@ -306,6 +325,16 @@ impl DynamicValue {
     ) -> Result<Option<Self>, String> {
         self.check_path_write(path, false)?;
         self.replace_path_field_unchecked_borrows(path, value)
+    }
+
+    /// Assign an owned place while rejecting references to that place or its descendants.
+    pub fn replace_path_owned(
+        &mut self,
+        path: &[DynamicPathStep],
+        value: Self,
+    ) -> Result<Option<Self>, String> {
+        self.check_path_write(path, false)?;
+        self.replace_path_reference(path, value)
     }
 
     /// Replace a field or sequence item through a lexical reference. Equal
