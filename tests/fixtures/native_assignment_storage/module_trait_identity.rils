@@ -1,0 +1,15 @@
+mod model {
+    pub trait Identity { fn identity(self) -> Self; }
+    pub struct Item { value: string }
+    impl Identity for Item {
+        fn identity(self) -> Self { self }
+    }
+    fn bounded<T: Identity>(value: T) -> T { value }
+    pub fn make() -> Item {
+        let item = Item { value: "37" };
+        let checked = bounded(item);
+        <Item as Identity>::identity(checked)
+    }
+}
+let value = Some(model::make());
+value

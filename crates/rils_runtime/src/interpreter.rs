@@ -243,7 +243,7 @@ impl Interpreter {
                     ));
                 }
                 None => {
-                    let members = Environment::module_child(environment.clone());
+                    let members = Environment::named_module_child(environment.clone(), segment);
                     let module = Rc::new(ModuleValue {
                         name: segment.clone(),
                         members,
@@ -285,6 +285,9 @@ impl Interpreter {
         program: &Program,
         analysis: &rils_frontend::analysis::DocumentAnalysis,
     ) -> Result<Value, RuntimeError> {
+        self.globals.borrow().set_declaration_types(
+            rils_frontend::semantic::DeclarationTypeResolver::from_programs([(&[][..], program)]),
+        );
         self.semantic_expression_ids =
             Some(rils_frontend::semantic::ExpressionIdentityMap::allocate(
                 program,
@@ -304,6 +307,24 @@ impl Interpreter {
         analysis: &rils_frontend::analysis::DocumentAnalysis,
         entry: rils_frontend::DefId,
     ) -> Result<Value, RuntimeError> {
+        let programs = syntax
+            .roots()
+            .map(|program| (Vec::<String>::new(), program))
+            .chain(syntax.modules().map(|(id, program)| {
+                let path = graph
+                    .module(id)
+                    .map(|module| module.path.split("::").map(str::to_owned).collect())
+                    .unwrap_or_default();
+                (path, program)
+            }))
+            .collect::<Vec<_>>();
+        self.globals.borrow().set_declaration_types(
+            rils_frontend::semantic::DeclarationTypeResolver::from_programs(
+                programs
+                    .iter()
+                    .map(|(path, program)| (path.as_slice(), *program)),
+            ),
+        );
         let mut expression_ids = rils_frontend::semantic::ExpressionIdentityMap::default();
         for program in syntax.roots() {
             expression_ids.extend(rils_frontend::semantic::ExpressionIdentityMap::allocate(
@@ -359,7 +380,7 @@ impl Interpreter {
                     .next()
                     .expect("non-root module has a name")
                     .to_owned();
-                let members = Environment::module_child(parent.clone());
+                let members = Environment::named_module_child(parent.clone(), &name);
                 parent.borrow_mut().define(
                     name.clone(),
                     Value::Module(Rc::new(ModuleValue {

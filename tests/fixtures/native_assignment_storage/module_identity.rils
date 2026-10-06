@@ -1,0 +1,10 @@
+mod left {
+    pub struct Item { value: string }
+    pub fn make() -> Item { Item { value: "37" } }
+}
+mod right {
+    pub struct Item { value: i32 }
+    pub fn make() -> Item { Item { value: 37 } }
+}
+let values = (Some(left::make()), Some(right::make()));
+values

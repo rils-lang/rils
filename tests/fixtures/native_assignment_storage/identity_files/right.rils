@@ -1,0 +1,2 @@
+pub enum Item { Value(i32) }
+pub fn make() -> Item { Item::Value(37) }

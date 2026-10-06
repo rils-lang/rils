@@ -42,6 +42,10 @@ use math::add as sum;
 let answer = sum(20, 22);
 ```
 
+模块中的名义类型保留完整声明路径。例如 `model::Item` 的实例在解释器和 VM 中
+都以 `model::Item` 作为 `type_of` 结果；`use model::Item as LocalItem` 不改变类型身份。
+原生容器布局可以读取未导入的声明和内部私有字段类型，无需把这些名称公开给源码。
+
 推荐使用项目模式。在项目根目录放置 `rils.toml`，文件名自动映射为模块路径，不需要再写
 `mod name;`：
 

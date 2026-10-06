@@ -21,10 +21,11 @@ impl Interpreter {
                         *span,
                     ));
                 }
+                let declaration_name = environment.borrow().qualified_type_name(name);
                 environment.borrow_mut().define(
                     name.clone(),
                     Value::TypeAlias(Rc::new(TypeAliasType {
-                        name: name.clone(),
+                        name: declaration_name,
                         generic_parameters: generic_parameters.clone(),
                         target: target.clone(),
                     })),
@@ -107,7 +108,7 @@ impl Interpreter {
                         *span,
                     ));
                 };
-                let members = Environment::module_child(environment.clone());
+                let members = Environment::named_module_child(environment.clone(), name);
                 self.execute_statements(statements, members.clone())?;
                 let mut public = std::collections::HashSet::new();
                 for statement in statements {
@@ -186,7 +187,7 @@ impl Interpreter {
             } => {
                 let type_annotation = type_annotation
                     .as_ref()
-                    .map(|ty| expand_type_aliases(ty, &environment, *span))
+                    .map(|ty| expand_source_type(ty, &environment, *span))
                     .transpose()?;
                 let inferred_type = self
                     .semantic_expression_ids
@@ -264,7 +265,7 @@ impl Interpreter {
                 let mut parameters = parameters.clone();
                 for parameter in &mut parameters {
                     if let Some(annotation) = &parameter.type_annotation {
-                        parameter.type_annotation = Some(expand_type_aliases(
+                        parameter.type_annotation = Some(expand_source_type(
                             annotation,
                             &environment,
                             parameter.span,
@@ -273,7 +274,7 @@ impl Interpreter {
                 }
                 let return_type = return_type
                     .as_ref()
-                    .map(|ty| expand_type_aliases(ty, &environment, body.span))
+                    .map(|ty| expand_source_type(ty, &environment, body.span))
                     .transpose()?;
                 let function_body = body.clone();
                 let semantic_expression_ids = self
@@ -318,13 +319,13 @@ impl Interpreter {
                     .map(|field| {
                         let mut field = field.clone();
                         field.type_annotation =
-                            expand_type_aliases(&field.type_annotation, &environment, field.span)?;
+                            expand_source_type(&field.type_annotation, &environment, field.span)?;
                         Ok(field)
                     })
                     .collect::<Result<Vec<_>, RuntimeError>>()?;
                 let definition = StructType {
                     field_indices: Default::default(),
-                    name: name.clone(),
+                    name: environment.borrow().qualified_type_name(name),
                     opaque_native: crate::ast::has_compiler_internal_attribute(attributes),
                     generic_parameters: generic_parameters.clone(),
                     fields,
@@ -362,7 +363,7 @@ impl Interpreter {
                             name: name.clone(),
                             fields: fields
                                 .iter()
-                                .map(|field| expand_type_aliases(field, &environment, *span))
+                                .map(|field| expand_source_type(field, &environment, *span))
                                 .collect::<Result<Vec<_>, _>>()?,
                             span: *span,
                         }),
@@ -372,7 +373,7 @@ impl Interpreter {
                                 .iter()
                                 .map(|field| {
                                     let mut field = field.clone();
-                                    field.type_annotation = expand_type_aliases(
+                                    field.type_annotation = expand_source_type(
                                         &field.type_annotation,
                                         &environment,
                                         field.span,
@@ -385,7 +386,7 @@ impl Interpreter {
                     })
                     .collect::<Result<Vec<_>, RuntimeError>>()?;
                 let definition = EnumType {
-                    name: name.clone(),
+                    name: environment.borrow().qualified_type_name(name),
                     generic_parameters: generic_parameters.clone(),
                     variants,
                     methods: Default::default(),
@@ -437,7 +438,7 @@ impl Interpreter {
                         associated.value = associated
                             .value
                             .as_ref()
-                            .map(|value| expand_type_aliases(value, &environment, associated.span))
+                            .map(|value| expand_source_type(value, &environment, associated.span))
                             .transpose()?;
                         Ok(associated)
                     })
@@ -448,7 +449,7 @@ impl Interpreter {
                         let mut method = method.clone();
                         for parameter in &mut method.parameters {
                             if let Some(annotation) = &parameter.type_annotation {
-                                parameter.type_annotation = Some(expand_type_aliases(
+                                parameter.type_annotation = Some(expand_source_type(
                                     annotation,
                                     &environment,
                                     parameter.span,
@@ -458,15 +459,16 @@ impl Interpreter {
                         method.return_type = method
                             .return_type
                             .as_ref()
-                            .map(|value| expand_type_aliases(value, &environment, method.span))
+                            .map(|value| expand_source_type(value, &environment, method.span))
                             .transpose()?;
                         Ok(method)
                     })
                     .collect::<Result<Vec<_>, RuntimeError>>()?;
+                let declaration_name = environment.borrow().qualified_type_name(name);
                 environment.borrow_mut().define(
                     name.clone(),
                     Value::TraitType(Rc::new(TraitType {
-                        name: name.clone(),
+                        name: declaration_name,
                         generic_parameters: generic_parameters.clone(),
                         bounds: bounds.clone(),
                         associated_types,
@@ -487,6 +489,13 @@ impl Interpreter {
                 span,
                 ..
             } => {
+                for associated in associated_types {
+                    if let Some(ty) = &associated.value {
+                        expand_source_type(ty, &environment, associated.span)?;
+                    }
+                }
+                let target = expand_source_type(target, &environment, *span)?;
+                let target = &target;
                 let Type::Named {
                     name: target_name, ..
                 } = target
@@ -691,6 +700,7 @@ impl Interpreter {
                             methods,
                             target,
                             *span,
+                            &environment,
                         )?;
                     }
                     if definition.name == "Copy"
@@ -741,6 +751,7 @@ impl Interpreter {
                     }
                     for parameter in &mut parameters {
                         if let Some(annotation) = &mut parameter.type_annotation {
+                            expand_source_type(annotation, &environment, parameter.span)?;
                             *annotation = expand_type_aliases(
                                 &substitute_associated(annotation, target, &associated_type_values),
                                 &environment,
@@ -752,6 +763,7 @@ impl Interpreter {
                         .return_type
                         .as_ref()
                         .map(|return_type| {
+                            expand_source_type(return_type, &environment, method.span)?;
                             expand_type_aliases(
                                 &substitute_associated(
                                     return_type,

@@ -1,0 +1,4 @@
+mod left;
+mod right;
+let values = (Some(left::make()), Some(right::make()));
+values

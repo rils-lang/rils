@@ -165,3 +165,72 @@ fn inferred_bindings_compose_native_storage_without_annotations() {
         }
     }
 }
+
+fn native_leaf_types(value: &Value) -> Vec<String> {
+    match value {
+        Value::Dynamic(object) => vec![object.descriptor().layout().rils_type().to_string()],
+        Value::Tuple(sequence) => sequence
+            .elements
+            .borrow()
+            .iter()
+            .flat_map(|slot| native_leaf_types(slot.value.as_ref().unwrap()))
+            .collect(),
+        other => panic!("expected native nominal sums, found {other:?}"),
+    }
+}
+
+#[test]
+fn module_declarations_retain_identity_and_private_layouts_without_imports() {
+    for (source, expected) in [
+        (
+            include_str!("fixtures/native_assignment_storage/module_identity.rils"),
+            vec!["Option<left::Item>", "Option<right::Item>"],
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/module_enum_identity.rils"),
+            vec!["Option<left::Item>", "Option<right::Item>"],
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/module_private_layout.rils"),
+            vec!["Option<model::Item>"],
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/module_forward_layout.rils"),
+            vec!["Option<model::Item>"],
+        ),
+        (
+            include_str!("fixtures/native_assignment_storage/module_trait_identity.rils"),
+            vec!["Option<model::Item>"],
+        ),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_eq!(native_leaf_types(&value), expected, "{source}: {value}");
+            assert!(value.to_string().contains("37"), "{source}: {value}");
+        }
+    }
+}
+
+#[test]
+fn separate_files_use_canonical_module_layouts_without_importing_types() {
+    let entry = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/native_assignment_storage/identity_files/main.rils");
+    let compiled = rils::compile_file(&entry).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        rils::Engine::new().eval_file_value(&entry).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        assert_eq!(
+            native_leaf_types(&value),
+            ["Option<left::Item>", "Option<right::Item>"]
+        );
+        assert!(value.to_string().contains("37"));
+    }
+}

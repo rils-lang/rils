@@ -205,8 +205,8 @@ pub(super) fn resolve_qualified_path(
         ));
     }
     Ok(Value::TraitMethodSelector(Rc::new(TraitMethodSelector {
-        target: Some(target.clone()),
-        trait_name: trait_name.into(),
+        target: Some(expand_type_aliases(target, environment, span)?),
+        trait_name: definition.name.clone(),
         method_name: member.into(),
         environment: environment.clone(),
     })))

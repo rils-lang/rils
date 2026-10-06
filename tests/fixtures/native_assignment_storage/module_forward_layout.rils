@@ -1,0 +1,9 @@
+mod model {
+    pub struct Item { inner: Inner }
+    struct Inner { value: string }
+    pub type Output = Option<Item>;
+    pub fn make() -> Output { Some(Item { inner: Inner { value: "37" } }) }
+}
+use model::Output as ImportedOutput;
+let value: ImportedOutput = model::make();
+value

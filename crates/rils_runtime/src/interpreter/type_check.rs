@@ -1,5 +1,8 @@
 use super::*;
 
+mod declarations;
+pub(super) use declarations::{expand_source_type, expand_type_aliases};
+
 pub(super) fn validate_named_fields(
     definitions: &[NamedField],
     mut values: HashMap<String, Value>,
@@ -313,6 +316,12 @@ pub(super) fn type_implements_trait(
     trait_name: &str,
     environment: &EnvironmentRef,
 ) -> bool {
+    let canonical_trait = match environment.borrow().get(trait_name) {
+        Some(Value::TraitType(definition)) => definition.name.clone(),
+        _ => trait_name.to_owned(),
+    };
+    let trait_name = rils_frontend::standard_library::builtin_type_name(&canonical_trait)
+        .unwrap_or(&canonical_trait);
     if rils_builtins::BLANKET_TRAIT_IMPLS
         .iter()
         .any(|&(bound, provided)| {
@@ -321,7 +330,6 @@ pub(super) fn type_implements_trait(
     {
         return true;
     }
-    let trait_name = trait_name.rsplit("::").next().unwrap_or(trait_name);
     if matches!(trait_name, "Display" | "Debug") {
         return rils_frontend::format_traits::implements(actual, trait_name, &|ty, required| {
             let Type::Named { name, .. } = ty else {
@@ -377,7 +385,7 @@ pub(super) fn type_implements_trait(
                 return false;
             };
             if rils_builtins::native_implements(
-                name.rsplit("::").next().unwrap_or(name),
+                rils_frontend::standard_library::builtin_type_name(name).unwrap_or(name),
                 trait_name,
             ) {
                 return true;
@@ -444,312 +452,6 @@ fn type_is_default(actual: &Type, environment: &EnvironmentRef) -> bool {
         Some(rils_frontend::default::DefaultPlan::TraitCall(_)) | None => false,
         Some(_) => true,
     }
-}
-
-pub(super) fn expand_type_aliases(
-    ty: &Type,
-    environment: &EnvironmentRef,
-    span: Span,
-) -> Result<Type, RuntimeError> {
-    fn resolve_type_path(environment: &EnvironmentRef, name: &str, span: Span) -> Option<Value> {
-        let path = name.split("::").map(str::to_owned).collect::<Vec<_>>();
-        let (environment, path) =
-            super::execution::anchored_environment(&path, environment, span).ok()?;
-        let (first, segments) = path.split_first()?;
-        let mut value = environment.borrow().get(first)?;
-        for segment in segments {
-            let Value::Module(module) = value else {
-                return None;
-            };
-            if !module.public.borrow().contains(segment) {
-                return None;
-            }
-            value = module.members.borrow().get(segment)?;
-        }
-        Some(value)
-    }
-
-    fn expand(
-        ty: &Type,
-        environment: &EnvironmentRef,
-        span: Span,
-        stack: &mut Vec<String>,
-    ) -> Result<Type, RuntimeError> {
-        match ty {
-            Type::Tuple(elements) => Ok(Type::Tuple(
-                elements
-                    .iter()
-                    .map(|element| expand(element, environment, span, stack))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )),
-            Type::Array { element, length } => Ok(Type::Array {
-                element: Box::new(expand(element, environment, span, stack)?),
-                length: *length,
-            }),
-            Type::Option(inner) => Ok(Type::Option(Box::new(expand(
-                inner,
-                environment,
-                span,
-                stack,
-            )?))),
-            Type::Result(ok, error) => Ok(Type::Result(
-                Box::new(expand(ok, environment, span, stack)?),
-                Box::new(expand(error, environment, span, stack)?),
-            )),
-            Type::Reference { mutable, inner } => Ok(Type::Reference {
-                mutable: *mutable,
-                inner: Box::new(expand(inner, environment, span, stack)?),
-            }),
-            Type::Function {
-                parameters,
-                return_type,
-            } => Ok(Type::Function {
-                parameters: parameters
-                    .as_ref()
-                    .map(|parameters| {
-                        parameters
-                            .iter()
-                            .map(|parameter| expand(parameter, environment, span, stack))
-                            .collect()
-                    })
-                    .transpose()?,
-                return_type: Box::new(expand(return_type, environment, span, stack)?),
-            }),
-            Type::Associated {
-                base,
-                trait_name,
-                name,
-                arguments,
-            } => {
-                let base = expand(base, environment, span, stack)?;
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| expand(argument, environment, span, stack))
-                    .collect::<Result<Vec<_>, _>>()?;
-                if trait_name.as_deref() == Some("IntoIterator")
-                    && name == "IntoIter"
-                    && arguments.is_empty()
-                    && type_implements_trait(&base, "Iterator", environment)
-                {
-                    return Ok(base);
-                }
-                let lookup_trait = if trait_name.as_deref() == Some("IntoIterator")
-                    && name == "Item"
-                    && arguments.is_empty()
-                    && type_implements_trait(&base, "Iterator", environment)
-                {
-                    Some("Iterator")
-                } else {
-                    trait_name.as_deref()
-                };
-                let Type::Named {
-                    name: target_name, ..
-                } = &base
-                else {
-                    return Ok(Type::Associated {
-                        base: Box::new(base),
-                        trait_name: trait_name.clone(),
-                        name: name.clone(),
-                        arguments,
-                    });
-                };
-                if lookup_trait == Some("Iterator")
-                    && name == "Item"
-                    && let Some(item) =
-                        rils_frontend::standard_library::builtin_iterator_item_type(&base)
-                {
-                    return Ok(item);
-                }
-                if trait_name.as_deref() == Some("IntoIterator")
-                    && name == "Item"
-                    && let Some(item) =
-                        rils_frontend::standard_library::builtin_into_iterator_item_type(&base)
-                {
-                    return Ok(item);
-                }
-                let definitions = match environment.borrow().get(target_name) {
-                    Some(Value::StructType(definition)) => definition
-                        .associated_types
-                        .borrow()
-                        .iter()
-                        .filter(|(implemented_trait, _)| {
-                            lookup_trait
-                                .is_none_or(|expected| expected == implemented_trait.as_str())
-                        })
-                        .filter_map(|(_, items)| items.get(name).cloned())
-                        .collect::<Vec<_>>(),
-                    Some(Value::EnumType(definition)) => definition
-                        .associated_types
-                        .borrow()
-                        .iter()
-                        .filter(|(implemented_trait, _)| {
-                            lookup_trait
-                                .is_none_or(|expected| expected == implemented_trait.as_str())
-                        })
-                        .filter_map(|(_, items)| items.get(name).cloned())
-                        .collect::<Vec<_>>(),
-                    _ => Vec::new(),
-                };
-                if definitions.len() > 1 {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "associated type `{target_name}::{name}` is ambiguous; use `<{target_name} as Trait>::{name}`"
-                        ),
-                        span,
-                    ));
-                }
-                let Some(alias) = definitions.into_iter().next() else {
-                    if let Some(trait_name) = trait_name {
-                        return Err(RuntimeError::new(
-                            format!(
-                                "type `{target_name}` has no associated type `{name}` from trait `{trait_name}`"
-                            ),
-                            span,
-                        ));
-                    }
-                    return Ok(Type::Associated {
-                        base: Box::new(base),
-                        trait_name: trait_name.clone(),
-                        name: name.clone(),
-                        arguments,
-                    });
-                };
-                if alias.generic_parameters.len() != arguments.len() {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "associated type `{target_name}::{name}` expects {} type argument(s), received {}",
-                            alias.generic_parameters.len(),
-                            arguments.len()
-                        ),
-                        span,
-                    ));
-                }
-                let substitutions = alias
-                    .generic_parameters
-                    .iter()
-                    .map(|parameter| parameter.name.clone())
-                    .zip(arguments)
-                    .collect::<HashMap<_, _>>();
-                expand(
-                    &alias.target.substitute(&substitutions),
-                    environment,
-                    span,
-                    stack,
-                )
-            }
-            Type::Named { name, arguments } => {
-                let arguments = arguments
-                    .iter()
-                    .map(|argument| expand(argument, environment, span, stack))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let resolved = resolve_type_path(environment, name, span);
-                match resolved {
-                    Some(Value::StructType(definition)) => {
-                        return Ok(Type::Named {
-                            name: definition.name.clone(),
-                            arguments,
-                        });
-                    }
-                    Some(Value::EnumType(definition)) => {
-                        return Ok(Type::Named {
-                            name: definition.name.clone(),
-                            arguments,
-                        });
-                    }
-                    Some(Value::HostType(definition)) => {
-                        return Ok(Type::Named {
-                            name: definition.name.clone(),
-                            arguments,
-                        });
-                    }
-                    _ => {}
-                }
-                let Some(Value::TypeAlias(alias)) = resolved else {
-                    let segments = name.split("::").collect::<Vec<_>>();
-                    if let [base, associated] = segments.as_slice() {
-                        return expand(
-                            &Type::Associated {
-                                base: Box::new(Type::named(*base)),
-                                trait_name: None,
-                                name: (*associated).into(),
-                                arguments,
-                            },
-                            environment,
-                            span,
-                            stack,
-                        );
-                    }
-                    return Ok(Type::Named {
-                        name: name.clone(),
-                        arguments,
-                    });
-                };
-                if alias.generic_parameters.len() != arguments.len() {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "type alias `{name}` expects {} type argument(s), received {}",
-                            alias.generic_parameters.len(),
-                            arguments.len()
-                        ),
-                        span,
-                    ));
-                }
-                if stack.contains(name) {
-                    return Err(RuntimeError::new(
-                        format!("recursive type alias `{name}`"),
-                        span,
-                    ));
-                }
-                let substitutions = alias
-                    .generic_parameters
-                    .iter()
-                    .zip(&arguments)
-                    .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
-                    .collect::<HashMap<_, _>>();
-                for (parameter, argument) in alias.generic_parameters.iter().zip(&arguments) {
-                    if matches!(
-                        argument,
-                        Type::Unknown | Type::Variable(_) | Type::BoundVariable { .. }
-                    ) {
-                        continue;
-                    }
-                    for bound in &parameter.bounds {
-                        if !type_implements_trait_bound(
-                            argument,
-                            &bound.substitute(&substitutions),
-                            None,
-                            environment,
-                        ) {
-                            return Err(RuntimeError::new(
-                                format!(
-                                    "type `{argument}` does not implement required trait `{bound}` for type alias `{name}`"
-                                ),
-                                span,
-                            ));
-                        }
-                    }
-                }
-                let substitutions = alias
-                    .generic_parameters
-                    .iter()
-                    .map(|parameter| parameter.name.clone())
-                    .zip(arguments)
-                    .collect::<HashMap<_, _>>();
-                stack.push(name.clone());
-                let result = expand(
-                    &alias.target.substitute(&substitutions),
-                    environment,
-                    span,
-                    stack,
-                );
-                stack.pop();
-                result
-            }
-            other => Ok(other.clone()),
-        }
-    }
-
-    expand(ty, environment, span, &mut Vec::new())
 }
 
 fn type_is_copy(actual: &Type, environment: &EnvironmentRef) -> bool {

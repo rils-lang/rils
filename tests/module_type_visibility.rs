@@ -1,4 +1,4 @@
-use rils::compile;
+use rils::{compile, eval_value};
 
 #[test]
 fn layout_registry_does_not_make_private_source_types_accessible() {
@@ -7,6 +7,10 @@ fn layout_registry_does_not_make_private_source_types_accessible() {
         include_str!("fixtures/native_assignment_storage/module_private_annotation.rils"),
         include_str!("fixtures/native_assignment_storage/module_private_enum.rils"),
     ] {
+        assert!(
+            eval_value(source).is_err(),
+            "accepted private type: {source}"
+        );
         let error = compile(source)
             .err()
             .expect("private type must be rejected before VM execution");

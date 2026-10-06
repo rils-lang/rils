@@ -1,10 +1,9 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{types::Type, value::Value};
+
+mod declarations;
+use declarations::TypeDeclarations;
 
 pub type EnvironmentRef = Rc<RefCell<Environment>>;
 pub type StorageRef = Rc<RefCell<StorageSlot>>;
@@ -148,6 +147,8 @@ pub struct Environment {
     values: HashMap<String, StorageRef>,
     parent: Option<EnvironmentRef>,
     module: bool,
+    module_path: Vec<String>,
+    declarations: Rc<TypeDeclarations>,
 }
 
 impl Environment {
@@ -157,47 +158,28 @@ impl Environment {
         Vec<Rc<crate::value::StructType>>,
         Vec<Rc<crate::value::EnumType>>,
     ) {
-        let mut structs = Vec::new();
-        let mut enums = Vec::new();
-        self.collect_visible_type_definitions(&mut HashSet::new(), &mut structs, &mut enums);
-        (structs, enums)
+        self.declarations.definitions()
     }
 
-    fn collect_visible_type_definitions(
-        &self,
-        seen: &mut HashSet<String>,
-        structs: &mut Vec<Rc<crate::value::StructType>>,
-        enums: &mut Vec<Rc<crate::value::EnumType>>,
-    ) {
-        for (name, slot) in &self.values {
-            if !seen.insert(name.clone()) {
-                continue;
-            }
-            match slot.borrow().value.as_ref() {
-                Some(Value::StructType(definition)) => structs.push(definition.clone()),
-                Some(Value::EnumType(definition)) => enums.push(definition.clone()),
-                _ => {}
-            }
-        }
-        if let Some(parent) = &self.parent {
-            parent
-                .borrow()
-                .collect_visible_type_definitions(seen, structs, enums);
-        }
-    }
     pub fn global() -> EnvironmentRef {
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
             parent: None,
             module: false,
+            module_path: Vec::new(),
+            declarations: Rc::default(),
         }))
     }
 
     pub fn child(parent: EnvironmentRef) -> EnvironmentRef {
+        let module_path = parent.borrow().module_path.clone();
+        let declarations = parent.borrow().declarations.clone();
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
             parent: Some(parent),
             module: false,
+            module_path,
+            declarations,
         }))
     }
 
@@ -206,11 +188,43 @@ impl Environment {
     }
 
     pub fn module_child(parent: EnvironmentRef) -> EnvironmentRef {
-        Rc::new(RefCell::new(Self {
-            values: HashMap::new(),
-            parent: Some(parent),
-            module: true,
-        }))
+        let child = Self::child(parent);
+        child.borrow_mut().module = true;
+        child
+    }
+
+    pub fn named_module_child(parent: EnvironmentRef, name: &str) -> EnvironmentRef {
+        let child = Self::module_child(parent);
+        child.borrow_mut().module_path.push(name.to_owned());
+        child
+    }
+
+    pub fn qualified_type_name(&self, name: &str) -> String {
+        self.module_path
+            .iter()
+            .map(String::as_str)
+            .chain([name])
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+
+    pub fn set_declaration_types(
+        &self,
+        resolver: rils_frontend::semantic::DeclarationTypeResolver,
+    ) {
+        self.declarations.set_resolver(resolver);
+    }
+
+    pub fn resolve_declaration_type(&self, ty: &Type) -> Type {
+        self.declarations.resolve(ty, &self.module_path)
+    }
+
+    pub fn is_declared_type(&self, name: &str) -> bool {
+        self.declarations.is_declared_type(name)
+    }
+
+    pub fn inaccessible_type(&self, ty: &Type) -> Option<String> {
+        self.declarations.inaccessible_type(ty, &self.module_path)
     }
 
     pub fn root(environment: &EnvironmentRef) -> EnvironmentRef {
@@ -254,6 +268,7 @@ impl Environment {
         mutable: bool,
         type_annotation: Option<Type>,
     ) {
+        self.declarations.register(&value);
         let type_annotation = type_annotation.or_else(|| match Type::of_value(&value) {
             Some(inferred @ (Type::Option(_) | Type::Result(_, _))) => Some(inferred),
             _ => None,
@@ -271,7 +286,13 @@ impl Environment {
     }
 
     pub fn get(&self, name: &str) -> Option<Value> {
-        self.slot(name).and_then(|slot| slot.borrow().read().ok())
+        self.slot(name)
+            .and_then(|slot| slot.borrow().read().ok())
+            .or_else(|| {
+                name.contains("::")
+                    .then(|| self.declarations.get(name))
+                    .flatten()
+            })
     }
 
     pub fn take(&self, name: &str) -> Result<Value, AccessError> {

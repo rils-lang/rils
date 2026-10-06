@@ -17,6 +17,7 @@ pub(super) fn validate_trait_implementation(
     methods: &[crate::ast::ImplMethod],
     target: &Type,
     span: Span,
+    environment: &EnvironmentRef,
 ) -> Result<(), RuntimeError> {
     let trait_substitutions = definition
         .generic_parameters
@@ -44,6 +45,7 @@ pub(super) fn validate_trait_implementation(
             target,
             associated_types,
             &trait_substitutions,
+            environment,
         )?;
     }
     if let Some(extra) = methods.iter().find(|method| {
@@ -69,6 +71,7 @@ pub(super) fn validate_trait_method_signature(
     target: &Type,
     associated_types: &HashMap<String, TypeAliasType>,
     trait_substitutions: &HashMap<String, Type>,
+    environment: &EnvironmentRef,
 ) -> Result<(), RuntimeError> {
     let mut substitutions = trait_substitutions.clone();
     for parameter in &required.generic_parameters {
@@ -114,6 +117,12 @@ pub(super) fn validate_trait_method_signature(
             .or_else(|| (actual_parameter.name == "self").then(|| target.clone()));
         let expected =
             expected.or_else(|| (required_parameter.name == "self").then(|| target.clone()));
+        let expected = expected
+            .map(|ty| expand_type_aliases(&ty, environment, implementation.span))
+            .transpose()?;
+        let actual = actual
+            .map(|ty| expand_type_aliases(&ty, environment, implementation.span))
+            .transpose()?;
         if !optional_types_compatible(expected.as_ref(), actual.as_ref()) {
             return Err(RuntimeError::new(
                 format!(
@@ -136,6 +145,8 @@ pub(super) fn validate_trait_method_signature(
         .as_ref()
         .map(|value| substitute_associated(value, target, associated_types))
         .unwrap_or(Type::Unit);
+    let expected_return = expand_type_aliases(&expected_return, environment, implementation.span)?;
+    let actual_return = expand_type_aliases(&actual_return, environment, implementation.span)?;
     if !trait_types_compatible(&expected_return, &actual_return) {
         return Err(RuntimeError::new(
             format!(
