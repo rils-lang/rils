@@ -16,8 +16,8 @@ pub enum DynamicPathStep {
 /// A borrowed view of any native layout, including composed generic values.
 /// It retains the owning value's borrow and never materializes an interpreter value.
 pub struct DynamicValueRef<'a> {
-    root: &'a DynamicValue,
-    path: Vec<DynamicPathStep>,
+    pub(super) root: &'a DynamicValue,
+    pub(super) path: Vec<DynamicPathStep>,
 }
 
 impl<'a> DynamicValueRef<'a> {
@@ -116,7 +116,10 @@ impl DynamicValue {
             path: path.to_vec(),
         })
     }
-    fn project(&self, path: &[DynamicPathStep]) -> Result<(*const u8, Rc<DynamicLayout>), String> {
+    pub(super) fn project(
+        &self,
+        path: &[DynamicPathStep],
+    ) -> Result<(*const u8, Rc<DynamicLayout>), String> {
         let mut pointer = self.storage.pointer();
         let mut layout = self.descriptor.clone();
         for step in path {
@@ -209,23 +212,9 @@ impl DynamicValue {
     /// decoding them into an interpreter-level representation.
     pub fn copy_path(&self, path: &[DynamicPathStep]) -> Result<Self, String> {
         let (pointer, layout) = self.project(path)?;
-        if !layout.is_copy() {
-            return Err(format!("{} is not Copy", layout.rils_type()));
-        }
-        // None may own only its one-byte tag, even when its registered
-        // descriptor reserves room for a larger Some payload.
-        if matches!(layout.drop_kind, DropKind::Option { .. }) && unsafe { ptr::read(pointer) } == 0
-        {
-            return Self::none(layout);
-        }
-        let mut copy = Self::uninitialized(layout.clone());
-        // SAFETY: project checked every parent tag and returned the aligned
-        // pointer for this exact Copy layout. Both allocations are disjoint.
-        unsafe {
-            ptr::copy_nonoverlapping(pointer, copy.storage.pointer_mut(), layout.layout().size());
-        }
-        copy.initialized = true;
-        Ok(copy)
+        // SAFETY: project checked the tags and exact layout, and &self keeps
+        // the source alive while each registered handle retains its owner.
+        unsafe { Self::copy_at(layout, pointer) }
     }
 
     fn field_parent(

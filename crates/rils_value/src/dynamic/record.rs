@@ -94,6 +94,7 @@ impl DynamicLayout {
         let mut layout = Layout::array::<u8>(fields.len())
             .map_err(|_| "record field tags exceed the address space".to_owned())?;
         let mut copy = true;
+        let mut bitwise_copy = true;
         let mut metadata = Vec::with_capacity(fields.len());
         let mut indices = HashMap::with_capacity(fields.len());
         for (name, field_layout) in fields {
@@ -105,6 +106,7 @@ impl DynamicLayout {
                 .map_err(|_| format!("record field `{name}` exceeds the address space"))?;
             layout = extended;
             copy &= field_layout.copy;
+            bitwise_copy &= field_layout.bitwise_copy;
             metadata.push(DynamicField {
                 name,
                 layout: field_layout,
@@ -115,6 +117,7 @@ impl DynamicLayout {
             rils_type,
             layout: layout.pad_to_align(),
             copy,
+            bitwise_copy,
             drop_kind: DropKind::Record(RecordLayout {
                 fields: metadata,
                 indices,

@@ -6,6 +6,7 @@ use rils_syntax::Type;
 
 use crate::storage::RawStorage;
 
+mod copy;
 mod object;
 mod operations;
 mod path;
@@ -13,6 +14,7 @@ mod path_borrows;
 mod record;
 mod sequence;
 mod variant;
+mod visit;
 pub use object::{CompactDynamicObject, DynamicObject};
 pub use operations::{DynamicCallContext, DynamicType};
 pub use path::{DynamicPathStep, DynamicValueRef};
@@ -27,6 +29,7 @@ enum DropKind {
     Rust {
         type_id: TypeId,
         drop_value: unsafe fn(*mut u8),
+        copy_handle: Option<unsafe fn(*const u8, *mut u8)>,
     },
     Option {
         item: Rc<DynamicLayout>,
@@ -46,6 +49,7 @@ pub struct DynamicLayout {
     rils_type: Type,
     layout: Layout,
     copy: bool,
+    bitwise_copy: bool,
     drop_kind: DropKind,
 }
 
@@ -55,18 +59,34 @@ impl DynamicLayout {
             rils_type,
             layout: Layout::new::<T>(),
             copy: false,
+            bitwise_copy: false,
             drop_kind: DropKind::Rust {
                 type_id: TypeId::of::<T>(),
                 drop_value: drop_rust::<T>,
+                copy_handle: None,
             },
         })
     }
 
     pub fn copy_of<T: Copy + 'static>(rils_type: Type) -> Rc<Self> {
         let mut layout = Self::of::<T>(rils_type);
-        Rc::get_mut(&mut layout)
-            .expect("new layout has one owner")
-            .copy = true;
+        let descriptor = Rc::get_mut(&mut layout).expect("new layout has one owner");
+        descriptor.copy = true;
+        descriptor.bitwise_copy = true;
+        layout
+    }
+
+    /// Register a Rils Copy identity handle whose Rust representation needs
+    /// `Clone` to retain its owner. Copying this layout never duplicates the
+    /// managed pointer's bytes without retaining its reference count.
+    pub fn copy_handle_of<T: Clone + 'static>(rils_type: Type) -> Rc<Self> {
+        let mut layout = Self::of::<T>(rils_type);
+        let descriptor = Rc::get_mut(&mut layout).expect("new layout has one owner");
+        descriptor.copy = true;
+        let DropKind::Rust { copy_handle, .. } = &mut descriptor.drop_kind else {
+            unreachable!()
+        };
+        *copy_handle = Some(copy::copy_handle::<T>);
         layout
     }
 
@@ -78,6 +98,7 @@ impl DynamicLayout {
             rils_type: Type::Option(Box::new(item.rils_type.clone())),
             layout: layout.pad_to_align(),
             copy: item.copy,
+            bitwise_copy: item.bitwise_copy,
             drop_kind: DropKind::Option { item, item_offset },
         }))
     }
@@ -100,6 +121,11 @@ impl DynamicLayout {
         matches!(self.drop_kind, DropKind::Rust { .. })
     }
 
+    /// Check a registered leaf representation without accessing its bytes.
+    pub fn is_rust_type<T: 'static>(&self) -> bool {
+        matches!(self.drop_kind, DropKind::Rust { type_id, .. } if type_id == TypeId::of::<T>())
+    }
+
     pub fn option_item(&self) -> Option<&Rc<Self>> {
         match &self.drop_kind {
             DropKind::Option { item, .. } => Some(item),
@@ -114,13 +140,23 @@ impl DynamicLayout {
         if self.rils_type != other.rils_type
             || self.layout != other.layout
             || self.copy != other.copy
+            || self.bitwise_copy != other.bitwise_copy
         {
             return false;
         }
         match (&self.drop_kind, &other.drop_kind) {
-            (DropKind::Rust { type_id: left, .. }, DropKind::Rust { type_id: right, .. }) => {
-                left == right
-            }
+            (
+                DropKind::Rust {
+                    type_id: left,
+                    copy_handle: left_copy,
+                    ..
+                },
+                DropKind::Rust {
+                    type_id: right,
+                    copy_handle: right_copy,
+                    ..
+                },
+            ) => left == right && left_copy.is_some() == right_copy.is_some(),
             (
                 DropKind::Option {
                     item: left,
@@ -362,17 +398,8 @@ impl DynamicValue {
     }
 
     pub fn copy_owned(&self) -> Result<Self, String> {
-        if !self.descriptor.copy {
-            return Err(format!("{} is not Copy", self.descriptor.rils_type));
-        }
-        Ok(Self {
-            descriptor: self.descriptor.clone(),
-            // SAFETY: DynamicLayout::copy is set only for T: Copy or for an
-            // optional layout whose child has the same guarantee.
-            storage: unsafe { self.storage.copy_bytes(true) },
-            initialized: true,
-            path_borrows: OnceCell::new(),
-        })
+        // SAFETY: this owner retains the initialized source for the whole copy.
+        unsafe { Self::copy_at(self.descriptor.clone(), self.storage.pointer()) }
     }
 
     pub fn descriptor(&self) -> &DynamicLayout {

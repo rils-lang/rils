@@ -75,10 +75,12 @@ impl DynamicLayout {
             .extend(payload)
             .map_err(|_| "variant layout exceeds the address space".to_owned())?;
         let copy = alternatives.iter().all(|child| child.copy);
+        let bitwise_copy = alternatives.iter().all(|child| child.bitwise_copy);
         Ok(Rc::new(Self {
             rils_type: ty,
             layout: layout.pad_to_align(),
             copy,
+            bitwise_copy,
             drop_kind: DropKind::Variant(VariantLayout {
                 alternatives,
                 names,

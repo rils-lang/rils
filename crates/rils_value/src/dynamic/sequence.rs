@@ -193,6 +193,7 @@ impl DynamicLayout {
             rils_type: ty,
             layout: Layout::new::<SequenceStorage>(),
             copy: false,
+            bitwise_copy: false,
             drop_kind: DropKind::Sequence { item },
         })
     }
