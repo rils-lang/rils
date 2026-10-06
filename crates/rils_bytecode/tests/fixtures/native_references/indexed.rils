@@ -1,0 +1,16 @@
+struct Inner { text: string, count: i32 }
+struct Outer { items: Vec<Inner>, pair: (Inner, [i32; 2]) }
+{
+    let mut items: Vec<Inner> = Vec::new();
+    items.push(Inner { text: "first", count: 1 });
+    let cell: RefCell<Outer> = RefCell::new(Outer {
+        items: items,
+        pair: (Inner { text: "second", count: 2 }, [3, 4])
+    });
+    let item = cell.borrow_mut();
+    item.items[0].count = 20;
+    item.pair.0.count = 18;
+    item.pair.1[1] = 4;
+    let current = cell.borrow();
+    current.items[0].count + current.pair.0.count + current.pair.1[1]
+}

@@ -1,0 +1,11 @@
+struct Inner { text: string, count: i32 }
+struct Outer { inner: Inner }
+{
+    let cell: RefCell<Outer> = RefCell::new(Outer {
+        inner: Inner { text: "owned", count: 4 }
+    });
+    let item = cell.borrow_mut();
+    let count = &item.inner.count;
+    item.inner = Inner { text: "replacement", count: 42 };
+    *count
+}

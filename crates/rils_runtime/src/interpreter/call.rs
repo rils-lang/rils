@@ -580,6 +580,45 @@ impl Interpreter {
                 span,
             ),
             Value::Reference(reference) => {
+                if let Some(projected) = reference
+                    .project_native_field(name)
+                    .map_err(|message| RuntimeError::new(message, span))?
+                {
+                    return projected
+                        .copy_native()
+                        .map_err(|message| RuntimeError::new(message, span))?
+                        .ok_or_else(|| {
+                            RuntimeError::new("projected field has no native storage", span)
+                        });
+                }
+                if let Some(definition) = reference
+                    .native_type_definition()
+                    .map_err(|message| RuntimeError::new(message, span))?
+                {
+                    match definition {
+                        Value::StructType(definition) => {
+                            return member::bind_rils_method(
+                                object.clone(),
+                                &definition.methods,
+                                &definition.trait_methods,
+                                &definition.name,
+                                name,
+                                span,
+                            );
+                        }
+                        Value::EnumType(definition) => {
+                            return member::bind_rils_method(
+                                object.clone(),
+                                &definition.methods,
+                                &definition.trait_methods,
+                                &definition.name,
+                                name,
+                                span,
+                            );
+                        }
+                        _ => unreachable!("native nominal declaration"),
+                    }
+                }
                 let borrowed = reference
                     .read()
                     .map_err(|message| RuntimeError::new(message, span))?;

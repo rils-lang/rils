@@ -627,6 +627,7 @@ dependencies = [
  "rils_host",
  "rils_project",
  "rils_runtime",
+ "rils_value",
 ]
 
 [[package]]

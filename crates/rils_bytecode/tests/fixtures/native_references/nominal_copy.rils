@@ -1,0 +1,9 @@
+#[derive(Copy, Clone)]
+struct Inner { count: i32 }
+struct Outer { text: string, inner: Inner }
+{
+    let cell: RefCell<Outer> = RefCell::new(Outer { text: "owned", inner: Inner { count: 42 } });
+    let item = cell.borrow();
+    let copied = item.inner;
+    copied.count
+}

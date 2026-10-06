@@ -1,0 +1,10 @@
+struct Inner { text: string, count: i32 }
+struct Outer { inner: Inner }
+{
+    let mut items: Vec<Outer> = Vec::new();
+    items.push(Outer { inner: Inner { text: "owned", count: 37 } });
+    let mut iterator = items.iter();
+    let item = iterator.next().unwrap();
+    let text = &item.inner.text;
+    if text.len() == 5 { item.inner.count + 5 } else { 0 }
+}

@@ -21,6 +21,7 @@ pub(super) enum Place {
     },
     DynamicIndexedElement {
         sequence: rils_execution::value::DynamicObject,
+        codec: Rc<rils_execution::value::record_codec::NativeRecordCodec>,
         index: usize,
         owner: String,
         mutable: bool,
@@ -162,6 +163,7 @@ impl Place {
             }
             Self::DynamicIndexedElement {
                 sequence,
+                codec: _,
                 index,
                 owner,
                 mutable,
@@ -242,6 +244,7 @@ impl Place {
             }
             Self::DynamicIndexedElement {
                 sequence,
+                codec,
                 index,
                 owner,
                 mutable: owner_mutable,
@@ -254,8 +257,12 @@ impl Place {
                     ));
                 }
                 Rc::new(
-                    ReferenceValue::new_guarded_dynamic_indexed_element(
-                        sequence, index, mutable, guard,
+                    ReferenceValue::new_guarded_dynamic_indexed_element_with_codec(
+                        sequence,
+                        index,
+                        mutable,
+                        guard,
+                        Some(codec),
                     )
                     .map_err(|message| RuntimeError::new(message, span))?,
                 )
@@ -331,7 +338,10 @@ impl Place {
         }
     }
 
-    fn projection_guard(&self, span: Span) -> Result<Option<Rc<ReferenceValue>>, RuntimeError> {
+    pub(super) fn projection_guard(
+        &self,
+        span: Span,
+    ) -> Result<Option<Rc<ReferenceValue>>, RuntimeError> {
         match self {
             Self::Storage { slot, name } => match slot.borrow().read().map_err(|_| {
                 RuntimeError::new(format!("cannot access moved value `{name}`"), span)
@@ -371,16 +381,18 @@ impl Place {
             ))),
             Self::DynamicIndexedElement {
                 sequence,
+                codec,
                 index,
                 mutable,
                 guard,
                 ..
             } => Ok(Some(Rc::new(
-                ReferenceValue::new_guarded_dynamic_indexed_element(
+                ReferenceValue::new_guarded_dynamic_indexed_element_with_codec(
                     sequence.clone(),
                     *index,
                     *mutable,
                     guard.clone(),
+                    Some(codec.clone()),
                 )
                 .map_err(|message| RuntimeError::new(message, span))?,
             ))),
@@ -425,6 +437,15 @@ impl Interpreter {
                 let mutable = owner.is_mutable();
                 let owner_name = owner.description();
                 let guard = owner.projection_guard(span)?;
+                if let Some(reference) = &guard
+                    && let Some(projected) = reference
+                        .project_native_field(name)
+                        .map_err(|message| RuntimeError::new(message, span))?
+                {
+                    return Ok(Place::Reference {
+                        reference: Rc::new(projected),
+                    });
+                }
                 let value = owner.projection_value(span)?;
                 if let Value::Tuple(sequence) = value {
                     let index = name.parse::<usize>().map_err(|_| {
@@ -495,11 +516,20 @@ impl Interpreter {
                 let mutable = owner.is_mutable();
                 let owner_name = owner.description();
                 let guard = owner.projection_guard(span)?;
-                let value = owner.projection_value(span)?;
                 let index = self.evaluate(index, environment.clone())?;
                 let Some(index) = index.as_usize() else {
                     return Err(RuntimeError::new("collection indices must be usize", span));
                 };
+                if let Some(reference) = &guard
+                    && let Some(projected) = reference
+                        .project_native_index(index)
+                        .map_err(|message| RuntimeError::new(message, span))?
+                {
+                    return Ok(Place::Reference {
+                        reference: Rc::new(projected),
+                    });
+                }
+                let value = owner.projection_value(span)?;
                 let sequence = match value {
                     Value::Array(sequence) | Value::Vec(sequence) => sequence,
                     Value::Dynamic(sequence)
@@ -519,6 +549,11 @@ impl Interpreter {
                         }
                         return Ok(Place::DynamicIndexedElement {
                             sequence,
+                            codec: {
+                                let (structs, enums) =
+                                    environment.borrow().visible_type_definitions();
+                                Rc::new(rils_execution::value::record_codec::NativeRecordCodec::with_definitions(&structs, &enums))
+                            },
                             index,
                             owner: owner_name,
                             mutable,

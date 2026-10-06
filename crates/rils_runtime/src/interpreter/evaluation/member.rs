@@ -70,6 +70,28 @@ impl Interpreter {
                 }
         ) {
             let place = self.resolve_place(object, &environment, span)?;
+            if let Some(reference) = place.projection_guard(span)? {
+                if let Some(projected) = reference
+                    .project_native_field(name)
+                    .map_err(|message| RuntimeError::new(message, span))?
+                {
+                    return projected
+                        .copy_native()
+                        .map_err(|message| RuntimeError::new(message, span))?
+                        .ok_or_else(|| {
+                            RuntimeError::new("projected field has no native storage", span)
+                        });
+                }
+                if let Some(method) = selected_method(&Value::Reference(reference), name, span)?
+                    && let Some(Type::Reference { mutable, .. }) = method
+                        .parameters
+                        .first()
+                        .and_then(|parameter| parameter.type_annotation.as_ref())
+                {
+                    let receiver = place.borrow(*mutable, span)?;
+                    return self.resolve_member(receiver, name, span);
+                }
+            }
             let value = place.read(span)?;
             let builtin_borrow = super::super::call::builtin_iterator_default_receiver(
                 &value, name,
@@ -113,6 +135,27 @@ fn selected_method(
             &instance.type_definition.trait_methods,
             name,
         ),
+        Value::Reference(reference) => {
+            let Some(definition) = reference
+                .native_type_definition()
+                .map_err(|message| RuntimeError::new(message, span))?
+            else {
+                return Ok(None);
+            };
+            match definition {
+                Value::StructType(definition) => super::super::call::select_method(
+                    &definition.methods,
+                    &definition.trait_methods,
+                    name,
+                ),
+                Value::EnumType(definition) => super::super::call::select_method(
+                    &definition.methods,
+                    &definition.trait_methods,
+                    name,
+                ),
+                _ => unreachable!("native nominal declaration"),
+            }
+        }
         _ => Ok(None),
     }
     .map_err(|traits| {

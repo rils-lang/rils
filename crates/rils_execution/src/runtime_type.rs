@@ -627,7 +627,10 @@ fn type_of_value(value: &Value) -> Option<Type> {
         }),
         Value::Reference(reference) => Some(Type::Reference {
             mutable: reference.mutable,
-            inner: Box::new(Type::of_value(&reference.read().ok()?)?),
+            inner: Box::new(match reference.native_layout().ok()? {
+                Some(layout) => layout.rils_type().clone(),
+                None => Type::of_value(&reference.read().ok()?)?,
+            }),
         }),
         Value::Function(function) => Some(function_type(function)),
         Value::BytecodeFunction(_) => Some(Type::opaque_function()),

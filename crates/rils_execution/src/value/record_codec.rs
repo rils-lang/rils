@@ -16,7 +16,7 @@ use super::{
     StructInstance, StructType, Value, native_layouts, native_string,
 };
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct NativeRecordCodec {
     structs: HashMap<String, Rc<StructType>>,
     enums: HashMap<String, Rc<EnumType>>,
@@ -38,6 +38,17 @@ impl NativeRecordCodec {
                 .map(|definition| (definition.name.clone(), definition.clone()))
                 .collect(),
         }
+    }
+
+    pub(crate) fn nominal_definition(&self, ty: &Type) -> Option<Value> {
+        let Type::Named { name, .. } = ty else {
+            return None;
+        };
+        self.structs
+            .get(name)
+            .cloned()
+            .map(Value::StructType)
+            .or_else(|| self.enums.get(name).cloned().map(Value::EnumType))
     }
 
     pub fn into_native(

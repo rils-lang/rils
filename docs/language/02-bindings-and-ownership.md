@@ -55,6 +55,11 @@ let mut answer = 0;
 }
 ```
 
+原生容器中的用户记录同样支持多层字段与索引引用，例如 `&mut item.inner.count`、
+`&mut item.items[0].count`；RefCell 借用、参数以及 `&self` / `&mut self` 方法 receiver
+保留原对象与路径，写入会反映到容器原值。通过引用读取拥有型字段仍要求 Copy；借用非 Copy
+字段应显式使用 `&` 或 `&mut`。存在后代字段引用时，不能替换其父字段。
+
 引用当前受以下限制：
 
 - 不能成为全局绑定，不能被闭包捕获。

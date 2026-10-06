@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 修复原生容器中嵌套 struct、tuple、array 与 Vec 字段引用的写回：RefCell 与借用迭代器现保留原对象和完整路径，参数及固有/trait 方法 receiver 复用同一引用。类型查询不再为读取声明复制原生记录；非 Copy 值不能借字段读取被隐式复制。同一位置允许多个可变引用，仍有后代引用时禁止替换父字段。脚本语法、C ABI 与 v8 字节码编码不变。
+
 - 直接表达式、if/match 分支和嵌套元组/数组的 Option/Result 结果现使用前端推导的具体类型提升原生存储，无需先存入局部绑定。Rust 宿主读取这些结果时应使用 `RilsValue::with_native_view()`，避免仅匹配旧 `Value::Option` / `Value::Result`。解释器与 VM 共用消费式布局转换；普通标量的直接调用路径不增加转换指令。**字节码扩展：** 未冻结的 v8 增加 `ApplyStorage`（操作码 47），携带源/目标寄存器及类型声明，加载验证拒绝无效索引与类型；格式号仍为 v8。新产物需要更新运行时后再加载，已有源码重新编译即可获得新存储行为。
 
 - 整体元组/数组替换和引用写回现在递归保留内部 Option/Result 的原生声明；整个负载或字段 move 后重新赋值也复用原布局，转换按所有权移动非 Clone 内容。**破坏性 Rust API 变更：** `value::storage::native_declaration` 与 `constrain_assignment` 的声明参数由动态类型句柄改为不含负载的 `NativeDeclaration`；底层宿主代码应通过 `native_declaration(&value)` 获取声明，使用 `rils_type()` 读取其类型。脚本语法和字节码编码不变。

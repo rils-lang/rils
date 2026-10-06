@@ -1,0 +1,7 @@
+struct Inner { text: string }
+struct Outer { inner: Inner }
+{
+    let cell: RefCell<Outer> = RefCell::new(Outer { inner: Inner { text: "owned" } });
+    let item = cell.borrow();
+    item.inner.text
+}

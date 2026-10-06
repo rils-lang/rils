@@ -16,6 +16,7 @@ enum PlaceContainer {
     Indexed(Rc<IndexedStorage>),
     DynamicIndexed(rils_execution::value::DynamicObject),
     DynamicRecord(rils_execution::value::DynamicObject),
+    NativeReference(Rc<ReferenceValue>),
 }
 
 impl VirtualMachine<'_> {
@@ -81,6 +82,14 @@ impl VirtualMachine<'_> {
             Value::Dynamic(object) if object.descriptor().layout().record_fields().is_some() => {
                 Ok(PlaceContainer::DynamicRecord(object))
             }
+            Value::Reference(reference)
+                if reference
+                    .native_layout()
+                    .map_err(|message| BytecodeError::new(message, span))?
+                    .is_some() =>
+            {
+                Ok(PlaceContainer::NativeReference(reference))
+            }
             Value::Reference(reference) => self.place_container(
                 reference
                     .read()
@@ -96,11 +105,10 @@ impl VirtualMachine<'_> {
 
     fn dynamic_field(
         &self,
-        object: &rils_execution::value::DynamicObject,
+        layout: &rils_value::DynamicLayout,
         projection: &ResolvedProjection,
         span: Span,
     ) -> Result<usize, BytecodeError> {
-        let layout = object.descriptor().layout();
         match projection {
             ResolvedProjection::Field(name) => layout
                 .record_field_index(name)
@@ -148,17 +156,57 @@ impl VirtualMachine<'_> {
         guard: Option<Rc<ReferenceValue>>,
         span: Span,
     ) -> Result<ReferenceValue, BytecodeError> {
-        let index = self.dynamic_field(&object, projection, span)?;
-        let mut structs = Vec::new();
-        let mut enums = Vec::new();
-        for ty in &self.module.types {
-            match ty {
-                RuntimeType::Struct(definition) => structs.push(definition.clone()),
-                RuntimeType::Enum(definition) => enums.push(definition.clone()),
-            }
-        }
+        let index = self.dynamic_field(object.descriptor().layout(), projection, span)?;
+        let (structs, enums) = self.type_definitions();
         ReferenceValue::new_dynamic_field(object, index, mutable, guard, structs, enums)
             .map_err(|message| BytecodeError::new(message, span))
+    }
+
+    fn dynamic_index_reference(
+        &self,
+        object: rils_execution::value::DynamicObject,
+        index: usize,
+        mutable: bool,
+        guard: Option<Rc<ReferenceValue>>,
+    ) -> Result<ReferenceValue, String> {
+        let (structs, enums) = self.type_definitions();
+        let codec = Rc::new(
+            rils_execution::value::record_codec::NativeRecordCodec::with_definitions(
+                &structs, &enums,
+            ),
+        );
+        ReferenceValue::new_guarded_dynamic_indexed_element_with_codec(
+            object,
+            index,
+            mutable,
+            guard,
+            Some(codec),
+        )
+    }
+
+    fn native_projection(
+        &self,
+        reference: &Rc<ReferenceValue>,
+        projection: &ResolvedProjection,
+        span: Span,
+    ) -> Result<ReferenceValue, BytecodeError> {
+        let result = match projection {
+            ResolvedProjection::Index(index) => reference.project_native_index(*index),
+            _ => {
+                let layout = reference
+                    .native_layout()
+                    .map_err(|message| BytecodeError::new(message, span))?
+                    .ok_or_else(|| BytecodeError::new("reference has no native layout", span))?;
+                let index = self.dynamic_field(&layout, projection, span)?;
+                let name = layout.record_fields().expect("validated record")[index].name();
+                reference.project_native_field(name)
+            }
+        };
+        result
+            .map_err(|message| BytecodeError::new(message, span))?
+            .ok_or_else(|| {
+                BytecodeError::new("place projection does not match its native reference", span)
+            })
     }
 
     fn struct_field<'a>(
@@ -208,6 +256,7 @@ impl VirtualMachine<'_> {
         &self,
         container: &PlaceContainer,
         projection: &ResolvedProjection,
+        mutable: bool,
         span: Span,
     ) -> Result<Value, BytecodeError> {
         match (container, projection) {
@@ -234,18 +283,20 @@ impl VirtualMachine<'_> {
                     BytecodeError::new(format!("element at index {index} has been moved"), span)
                 })
             }
-            (PlaceContainer::DynamicIndexed(object), ResolvedProjection::Index(index)) => {
-                rils_execution::value::dynamic_sequence::copy_item(object, *index)
-                    .map_err(|message| BytecodeError::new(message, span))
-            }
+            (PlaceContainer::DynamicIndexed(object), ResolvedProjection::Index(index)) => self
+                .dynamic_index_reference(object.clone(), *index, mutable, None)
+                .map(|reference| Value::Reference(Rc::new(reference)))
+                .map_err(|message| BytecodeError::new(message, span)),
             (
                 PlaceContainer::DynamicRecord(object),
                 projection
                 @ (ResolvedProjection::Field(_) | ResolvedProjection::RecordField { .. }),
             ) => self
-                .dynamic_field_reference(object.clone(), projection, false, None, span)?
-                .read()
-                .map_err(|message| BytecodeError::new(message, span)),
+                .dynamic_field_reference(object.clone(), projection, mutable, None, span)
+                .map(|reference| Value::Reference(Rc::new(reference))),
+            (PlaceContainer::NativeReference(reference), projection) => self
+                .native_projection(reference, projection, span)
+                .map(|reference| Value::Reference(Rc::new(reference))),
             _ => Err(BytecodeError::new(
                 "place projection does not match its value",
                 span,
@@ -263,8 +314,9 @@ impl VirtualMachine<'_> {
             .split_last()
             .ok_or_else(|| BytecodeError::new("place projection cannot be empty", span))?;
         let mut container = self.place_root(place.local, span)?;
+        let mutable = self.place_is_mutable(place.local, span)?;
         for projection in parents {
-            let value = self.projected_value(&container, projection, span)?;
+            let value = self.projected_value(&container, projection, mutable, span)?;
             container = self.place_container(value, span)?;
         }
         Ok((container, last))
@@ -306,6 +358,11 @@ impl VirtualMachine<'_> {
                 rils_execution::value::dynamic_sequence::copy_item(&object, *index)
                     .map_err(|message| BytecodeError::new(message, span))
             }
+            (PlaceContainer::NativeReference(reference), projection) => self
+                .native_projection(&reference, projection, span)?
+                .copy_native()
+                .map_err(|message| BytecodeError::new(message, span))?
+                .ok_or_else(|| BytecodeError::new("reference has no native storage", span)),
             (
                 PlaceContainer::DynamicRecord(object),
                 projection
@@ -360,6 +417,10 @@ impl VirtualMachine<'_> {
                 rils_execution::value::dynamic_sequence::replace_item(&object, *index, value)
                     .map_err(|message| BytecodeError::new(message, span))
             }
+            (PlaceContainer::NativeReference(reference), projection) => self
+                .native_projection(&reference, projection, span)?
+                .write(value)
+                .map_err(|error| BytecodeError::new(format!("{error:?}"), span)),
             (
                 PlaceContainer::DynamicRecord(object),
                 projection
@@ -407,13 +468,16 @@ impl VirtualMachine<'_> {
                     )
                 }
                 (PlaceContainer::DynamicIndexed(object), ResolvedProjection::Index(element)) => {
-                    ReferenceValue::new_guarded_dynamic_indexed_element(
-                        object.clone(),
-                        *element,
-                        mutable,
-                        guard,
-                    )
+                    self.dynamic_index_reference(object.clone(), *element, mutable, guard)
                 }
+                (PlaceContainer::NativeReference(reference), projection) => self
+                    .native_projection(reference, projection, span)
+                    .and_then(|projected| {
+                        projected
+                            .reborrow(mutable)
+                            .map_err(|message| BytecodeError::new(message, span))
+                    })
+                    .map_err(|error| error.message),
                 (
                     PlaceContainer::DynamicRecord(object),
                     projection @ (ResolvedProjection::Field(_)
@@ -433,10 +497,7 @@ impl VirtualMachine<'_> {
                 return Ok(reference);
             }
             let reference = Rc::new(reference);
-            let value = reference
-                .read()
-                .map_err(|message| BytecodeError::new(message, span))?;
-            container = self.place_container(value, span)?;
+            container = self.place_container(Value::Reference(reference.clone()), span)?;
             guard = Some(reference);
         }
         unreachable!("empty place projections are rejected")

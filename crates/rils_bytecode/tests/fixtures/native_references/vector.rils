@@ -1,0 +1,10 @@
+struct Inner { text: string, count: i32 }
+impl Inner { fn update(&mut self, count: i32) { self.count = count; } }
+struct Outer { inner: Inner }
+{
+    let mut items: Vec<Outer> = Vec::new();
+    items.push(Outer { inner: Inner { text: "owned", count: 4 } });
+    items[0].inner.count = 20;
+    items[0].inner.update(42);
+    items[0].inner.count
+}
