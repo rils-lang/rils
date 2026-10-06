@@ -1,0 +1,12 @@
+{
+    let mut number = 1;
+    {
+        let item: Option<&mut i32> = Some(&mut number);
+        let copied = item.clone();
+        let first = item.unwrap();
+        let second = copied.unwrap();
+        *first = 41;
+        *second = *first + 1;
+    }
+    number
+}

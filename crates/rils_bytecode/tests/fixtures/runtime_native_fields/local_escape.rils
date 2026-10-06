@@ -1,0 +1,5 @@
+fn escape() -> Option<&i32> {
+    let number = 42;
+    Some(&number)
+}
+escape()

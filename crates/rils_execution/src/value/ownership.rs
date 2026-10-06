@@ -81,6 +81,10 @@ impl Value {
 
     pub fn contains_reference(&self) -> bool {
         match self {
+            Self::Dynamic(object) => object
+                .with(|value| runtime_layouts::contains_reference(value.view()))
+                .and_then(|result| result)
+                .unwrap_or(true),
             Self::BinaryHeap(heap) => heap.elements.borrow().iter().any(Value::contains_reference),
             Self::VecDeque(queue) => queue
                 .elements
@@ -89,6 +93,9 @@ impl Value {
                 .any(|value| value.contains_reference()),
             Self::Reference(_) => true,
             Self::Native(object) => object.any_child(Value::contains_reference),
+            Self::BoundMethod(method) => method.receiver.contains_reference(),
+            Self::BuiltinBoundMethod(method) => method.receiver.contains_reference(),
+            Self::HostBoundMethod(method) => method.receiver.contains_reference(),
             Self::BytecodeFunction(function) => {
                 function.captures.iter().any(|slot| {
                     slot.borrow()
@@ -150,6 +157,10 @@ impl Value {
 
     pub fn contains_local_reference(&self, environment: &EnvironmentRef) -> bool {
         match self {
+            Self::Dynamic(object) => object
+                .with(|value| runtime_layouts::contains_local_reference(value.view(), environment))
+                .and_then(|result| result)
+                .unwrap_or(true),
             Self::BTreeMap(map) => map
                 .entries
                 .borrow()
@@ -169,6 +180,22 @@ impl Value {
             Self::Reference(reference) => reference.is_local_to(environment),
             Self::Native(object) => {
                 object.any_child(|value| value.contains_local_reference(environment))
+            }
+            Self::BoundMethod(method) => method.receiver.contains_local_reference(environment),
+            Self::BuiltinBoundMethod(method) => {
+                method.receiver.contains_local_reference(environment)
+            }
+            Self::HostBoundMethod(method) => method.receiver.contains_local_reference(environment),
+            Self::BytecodeFunction(function) => {
+                function.captures.iter().any(|slot| {
+                    slot.borrow()
+                        .read()
+                        .ok()
+                        .is_some_and(|value| value.contains_local_reference(environment))
+                }) || function
+                    .bound_arguments
+                    .iter()
+                    .any(|value| value.contains_local_reference(environment))
             }
             Self::BorrowedIndexedIterator(iterator) => iterator.source.is_local_to(environment),
             Self::BorrowedMapIterator(iterator) => iterator.source.is_local_to(environment),

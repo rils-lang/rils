@@ -1,0 +1,9 @@
+struct Counter { count: i32 }
+impl Counter {
+    fn read(&self) -> i32 { self.count }
+}
+fn escape() -> Option<fn() -> i32> {
+    let item = Counter { count: 42 };
+    Some(item.read)
+}
+escape()

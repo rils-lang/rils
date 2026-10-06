@@ -1,0 +1,6 @@
+{
+    let number = 42;
+    let references: Option<&i32> = Some(&number);
+    fn capture() -> i32 { *references.unwrap() }
+    capture()
+}

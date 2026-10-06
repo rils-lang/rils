@@ -73,6 +73,9 @@ impl<'a> RecordLayoutResolver<'a> {
     }
 
     fn resolve_uncached(&mut self, ty: &Type) -> Result<Rc<DynamicLayout>, String> {
+        if let Some(layout) = super::runtime_layouts::layout(ty) {
+            return Ok(layout);
+        }
         if let Some(layout) = native_layouts::integer::layout(ty)
             .or_else(|| native_layouts::float::layout(ty))
             .or_else(|| (ty == &Type::String).then(native_layouts::string::layout))

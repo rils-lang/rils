@@ -1,0 +1,10 @@
+{
+    let mut number = 1;
+    {
+        let mut references: Vec<&mut i32> = Vec::new();
+        references.push(&mut number);
+        let item = references.pop().unwrap();
+        *item = 42;
+    }
+    number
+}

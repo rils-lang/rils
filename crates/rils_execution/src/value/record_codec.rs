@@ -120,6 +120,15 @@ impl NativeRecordCodec {
     fn encode(&mut self, value: Value, layout: Rc<DynamicLayout>) -> Result<DynamicValue, String> {
         let ty = layout.rils_type().clone();
         match (ty, value) {
+            (Type::Reference { .. }, Value::Reference(value)) => {
+                super::runtime_layouts::encode_reference(value, layout)
+            }
+            (Type::Function { .. }, value) => {
+                super::runtime_layouts::encode_callable(value, layout)
+            }
+            (Type::Named { .. }, Value::HostObject(value)) => {
+                super::runtime_layouts::encode_host(value, layout)
+            }
             (Type::Unit, Value::Unit) => DynamicValue::from_rust(layout, ()),
             (Type::Bool, Value::Bool(value)) => DynamicValue::from_rust(layout, value),
             (Type::Char, value) if super::char_payload(&value).is_some() => {
@@ -503,6 +512,9 @@ impl NativeRecordCodec {
     }
 
     fn decode(&self, mut value: DynamicValue) -> Result<Value, String> {
+        if super::runtime_layouts::is_execution_leaf(value.descriptor()) {
+            return super::runtime_layouts::decode(value);
+        }
         let ty = value.descriptor().rils_type().clone();
         match ty {
             Type::Unit => value

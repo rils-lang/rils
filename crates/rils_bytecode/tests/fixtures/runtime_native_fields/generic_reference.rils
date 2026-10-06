@@ -1,0 +1,11 @@
+struct Holder<T> { item: T }
+{
+    let mut number = 1;
+    {
+        let wrapped: Option<Holder<Option<&mut i32>>> = Some(Holder { item: Some(&mut number) });
+        let holder = wrapped.unwrap();
+        let item = holder.item.unwrap();
+        *item = 42;
+    }
+    number
+}

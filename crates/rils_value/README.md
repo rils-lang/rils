@@ -13,3 +13,7 @@
 `DynamicLayout` 另提供运行时组合的泛型布局。`Option<T>` 使用显式标记和按 `T` 对齐的负载，可嵌套、移动、复制 Copy 负载并正确析构非 Copy 负载；`None` 只需标记字节。用户结构体可由字段布局递归计算对齐与偏移，字段初始化标记与负载放在同一块存储中；按索引访问、移出、重新填入和析构支持嵌套结构及 `Option<T>`。字段名到索引的映射保存在布局描述中，操作注册的上下文可通过类型检查后的字段入口访问负载。`DynamicObject<V>` 按类型 Copy 性质选择内联句柄或共享存储；`DynamicType<V>` 为它提供任意操作的注册表和带布局检查的调用上下文。`NativeObject::into_rust` 和 `DynamicValue::into_rust` 可以消耗已验证类型的原生负载，避免隐式 Clone 或重复析构。执行层已有从标准库声明过程宏生成的整数、浮点数、`string` 与 `Option<T>` 布局工厂，也能从已有的 `StructType` 声明为具体泛型实例解析嵌套布局。独立用户结构体实例尚未迁出 `Value::Struct`；容器中的原生用户记录已支持沿布局路径进行嵌套引用与写回，所有标准库整数、`f32`、`f64` 和 `string` 的 `Option<T>` 已接入实际 `Value::Dynamic` 路径。
 
 `DynamicValue::view_path` 以经过校验的路径借用布局与 Rust 叶子，不暴露裸指针。`reference_path` 返回词法租约，并为路径经过的序列元素保留结构稳定性；多个可变租约可指向同一位置。`replace_path_reference` 直接替换字段或序列元素并返回旧负载，若父字段仍有后代引用则拒绝；字段 move 也拒绝与活动租约重叠。路径账本在首次引用时才分配，Copy 产生新账本，租约不保留任何 Rust 借用。
+
+`DynamicLayout::copy_of<T: Copy>` 登记普通字节复制；`copy_handle_of<T: Clone>` 登记 Rils 的 Copy 身份句柄，复制时调用所注册 Rust 类型的 Clone 以保留所有者，不隐式复制其所指负载。Option、record 和 variant 递归执行子布局的复制操作，普通 Copy 组合保留字节复制快路径；复制失败或 panic 会清理已经完成的子负载，部分 move 的字段保留空标记。`DynamicValueRef::any_leaf` 只遍历存活的 Rust 叶子，跳过未选中分支与已移出字段，供执行层检查原生存储中的词法引用来源。
+
+执行层的 `runtime_layouts` 为引用和调用目标登记叶子布局及消费式转换，bytes 中保存租约或调用目标句柄；`HostLayoutProvider` 从传入的宿主声明登记其布局与 Copy 策略，不把未知名称当作宿主类型。独立用户实例的构造和宿主声明上下文的自动传递仍在迁移中。

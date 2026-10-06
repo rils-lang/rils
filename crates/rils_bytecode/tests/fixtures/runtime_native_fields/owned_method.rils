@@ -1,0 +1,10 @@
+struct Counter { count: i32 }
+impl Counter {
+    fn read(self) -> i32 { self.count }
+}
+{
+    let item = Counter { count: 42 };
+    let callbacks: Option<fn() -> i32> = Some(item.read);
+    let callback = callbacks.unwrap();
+    callback()
+}

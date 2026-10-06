@@ -1,0 +1,9 @@
+fn wrap<T>(source: &mut T) -> Option<&mut T> { Some(source) }
+{
+    let mut number = 1;
+    {
+        let item = wrap(&mut number).unwrap();
+        *item = 42;
+    }
+    number
+}

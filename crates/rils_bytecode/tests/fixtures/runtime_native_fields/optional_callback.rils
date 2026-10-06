@@ -1,0 +1,7 @@
+fn increment(number: i32) -> i32 { number + 1 }
+{
+    let wrapped: Option<fn(i32) -> i32> = Some(increment);
+    let copied = wrapped.clone();
+    let callback = copied.unwrap();
+    callback(41)
+}

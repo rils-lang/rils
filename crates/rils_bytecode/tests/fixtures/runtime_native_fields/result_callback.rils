@@ -1,0 +1,6 @@
+fn increment(number: i32) -> i32 { number + 1 }
+fn callback() -> Result<fn(i32) -> i32, string> { Ok(increment) }
+{
+    let function = callback().unwrap();
+    function(41)
+}

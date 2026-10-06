@@ -1,0 +1,6 @@
+{
+    let text = "owned";
+    let references: Option<&string> = Some(&text);
+    let moved = text;
+    references
+}

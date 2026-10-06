@@ -48,6 +48,7 @@ pub mod native_ops;
 pub mod record_codec;
 #[path = "value/record_layout.rs"]
 pub mod record_layout;
+pub mod runtime_layouts;
 #[path = "value/string.rs"]
 mod string;
 pub use string::{native_string, string_payload};
