@@ -310,6 +310,7 @@ impl BytecodeModule {
             self,
             imports,
             host.host_value_formatter.clone(),
+            host.declarations.clone(),
             crate::ExecutionLimits {
                 max_steps,
                 ..crate::ExecutionLimits::default()
@@ -411,7 +412,14 @@ impl BytecodeModule {
     ) -> Result<Value, BytecodeError> {
         self.verify()?;
         let imports = self.link(host)?;
-        VirtualMachine::new(self, imports, host.host_value_formatter.clone(), limits).execute()
+        VirtualMachine::new(
+            self,
+            imports,
+            host.host_value_formatter.clone(),
+            host.declarations.clone(),
+            limits,
+        )
+        .execute()
     }
 
     /// Calls a named bytecode function without executing the module entry point.
@@ -521,6 +529,7 @@ impl BytecodeModule {
             self,
             imports,
             host.host_value_formatter.clone(),
+            host.declarations.clone(),
             limits,
             function,
             arguments,

@@ -52,8 +52,7 @@ impl NativePath {
     }
 
     pub(super) fn read(&self) -> Result<Value, String> {
-        let value =
-            self.with_view(|view| rils_stdlib::native::registry().clone_borrowed_view(view))??;
+        let value = self.with_view(crate::value::runtime_layouts::clone_borrowed_view)??;
         self.codec.from_native(value)
     }
 

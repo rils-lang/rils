@@ -15,7 +15,10 @@ VM 的局部槽位在初始化原生 Option/Result 时保留具体类型和操�
 组合布局现可包含执行层登记的引用与函数句柄。VM 函数叶子保留函数索引、捕获槽位和绑定参数，
 消费后恢复同一通用调用目标；Copy 操作保留受管理句柄的所有者，普通 Copy 字节保留快速路径。
 引用来源检查直接遍历存活的原生叶子，不解码整个容器。宿主叶子布局可由宿主声明的 Copy 策略登记，
-声明上下文的完整自动传递仍待接入。这些进程内布局及操作表不进入磁盘格式，v8 编码未变。
+`BytecodeHost::register_host_contract()` 从共享契约登记类型；
+VM 在启动时与模块声明合并，参数、返回、原生构造、嵌套回调与格式化使用同一上下文。
+Host enum 的声明包含 raw flags 分支，完整宿主类型路径贯通导入别名与局部存储。
+这些进程内布局及操作表不进入磁盘格式，v8 编码未变；旧 flags 字节码应从源码重新编译。
 
 HIR 的局部初始化保存显式标注或前端推导的类型，经现有 `InitLocal` 可选类型字段传入 VM。VM 的类型化初始化、参数和返回边界复用共享存储上下文，递归提升元组/数组元素中的具体 Option/Result 布局。数组构造使用共享的递归类型合并规则，允许 Ok/Err 或 Some/None 分支补齐同一元素类型；不改变 v8 编码。
 
@@ -148,6 +151,7 @@ contract.register_function(
 )?;
 let game = rils::compile_with_host("unity_engine::time::frame_count()", &contract)?;
 let mut game_host = rils::BytecodeHost::new(rils::BYTECODE_HOST_ABI_VERSION);
+game_host.register_host_contract(&contract)?;
 game_host.allow_capability("unity.time");
 game_host.register_function(
     "unity_engine::time::frame_count",

@@ -1,0 +1,2 @@
+let value: Option<host::Item> = None;
+value

@@ -238,6 +238,7 @@ pub(crate) fn into_iterator(object: DynamicObject) -> Result<Value, String> {
         &NativeOwnedContext {
             structs: Vec::new(),
             enums: Vec::new(),
+            ..Default::default()
         },
     )
 }

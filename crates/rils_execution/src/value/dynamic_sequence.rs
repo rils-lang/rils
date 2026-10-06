@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use rils_value::{DynamicPathStep, DynamicType, DynamicValue};
+use rils_value::{DynamicLayout, DynamicPathStep, DynamicType, DynamicValue};
 
 use crate::Type;
 
@@ -24,8 +24,15 @@ pub fn empty_with_definitions(
 ) -> Result<Value, String> {
     let mut resolver = RecordLayoutResolver::with_enums(structs, enums);
     let layout = resolver.resolve(ty)?;
+    empty_with_layout(layout)
+}
+
+pub(crate) fn empty_with_layout(layout: Rc<DynamicLayout>) -> Result<Value, String> {
     if layout.sequence_item().is_none() {
-        return Err(format!("{ty} has no native collection layout"));
+        return Err(format!(
+            "{} has no native collection layout",
+            layout.rils_type()
+        ));
     }
     let payload = DynamicValue::sequence(layout.clone(), Vec::new())?;
     Ok(Value::Dynamic(DynamicObject::new(
@@ -39,6 +46,18 @@ pub fn promote_empty_with_definitions(
     expected: &Type,
     structs: &[Rc<StructType>],
     enums: &[Rc<EnumType>],
+) -> Value {
+    promote_empty_with_context(
+        value,
+        expected,
+        &super::storage::TypedStorageContext::new(structs, enums),
+    )
+}
+
+pub(crate) fn promote_empty_with_context(
+    value: Value,
+    expected: &Type,
+    context: &super::storage::TypedStorageContext<'_>,
 ) -> Value {
     let supported = match (&value, expected) {
         (Value::Vec(_), Type::Named { name, arguments }) => name == "Vec" && arguments.len() == 1,
@@ -92,7 +111,10 @@ pub fn promote_empty_with_definitions(
     if !empty_and_unique {
         return value;
     }
-    empty_with_definitions(expected, structs, enums).unwrap_or(value)
+    context
+        .layout(expected)
+        .and_then(empty_with_layout)
+        .unwrap_or(value)
 }
 
 pub fn copy_items(object: &DynamicObject) -> Result<Vec<Value>, String> {
@@ -149,7 +171,7 @@ pub fn borrowed_item_with_codec(
 }
 
 fn clone_item(item: &DynamicValue) -> Result<DynamicValue, String> {
-    rils_stdlib::native::registry().clone_borrowed_element(item)
+    crate::value::runtime_layouts::clone_borrowed_element(item)
 }
 
 pub fn replace_item(object: &DynamicObject, index: usize, value: Value) -> Result<(), String> {

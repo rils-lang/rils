@@ -128,6 +128,12 @@ impl Engine {
             .map(|definition| NativeTypeHandle { definition })
     }
 
+    /// Install manifest type declarations for native storage composition.
+    /// Register callable handlers with `register_module_typed_function`.
+    pub fn register_host_contract_types(&mut self, contract: &HostContract) -> Result<(), String> {
+        self.interpreter.register_host_contract_types(contract)
+    }
+
     pub fn register_native_macro(
         &mut self,
         macro_name: &'static str,

@@ -107,6 +107,7 @@ impl VirtualMachine<'_> {
             module: self.module,
             imports: self.imports.clone(),
             host_value_formatter: self.host_value_formatter.clone(),
+            native_context: self.native_context.clone(),
             frames: vec![Frame {
                 function: function.function,
                 registers: vec![None; callee.register_count],
@@ -204,8 +205,8 @@ impl VirtualMachine<'_> {
     ) -> Result<Option<Value>, BytecodeError> {
         let frame = self.frames.pop().expect("return has an active frame");
         let value = if let Some(expected) = frame.return_type {
-            let (structs, enums) = self.type_definitions();
-            crate::value::storage::TypedStorageContext::new(&structs, &enums)
+            self.native_context
+                .storage()
                 .apply_declared(value, &expected)
                 .map_err(|message| BytecodeError::new(message, span))?
         } else {
@@ -227,9 +228,10 @@ impl VirtualMachine<'_> {
                 some_target,
                 none_target,
             } => {
-                let (structs, enums) = self.type_definitions();
                 let value = crate::value::dynamic_option::take_owned_with_definitions(
-                    value, &structs, &enums,
+                    value,
+                    &self.native_context.structs,
+                    &self.native_context.enums,
                 )
                 .map_err(|message| BytecodeError::new(message, span))?;
                 if let Some(value) = value {

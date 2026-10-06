@@ -111,6 +111,8 @@ fn inspect(object: GameObject) {
 `InlineValue`。这不会改变 Rils
 拥有型 struct/enum 的语义，也不允许脚本访问宿主 payload。
 
+具体宿主类型也可作为 Option/Result、集合和泛型记录的字段进入原生组合存储；None 或未激活的 Result 分支同样保留完整类型声明。布局使用注册的 Copy 策略，借用读取保留同一宿主对象身份。Rust 的 `Engine::register_host_contract_types()` 与 `BytecodeHost::register_host_contract()` 从同一契约安装类型。自定义 `register_native_type()` 类型默认非 Copy，其身份为完整模块路径（例如 `host::Item`）。
+
 宿主 enum 是普通 Rils enum，可以构造枚举项、参与 `match`，也可以通过固有 `impl` 增加脚本侧方法。
 带 flags 标记的宿主 enum 仍保持 enum 身份，并自动实现内建 marker trait `BitFlags`；未知的组合位在
 跨宿主调用时会保留，`match` 可用通配分支处理。底层整数只属于 ABI transport，不是源码类型。

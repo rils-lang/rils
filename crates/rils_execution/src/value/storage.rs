@@ -8,8 +8,8 @@ use rils_value::DynamicType;
 use crate::{Type, types::merge_types};
 
 use super::{
-    DynamicObject, EnumType, HostObject, NativeObject, StructType, Value, dynamic_sequence,
-    record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver,
+    DynamicObject, EnumType, HostObject, HostType, NativeObject, StructType, Value,
+    dynamic_sequence, record_codec::NativeRecordCodec,
 };
 
 mod assignment;
@@ -42,11 +42,28 @@ impl Value {
 pub struct TypedStorageContext<'a> {
     structs: &'a [Rc<StructType>],
     enums: &'a [Rc<EnumType>],
+    hosts: &'a [Rc<HostType>],
 }
 
 impl<'a> TypedStorageContext<'a> {
     pub fn new(structs: &'a [Rc<StructType>], enums: &'a [Rc<EnumType>]) -> Self {
-        Self { structs, enums }
+        Self::with_hosts(structs, enums, &[])
+    }
+
+    pub fn with_hosts(
+        structs: &'a [Rc<StructType>],
+        enums: &'a [Rc<EnumType>],
+        hosts: &'a [Rc<HostType>],
+    ) -> Self {
+        Self {
+            structs,
+            enums,
+            hosts,
+        }
+    }
+
+    pub fn layout(&self, ty: &Type) -> Result<Rc<rils_value::DynamicLayout>, String> {
+        crate::runtime_builtins::resolve_layout(ty, self.structs, self.enums, self.hosts)
     }
 
     pub fn apply_declared(&self, value: Value, expected: &Type) -> Result<Value, String> {
@@ -56,11 +73,8 @@ impl<'a> TypedStorageContext<'a> {
         let value = self.compose_indexed(value, expected)?;
         let value = self.attach_result_witness(value, expected)?;
         let value = self.compose_variant(value, expected)?;
-        Ok(dynamic_sequence::promote_empty_with_definitions(
-            value,
-            expected,
-            self.structs,
-            self.enums,
+        Ok(dynamic_sequence::promote_empty_with_context(
+            value, expected, self,
         ))
     }
 
@@ -75,7 +89,8 @@ impl<'a> TypedStorageContext<'a> {
             return Ok(expected.clone());
         }
         bindings.retain(|_, ty| *ty != Type::Unknown);
-        Ok(expected.substitute(&bindings))
+        let expected = expected.substitute(&bindings);
+        Ok(merge_types(&expected, &actual).unwrap_or(expected))
     }
 
     fn attach_result_witness(&self, value: Value, expected: &Type) -> Result<Value, String> {
@@ -110,6 +125,19 @@ impl<'a> TypedStorageContext<'a> {
     }
 
     fn compose_variant(&self, value: Value, expected: &Type) -> Result<Value, String> {
+        if let Value::Dynamic(object) = &value
+            && matches!(expected, Type::Option(_) | Type::Result(_, _))
+            && merge_types(expected, object.descriptor().layout().rils_type()).is_none()
+        {
+            if !expected.accepts(&value) {
+                return Err(format!(
+                    "declared {expected} does not accept {}",
+                    value.type_name()
+                ));
+            }
+            let value = super::owned_sum::materialize(value, self.structs, self.enums)?;
+            return self.compose_variant(value, expected);
+        }
         if !matches!(expected, Type::Option(_) | Type::Result(_, _))
             || !matches!(value, Value::Option { .. } | Value::Result { .. })
         {
@@ -121,11 +149,9 @@ impl<'a> TypedStorageContext<'a> {
                 value.type_name()
             ));
         }
-        let Ok(layout) =
-            RecordLayoutResolver::with_enums(self.structs, self.enums).resolve(expected)
-        else {
-            // A valid value can still contain a runtime-only child, such as a
-            // reference or callable. Its representation is migrated later.
+        let Ok(layout) = self.layout(expected) else {
+            // Unresolved generic constructors retain their transitional form
+            // until a concrete declaration is available.
             return Ok(value);
         };
         let payload = NativeRecordCodec::with_definitions(self.structs, self.enums)

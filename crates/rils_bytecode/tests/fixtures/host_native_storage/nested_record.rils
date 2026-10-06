@@ -1,0 +1,3 @@
+struct Holder<T> { value: Option<T> }
+fn wrap<T>(value: T) -> Option<Holder<T>> { Some(Holder { value: Some(value) }) }
+wrap(host::item())

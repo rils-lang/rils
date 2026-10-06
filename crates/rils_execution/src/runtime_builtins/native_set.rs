@@ -389,7 +389,7 @@ fn insertion_index(set: &DynamicValue, key: &NativeKey) -> Result<usize, String>
 }
 
 fn clone_item(item: &DynamicValue) -> Result<DynamicValue, String> {
-    rils_stdlib::native::registry().clone_borrowed_view(item.view())
+    crate::value::runtime_layouts::clone_borrowed_view(item.view())
 }
 
 fn snapshot(set: &DynamicValue) -> Result<Vec<(NativeKey, DynamicValue)>, String> {

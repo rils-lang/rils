@@ -238,8 +238,11 @@ impl Interpreter {
                 }
                 let mut value = apply_type_owned(type_annotation.as_ref(), value, *span, name)?;
                 if let Some(expected) = contextual_type {
-                    let (structs, enums) = environment.borrow().visible_type_definitions();
-                    value = crate::value::storage::TypedStorageContext::new(&structs, &enums)
+                    let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                        &environment.borrow(),
+                    );
+                    value = context
+                        .storage()
                         .apply_declared(value, expected)
                         .map_err(|message| RuntimeError::new(message, *span))?;
                 }

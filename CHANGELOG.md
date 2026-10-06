@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 宿主类型声明已贯通原生组合存储与构造上下文，涵盖 Option/Result、空集合、Box/Rc、Cell/RefCell、回调及嵌套记录。Rust 使用 `Engine::register_host_contract_types()` / `BytecodeHost::register_host_contract()` 安装 Manifest 类型；自定义 Rust 类型可向 VM 共享声明并保留其非 Copy 策略。宿主 enum 与 raw flags 使用同一变体声明，基类组合值保留实际宿主身份。**破坏性 Rust API / 类型身份调整：** `NativeOwnedContext` 新增 `hosts` 字段，已有字面量可补 `..Default::default()`，或改用 `from_environment()`；`register_native_type("host", "Item")` 的类型名改为 `host::Item`，签名与类型名比较应使用完整路径。读取组合结果应使用原生视图或 `as_option()` / `as_result()`。C ABI、版本号和 v8 编码未变；旧 flags 字节码需重新编译。
+
 - **破坏性 Rust 存储表示调整：** 引用与函数值可参与原生组合存储，覆盖 Option/Result、Vec 和泛型记录字段；Copy 保留词法租约、函数身份与闭包捕获状态，作用域检查直接遍历存活的原生字段。修复绑定方法和 VM 函数捕获中的引用来源检查，禁止将局部 receiver 引用通过函数值返回。Rust 宿主读取这些组合值时应使用 `RilsValue::with_native_view()` 或 `Value::as_option()` / `as_result()`，避免仅匹配旧枚举变体。脚本语法、C ABI 与 v8 编码不变。
 
 - 修复原生容器中嵌套 struct、tuple、array 与 Vec 字段引用的写回：RefCell 与借用迭代器现保留原对象和完整路径，参数及固有/trait 方法 receiver 复用同一引用。类型查询不再为读取声明复制原生记录；非 Copy 值不能借字段读取被隐式复制。同一位置允许多个可变引用，仍有后代引用时禁止替换父字段。脚本语法、C ABI 与 v8 字节码编码不变。

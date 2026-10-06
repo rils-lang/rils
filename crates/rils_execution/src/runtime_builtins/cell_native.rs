@@ -7,7 +7,7 @@ use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
 use crate::{
     Type, Value,
-    value::{ReferenceValue, record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver},
+    value::{ReferenceValue, record_codec::NativeRecordCodec},
 };
 
 use super::NativeOwnedContext;
@@ -72,8 +72,7 @@ pub(super) fn call_owned_symbol(
             }
             let value = arguments.pop().expect("checked argument count");
             let ty = Type::of_value(&value).ok_or("Cell::new needs a concrete item type")?;
-            let item_layout =
-                RecordLayoutResolver::with_enums(&context.structs, &context.enums).resolve(&ty)?;
+            let item_layout = context.layout(&ty)?;
             let native = NativeRecordCodec::with_definitions(&context.structs, &context.enums)
                 .into_native(value, item_layout.clone())?;
             let (layout, payload) = if operation == Operation::CellNew {
@@ -144,8 +143,7 @@ pub(super) fn call_owned_symbol(
                     Ok(Value::Reference(Rc::new(reference)))
                 }
                 Operation::RefCellReplace => {
-                    let layout = RecordLayoutResolver::with_enums(&context.structs, &context.enums)
-                        .resolve(item_ty)?;
+                    let layout = context.layout(item_ty)?;
                     let mut codec =
                         NativeRecordCodec::with_definitions(&context.structs, &context.enums);
                     let native = codec
@@ -188,8 +186,7 @@ pub(super) fn call_owned_symbol(
             return Err("expected Cell receiver".into());
         }
         let item_ty = types.first().ok_or("Cell has no item type")?;
-        let item_layout =
-            RecordLayoutResolver::with_enums(&context.structs, &context.enums).resolve(item_ty)?;
+        let item_layout = context.layout(item_ty)?;
         let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
         match operation {
             Operation::CellGet => {

@@ -15,11 +15,11 @@ impl VirtualMachine<'_> {
                 expected,
             } => {
                 let value = self.take_register(source, span)?;
-                let (structs, enums) = self.type_definitions();
-                let value =
-                    rils_execution::value::storage::TypedStorageContext::new(&structs, &enums)
-                        .apply_declared(value, &expected)
-                        .map_err(|message| BytecodeError::new(message, span))?;
+                let value = self
+                    .native_context
+                    .storage()
+                    .apply_declared(value, &expected)
+                    .map_err(|message| BytecodeError::new(message, span))?;
                 self.frame_mut().registers[destination] = Some(value);
             }
             Instruction::BuildTuple {
@@ -77,14 +77,9 @@ impl VirtualMachine<'_> {
                 destination,
                 item_type,
             } => {
-                let (structs, enums) = self.type_definitions();
                 let constructed = item_type
                     .as_ref()
-                    .map(|item_type| {
-                        rils_execution::value::dynamic_option::none_with_definitions(
-                            item_type, &structs, &enums,
-                        )
-                    })
+                    .map(|item_type| self.native_context.none(item_type))
                     .transpose();
                 self.frame_mut().registers[destination] = Some(match constructed {
                     Ok(Some(value)) => value,

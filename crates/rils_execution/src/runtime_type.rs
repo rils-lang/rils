@@ -37,6 +37,15 @@ impl Value {
     /// value. Other cases still use the existing constraint logic, which may
     /// infer generic arguments or materialize a different representation.
     pub fn constrain_owned(self, expected: &Type) -> Option<Self> {
+        if let Self::Dynamic(object) = &self
+            && matches!(expected, Type::Option(_) | Type::Result(_, _))
+            && merge_types(expected, object.descriptor().layout().rils_type()).is_none()
+            && expected.accepts(&self)
+        {
+            return crate::value::owned_sum::materialize(self, &[], &[])
+                .ok()?
+                .constrain_owned(expected);
+        }
         if matches!((&self, expected), (Self::Result { .. }, Type::Result(_, _))) {
             expected.constrain(&self)?;
             return self.apply_declared_storage(expected).ok();
@@ -284,6 +293,11 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         }
         (expected, Value::Dynamic(object)) => {
             merge_types(expected, object.descriptor().layout().rils_type()).is_some()
+                || object
+                    .with(|value| {
+                        crate::value::runtime_layouts::accepts_view(value.view(), expected)
+                    })
+                    .is_ok_and(|accepted| accepted.unwrap_or(false))
         }
         _ => false,
     }

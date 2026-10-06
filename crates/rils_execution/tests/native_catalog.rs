@@ -21,6 +21,7 @@ fn every_native_member_has_a_bridge_and_rejects_missing_arguments() {
                     &NativeOwnedContext {
                         structs: Vec::new(),
                         enums: Vec::new(),
+                        ..Default::default()
                     },
                 )
             } else {

@@ -2,15 +2,13 @@ use super::*;
 
 pub(super) fn builtin_default_value(
     ty: &Type,
-    structs: &[Rc<StructType>],
-    enums: &[Rc<EnumType>],
+    context: &crate::runtime_builtins::NativeOwnedContext,
 ) -> Option<Value> {
     use rils_frontend::default::DefaultPlan;
 
     fn materialize(
         plan: &DefaultPlan,
-        structs: &[Rc<StructType>],
-        enums: &[Rc<EnumType>],
+        context: &crate::runtime_builtins::NativeOwnedContext,
     ) -> Option<Value> {
         let sequence = |values: Vec<(Value, Type)>| {
             Rc::new(IndexedStorage {
@@ -47,7 +45,7 @@ pub(super) fn builtin_default_value(
                 elements
                     .iter()
                     .map(|element| {
-                        let value = materialize(element, structs, enums)?;
+                        let value = materialize(element, context)?;
                         let ty = Type::of_value(&value)?;
                         Some((value, ty))
                     })
@@ -59,30 +57,27 @@ pub(super) fn builtin_default_value(
                 length,
             } => {
                 let values = (0..*length)
-                    .map(|_| Some((materialize(element, structs, enums)?, element_type.clone())))
+                    .map(|_| Some((materialize(element, context)?, element_type.clone())))
                     .collect::<Option<Vec<_>>>()?;
                 let sequence = sequence(values);
                 *sequence.element_type.borrow_mut() = Some(element_type.clone());
                 Value::Array(sequence)
             }
-            DefaultPlan::Option(inner) => {
-                crate::value::dynamic_option::none_with_definitions(inner, structs, enums)
-                    .unwrap_or_else(|_| Value::Option {
-                        value: None,
-                        element_type: Some(inner.clone()),
-                    })
-            }
+            DefaultPlan::Option(inner) => context.none(inner).unwrap_or_else(|_| Value::Option {
+                value: None,
+                element_type: Some(inner.clone()),
+            }),
             DefaultPlan::EmptyCollection { name, arguments } => {
                 let ty = Type::Named {
                     name: name.clone(),
                     arguments: arguments.clone(),
                 };
-                crate::value::dynamic_sequence::empty_with_definitions(&ty, structs, enums).ok()?
+                context.empty_collection(&ty).ok()?
             }
             DefaultPlan::TraitCall(_) => return None,
         })
     }
-    materialize(&rils_frontend::default::default_plan(ty)?, structs, enums)
+    materialize(&rils_frontend::default::default_plan(ty)?, context)
 }
 
 pub(crate) fn builtin_runtime_member(

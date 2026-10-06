@@ -37,6 +37,7 @@ fn vec_from_typed_array_constructs_native_storage() {
             &NativeOwnedContext {
                 structs: Vec::new(),
                 enums: Vec::new(),
+                ..Default::default()
             },
         )
         .unwrap()

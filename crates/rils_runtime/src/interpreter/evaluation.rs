@@ -49,8 +49,11 @@ impl Interpreter {
         {
             let expected = expand_type_aliases(inferred, &environment, expression.span())?;
             if rils_frontend::semantic::requires_storage_declaration(&expected) {
-                let (structs, enums) = environment.borrow().visible_type_definitions();
-                return crate::value::storage::TypedStorageContext::new(&structs, &enums)
+                let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                    &environment.borrow(),
+                );
+                return context
+                    .storage()
                     .apply_declared(value, &expected)
                     .map_err(|message| RuntimeError::new(message, expression.span()));
             }

@@ -64,8 +64,10 @@ impl Interpreter {
             .filter(|parameter| substitutions.get(&parameter.name) == Some(&Type::Unknown))
             .cloned()
             .collect::<Vec<_>>();
-        let (structs, enums) = function.closure.borrow().visible_type_definitions();
-        let storage = crate::value::storage::TypedStorageContext::new(&structs, &enums);
+        let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+            &function.closure.borrow(),
+        );
+        let storage = context.storage();
         for (parameter, argument) in function.parameters.iter().zip(arguments) {
             let expected = parameter
                 .type_annotation

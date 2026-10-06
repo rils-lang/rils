@@ -28,8 +28,8 @@ impl Interpreter {
         span: Span,
         environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
-        let (structs, enums) = environment.borrow().visible_type_definitions();
-        let native_context = crate::runtime_builtins::NativeOwnedContext { structs, enums };
+        let native_context =
+            crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow());
         let callee = match callee {
             Value::BuiltinBoundMethod(method) if matches!(method.method, BuiltinMethod::Native(symbol) if crate::runtime_builtins::requires_owned_native_call(symbol)) =>
             {
@@ -238,8 +238,10 @@ impl Interpreter {
                         )
                     })?;
                     let target = expand_type_aliases(target, &selector.environment, span)?;
-                    let (structs, enums) = selector.environment.borrow().visible_type_definitions();
-                    if let Some(value) = builtin_default_value(&target, &structs, &enums) {
+                    let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                        &selector.environment.borrow(),
+                    );
+                    if let Some(value) = builtin_default_value(&target, &context) {
                         return Ok(value);
                     }
                     let Type::Named { name, .. } = &target else {
@@ -356,8 +358,9 @@ impl Interpreter {
                     && (matches!(actual_target, Type::Array { .. })
                         || matches!(actual_target, Type::Named { name, .. } if name == "Vec"))
                 {
-                    let (structs, enums) = selector.environment.borrow().visible_type_definitions();
-                    let context = crate::runtime_builtins::NativeOwnedContext { structs, enums };
+                    let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                        &selector.environment.borrow(),
+                    );
                     return match rils_execution::iteration::into_iterator_with_context(
                         receiver.clone(),
                         &context,

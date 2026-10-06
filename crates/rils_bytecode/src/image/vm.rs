@@ -33,6 +33,7 @@ pub(super) struct VirtualMachine<'a> {
     pub(super) module: &'a BytecodeModule,
     pub(super) imports: Vec<Rc<BytecodeHostHandler>>,
     pub(super) host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
+    pub(super) native_context: crate::runtime_builtins::NativeOwnedContext,
     pub(super) frames: Vec<Frame>,
     pub(super) steps: usize,
     pub(super) max_steps: usize,
@@ -183,12 +184,11 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let mut value = self.take_register(source, instruction.span)?;
                     if let Some(expected) = type_annotation {
-                        let (structs, enums) = self.type_definitions();
-                        value = rils_execution::value::storage::TypedStorageContext::new(
-                            &structs, &enums,
-                        )
-                        .apply_declared(value, &expected)
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                        value = self
+                            .native_context
+                            .storage()
+                            .apply_declared(value, &expected)
+                            .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     }
                     self.frame().locals[local].borrow_mut().initialize(value);
                 }
@@ -288,20 +288,9 @@ impl<'a> VirtualMachine<'a> {
                     source,
                 } => {
                     let source = self.take_register(source, instruction.span)?;
-                    let mut context = crate::runtime_builtins::NativeOwnedContext {
-                        structs: Vec::new(),
-                        enums: Vec::new(),
-                    };
-                    for definition in &self.module.types {
-                        match definition {
-                            RuntimeType::Struct(definition) => {
-                                context.structs.push(definition.clone())
-                            }
-                            RuntimeType::Enum(definition) => context.enums.push(definition.clone()),
-                        }
-                    }
+                    let context = &self.native_context;
                     let iterator = match rils_execution::iteration::into_iterator_with_context(
-                        source, &context,
+                        source, context,
                     )
                     .map_err(|message| BytecodeError::new(message, instruction.span))?
                     {
@@ -560,40 +549,14 @@ impl<'a> VirtualMachine<'a> {
                         .specialized_empty_collection_type()
                         .cloned();
                     let native_empty = empty_type.and_then(|empty_type| {
-                        let mut structs = Vec::new();
-                        let mut enums = Vec::new();
-                        for definition in &self.module.types {
-                            match definition {
-                                RuntimeType::Struct(definition) => structs.push(definition.clone()),
-                                RuntimeType::Enum(definition) => enums.push(definition.clone()),
-                            }
-                        }
-                        crate::value::dynamic_sequence::empty_with_definitions(
-                            &empty_type,
-                            &structs,
-                            &enums,
-                        )
-                        .ok()
+                        self.native_context.empty_collection(&empty_type).ok()
                     });
                     let value = if let Some(value) = native_empty {
                         value
                     } else if crate::runtime_builtins::requires_owned_native_call(&symbol) {
-                        let mut context = crate::runtime_builtins::NativeOwnedContext {
-                            structs: Vec::new(),
-                            enums: Vec::new(),
-                        };
-                        for definition in &self.module.types {
-                            match definition {
-                                RuntimeType::Struct(definition) => {
-                                    context.structs.push(definition.clone())
-                                }
-                                RuntimeType::Enum(definition) => {
-                                    context.enums.push(definition.clone())
-                                }
-                            }
-                        }
+                        let context = &self.native_context;
                         crate::runtime_builtins::call_native_owned_symbol(
-                            &symbol, arguments, &context,
+                            &symbol, arguments, context,
                         )
                         .expect("owned native symbol is registered")
                         .map_err(|message| BytecodeError::new(message, instruction.span))?
@@ -700,9 +663,12 @@ impl<'a> VirtualMachine<'a> {
                     pattern,
                 } => {
                     let value = self.take_register(source, instruction.span)?;
-                    let (structs, enums) = self.type_definitions();
-                    let value = crate::value::owned_sum::materialize(value, &structs, &enums)
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                    let value = crate::value::owned_sum::materialize(
+                        value,
+                        &self.native_context.structs,
+                        &self.native_context.enums,
+                    )
+                    .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     self.frame_mut().registers[source] = Some(value);
                     let matched = self.frame().registers[source]
                         .as_ref()

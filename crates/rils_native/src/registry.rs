@@ -72,33 +72,50 @@ impl NativeRegistry {
     }
 
     pub fn clone_borrowed_view(&self, view: DynamicValueRef<'_>) -> Result<DynamicValue, String> {
+        self.clone_borrowed_view_with(view, &mut |_| None)
+    }
+
+    /// Allow an execution context to supply additional registered leaf reads.
+    /// The callback is consulted recursively without introducing runtime
+    /// dependencies into the native registry.
+    pub fn clone_borrowed_view_with(
+        &self,
+        view: DynamicValueRef<'_>,
+        leaf: &mut dyn FnMut(&DynamicValueRef<'_>) -> Option<Result<DynamicValue, String>>,
+    ) -> Result<DynamicValue, String> {
         let layout = view.layout()?;
         if layout.is_copy() {
             return view.copy_owned();
         }
         if layout.option_item().is_some() {
             return if view.option_is_some()? {
-                DynamicValue::some(layout, self.clone_borrowed_view(view.option_item()?)?)
+                DynamicValue::some(
+                    layout,
+                    self.clone_borrowed_view_with(view.option_item()?, leaf)?,
+                )
             } else {
                 DynamicValue::none(layout)
             };
         }
         if layout.variant_alternatives().is_some() {
             let index = view.variant_index()?;
-            let item = self.clone_borrowed_view(view.variant_payload()?)?;
+            let item = self.clone_borrowed_view_with(view.variant_payload()?, leaf)?;
             return DynamicValue::variant(layout, index, item);
         }
         if let Some(fields) = layout.record_fields() {
             let values = (0..fields.len())
-                .map(|index| self.clone_borrowed_view(view.field(index)?))
+                .map(|index| self.clone_borrowed_view_with(view.field(index)?, leaf))
                 .collect::<Result<Vec<_>, _>>()?;
             return DynamicValue::record(layout, values);
         }
         if layout.sequence_item().is_some() {
             let values = (0..view.sequence_len()?)
-                .map(|index| self.clone_borrowed_view(view.sequence_item(index)?))
+                .map(|index| self.clone_borrowed_view_with(view.sequence_item(index)?, leaf))
                 .collect::<Result<Vec<_>, _>>()?;
             return DynamicValue::sequence(layout, values);
+        }
+        if let Some(value) = leaf(&view) {
+            return value;
         }
         let ty = layout.rils_type();
         let registration = self

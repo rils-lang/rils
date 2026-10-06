@@ -1,0 +1,3 @@
+let cell = RefCell::new(host::item());
+*cell.borrow_mut() = host::item();
+Some(cell.replace(host::item()))

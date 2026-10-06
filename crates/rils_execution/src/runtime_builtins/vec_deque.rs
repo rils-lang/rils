@@ -238,7 +238,7 @@ fn call_dynamic(
                 };
                 value
                     .with_sequence_item(index, |item| {
-                        rils_stdlib::native::registry().clone_borrowed_element(item)
+                        crate::value::runtime_layouts::clone_borrowed_element(item)
                     })?
                     .map(Some)
             })??;

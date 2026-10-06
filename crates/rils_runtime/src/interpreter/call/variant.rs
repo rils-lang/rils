@@ -45,8 +45,10 @@ impl Interpreter {
             &constructor.environment,
             span,
         )?;
-        let (structs, enums) = constructor.environment.borrow().visible_type_definitions();
-        let storage = crate::value::storage::TypedStorageContext::new(&structs, &enums);
+        let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+            &constructor.environment.borrow(),
+        );
+        let storage = context.storage();
         let values = fields
             .iter()
             .zip(arguments)

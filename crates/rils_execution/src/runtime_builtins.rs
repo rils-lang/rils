@@ -16,6 +16,9 @@ mod callback;
 mod cell_native;
 mod collection_constructor;
 mod collection_iter;
+mod context;
+pub use context::NativeOwnedContext;
+pub(crate) use context::resolve_layout;
 mod indexed_iter;
 mod native;
 mod native_map;
@@ -31,12 +34,6 @@ mod vector;
 pub(crate) mod vector_dynamic;
 
 pub type NativeCallback<'a, E> = dyn FnMut(&Value, &[Value]) -> Result<Value, E> + 'a;
-
-/// Resolved nominal declarations available to an owned native call.
-pub struct NativeOwnedContext {
-    pub structs: Vec<Rc<crate::value::StructType>>,
-    pub enums: Vec<Rc<crate::value::EnumType>>,
-}
 
 #[derive(Debug)]
 pub enum NativeCallError<E> {
@@ -236,6 +233,7 @@ mod tests {
         let context = NativeOwnedContext {
             structs: Vec::new(),
             enums: Vec::new(),
+            ..Default::default()
         };
         let option = Value::Option {
             value: Some(Rc::new(Value::from_i32(7))),

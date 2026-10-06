@@ -56,7 +56,7 @@ pub fn take_owned_with_definitions(
 
 fn read_item(payload: &DynamicValue) -> Result<Value, String> {
     let item =
-        rils_stdlib::native::registry().clone_borrowed_view(payload.view().variant_payload()?)?;
+        crate::value::runtime_layouts::clone_borrowed_view(payload.view().variant_payload()?)?;
     NativeRecordCodec::new().from_native(item)
 }
 

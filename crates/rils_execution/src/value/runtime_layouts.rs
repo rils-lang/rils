@@ -11,6 +11,82 @@ use super::{HostObject, HostType, ReferenceValue, Value, record_layout::NativeLa
 mod callable;
 use callable::Callable;
 
+/// Compatibility read of a borrowed native value. Host leaves retain their
+/// opaque identity; this does not mark a non-Copy host object as Copy.
+pub fn clone_borrowed_view(view: DynamicValueRef<'_>) -> Result<DynamicValue, String> {
+    rils_stdlib::native::registry().clone_borrowed_view_with(view, &mut |leaf| {
+        let layout = match leaf.layout() {
+            Ok(layout) => layout,
+            Err(error) => return Some(Err(error)),
+        };
+        if !layout.is_rust_type::<Rc<HostObject>>() {
+            return None;
+        }
+        Some(
+            leaf.with_rust::<Rc<HostObject>, _>(Rc::clone)
+                .and_then(|object| encode_host(object, layout)),
+        )
+    })
+}
+
+pub fn clone_borrowed_element(value: &DynamicValue) -> Result<DynamicValue, String> {
+    clone_borrowed_view(value.view())
+}
+
+/// Preserve host subtype checks through native sums and indexed aggregates,
+/// inspecting the registered host leaf without materializing its payload.
+pub(crate) fn accepts_view(view: DynamicValueRef<'_>, expected: &Type) -> Result<bool, String> {
+    let layout = view.layout()?;
+    if crate::types::merge_types(expected, layout.rils_type()).is_some() {
+        return Ok(true);
+    }
+    match (expected, layout.rils_type()) {
+        (Type::Named { name, arguments }, _) if layout.is_rust_type::<Rc<HostObject>>() => view
+            .with_rust::<Rc<HostObject>, _>(|object| {
+                arguments.is_empty()
+                    && (object.type_definition.name == *name
+                        || object.type_definition.base_types.contains(name))
+            }),
+        (Type::Option(expected), Type::Option(_)) if view.option_is_some()? => {
+            accepts_view(view.option_item()?, expected)
+        }
+        (Type::Result(ok, error), Type::Result(actual_ok, actual_error)) => {
+            let (expected, inactive, actual_inactive) = if view.variant_index()? == 0 {
+                (ok, error, actual_error)
+            } else {
+                (error, ok, actual_ok)
+            };
+            Ok(
+                crate::types::merge_types(inactive, actual_inactive).is_some()
+                    && accepts_view(view.variant_payload()?, expected)?,
+            )
+        }
+        (Type::Tuple(expected), Type::Tuple(actual)) if expected.len() == actual.len() => {
+            for (index, expected) in expected.iter().enumerate() {
+                if !accepts_view(view.field(index)?, expected)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        (
+            Type::Array { element, length },
+            Type::Array {
+                length: actual_length,
+                ..
+            },
+        ) if length == actual_length => {
+            for index in 0..*length {
+                if !accepts_view(view.field(index)?, element)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 /// Layouts for execution handles are registered here, independently of
 /// standard-library payloads. A reference leaf owns its lexical lease and a
 /// callable leaf owns its call target; neither stores a `Value` data wrapper.
@@ -90,7 +166,11 @@ pub(super) fn encode_host(
     value: Rc<HostObject>,
     layout: Rc<DynamicLayout>,
 ) -> Result<DynamicValue, String> {
-    if layout.rils_type() != &Type::named(value.type_definition.name.clone())
+    let Type::Named { name, arguments } = layout.rils_type() else {
+        return Err("host object requires a named declaration".into());
+    };
+    if !arguments.is_empty()
+        || (name != &value.type_definition.name && !value.type_definition.base_types.contains(name))
         || layout.is_copy() != value.type_definition.copy
     {
         return Err("host object differs from its registered declaration".into());

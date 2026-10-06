@@ -38,11 +38,7 @@ impl TypedStorageContext<'_> {
                 })
             }
             (Value::Option { .. }, Type::Option(_))
-            | (Value::Result { .. }, Type::Result(_, _)) => {
-                RecordLayoutResolver::with_enums(self.structs, self.enums)
-                    .resolve(expected)
-                    .is_ok()
-            }
+            | (Value::Result { .. }, Type::Result(_, _)) => self.layout(expected).is_ok(),
             _ => false,
         }
     }

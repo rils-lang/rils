@@ -155,6 +155,10 @@ pub struct Environment {
 }
 
 impl Environment {
+    pub fn visible_host_definitions(&self) -> Vec<Rc<crate::value::HostType>> {
+        self.declarations.host_definitions()
+    }
+
     pub fn visible_type_definitions(
         &self,
     ) -> (

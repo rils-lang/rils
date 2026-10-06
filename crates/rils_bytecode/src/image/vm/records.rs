@@ -48,8 +48,7 @@ impl VirtualMachine<'_> {
             .zip(&type_arguments)
             .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
             .collect::<HashMap<_, _>>();
-        let (structs, enums) = self.type_definitions();
-        let storage = rils_execution::value::storage::TypedStorageContext::new(&structs, &enums);
+        let storage = self.native_context.storage();
         let values = field_types
             .iter()
             .zip(values)
@@ -100,9 +99,7 @@ impl VirtualMachine<'_> {
                     .zip(&type_arguments)
                     .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
                     .collect::<HashMap<_, _>>();
-                let (structs, enums) = self.type_definitions();
-                let storage =
-                    rils_execution::value::storage::TypedStorageContext::new(&structs, &enums);
+                let storage = self.native_context.storage();
                 let slots = definition
                     .fields
                     .iter()
@@ -159,9 +156,7 @@ impl VirtualMachine<'_> {
                     .zip(&type_arguments)
                     .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
                     .collect::<HashMap<_, _>>();
-                let (structs, enums) = self.type_definitions();
-                let storage =
-                    rils_execution::value::storage::TypedStorageContext::new(&structs, &enums);
+                let storage = self.native_context.storage();
                 for field in fields {
                     let annotation = field.type_annotation.substitute(&substitutions);
                     if let Some(value) = values.remove(&field.name) {

@@ -27,6 +27,8 @@ pub struct BytecodeHost {
     pub(super) capabilities: HashSet<String>,
     pub(super) functions: HashMap<String, Vec<HostBinding>>,
     pub(super) host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
+    pub(super) declarations: crate::runtime_builtins::NativeOwnedContext,
+    type_contract: Option<crate::HostContract>,
 }
 
 impl BytecodeHost {
@@ -36,6 +38,8 @@ impl BytecodeHost {
             capabilities: HashSet::new(),
             functions: HashMap::new(),
             host_value_formatter: None,
+            declarations: Default::default(),
+            type_contract: None,
         }
     }
 
@@ -52,6 +56,115 @@ impl BytecodeHost {
             .expect("standard core imports are unique");
         }
         host
+    }
+
+    /// Register the authoritative manifest types before executing bytecode.
+    /// Custom Rust host declarations keep their own Copy policy.
+    pub fn register_host_contract(&mut self, contract: &crate::HostContract) -> Result<(), String> {
+        let mut type_contract = self.type_contract.clone().unwrap_or_else(|| {
+            crate::HostContract::with_versions(
+                contract.host_abi_version(),
+                contract.contract_version(),
+            )
+            .expect("valid host contract versions")
+        });
+        type_contract.merge(contract)?;
+        let context =
+            crate::runtime_builtins::NativeOwnedContext::from_host_contract(&type_contract)?;
+        let mut declarations = self.declarations.clone();
+        for definition in context.hosts {
+            if declarations
+                .enums
+                .iter()
+                .any(|existing| existing.name == definition.name)
+            {
+                return Err(format!(
+                    "conflicting host declaration `{}`",
+                    definition.name
+                ));
+            }
+            if let Some(existing) = declarations
+                .hosts
+                .iter()
+                .find(|existing| existing.name == definition.name)
+            {
+                if existing.base_types != definition.base_types {
+                    return Err(format!(
+                        "conflicting host declaration `{}`",
+                        definition.name
+                    ));
+                }
+            } else {
+                declarations.hosts.push(definition);
+            }
+        }
+        for definition in context.enums {
+            if declarations
+                .hosts
+                .iter()
+                .any(|existing| existing.name == definition.name)
+            {
+                return Err(format!(
+                    "conflicting host declaration `{}`",
+                    definition.name
+                ));
+            }
+            if let Some(existing) = declarations
+                .enums
+                .iter()
+                .find(|existing| existing.name == definition.name)
+            {
+                if self
+                    .type_contract
+                    .as_ref()
+                    .and_then(|contract| contract.host_type(&existing.name))
+                    != type_contract.host_type(&definition.name)
+                {
+                    return Err(format!(
+                        "conflicting host enum declaration `{}`",
+                        definition.name
+                    ));
+                }
+            } else {
+                declarations.enums.push(definition);
+            }
+        }
+        self.declarations = declarations;
+        self.type_contract = Some(type_contract);
+        Ok(())
+    }
+
+    pub fn register_host_type(
+        &mut self,
+        definition: Rc<rils_execution::value::HostType>,
+    ) -> Result<(), String> {
+        if self
+            .declarations
+            .enums
+            .iter()
+            .any(|existing| existing.name == definition.name)
+        {
+            return Err(format!(
+                "conflicting host declaration `{}`",
+                definition.name
+            ));
+        }
+        if let Some(existing) = self
+            .declarations
+            .hosts
+            .iter()
+            .find(|existing| existing.name == definition.name)
+        {
+            if Rc::ptr_eq(existing, &definition) {
+                return Ok(());
+            }
+            return Err(format!(
+                "host type `{}` is already registered",
+                definition.name
+            ));
+        }
+        self.declarations.hosts.push(definition);
+        Ok(())
     }
 
     pub fn allow_capability(&mut self, capability: impl Into<String>) {

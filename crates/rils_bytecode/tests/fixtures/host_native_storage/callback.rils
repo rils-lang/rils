@@ -1,0 +1,3 @@
+fn produce() -> Option<host::Item> { Some(host::item()) }
+let value: Option<host::Item> = None;
+value.or_else(produce)

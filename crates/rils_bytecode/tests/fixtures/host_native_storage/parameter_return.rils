@@ -1,0 +1,5 @@
+use host::Item;
+fn wrap(value: Item) -> Option<Item> { Some(value) }
+let mut value: Option<Item> = None;
+value = wrap(host::item());
+value

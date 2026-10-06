@@ -7,9 +7,7 @@ use rils_value::{DynamicType, DynamicValue};
 use crate::{
     Type,
     runtime_builtins::NativeOwnedContext,
-    value::{
-        DynamicObject, Value, record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver,
-    },
+    value::{DynamicObject, Value, record_codec::NativeRecordCodec},
 };
 
 struct BoxPayload {
@@ -27,9 +25,8 @@ pub(super) fn new(
         name: "Box".into(),
         arguments: vec![item_type.clone()],
     };
-    let mut resolver = RecordLayoutResolver::with_enums(&context.structs, &context.enums);
-    let item_layout = resolver.resolve(&item_type)?;
-    let box_layout = resolver.resolve(&box_type)?;
+    let item_layout = context.layout(&item_type)?;
+    let box_layout = context.layout(&box_type)?;
     let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
     let value = codec.into_native(value, item_layout)?;
     let payload: Box<dyn Any> = Box::new(BoxPayload { value, codec });

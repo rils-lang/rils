@@ -119,6 +119,18 @@ pub fn restore_owned_nominal(
 impl NativeRecordCodec {
     fn encode(&mut self, value: Value, layout: Rc<DynamicLayout>) -> Result<DynamicValue, String> {
         let ty = layout.rils_type().clone();
+        if let Value::Dynamic(object) = &value
+            && matches!(ty, Type::Option(_) | Type::Result(_, _))
+            && object.descriptor().layout().rils_type() != &ty
+            && ty.accepts(&value)
+        {
+            let Value::Dynamic(object) = value else {
+                unreachable!()
+            };
+            let payload = object.into_value().map_err(|error| error.1)?;
+            let value = self.decode(payload)?;
+            return self.encode(value, layout);
+        }
         match (ty, value) {
             (Type::Reference { .. }, Value::Reference(value)) => {
                 super::runtime_layouts::encode_reference(value, layout)

@@ -7,29 +7,27 @@ impl<'a> VirtualMachine<'a> {
         Vec<Rc<rils_execution::value::StructType>>,
         Vec<Rc<rils_execution::value::EnumType>>,
     ) {
-        let mut structs = Vec::new();
-        let mut enums = Vec::new();
-        for definition in &self.module.types {
-            match definition {
-                RuntimeType::Struct(definition) => structs.push(definition.clone()),
-                RuntimeType::Enum(definition) => enums.push(definition.clone()),
-            }
-        }
-        (structs, enums)
+        (
+            self.native_context.structs.clone(),
+            self.native_context.enums.clone(),
+        )
     }
 
     pub(in crate::image) fn new(
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
         host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
+        mut native_context: crate::runtime_builtins::NativeOwnedContext,
         limits: crate::ExecutionLimits,
     ) -> Self {
         register_structural_key_traits(module);
+        extend_module_types(&mut native_context, module);
         let entry = &module.functions[module.entry];
         Self {
             module,
             imports,
             host_value_formatter,
+            native_context,
             frames: vec![Frame {
                 function: module.entry,
                 registers: vec![None; entry.register_count],
@@ -49,11 +47,13 @@ impl<'a> VirtualMachine<'a> {
         module: &'a BytecodeModule,
         imports: Vec<Rc<BytecodeHostHandler>>,
         host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
+        mut native_context: crate::runtime_builtins::NativeOwnedContext,
         limits: crate::ExecutionLimits,
         function: usize,
         arguments: Vec<Value>,
     ) -> Result<Self, BytecodeError> {
         register_structural_key_traits(module);
+        extend_module_types(&mut native_context, module);
         let callee = &module.functions[function];
         if callee.capture_count != 0 {
             return Err(BytecodeError::new(
@@ -81,6 +81,7 @@ impl<'a> VirtualMachine<'a> {
             module,
             imports,
             host_value_formatter,
+            native_context,
             frames: vec![Frame {
                 function,
                 registers: vec![None; callee.register_count],
@@ -117,6 +118,38 @@ fn register_structural_key_traits(module: &BytecodeModule) {
                         .insert(implementation.trait_name.clone());
                 }
                 _ => {}
+            }
+        }
+    }
+}
+
+fn extend_module_types(
+    context: &mut crate::runtime_builtins::NativeOwnedContext,
+    module: &BytecodeModule,
+) {
+    for definition in &module.types {
+        match definition {
+            RuntimeType::Struct(definition) => {
+                if let Some(existing) = context
+                    .structs
+                    .iter_mut()
+                    .find(|existing| existing.name == definition.name)
+                {
+                    *existing = definition.clone();
+                } else {
+                    context.structs.push(definition.clone());
+                }
+            }
+            RuntimeType::Enum(definition) => {
+                if let Some(existing) = context
+                    .enums
+                    .iter_mut()
+                    .find(|existing| existing.name == definition.name)
+                {
+                    *existing = definition.clone();
+                } else {
+                    context.enums.push(definition.clone());
+                }
             }
         }
     }

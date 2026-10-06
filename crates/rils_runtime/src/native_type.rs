@@ -8,6 +8,12 @@ pub struct NativeTypeHandle {
 }
 
 impl NativeTypeHandle {
+    /// Share this declaration with another execution backend during migration.
+    #[doc(hidden)]
+    pub fn runtime_declaration(&self) -> std::rc::Rc<value::HostType> {
+        self.definition.clone()
+    }
+
     pub fn value<T: 'static>(&self, payload: T) -> Value {
         Value::HostObject(std::rc::Rc::new(value::HostObject {
             type_definition: self.definition.clone(),

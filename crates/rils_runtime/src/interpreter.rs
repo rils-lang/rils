@@ -12,6 +12,7 @@ mod construction;
 mod evaluation;
 mod execution;
 mod formatting;
+mod host_declarations;
 mod native_callback;
 mod operators;
 mod pattern;
@@ -212,7 +213,7 @@ impl Interpreter {
             return Err(format!("name `{name}` is already registered"));
         }
         let definition = Rc::new(HostType {
-            name: name.clone(),
+            name: environment.borrow().qualified_type_name(&name),
             base_types: Default::default(),
             copy: false,
             methods: RefCell::new(Default::default()),

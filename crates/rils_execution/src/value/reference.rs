@@ -434,7 +434,7 @@ impl ReferenceValue {
                 Some(field) => sequence.with(|value| {
                     value.with_sequence_item(*index, |item| {
                         let view = item.view().field(*field)?;
-                        let cloned = rils_stdlib::native::registry().clone_borrowed_view(view)?;
+                        let cloned = crate::value::runtime_layouts::clone_borrowed_view(view)?;
                         if let Some(codec) = codec {
                             codec.from_native(cloned)
                         } else {
@@ -445,7 +445,7 @@ impl ReferenceValue {
                 None => {
                     let item = sequence.with(|payload| {
                         payload.with_sequence_item(*index, |item| {
-                            rils_stdlib::native::registry().clone_borrowed_element(item)
+                            crate::value::runtime_layouts::clone_borrowed_element(item)
                         })
                     })???;
                     if let Some(codec) = codec {
@@ -483,9 +483,10 @@ impl ReferenceValue {
                 };
                 if (layout.is_copy() && !nominal_noncopy)
                     || layout.rils_type() == &crate::Type::String
+                    || super::runtime_layouts::is_execution_leaf(layout)
                 {
                     let cloned = inner.with(|value| {
-                        rils_stdlib::native::registry().clone_borrowed_element(value)
+                        crate::value::runtime_layouts::clone_borrowed_element(value)
                     })??;
                     super::record_codec::NativeRecordCodec::with_definitions(structs, enums)
                         .from_native(cloned)
@@ -644,9 +645,15 @@ impl ReferenceValue {
                 let Some(item_ty) = arguments.first() else {
                     return Err(AssignError::Undefined);
                 };
-                let layout = super::record_layout::RecordLayoutResolver::with_enums(structs, enums)
-                    .resolve(item_ty)
-                    .map_err(|_| AssignError::TypeMismatch(item_ty.clone()))?;
+                let layout = cell
+                    .with(|payload| {
+                        payload.with::<ErasedRefCell, _>(|cell| {
+                            cell.value.with(|value| value.layout_handle())
+                        })
+                    })
+                    .map_err(|_| AssignError::BorrowedTarget)?
+                    .map_err(|_| AssignError::BorrowedTarget)?
+                    .map_err(|_| AssignError::BorrowedTarget)?;
                 let native =
                     super::record_codec::NativeRecordCodec::with_definitions(structs, enums)
                         .into_native(value, layout)

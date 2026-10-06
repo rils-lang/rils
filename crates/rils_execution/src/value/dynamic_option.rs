@@ -146,7 +146,7 @@ fn view_composite(object: &DynamicObject) -> Result<Option<Value>, String> {
         if !view.option_is_some()? {
             return Ok(None);
         }
-        let item = rils_stdlib::native::registry().clone_borrowed_view(view.option_item()?)?;
+        let item = crate::value::runtime_layouts::clone_borrowed_view(view.option_item()?)?;
         let value = if nested_option {
             let layout = item.layout_handle();
             Value::Dynamic(DynamicObject::new(Rc::new(DynamicType::new(layout)), item)?)

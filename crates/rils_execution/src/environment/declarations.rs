@@ -2,7 +2,7 @@
 
 use crate::{
     Type,
-    value::{EnumType, StructType, TraitType, TypeAliasType, Value},
+    value::{EnumType, HostType, StructType, TraitType, TypeAliasType, Value},
 };
 use rils_frontend::semantic::DeclarationTypeResolver;
 use std::{
@@ -16,6 +16,7 @@ enum Declaration {
     Enum(Weak<EnumType>),
     Trait(Weak<TraitType>),
     Alias(Weak<TypeAliasType>),
+    Host(Weak<HostType>),
 }
 
 impl Declaration {
@@ -25,6 +26,7 @@ impl Declaration {
             Self::Enum(value) => value.upgrade().map(Value::EnumType),
             Self::Trait(value) => value.upgrade().map(Value::TraitType),
             Self::Alias(value) => value.upgrade().map(Value::TypeAlias),
+            Self::Host(value) => value.upgrade().map(Value::HostType),
         }
     }
 }
@@ -42,6 +44,7 @@ impl TypeDeclarations {
             Value::EnumType(value) => (&value.name, Declaration::Enum(Rc::downgrade(value))),
             Value::TraitType(value) => (&value.name, Declaration::Trait(Rc::downgrade(value))),
             Value::TypeAlias(value) => (&value.name, Declaration::Alias(Rc::downgrade(value))),
+            Value::HostType(value) => (&value.name, Declaration::Host(Rc::downgrade(value))),
             _ => return,
         };
         self.values.borrow_mut().insert(name.clone(), declaration);
@@ -68,6 +71,19 @@ impl TypeDeclarations {
 
     pub(super) fn set_resolver(&self, resolver: DeclarationTypeResolver) {
         *self.resolver.borrow_mut() = resolver;
+    }
+
+    pub(super) fn host_definitions(&self) -> Vec<Rc<HostType>> {
+        let mut hosts = Vec::new();
+        self.values.borrow_mut().retain(|_, declaration| {
+            match declaration.value() {
+                Some(Value::HostType(value)) => hosts.push(value),
+                Some(_) => {}
+                None => return false,
+            }
+            true
+        });
+        hosts
     }
 
     pub(super) fn resolve(&self, ty: &Type, module: &[String]) -> Type {

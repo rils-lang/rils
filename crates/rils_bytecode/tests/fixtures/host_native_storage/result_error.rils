@@ -1,0 +1,2 @@
+let value: Result<host::Item, i32> = Err(42);
+value

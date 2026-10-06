@@ -101,8 +101,7 @@ fn format_view(
             formatter.write_str(close)
         }
         ty => {
-            let cloned = rils_stdlib::native::registry()
-                .clone_borrowed_view(view)
+            let cloned = crate::value::runtime_layouts::clone_borrowed_view(view)
                 .and_then(|item| NativeRecordCodec::new().from_native(item));
             match cloned {
                 Ok(Value::Dynamic(_)) | Err(_) => write!(formatter, "<{ty}>"),

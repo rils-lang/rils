@@ -21,6 +21,7 @@ pub fn into_iterator(value: Value) -> Result<IntoIteratorResult, String> {
         &runtime_builtins::NativeOwnedContext {
             structs: Vec::new(),
             enums: Vec::new(),
+            ..Default::default()
         },
     )
 }

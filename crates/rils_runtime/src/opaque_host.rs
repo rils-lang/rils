@@ -1,10 +1,10 @@
+use std::collections::HashSet;
 use std::rc::Rc;
-use std::{cell::RefCell, collections::HashSet};
 
-use crate::value::{EnumInstance, EnumPayload, EnumType, HostObject, HostType};
+use crate::value::{EnumInstance, EnumPayload, HostObject, HostType};
 use crate::{HostEnumDefinition, Value};
 
-const HOST_FLAGS_RAW_VARIANT: &str = "#rils_host_flags_raw";
+use rils_execution::value::host_declarations::{HOST_FLAGS_RAW_VARIANT, enum_definition};
 
 /// Payload carried by the portable host-handle ABI value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,27 +92,7 @@ pub fn host_enum_value(
         EnumPayload::Unit
     };
     Ok(Value::Enum(Rc::new(EnumInstance {
-        type_definition: Rc::new(EnumType {
-            name: type_name,
-            generic_parameters: Vec::new(),
-            variants: definition
-                .variants
-                .keys()
-                .map(|name| crate::ast::EnumVariant::Unit {
-                    name: name.clone(),
-                    span: crate::Span::default(),
-                })
-                .chain(definition.flags.then(|| crate::ast::EnumVariant::Tuple {
-                    name: HOST_FLAGS_RAW_VARIANT.to_owned(),
-                    fields: vec![crate::Type::Integer(crate::IntegerType::U128)],
-                    span: crate::Span::default(),
-                }))
-                .collect(),
-            methods: RefCell::new(Default::default()),
-            trait_methods: RefCell::new(Default::default()),
-            implemented_traits: RefCell::new(Default::default()),
-            associated_types: RefCell::new(Default::default()),
-        }),
+        type_definition: enum_definition(type_name, definition),
         variant,
         payload,
         type_arguments: Vec::new(),

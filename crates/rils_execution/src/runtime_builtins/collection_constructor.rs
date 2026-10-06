@@ -10,7 +10,6 @@ use crate::{
     Type, Value,
     value::{
         DynamicObject, HashMapValue, HashSetValue, IndexedStorage, record_codec::NativeRecordCodec,
-        record_layout::RecordLayoutResolver,
     },
 };
 
@@ -68,8 +67,7 @@ pub(super) fn from_array(
             name: "Vec".into(),
             arguments: vec![element_type.clone()],
         };
-        let mut resolver = RecordLayoutResolver::with_enums(&context.structs, &context.enums);
-        if let Ok(layout) = resolver.resolve(&ty) {
+        if let Ok(layout) = context.layout(&ty) {
             let item_layout = layout
                 .sequence_item()
                 .ok_or("Vec layout has no element layout")?

@@ -52,9 +52,11 @@ impl Interpreter {
         if !rils_frontend::standard_library::is_concrete_native_type(expected) {
             return None;
         }
-        let (structs, enums) = environment.borrow().visible_type_definitions();
+        let context =
+            crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow());
         Some(
-            crate::value::dynamic_sequence::empty_with_definitions(expected, &structs, &enums)
+            context
+                .empty_collection(expected)
                 .map_err(|message| RuntimeError::new(message, *span)),
         )
     }

@@ -59,11 +59,7 @@ pub(super) fn call_owned_symbol(
         }
         let value = arguments.pop().expect("checked argument count");
         let item_type = Type::of_value(&value).ok_or("Rc::new needs a concrete item type")?;
-        let mut resolver = crate::value::record_layout::RecordLayoutResolver::with_enums(
-            &context.structs,
-            &context.enums,
-        );
-        let item_layout = resolver.resolve(&item_type)?;
+        let item_layout = context.layout(&item_type)?;
         let native = NativeRecordCodec::with_definitions(&context.structs, &context.enums)
             .into_native(value, item_layout)?;
         let ty = Type::Named {

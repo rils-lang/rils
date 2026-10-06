@@ -90,6 +90,7 @@ impl VirtualMachine<'_> {
             self.module,
             self.imports.clone(),
             self.host_value_formatter.clone(),
+            self.native_context.clone(),
             crate::ExecutionLimits {
                 max_steps: self.max_steps.saturating_sub(self.steps),
                 max_call_depth: remaining_call_depth,

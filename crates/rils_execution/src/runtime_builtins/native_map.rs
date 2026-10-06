@@ -399,7 +399,7 @@ fn insertion_index(map: &DynamicValue, key: &NativeKey) -> Result<usize, String>
 
 fn clone_field(map: &DynamicValue, index: usize, field: usize) -> Result<DynamicValue, String> {
     map.with_sequence_item(index, |entry| {
-        rils_stdlib::native::registry().clone_borrowed_view(entry.view().field(field)?)
+        crate::value::runtime_layouts::clone_borrowed_view(entry.view().field(field)?)
     })?
 }
 
