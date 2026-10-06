@@ -1,0 +1,8 @@
+mod model {
+    pub struct Item { value: string }
+    pub fn make() -> Item { Item { value: "37" } }
+}
+use model::Item as ImportedItem;
+let value = Some(ImportedItem { value: "37" });
+let tuple = (Some(model::make()), value);
+tuple

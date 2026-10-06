@@ -121,8 +121,14 @@ impl<'a> FunctionLowerer<'a> {
                 span,
                 ..
             } => {
+                let type_annotation = type_annotation
+                    .as_ref()
+                    .map(|ty| self.signature_type(ty))
+                    .or_else(|| {
+                        self.expression_type(initializer)
+                            .map(|ty| self.signature_type(&ty))
+                    });
                 let mut initializer = self.expression(initializer)?;
-                let type_annotation = type_annotation.as_ref().map(|ty| self.signature_type(ty));
                 apply_option_type(&mut initializer, type_annotation.as_ref());
                 let local = self.mutable.len();
                 self.mutable.push(*mutable);

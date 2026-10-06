@@ -1,0 +1,3 @@
+struct Item { value: string }
+let values = [if true { Ok(Item { value: "37" }) } else { Err("error") }];
+values

@@ -144,3 +144,24 @@ fn typed_indexed_initializers_recursively_compose_nominal_sums() {
         }
     }
 }
+
+#[test]
+fn inferred_bindings_compose_native_storage_without_annotations() {
+    for source in [
+        include_str!("fixtures/native_assignment_storage/inferred_option.rils"),
+        include_str!("fixtures/native_assignment_storage/inferred_indexed.rils"),
+        include_str!("fixtures/native_assignment_storage/inferred_result.rils"),
+        include_str!("fixtures/native_assignment_storage/inferred_modules.rils"),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_native_sum(&value);
+            assert!(value.to_string().contains("37"), "{source}: {value}");
+        }
+    }
+}

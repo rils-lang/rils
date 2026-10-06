@@ -1,0 +1,3 @@
+struct Item { value: string }
+let values = ([Some(Item { value: "37" }), None], (Some(Item { value: "37" }),));
+values

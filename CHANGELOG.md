@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 未显式标注的局部绑定现在使用前端推导类型提升原生存储，覆盖布局可解析的用户类型 Option/Result 和嵌套元组/数组；move 后重新赋值保留原生声明。HIR 经现有 `InitLocal` 类型字段传递推导结果，v8 编码不变。Rust 宿主读取这类绑定的结果时应使用 `RilsValue::with_native_view()` 或 `Value::as_option()` / `as_result()`，避免仅匹配旧 Option/Result 变体。
+
 - 类型化元组/数组初始化、具体泛型参数与返回值现在递归提升内部用户类型的 Option/Result，支持跨模块透明别名，按所有权移动非 Clone 内容。VM 数组构造复用共享的递归类型合并规则，Ok/Err 和 Some/None 分支与解释器保持一致；字节码 v8 编码不变。
 
 - **破坏性 Rust API 变更：** `FieldSlot` 独立保存原生声明，不再支持结构体字面量构造；改用 `FieldSlot::new(type_annotation, value)`，替换负载使用 `FieldSlot::assign(value)`。原先的 `Value::constrain_assignment` 辅助方法已移除，赋值通过目标槽位执行。

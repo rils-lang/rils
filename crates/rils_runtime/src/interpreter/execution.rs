@@ -193,7 +193,8 @@ impl Interpreter {
                     .as_ref()
                     .and_then(|ids| ids.get(initializer))
                     .and_then(|id| self.typeck_results.as_ref()?.expression_type(id))
-                    .cloned();
+                    .map(|ty| expand_type_aliases(ty, &environment, *span))
+                    .transpose()?;
                 let contextual_type = type_annotation.as_ref().or(inferred_type.as_ref());
                 let value = match contextual_type.and_then(|expected| {
                     self.construct_contextual_empty(initializer, expected, &environment)
@@ -235,7 +236,7 @@ impl Interpreter {
                     ));
                 }
                 let mut value = apply_type_owned(type_annotation.as_ref(), value, *span, name)?;
-                if let Some(expected) = type_annotation.as_ref() {
+                if let Some(expected) = contextual_type {
                     let (structs, enums) = environment.borrow().visible_type_definitions();
                     value = crate::value::storage::TypedStorageContext::new(&structs, &enums)
                         .apply_declared(value, expected)

@@ -1,0 +1,6 @@
+struct Item { value: string }
+let mut value = Some(Item { value: "initial" });
+let previous = value;
+value = None;
+value = Some(Item { value: "37" });
+value
