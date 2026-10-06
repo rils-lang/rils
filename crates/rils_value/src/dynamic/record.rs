@@ -274,6 +274,13 @@ impl DynamicValue {
 
     /// Move one nested field while leaving every ancestor and sibling live.
     pub fn take_field_path(&mut self, path: &[usize]) -> Result<Self, String> {
+        self.check_path_move(
+            &path
+                .iter()
+                .copied()
+                .map(super::DynamicPathStep::Field)
+                .collect::<Vec<_>>(),
+        )?;
         let (parent, index, offset, layout) = self.field_path_parent(path)?;
         // SAFETY: field_path_parent checked the index against the parent tags.
         if unsafe { ptr::read(parent.add(index)) } != 1 {
@@ -374,6 +381,7 @@ impl DynamicValue {
 
     /// Move a field out, leaving its tag empty for a later write.
     pub fn take_field(&mut self, index: usize) -> Result<Self, String> {
+        self.check_path_move(&[super::DynamicPathStep::Field(index)])?;
         let field = self.record_field(index)?;
         if !self.field_is_live(index)? {
             return Err(format!("record field `{}` has been moved", field.name));

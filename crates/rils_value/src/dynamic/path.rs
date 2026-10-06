@@ -21,6 +21,16 @@ pub struct DynamicValueRef<'a> {
 }
 
 impl<'a> DynamicValueRef<'a> {
+    pub fn sequence_borrows(&self) -> Result<Rc<super::SequenceBorrowLedger>, String> {
+        let (pointer, layout) = self.root.project(&self.path)?;
+        if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {
+            return Err(format!("{} is not a sequence", layout.rils_type()));
+        }
+        // SAFETY: project checked every parent and this exact sequence layout.
+        Ok(unsafe { &*pointer.cast::<SequenceStorage>() }
+            .borrows
+            .clone())
+    }
     pub fn layout(&self) -> Result<Rc<DynamicLayout>, String> {
         self.root.project(&self.path).map(|(_, layout)| layout)
     }
@@ -97,6 +107,14 @@ impl DynamicValue {
             root: self,
             path: Vec::new(),
         }
+    }
+    /// Resolve a complete native path without copying any of its payloads.
+    pub fn view_path(&self, path: &[DynamicPathStep]) -> Result<DynamicValueRef<'_>, String> {
+        self.project(path)?;
+        Ok(DynamicValueRef {
+            root: self,
+            path: path.to_vec(),
+        })
     }
     fn project(&self, path: &[DynamicPathStep]) -> Result<(*const u8, Rc<DynamicLayout>), String> {
         let mut pointer = self.storage.pointer();
@@ -237,6 +255,7 @@ impl DynamicValue {
     /// Move a record field through any live option, variant or sequence parent.
     /// Only the final field becomes empty; all ancestors stay initialized.
     pub fn take_path_field(&mut self, path: &[DynamicPathStep]) -> Result<Self, String> {
+        self.check_path_move(path)?;
         let (parent, index, offset, layout) = self.field_parent(path)?;
         // SAFETY: field_parent checked the index against an initialized record.
         if unsafe { ptr::read(parent.add(index)) } != 1 {
@@ -292,6 +311,50 @@ impl DynamicValue {
     /// value, if present, remains owned by the caller and is dropped exactly
     /// once. A layout mismatch leaves the record untouched.
     pub fn replace_path_field(
+        &mut self,
+        path: &[DynamicPathStep],
+        value: Self,
+    ) -> Result<Option<Self>, String> {
+        self.check_path_write(path, false)?;
+        self.replace_path_field_unchecked_borrows(path, value)
+    }
+
+    /// Replace a field or sequence item through a lexical reference. Equal
+    /// mutable references may coexist; live descendant references prevent
+    /// replacing their parent. The old value is returned with sole ownership.
+    pub fn replace_path_reference(
+        &mut self,
+        path: &[DynamicPathStep],
+        value: Self,
+    ) -> Result<Option<Self>, String> {
+        self.check_path_write(path, true)?;
+        match path.split_last() {
+            Some((DynamicPathStep::Field(_), _)) => {
+                self.replace_path_field_unchecked_borrows(path, value)
+            }
+            Some((DynamicPathStep::Index(index), parents)) => {
+                let (pointer, layout) = self.project(parents)?;
+                let DropKind::Sequence { item } = &layout.drop_kind else {
+                    return Err("native indexed reference requires a sequence".into());
+                };
+                if !item.compatible_with(&value.descriptor) {
+                    return Err("native sequence item has a different layout".into());
+                }
+                // SAFETY: project checked the sequence and &mut self provides
+                // exclusive access for the entire replacement operation.
+                let storage = unsafe { &mut *pointer.cast_mut().cast::<SequenceStorage>() };
+                storage.borrows.check_element_write(*index)?;
+                let slot = storage
+                    .items
+                    .get_mut(*index)
+                    .ok_or("native index is out of bounds")?;
+                Ok(Some(std::mem::replace(slot, value)))
+            }
+            _ => Err("native reference assignment requires a field or sequence item".into()),
+        }
+    }
+
+    pub(super) fn replace_path_field_unchecked_borrows(
         &mut self,
         path: &[DynamicPathStep],
         mut value: Self,

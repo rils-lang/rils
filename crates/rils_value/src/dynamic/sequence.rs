@@ -274,6 +274,7 @@ impl DynamicValue {
     /// Replace one item without moving the sequence or invalidating its
     /// reference handles. Each write takes only a short Rust borrow.
     pub fn replace_sequence_item(&mut self, index: usize, item: Self) -> Result<Self, String> {
+        self.check_path_write(&[super::DynamicPathStep::Index(index)], true)?;
         let DropKind::Sequence { item: expected } = &self.descriptor.drop_kind else {
             return Err("value is not a sequence".into());
         };

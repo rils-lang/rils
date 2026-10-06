@@ -6,7 +6,7 @@ mod storage;
 
 pub use dynamic::{
     CompactDynamicObject, DynamicCallContext, DynamicField, DynamicLayout, DynamicObject,
-    DynamicPathStep, DynamicType, DynamicValue, DynamicValueRef, SequenceBorrowLedger,
-    SequenceItemLease, SequenceIteratorLease,
+    DynamicPathLease, DynamicPathStep, DynamicType, DynamicValue, DynamicValueRef,
+    SequenceBorrowLedger, SequenceItemLease, SequenceIteratorLease,
 };
 pub use native::{NativeCallContext, NativeChildren, NativeObject, NativeType};

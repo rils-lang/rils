@@ -1,6 +1,6 @@
 //! Runtime-composed layouts for generic native payloads.
 
-use std::{alloc::Layout, any::TypeId, ptr, rc::Rc};
+use std::{alloc::Layout, any::TypeId, cell::OnceCell, ptr, rc::Rc};
 
 use rils_syntax::Type;
 
@@ -9,12 +9,14 @@ use crate::storage::RawStorage;
 mod object;
 mod operations;
 mod path;
+mod path_borrows;
 mod record;
 mod sequence;
 mod variant;
 pub use object::{CompactDynamicObject, DynamicObject};
 pub use operations::{DynamicCallContext, DynamicType};
 pub use path::{DynamicPathStep, DynamicValueRef};
+pub use path_borrows::DynamicPathLease;
 pub use record::DynamicField;
 pub use sequence::{SequenceBorrowLedger, SequenceItemLease, SequenceIteratorLease};
 
@@ -190,6 +192,7 @@ pub struct DynamicValue {
     descriptor: Rc<DynamicLayout>,
     storage: RawStorage,
     initialized: bool,
+    path_borrows: OnceCell<Rc<path_borrows::PathBorrowLedger>>,
 }
 
 impl DynamicValue {
@@ -219,6 +222,7 @@ impl DynamicValue {
             descriptor,
             storage: RawStorage::new(Layout::new::<u8>(), true),
             initialized: false,
+            path_borrows: OnceCell::new(),
         };
         // SAFETY: the first byte of every optional layout is its tag.
         unsafe { ptr::write(result.storage.pointer_mut(), 0) };
@@ -336,6 +340,10 @@ impl DynamicValue {
     }
 
     /// Consume one concrete Rust leaf without cloning its payload.
+    #[allow(
+        clippy::result_large_err,
+        reason = "failed conversion returns the original owner without allocating"
+    )]
     pub fn into_rust<T: 'static>(mut self) -> Result<T, (Self, String)> {
         if !matches!(
             self.descriptor.drop_kind,
@@ -363,6 +371,7 @@ impl DynamicValue {
             // optional layout whose child has the same guarantee.
             storage: unsafe { self.storage.copy_bytes(true) },
             initialized: true,
+            path_borrows: OnceCell::new(),
         })
     }
 
@@ -387,6 +396,7 @@ impl DynamicValue {
             storage: RawStorage::new(descriptor.layout, descriptor.copy),
             descriptor,
             initialized: false,
+            path_borrows: OnceCell::new(),
         }
     }
 }
