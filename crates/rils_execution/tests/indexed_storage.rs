@@ -128,3 +128,68 @@ fn active_references_iterators_and_partial_moves_reject_composition() {
         );
     }
 }
+
+#[test]
+fn aggregate_declaration_outlives_move_without_retaining_the_owned_storage() {
+    let value = TypedStorageContext::new(&[], &[])
+        .apply_declared(tuple(optional_string()), &annotation())
+        .unwrap();
+    let Value::Tuple(sequence) = &value else {
+        unreachable!()
+    };
+    let weak = Rc::downgrade(sequence);
+    let mut slot = rils_execution::environment::StorageSlot::uninitialized(true);
+    slot.initialize(value);
+    drop(slot.take().unwrap());
+    assert!(
+        weak.upgrade().is_none(),
+        "declaration retained the old payload"
+    );
+    slot.assign(tuple(optional_string())).unwrap();
+    let Value::Tuple(sequence) = slot.take().unwrap() else {
+        unreachable!()
+    };
+    let Value::Dynamic(object) = sequence.elements.borrow_mut()[0].value.take().unwrap() else {
+        panic!("replacement lost native declaration")
+    };
+    assert!(
+        object.into_value().is_ok(),
+        "replacement shared an owned payload"
+    );
+}
+
+#[test]
+fn failed_aggregate_replacements_leave_the_destination_unchanged() {
+    for case in 0..3 {
+        let value = TypedStorageContext::new(&[], &[])
+            .apply_declared(tuple(optional_string()), &annotation())
+            .unwrap();
+        let mut slot = rils_execution::environment::StorageSlot::uninitialized(true);
+        slot.initialize(value);
+        let replacement = tuple(optional_string());
+        let Value::Tuple(sequence) = &replacement else {
+            unreachable!()
+        };
+        let observer = if case == 0 {
+            Some(sequence.clone())
+        } else {
+            None
+        };
+        if case == 1 {
+            sequence.elements.borrow_mut()[0].references = 1;
+        } else if case == 2 {
+            sequence
+                .elements
+                .borrow_mut()
+                .push(FieldSlot::new(Type::Unit, Value::Unit));
+        }
+        assert!(slot.assign(replacement).is_err());
+        assert_eq!(slot.read().unwrap().to_string(), "(Some(owned),)");
+        if let Some(observer) = observer {
+            assert!(matches!(
+                observer.elements.borrow()[0].value,
+                Some(Value::Option { .. })
+            ));
+        }
+    }
+}

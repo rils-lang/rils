@@ -12,7 +12,7 @@ pub struct StorageSlot {
     value: Option<Value>,
     mutable: bool,
     type_annotation: Option<Type>,
-    native_declaration: Option<Rc<rils_value::DynamicType<Value>>>,
+    native_declaration: Option<crate::value::storage::NativeDeclaration>,
     references: usize,
 }
 
@@ -31,7 +31,10 @@ impl StorageSlot {
         self.native_declaration = crate::value::storage::native_declaration(&value);
         self.type_annotation = match Type::of_value(&value) {
             Some(ty @ (Type::Option(_) | Type::Result(_, _))) => Some(ty),
-            _ => None,
+            _ => self
+                .native_declaration
+                .as_ref()
+                .map(|declaration| declaration.rils_type().clone()),
         };
         self.value = Some(value);
     }
@@ -269,14 +272,17 @@ impl Environment {
         type_annotation: Option<Type>,
     ) {
         self.declarations.register(&value);
+        let native_declaration = crate::value::storage::native_declaration(&value);
         let type_annotation = type_annotation.or_else(|| match Type::of_value(&value) {
             Some(inferred @ (Type::Option(_) | Type::Result(_, _))) => Some(inferred),
-            _ => None,
+            _ => native_declaration
+                .as_ref()
+                .map(|declaration| declaration.rils_type().clone()),
         });
         self.values.insert(
             name.into(),
             Rc::new(RefCell::new(StorageSlot {
-                native_declaration: crate::value::storage::native_declaration(&value),
+                native_declaration,
                 value: Some(value),
                 mutable,
                 type_annotation,

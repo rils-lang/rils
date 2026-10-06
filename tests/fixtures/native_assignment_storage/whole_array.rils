@@ -1,0 +1,4 @@
+struct Item { value: string }
+let mut values: [Result<Item, i32>; 2] = [Err(0), Ok(Item { value: "old" })];
+values = [Ok(Item { value: "37" }), Err(37)];
+values

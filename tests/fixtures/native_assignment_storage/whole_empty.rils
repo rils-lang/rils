@@ -1,0 +1,6 @@
+struct Item { value: string }
+let mut values: (Option<Item>, [Option<Item>; 0]) = (None, []);
+let moved = values;
+moved;
+values = (None, []);
+values

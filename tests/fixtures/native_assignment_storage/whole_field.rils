@@ -1,0 +1,7 @@
+struct Item { value: string }
+struct Holder { values: (Option<Item>, [Result<Item, i32>; 2]) }
+let mut holder = Holder { values: (Some(Item { value: "old" }), [Err(0), Err(0)]) };
+let moved = holder.values;
+moved;
+holder.values = (None, [Err(37), Ok(Item { value: "37" })]);
+holder.values

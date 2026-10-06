@@ -1,0 +1,4 @@
+struct Item { value: string }
+let mut values: (Option<Item>, Result<Item, i32>) = (Some(Item { value: "old" }), Err(0));
+values = (Some(Item { value: "37" }), Ok(Item { value: "37" }));
+values

@@ -1,9 +1,5 @@
 //! Field and indexed element declarations outlive their owned payloads.
 
-use std::rc::Rc;
-
-use rils_value::DynamicType;
-
 use super::{Value, storage};
 use crate::types::Type;
 
@@ -12,7 +8,7 @@ pub struct FieldSlot {
     pub value: Option<Value>,
     pub type_annotation: Type,
     pub references: usize,
-    native_declaration: Option<Rc<DynamicType<Value>>>,
+    pub(super) native_declaration: Option<storage::NativeDeclaration>,
 }
 
 impl FieldSlot {

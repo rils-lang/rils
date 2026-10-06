@@ -234,3 +234,48 @@ fn separate_files_use_canonical_module_layouts_without_importing_types() {
         assert!(value.to_string().contains("37"));
     }
 }
+
+#[test]
+fn whole_indexed_replacements_preserve_recursive_native_declarations() {
+    for source in [
+        include_str!("fixtures/native_assignment_storage/whole_tuple.rils"),
+        include_str!("fixtures/native_assignment_storage/whole_array.rils"),
+        include_str!("fixtures/native_assignment_storage/whole_moved.rils"),
+        include_str!("fixtures/native_assignment_storage/whole_reference.rils"),
+        include_str!("fixtures/native_assignment_storage/whole_field.rils"),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_native_sum(&value);
+            assert!(value.to_string().contains("37"), "{source}: {value}");
+        }
+    }
+}
+
+#[test]
+fn whole_replacement_keeps_zero_length_array_element_declarations() {
+    let source = include_str!("fixtures/native_assignment_storage/whole_empty.rils");
+    let module = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    let item = rils::Type::Option(Box::new(rils::Type::named("Item")));
+    let expected = rils::Type::Tuple(vec![
+        item.clone(),
+        rils::Type::Array {
+            element: Box::new(item),
+            length: 0,
+        },
+    ]);
+    for value in [
+        eval_value(source).unwrap(),
+        module.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        assert_eq!(rils::Type::of_value(&value), Some(expected.clone()));
+        assert_native_sum(&value);
+    }
+}

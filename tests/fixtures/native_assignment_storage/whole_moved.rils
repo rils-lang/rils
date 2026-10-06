@@ -1,0 +1,6 @@
+struct Item { value: string }
+let mut values: (Option<Item>, [Result<Item, i32>; 2]) = (Some(Item { value: "old" }), [Err(0), Err(0)]);
+let moved = values;
+moved;
+values = (None, [Err(37), Err(37)]);
+values
