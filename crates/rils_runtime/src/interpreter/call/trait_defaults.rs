@@ -54,6 +54,14 @@ impl Interpreter {
         object: &Value,
         name: &str,
     ) -> Option<Value> {
+        if !rils_builtins::is_iterator_default_method(name)
+            || rils_execution::value::native_instance::record_definition(object)
+                .ok()
+                .flatten()
+                .is_some()
+        {
+            return None;
+        }
         let borrowed = match object {
             Value::Reference(reference) => Some(reference.read().ok()?),
             _ => None,

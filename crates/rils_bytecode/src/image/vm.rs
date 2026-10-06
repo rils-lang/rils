@@ -683,7 +683,8 @@ impl<'a> VirtualMachine<'a> {
                         })?
                         .clone();
                     let mut bindings = Vec::new();
-                    collect_pattern_bindings(&pattern, &value, &mut bindings);
+                    collect_pattern_bindings(&pattern, &value, &mut bindings)
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     for (local, value) in bindings {
                         self.frame().locals[local].borrow_mut().initialize(value);
                     }

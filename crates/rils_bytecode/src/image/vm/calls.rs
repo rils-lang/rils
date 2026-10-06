@@ -127,9 +127,9 @@ impl VirtualMachine<'_> {
     }
 
     pub(super) fn iterator_methods(&self, value: &Value) -> Option<BytecodeIteratorMethods> {
-        let name = match value {
-            Value::Struct(instance) => &instance.type_definition.name,
-            Value::Enum(instance) => &instance.type_definition.name,
+        let ty = Type::of_value(value)?;
+        let name = match &ty {
+            Type::Named { name, .. } => name,
             _ => return None,
         };
         self.module.iterators.get(name).cloned()

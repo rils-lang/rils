@@ -12,6 +12,7 @@ enum ResolvedProjection {
 }
 
 enum PlaceContainer {
+    NativeOwner(rils_execution::value::native_instance::NativeInstancePlace),
     Struct(Rc<StructInstance>),
     Indexed(Rc<IndexedStorage>),
     DynamicIndexed(rils_execution::value::DynamicObject),
@@ -68,6 +69,16 @@ impl VirtualMachine<'_> {
 
     fn place_container(&self, value: Value, span: Span) -> Result<PlaceContainer, BytecodeError> {
         match value {
+            Value::Dynamic(object)
+                if matches!(
+                    rils_execution::value::native_instance::definition(&object),
+                    Some(Value::StructType(_))
+                ) =>
+            {
+                rils_execution::value::native_instance::NativeInstancePlace::new(object)
+                    .map(PlaceContainer::NativeOwner)
+                    .map_err(|message| BytecodeError::new(message, span))
+            }
             Value::Struct(instance) => Ok(PlaceContainer::Struct(instance)),
             Value::Tuple(sequence) | Value::Array(sequence) | Value::Vec(sequence) => {
                 Ok(PlaceContainer::Indexed(sequence))
@@ -146,6 +157,33 @@ impl VirtualMachine<'_> {
                 span,
             )),
         }
+    }
+
+    fn native_owner_projection(
+        &self,
+        owner: &rils_execution::value::native_instance::NativeInstancePlace,
+        projection: &ResolvedProjection,
+        span: Span,
+    ) -> Result<rils_execution::value::native_instance::NativeInstancePlace, BytecodeError> {
+        let layout = owner
+            .with_view(|view| view.layout())
+            .map_err(|message| BytecodeError::new(message, span))?
+            .map_err(|message| BytecodeError::new(message, span))?;
+        if let ResolvedProjection::Index(index) = projection {
+            if layout.record_fields().is_some() {
+                return owner
+                    .field(&index.to_string())
+                    .map_err(|message| BytecodeError::new(message, span));
+            }
+            return owner
+                .project(rils_value::DynamicPathStep::Index(*index))
+                .map_err(|message| BytecodeError::new(message, span));
+        }
+        let index = self.dynamic_field(&layout, projection, span)?;
+        let name = layout.record_fields().expect("validated record")[index].name();
+        owner
+            .field(name)
+            .map_err(|message| BytecodeError::new(message, span))
     }
 
     fn dynamic_field_reference(
@@ -316,6 +354,12 @@ impl VirtualMachine<'_> {
         let mut container = self.place_root(place.local, span)?;
         let mutable = self.place_is_mutable(place.local, span)?;
         for projection in parents {
+            if let PlaceContainer::NativeOwner(owner) = container {
+                container = PlaceContainer::NativeOwner(
+                    self.native_owner_projection(&owner, projection, span)?,
+                );
+                continue;
+            }
             let value = self.projected_value(&container, projection, mutable, span)?;
             container = self.place_container(value, span)?;
         }
@@ -329,6 +373,10 @@ impl VirtualMachine<'_> {
     ) -> Result<Value, BytecodeError> {
         let (container, projection) = self.place_parent(place, span)?;
         match (container, projection) {
+            (PlaceContainer::NativeOwner(owner), projection) => self
+                .native_owner_projection(&owner, projection, span)?
+                .take()
+                .map_err(|message| BytecodeError::new(message, span)),
             (
                 PlaceContainer::Struct(instance),
                 projection
@@ -386,6 +434,10 @@ impl VirtualMachine<'_> {
     ) -> Result<(), BytecodeError> {
         let (container, projection) = self.place_parent(place, span)?;
         match (container, projection) {
+            (PlaceContainer::NativeOwner(owner), projection) => self
+                .native_owner_projection(&owner, projection, span)?
+                .assign(value)
+                .map_err(|message| BytecodeError::new(message, span)),
             (
                 PlaceContainer::Struct(instance),
                 projection
@@ -445,6 +497,22 @@ impl VirtualMachine<'_> {
         let mut container = self.place_root(place.local, span)?;
         let mut guard = None;
         for (index, projection) in place.projections.iter().enumerate() {
+            if let PlaceContainer::NativeOwner(owner) = &container {
+                let projected = self.native_owner_projection(owner, projection, span)?;
+                if index + 1 == place.projections.len() {
+                    if guard.is_none() {
+                        guard = Some(Rc::new(ReferenceValue::new_storage(
+                            self.frame().locals[place.local].clone(),
+                            mutable,
+                        )));
+                    }
+                    return projected
+                        .borrow(mutable, guard)
+                        .map_err(|message| BytecodeError::new(message, span));
+                }
+                container = PlaceContainer::NativeOwner(projected);
+                continue;
+            }
             let reference = match (&container, projection) {
                 (
                     PlaceContainer::Struct(instance),

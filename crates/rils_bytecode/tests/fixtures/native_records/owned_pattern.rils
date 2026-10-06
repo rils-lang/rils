@@ -1,0 +1,7 @@
+struct Item { value: i32, text: string }
+struct Outer { inner: Item }
+let outer = Outer { inner: Item { value: 37, text: "owned" } };
+match outer {
+    Outer { inner: Item { value: 0, text: _ } } => 0,
+    Outer { inner: Item { value: number, text: text } } => if text.len() == 5 { number + 5 } else { 0 },
+}

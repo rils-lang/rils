@@ -12,6 +12,13 @@ pub(super) enum Place {
         mutable: bool,
         guard: Option<Rc<ReferenceValue>>,
     },
+    NativeField {
+        place: rils_execution::value::native_instance::NativeInstancePlace,
+        name: String,
+        owner: String,
+        mutable: bool,
+        source: Option<crate::environment::StorageRef>,
+    },
     IndexedElement {
         sequence: Rc<IndexedStorage>,
         index: usize,
@@ -33,8 +40,54 @@ pub(super) enum Place {
 }
 
 impl Place {
+    fn native_source(&self) -> Option<crate::environment::StorageRef> {
+        match self {
+            Self::Storage { slot, .. } => Some(slot.clone()),
+            Self::NativeField { source, .. } => source.clone(),
+            _ => None,
+        }
+    }
+    pub(super) fn native_owner(
+        &self,
+        span: Span,
+    ) -> Result<Option<rils_execution::value::native_instance::NativeInstancePlace>, RuntimeError>
+    {
+        if let Self::NativeField { place, .. } = self {
+            return Ok(Some(place.clone()));
+        }
+        let value = match self {
+            Self::Storage { slot, .. } => slot.borrow().read().ok(),
+            Self::StructField { instance, name, .. } => instance
+                .fields
+                .borrow()
+                .get(name)
+                .and_then(|slot| slot.value.clone()),
+            Self::IndexedElement {
+                sequence, index, ..
+            } => sequence
+                .elements
+                .borrow()
+                .get(*index)
+                .and_then(|slot| slot.value.clone()),
+            _ => None,
+        };
+        match value {
+            Some(Value::Dynamic(object))
+                if rils_execution::value::native_instance::definition(&object).is_some() =>
+            {
+                rils_execution::value::native_instance::NativeInstancePlace::new(object)
+                    .map(Some)
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub(super) fn read(&self, span: Span) -> Result<Value, RuntimeError> {
         match self {
+            Self::NativeField { place, .. } => place
+                .take()
+                .map_err(|message| RuntimeError::new(message, span)),
             Self::Storage { slot, name } => slot.borrow().read().map_err(|_| {
                 RuntimeError::new(format!("cannot access moved value `{name}`"), span)
             }),
@@ -76,6 +129,31 @@ impl Place {
 
     pub(super) fn assign(self, value: Value, span: Span) -> Result<(), RuntimeError> {
         match self {
+            Self::NativeField {
+                place,
+                name,
+                owner,
+                mutable,
+                ..
+            } => {
+                if !mutable {
+                    return Err(RuntimeError::new(
+                        format!("cannot assign to field `{name}` of immutable place `{owner}`"),
+                        span,
+                    ));
+                }
+                let ty = place
+                    .field_layout()
+                    .map_err(|message| RuntimeError::new(message, span))?
+                    .rils_type()
+                    .clone();
+                place.assign(value).map_err(|message| {
+                    RuntimeError::new(
+                        format!("cannot assign to field `{name}` of type {ty}: {message}"),
+                        span,
+                    )
+                })
+            }
             Self::Storage { slot, name } => slot
                 .borrow_mut()
                 .assign(value)
@@ -183,6 +261,28 @@ impl Place {
 
     pub(super) fn borrow(self, mutable: bool, span: Span) -> Result<Value, RuntimeError> {
         let reference = match self {
+            Self::NativeField {
+                place,
+                owner,
+                mutable: owner_mutable,
+                source,
+                ..
+            } => {
+                if mutable && !owner_mutable {
+                    return Err(RuntimeError::new(
+                        format!("cannot mutably reference immutable place `{owner}`"),
+                        span,
+                    ));
+                }
+                Rc::new(
+                    place
+                        .borrow(
+                            mutable,
+                            source.map(|slot| Rc::new(ReferenceValue::new_storage(slot, mutable))),
+                        )
+                        .map_err(|message| RuntimeError::new(message, span))?,
+                )
+            }
             Self::Storage { slot, name } => {
                 {
                     let storage = slot.borrow();
@@ -278,6 +378,7 @@ impl Place {
 
     fn is_mutable(&self) -> bool {
         match self {
+            Self::NativeField { mutable, .. } => *mutable,
             Self::Storage { slot, .. } => match slot.borrow().read() {
                 Ok(Value::Reference(reference)) => reference.mutable,
                 _ => slot.borrow().is_mutable(),
@@ -291,6 +392,7 @@ impl Place {
 
     fn description(&self) -> String {
         match self {
+            Self::NativeField { owner, name, .. } => format!("{owner}.{name}"),
             Self::Storage { name, .. } => name.clone(),
             Self::StructField { owner, name, .. } => format!("{owner}.{name}"),
             Self::IndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
@@ -301,6 +403,10 @@ impl Place {
 
     pub(super) fn projection_value(&self, span: Span) -> Result<Value, RuntimeError> {
         match self {
+            Self::NativeField { place, .. } => place
+                .borrow(false, None)
+                .and_then(|reference| reference.read())
+                .map_err(|message| RuntimeError::new(message, span)),
             Self::Storage { slot, name } => {
                 let value = slot.borrow().read().map_err(|_| {
                     RuntimeError::new(format!("cannot access moved value `{name}`"), span)
@@ -343,6 +449,21 @@ impl Place {
         span: Span,
     ) -> Result<Option<Rc<ReferenceValue>>, RuntimeError> {
         match self {
+            Self::NativeField {
+                place,
+                mutable,
+                source,
+                ..
+            } => Ok(Some(Rc::new(
+                place
+                    .borrow(
+                        *mutable,
+                        source
+                            .clone()
+                            .map(|slot| Rc::new(ReferenceValue::new_storage(slot, *mutable))),
+                    )
+                    .map_err(|message| RuntimeError::new(message, span))?,
+            ))),
             Self::Storage { slot, name } => match slot.borrow().read().map_err(|_| {
                 RuntimeError::new(format!("cannot access moved value `{name}`"), span)
             })? {
@@ -436,6 +557,17 @@ impl Interpreter {
                 let owner = self.resolve_place(object, environment, span)?;
                 let mutable = owner.is_mutable();
                 let owner_name = owner.description();
+                if let Some(place) = owner.native_owner(span)? {
+                    return Ok(Place::NativeField {
+                        place: place
+                            .field(name)
+                            .map_err(|message| RuntimeError::new(message, span))?,
+                        name: name.clone(),
+                        owner: owner_name,
+                        mutable,
+                        source: owner.native_source(),
+                    });
+                }
                 let guard = owner.projection_guard(span)?;
                 if let Some(reference) = &guard
                     && let Some(projected) = reference

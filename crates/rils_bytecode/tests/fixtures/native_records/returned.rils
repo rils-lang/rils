@@ -1,0 +1,3 @@
+struct Item { value: i32, text: string }
+fn make() -> Item { Item { value: 42, text: "owned" } }
+make()

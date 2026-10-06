@@ -1,3 +1,4 @@
+use crate::value::native_receiver::NativeReceiver;
 use std::{cell::RefCell, rc::Rc};
 
 use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern};
@@ -88,43 +89,41 @@ pub(super) fn call_owned_symbol(
         if !matches!(receiver, Value::Reference(reference) if reference.mutable) {
             return Err("VecDeque mutation requires a mutable reference".into());
         }
-        let receiver = match receiver {
-            Value::Reference(reference) => reference.read()?,
-            value => value.clone(),
-        };
         let item = arguments.pop().expect("arity checked");
-        match receiver {
-            Value::Dynamic(object)
-                if crate::value::native_layouts::vec_deque::matches(
-                    object.descriptor().layout().rils_type(),
-                ) =>
-            {
-                let layout = object
-                    .descriptor()
-                    .layout()
-                    .sequence_item()
-                    .ok_or("VecDeque has no native element layout")?
-                    .clone();
-                if !layout.rils_type().accepts(&item) {
-                    return Err(format!(
-                        "VecDeque expects {}, found {}",
-                        layout.rils_type(),
-                        item.type_name()
-                    ));
-                }
-                let mut codec = crate::value::record_codec::NativeRecordCodec::with_definitions(
-                    &context.structs,
-                    &context.enums,
-                );
-                let item = codec.into_native(item, layout)?;
-                object.with_mut(|value| match member.name {
-                    "push_front" => value.push_sequence_front(item),
-                    "push_back" => value.push_sequence_item(item),
-                    name => Err(format!(
-                        "owned native VecDeque method `{name}` is not supported"
-                    )),
-                })??;
+        if let Some(object) = NativeReceiver::from_value(&arguments[0])? {
+            if !crate::value::native_layouts::vec_deque::matches(
+                object.descriptor().layout().rils_type(),
+            ) {
+                return Err("wrong native collection receiver".into());
             }
+            let layout = object
+                .descriptor()
+                .layout()
+                .sequence_item()
+                .ok_or("VecDeque has no native element layout")?
+                .clone();
+            if !layout.rils_type().accepts(&item) {
+                return Err(format!(
+                    "VecDeque expects {}, found {}",
+                    layout.rils_type(),
+                    item.type_name()
+                ));
+            }
+            let mut codec = crate::value::record_codec::NativeRecordCodec::with_definitions(
+                &context.structs,
+                &context.enums,
+            );
+            let item = codec.into_native(item, layout)?;
+            object.with_mut(|mut value| match member.name {
+                "push_front" => value.push_sequence_front(item),
+                "push_back" => value.push_sequence_item(item),
+                name => Err(format!(
+                    "owned native VecDeque method `{name}` is not supported"
+                )),
+            })??;
+            return Ok(Value::Unit);
+        }
+        match super::import_receiver(&arguments[0])? {
             Value::VecDeque(queue) => {
                 let actual = Type::of_value(&item).unwrap_or(Type::Unknown);
                 let expected = queue.element_type.borrow().clone().unwrap_or(Type::Unknown);
@@ -156,11 +155,7 @@ fn call_named(name: &str, arguments: &[Value]) -> Result<Value, String> {
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("VecDeque mutation requires a mutable reference".into());
     }
-    let value = match receiver {
-        Value::Reference(reference) => reference.read()?,
-        value => value.clone(),
-    };
-    if let Value::Dynamic(object) = value
+    if let Some(object) = NativeReceiver::from_value(receiver)?
         && crate::value::native_layouts::vec_deque::matches(
             object.descriptor().layout().rils_type(),
         )
@@ -173,11 +168,7 @@ fn call_named(name: &str, arguments: &[Value]) -> Result<Value, String> {
     call_queue(name, arguments, &queue)
 }
 
-fn call_dynamic(
-    name: &str,
-    arguments: &[Value],
-    object: &crate::value::DynamicObject,
-) -> Result<Value, String> {
+fn call_dynamic(name: &str, arguments: &[Value], object: &NativeReceiver) -> Result<Value, String> {
     let item_layout = object
         .descriptor()
         .layout()
@@ -194,7 +185,7 @@ fn call_dynamic(
         "push_front" | "push_back" => {
             let item = arguments.get(1).ok_or("missing VecDeque element")?.clone();
             let item = crate::value::record_codec::into_native(item, item_layout.clone())?;
-            object.with_mut(|value| {
+            object.with_mut(|mut value| {
                 if name == "push_front" {
                     value.push_sequence_front(item)
                 } else {
@@ -204,7 +195,7 @@ fn call_dynamic(
             Ok(Value::Unit)
         }
         "pop_front" | "pop_back" => {
-            let item = object.with_mut(|value| {
+            let item = object.with_mut(|mut value| {
                 let length = value.sequence_len()?;
                 if length == 0 {
                     Ok(None)
@@ -222,7 +213,7 @@ fn call_dynamic(
             })
         }
         "clear" => {
-            object.with_mut(|value| value.clear_sequence())??;
+            object.with_mut(|mut value| value.clear_sequence())??;
             Ok(Value::Unit)
         }
         "front_cloned" | "back_cloned" => {

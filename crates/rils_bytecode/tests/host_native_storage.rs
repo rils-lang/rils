@@ -110,7 +110,12 @@ fn check_native(value: Value, name: &str, copy: bool) {
         else {
             panic!("record option")
         };
-        assert!(matches!(value.as_ref(), Value::Struct(_)));
+        let Value::Dynamic(record) = value.as_ref() else {
+            panic!("record lost native storage");
+        };
+        assert!(
+            matches!(record.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Holder")
+        );
     } else {
         let Value::Option {
             value: Some(value), ..

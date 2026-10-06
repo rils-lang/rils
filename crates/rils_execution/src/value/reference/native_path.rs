@@ -3,7 +3,8 @@
 use std::rc::Rc;
 
 use rils_value::{
-    CompactDynamicObject, DynamicLayout, DynamicPathLease, DynamicPathStep, DynamicValueRef,
+    CompactDynamicObject, DynamicLayout, DynamicPathLease, DynamicPathStep, DynamicValueMut,
+    DynamicValueRef,
 };
 
 use super::{NativeRecordCodec, ReferenceTarget, ReferenceValue, Value};
@@ -156,6 +157,20 @@ impl ReferenceValue {
         Ok(Some(path))
     }
 
+    pub(crate) fn with_native_mut<R>(
+        &self,
+        callback: impl FnOnce(DynamicValueMut<'_>) -> R,
+    ) -> Result<R, String> {
+        if !self.mutable {
+            return Err("native receiver requires a mutable reference".into());
+        }
+        let path = self
+            .native_path()?
+            .ok_or("receiver has no native storage")?;
+        path.object
+            .with_mut(|value| Ok(callback(value.view_path_mut(&path.path)?)))?
+    }
+
     pub fn native_layout(&self) -> Result<Option<Rc<DynamicLayout>>, String> {
         self.native_path()?
             .map(|path| path.with_view(|view| view.layout())?)
@@ -187,15 +202,24 @@ impl ReferenceValue {
     }
 
     pub fn project_native_index(self: &Rc<Self>, index: usize) -> Result<Option<Self>, String> {
-        let Some(path) = self.native_path()? else {
+        self.project_native_index_with_codec(index, None)
+    }
+
+    pub(crate) fn project_native_index_with_codec(
+        self: &Rc<Self>,
+        index: usize,
+        codec: Option<Rc<NativeRecordCodec>>,
+    ) -> Result<Option<Self>, String> {
+        let Some(mut path) = self.native_path()? else {
             return Ok(None);
         };
         let layout = path.with_view(|view| view.layout())??;
+        if let Some(codec) = codec {
+            path.codec = codec;
+        }
         let step = match layout.rils_type() {
             crate::Type::Array { .. } | crate::Type::Tuple(_) => DynamicPathStep::Field(index),
-            crate::Type::Named { .. }
-                if super::super::native_layouts::vec::matches(layout.rils_type()) =>
-            {
+            crate::Type::Named { .. } if layout.sequence_item().is_some() => {
                 DynamicPathStep::Index(index)
             }
             _ => return Ok(None),

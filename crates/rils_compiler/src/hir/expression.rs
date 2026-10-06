@@ -6,6 +6,7 @@ impl<'a> FunctionLowerer<'a> {
         let constructs_storage = matches!(
             expression,
             Expr::Call { .. }
+                | Expr::RecordLiteral { .. }
                 | Expr::Tuple { .. }
                 | Expr::Array { .. }
                 | Expr::If { .. }

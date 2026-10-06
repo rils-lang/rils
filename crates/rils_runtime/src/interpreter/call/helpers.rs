@@ -84,6 +84,17 @@ pub(crate) fn builtin_runtime_member(
     value: &Value,
     name: &str,
 ) -> Option<(BuiltinMethod, rils_builtins::ReceiverMode)> {
+    if rils_execution::value::native_instance::record_definition(value)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return None;
+    }
+    let reference_layout = match value {
+        Value::Reference(reference) => reference.native_layout().ok().flatten(),
+        _ => None,
+    };
     let owner = match value {
         Value::Array(_) => "Vec",
         Value::Vec(_) => "Vec",
@@ -94,6 +105,13 @@ pub(crate) fn builtin_runtime_member(
         Value::VecDeque(_) => "VecDeque",
         Value::BinaryHeap(_) => "BinaryHeap",
         Value::Native(object) => match object.descriptor().rils_type() {
+            Type::String => "string",
+            Type::Named { name, .. } => name.as_str(),
+            _ => return None,
+        },
+        Value::Reference(_) => match reference_layout.as_ref()?.rils_type() {
+            Type::Option(_) => "Option",
+            Type::Result(_, _) => "Result",
             Type::String => "string",
             Type::Named { name, .. } => name.as_str(),
             _ => return None,

@@ -49,7 +49,15 @@ pub(super) fn resolve_host_or_builtin_member(
     name: &str,
     span: Span,
 ) -> Result<Option<Value>, RuntimeError> {
-    if let Some((method, _)) = builtin_runtime_member(value, name) {
+    if let Some((method, mode)) = builtin_runtime_member(value, name) {
+        if mode == rils_builtins::ReceiverMode::Mutable
+            && matches!(value, Value::Reference(reference) if !reference.mutable)
+        {
+            return Err(RuntimeError::new(
+                format!("method `{name}` requires `&mut self`"),
+                span,
+            ));
+        }
         return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
             BuiltinBoundMethod {
                 receiver: Rc::new(value.clone()),
@@ -138,6 +146,21 @@ pub(super) fn take_struct_field(
     name: &str,
     span: Span,
 ) -> Result<Option<Value>, RuntimeError> {
+    if let Value::Dynamic(object) = value {
+        if object
+            .descriptor()
+            .layout()
+            .record_field_index(name)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        return rils_execution::value::native_instance::NativeInstancePlace::new(object.clone())
+            .and_then(|place| place.field(name))
+            .and_then(|place| place.take())
+            .map(Some)
+            .map_err(|message| RuntimeError::new(message, span));
+    }
     let Value::Struct(instance) = value else {
         return Ok(None);
     };

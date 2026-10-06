@@ -1,0 +1,49 @@
+struct Entry { value: i32 }
+struct Collections {
+    rows: Vec<Entry>, values: Vec<i32>, queue: VecDeque<string>, heap: BinaryHeap<i32>,
+    map: HashMap<i32, string>, sorted: BTreeMap<i32, string>,
+    set: HashSet<i32>, ordered: BTreeSet<i32>
+}
+fn run() -> i32 {
+    let mut data = Collections {
+        rows: Vec::new(), values: Vec::new(), queue: VecDeque::new(), heap: BinaryHeap::new(),
+        map: HashMap::new(), sorted: BTreeMap::new(),
+        set: HashSet::new(), ordered: BTreeSet::new()
+    };
+    data.rows.push(Entry { value: 42 });
+    for row in data.rows.iter() { assert!(row.value == 42); }
+    data.rows.clear();
+    data.values.push(7); data.values.push(9);
+    data.values[0] = 11;
+    assert!(data.values.pop().unwrap() == 9);
+    {
+        let first = &mut data.values;
+        let second = &mut data.values;
+        first.push(13); second.push(17);
+    }
+    let mut total = 0;
+    for item in data.values.iter() { total = total + *item; }
+    assert!(total == 41);
+    data.values.clear(); assert!(data.values.is_empty());
+    data.queue.push_back("back"); data.queue.push_front("front");
+    assert!(data.queue.pop_back().unwrap() == "back");
+    assert!(data.queue.pop_front().unwrap() == "front");
+    data.heap.push(5); data.heap.push(8); data.heap.push(2);
+    assert!(data.heap.pop().unwrap() == 8);
+    assert!(data.heap.peek_cloned().unwrap() == 5);
+    let one = 1; let two = 2; let three = 3;
+    data.map.insert(1, "first"); data.map.insert(1, "replaced");
+    assert!(data.map.get_cloned(&one).unwrap() == "replaced");
+    for entry in data.map.iter() { assert!(*entry.0 == 1); assert!(entry.1.len() == 8); }
+    assert!(data.map.remove(&one).unwrap() == "replaced");
+    data.sorted.insert(3, "three"); data.sorted.insert(1, "one");
+    assert!(data.sorted.first_key_cloned().unwrap() == 1);
+    assert!(data.sorted.remove(&three).unwrap() == "three");
+    assert!(data.set.insert(2)); assert!(!data.set.insert(2));
+    assert!(data.set.contains(&two)); assert!(data.set.remove(&two));
+    assert!(data.ordered.insert(7)); assert!(data.ordered.insert(4));
+    assert!(data.ordered.first_cloned().unwrap() == 4);
+    data.ordered.clear(); assert!(data.ordered.is_empty());
+    total + 1
+}
+run()

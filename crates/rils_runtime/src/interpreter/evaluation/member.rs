@@ -14,6 +14,15 @@ impl Interpreter {
         } = object
             && let Some(value) = environment.borrow().get(variable_name)
         {
+            if matches!(value, Value::Reference(_)) {
+                // A reference binding already carries receiver mutability and
+                // provenance. Reusing it also gives fields priority over methods.
+                return self.resolve_member(value, name, span);
+            }
+            if matches!(&value, Value::Dynamic(object) if object.descriptor().layout().record_field_index(name).is_some())
+            {
+                return self.resolve_member(value, name, span);
+            }
             if let Value::Struct(instance) = &value
                 && instance.fields.borrow().contains_key(name)
             {
@@ -70,6 +79,42 @@ impl Interpreter {
                 }
         ) {
             let place = self.resolve_place(object, &environment, span)?;
+            if let Some(owner) = place.native_owner(span)? {
+                let layout = owner
+                    .with_view(|view| view.layout())
+                    .map_err(|message| RuntimeError::new(message, span))?
+                    .map_err(|message| RuntimeError::new(message, span))?;
+                let builtin = match layout.rils_type() {
+                    Type::Option(_) => Some("Option"),
+                    Type::Result(_, _) => Some("Result"),
+                    Type::Named { name, .. } if layout.record_fields().is_none() => {
+                        Some(name.as_str())
+                    }
+                    _ => None,
+                }
+                .and_then(|owner| rils_builtins::builtin_member(owner, name));
+                if let Some(receiver) = builtin.and_then(|member| member.receiver) {
+                    let receiver = match receiver {
+                        rils_builtins::ReceiverMode::Owned => place.read(span)?,
+                        rils_builtins::ReceiverMode::Shared => place.borrow(false, span)?,
+                        rils_builtins::ReceiverMode::Mutable => place.borrow(true, span)?,
+                    };
+                    return self.resolve_member(receiver, name, span);
+                }
+            }
+            if let Some(owner) = place.native_owner(span)?
+                && owner
+                    .with_view(|view| view.layout())
+                    .map_err(|message| RuntimeError::new(message, span))?
+                    .map_err(|message| RuntimeError::new(message, span))?
+                    .record_field_index(name)
+                    .is_some()
+            {
+                return owner
+                    .field(name)
+                    .and_then(|place| place.take())
+                    .map_err(|message| RuntimeError::new(message, span));
+            }
             if let Some(reference) = place.projection_guard(span)? {
                 if let Some(projected) = reference
                     .project_native_field(name)
@@ -82,13 +127,16 @@ impl Interpreter {
                             RuntimeError::new("projected field has no native storage", span)
                         });
                 }
-                if let Some(method) = selected_method(&Value::Reference(reference), name, span)?
-                    && let Some(Type::Reference { mutable, .. }) = method
+                let method = selected_method(&Value::Reference(reference), name, span)?;
+                if let Some(method) = method {
+                    let receiver = match method
                         .parameters
                         .first()
                         .and_then(|parameter| parameter.type_annotation.as_ref())
-                {
-                    let receiver = place.borrow(*mutable, span)?;
+                    {
+                        Some(Type::Reference { mutable, .. }) => place.borrow(*mutable, span)?,
+                        _ => place.read(span)?,
+                    };
                     return self.resolve_member(receiver, name, span);
                 }
             }
@@ -131,37 +179,14 @@ fn selected_method(
     name: &str,
     span: Span,
 ) -> Result<Option<Rc<UserFunction>>, RuntimeError> {
-    match value {
-        Value::Struct(instance) => super::super::call::select_method(
-            &instance.type_definition.methods,
-            &instance.type_definition.trait_methods,
-            name,
-        ),
-        Value::Enum(instance) => super::super::call::select_method(
-            &instance.type_definition.methods,
-            &instance.type_definition.trait_methods,
-            name,
-        ),
-        Value::Reference(reference) => {
-            let Some(definition) = reference
-                .native_type_definition()
-                .map_err(|message| RuntimeError::new(message, span))?
-            else {
-                return Ok(None);
-            };
-            match definition {
-                Value::StructType(definition) => super::super::call::select_method(
-                    &definition.methods,
-                    &definition.trait_methods,
-                    name,
-                ),
-                Value::EnumType(definition) => super::super::call::select_method(
-                    &definition.methods,
-                    &definition.trait_methods,
-                    name,
-                ),
-                _ => unreachable!("native nominal declaration"),
-            }
+    let definition = rils_execution::value::native_instance::value_definition(value)
+        .map_err(|message| RuntimeError::new(message, span))?;
+    match definition {
+        Some(Value::StructType(definition)) => {
+            super::super::call::select_method(&definition.methods, &definition.trait_methods, name)
+        }
+        Some(Value::EnumType(definition)) => {
+            super::super::call::select_method(&definition.methods, &definition.trait_methods, name)
         }
         _ => Ok(None),
     }

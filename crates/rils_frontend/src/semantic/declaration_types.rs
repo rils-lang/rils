@@ -13,6 +13,9 @@ mod visibility;
 /// Indexed aggregates carry these declarations recursively; references do not.
 pub fn requires_storage_declaration(ty: &Type) -> bool {
     match ty {
+        Type::Named { arguments, .. } => arguments
+            .iter()
+            .all(crate::standard_library::is_concrete_native_type),
         Type::Option(_) | Type::Result(_, _) => true,
         Type::Tuple(types) => types.iter().any(requires_storage_declaration),
         Type::Array { element, .. } | Type::ArrayParameter { element, .. } => {

@@ -1,21 +1,15 @@
 //! Shared receiver queries for native sequence backed containers.
 
 use crate::{Type, Value};
-use rils_value::DynamicValue;
 
 fn receiver(
     owner: &str,
     arguments: &[Value],
-) -> Option<Result<crate::value::DynamicObject, String>> {
-    let value = match &arguments[0] {
-        Value::Reference(reference) => match reference.read() {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        },
-        value => value.clone(),
-    };
-    let Value::Dynamic(object) = value else {
-        return None;
+) -> Option<Result<crate::value::native_receiver::NativeReceiver, String>> {
+    let object = match crate::value::native_receiver::NativeReceiver::from_value(&arguments[0]) {
+        Ok(Some(object)) => object,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
     };
     let layout = object.descriptor().layout();
     let matches = matches!(layout.rils_type(), Type::Named { name, .. } if name == owner)
@@ -67,7 +61,7 @@ pub(super) fn clear(owner: &str, arguments: &[Value]) -> Option<Result<Value, St
     }
     Some(
         object
-            .with_mut(DynamicValue::clear_sequence)
+            .with_mut(|mut view| view.clear_sequence())
             .and_then(|result| result.map(|()| Value::Unit)),
     )
 }

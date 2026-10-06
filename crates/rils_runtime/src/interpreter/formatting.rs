@@ -127,6 +127,18 @@ impl Interpreter {
     }
 
     fn trait_format_method(&self, value: &Value, trait_name: &str) -> Option<Rc<UserFunction>> {
+        if let Some(Value::StructType(definition)) =
+            rils_execution::value::native_instance::value_definition(value)
+                .ok()
+                .flatten()
+        {
+            return definition
+                .trait_methods
+                .borrow()
+                .get(trait_name)
+                .and_then(|methods| methods.get("fmt"))
+                .cloned();
+        }
         let value = match value {
             Value::Reference(reference) => reference.read().ok()?,
             value => value.clone(),
@@ -157,6 +169,20 @@ impl Interpreter {
         span: Span,
     ) -> Result<(), RuntimeError> {
         let buffer = formatter_buffer(formatter, span)?;
+        if let Some(definition) = rils_execution::value::native_instance::record_definition(value)
+            .map_err(|message| RuntimeError::new(message, span))?
+        {
+            let fields = definition
+                .fields
+                .iter()
+                .map(|field| {
+                    rils_execution::value::native_instance::borrow_field(value, &field.name)
+                        .map(|value| (field.name.clone(), value))
+                        .map_err(|message| RuntimeError::new(message, span))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return self.write_debug_record(&buffer, &definition.name, &fields, span);
+        }
         let value = dereference_value(value, span)?;
         match value {
             Value::Struct(instance) => {

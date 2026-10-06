@@ -1,0 +1,3 @@
+struct Holder<T> { item: Option<T> }
+let holder: Holder<i32> = Holder { item: None };
+holder

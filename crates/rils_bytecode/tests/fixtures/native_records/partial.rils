@@ -1,0 +1,8 @@
+struct Item { value: i32, text: string }
+struct Outer { inner: Item }
+let mut outer = Outer { inner: Item { value: 37, text: "first" } };
+let moved = outer.inner.text;
+let number = outer.inner.value;
+outer.inner.text = "reset";
+let inner = outer.inner;
+if inner.text.len() == 5 { number + 5 } else { 0 }

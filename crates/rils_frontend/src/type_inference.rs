@@ -1,3 +1,6 @@
+mod patterns;
+mod records;
+
 use std::collections::{HashMap, HashSet};
 
 use crate::{
@@ -1183,68 +1186,7 @@ impl<'a> Inferencer<'a> {
                 Type::Result(ok, _) => *ok,
                 _ => Type::Unknown,
             },
-            Expr::RecordLiteral { path, fields, .. } => {
-                let actual_fields = fields
-                    .iter()
-                    .map(|field| (&field.name, self.expression(&field.value, returns)))
-                    .collect::<Vec<_>>();
-                let Some(path_name) = path.first() else {
-                    return Type::Unknown;
-                };
-                let self_name;
-                let name = if path_name == "Self" {
-                    let Some(Type::Named { name, .. }) =
-                        self.lookup("Self").map(|binding| &binding.ty)
-                    else {
-                        return Type::Unknown;
-                    };
-                    self_name = name.clone();
-                    &self_name
-                } else {
-                    path_name
-                };
-                let Some(definition) = self.types.get(name).cloned() else {
-                    return Type::Named {
-                        name: name.clone(),
-                        arguments: Vec::new(),
-                    };
-                };
-                let declared_fields = path
-                    .get(1)
-                    .and_then(|variant| definition.variants.get(variant))
-                    .and_then(|variant| match variant {
-                        VariantDefinition::Record(fields) => Some(fields),
-                        _ => None,
-                    })
-                    .unwrap_or(&definition.fields);
-                let mut substitutions = HashMap::new();
-                for (field, actual) in actual_fields {
-                    if let Some(expected) = declared_fields.get(field) {
-                        infer_type_variables(expected, &actual, &mut substitutions);
-                    }
-                }
-                for field in fields {
-                    if let Some(expected) = declared_fields.get(&field.name) {
-                        self.apply_expected_type(
-                            &field.value,
-                            &expected.substitute(&substitutions),
-                        );
-                    }
-                }
-                Type::Named {
-                    name: name.clone(),
-                    arguments: definition
-                        .generic_parameters
-                        .iter()
-                        .map(|parameter| {
-                            substitutions
-                                .get(parameter)
-                                .cloned()
-                                .unwrap_or(Type::Unknown)
-                        })
-                        .collect(),
-                }
-            }
+            Expr::RecordLiteral { path, fields, .. } => self.record_literal(path, fields, returns),
             Expr::Assign { target, value, .. } => {
                 let target = self.expression(target, returns);
                 let value_type = self.expression(value, returns);
@@ -1439,7 +1381,10 @@ impl<'a> Inferencer<'a> {
                     arm_types.push(self.with_scope_value(|inferencer| {
                         inferencer.pattern(
                             &arm.pattern,
-                            &value_type,
+                            match &value_type {
+                                Type::Reference { inner, .. } => inner,
+                                ty => ty,
+                            },
                             matches!(value_type, Type::Reference { .. }),
                         );
                         inferencer.expression(&arm.expression, returns)
@@ -1448,94 +1393,6 @@ impl<'a> Inferencer<'a> {
                 merge_all(arm_types)
             }
             Expr::Block(block) => self.block(block, returns),
-        }
-    }
-
-    fn pattern(&mut self, pattern: &Pattern, expected: &Type, borrowed: bool) {
-        match pattern {
-            Pattern::Binding { name, span } => {
-                self.define_binding(
-                    name,
-                    *span,
-                    Binding {
-                        ty: if borrowed {
-                            Type::Reference {
-                                mutable: false,
-                                inner: Box::new(expected.clone()),
-                            }
-                        } else {
-                            expected.clone()
-                        },
-                    },
-                );
-                self.type_hint(*span, expected.clone(), ": ");
-            }
-            Pattern::Some { inner, .. } => {
-                self.pattern(inner, &option_inner(Some(expected.clone())), borrowed);
-            }
-            Pattern::Ok { inner, .. } => {
-                let ty = match expected {
-                    Type::Result(ok, _) => (**ok).clone(),
-                    _ => Type::Unknown,
-                };
-                self.pattern(inner, &ty, borrowed);
-            }
-            Pattern::Err { inner, .. } => {
-                let ty = match expected {
-                    Type::Result(_, error) => (**error).clone(),
-                    _ => Type::Unknown,
-                };
-                self.pattern(inner, &ty, borrowed);
-            }
-            Pattern::TupleVariant { path, fields, .. } => {
-                let payload = path
-                    .last()
-                    .and_then(|variant| {
-                        self.variant_owners
-                            .get(variant)
-                            .and_then(|owner| self.types.get(owner))
-                            .and_then(|definition| definition.variants.get(variant))
-                    })
-                    .and_then(|variant| match variant {
-                        VariantDefinition::Tuple(fields) => Some(fields.clone()),
-                        _ => None,
-                    })
-                    .unwrap_or_default();
-                for (field, ty) in fields.iter().zip(payload.iter()) {
-                    self.pattern(field, ty, borrowed);
-                }
-            }
-            Pattern::Record { path, fields, .. } => {
-                let record_fields = path.last().and_then(|name| {
-                    if let Some(owner) = self.variant_owners.get(name) {
-                        self.types
-                            .get(owner)
-                            .and_then(|definition| definition.variants.get(name))
-                            .and_then(|variant| match variant {
-                                VariantDefinition::Record(fields) => Some(fields.clone()),
-                                _ => None,
-                            })
-                    } else if let Type::Named { name, .. } = expected {
-                        self.types
-                            .get(name)
-                            .map(|definition| definition.fields.clone())
-                    } else {
-                        None
-                    }
-                });
-                for (name, pattern) in fields {
-                    let field_type = record_fields
-                        .as_ref()
-                        .and_then(|fields| fields.get(name))
-                        .cloned()
-                        .unwrap_or(Type::Unknown);
-                    self.pattern(pattern, &field_type, borrowed);
-                }
-            }
-            Pattern::Wildcard { .. }
-            | Pattern::Literal { .. }
-            | Pattern::None { .. }
-            | Pattern::Path { .. } => {}
         }
     }
 

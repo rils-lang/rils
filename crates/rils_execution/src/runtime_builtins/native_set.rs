@@ -11,6 +11,9 @@ use rils_value::{DynamicLayout, DynamicType, DynamicValue};
 
 use crate::value::{DynamicObject, HashKey, Value, record_codec::NativeRecordCodec};
 
+use crate::value::native_receiver::NativeReceiver;
+use rils_value::DynamicValueRef;
+
 use super::{NativeOwnedContext, import_receiver};
 
 fn owned_insert_kind(symbol: &str) -> Option<SetKind> {
@@ -74,7 +77,9 @@ pub(super) fn call_owned_symbol(
             }
             let receiver = arguments.into_iter().next().expect("arity checked");
             match receiver {
-                Value::Dynamic(object) if kind.matches(&object) => {
+                Value::Dynamic(object)
+                    if kind.matches(object.descriptor().layout().rils_type()) =>
+                {
                     crate::iteration::native_sequence_into_iterator(object, context)
                 }
                 Value::HashSet(set) if kind == SetKind::Hash => {
@@ -96,14 +101,13 @@ pub(super) fn call_owned_symbol(
         if !matches!(&arguments[0], Value::Reference(reference) if reference.mutable) {
             return Err(format!("{}::insert requires `&mut self`", kind.name()));
         }
-        let receiver = import_receiver(&arguments[0])?;
-        let Value::Dynamic(object) = receiver else {
+        let Some(object) = NativeReceiver::from_value(&arguments[0])? else {
             return match kind {
                 SetKind::Hash => crate::hash_collections::call_set("insert", &arguments),
                 SetKind::BTree => super::btree_set::call("insert", &arguments),
             };
         };
-        if !kind.matches(&object) {
+        if !kind.matches(object.descriptor().layout().rils_type()) {
             return Err(format!(
                 "{}::insert received the wrong collection",
                 kind.name()
@@ -125,14 +129,14 @@ pub(super) fn call_owned_symbol(
         let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
         let native = codec.into_native(value, item_layout)?;
         let key = rils_stdlib::native::registry().key(native.view())?;
-        let index = object.with(|set| find(set, &key))??;
+        let index = object.with(|set| find(&set, &key))??;
         if index.is_some() {
             return Ok(Value::Bool(false));
         }
         object
-            .with_mut(|set| {
+            .with_mut(|mut set| {
                 let position = if kind == SetKind::BTree {
-                    insertion_index(set, &key)?
+                    insertion_index(&set.view(), &key)?
                 } else {
                     set.sequence_len()?
                 };
@@ -157,8 +161,7 @@ impl SetKind {
         }
     }
 
-    fn matches(self, object: &DynamicObject) -> bool {
-        let ty = object.descriptor().layout().rils_type();
+    fn matches(self, ty: &crate::Type) -> bool {
         match self {
             Self::Hash => crate::value::native_layouts::hash_set::matches(ty),
             Self::BTree => crate::value::native_layouts::btree_set::matches(ty),
@@ -193,10 +196,13 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             ));
         }
         let receiver = &arguments[0];
-        match import_receiver(receiver)? {
-            Value::Dynamic(object) if kind.matches(&object) => {
-                dispatch(kind, method, arguments, receiver, &object)
+        if let Some(object) = NativeReceiver::from_value(receiver)? {
+            if !kind.matches(object.descriptor().layout().rils_type()) {
+                return Err(format!("wrong {} receiver", kind.name()));
             }
+            return dispatch(kind, method, arguments, receiver, &object);
+        }
+        match import_receiver(receiver)? {
             Value::HashSet(_) if kind == SetKind::Hash => {
                 crate::hash_collections::call_set(method, arguments)
             }
@@ -216,7 +222,7 @@ fn dispatch(
     method: &str,
     arguments: &[Value],
     receiver: &Value,
-    object: &DynamicObject,
+    object: &NativeReceiver,
 ) -> Result<Value, String> {
     let item_layout = object
         .descriptor()
@@ -233,19 +239,19 @@ fn dispatch(
     }
     match method {
         "len" => Ok(crate::numeric::native_usize(
-            object.with(DynamicValue::sequence_len)??,
+            object.with(|view| view.sequence_len())??,
         )),
-        "is_empty" => Ok(Value::Bool(object.with(DynamicValue::sequence_len)?? == 0)),
+        "is_empty" => Ok(Value::Bool(object.with(|view| view.sequence_len())?? == 0)),
         "clear" => {
             object
-                .with_mut(DynamicValue::clear_sequence)?
+                .with_mut(|mut view| view.clear_sequence())?
                 .map_err(|error| mutation_error(kind, error))?;
             Ok(Value::Unit)
         }
         "contains" | "insert" | "remove" => {
             let item = arguments.get(1).ok_or("missing set element")?;
             let (key, native) = encode_key(kind, item, item_layout)?;
-            let index = object.with(|set| find(set, &key))??;
+            let index = object.with(|set| find(&set, &key))??;
             match method {
                 "contains" => Ok(Value::Bool(index.is_some())),
                 "insert" => {
@@ -253,9 +259,9 @@ fn dispatch(
                         return Ok(Value::Bool(false));
                     }
                     object
-                        .with_mut(|set| {
+                        .with_mut(|mut set| {
                             let position = if kind == SetKind::BTree {
-                                insertion_index(set, &key)?
+                                insertion_index(&set.view(), &key)?
                             } else {
                                 set.sequence_len()?
                             };
@@ -267,7 +273,7 @@ fn dispatch(
                 "remove" => {
                     if let Some(index) = index {
                         object
-                            .with_mut(|set| set.take_sequence_item(index))?
+                            .with_mut(|mut set| set.take_sequence_item(index))?
                             .map_err(|error| mutation_error(kind, error))?;
                         Ok(Value::Bool(true))
                     } else {
@@ -307,15 +313,15 @@ fn dispatch(
             {
                 return Err(format!("{} element types do not match", kind.name()));
             }
-            let left_keys = object.with(keys)??;
-            let right_keys = other.with(keys)??;
+            let left_keys = object.with(|view| keys(&view))??;
+            let right_keys = other.with(|view| keys(&view))??;
             match method {
                 "is_subset" => Ok(Value::Bool(left_keys.is_subset(&right_keys))),
                 "is_superset" => Ok(Value::Bool(left_keys.is_superset(&right_keys))),
                 "is_disjoint" => Ok(Value::Bool(left_keys.is_disjoint(&right_keys))),
                 _ => {
-                    let left = object.with(snapshot)??;
-                    let right = other.with(snapshot)??;
+                    let left = object.with(|view| snapshot(&view))??;
+                    let right = other.with(|view| snapshot(&view))??;
                     let keys: BTreeSet<_> = match method {
                         "union" => left_keys.union(&right_keys).cloned().collect(),
                         "intersection" => left_keys.intersection(&right_keys).cloned().collect(),
@@ -339,11 +345,11 @@ fn dispatch(
     }
 }
 
-fn other_set(kind: SetKind, value: &Value) -> Result<DynamicObject, String> {
-    let Value::Dynamic(object) = super::import_receiver(value)? else {
+fn other_set(kind: SetKind, value: &Value) -> Result<NativeReceiver, String> {
+    let Some(object) = NativeReceiver::from_value(value)? else {
         return Err(format!("expected {} receiver", kind.name()));
     };
-    if !kind.matches(&object) {
+    if !kind.matches(object.descriptor().layout().rils_type()) {
         return Err(format!("expected {} receiver", kind.name()));
     }
     Ok(object)
@@ -364,7 +370,7 @@ fn encode_key(
     Ok((identity, native))
 }
 
-fn find(set: &DynamicValue, key: &NativeKey) -> Result<Option<usize>, String> {
+fn find(set: &DynamicValueRef<'_>, key: &NativeKey) -> Result<Option<usize>, String> {
     for index in 0..set.sequence_len()? {
         let known = set.with_sequence_item(index, |item| {
             rils_stdlib::native::registry().key(item.view())
@@ -376,7 +382,7 @@ fn find(set: &DynamicValue, key: &NativeKey) -> Result<Option<usize>, String> {
     Ok(None)
 }
 
-fn insertion_index(set: &DynamicValue, key: &NativeKey) -> Result<usize, String> {
+fn insertion_index(set: &DynamicValueRef<'_>, key: &NativeKey) -> Result<usize, String> {
     for index in 0..set.sequence_len()? {
         let known = set.with_sequence_item(index, |item| {
             rils_stdlib::native::registry().key(item.view())
@@ -392,7 +398,7 @@ fn clone_item(item: &DynamicValue) -> Result<DynamicValue, String> {
     crate::value::runtime_layouts::clone_borrowed_view(item.view())
 }
 
-fn snapshot(set: &DynamicValue) -> Result<Vec<(NativeKey, DynamicValue)>, String> {
+fn snapshot(set: &DynamicValueRef<'_>) -> Result<Vec<(NativeKey, DynamicValue)>, String> {
     (0..set.sequence_len()?)
         .map(|index| {
             set.with_sequence_item(index, |item| {
@@ -405,7 +411,7 @@ fn snapshot(set: &DynamicValue) -> Result<Vec<(NativeKey, DynamicValue)>, String
         .collect()
 }
 
-fn keys(set: &DynamicValue) -> Result<BTreeSet<NativeKey>, String> {
+fn keys(set: &DynamicValueRef<'_>) -> Result<BTreeSet<NativeKey>, String> {
     (0..set.sequence_len()?)
         .map(|index| {
             set.with_sequence_item(index, |item| {

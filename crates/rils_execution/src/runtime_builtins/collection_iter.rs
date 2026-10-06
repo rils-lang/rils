@@ -22,6 +22,11 @@ fn call(owner: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let Some(Value::Reference(source)) = arguments.first() else {
         return Some(Err("collection iter requires a borrowed receiver".into()));
     };
+    match source.native_layout() {
+        Ok(Some(layout)) if layout.sequence_item().is_some() => return None,
+        Err(error) => return Some(Err(error)),
+        _ => {}
+    }
     let collection = match source.read() {
         Ok(collection) => collection,
         Err(message) => return Some(Err(message)),

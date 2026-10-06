@@ -73,6 +73,15 @@ impl<'a> RecordLayoutResolver<'a> {
     }
 
     fn resolve_uncached(&mut self, ty: &Type) -> Result<Rc<DynamicLayout>, String> {
+        if let Type::Named { name, arguments } = ty
+            && (self
+                .definitions
+                .iter()
+                .any(|definition| definition.name == *name && !definition.opaque_native)
+                || self.enums.iter().any(|definition| definition.name == *name))
+        {
+            return self.resolve_named(name, arguments, ty);
+        }
         if let Some(layout) = super::runtime_layouts::layout(ty) {
             return Ok(layout);
         }

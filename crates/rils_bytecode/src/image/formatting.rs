@@ -128,15 +128,20 @@ impl VirtualMachine<'_> {
     }
 
     fn format_method(&self, value: &Value, trait_name: &str) -> Option<usize> {
-        let target = match value {
-            Value::Reference(reference) => reference.read().ok()?.type_name(),
-            value => value.type_name(),
+        let ty = Type::of_value(value)?;
+        let target = match &ty {
+            Type::Named { name, .. } => name.clone(),
+            Type::Reference { inner, .. } => match inner.as_ref() {
+                Type::Named { name, .. } => name.clone(),
+                ty => ty.to_string(),
+            },
+            ty => ty.to_string(),
         };
         self.module
             .trait_implementations
             .iter()
             .find(|implementation| {
-                implementation.target.rsplit("::").next() == Some(target.as_str())
+                implementation.target == target
                     && trait_name_matches(&implementation.trait_name, trait_name)
             })?
             .methods
@@ -152,6 +157,13 @@ impl VirtualMachine<'_> {
     ) -> Result<Value, BytecodeError> {
         let buffer = crate::formatting::buffer_from_value(formatter)
             .map_err(|message| BytecodeError::new(message, span))?;
+        if rils_execution::value::native_instance::record_definition(value)
+            .map_err(|message| BytecodeError::new(message, span))?
+            .is_some()
+        {
+            self.write_structural_debug(&buffer, value, span)?;
+            return Ok(format_ok());
+        }
         let value = match value {
             Value::Reference(reference) => reference
                 .read()
@@ -169,6 +181,25 @@ impl VirtualMachine<'_> {
         span: Span,
     ) -> Result<(), BytecodeError> {
         let (name, fields, tuple) = match value {
+            value
+                if rils_execution::value::native_instance::record_definition(value)
+                    .map_err(|message| BytecodeError::new(message, span))?
+                    .is_some() =>
+            {
+                let definition = rils_execution::value::native_instance::record_definition(value)
+                    .map_err(|message| BytecodeError::new(message, span))?
+                    .expect("checked record");
+                let fields = definition
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        rils_execution::value::native_instance::borrow_field(value, &field.name)
+                            .map(|value| (Some(field.name.clone()), value))
+                            .map_err(|message| BytecodeError::new(message, span))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                (definition.name.clone(), fields, false)
+            }
             Value::Struct(instance) => {
                 let slots = instance.fields.borrow();
                 let values = instance

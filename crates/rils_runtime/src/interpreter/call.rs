@@ -89,6 +89,39 @@ impl Interpreter {
             return validate_native_return(function.signature.as_ref(), value, span, function.name);
         }
         match callee {
+            Value::BoundMethod(method) => {
+                let (function, receiver) = match Rc::try_unwrap(method) {
+                    Ok(method) => {
+                        let receiver = Rc::try_unwrap(method.receiver)
+                            .or_else(|value| {
+                                if value.is_copy() {
+                                    value.clone_owned()
+                                } else {
+                                    Err("cannot consume a shared method receiver".into())
+                                }
+                            })
+                            .map_err(|message| RuntimeError::new(message, span))?;
+                        (method.function, receiver)
+                    }
+                    Err(method) if method.receiver.is_copy() => (
+                        method.function.clone(),
+                        method
+                            .receiver
+                            .clone_owned()
+                            .map_err(|message| RuntimeError::new(message, span))?,
+                    ),
+                    Err(_) => {
+                        return Err(RuntimeError::new(
+                            "cannot consume a shared method receiver",
+                            span,
+                        ));
+                    }
+                };
+                let mut values = Vec::with_capacity(arguments.len() + 1);
+                values.push(receiver);
+                values.extend(arguments);
+                return self.call_user_function(function, values, span);
+            }
             Value::Function(function) => return self.call_user_function(function, arguments, span),
             Value::VariantConstructor(constructor) => {
                 return self.construct_tuple_variant(constructor, arguments, span);
@@ -532,6 +565,28 @@ impl Interpreter {
         }
         if let Some(member) = member::take_struct_field(&object, name, span)? {
             return Ok(member);
+        }
+        if let Value::Dynamic(payload) = &object
+            && let Some(Value::StructType(definition)) =
+                rils_execution::value::native_instance::definition(payload)
+        {
+            if name == "into_iter"
+                && definition.implemented_traits.borrow().contains("Iterator")
+                && !definition.methods.borrow().contains_key(name)
+            {
+                return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                    receiver: Rc::new(object),
+                    method: BuiltinMethod::IteratorIdentity,
+                })));
+            }
+            return member::bind_rils_method(
+                object,
+                &definition.methods,
+                &definition.trait_methods,
+                &definition.name,
+                name,
+                span,
+            );
         }
         if name == "into_iter"
             && (matches!(

@@ -363,7 +363,7 @@ pub(super) fn read_enum_variant(reader: &mut Reader<'_>) -> Result<EnumVariant> 
 pub(super) fn write_runtime_type(writer: &mut Writer, runtime_type: &RuntimeType) -> Result<()> {
     match runtime_type {
         RuntimeType::Struct(value) => {
-            writer.u8(0);
+            writer.u8(if value.opaque_native { 2 } else { 0 });
             writer.string(&value.name)?;
             writer.collection(&value.generic_parameters, write_generic_parameter)?;
             writer.collection(&value.fields, write_named_field)?;
@@ -380,9 +380,9 @@ pub(super) fn write_runtime_type(writer: &mut Writer, runtime_type: &RuntimeType
 
 pub(super) fn read_runtime_type(reader: &mut Reader<'_>) -> Result<RuntimeType> {
     match reader.u8()? {
-        0 => Ok(RuntimeType::Struct(Rc::new(StructType {
+        tag @ (0 | 2) => Ok(RuntimeType::Struct(Rc::new(StructType {
             name: reader.string()?,
-            opaque_native: false,
+            opaque_native: tag == 2,
             generic_parameters: reader.collection(read_generic_parameter)?,
             fields: reader.collection(read_named_field)?,
             field_indices: Default::default(),

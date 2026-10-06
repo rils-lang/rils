@@ -104,10 +104,10 @@ impl HashKey {
     }
 
     pub fn from_value(value: &Value) -> Result<Self, String> {
-        let value = match value {
-            Value::Reference(reference) => reference.read()?,
-            value => value.clone(),
-        };
+        if let Value::Reference(reference) = value {
+            return Self::from_value(&reference.read()?);
+        }
+        let value = value.clone();
         let value = value.materialize_native_sum().transpose()?.unwrap_or(value);
         let value = crate::numeric::lower_migrated_integer(value);
         if let Some(value) = crate::numeric::i8_payload(&value) {
@@ -146,6 +146,14 @@ impl HashKey {
             | Value::Struct(_)
             | Value::Enum(_) => {
                 let value = value.clone_owned()?;
+                let identity = StructuralIdentity::from_value(&value)?;
+                Self::Composite(Box::new(StructuralKey { identity, value }))
+            }
+            Value::Dynamic(object)
+                if super::native_instance::record_definition(&Value::Dynamic(object.clone()))?
+                    .is_some() =>
+            {
+                let value = Value::Dynamic(object).clone_owned()?;
                 let identity = StructuralIdentity::from_value(&value)?;
                 Self::Composite(Box::new(StructuralKey { identity, value }))
             }
@@ -220,6 +228,36 @@ impl StructuralIdentity {
             )
         };
         Ok(match value {
+            Value::Dynamic(_) => {
+                let definition =
+                    super::native_instance::record_definition(value)?.ok_or_else(unsupported)?;
+                let traits = definition.implemented_traits.borrow();
+                if !traits.contains("Eq") || !traits.contains("Hash") {
+                    return Err(unsupported());
+                }
+                let Some(Type::Named { name, arguments }) = Type::of_value(value) else {
+                    return Err(unsupported());
+                };
+                let mut fields = definition
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        Ok((
+                            field.name.clone(),
+                            HashKey::from_value(&super::native_instance::borrow_field(
+                                value,
+                                &field.name,
+                            )?)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                fields.sort_by(|left, right| left.0.cmp(&right.0));
+                Self::Struct {
+                    name,
+                    arguments: arguments.iter().map(ToString::to_string).collect(),
+                    fields,
+                }
+            }
             Value::Tuple(sequence) | Value::Array(sequence) => {
                 let elements = sequence
                     .elements

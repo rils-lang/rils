@@ -5,6 +5,8 @@ use crate::{
     value::{EnumPayload, Value},
 };
 
+mod native_record;
+
 pub(super) fn pattern_locals_valid(pattern: &HirPattern, local_count: usize) -> bool {
     match pattern {
         HirPattern::Binding(local) => *local < local_count,
@@ -24,6 +26,9 @@ pub(super) fn pattern_locals_valid(pattern: &HirPattern, local_count: usize) -> 
 }
 
 pub(super) fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
+    if let Some(matches) = native_record::matches(pattern, value) {
+        return matches;
+    }
     let borrowed = match value {
         Value::Reference(reference) => reference.read().ok(),
         _ => None,
@@ -111,7 +116,14 @@ pub(super) fn collect_pattern_bindings(
     pattern: &HirPattern,
     value: &Value,
     bindings: &mut Vec<(usize, Value)>,
-) {
+) -> Result<(), String> {
+    if let Some(result) = native_record::collect(pattern, value, bindings, false) {
+        return result;
+    }
+    if let (HirPattern::Binding(local), Value::Reference(_)) = (pattern, value) {
+        bindings.push((*local, value.clone()));
+        return Ok(());
+    }
     let borrowed_value = match value {
         Value::Reference(reference) => reference.read().ok(),
         _ => None,
@@ -121,7 +133,7 @@ pub(super) fn collect_pattern_bindings(
         borrowed_value.as_ref().unwrap_or(value),
         bindings,
         borrowed_value.is_some(),
-    );
+    )
 }
 
 fn collect_pattern_bindings_inner(
@@ -129,7 +141,10 @@ fn collect_pattern_bindings_inner(
     value: &Value,
     bindings: &mut Vec<(usize, Value)>,
     borrowed: bool,
-) {
+) -> Result<(), String> {
+    if let Some(result) = native_record::collect(pattern, value, bindings, borrowed) {
+        return result;
+    }
     let materialized = value.materialize_native_sum().and_then(Result::ok);
     let value = materialized.as_ref().unwrap_or(value);
     match pattern {
@@ -152,7 +167,7 @@ fn collect_pattern_bindings_inner(
                 value: Some(value), ..
             } = value
             {
-                collect_pattern_bindings_inner(inner, value, bindings, borrowed);
+                collect_pattern_bindings_inner(inner, value, bindings, borrowed)?;
             }
         }
         HirPattern::Ok(inner) => {
@@ -160,7 +175,7 @@ fn collect_pattern_bindings_inner(
                 value: Ok(value), ..
             } = value
             {
-                collect_pattern_bindings_inner(inner, value, bindings, borrowed);
+                collect_pattern_bindings_inner(inner, value, bindings, borrowed)?;
             }
         }
         HirPattern::Err(inner) => {
@@ -168,7 +183,7 @@ fn collect_pattern_bindings_inner(
                 value: Err(value), ..
             } = value
             {
-                collect_pattern_bindings_inner(inner, value, bindings, borrowed);
+                collect_pattern_bindings_inner(inner, value, bindings, borrowed)?;
             }
         }
         HirPattern::TupleVariant { fields, .. } => {
@@ -176,7 +191,7 @@ fn collect_pattern_bindings_inner(
                 && let EnumPayload::Tuple(values) = &instance.payload
             {
                 for (pattern, value) in fields.iter().zip(values) {
-                    collect_pattern_bindings_inner(pattern, value, bindings, borrowed);
+                    collect_pattern_bindings_inner(pattern, value, bindings, borrowed)?;
                 }
             }
         }
@@ -185,7 +200,7 @@ fn collect_pattern_bindings_inner(
                 let values = instance.fields.borrow();
                 for (name, pattern) in fields {
                     if let Some(value) = values.get(name).and_then(|field| field.value.as_ref()) {
-                        collect_pattern_bindings_inner(pattern, value, bindings, borrowed);
+                        collect_pattern_bindings_inner(pattern, value, bindings, borrowed)?;
                     }
                 }
             }
@@ -193,7 +208,7 @@ fn collect_pattern_bindings_inner(
                 if let EnumPayload::Record(values) = &instance.payload {
                     for (name, pattern) in fields {
                         if let Some(value) = values.get(name) {
-                            collect_pattern_bindings_inner(pattern, value, bindings, borrowed);
+                            collect_pattern_bindings_inner(pattern, value, bindings, borrowed)?;
                         }
                     }
                 }
@@ -202,6 +217,7 @@ fn collect_pattern_bindings_inner(
         },
         HirPattern::Wildcard | HirPattern::Literal(_) | HirPattern::None | HirPattern::Path(_) => {}
     }
+    Ok(())
 }
 
 fn hir_literal_value(literal: &HirLiteral) -> Value {

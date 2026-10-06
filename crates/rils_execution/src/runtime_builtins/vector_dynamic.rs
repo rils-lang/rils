@@ -9,6 +9,8 @@ use crate::{
     value::{DynamicObject, Value, record_codec},
 };
 
+use crate::value::native_receiver::NativeReceiver;
+
 use super::{NativeOwnedContext, import_receiver, indexed_iter, vector};
 
 fn owned_member(symbol: &str) -> Option<&'static BuiltinMember> {
@@ -114,8 +116,7 @@ pub(crate) fn call_owned_symbol(
             {
                 return Err(format!("Vec::{name} requires `&mut self`"));
             }
-            let receiver = import_receiver(&arguments[0])?;
-            let Value::Dynamic(object) = receiver else {
+            let Some(object) = NativeReceiver::from_value(&arguments[0])? else {
                 return super::native::call_symbol(symbol, &arguments)
                     .unwrap_or_else(|| Err(format!("Vec::{name} has no runtime adapter")));
             };
@@ -133,7 +134,7 @@ pub(crate) fn call_owned_symbol(
             let codec =
                 record_codec::NativeRecordCodec::with_definitions(&context.structs, &context.enums);
             if name == "pop" {
-                let item = object.with_mut(|payload| {
+                let item = object.with_mut(|mut payload| {
                     let length = payload.sequence_len()?;
                     if length == 0 {
                         Ok(None)
@@ -149,7 +150,7 @@ pub(crate) fn call_owned_symbol(
                 })
             } else {
                 let position = index(&arguments, 1)?;
-                let item = object.with_mut(|payload| {
+                let item = object.with_mut(|mut payload| {
                     if name == "remove" {
                         payload.take_sequence_item(position)
                     } else {
@@ -177,8 +178,7 @@ pub(crate) fn call_owned_symbol(
         if !matches!(arguments.first(), Some(Value::Reference(reference)) if reference.mutable) {
             return Err("Vec method requires `&mut self`".into());
         }
-        let receiver = import_receiver(&arguments[0])?;
-        let Value::Dynamic(object) = receiver else {
+        let Some(object) = NativeReceiver::from_value(&arguments[0])? else {
             return match member.name {
                 "push" => vector::push_owned(arguments),
                 "insert" => vector::insert_owned(arguments),
@@ -206,10 +206,10 @@ pub(crate) fn call_owned_symbol(
             record_codec::NativeRecordCodec::with_definitions(&context.structs, &context.enums);
         let value = codec.into_native(value, item_layout)?;
         match member.name {
-            "push" => object.with_mut(|payload| payload.push_sequence_item(value))??,
+            "push" => object.with_mut(|mut payload| payload.push_sequence_item(value))??,
             "insert" => {
                 let index = index(&arguments, 1)?;
-                object.with_mut(|payload| payload.insert_sequence_item(index, value))??;
+                object.with_mut(|mut payload| payload.insert_sequence_item(index, value))??;
             }
             name => return Err(format!("owned native Vec method `{name}` is not supported")),
         }
@@ -219,9 +219,7 @@ pub(crate) fn call_owned_symbol(
 
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let receiver = arguments.first()?;
-    let Value::Dynamic(object) = import_receiver(receiver).ok()? else {
-        return None;
-    };
+    let object = NativeReceiver::from_value(receiver).ok()??;
     if !crate::value::native_layouts::vec::matches(object.descriptor().layout().rils_type()) {
         return None;
     }
@@ -254,9 +252,7 @@ pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
     let Some(receiver) = arguments.first() else {
         return Some(Err("missing Vec receiver".into()));
     };
-    let Value::Dynamic(destination) = import_receiver(receiver).ok()? else {
-        return None;
-    };
+    let destination = NativeReceiver::from_value(receiver).ok()??;
     if !crate::value::native_layouts::vec::matches(destination.descriptor().layout().rils_type()) {
         return None;
     }
@@ -271,7 +267,10 @@ pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
                     source.descriptor().layout().rils_type(),
                 ) =>
             {
-                if destination.same_storage(&source) {
+                if destination.same_storage(
+                    &NativeReceiver::from_value(&Value::Dynamic(source.clone()))?
+                        .expect("native source"),
+                ) {
                     return Err("Vec cannot extend itself".into());
                 }
                 if !destination
@@ -281,17 +280,12 @@ pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
                 {
                     return Err("Vec element types do not match".into());
                 }
-                destination.with_mut(|destination| {
-                    destination
-                        .sequence_borrows()?
-                        .check_structural_mutation()?;
-                    source.with_mut(|source| {
-                        let items = source.take_all_sequence_items()?;
-                        for item in items {
-                            destination.push_sequence_item(item)?;
-                        }
-                        Ok::<_, String>(())
-                    })??;
+                destination.with(|view| view.sequence_borrows()?.check_structural_mutation())??;
+                let items = source.with_mut(|source| source.take_all_sequence_items())??;
+                destination.with_mut(|mut destination| {
+                    for item in items {
+                        destination.push_sequence_item(item)?;
+                    }
                     Ok::<_, String>(())
                 })??;
             }
@@ -322,7 +316,7 @@ pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
                         record_codec::into_native(value.clone_owned()?, layout.clone())
                     })
                     .collect::<Result<Vec<_>, String>>()?;
-                destination.with_mut(|destination| {
+                destination.with_mut(|mut destination| {
                     destination
                         .sequence_borrows()?
                         .check_structural_mutation()?;
@@ -339,7 +333,7 @@ pub(crate) fn extend(arguments: &[Value]) -> Option<Result<Value, String>> {
     })())
 }
 
-fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value, String> {
+fn call(name: &str, arguments: &[Value], object: &NativeReceiver) -> Result<Value, String> {
     let item_layout = object
         .descriptor()
         .layout()
@@ -365,11 +359,11 @@ fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value
         )),
         "push" => {
             let value = item(arguments, 1, &item_layout)?;
-            object.with_mut(|payload| payload.push_sequence_item(value))??;
+            object.with_mut(|mut payload| payload.push_sequence_item(value))??;
             Ok(Value::Unit)
         }
         "pop" => {
-            let item = object.with_mut(|payload| {
+            let item = object.with_mut(|mut payload| {
                 let length = payload.sequence_len()?;
                 if length == 0 {
                     Ok(None)
@@ -380,23 +374,23 @@ fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value
             option(item, item_type)
         }
         "clear" => {
-            object.with_mut(|payload| payload.clear_sequence())??;
+            object.with_mut(|mut payload| payload.clear_sequence())??;
             Ok(Value::Unit)
         }
         "truncate" => {
             let length = index(arguments, 1)?;
-            object.with_mut(|payload| payload.truncate_sequence(length))??;
+            object.with_mut(|mut payload| payload.truncate_sequence(length))??;
             Ok(Value::Unit)
         }
         "insert" => {
             let index = index(arguments, 1)?;
             let value = item(arguments, 2, &item_layout)?;
-            object.with_mut(|payload| payload.insert_sequence_item(index, value))??;
+            object.with_mut(|mut payload| payload.insert_sequence_item(index, value))??;
             Ok(Value::Unit)
         }
         "remove" | "swap_remove" => {
             let index = index(arguments, 1)?;
-            let value = object.with_mut(|payload| {
+            let value = object.with_mut(|mut payload| {
                 if name == "remove" {
                     payload.take_sequence_item(index)
                 } else {
@@ -409,7 +403,14 @@ fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value
             let needle = import_receiver(arguments.get(1).ok_or("missing Vec element")?)?;
             let length = object.with(|payload| payload.sequence_len())??;
             for index in 0..length {
-                if crate::value::dynamic_sequence::borrowed_item(object, index)? == needle {
+                if record_codec::from_native(object.with(|view| {
+                    view.with_sequence_item(
+                        index,
+                        crate::value::runtime_layouts::clone_borrowed_element,
+                    )
+                })???)?
+                    == needle
+                {
                     return Ok(Value::Bool(true));
                 }
             }
@@ -417,7 +418,7 @@ fn call(name: &str, arguments: &[Value], object: &DynamicObject) -> Result<Value
         }
         "iter" => indexed_iter::borrow(arguments),
         "extend" => extend(arguments).expect("native Vec receiver was checked"),
-        "into_iter" => into_iterator(object.clone()),
+        "into_iter" => into_iterator(object.owned_object()?),
         _ => Err(format!("native Vec method `{name}` is not supported")),
     }
 }

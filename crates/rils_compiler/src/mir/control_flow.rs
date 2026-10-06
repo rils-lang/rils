@@ -274,6 +274,15 @@ impl Builder {
         }
         self.loops.pop();
         self.current = exit_block;
+        self.emit(MirInstruction::DropLocal { local: binding }, span);
+        let unit = self.unit(span);
+        self.emit(
+            MirInstruction::Move {
+                destination: iterator,
+                source: unit,
+            },
+            span,
+        );
         Ok(result)
     }
 

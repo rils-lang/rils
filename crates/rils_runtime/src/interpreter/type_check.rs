@@ -161,6 +161,19 @@ pub(super) fn infer_type_from_value(
         {
             infer_type_arguments(arguments, &instance.type_arguments, substitutions)
         }
+        (Type::Named { name, arguments }, value @ Value::Dynamic(_)) => {
+            let Some(Type::Named {
+                name: actual_name,
+                arguments: actual_arguments,
+            }) = Type::of_value(value)
+            else {
+                return Err("cannot infer nominal argument type".into());
+            };
+            if *name != actual_name {
+                return Err(format!("expected {name}, found {actual_name}"));
+            }
+            infer_type_arguments(arguments, &actual_arguments, substitutions)
+        }
         (
             expected @ Type::Function { .. },
             value @ (Value::Function(_)

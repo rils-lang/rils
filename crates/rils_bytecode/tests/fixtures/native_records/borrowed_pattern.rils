@@ -1,0 +1,13 @@
+struct Item { value: i32, text: string }
+fn run() -> i32 {
+let mut item = Item { value: 0, text: "owned" };
+let number = &mut item.value;
+match &item {
+    Item { value: seen, text: text } => {
+        *number = 37;
+        if text.len() == 5 { *seen + 5 } else { 0 }
+    }
+}
+
+}
+run()

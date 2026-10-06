@@ -1,0 +1,6 @@
+#[derive(Clone)]
+struct Item { value: i32, text: string }
+let mut original = Item { value: 37, text: "owned" };
+let copied = original.clone();
+original.text = "different";
+if copied.text.len() == 5 { copied.value + 5 } else { 0 }

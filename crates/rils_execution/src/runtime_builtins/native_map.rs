@@ -10,6 +10,9 @@ use crate::value::{
     DynamicObject, HashKey, OwnedIteratorValue, Value, record_codec::NativeRecordCodec,
 };
 
+use crate::value::native_receiver::NativeReceiver;
+use rils_value::DynamicValueRef;
+
 use super::{NativeOwnedContext, import_receiver};
 
 fn owned_insert_kind(symbol: &str) -> Option<MapKind> {
@@ -73,7 +76,9 @@ pub(super) fn call_owned_symbol(
             }
             let receiver = arguments.into_iter().next().expect("arity checked");
             match receiver {
-                Value::Dynamic(object) if kind.matches(&object) => {
+                Value::Dynamic(object)
+                    if kind.matches(object.descriptor().layout().rils_type()) =>
+                {
                     crate::iteration::native_sequence_into_iterator(object, context)
                 }
                 Value::HashMap(map) if kind == MapKind::Hash => {
@@ -95,14 +100,13 @@ pub(super) fn call_owned_symbol(
         if !matches!(&arguments[0], Value::Reference(reference) if reference.mutable) {
             return Err(format!("{}::insert requires `&mut self`", kind.name()));
         }
-        let receiver = import_receiver(&arguments[0])?;
-        let Value::Dynamic(object) = receiver else {
+        let Some(object) = NativeReceiver::from_value(&arguments[0])? else {
             return match kind {
                 MapKind::Hash => crate::hash_collections::call_map("insert", &arguments),
                 MapKind::BTree => super::btree_map::call("insert", &arguments),
             };
         };
-        if !kind.matches(&object) {
+        if !kind.matches(object.descriptor().layout().rils_type()) {
             return Err(format!(
                 "{}::insert received the wrong collection",
                 kind.name()
@@ -135,9 +139,9 @@ pub(super) fn call_owned_symbol(
         let identity = rils_stdlib::native::registry().key(native_key.view())?;
         let native_value = codec.into_native(value, value_layout.clone())?;
         let pair = DynamicValue::record(pair_layout, vec![native_key, native_value])?;
-        let index = object.with(|map| find(map, &identity))??;
+        let index = object.with(|map| find(&map, &identity))??;
         let previous = object
-            .with_mut(|map| -> Result<Option<DynamicValue>, String> {
+            .with_mut(|mut map| -> Result<Option<DynamicValue>, String> {
                 map.sequence_borrows()?.check_structural_mutation()?;
                 if let Some(index) = index {
                     let mut previous = map.replace_sequence_item(index, pair)?;
@@ -146,7 +150,7 @@ pub(super) fn call_owned_symbol(
                     ))
                 } else {
                     let position = if kind == MapKind::BTree {
-                        insertion_index(map, &identity)?
+                        insertion_index(&map.view(), &identity)?
                     } else {
                         map.sequence_len()?
                     };
@@ -172,8 +176,7 @@ impl MapKind {
             Self::BTree => "BTreeMap",
         }
     }
-    fn matches(self, object: &DynamicObject) -> bool {
-        let ty = object.descriptor().layout().rils_type();
+    fn matches(self, ty: &crate::Type) -> bool {
         match self {
             Self::Hash => crate::value::native_layouts::hash_map::matches(ty),
             Self::BTree => crate::value::native_layouts::btree_map::matches(ty),
@@ -208,10 +211,13 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             ));
         }
         let receiver = &arguments[0];
-        match import_receiver(receiver)? {
-            Value::Dynamic(object) if kind.matches(&object) => {
-                dispatch(kind, method, arguments, receiver, &object)
+        if let Some(object) = NativeReceiver::from_value(receiver)? {
+            if !kind.matches(object.descriptor().layout().rils_type()) {
+                return Err(format!("wrong {} receiver", kind.name()));
             }
+            return dispatch(kind, method, arguments, receiver, &object);
+        }
+        match import_receiver(receiver)? {
             Value::HashMap(_) if kind == MapKind::Hash => {
                 crate::hash_collections::call_map(method, arguments)
             }
@@ -231,7 +237,7 @@ fn dispatch(
     method: &str,
     arguments: &[Value],
     receiver: &Value,
-    object: &DynamicObject,
+    object: &NativeReceiver,
 ) -> Result<Value, String> {
     let pair_layout = object
         .descriptor()
@@ -256,12 +262,12 @@ fn dispatch(
     }
     match method {
         "len" => Ok(crate::numeric::native_usize(
-            object.with(DynamicValue::sequence_len)??,
+            object.with(|view| view.sequence_len())??,
         )),
-        "is_empty" => Ok(Value::Bool(object.with(DynamicValue::sequence_len)?? == 0)),
+        "is_empty" => Ok(Value::Bool(object.with(|view| view.sequence_len())?? == 0)),
         "clear" => {
             object
-                .with_mut(DynamicValue::clear_sequence)?
+                .with_mut(|mut view| view.clear_sequence())?
                 .map_err(|error| mutation_error(kind, error))?;
             Ok(Value::Unit)
         }
@@ -271,12 +277,12 @@ fn dispatch(
                 arguments.get(1).ok_or("missing map key")?,
                 key_layout.clone(),
             )?;
-            let index = object.with(|map| find(map, &key))??;
+            let index = object.with(|map| find(&map, &key))??;
             match method {
                 "contains_key" => Ok(Value::Bool(index.is_some())),
                 "get_cloned" => {
                     let value = index
-                        .map(|index| object.with(|map| clone_field(map, index, 1)))
+                        .map(|index| object.with(|map| clone_field(&map, index, 1)))
                         .transpose()?
                         .transpose()?;
                     native_option(value, value_layout)
@@ -285,7 +291,7 @@ fn dispatch(
                     let value = if let Some(index) = index {
                         Some(
                             object
-                                .with_mut(|map| {
+                                .with_mut(|mut map| {
                                     let mut entry = map.take_sequence_item(index)?;
                                     entry.take_path_field(&[DynamicPathStep::Field(1)])
                                 })?
@@ -303,7 +309,7 @@ fn dispatch(
                     let pair =
                         DynamicValue::record(pair_layout.clone(), vec![native_key, native_value])?;
                     let previous = object
-                        .with_mut(|map| -> Result<Option<DynamicValue>, String> {
+                        .with_mut(|mut map| -> Result<Option<DynamicValue>, String> {
                             map.sequence_borrows()?.check_structural_mutation()?;
                             if let Some(index) = index {
                                 let mut previous = map.replace_sequence_item(index, pair)?;
@@ -312,7 +318,7 @@ fn dispatch(
                                 ))
                             } else {
                                 let position = if kind == MapKind::BTree {
-                                    insertion_index(map, &key)?
+                                    insertion_index(&map.view(), &key)?
                                 } else {
                                     map.sequence_len()?
                                 };
@@ -337,7 +343,7 @@ fn dispatch(
                 } else {
                     len - 1
                 };
-                clone_field(map, index, 0).map(Some)
+                clone_field(&map, index, 0).map(Some)
             })??;
             native_option(key, key_layout)
         }
@@ -347,7 +353,7 @@ fn dispatch(
             let values = object.with(|map| {
                 (0..map.sequence_len()?)
                     .map(|index| {
-                        clone_field(map, index, field)
+                        clone_field(&map, index, field)
                             .and_then(crate::value::record_codec::from_native)
                     })
                     .collect::<Result<Vec<_>, String>>()
@@ -379,7 +385,7 @@ fn entry_key(entry: &DynamicValue) -> Result<NativeKey, String> {
     rils_stdlib::native::registry().key(entry.view().field(0)?)
 }
 
-fn find(map: &DynamicValue, key: &NativeKey) -> Result<Option<usize>, String> {
+fn find(map: &DynamicValueRef<'_>, key: &NativeKey) -> Result<Option<usize>, String> {
     for index in 0..map.sequence_len()? {
         if map.with_sequence_item(index, entry_key)?? == *key {
             return Ok(Some(index));
@@ -388,7 +394,7 @@ fn find(map: &DynamicValue, key: &NativeKey) -> Result<Option<usize>, String> {
     Ok(None)
 }
 
-fn insertion_index(map: &DynamicValue, key: &NativeKey) -> Result<usize, String> {
+fn insertion_index(map: &DynamicValueRef<'_>, key: &NativeKey) -> Result<usize, String> {
     for index in 0..map.sequence_len()? {
         if map.with_sequence_item(index, entry_key)?? > *key {
             return Ok(index);
@@ -397,7 +403,11 @@ fn insertion_index(map: &DynamicValue, key: &NativeKey) -> Result<usize, String>
     map.sequence_len()
 }
 
-fn clone_field(map: &DynamicValue, index: usize, field: usize) -> Result<DynamicValue, String> {
+fn clone_field(
+    map: &DynamicValueRef<'_>,
+    index: usize,
+    field: usize,
+) -> Result<DynamicValue, String> {
     map.with_sequence_item(index, |entry| {
         crate::value::runtime_layouts::clone_borrowed_view(entry.view().field(field)?)
     })?

@@ -1,3 +1,4 @@
+use crate::value::native_receiver::NativeReceiver;
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
 use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern};
@@ -95,10 +96,6 @@ pub(super) fn call_owned_symbol(
         if !matches!(receiver, Value::Reference(reference) if reference.mutable) {
             return Err("BinaryHeap mutation requires a mutable reference".into());
         }
-        let receiver = match receiver {
-            Value::Reference(reference) => reference.read()?,
-            value => value.clone(),
-        };
         let item = arguments.pop().expect("arity checked");
         if !orderable(&item) {
             return Err(format!(
@@ -106,32 +103,33 @@ pub(super) fn call_owned_symbol(
                 item.type_name()
             ));
         }
-        match receiver {
-            Value::Dynamic(object)
-                if crate::value::native_layouts::binary_heap::matches(
-                    object.descriptor().layout().rils_type(),
-                ) =>
-            {
-                let layout = object
-                    .descriptor()
-                    .layout()
-                    .sequence_item()
-                    .ok_or("BinaryHeap has no native element layout")?
-                    .clone();
-                if !layout.rils_type().accepts(&item) {
-                    return Err(format!(
-                        "BinaryHeap expects {}, found {}",
-                        layout.rils_type(),
-                        item.type_name()
-                    ));
-                }
-                let mut codec = crate::value::record_codec::NativeRecordCodec::with_definitions(
-                    &context.structs,
-                    &context.enums,
-                );
-                let item = codec.into_native(item, layout)?;
-                push_dynamic_item(&object, item)
+        if let Some(object) = NativeReceiver::from_value(&arguments[0])? {
+            if !crate::value::native_layouts::binary_heap::matches(
+                object.descriptor().layout().rils_type(),
+            ) {
+                return Err("wrong native collection receiver".into());
             }
+            let layout = object
+                .descriptor()
+                .layout()
+                .sequence_item()
+                .ok_or("BinaryHeap has no native element layout")?
+                .clone();
+            if !layout.rils_type().accepts(&item) {
+                return Err(format!(
+                    "BinaryHeap expects {}, found {}",
+                    layout.rils_type(),
+                    item.type_name()
+                ));
+            }
+            let mut codec = crate::value::record_codec::NativeRecordCodec::with_definitions(
+                &context.structs,
+                &context.enums,
+            );
+            let item = codec.into_native(item, layout)?;
+            return push_dynamic_item(&object, item);
+        }
+        match super::import_receiver(&arguments[0])? {
             Value::BinaryHeap(heap) => push_heap_item(&heap, item),
             _ => Err("expected BinaryHeap receiver".into()),
         }
@@ -144,11 +142,7 @@ fn call_named(name: &str, arguments: &[Value]) -> Result<Value, String> {
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("BinaryHeap mutation requires a mutable reference".into());
     }
-    let value = match receiver {
-        Value::Reference(reference) => reference.read()?,
-        value => value.clone(),
-    };
-    if let Value::Dynamic(object) = value
+    if let Some(object) = NativeReceiver::from_value(receiver)?
         && crate::value::native_layouts::binary_heap::matches(
             object.descriptor().layout().rils_type(),
         )
@@ -161,11 +155,7 @@ fn call_named(name: &str, arguments: &[Value]) -> Result<Value, String> {
     call_heap(name, arguments, &heap)
 }
 
-fn call_dynamic(
-    name: &str,
-    arguments: &[Value],
-    object: &crate::value::DynamicObject,
-) -> Result<Value, String> {
+fn call_dynamic(name: &str, arguments: &[Value], object: &NativeReceiver) -> Result<Value, String> {
     let item_layout = object
         .descriptor()
         .layout()
@@ -191,7 +181,7 @@ fn call_dynamic(
             push_dynamic_item(object, item)
         }
         "pop" => {
-            let item = object.with_mut(|value| {
+            let item = object.with_mut(|mut value| {
                 let length = value.sequence_len()?;
                 if length == 0 {
                     return Ok(None);
@@ -203,13 +193,13 @@ fn call_dynamic(
                     let left = index * 2 + 1;
                     let right = left + 1;
                     let child = if right < value.sequence_len()?
-                        && compare_native_items(value, right, left)? == Ordering::Greater
+                        && compare_native_items(&value.view(), right, left)? == Ordering::Greater
                     {
                         right
                     } else {
                         left
                     };
-                    if compare_native_items(value, child, index)? != Ordering::Greater {
+                    if compare_native_items(&value.view(), child, index)? != Ordering::Greater {
                         break;
                     }
                     value.swap_sequence_items(index, child)?;
@@ -241,23 +231,20 @@ fn call_dynamic(
             })
         }
         "clear" => {
-            object.with_mut(|value| value.clear_sequence())??;
+            object.with_mut(|mut value| value.clear_sequence())??;
             Ok(Value::Unit)
         }
         _ => Err("unsupported BinaryHeap operation".into()),
     }
 }
 
-fn push_dynamic_item(
-    object: &crate::value::DynamicObject,
-    item: DynamicValue,
-) -> Result<Value, String> {
-    object.with_mut(|value| {
+fn push_dynamic_item(object: &NativeReceiver, item: DynamicValue) -> Result<Value, String> {
+    object.with_mut(|mut value| {
         value.push_sequence_item(item)?;
         let mut index = value.sequence_len()? - 1;
         while index > 0 {
             let parent = (index - 1) / 2;
-            if compare_native_items(value, index, parent)? != Ordering::Greater {
+            if compare_native_items(&value.view(), index, parent)? != Ordering::Greater {
                 break;
             }
             value.swap_sequence_items(index, parent)?;
@@ -292,7 +279,7 @@ fn push_heap_item(heap: &BinaryHeapValue, item: Value) -> Result<Value, String> 
 }
 
 fn compare_native_items(
-    value: &DynamicValue,
+    value: &rils_value::DynamicValueRef<'_>,
     left: usize,
     right: usize,
 ) -> Result<Ordering, String> {

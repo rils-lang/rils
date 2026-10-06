@@ -1,0 +1,2 @@
+struct Item { value: i32, text: string }
+Item { value: 42, text: "owned" }

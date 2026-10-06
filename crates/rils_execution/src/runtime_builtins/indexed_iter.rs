@@ -58,45 +58,50 @@ fn borrow_inner(
     let Some(Value::Reference(receiver)) = arguments.first() else {
         return Err("indexed iterator method requires a borrowed receiver".into());
     };
-    let (storage, length, element_type) = match receiver.read()? {
-        Value::Array(sequence) | Value::Vec(sequence) => {
-            let length = sequence.elements.borrow().len();
-            sequence
-                .active_iterators
-                .set(sequence.active_iterators.get() + 1);
-            let element_type = sequence
-                .element_type
-                .borrow()
-                .clone()
-                .unwrap_or(Type::Unknown);
-            (
-                IndexedIteratorStorage::Legacy(sequence),
-                length,
-                element_type,
-            )
+    let native = crate::value::native_receiver::NativeReceiver::from_value(&Value::Reference(
+        receiver.clone(),
+    ))?;
+    let (storage, length, element_type) = if let Some(object) = native
+        && object.descriptor().layout().sequence_item().is_some()
+    {
+        let element_type = object
+            .descriptor()
+            .layout()
+            .sequence_item()
+            .expect("checked sequence")
+            .rils_type()
+            .clone();
+        let (length, ledger) = object
+            .with(|view| Ok::<_, String>((view.sequence_len()?, view.sequence_borrows()?)))??;
+        let lease = ledger.begin_iteration()?;
+        (
+            IndexedIteratorStorage::Native {
+                ledger,
+                _lease: lease,
+            },
+            length,
+            element_type,
+        )
+    } else {
+        match receiver.read()? {
+            Value::Array(sequence) | Value::Vec(sequence) => {
+                let length = sequence.elements.borrow().len();
+                sequence
+                    .active_iterators
+                    .set(sequence.active_iterators.get() + 1);
+                let element_type = sequence
+                    .element_type
+                    .borrow()
+                    .clone()
+                    .unwrap_or(Type::Unknown);
+                (
+                    IndexedIteratorStorage::Legacy(sequence),
+                    length,
+                    element_type,
+                )
+            }
+            _ => return Err("iter receiver is not an indexed sequence".into()),
         }
-        Value::Dynamic(object) if object.descriptor().layout().sequence_item().is_some() => {
-            let element_type = object
-                .descriptor()
-                .layout()
-                .sequence_item()
-                .ok_or("native sequence has no item layout")?
-                .rils_type()
-                .clone();
-            let (length, ledger) = object.with(|payload| {
-                Ok::<_, String>((payload.sequence_len()?, payload.sequence_borrows()?))
-            })??;
-            let lease = ledger.begin_iteration()?;
-            (
-                IndexedIteratorStorage::Native {
-                    object,
-                    _lease: lease,
-                },
-                length,
-                element_type,
-            )
-        }
-        _ => return Err("iter receiver is not an indexed sequence".into()),
     };
     Ok(Value::BorrowedIndexedIterator(Rc::new(
         BorrowedIndexedIteratorValue {

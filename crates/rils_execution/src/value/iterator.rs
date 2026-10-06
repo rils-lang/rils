@@ -6,8 +6,7 @@ use crate::types::Type;
 
 use super::record_codec::NativeRecordCodec;
 use super::{
-    DynamicObject, FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue,
-    SetCollection, Value,
+    FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue, SetCollection, Value,
 };
 
 #[derive(Clone)]
@@ -234,7 +233,7 @@ pub struct BorrowedIndexedIteratorValue {
 pub enum IndexedIteratorStorage {
     Legacy(Rc<IndexedStorage>),
     Native {
-        object: DynamicObject,
+        ledger: Rc<rils_value::SequenceBorrowLedger>,
         _lease: SequenceIteratorLease,
     },
 }
@@ -263,34 +262,41 @@ impl BorrowedIndexedIteratorValue {
     }
 
     pub fn next(&self) -> Result<Option<Value>, String> {
-        match (&self.storage, self.source.read()?) {
-            (
-                IndexedIteratorStorage::Legacy(storage),
-                Value::Array(source) | Value::Vec(source),
-            ) if Rc::ptr_eq(storage, &source) => {}
-            (IndexedIteratorStorage::Native { object, .. }, Value::Dynamic(source))
-                if object.same_storage(&source) => {}
-            _ => return Err("iterator source has been replaced".into()),
+        match &self.storage {
+            IndexedIteratorStorage::Legacy(storage) => match self.source.read()? {
+                Value::Array(source) | Value::Vec(source) if Rc::ptr_eq(storage, &source) => {}
+                _ => return Err("iterator source has been replaced".into()),
+            },
+            IndexedIteratorStorage::Native { ledger, .. } => {
+                let current = self
+                    .source
+                    .with_native_view(|view| view.sequence_borrows())??;
+                if !Rc::ptr_eq(ledger, &current) {
+                    return Err("iterator source has been replaced".into());
+                }
+            }
         }
         let index = self.index.get();
         if index >= self.length {
             return Ok(None);
         }
         if self.map_entries {
-            let IndexedIteratorStorage::Native { object, .. } = &self.storage else {
+            let IndexedIteratorStorage::Native { .. } = &self.storage else {
                 return Err("map iterator has no native entry storage".into());
             };
             let fields = (0..2)
                 .map(|field| {
-                    ReferenceValue::new_guarded_dynamic_indexed_field_with_codec(
-                        object.clone(),
-                        index,
-                        Some(field),
-                        false,
-                        Some(self.source.clone()),
-                        self.native_codec.clone(),
-                    )
-                    .map(|reference| Value::Reference(Rc::new(reference)))
+                    let entry = Rc::new(
+                        self.source
+                            .project_native_index_with_codec(index, self.native_codec.clone())?
+                            .ok_or("map entry has no native path")?,
+                    );
+                    let reference = entry
+                        .project_native_field(&field.to_string())?
+                        .ok_or("map entry field has no native path")?;
+                    reference
+                        .reborrow(false)
+                        .map(|reference| Value::Reference(Rc::new(reference)))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let types = match self.item_type() {
@@ -316,15 +322,11 @@ impl BorrowedIndexedIteratorValue {
                 false,
                 Some(self.source.clone()),
             )?,
-            IndexedIteratorStorage::Native { object, .. } => {
-                ReferenceValue::new_guarded_dynamic_indexed_element_with_codec(
-                    object.clone(),
-                    index,
-                    false,
-                    Some(self.source.clone()),
-                    self.native_codec.clone(),
-                )?
-            }
+            IndexedIteratorStorage::Native { .. } => self
+                .source
+                .project_native_index_with_codec(index, self.native_codec.clone())?
+                .ok_or("iterator element has no native path")?
+                .reborrow(false)?,
         };
         self.index.set(index + 1);
         Ok(Some(Value::Reference(Rc::new(reference))))

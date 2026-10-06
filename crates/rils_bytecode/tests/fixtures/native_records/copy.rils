@@ -1,0 +1,6 @@
+#[derive(Clone, Copy)]
+struct Point { value: i32 }
+let mut original = Point { value: 1 };
+let copied = original;
+original.value = 41;
+original.value + copied.value

@@ -28,7 +28,25 @@ impl FunctionLowerer<'_> {
                     && arguments.is_empty()
                     && let Some(ty) = &self.self_type
                 {
-                    return self.signature_type(&Type::named(ty));
+                    let arguments = self
+                        .symbol_id(self.types, ty)
+                        .and_then(|id| self.type_definitions.get(id))
+                        .map(|definition| match definition {
+                            HirTypeDefinition::Struct {
+                                generic_parameters, ..
+                            }
+                            | HirTypeDefinition::Enum {
+                                generic_parameters, ..
+                            } => generic_parameters,
+                        })
+                        .into_iter()
+                        .flatten()
+                        .map(|parameter| Type::Variable(parameter.name.clone()))
+                        .collect();
+                    return self.signature_type(&Type::Named {
+                        name: ty.clone(),
+                        arguments,
+                    });
                 }
                 let name = self
                     .symbol_id(self.types, name)

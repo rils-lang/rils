@@ -1,0 +1,15 @@
+struct Holder { values: Vec<i32> }
+fn run() -> i32 {
+    let mut holder = Holder { values: Vec::from([1, 2]) };
+    for item in holder.values.iter() {
+        if *item == 1 { continue; }
+        break;
+    }
+    holder.values.push(3);
+    for item in holder.values.iter() { break; }
+    holder.values.clear();
+    for item in holder.values.iter() { return 0; }
+    holder.values.push(42);
+    holder.values.pop().unwrap()
+}
+run()

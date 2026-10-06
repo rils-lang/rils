@@ -49,9 +49,9 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 
 ## Rust 嵌入
 
-执行层新增 `TypedStorageContext::compose_nominal()` 和共享 `NativeInstancePlace`，可把具体用户 struct/enum 按所有权转换成原生实例，沿字段路径 move、恢复和借用；类型定义与泛型参数保存在声明元数据中。`RilsValue::field()`、`struct_name()` 与 `field_name()` 可直接读取这类实例及其引用，字段 handle 保留原 bytes 所有者；数值叶子的 `with_ref` / `into_owned` 按实际布局转换。脚本构造器和方法分发尚未整体切换，普通独立 struct/enum 仍走旧表示。
+执行层新增 `TypedStorageContext::compose_nominal()` 和共享 `NativeInstancePlace`，可把具体用户 struct/enum 按所有权转换成原生实例，沿字段路径 move、恢复和借用；类型定义与泛型参数保存在声明元数据中。`RilsValue::field()`、`struct_name()` 与 `field_name()` 可直接读取这类实例及其引用，字段 handle 保留原 bytes 所有者；数值叶子的 `with_ref` / `into_owned` 按实际布局转换。普通脚本 struct 的独立存储、泛型实例、字段 move/恢复、方法 receiver 和 record 模式已接入原生布局；构造过程仍有临时兼容值，独立 enum 实例继续迁移。用户类型只有显式实现 Copy 才可复制，字段全部为 Copy 并不会自动授予该能力。
 
-`RilsValue::with_native_view` 可在回调内沿原生布局读取 `Option`、`Result`、record 和序列的嵌套子值，不需要把复合值转换成拥有型 `Value`；`with_ref` 仍用于已知 Rust 叶子类型。视图不能离开回调。脚本内部的方法调用尚未统一改用这条借用路径。
+`RilsValue::with_native_view` 可在回调内沿原生布局读取 `Option`、`Result`、record 和序列的嵌套子值，不需要把复合值转换成拥有型 `Value`；`with_ref` 仍用于已知 Rust 叶子类型。视图不能离开回调。用户 struct receiver、字段中的原生集合方法及借用迭代器使用原对象的检查路径；剩余适配器仍在逐步迁移。
 
 类型化空 `Vec<T>` 在元素有可解析的标准库原生布局时使用原生序列，包括 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。这些复合元素可用拥有型方法移入、移出，并能建立索引引用和借用迭代器；内部读取借用的非 Copy 复合元素仍受 `Value` 转换边界限制。无法解析布局的用户定义元素暂时沿用旧容器路径。`Vec<string>` 借用读取字符串时，现有 `Value` 调用边界会克隆文本；索引直接移出非 Copy 字符串仍被拒绝。
 

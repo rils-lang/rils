@@ -1,0 +1,5 @@
+struct Item { value: i32, text: string }
+impl Item { fn pack(self) -> Option<Self> { Some(self) } }
+let item = Item { value: 42, text: "owned" };
+let returned = item.pack().unwrap();
+returned.value

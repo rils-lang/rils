@@ -12,8 +12,8 @@ use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 use crate::{Type, ast::EnumVariant};
 
 use super::{
-    EnumInstance, EnumPayload, EnumType, FieldSlot, HashKey, IndexedStorage, StructFields,
-    StructInstance, StructType, Value, native_layouts, native_string,
+    EnumInstance, EnumPayload, EnumType, FieldSlot, HashKey, IndexedStorage, StructType, Value,
+    native_layouts, native_string,
 };
 
 #[derive(Clone, Default)]
@@ -335,7 +335,8 @@ impl NativeRecordCodec {
             }
             (Type::Named { name, arguments }, Value::Struct(instance))
                 if instance.type_definition.name == name
-                    && instance.type_arguments == arguments =>
+                    && crate::types::merge_type_arguments(&arguments, &instance.type_arguments)
+                        .is_some() =>
             {
                 let instance = Rc::try_unwrap(instance)
                     .map_err(|_| format!("cannot move a shared struct `{name}`"))?;
@@ -625,31 +626,17 @@ impl NativeRecordCodec {
                         "struct `{name}` field count does not match its declaration"
                     ));
                 }
-                let substitutions = definition
-                    .generic_parameters
-                    .iter()
-                    .zip(&arguments)
-                    .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
-                    .collect::<HashMap<_, _>>();
-                let mut slots = HashMap::new();
                 for (index, field) in definition.fields.iter().enumerate() {
                     if field_names[index] != field.name {
                         return Err(format!(
                             "struct `{name}` field order differs from its declaration"
                         ));
                     }
-                    let item = self.decode(value.take_field(index)?)?;
-                    slots.insert(
-                        field.name.clone(),
-                        FieldSlot::new(field.type_annotation.substitute(&substitutions), item),
-                    );
                 }
-                let fields = StructFields::from_map(definition.clone(), slots)?;
-                Ok(Value::Struct(Rc::new(StructInstance {
-                    type_definition: definition,
-                    fields: RefCell::new(fields),
-                    type_arguments: arguments,
-                })))
+                if definition.generic_parameters.len() != arguments.len() {
+                    return Err(format!("struct `{name}` has wrong type argument count"));
+                }
+                super::native_instance::from_native(value, Rc::new(self.clone()))
             }
             Type::Named { name, arguments } if self.enums.contains_key(&name) => {
                 let definition = self.enums[&name].clone();

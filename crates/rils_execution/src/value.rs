@@ -46,6 +46,7 @@ pub mod native_instance;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
 pub mod native_ops;
+pub(crate) mod native_receiver;
 #[path = "value/record_codec.rs"]
 pub mod record_codec;
 #[path = "value/record_layout.rs"]
@@ -532,6 +533,9 @@ impl Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         if matches!(self, Self::Dynamic(_)) || matches!(other, Self::Dynamic(_)) {
+            if let Some(equal) = native_instance::records_equal(self, other) {
+                return equal;
+            }
             if let (Some(Ok(left)), Some(Ok(right))) = (
                 dynamic_sequence::view_vec(self),
                 dynamic_sequence::view_vec(other),

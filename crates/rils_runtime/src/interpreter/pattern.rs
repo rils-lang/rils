@@ -1,12 +1,21 @@
 use super::*;
 use crate::environment::StorageSlot;
 
+mod native_record;
+
 pub(super) fn pattern_matches(
     pattern: &Pattern,
     value: &Value,
     bindings: &mut Vec<(String, Value)>,
     environment: &EnvironmentRef,
 ) -> bool {
+    if let Some(matches) = native_record::matches(pattern, value, bindings, environment, false) {
+        return matches;
+    }
+    if let (Pattern::Binding { name, .. }, Value::Reference(_)) = (pattern, value) {
+        bindings.push((name.clone(), value.clone()));
+        return true;
+    }
     let borrowed_value = match value {
         Value::Reference(reference) => reference.read().ok(),
         _ => None,
@@ -27,6 +36,9 @@ fn pattern_matches_inner(
     environment: &EnvironmentRef,
     borrowed: bool,
 ) -> bool {
+    if let Some(matches) = native_record::matches(pattern, value, bindings, environment, borrowed) {
+        return matches;
+    }
     let materialized = match value.materialize_native_sum() {
         Some(Ok(value)) => Some(value),
         Some(Err(_)) => return false,

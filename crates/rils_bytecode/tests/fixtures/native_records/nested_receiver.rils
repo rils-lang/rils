@@ -1,0 +1,7 @@
+struct Item { text: string, result: i32 }
+struct Holder { item: Item }
+impl Item {
+    fn finish(self) -> i32 { if self.text.len() == 5 { self.result } else { 0 } }
+}
+let holder = Holder { item: Item { text: "owned", result: 42 } };
+holder.item.finish()
