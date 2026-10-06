@@ -99,6 +99,7 @@ pub(crate) fn invoke_host_dispatcher(
 
 pub(crate) fn build_runtime_host(runtime: &Runtime) -> Result<BytecodeHost, String> {
     let mut host = BytecodeHost::standard();
+    host.register_host_contract(&runtime.host_contract)?;
     for capability in &runtime.allowed_capabilities {
         if BytecodeHost::standard_library_capabilities().contains(&capability.as_str()) {
             host.enable_standard_library_capability(capability)?;
