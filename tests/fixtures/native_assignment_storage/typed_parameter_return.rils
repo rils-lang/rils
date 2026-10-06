@@ -1,0 +1,5 @@
+struct Item { value: i32 }
+fn identity<T>(values: (Option<T>, [Result<T, string>; 1])) -> (Option<T>, [Result<T, string>; 1]) {
+    values
+}
+identity((Some(Item { value: 37 }), [Err("37")]))

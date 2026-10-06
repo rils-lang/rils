@@ -122,3 +122,25 @@ fn moved_fields_reuse_native_declarations_without_cloning_payloads() {
         }
     }
 }
+
+#[test]
+fn typed_indexed_initializers_recursively_compose_nominal_sums() {
+    for source in [
+        include_str!("fixtures/native_assignment_storage/typed_tuple.rils"),
+        include_str!("fixtures/native_assignment_storage/typed_array.rils"),
+        include_str!("fixtures/native_assignment_storage/typed_nested.rils"),
+        include_str!("fixtures/native_assignment_storage/typed_parameter_return.rils"),
+        include_str!("fixtures/native_assignment_storage/typed_alias.rils"),
+    ] {
+        let compiled = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        for value in [
+            eval_value(source).unwrap(),
+            compiled.execute_value().unwrap(),
+            loaded.execute_value().unwrap(),
+        ] {
+            assert_native_sum(&value);
+            assert!(value.to_string().contains("37"), "{source}: {value}");
+        }
+    }
+}

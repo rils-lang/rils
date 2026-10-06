@@ -1,0 +1,7 @@
+mod model {
+    pub struct Item { value: i32 }
+    pub type Entries<T> = [(Option<T>, Result<T, string>); 1];
+}
+use model::{Item, Entries};
+let values: Entries<Item> = [(Some(Item { value: 37 }), Err("37"))];
+values

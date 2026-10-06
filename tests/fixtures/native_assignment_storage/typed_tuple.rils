@@ -1,0 +1,8 @@
+struct Item { value: i32 }
+let mut values: (Option<Item>, Result<Item, string>) =
+    (Some(Item { value: 1 }), Err("initial"));
+let previous = values.0;
+values.0 = None;
+values.0 = Some(Item { value: 37 });
+values.1 = Ok(Item { value: 37 });
+values

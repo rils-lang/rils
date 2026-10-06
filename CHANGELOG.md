@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 类型化元组/数组初始化、具体泛型参数与返回值现在递归提升内部用户类型的 Option/Result，支持跨模块透明别名，按所有权移动非 Clone 内容。VM 数组构造复用共享的递归类型合并规则，Ok/Err 和 Some/None 分支与解释器保持一致；字节码 v8 编码不变。
+
 - **破坏性 Rust API 变更：** `FieldSlot` 独立保存原生声明，不再支持结构体字面量构造；改用 `FieldSlot::new(type_annotation, value)`，替换负载使用 `FieldSlot::assign(value)`。原先的 `Value::constrain_assignment` 辅助方法已移除，赋值通过目标槽位执行。
 
 - 共享前端保留跨模块类型声明身份，并在函数参数、返回值、局部声明和 struct/enum 字段进入 HIR 前展开透明类型别名。跨模块 Option/Result 字段替换及直接赋值 `None` 使用正确的具体布局；支持链式泛型别名和多文件模块。Analyzer 的类型诊断和字段导航使用同一身份，类型提示仍显示简洁名称。字节码 v8 编码未变。

@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     source::Span,
-    types::Type,
+    types::{Type, merge_types},
     value::{FieldSlot, IndexedStorage, Value},
 };
 
@@ -17,7 +17,7 @@ pub(super) fn sequence_value(
     if array {
         for value in &values {
             let actual = Type::of_value(value).unwrap_or(Type::Unknown);
-            element_type = merge_sequence_types(&element_type, &actual).ok_or_else(|| {
+            element_type = merge_types(&element_type, &actual).ok_or_else(|| {
                 BytecodeError::new(
                     format!(
                         "array elements must have one type, found `{element_type}` and `{actual}`"
@@ -50,14 +50,4 @@ pub(super) fn sequence_value(
     } else {
         Value::Tuple(sequence)
     })
-}
-
-fn merge_sequence_types(left: &Type, right: &Type) -> Option<Type> {
-    if left == &Type::Unknown {
-        return Some(right.clone());
-    }
-    if right == &Type::Unknown || left == right {
-        return Some(left.clone());
-    }
-    None
 }

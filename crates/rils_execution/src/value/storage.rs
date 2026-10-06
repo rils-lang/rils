@@ -14,6 +14,7 @@ use super::{
 
 mod assignment;
 mod declarations;
+mod indexed;
 pub use assignment::{constrain_assignment, native_declaration};
 
 /// The three payload families that can represent a stored script value.
@@ -52,6 +53,7 @@ impl<'a> TypedStorageContext<'a> {
         let expected = declarations::storage_type(expected);
         let expected = self.concrete_expected(&value, &expected)?;
         let expected = &expected;
+        let value = self.compose_indexed(value, expected)?;
         let value = self.attach_result_witness(value, expected)?;
         let value = self.compose_variant(value, expected)?;
         Ok(dynamic_sequence::promote_empty_with_definitions(

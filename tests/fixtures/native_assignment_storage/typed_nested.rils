@@ -1,0 +1,4 @@
+struct Item { value: i32 }
+let values: ([(Option<Item>, Result<Item, string>); 2],) =
+    ([(None, Err("37")), (Some(Item { value: 37 }), Ok(Item { value: 37 }))],);
+values

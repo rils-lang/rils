@@ -1,0 +1,4 @@
+struct Item { value: i32 }
+let mut values: [Option<Item>; 2] = [Some(Item { value: 1 }), None];
+{ let reference = &mut values[0]; *reference = Some(Item { value: 37 }); }
+values
