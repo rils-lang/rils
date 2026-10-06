@@ -7,6 +7,8 @@ use crate::{
     ast::{Program, Stmt, UseImportKind},
 };
 
+mod visibility;
+
 #[derive(Clone, Debug)]
 struct Alias {
     parameters: Vec<String>,
@@ -23,9 +25,15 @@ pub struct DeclarationTypeResolver {
     aliases: HashMap<String, Alias>,
     imports: HashMap<String, Vec<(String, String)>>,
     globs: HashMap<String, Vec<String>>,
+    private_paths: HashMap<String, Vec<String>>,
 }
 
 impl DeclarationTypeResolver {
+    /// Whether a canonical path denotes a source type declaration.
+    pub fn is_declared_type(&self, name: &str) -> bool {
+        self.types.contains(name) || self.exposed_types.contains_key(name)
+    }
+
     pub(crate) fn extend_exports(&mut self, exports: &crate::exports::ExportTable) {
         for (module, declarations) in exports {
             for export in declarations {
@@ -68,6 +76,23 @@ impl DeclarationTypeResolver {
     fn collect(&mut self, statements: &[Stmt], module: &[String]) {
         let namespace = module.join("::");
         for statement in statements {
+            if statement
+                .visibility()
+                .is_some_and(|visibility| !visibility.is_public())
+            {
+                let name = match statement {
+                    Stmt::Struct { name, .. }
+                    | Stmt::Enum { name, .. }
+                    | Stmt::Trait { name, .. }
+                    | Stmt::TypeAlias { name, .. }
+                    | Stmt::Module { name, .. } => Some(name),
+                    _ => None,
+                };
+                if let Some(name) = name {
+                    self.private_paths
+                        .insert(crate::exports::join_path(&namespace, name), module.to_vec());
+                }
+            }
             match statement {
                 Stmt::Struct { name, .. } | Stmt::Enum { name, .. } | Stmt::Trait { name, .. } => {
                     self.types

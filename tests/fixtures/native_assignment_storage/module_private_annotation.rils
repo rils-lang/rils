@@ -1,0 +1,5 @@
+mod model {
+    struct Secret { value: i32 }
+}
+let value: Option<model::Secret> = None;
+value

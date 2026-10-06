@@ -1,0 +1,5 @@
+mod model {
+    struct Secret { value: i32 }
+}
+let value = Some(model::Secret { value: 37 });
+value

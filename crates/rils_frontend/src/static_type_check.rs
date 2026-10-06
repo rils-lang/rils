@@ -8,6 +8,8 @@ use crate::{
     types::{Type, merge_types},
 };
 
+mod visibility;
+
 pub(crate) fn analyze(
     program: &Program,
     expression_types: ExpressionTypes<'_>,
@@ -189,6 +191,7 @@ impl<'a> Checker<'a> {
     }
 
     fn statement(&mut self, statement: &Stmt) {
+        self.check_statement_type_visibility(statement);
         match statement {
             Stmt::Module {
                 name,
@@ -307,6 +310,10 @@ impl<'a> Checker<'a> {
     }
 
     fn expression(&mut self, expression: &Expr) {
+        if let Expr::Path { segments, span } | Expr::GenericPath { segments, span, .. } = expression
+        {
+            self.check_type_path_visibility(&segments.join("::"), *span);
+        }
         match expression {
             Expr::Member { object, .. }
             | Expr::Borrow { target: object, .. }
@@ -354,6 +361,7 @@ impl<'a> Checker<'a> {
             }
             Expr::RecordLiteral { path, fields, span } => {
                 let qualified = path.join("::");
+                self.check_type_path_visibility(&qualified, *span);
                 let opaque = self
                     .opaque_types
                     .get(&qualified)

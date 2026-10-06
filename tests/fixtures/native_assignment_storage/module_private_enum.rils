@@ -1,0 +1,5 @@
+mod model {
+    enum Secret { Value(i32) }
+}
+let value = Some(model::Secret::Value(37));
+value

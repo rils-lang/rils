@@ -1,0 +1,8 @@
+mod model {
+    struct Secret { value: i32 }
+    pub type Public = Option<Secret>;
+    pub mod nested {}
+}
+mod public_module {
+    mod hidden { pub struct Item {} }
+}

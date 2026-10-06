@@ -37,3 +37,29 @@ fn declarations_keep_defining_modules_and_expand_imported_aliases() {
         );
     }
 }
+
+#[test]
+fn source_type_access_checks_identity_before_expanding_aliases() {
+    let source = include_str!("fixtures/declaration_types/visibility.rils");
+    let program = parse(rils_frontend::lex(source).unwrap()).unwrap();
+    let resolver = DeclarationTypeResolver::from_programs([(&[] as &[String], &program)]);
+    for (module, name, blocked) in [
+        ("", "model::Secret", true),
+        ("model", "Secret", false),
+        ("model::nested", "super::Secret", false),
+        ("", "model::Public", false),
+        ("", "public_module::hidden::Item", true),
+        ("public_module", "hidden::Item", false),
+    ] {
+        let module = module
+            .split("::")
+            .filter(|part| !part.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            resolver.inaccessible_type_path(name, &module).is_some(),
+            blocked,
+            "{module:?}::{name}"
+        );
+    }
+}
