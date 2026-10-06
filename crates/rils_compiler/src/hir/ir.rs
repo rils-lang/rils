@@ -122,6 +122,11 @@ pub enum HirStatement {
 }
 
 pub enum HirExpression {
+    ApplyStorage {
+        value: Box<HirExpression>,
+        expected: Type,
+        span: Span,
+    },
     Literal {
         value: HirLiteral,
         span: Span,

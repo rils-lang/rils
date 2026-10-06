@@ -1,0 +1,2 @@
+struct Item { value: string }
+Item { value: "37" }

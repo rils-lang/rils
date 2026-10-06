@@ -122,6 +122,9 @@ fn encode_function(
         for instruction in block.instructions {
             instructions.push(SpannedInstruction {
                 instruction: match instruction.instruction {
+                    MirInstruction::ApplyStorage { destination, source, expected } => {
+                        Instruction::ApplyStorage { destination, source, expected }
+                    }
                     MirInstruction::LoadConstant {
                         destination,
                         constant,

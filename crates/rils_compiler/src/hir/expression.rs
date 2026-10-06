@@ -2,6 +2,32 @@ use super::*;
 
 impl<'a> FunctionLowerer<'a> {
     pub(super) fn expression(&mut self, expression: &Expr) -> Result<HirExpression, CompileError> {
+        let value = self.expression_value(expression)?;
+        let constructs_storage = matches!(
+            expression,
+            Expr::Call { .. }
+                | Expr::Tuple { .. }
+                | Expr::Array { .. }
+                | Expr::If { .. }
+                | Expr::Match { .. }
+                | Expr::Block(_)
+        );
+        if constructs_storage
+            && let Some(expected) = self
+                .expression_type(expression)
+                .map(|ty| self.signature_type(&ty))
+            && rils_frontend::semantic::requires_storage_declaration(&expected)
+        {
+            return Ok(HirExpression::ApplyStorage {
+                value: Box::new(value),
+                expected,
+                span: expression.span(),
+            });
+        }
+        Ok(value)
+    }
+
+    fn expression_value(&mut self, expression: &Expr) -> Result<HirExpression, CompileError> {
         let expression_id = self.expression_id(expression)?;
         match expression {
             Expr::Literal { value, span } => Ok(HirExpression::Literal {

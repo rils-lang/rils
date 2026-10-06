@@ -1,0 +1,2 @@
+struct Item { value: string }
+if true { Ok(Item { value: "37" }) } else { Err(37) }

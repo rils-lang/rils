@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 直接表达式、if/match 分支和嵌套元组/数组的 Option/Result 结果现使用前端推导的具体类型提升原生存储，无需先存入局部绑定。Rust 宿主读取这些结果时应使用 `RilsValue::with_native_view()`，避免仅匹配旧 `Value::Option` / `Value::Result`。解释器与 VM 共用消费式布局转换；普通标量的直接调用路径不增加转换指令。**字节码扩展：** 未冻结的 v8 增加 `ApplyStorage`（操作码 47），携带源/目标寄存器及类型声明，加载验证拒绝无效索引与类型；格式号仍为 v8。新产物需要更新运行时后再加载，已有源码重新编译即可获得新存储行为。
+
 - 整体元组/数组替换和引用写回现在递归保留内部 Option/Result 的原生声明；整个负载或字段 move 后重新赋值也复用原布局，转换按所有权移动非 Clone 内容。**破坏性 Rust API 变更：** `value::storage::native_declaration` 与 `constrain_assignment` 的声明参数由动态类型句柄改为不含负载的 `NativeDeclaration`；底层宿主代码应通过 `native_declaration(&value)` 获取声明，使用 `rils_type()` 读取其类型。脚本语法和字节码编码不变。
 
 - **破坏性类型身份调整：** 解释器中模块内 struct/enum 的 `type_of`、默认显示和 Rust 声明元数据现在保留完整路径，与 VM 一致，例如 `model::Item`。比较短类型名或保存显示快照的代码需改用完整路径。模块类型未被 `use` 导入时，其声明和私有字段仍可参与内部原生布局解析；不同模块的同名类型互不覆盖，公开透明别名与 trait/UFCS 调用保留声明身份。源码可见性规则和字节码 v8 编码不变。

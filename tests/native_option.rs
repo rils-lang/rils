@@ -205,13 +205,40 @@ fn options_of_native_containers_use_composed_layouts() {
 }
 
 #[test]
-fn options_with_unregistered_user_items_keep_legacy_storage() {
-    let source = "struct Item { value: i32 } Some(Item { value: 7 })";
-    assert!(matches!(eval_value(source).unwrap(), Value::Option { .. }));
-    assert!(matches!(
-        compile(source).unwrap().execute_value().unwrap(),
-        Value::Option { .. }
-    ));
+fn declared_user_items_use_native_expression_storage() {
+    let source = include_str!("fixtures/native_expression_storage/option.rils");
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        let Value::Dynamic(object) = &value else {
+            panic!("declared item retained legacy Option storage")
+        };
+        assert_eq!(
+            object.descriptor().layout().rils_type(),
+            &rils::Type::Option(Box::new(rils::Type::named("Item")))
+        );
+        assert_eq!(value.to_string(), "Some(Item { value: 37 })");
+    }
+}
+
+#[test]
+fn manual_user_option_without_declaration_context_preserves_its_owned_value() {
+    let item = eval_value(include_str!(
+        "fixtures/native_expression_storage/manual_item.rils"
+    ))
+    .unwrap();
+    let value = Value::Option {
+        value: Some(std::rc::Rc::new(item)),
+        element_type: Some(rils::Type::named("Item")),
+    };
+    let expected = rils::Type::Option(Box::new(rils::Type::named("Item")));
+    let value = value.apply_declared_storage(&expected).unwrap();
+    assert!(matches!(value, Value::Option { .. }));
+    assert_eq!(value.to_string(), "Some(Item { value: 37 })");
 }
 
 #[test]

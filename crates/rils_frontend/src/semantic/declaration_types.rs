@@ -9,6 +9,19 @@ use crate::{
 
 mod visibility;
 
+/// Owned sums need both branch types even when only one branch is present.
+/// Indexed aggregates carry these declarations recursively; references do not.
+pub fn requires_storage_declaration(ty: &Type) -> bool {
+    match ty {
+        Type::Option(_) | Type::Result(_, _) => true,
+        Type::Tuple(types) => types.iter().any(requires_storage_declaration),
+        Type::Array { element, .. } | Type::ArrayParameter { element, .. } => {
+            requires_storage_declaration(element)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Alias {
     parameters: Vec<String>,

@@ -294,6 +294,21 @@ impl BytecodeModule {
                         ));
                     }
                 }
+                Instruction::ApplyStorage {
+                    destination,
+                    source,
+                    expected,
+                } => {
+                    if invalid_register(*destination)
+                        || invalid_register(*source)
+                        || !self.valid_type(expected)
+                    {
+                        return Err(BytecodeError::new(
+                            "invalid storage conversion operands",
+                            instruction.span,
+                        ));
+                    }
+                }
                 Instruction::DropLocal { local } => {
                     if *local >= function.local_count {
                         return Err(BytecodeError::new("invalid local drop", instruction.span));

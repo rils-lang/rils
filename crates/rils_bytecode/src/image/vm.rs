@@ -5,6 +5,7 @@ mod places;
 mod records;
 mod returns;
 mod setup;
+mod storage;
 
 pub(super) struct Frame {
     function: usize,
@@ -640,131 +641,16 @@ impl<'a> VirtualMachine<'a> {
                             type_arguments: Vec::new(),
                         })));
                 }
-                Instruction::BuildTuple {
-                    destination,
-                    elements,
-                } => {
-                    let values = self.take_registers(elements, instruction.span)?;
-                    self.frame_mut().registers[destination] =
-                        Some(sequence_value(values, false, instruction.span)?);
-                }
-                Instruction::BuildArray {
-                    destination,
-                    elements,
-                } => {
-                    let values = self.take_registers(elements, instruction.span)?;
-                    self.frame_mut().registers[destination] =
-                        Some(sequence_value(values, true, instruction.span)?);
-                }
-                Instruction::BuildRepeatArray {
-                    destination,
-                    value,
-                    count,
-                } => {
-                    let value = self.take_register(value, instruction.span)?;
-                    let count = self.take_register(count, instruction.span)?;
-                    let Some(count) = count.as_usize() else {
-                        return Err(BytecodeError::new(
-                            "array repeat count must be usize",
-                            instruction.span,
-                        ));
-                    };
-                    if !value.is_copy() {
-                        return Err(BytecodeError::new(
-                            "array repeat syntax requires a Copy value",
-                            instruction.span,
-                        ));
-                    }
-                    let values = (0..count)
-                        .map(|_| {
-                            value
-                                .clone_owned()
-                                .map_err(|message| BytecodeError::new(message, instruction.span))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    self.frame_mut().registers[destination] =
-                        Some(sequence_value(values, true, instruction.span)?);
-                }
-                Instruction::BuildRange {
-                    destination,
-                    start,
-                    end,
-                } => {
-                    let start = self.take_register(start, instruction.span)?;
-                    let end = self.take_register(end, instruction.span)?;
-                    let range = native_range(start, end)
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                    self.frame_mut().registers[destination] = Some(range);
-                }
-                Instruction::BuildOptionNone {
-                    destination,
-                    item_type,
-                } => {
-                    let (structs, enums) = self.type_definitions();
-                    let constructed = item_type
-                        .as_ref()
-                        .map(|item_type| {
-                            rils_execution::value::dynamic_option::none_with_definitions(
-                                item_type, &structs, &enums,
-                            )
-                        })
-                        .transpose();
-                    self.frame_mut().registers[destination] = Some(match constructed {
-                        Ok(Some(value)) => value,
-                        Ok(None) | Err(_) => Value::Option {
-                            value: None,
-                            element_type: item_type,
-                        },
-                    });
-                }
-                Instruction::BuildOptionSome {
-                    destination,
-                    source,
-                } => {
-                    let value = self.take_register(source, instruction.span)?;
-                    let element_type = Type::of_value(&value);
-                    let constructed = match element_type.as_ref() {
-                        Some(item_type) => {
-                            rils_execution::value::dynamic_option::construct(Some(value), item_type)
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?
-                        }
-                        None => rils_execution::value::dynamic_option::Construction::Unsupported(
-                            Some(value),
-                        ),
-                    };
-                    self.frame_mut().registers[destination] = Some(match constructed {
-                        rils_execution::value::dynamic_option::Construction::Native(value) => value,
-                        rils_execution::value::dynamic_option::Construction::Unsupported(value) => {
-                            Value::Option {
-                                value: value.map(Rc::new),
-                                element_type,
-                            }
-                        }
-                    });
-                }
-                Instruction::BuildResultOk {
-                    destination,
-                    source,
-                } => {
-                    let value = self.take_register(source, instruction.span)?;
-                    let ok_type = Type::of_value(&value);
-                    self.frame_mut().registers[destination] = Some(Value::Result {
-                        value: Ok(Rc::new(value)),
-                        ok_type,
-                        error_type: None,
-                    });
-                }
-                Instruction::BuildResultErr {
-                    destination,
-                    source,
-                } => {
-                    let value = self.take_register(source, instruction.span)?;
-                    let error_type = Type::of_value(&value);
-                    self.frame_mut().registers[destination] = Some(Value::Result {
-                        value: Err(Rc::new(value)),
-                        ok_type: None,
-                        error_type,
-                    });
+                operation @ (Instruction::BuildTuple { .. }
+                | Instruction::BuildArray { .. }
+                | Instruction::BuildRepeatArray { .. }
+                | Instruction::BuildRange { .. }
+                | Instruction::BuildOptionNone { .. }
+                | Instruction::BuildOptionSome { .. }
+                | Instruction::BuildResultOk { .. }
+                | Instruction::BuildResultErr { .. }
+                | Instruction::ApplyStorage { .. }) => {
+                    self.execute_storage(operation, instruction.span)?
                 }
                 Instruction::TryResult {
                     destination,

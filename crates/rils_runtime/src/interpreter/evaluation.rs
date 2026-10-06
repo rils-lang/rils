@@ -20,14 +20,42 @@ impl Interpreter {
         environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
         self.tick(expression.span())?;
-        match expression {
+        let constructs_storage = matches!(
+            expression,
+            Expr::Call { .. }
+                | Expr::Tuple { .. }
+                | Expr::Array { .. }
+                | Expr::If { .. }
+                | Expr::Match { .. }
+                | Expr::Block(_)
+        );
+        let storage_environment = constructs_storage.then(|| environment.clone());
+        let value = match expression {
             Expr::Call { .. }
             | Expr::If { .. }
             | Expr::Match { .. }
             | Expr::Block(_)
             | Expr::Try { .. } => self.evaluate_control(expression, environment),
             _ => self.evaluate_non_control(expression, environment),
+        }?;
+        if let Some(environment) = storage_environment
+            && self.pending_return.is_none()
+            && self.pending_loop_flow.is_none()
+            && let Some(inferred) = self
+                .semantic_expression_ids
+                .as_ref()
+                .and_then(|ids| ids.get(expression))
+                .and_then(|id| self.typeck_results.as_ref()?.expression_type(id))
+        {
+            let expected = expand_type_aliases(inferred, &environment, expression.span())?;
+            if rils_frontend::semantic::requires_storage_declaration(&expected) {
+                let (structs, enums) = environment.borrow().visible_type_definitions();
+                return crate::value::storage::TypedStorageContext::new(&structs, &enums)
+                    .apply_declared(value, &expected)
+                    .map_err(|message| RuntimeError::new(message, expression.span()));
+            }
         }
+        Ok(value)
     }
 
     fn evaluate_non_control(

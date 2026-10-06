@@ -1,0 +1,5 @@
+struct Item { value: string }
+match 1 {
+    0 => [Ok(Item { value: "37" }), Err(37)],
+    _ => [Err(37), Ok(Item { value: "37" })],
+}

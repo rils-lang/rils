@@ -1,0 +1,6 @@
+mod model {
+    struct Inner { value: string }
+    pub struct Item { inner: Inner }
+    pub fn make() -> Item { Item { inner: Inner { value: "37" } } }
+}
+(Some(model::make()), [Some(model::make()), None])

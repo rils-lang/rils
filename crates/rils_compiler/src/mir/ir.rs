@@ -58,6 +58,11 @@ pub struct SpannedInstruction {
 }
 
 pub enum MirInstruction {
+    ApplyStorage {
+        destination: Register,
+        source: Register,
+        expected: Type,
+    },
     LoadConstant {
         destination: Register,
         constant: ConstantId,

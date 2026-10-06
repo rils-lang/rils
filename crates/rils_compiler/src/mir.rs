@@ -256,6 +256,23 @@ impl Builder {
 
     fn expression(&mut self, expression: &HirExpression) -> Result<Register, CompileError> {
         match expression {
+            HirExpression::ApplyStorage {
+                value,
+                expected,
+                span,
+            } => {
+                let source = self.expression(value)?;
+                let destination = self.register();
+                self.emit(
+                    MirInstruction::ApplyStorage {
+                        destination,
+                        source,
+                        expected: expected.clone(),
+                    },
+                    *span,
+                );
+                Ok(destination)
+            }
             HirExpression::Literal { value, span } => Ok(self.constant(value.clone(), *span)),
             HirExpression::Local { local, span } => {
                 let destination = self.register();

@@ -1,0 +1,2 @@
+struct Item { value: string }
+(Some(Item { value: "37" }), [Ok(Item { value: "37" }), Err(37)])

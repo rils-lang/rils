@@ -118,6 +118,16 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
     writer.span(value.span)?;
     let i = &value.instruction;
     match i {
+        Instruction::ApplyStorage {
+            destination,
+            source,
+            expected,
+        } => {
+            writer.u8(47);
+            writer.index(*destination, "storage destination")?;
+            writer.index(*source, "storage source")?;
+            write_type(writer, expected, 0)?;
+        }
         Instruction::LoadConstant {
             destination,
             constant,
@@ -734,6 +744,11 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
             destination: reader.index()?,
             import: reader.index()?,
             arguments: reader.indices()?,
+        },
+        47 => Instruction::ApplyStorage {
+            destination: reader.index()?,
+            source: reader.index()?,
+            expected: read_type(reader)?,
         },
         value => {
             return Err(BytecodeFormatError::new(format!(

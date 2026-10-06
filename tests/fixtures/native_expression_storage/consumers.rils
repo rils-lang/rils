@@ -1,0 +1,6 @@
+struct Item { value: string }
+let value = match if true { Ok(Item { value: "37" }) } else { Err(0) } {
+    Ok(item) => item.value,
+    Err(_) => "wrong",
+};
+(value, Some(Item { value: "37" }).is_some())
