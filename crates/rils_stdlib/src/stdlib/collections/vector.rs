@@ -150,3 +150,11 @@ pub use native::Vec;
 pub fn is_native_vec(ty: &rils_syntax::Type) -> bool {
     vec_layout::matches(ty)
 }
+
+#[path = "vector/format.rs"]
+mod native_format;
+
+pub const NATIVE_FORMAT_VEC: rils_native::FormatRegistration = rils_native::FormatRegistration {
+    matches: |layout| is_native_vec(layout.rils_type()) && layout.sequence_item().is_some(),
+    format: native_format::format,
+};

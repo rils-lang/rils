@@ -30,6 +30,7 @@ pub struct NativeRegistry {
     layouts: &'static [LayoutRegistration],
     elements: &'static [ElementRegistration],
     pub(crate) keys: &'static [KeyRegistration],
+    pub(crate) formats: &'static [crate::FormatRegistration],
 }
 
 impl NativeRegistry {
@@ -41,6 +42,7 @@ impl NativeRegistry {
             layouts,
             elements,
             keys: &[],
+            formats: &[],
         }
     }
 
@@ -53,6 +55,7 @@ impl NativeRegistry {
             layouts,
             elements,
             keys,
+            formats: &[],
         }
     }
 
@@ -65,6 +68,11 @@ impl NativeRegistry {
             .iter()
             .find(|registration| (registration.matches)(ty))
             .and_then(|registration| (registration.layout)(ty, resolve))
+    }
+
+    pub const fn with_formats(mut self, formats: &'static [crate::FormatRegistration]) -> Self {
+        self.formats = formats;
+        self
     }
 
     pub fn clone_borrowed_element(&self, item: &DynamicValue) -> Result<DynamicValue, String> {

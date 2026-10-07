@@ -2,6 +2,11 @@
 
 use rils_stdlib_macros::decl_rils;
 
+pub const NATIVE_FORMAT_BOOL: rils_native::FormatRegistration =
+    rils_native::FormatRegistration::of::<bool>();
+pub const NATIVE_FORMAT_CHAR: rils_native::FormatRegistration =
+    rils_native::FormatRegistration::of::<char>();
+
 #[decl_rils(core::boxed)]
 mod boxed {
     /// An owned heap indirection for recursive data structures.

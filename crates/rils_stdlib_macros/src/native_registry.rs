@@ -7,7 +7,7 @@ use std::{
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Error, Item, LitStr, parse_macro_input};
+use syn::{Error, Item, LitStr, parse::Parser, parse_macro_input};
 
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let folder = parse_macro_input!(input as LitStr);
@@ -34,6 +34,7 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
     let mut layouts = Vec::new();
     let mut elements = Vec::new();
     let mut keys = Vec::new();
+    let mut formats = Vec::new();
     let mut dependencies = Vec::new();
     for relative in files {
         let absolute = root.join(&relative);
@@ -66,6 +67,8 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                         elements.push(quote!(#module::#ident));
                     } else if name == "NATIVE_KEY" || name.starts_with("NATIVE_KEY_") {
                         keys.push(quote!(#module::#ident));
+                    } else if name == "NATIVE_FORMAT" || name.starts_with("NATIVE_FORMAT_") {
+                        formats.push(quote!(#module::#ident));
                     }
                 }
                 Item::Mod(item)
@@ -78,6 +81,24 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                         continue;
                     };
                     for declaration in declarations {
+                        if let Item::Macro(family) = &declaration
+                            && (family.mac.path.is_ident("primitive_integer_family")
+                                || family.mac.path.is_ident("primitive_float_family"))
+                        {
+                            let primitives = syn::punctuated::Punctuated::<
+                                syn::Ident,
+                                syn::Token![,],
+                            >::parse_terminated
+                                .parse2(family.mac.tokens.clone())?;
+                            let formatting = if family.mac.path.is_ident("primitive_float_family") {
+                                format_ident!("display")
+                            } else {
+                                format_ident!("of")
+                            };
+                            formats.extend(primitives.iter().map(|primitive| {
+                                quote!(rils_native::FormatRegistration::#formatting::<#primitive>())
+                            }));
+                        }
                         let Item::Struct(structure) = declaration else {
                             continue;
                         };
@@ -113,7 +134,9 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
         static LAYOUTS: &[rils_native::LayoutRegistration] = &[#(#layouts),*];
         static ELEMENTS: &[rils_native::ElementRegistration] = &[#(#elements),*];
         static KEYS: &[rils_native::KeyRegistration] = &[#(#keys),*];
-        static REGISTRY: rils_native::NativeRegistry = rils_native::NativeRegistry::with_keys(LAYOUTS, ELEMENTS, KEYS);
+        static FORMATS: &[rils_native::FormatRegistration] = &[#(#formats),*];
+        static REGISTRY: rils_native::NativeRegistry = rils_native::NativeRegistry::with_keys(LAYOUTS, ELEMENTS, KEYS)
+            .with_formats(FORMATS);
 
         pub fn registry() -> &'static rils_native::NativeRegistry {
             &REGISTRY

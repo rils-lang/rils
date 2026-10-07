@@ -234,3 +234,23 @@ pub const NATIVE_KEY_STRING: rils_native::KeyRegistration = rils_native::KeyRegi
     matches: native_element_matches,
     key: native_string_key,
 };
+
+fn format_native_string(
+    item: &rils_value::DynamicValueRef<'_>,
+    formatter: &mut std::fmt::Formatter<'_>,
+    debug: bool,
+    _child: rils_native::FormatChild,
+) -> Result<std::fmt::Result, std::string::String> {
+    item.with_rust::<String, _>(|value| {
+        if debug {
+            std::fmt::Debug::fmt(value.as_ref(), formatter)
+        } else {
+            std::fmt::Display::fmt(value.as_ref(), formatter)
+        }
+    })
+}
+
+pub const NATIVE_FORMAT_STRING: rils_native::FormatRegistration = rils_native::FormatRegistration {
+    matches: |layout| layout.is_rust_type::<String>(),
+    format: format_native_string,
+};
