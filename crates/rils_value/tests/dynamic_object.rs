@@ -4,6 +4,39 @@ use rils_syntax::Type;
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
 #[test]
+fn promoting_inline_storage_moves_managed_handles_and_keeps_operations() {
+    let item = Rc::new(Cell::new(42));
+    let leaf = DynamicLayout::copy_handle_of::<Rc<Cell<i32>>>(Type::named("Handle"));
+    let layout = DynamicLayout::option(leaf.clone()).unwrap();
+    let descriptor = Rc::new(
+        DynamicType::<bool>::new(layout.clone())
+            .register_method("is_some", |context| context.option_is_some()),
+    );
+    let object = DynamicObject::new(
+        descriptor.clone(),
+        DynamicValue::some(layout, DynamicValue::from_rust(leaf, item.clone()).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert!(object.is_inline());
+    assert_eq!(Rc::strong_count(&item), 2);
+    let shared = object.into_shared();
+    assert!(!shared.is_inline());
+    assert!(Rc::ptr_eq(&descriptor, &shared.descriptor_handle()));
+    assert_eq!(
+        Rc::strong_count(&item),
+        2,
+        "promotion must not copy the handle"
+    );
+    let alias = shared.clone().into_shared();
+    assert!(shared.same_storage(&alias));
+    assert_eq!(alias.call("is_some", &[]), Some(Ok(true)));
+    drop(shared);
+    assert_eq!(Rc::strong_count(&item), 2);
+    drop(alias);
+    assert_eq!(Rc::strong_count(&item), 1);
+}
+
+#[test]
 fn registered_owned_operation_moves_non_clone_child_and_drops_once() {
     struct Probe(i32, Rc<Cell<usize>>);
     impl Drop for Probe {

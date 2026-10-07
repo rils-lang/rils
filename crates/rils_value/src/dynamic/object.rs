@@ -113,6 +113,20 @@ impl<V> DynamicObject<V> {
             storage,
         }
     }
+
+    /// Give an inline value a stable owner before retaining a child projection.
+    /// The payload and declaration table are transferred without a Copy or Clone.
+    pub fn into_shared(self) -> Self {
+        let storage = match self.storage {
+            Storage::Inline(value) => Storage::Shared(Rc::new(value)),
+            Storage::Shared(value) => Storage::Shared(value),
+        };
+        Self {
+            descriptor: self.descriptor,
+            storage,
+        }
+    }
+
     pub fn new(descriptor: Rc<DynamicType<V>>, value: DynamicValue) -> Result<Self, String> {
         if !value.descriptor().compatible_with(descriptor.layout()) {
             return Err("dynamic value layout does not match its type".into());

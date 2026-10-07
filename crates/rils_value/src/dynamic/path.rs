@@ -337,7 +337,7 @@ impl DynamicValue {
         self.replace_path_reference(path, value)
     }
 
-    /// Replace a field or sequence item through a lexical reference. Equal
+    /// Replace a field, active sum payload, or sequence item through a lexical reference. Equal
     /// mutable references may coexist; live descendant references prevent
     /// replacing their parent. The old value is returned with sole ownership.
     pub fn replace_path_reference(
@@ -368,7 +368,34 @@ impl DynamicValue {
                     .ok_or("native index is out of bounds")?;
                 Ok(Some(std::mem::replace(slot, value)))
             }
-            _ => Err("native reference assignment requires a field or sequence item".into()),
+            Some((DynamicPathStep::Some | DynamicPathStep::Variant(_), _)) => {
+                let (pointer, layout) = self.project(path)?;
+                if !layout.compatible_with(&value.descriptor) {
+                    return Err("native sum payload has a different layout".into());
+                }
+                let mut previous = Self::uninitialized(layout.clone());
+                let mut value = value;
+                // SAFETY: project verified the active tag and aligned payload.
+                // Compatible layouts and &mut self allow ownership transfer into
+                // a fresh old-value buffer before installing the new payload.
+                // The parent tag stays active; no callback can observe the move.
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        pointer,
+                        previous.storage.pointer_mut(),
+                        layout.layout().size(),
+                    );
+                    ptr::copy_nonoverlapping(
+                        value.storage.pointer(),
+                        pointer.cast_mut(),
+                        layout.layout().size(),
+                    );
+                }
+                previous.initialized = true;
+                value.initialized = false;
+                Ok(Some(previous))
+            }
+            _ => Err("native reference assignment requires a field, active sum payload, or sequence item".into()),
         }
     }
 
