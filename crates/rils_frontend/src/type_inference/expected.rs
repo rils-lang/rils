@@ -6,6 +6,15 @@ impl Inferencer<'_> {
     pub(super) fn apply_expected_type(&mut self, expression: &Expr, expected: &Type) {
         let expected = self.resolve_type(expected);
         match (expression, &expected) {
+            (Expr::Path { .. } | Expr::GenericPath { .. }, Type::Named { .. })
+                if is_known(&expected)
+                    && self
+                        .nominal_variant_type(expression)
+                        .is_some_and(|actual| merge_types(&actual, &expected).is_some()) =>
+            {
+                let id = self.expression_ids.id(expression);
+                self.result.expression_types_by_id.insert(id, expected);
+            }
             (Expr::Variable { name, .. }, Type::Option(_)) if name == "None" => {
                 if is_known(&expected) {
                     let id = self.expression_ids.id(expression);

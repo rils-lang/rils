@@ -1,0 +1,2 @@
+enum Choice<T> { Empty, Full(T) }
+Choice::Full(Some(42))

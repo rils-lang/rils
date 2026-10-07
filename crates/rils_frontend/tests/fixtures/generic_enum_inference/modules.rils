@@ -1,0 +1,4 @@
+mod left { pub enum Choice<T> { Empty, Full(T) } }
+mod right { pub enum Other { Empty, Full(string) } }
+use left::Choice as Alias;
+Alias::Full(Some(42))

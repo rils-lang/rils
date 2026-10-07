@@ -1046,6 +1046,7 @@ impl<'a> Inferencer<'a> {
                             Some(method)
                         }
                     })
+                    .or_else(|| self.nominal_variant_type(expression))
                     .or_else(|| {
                         segments
                             .first()
@@ -1266,38 +1267,10 @@ impl<'a> Inferencer<'a> {
                         self.apply_expected_type(argument, parameter);
                     }
                 }
+                if let Some(ty) = self.tuple_variant_type(callee, arguments, &argument_types) {
+                    return ty;
+                }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
-                    if let Some(variant) = segments.last()
-                        && let Some(owner) = self.variant_owners.get(variant)
-                        && segments.first().is_some_and(|segment| segment == owner)
-                    {
-                        let definition = self.types.get(owner);
-                        let mut inferred = HashMap::new();
-                        if let Some(VariantDefinition::Tuple(fields)) =
-                            definition.and_then(|definition| definition.variants.get(variant))
-                        {
-                            for (field, actual) in fields.iter().zip(&argument_types) {
-                                if let Type::Named { name, arguments } = field
-                                    && arguments.is_empty()
-                                    && definition.is_some_and(|definition| {
-                                        definition.generic_parameters.contains(name)
-                                    })
-                                {
-                                    inferred.insert(name.clone(), actual.clone());
-                                }
-                            }
-                        }
-                        return Type::Named {
-                            name: owner.clone(),
-                            arguments: definition.map_or_else(Vec::new, |definition| {
-                                definition
-                                    .generic_parameters
-                                    .iter()
-                                    .map(|name| inferred.remove(name).unwrap_or(Type::Unknown))
-                                    .collect()
-                            }),
-                        };
-                    }
                     match segments.join("::").as_str() {
                         "Vec::new" | "std::collections::Vec::new" => {
                             return Type::Named {

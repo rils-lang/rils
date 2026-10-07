@@ -3,6 +3,108 @@
 use super::*;
 
 impl Inferencer<'_> {
+    pub(super) fn nominal_variant_type(&self, expression: &Expr) -> Option<Type> {
+        let (segments, arguments) = match expression {
+            Expr::Path { segments, .. } => (segments, &[][..]),
+            Expr::GenericPath {
+                segments,
+                arguments,
+                ..
+            } => (segments, arguments.as_slice()),
+            _ => return None,
+        };
+        let (variant, owner_path) = segments.split_last()?;
+        let owner = if owner_path == ["Self"] {
+            self.lookup("Self")?.ty.clone()
+        } else {
+            self.declaration_types.resolve(
+                &Type::Named {
+                    name: owner_path.join("::"),
+                    arguments: arguments.to_vec(),
+                },
+                &self.module_path,
+            )
+        };
+        let Type::Named {
+            name,
+            mut arguments,
+        } = owner
+        else {
+            return None;
+        };
+        let definition = self.types.get(&name)?;
+        definition.variants.get(variant)?;
+        if arguments.is_empty() {
+            arguments.resize(definition.generic_parameters.len(), Type::Unknown);
+        }
+        Some(Type::Named { name, arguments })
+    }
+
+    pub(super) fn tuple_variant_type(
+        &mut self,
+        callee: &Expr,
+        arguments: &[Expr],
+        actual: &[Type],
+    ) -> Option<Type> {
+        let (segments, explicit) = match callee {
+            Expr::Path { segments, .. } => (segments, &[][..]),
+            Expr::GenericPath {
+                segments,
+                arguments,
+                ..
+            } => (segments, arguments.as_slice()),
+            _ => return None,
+        };
+        let (variant, owner_path) = segments.split_last()?;
+        let owner = if owner_path == ["Self"] {
+            self.lookup("Self")?.ty.clone()
+        } else {
+            self.declaration_types.resolve(
+                &Type::Named {
+                    name: owner_path.join("::"),
+                    arguments: explicit.to_vec(),
+                },
+                &self.module_path,
+            )
+        };
+        let Type::Named {
+            name,
+            arguments: type_arguments,
+        } = owner
+        else {
+            return None;
+        };
+        let definition = self.types.get(&name)?.clone();
+        let VariantDefinition::Tuple(fields) = definition.variants.get(variant)? else {
+            return None;
+        };
+        let mut substitutions = definition
+            .generic_parameters
+            .iter()
+            .cloned()
+            .zip(type_arguments)
+            .collect::<HashMap<_, _>>();
+        for (field, actual) in fields.iter().zip(actual) {
+            infer_type_variables(field, actual, &mut substitutions);
+        }
+        for (field, argument) in fields.iter().zip(arguments) {
+            self.apply_expected_type(argument, &field.substitute(&substitutions));
+        }
+        Some(Type::Named {
+            name,
+            arguments: definition
+                .generic_parameters
+                .iter()
+                .map(|parameter| {
+                    substitutions
+                        .get(parameter)
+                        .cloned()
+                        .unwrap_or(Type::Unknown)
+                })
+                .collect(),
+        })
+    }
+
     pub(super) fn record_literal(
         &mut self,
         path: &[String],

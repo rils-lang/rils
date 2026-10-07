@@ -1,0 +1,5 @@
+enum Choice<T> { Empty, Full(T), Record { item: T } }
+let first: Choice<i32> = Choice::Full(20);
+let second: Choice<i32> = Choice::Record { item: 22 };
+let value = match first { Choice::Full(item) => item, _ => 0i32 };
+match &second { Choice::Record { item: item } => value + *item, _ => 0i32 }
