@@ -377,8 +377,9 @@ impl Inferencer<'_> {
                     for ((parameter, argument_type), argument) in
                         parameters.iter().zip(&argument_types).zip(arguments)
                     {
-                        self.unify(parameter, argument_type);
-                        self.apply_expected_type(argument, &parameter.substitute(&substitutions));
+                        let expected = parameter.substitute(&substitutions);
+                        self.unify(&expected, argument_type);
+                        self.apply_expected_type(argument, &expected);
                     }
                 }
                 if let Some(ty) = self.tuple_variant_type(callee, arguments, &argument_types) {
@@ -443,10 +444,10 @@ impl Inferencer<'_> {
                             Some(Type::Reference { inner, .. }) => (**inner).clone(),
                             _ => Type::Unknown,
                         },
-                        _ => function_call_result(&callee_type, &argument_types),
+                        _ => self.call_result(&callee_type, &argument_types),
                     };
                 }
-                function_call_result(&callee_type, &argument_types)
+                self.call_result(&callee_type, &argument_types)
             }
             Expr::If {
                 condition,

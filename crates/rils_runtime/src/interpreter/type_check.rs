@@ -96,6 +96,11 @@ pub(super) fn infer_type_from_value(
     value: &Value,
     substitutions: &mut HashMap<String, Type>,
 ) -> Result<(), String> {
+    if matches!(value, Value::Native(_) | Value::Dynamic(_)) {
+        let actual = Type::of_value(value).ok_or("native argument has no type witness")?;
+        return infer_type_from_type(expected, &actual, substitutions)
+            .map_err(|message| format!("type mismatch: {message}"));
+    }
     match (expected, value) {
         (Type::Variable(name) | Type::BoundVariable { name, .. }, value) => {
             let actual = Type::of_value(value).unwrap_or(Type::Unknown);
@@ -117,13 +122,6 @@ pub(super) fn infer_type_from_value(
                 value: Some(value), ..
             },
         ) => infer_type_from_value(inner, value, substitutions),
-        (Type::Option(inner), Value::Dynamic(_)) => {
-            if let Some(Type::Option(actual)) = Type::of_value(value) {
-                infer_type_from_type(inner, &actual, substitutions)
-            } else {
-                Ok(())
-            }
-        }
         (
             Type::Option(inner),
             Value::Option {
@@ -152,19 +150,6 @@ pub(super) fn infer_type_from_value(
             Ok(())
         }
 
-        (Type::Named { name, arguments }, value @ Value::Dynamic(_)) => {
-            let Some(Type::Named {
-                name: actual_name,
-                arguments: actual_arguments,
-            }) = Type::of_value(value)
-            else {
-                return Err("cannot infer nominal argument type".into());
-            };
-            if *name != actual_name {
-                return Err(format!("expected {name}, found {actual_name}"));
-            }
-            infer_type_arguments(arguments, &actual_arguments, substitutions)
-        }
         (
             expected @ Type::Function { .. },
             value @ (Value::Function(_)
@@ -194,24 +179,6 @@ pub(super) fn infer_type_from_type(
     substitutions: &mut HashMap<String, Type>,
 ) -> Result<(), String> {
     crate::types::infer_generic_arguments(expected, actual, substitutions)
-}
-
-pub(super) fn infer_type_arguments(
-    expected: &[Type],
-    actual: &[Type],
-    substitutions: &mut HashMap<String, Type>,
-) -> Result<(), String> {
-    if expected.len() != actual.len() {
-        return Err(format!(
-            "generic arity mismatch: expected {} arguments, found {}",
-            expected.len(),
-            actual.len()
-        ));
-    }
-    for (expected, actual) in expected.iter().zip(actual) {
-        infer_type_from_type(expected, actual, substitutions)?;
-    }
-    Ok(())
 }
 
 pub(super) fn bind_type_variable(

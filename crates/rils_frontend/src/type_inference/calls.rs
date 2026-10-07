@@ -3,6 +3,50 @@
 use super::*;
 
 impl Inferencer<'_> {
+    pub(super) fn call_result(&mut self, function: &Type, arguments: &[Type]) -> Type {
+        // Substitute established numeric constraints before matching a callback
+        // signature. Leave unconstrained literals available to later contexts.
+        let mut fixed_numeric = |ty: &Type| match ty {
+            Type::IntegerInference(variable) | Type::FloatInference(variable) => {
+                let root = self.numeric_root(*variable);
+                self.numeric_fixed.get(&root).cloned()
+            }
+            _ => None,
+        };
+        let function = map_type(function, &mut fixed_numeric);
+        let mut arguments = arguments
+            .iter()
+            .map(|ty| map_type(ty, &mut fixed_numeric))
+            .collect::<Vec<_>>();
+        if let Type::Function {
+            parameters: Some(parameters),
+            ..
+        } = &function
+        {
+            for (expected, actual) in parameters.iter().zip(&mut arguments) {
+                let (
+                    Type::Function {
+                        parameters: Some(expected),
+                        ..
+                    },
+                    Type::Function {
+                        parameters: Some(actual_parameters),
+                        ..
+                    },
+                ) = (expected, &*actual)
+                else {
+                    continue;
+                };
+                let mut bindings = HashMap::new();
+                for (parameter, input) in actual_parameters.iter().zip(expected) {
+                    infer_type_variables(parameter, input, &mut bindings);
+                }
+                *actual = actual.substitute(&bindings);
+            }
+        }
+        function_call_result(&function, &arguments)
+    }
+
     pub(super) fn trait_call_type(&self, callee: &Expr, arguments: &[Type]) -> Option<Type> {
         let Expr::Path { segments, .. } = callee else {
             return None;

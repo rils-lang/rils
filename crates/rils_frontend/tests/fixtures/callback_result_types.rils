@@ -1,0 +1,10 @@
+fn narrow(value: u8) -> usize { value as usize }
+fn floating(value: f32) -> i32 { 0 }
+fn pass<T>(value: T) -> T { value }
+fn combine(left: i32, right: i32) -> i32 { left + right }
+fn map_error<T, E>(value: Result<T, E>) -> Result<T, E> { value.map_err(pass) }
+let numeric_result = Some(3).map(narrow);
+let floating_result = Some(1.5).map(floating);
+let source: Result<i32, string> = Err("error");
+let generic_result = map_error(source);
+let combined_result = core::ops::combine(4, 2, combine);
