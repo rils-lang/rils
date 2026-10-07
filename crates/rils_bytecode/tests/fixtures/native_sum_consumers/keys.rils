@@ -1,0 +1,10 @@
+#[derive(Eq, Hash)]
+enum Key { Empty, Text(string) }
+let mut keys: HashSet<Option<Result<Key, string>>> = HashSet::new();
+keys.insert(None);
+keys.insert(Some(Ok(Key::Text("owned"))));
+keys.insert(Some(Err("failed")));
+let none: Option<Result<Key, string>> = None;
+let ok: Option<Result<Key, string>> = Some(Ok(Key::Text("owned")));
+let err: Option<Result<Key, string>> = Some(Err("failed"));
+if keys.len() == 3usize && keys.contains(&none) && keys.contains(&ok) && keys.contains(&err) { 42 } else { 0 }

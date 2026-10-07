@@ -6,16 +6,32 @@ use rils_value::DynamicValueRef;
 
 use crate::Type;
 
-use super::super::{DynamicObject, Value, record_codec::NativeRecordCodec};
+use super::super::DynamicObject;
+
+pub(super) fn display_reference(
+    reference: &super::super::ReferenceValue,
+    formatter: &mut Formatter<'_>,
+) -> fmt::Result {
+    format_reference(reference, formatter, false)
+}
 
 pub(super) fn debug_reference(
     reference: &super::super::ReferenceValue,
     formatter: &mut Formatter<'_>,
 ) -> fmt::Result {
-    match reference.with_native_view(|view| format_view(view, formatter, true, true)) {
+    format_reference(reference, formatter, true)
+}
+
+fn format_reference(
+    reference: &super::super::ReferenceValue,
+    formatter: &mut Formatter<'_>,
+    debug: bool,
+) -> fmt::Result {
+    match reference.with_native_view(|view| format_view(view, formatter, debug, true)) {
         Ok(result) => result,
         Err(_) => match reference.read() {
-            Ok(value) => write!(formatter, "{value:?}"),
+            Ok(value) if debug => fmt::Debug::fmt(&value, formatter),
+            Ok(value) => fmt::Display::fmt(&value, formatter),
             Err(_) => formatter.write_str("<invalid reference>"),
         },
     }
@@ -53,7 +69,16 @@ fn format_view(
     tuple_trailing_comma: bool,
 ) -> fmt::Result {
     let layout = view.layout().map_err(|_| fmt::Error)?;
+    if let Some(result) = rils_stdlib::native::registry().format_view(
+        &view,
+        formatter,
+        debug,
+        format_registered_child,
+    ) {
+        return result.map_err(|_| fmt::Error)?;
+    }
     match layout.rils_type() {
+        Type::Unit => formatter.write_str("()"),
         Type::Option(_) => {
             if !view.option_is_some().map_err(|_| fmt::Error)? {
                 return formatter.write_str("None");
@@ -69,7 +94,11 @@ fn format_view(
         }
         Type::Result(_, _) => {
             let index = view.variant_index().map_err(|_| fmt::Error)?;
-            formatter.write_str(if index == 0 { "Ok(" } else { "Err(" })?;
+            formatter.write_str(match index {
+                0 => "Ok(",
+                1 => "Err(",
+                _ => return Err(fmt::Error),
+            })?;
             format_view(
                 view.variant_payload().map_err(|_| fmt::Error)?,
                 formatter,
@@ -120,13 +149,22 @@ fn format_view(
             formatter.write_str(close)
         }
         ty => {
-            let cloned = crate::value::runtime_layouts::clone_borrowed_view(view)
-                .and_then(|item| NativeRecordCodec::new().from_native(item));
-            match cloned {
-                Ok(Value::Dynamic(_)) | Err(_) => write!(formatter, "<{ty}>"),
-                Ok(value) if debug => write!(formatter, "{value:?}"),
-                Ok(value) => write!(formatter, "{value}"),
+            if layout.is_rust_type::<std::rc::Rc<super::super::ReferenceValue>>() {
+                return view
+                    .with_rust::<std::rc::Rc<super::super::ReferenceValue>, _>(|reference| {
+                        format_reference(reference, formatter, debug)
+                    })
+                    .map_err(|_| fmt::Error)?;
             }
+            write!(formatter, "<{ty}>")
         }
     }
+}
+
+fn format_registered_child(
+    view: DynamicValueRef<'_>,
+    formatter: &mut Formatter<'_>,
+    debug: bool,
+) -> fmt::Result {
+    format_view(view, formatter, debug, true)
 }

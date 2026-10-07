@@ -21,6 +21,14 @@ fn native_sum_consumption_agrees_in_interpreter_vm_and_loaded_vm() {
             "copy",
             include_str!("fixtures/native_sum_consumers/copy.rils"),
         ),
+        (
+            "bindings",
+            include_str!("fixtures/native_sum_consumers/bindings.rils"),
+        ),
+        (
+            "keys",
+            include_str!("fixtures/native_sum_consumers/keys.rils"),
+        ),
     ] {
         assert_eq!(
             eval_value(source).unwrap_or_else(|error| panic!("{name}, interpreter: {error}")),

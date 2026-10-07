@@ -400,11 +400,6 @@ impl Value {
         }
     }
 
-    /// Produce the legacy view used by transitional interpreter and VM paths.
-    pub fn materialize_native_sum(&self) -> Option<Result<Value, String>> {
-        dynamic_option::materialize(self).or_else(|| dynamic_result::materialize(self))
-    }
-
     pub fn type_name(&self) -> String {
         match self {
             Self::Unit => "()".into(),

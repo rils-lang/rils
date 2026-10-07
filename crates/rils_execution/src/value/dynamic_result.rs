@@ -79,13 +79,3 @@ pub fn view(value: &Value) -> Option<Result<ResultView, String>> {
             .and_then(|result| result)
     }))
 }
-
-pub fn materialize(value: &Value) -> Option<Result<Value, String>> {
-    view(value).map(|result| {
-        result.map(|(branch, ok_type, error_type)| Value::Result {
-            value: branch.map(Rc::new).map_err(Rc::new),
-            ok_type: Some(ok_type),
-            error_type: Some(error_type),
-        })
-    })
-}

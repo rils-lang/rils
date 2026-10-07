@@ -145,6 +145,11 @@ let inferred = Some(42); // Option<i32>
 | `option.or_else(fn)` | 仅对 None 调用零参数备用函数 |
 
 Option/Result 的消费式方法遵守显式所有权，非 Copy 内容无需 Clone 即可移出。
+
+原生组合值的 Display/Debug 直接读取借用视图，不因输出而移动或复制 payload。
+嵌套字符串在 Debug 输出中保留引号；含非 Clone 字段的记录和 Vec 也可沿字段视图输出。
+标准库注册各类型的格式化操作，未登记格式化的原生叶子显示其类型占位。
+
 `Option::take/replace` 支持局部变量、结构体字段及集合元素中的 Option，并通过原生路径
 写回；同一位置的多个可变引用仍允许共存，有存活子引用时不能替换父 Option。
 

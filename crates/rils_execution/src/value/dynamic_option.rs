@@ -151,12 +151,3 @@ pub fn view_any(value: &Value) -> Option<Result<(Option<Value>, Type), String>> 
         _ => None,
     }
 }
-
-pub fn materialize(value: &Value) -> Option<Result<Value, String>> {
-    view(value).map(|result| {
-        result.map(|(item, item_type)| Value::Option {
-            value: item.map(Rc::new),
-            element_type: Some(item_type),
-        })
-    })
-}

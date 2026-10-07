@@ -45,12 +45,9 @@ pub(super) fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
         _ => None,
     };
     let value = borrowed.as_ref().unwrap_or(value);
-    let materialized = match value.materialize_native_sum() {
-        Some(Ok(value)) => Some(value),
-        Some(Err(_)) => return false,
-        None => None,
-    };
-    let value = materialized.as_ref().unwrap_or(value);
+    if let Some(matches) = native_sum::matches(pattern, value) {
+        return matches;
+    }
     match pattern {
         HirPattern::Wildcard | HirPattern::Binding(_) => true,
         HirPattern::Literal(literal) => hir_literal_value(literal) == *value,
@@ -73,7 +70,7 @@ pub(super) fn collect_pattern_bindings(
     value: &Value,
     bindings: &mut Vec<(usize, Value)>,
 ) -> Result<(), String> {
-    if let Some(result) = native_sum::collect(pattern, value, bindings) {
+    if let Some(result) = native_sum::collect(pattern, value, bindings, false) {
         return result;
     }
     if let Some(result) = native_record::collect(pattern, value, bindings, false) {
@@ -104,14 +101,15 @@ fn collect_pattern_bindings_inner(
     bindings: &mut Vec<(usize, Value)>,
     borrowed: bool,
 ) -> Result<(), String> {
+    if let Some(result) = native_sum::collect(pattern, value, bindings, borrowed) {
+        return result;
+    }
     if let Some(result) = native_record::collect(pattern, value, bindings, borrowed) {
         return result;
     }
     if let Some(result) = native_enum::collect(pattern, value, bindings, borrowed) {
         return result;
     }
-    let materialized = value.materialize_native_sum().and_then(Result::ok);
-    let value = materialized.as_ref().unwrap_or(value);
     match pattern {
         HirPattern::Binding(local) => {
             let bound = if borrowed {

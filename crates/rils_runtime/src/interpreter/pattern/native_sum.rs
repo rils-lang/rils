@@ -6,6 +6,7 @@ pub(super) fn matches(
     value: &Value,
     bindings: &mut Vec<(String, Value)>,
     environment: &EnvironmentRef,
+    borrowed: bool,
 ) -> Option<bool> {
     let (expected, inner) = match pattern {
         Pattern::Some { inner, .. } => (Branch::Some, Some(inner)),
@@ -31,7 +32,7 @@ pub(super) fn matches(
         if !pattern_matches(pattern, &child, &mut probes, environment) {
             return false;
         }
-        if matches!(value, Value::Reference(_)) {
+        if borrowed || matches!(value, Value::Reference(_)) {
             bindings.extend(probes);
             return true;
         }

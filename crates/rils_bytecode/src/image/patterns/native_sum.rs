@@ -31,6 +31,7 @@ pub(super) fn collect(
     pattern: &HirPattern,
     value: &Value,
     bindings: &mut Vec<(usize, Value)>,
+    borrowed: bool,
 ) -> Option<Result<(), String>> {
     let (expected, inner) = parts(pattern)?;
     let actual = match sum::branch(value) {
@@ -45,7 +46,11 @@ pub(super) fn collect(
         if let Some(pattern) = inner
             && native_record::has_binding(pattern)
         {
-            let child = sum::bind_payload(value, actual)?;
+            let child = if borrowed {
+                sum::borrow_payload(value, actual)?
+            } else {
+                sum::bind_payload(value, actual)?
+            };
             collect_pattern_bindings(pattern, &child, bindings)?;
         }
         Ok(())

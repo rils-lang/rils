@@ -14,7 +14,7 @@ pub(super) fn pattern_matches(
     if matches!(pattern, Pattern::Wildcard { .. }) {
         return true;
     }
-    if let Some(matches) = native_sum::matches(pattern, value, bindings, environment) {
+    if let Some(matches) = native_sum::matches(pattern, value, bindings, environment, false) {
         return matches;
     }
     if let Some(matches) = native_record::matches(pattern, value, bindings, environment, false) {
@@ -47,18 +47,15 @@ fn pattern_matches_inner(
     environment: &EnvironmentRef,
     borrowed: bool,
 ) -> bool {
+    if let Some(matches) = native_sum::matches(pattern, value, bindings, environment, borrowed) {
+        return matches;
+    }
     if let Some(matches) = native_record::matches(pattern, value, bindings, environment, borrowed) {
         return matches;
     }
     if let Some(matches) = native_enum::matches(pattern, value, bindings, environment, borrowed) {
         return matches;
     }
-    let materialized = match value.materialize_native_sum() {
-        Some(Ok(value)) => Some(value),
-        Some(Err(_)) => return false,
-        None => None,
-    };
-    let value = materialized.as_ref().unwrap_or(value);
     match pattern {
         Pattern::Wildcard { .. } => true,
         Pattern::Binding { name, .. } => {

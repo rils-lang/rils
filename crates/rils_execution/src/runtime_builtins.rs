@@ -172,24 +172,6 @@ fn owned_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value {
 fn import_receiver(value: &Value) -> Result<Value, String> {
     match value {
         Value::Reference(reference) => import_receiver(&reference.read()?),
-        Value::Dynamic(object)
-            if crate::value::native_layouts::vec::matches(
-                object.descriptor().layout().rils_type(),
-            ) || crate::value::native_layouts::btree_set::matches(
-                object.descriptor().layout().rils_type(),
-            ) || crate::value::native_layouts::hash_set::matches(
-                object.descriptor().layout().rils_type(),
-            ) || crate::value::native_layouts::hash_map::matches(
-                object.descriptor().layout().rils_type(),
-            ) || crate::value::native_layouts::btree_map::matches(
-                object.descriptor().layout().rils_type(),
-            ) || matches!(object.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Rc" || name == "Weak" || name == "Cell" || name == "RefCell") =>
-        {
-            Ok(value.clone())
-        }
-        Value::Dynamic(_) => value
-            .materialize_native_sum()
-            .ok_or("dynamic value has no runtime receiver adapter")?,
         value => Ok(value.clone()),
     }
 }

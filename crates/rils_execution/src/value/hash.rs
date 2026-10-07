@@ -108,7 +108,6 @@ impl HashKey {
             return Self::from_value(&reference.read()?);
         }
         let value = value.clone();
-        let value = value.materialize_native_sum().transpose()?.unwrap_or(value);
         let value = crate::numeric::lower_migrated_integer(value);
         if let Some(value) = crate::numeric::i8_payload(&value) {
             return Ok(Self::I8(value));
@@ -150,6 +149,9 @@ impl HashKey {
             }
             Value::Dynamic(object)
                 if matches!(
+                    object.descriptor().layout().rils_type(),
+                    Type::Option(_) | Type::Result(_, _)
+                ) || matches!(
                     super::native_instance::definition(&object),
                     Some(Value::StructType(_) | Value::EnumType(_))
                 ) =>
@@ -222,6 +224,21 @@ impl HashKey {
 
 impl StructuralIdentity {
     fn from_value(value: &Value) -> Result<Self, String> {
+        if let Some(branch) = super::sum::branch(value)? {
+            use super::borrowed_sum::Branch;
+            return Ok(match branch {
+                Branch::None => Self::Option(None),
+                Branch::Some => Self::Option(Some(Box::new(HashKey::from_value(
+                    &super::sum::borrow_payload(value, branch)?,
+                )?))),
+                Branch::Ok => Self::ResultOk(Box::new(HashKey::from_value(
+                    &super::sum::borrow_payload(value, branch)?,
+                )?)),
+                Branch::Err => Self::ResultErr(Box::new(HashKey::from_value(
+                    &super::sum::borrow_payload(value, branch)?,
+                )?)),
+            });
+        }
         let unsupported = || {
             format!(
                 "{} cannot be used as a hash collection key",
