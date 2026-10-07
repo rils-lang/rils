@@ -183,9 +183,31 @@ pub(super) fn validate_native_return(
     let Some(signature) = signature else {
         return Ok(value);
     };
-    apply_type(
-        Some(&signature.return_type),
-        &value,
+    let actual = Type::of_value(&value).ok_or_else(|| {
+        RuntimeError::new(
+            format!("return value of `{name}` has no runtime type"),
+            span,
+        )
+    })?;
+    let expected = merge_types(&signature.return_type, &actual)
+        .or_else(|| {
+            signature
+                .return_type
+                .accepts(&value)
+                .then(|| signature.return_type.clone())
+        })
+        .ok_or_else(|| {
+            RuntimeError::new(
+                format!(
+                    "type mismatch for return value of `{name}`: expected {}, found {actual}",
+                    signature.return_type
+                ),
+                span,
+            )
+        })?;
+    apply_type_owned(
+        Some(&expected),
+        value,
         span,
         &format!("return value of `{name}`"),
     )

@@ -30,9 +30,11 @@ pub fn is_ok<T, E>(value: Result<T, E>) -> bool {}
 pub fn is_err<T, E>(value: Result<T, E>) -> bool {}
 
 /// Extracts an Option or Result success value.
+#[native_method(core::option::option::unwrap)]
 pub fn unwrap(value: _) -> _ {}
 
 /// Extracts a value or returns a default.
+#[native_method(core::option::option::unwrap_or)]
 pub fn unwrap_or<T>(value: _, default: T) -> T {}
 
 /// Explicitly duplicates an owned value.

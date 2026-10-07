@@ -1,0 +1,6 @@
+struct Item { text: string }
+let mut state: Option<Item> = Some(Item { text: "retained" });
+match &state {
+    Some(child) => { state.take(); child.text.len() },
+    None => 0usize,
+}

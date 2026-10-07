@@ -1,0 +1,1 @@
+std::fs::read_to_string("__rils_missing_native_sum_methods__/file.txt")

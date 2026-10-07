@@ -637,7 +637,7 @@ mod tests {
                 loop {}
             }
         );
-        assert!(!supports_direct_bridge(&option, &unsupported));
+        assert!(supports_direct_bridge(&option, &unsupported));
 
         let module: ItemMod = syn::parse_quote! {
             mod native {
@@ -650,6 +650,21 @@ mod tests {
         };
         let definition = Definition::parse(syn::parse_quote!(core::option), &module).unwrap();
         assert!(metadata_tokens(&definition).is_ok());
+
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                pub enum Option<T> { Some(T), None }
+                impl<T> Option<T> {
+                    #[export_rils]
+                    pub fn extract_or(self, fallback: T) -> T { loop {} }
+                }
+            }
+        };
+        let definition = Definition::parse(syn::parse_quote!(core::option), &module).unwrap();
+        let generated = native_tokens(&definition).unwrap().to_string();
+        assert!(generated.contains("native_self . extract_or (argument_1)"));
+        assert!(!generated.contains("option_result"));
+        assert!(!generated.contains("materialize_native_sum"));
     }
 
     #[test]

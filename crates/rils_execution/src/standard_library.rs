@@ -90,6 +90,8 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             let error_kind = error_kind.clone();
             move |_| match native_result(native::read_line()) {
                 Ok(line) => Ok(result_ok(
+                    &error,
+                    &error_kind,
                     crate::value::native_string(std::string::String::from(line)),
                     Type::String,
                 )),
@@ -110,7 +112,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             let error = error.clone();
             let error_kind = error_kind.clone();
             move |arguments| match native_result(native::write(arguments[0].to_string())) {
-                Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
+                Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
@@ -122,7 +124,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             let error = error.clone();
             let error_kind = error_kind.clone();
             move |arguments| match native_result(native::write_line(arguments[0].to_string())) {
-                Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
+                Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
@@ -132,7 +134,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
         "flush",
         host_function("std::io::flush", 0, 0, move |_| {
             match native_result(native::flush()) {
-                Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
+                Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
@@ -253,7 +255,7 @@ where
     host_function(&format!("std::fs::{name}"), 1, 1, move |arguments| {
         let path = string_argument(arguments, 0, name)?;
         match operation(std::path::Path::new(&path)) {
-            Ok(value) => Ok(result_ok(value, ok_type.clone())),
+            Ok(value) => Ok(result_ok(&error, &error_kind, value, ok_type.clone())),
             Err(source) => Ok(result_error(
                 &error,
                 &error_kind,
@@ -278,7 +280,7 @@ where
         let path = string_argument(arguments, 0, name)?;
         let text = string_argument(arguments, 1, name)?;
         match operation(std::path::Path::new(&path), &text) {
-            Ok(()) => Ok(result_ok(Value::Unit, Type::Unit)),
+            Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
             Err(source) => Ok(result_error(
                 &error,
                 &error_kind,
@@ -375,12 +377,13 @@ fn string_argument(
     })
 }
 
-fn result_ok(value: Value, ok_type: Type) -> Value {
-    Value::Result {
-        value: Ok(Rc::new(value)),
-        ok_type: Some(ok_type),
-        error_type: Some(Type::named("std::io::Error")),
-    }
+fn result_ok(
+    definition: &Rc<StructType>,
+    kind_definition: &Rc<EnumType>,
+    value: Value,
+    ok_type: Type,
+) -> Value {
+    io_result(definition, kind_definition, Ok(value), ok_type)
 }
 
 fn result_error(
@@ -391,11 +394,23 @@ fn result_error(
     ok_type: Type,
 ) -> Value {
     let error = io_error(definition, kind_definition, &source, path);
-    Value::Result {
-        value: Err(Rc::new(error)),
-        ok_type: Some(ok_type),
-        error_type: Some(Type::named("std::io::Error")),
-    }
+    io_result(definition, kind_definition, Err(error), ok_type)
+}
+
+fn io_result(
+    definition: &Rc<StructType>,
+    kind_definition: &Rc<EnumType>,
+    value: Result<Value, Value>,
+    ok_type: Type,
+) -> Value {
+    let structs = [definition.clone()];
+    let enums = [kind_definition.clone()];
+    TypedStorageContext::new(&structs, &enums)
+        .construct_result(
+            &Type::Result(Box::new(ok_type), Box::new(Type::named(&definition.name))),
+            value,
+        )
+        .expect("standard library result matches its declaration")
 }
 
 fn io_error(
@@ -421,10 +436,12 @@ fn io_error(
         ),
         (
             "path".into(),
-            Value::Option {
-                value: path.map(|path| Rc::new(crate::value::native_string(path))),
-                element_type: Some(Type::String),
-            },
+            storage
+                .construct_option(
+                    &Type::Option(Box::new(Type::String)),
+                    path.map(crate::value::native_string),
+                )
+                .expect("standard library error path matches its declaration"),
         ),
     ]);
     storage

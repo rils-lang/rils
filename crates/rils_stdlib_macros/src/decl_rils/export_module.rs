@@ -347,6 +347,8 @@ fn expand_with_layouts(
                     .attrs
                     .retain(|attr| !attr.path().is_ident("rils_impl"));
                 let mut shadow_methods = Vec::new();
+                let sum =
+                    target_name(value).is_some_and(|name| name == "Option" || name == "Result");
                 for member in &mut value.items {
                     if let ImplItem::Fn(method) = member {
                         if has_attr(&method.attrs, "export_rils")
@@ -354,6 +356,11 @@ fn expand_with_layouts(
                                 super::function_definition::callback_signature::shadow_method(
                                     method,
                                 )?
+                        {
+                            shadow_methods.push(ImplItem::Fn(shadow));
+                        } else if has_attr(&method.attrs, "export_rils")
+                            && sum
+                            && let Some(shadow) = super::sum::fallible::method(method)
                         {
                             shadow_methods.push(ImplItem::Fn(shadow));
                         }

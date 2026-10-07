@@ -200,6 +200,10 @@ impl ReferenceValue {
             .transpose()
     }
 
+    pub(crate) fn native_codec(&self) -> Result<Option<Rc<NativeRecordCodec>>, String> {
+        Ok(self.native_path()?.map(|path| path.codec))
+    }
+
     fn native_root_layout(value: &Value) -> Result<Option<Rc<DynamicLayout>>, String> {
         match value {
             Value::Dynamic(object) => Ok(Some(object.descriptor().layout_handle())),

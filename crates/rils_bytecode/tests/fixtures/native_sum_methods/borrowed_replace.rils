@@ -1,0 +1,7 @@
+struct Item { text: string }
+struct Holder { item: Option<Item> }
+let mut holder = Holder { item: Some(Item { text: "retained" }) };
+match &holder.item {
+    Some(child) => { holder.item.replace(Item { text: "new" }); child.text.len() },
+    None => 0usize,
+}

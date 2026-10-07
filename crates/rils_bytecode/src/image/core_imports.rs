@@ -33,9 +33,6 @@ pub(super) fn resolve_core_import(name: &str) -> Option<CoreImport> {
     }
     Some(match name {
         "type_of" => CoreImport::TypeOf,
-        "unwrap" | "unwrap_or" => {
-            CoreImport::Native(rils_builtins::builtin_member("Option", name)?.native_symbol?)
-        }
         "core::assert" => CoreImport::Assert,
         _ => return None,
     })

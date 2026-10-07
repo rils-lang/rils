@@ -13,7 +13,7 @@ use super::{
     record_codec::NativeRecordCodec,
 };
 
-pub(super) fn codec(
+pub(crate) fn codec(
     object: &DynamicObject,
     structs: &[Rc<StructType>],
     enums: &[Rc<EnumType>],

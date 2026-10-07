@@ -122,25 +122,6 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             )),
             body: NativeFunctionBody::RustOwned(sums::err),
         },
-        NativeFunction {
-            binding_name: "unwrap",
-            name: "unwrap",
-            min_arity: 1,
-            max_arity: 1,
-            signature: Some(FunctionSignature::fixed(vec![Type::Unknown], Type::Unknown)),
-            body: NativeFunctionBody::Rust(runtime_unwrap),
-        },
-        NativeFunction {
-            binding_name: "unwrap_or",
-            name: "unwrap_or",
-            min_arity: 2,
-            max_arity: 2,
-            signature: Some(FunctionSignature::fixed(
-                vec![Type::Unknown, Type::Unknown],
-                Type::Unknown,
-            )),
-            body: NativeFunctionBody::Rust(runtime_unwrap_or),
-        },
     ];
 
     for mut function in builtins {
@@ -341,22 +322,6 @@ fn runtime_clone(arguments: &[Value]) -> Result<Value, String> {
         .expect("Clone::clone exports a native symbol");
     crate::runtime_builtins::call_native_symbol(symbol, arguments)
         .expect("Clone::clone native adapter is registered")
-}
-
-fn runtime_unwrap(arguments: &[Value]) -> Result<Value, String> {
-    let symbol = rils_builtins::builtin_member("Option", "unwrap")
-        .and_then(|member| member.native_symbol)
-        .expect("Option::unwrap exports a native symbol");
-    crate::runtime_builtins::call_native_symbol(symbol, arguments)
-        .expect("Option::unwrap native adapter is registered")
-}
-
-fn runtime_unwrap_or(arguments: &[Value]) -> Result<Value, String> {
-    let symbol = rils_builtins::builtin_member("Option", "unwrap_or")
-        .and_then(|member| member.native_symbol)
-        .expect("Option::unwrap_or exports a native symbol");
-    crate::runtime_builtins::call_native_symbol(symbol, arguments)
-        .expect("Option::unwrap_or native adapter is registered")
 }
 
 fn install_builtin_modules(environment: &EnvironmentRef) {

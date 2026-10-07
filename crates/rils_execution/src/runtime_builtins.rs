@@ -1,9 +1,7 @@
-use std::rc::Rc;
-
 #[cfg(test)]
-use std::{cell::RefCell, collections::VecDeque};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use crate::{environment::AssignError, types::Type, value::Value};
+use crate::{types::Type, value::Value};
 
 #[cfg(test)]
 use crate::value::{IndexedStorage, OwnedIteratorValue};
@@ -25,10 +23,10 @@ mod native_map;
 mod native_set;
 pub(crate) use native::{StringOutput, string_input, usize_input as string_usize_input};
 pub mod native_value;
-mod option_result;
 mod range;
 mod rc_native;
 mod sequence_receiver;
+mod sum_native;
 mod vec_deque;
 mod vector;
 pub(crate) mod vector_dynamic;
@@ -95,13 +93,16 @@ pub fn call_native_owned_symbol(
     arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
-    if let Some((owner, member)) = owned_sum_member(symbol) {
-        return Some(option_result::call_owned(
-            owner.path,
-            member.name,
-            arguments,
-            context,
-        ));
+    if let Some((owner, member)) = owned_sum_member(symbol)
+        && owner.path == "Option"
+        && arguments
+            .first()
+            .and_then(Type::of_value)
+            .is_some_and(|ty| matches!(ty, Type::Result(_, _)))
+        && let Some(symbol) = rils_builtins::builtin_member("Result", member.name)
+            .and_then(|member| member.native_symbol)
+    {
+        return native::call_owned_symbol(symbol, arguments, context);
     }
     native::call_owned_symbol(symbol, arguments, context)
 }
@@ -162,23 +163,6 @@ fn import_receiver(value: &Value) -> Result<Value, String> {
             .materialize_native_sum()
             .ok_or("dynamic value has no runtime receiver adapter")?,
         value => Ok(value.clone()),
-    }
-}
-
-fn assignment_error_message(error: AssignError) -> String {
-    match error {
-        AssignError::Undefined => "assignment target is undefined".into(),
-        AssignError::Immutable => "cannot assign to immutable local".into(),
-        AssignError::TypeMismatch(expected) => {
-            format!("assignment value must have type {expected}")
-        }
-        AssignError::OptionRequiresAnnotation => {
-            "Option assignment requires a type annotation".into()
-        }
-        AssignError::ReferenceEscape => "reference cannot escape its scope".into(),
-        AssignError::BorrowedTarget => {
-            "cannot replace a value while part of it is referenced".into()
-        }
     }
 }
 
@@ -285,17 +269,21 @@ mod tests {
         };
         assert_eq!(vector.elements.borrow()[0].value, Some(Value::from_i32(7)));
 
-        let option = mutable_receiver(Value::Option {
-            value: Some(Rc::new(Value::from_i32(3))),
-            element_type: Some(Type::I32),
-        });
+        let context = NativeOwnedContext::default();
+        let option = mutable_receiver(
+            context
+                .storage()
+                .construct_option(&Type::Option(Box::new(Type::I32)), Some(Value::from_i32(3)))
+                .unwrap(),
+        );
         assert_eq!(
-            call_native_symbol(
+            call_native_owned_symbol(
                 rils_builtins::builtin_member("Option", "take")
                     .unwrap()
                     .native_symbol
                     .unwrap(),
-                std::slice::from_ref(&option),
+                vec![option.clone()],
+                &context,
             )
             .unwrap()
             .unwrap(),
@@ -370,12 +358,13 @@ mod tests {
             .contains("&mut self")
         );
         assert!(
-            call_native_symbol(
+            call_native_owned_symbol(
                 rils_builtins::builtin_member("Option", "take")
                     .unwrap()
                     .native_symbol
                     .unwrap(),
-                &[Value::Unit],
+                vec![Value::Unit],
+                &NativeOwnedContext::default(),
             )
             .unwrap()
             .unwrap_err()

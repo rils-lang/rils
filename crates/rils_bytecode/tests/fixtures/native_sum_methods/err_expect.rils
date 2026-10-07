@@ -1,0 +1,2 @@
+let failed: Result<i32, string> = Err("bad");
+failed.expect("failed")

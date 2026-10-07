@@ -1,0 +1,2 @@
+let absent: Option<i32> = None;
+absent.expect("missing")

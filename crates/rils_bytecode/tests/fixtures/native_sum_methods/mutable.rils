@@ -1,0 +1,44 @@
+struct Item { number: i32, text: string }
+struct Holder { item: Option<Item> }
+
+fn text(item: Item) -> string { item.text }
+
+fn run() -> i32 {
+    let mut root: Option<Item> = Some(Item { number: 1, text: "root" });
+    let first = &mut root;
+    let second = &mut root;
+    let previous = first.replace(Item { number: 2, text: "replacement" });
+    assert!(text(previous.unwrap()) == "root");
+    assert!(text(second.take().unwrap()) == "replacement");
+    assert!(first.is_none());
+    assert!(first.replace(Item { number: 3, text: "again" }).is_none());
+    assert!(text(second.take().unwrap()) == "again");
+
+    let mut holder = Holder { item: Some(Item { number: 4, text: "field" }) };
+    assert!(text(holder.item.take().unwrap()) == "field");
+    assert!(holder.item.is_none());
+    assert!(holder.item.replace(Item { number: 5, text: "field replacement" }).is_none());
+    assert!(text(holder.item.take().unwrap()) == "field replacement");
+
+    let mut items: Vec<Option<Item>> = Vec::new();
+    items.push(Some(Item { number: 6, text: "sequence" }));
+    let child = &mut items[0usize];
+    assert!(text(child.replace(Item { number: 7, text: "sequence replacement" }).unwrap()) == "sequence");
+    assert!(text(child.take().unwrap()) == "sequence replacement");
+    assert!(child.is_none());
+
+    let mut number = 20;
+    let mut other = 0;
+    let mut references: Option<&mut i32> = Some(&mut number);
+    let old = references.replace(&mut other).unwrap();
+    *old = 21;
+    let current = references.take().unwrap();
+    *current = 21;
+    assert!(*old + *current == 42);
+
+    let mut scalar: Option<i32> = Some(21);
+    let scalar_first = &mut scalar;
+    let scalar_second = &mut scalar;
+    scalar_first.take().unwrap() + scalar_second.replace(21).unwrap_or(21)
+}
+run()

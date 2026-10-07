@@ -1,0 +1,42 @@
+struct Item { text: string }
+enum Failure { Message(string) }
+
+fn text(item: Item) -> string { item.text }
+
+fn run() -> i32 {
+    assert!(text(Some(Item { text: "unwrap" }).unwrap()) == "unwrap");
+    let absent_default: Option<Item> = None;
+    assert!(text(absent_default.unwrap_or(Item { text: "default" })) == "default");
+    assert!(text(Some(Item { text: "expect" }).expect("missing")) == "expect");
+    let absent_or: Option<Item> = None;
+    let chosen = absent_or.or(Some(Item { text: "right" }));
+    assert!(text(chosen.unwrap()) == "right");
+    let absent_right: Option<Item> = None;
+    assert!(text(Some(Item { text: "left" }).or(absent_right).unwrap()) == "left");
+    let absent_xor: Option<Item> = None;
+    assert!(text(Some(Item { text: "xor" }).xor(absent_xor).unwrap()) == "xor");
+    assert!(Some(Item { text: "a" }).xor(Some(Item { text: "b" })).is_none());
+
+    let success_ok: Result<Item, Failure> = Ok(Item { text: "ok" });
+    assert!(text(success_ok.ok().unwrap()) == "ok");
+    let failure_ok: Result<Item, Failure> = Err(Failure::Message("error"));
+    assert!(failure_ok.ok().is_none());
+    let failure_err: Result<Item, Failure> = Err(Failure::Message("error"));
+    assert!(match failure_err.err().unwrap() { Failure::Message(text) => text == "error" });
+    let success_err: Result<Item, Failure> = Ok(Item { text: "ok" });
+    assert!(success_err.err().is_none());
+    let success_unwrap: Result<Item, string> = Ok(Item { text: "unwrap" });
+    assert!(text(success_unwrap.unwrap()) == "unwrap");
+    let failure_default: Result<Item, string> = Err("ignored");
+    assert!(text(failure_default.unwrap_or(Item { text: "default" })) == "default");
+    let success_expect: Result<Item, string> = Ok(Item { text: "expect" });
+    assert!(text(success_expect.expect("missing")) == "expect");
+    let failure_unwrap: Result<i32, Item> = Err(Item { text: "unwrap_err" });
+    assert!(text(failure_unwrap.unwrap_err()) == "unwrap_err");
+    let failure_expect: Result<i32, Item> = Err(Item { text: "expect_err" });
+    assert!(text(failure_expect.expect_err("unexpected")) == "expect_err");
+
+    let success: Result<i32, string> = Ok(42);
+    unwrap(success)
+}
+run()

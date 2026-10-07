@@ -305,7 +305,11 @@ pub fn call_owned_symbol(
     arguments: Vec<crate::Value>,
     context: &super::NativeOwnedContext,
 ) -> Option<Result<crate::Value, String>> {
-    if super::cell_native::is_owned_symbol(symbol) {
+    if option::is_owned_symbol(symbol) {
+        option::call_owned_symbol(symbol, arguments, context)
+    } else if result::is_owned_symbol(symbol) {
+        result::call_owned_symbol(symbol, arguments, context)
+    } else if super::cell_native::is_owned_symbol(symbol) {
         super::cell_native::call_owned_symbol(symbol, arguments, context)
     } else if super::native_set::is_owned_symbol(symbol) {
         super::native_set::call_owned_symbol(symbol, arguments, context)
@@ -325,7 +329,9 @@ pub fn call_owned_symbol(
 }
 
 pub fn is_owned_symbol(symbol: &str) -> bool {
-    super::cell_native::is_owned_symbol(symbol)
+    option::is_owned_symbol(symbol)
+        || result::is_owned_symbol(symbol)
+        || super::cell_native::is_owned_symbol(symbol)
         || super::native_set::is_owned_symbol(symbol)
         || super::native_map::is_owned_symbol(symbol)
         || super::rc_native::is_owned_symbol(symbol)

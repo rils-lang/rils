@@ -144,6 +144,10 @@ let inferred = Some(42); // Option<i32>
 | `option.and_then(fn)` | 仅对 Some 调用返回 Option 的函数，并展平结果 |
 | `option.or_else(fn)` | 仅对 None 调用零参数备用函数 |
 
+Option/Result 的消费式方法遵守显式所有权，非 Copy 内容无需 Clone 即可移出。
+`Option::take/replace` 支持局部变量、结构体字段及集合元素中的 Option，并通过原生路径
+写回；同一位置的多个可变引用仍允许共存，有存活子引用时不能替换父 Option。
+
 Option 不参与隐式真值转换。推荐使用模式匹配：
 
 ```rust

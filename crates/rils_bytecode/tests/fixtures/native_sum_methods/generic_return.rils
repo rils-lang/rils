@@ -1,0 +1,9 @@
+struct Item { text: string }
+
+let mut items: Vec<Item> = Vec::new();
+Vec::push(&mut items, Item { text: "owned" });
+let popped = Vec::pop(&mut items);
+assert!(type_of(&popped) == "&Option<Item>");
+let item = popped.unwrap();
+assert!(item.text == "owned");
+42

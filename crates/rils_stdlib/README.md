@@ -27,6 +27,15 @@ Option/Result 的回调方法已直接在带 `FnOnce` 约束、返回普通 Rust
 生成器从方法签名生成调用，Rust 检查参数与返回值是否满足转换接口。
 涉及词法引用的借用迭代，以及结构修改时的引用保护，仍由对应 receiver 适配器处理。
 其他复杂 receiver 类型仍需扩展原生桥接。
+
+Option/Result 的普通消费式方法从 receiver、参数和返回签名生成拥有型桥接，运行时只负责
+原生布局转换，不按方法名实现操作。泛型子值临时移入 Rust 的 `Option<Value>` /
+`Result<Value, Value>` 调用原方法，返回的 sum 直接编码为原生布局；不创建旧
+`Value::Option` / `Value::Result`。可变 Option receiver 使用保留原路径的原生视图，
+写回时保持借用记录，支持非 Clone 字段与集合元素。普通 sum 方法中的显式 `panic!`
+分支由宏生成隐藏的可失败实现，调用边界接收错误。Rust 宿主调用消费式或可变 sum 方法
+使用 `call_native_owned_symbol()`；标签查询仍可使用借用切片入口。回调桥接继续迁移。
+
 `#[export_rils]` 只可标在固有 impl 的方法上。Rust trait impl 必须在整个 impl 块上
 标记 `#[rils_impl]`，由宏一并导出 trait 身份、方法和关联类型；trait 方法不能单独标记
 `#[export_rils]`。集合的 `IntoIterator` 和迭代器的 `Iterator` 使用这种形式。
