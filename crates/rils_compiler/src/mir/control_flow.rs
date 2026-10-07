@@ -52,6 +52,8 @@ impl Builder {
         span: Span,
     ) -> Result<Register, CompileError> {
         let value = self.expression(value)?;
+        self.scope_cleanups
+            .push(vec![ScopeCleanup::Register(value)]);
         let result = self.register();
         let join_block = self.block();
 
@@ -100,6 +102,10 @@ impl Builder {
 
         self.terminate(MirTerminator::MatchFail, span);
         self.current = join_block;
+        // Release the scrutinee at the end of the lexical match. Returned
+        // references keep their own guard; unused pattern leases must expire.
+        self.clean_scope_value(ScopeCleanup::Register(value), span);
+        self.scope_cleanups.pop();
         Ok(result)
     }
 
@@ -196,6 +202,7 @@ impl Builder {
             continue_block: condition_block,
             break_block: exit_block,
             result,
+            cleanup_depth: self.scope_cleanups.len(),
         });
         self.current = body_block;
         self.statements(body)?;
@@ -258,6 +265,7 @@ impl Builder {
             continue_block: next_block,
             break_block: exit_block,
             result,
+            cleanup_depth: self.scope_cleanups.len(),
         });
         self.current = body_block;
         self.emit(
@@ -299,6 +307,7 @@ impl Builder {
             continue_block: body_block,
             break_block: exit_block,
             result,
+            cleanup_depth: self.scope_cleanups.len(),
         });
         self.current = body_block;
         self.statements(body)?;

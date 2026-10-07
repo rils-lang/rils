@@ -8,8 +8,11 @@ use crate::{
     source::Span,
 };
 
+mod cleanup;
 mod control_flow;
 mod ir;
+
+use cleanup::ScopeCleanup;
 
 pub use ir::*;
 
@@ -33,6 +36,7 @@ struct LoopContext {
     continue_block: BlockId,
     break_block: BlockId,
     result: Register,
+    cleanup_depth: usize,
 }
 
 struct Builder {
@@ -42,6 +46,7 @@ struct Builder {
     register_count: usize,
     local_count: usize,
     loops: Vec<LoopContext>,
+    scope_cleanups: Vec<Vec<ScopeCleanup>>,
 }
 
 impl Builder {
@@ -56,6 +61,7 @@ impl Builder {
             register_count: 0,
             local_count,
             loops: Vec::new(),
+            scope_cleanups: Vec::new(),
         }
     }
 
@@ -111,6 +117,15 @@ impl Builder {
     }
 
     fn statements(&mut self, statements: &[HirStatement]) -> Result<Register, CompileError> {
+        self.scope_cleanups.push(
+            statements
+                .iter()
+                .filter_map(|statement| match statement {
+                    HirStatement::DropLocal { local, .. } => Some(ScopeCleanup::Local(*local)),
+                    _ => None,
+                })
+                .collect(),
+        );
         let mut result = self.unit(Span::default());
         for statement in statements {
             if !self.is_open() {
@@ -121,6 +136,7 @@ impl Builder {
                 result = value;
             }
         }
+        self.scope_cleanups.pop();
         Ok(result)
     }
 
@@ -195,6 +211,7 @@ impl Builder {
                 };
                 let result = context.result;
                 let break_block = context.break_block;
+                let cleanup_depth = context.cleanup_depth;
                 let value = value
                     .as_ref()
                     .map(|value| self.expression(value))
@@ -207,6 +224,7 @@ impl Builder {
                     },
                     *span,
                 );
+                self.clean_exiting_scopes(cleanup_depth, *span);
                 self.terminate(MirTerminator::Goto(break_block), *span);
                 Ok(result)
             }
@@ -218,6 +236,8 @@ impl Builder {
                     ));
                 };
                 let continue_block = context.continue_block;
+                let cleanup_depth = context.cleanup_depth;
+                self.clean_exiting_scopes(cleanup_depth, *span);
                 self.terminate(MirTerminator::Goto(continue_block), *span);
                 Ok(self.unit(*span))
             }
@@ -231,7 +251,10 @@ impl Builder {
                 span,
             } => {
                 let value = self.expression(expression)?;
-                Ok(if *terminated { self.unit(*span) } else { value })
+                if *terminated {
+                    self.clean_scope_value(ScopeCleanup::Register(value), *span);
+                }
+                Ok(value)
             }
         }
     }

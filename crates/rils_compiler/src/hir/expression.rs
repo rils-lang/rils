@@ -756,13 +756,30 @@ impl<'a> FunctionLowerer<'a> {
                 let value = Box::new(self.expression(value)?);
                 let mut lowered_arms = Vec::with_capacity(arms.len());
                 for arm in arms {
+                    let first_local = self.mutable.len();
                     self.scopes.push(HashMap::new());
                     let pattern = self.pattern(&arm.pattern)?;
                     let expression = self.expression(&arm.expression)?;
                     self.scopes.pop();
+                    let mut statements = vec![HirStatement::Expression {
+                        expression,
+                        terminated: false,
+                        span: arm.pattern.span(),
+                    }];
+                    for local in (first_local..self.mutable.len()).rev() {
+                        if !self.captured.contains(&local) {
+                            statements.push(HirStatement::DropLocal {
+                                local,
+                                span: arm.pattern.span(),
+                            });
+                        }
+                    }
                     lowered_arms.push(HirMatchArm {
                         pattern,
-                        expression,
+                        expression: HirExpression::Block {
+                            statements,
+                            span: arm.pattern.span(),
+                        },
                         span: arm.pattern.span(),
                     });
                 }
