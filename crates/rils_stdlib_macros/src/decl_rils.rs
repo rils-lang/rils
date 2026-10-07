@@ -668,6 +668,38 @@ mod tests {
     }
 
     #[test]
+    fn renamed_callbacks_generate_signature_driven_owned_calls() {
+        let module: ItemMod = syn::parse_quote! {
+            mod native {
+                pub enum Option<T> { Some(T), None }
+                impl<T> Option<T> {
+                    #[export_rils]
+                    pub fn transform<U, F>(self, callback: F) -> Option<U>
+                    where F: FnOnce(T) -> U {
+                        match self {
+                            Self::Some(value) => Option::Some(callback(value)),
+                            Self::None => Option::None,
+                        }
+                    }
+                    #[export_rils]
+                    pub fn select<F>(self, callback: F) -> Self
+                    where F: FnOnce(&T) -> bool { loop {} }
+                }
+            }
+        };
+        let definition = Definition::parse(syn::parse_quote!(core::option), &module).unwrap();
+        let generated = native_tokens(&definition).unwrap().to_string();
+        assert!(generated.contains("native_self . __rils_try_transform"));
+        assert!(generated.contains("native_self . __rils_try_select"));
+        assert!(generated.contains("shared_argument"));
+        assert!(!generated.contains("Operation"));
+        assert!(!generated.contains("materialize_native_sum"));
+        assert!(!generated.contains("Value :: Option"));
+        assert!(!generated.contains("Value :: Result"));
+        assert!(!generated.contains("arguments ["));
+    }
+
+    #[test]
     fn parses_native_definition_and_rejects_placeholder_body() {
         let valid: Tokens = r#"
             core::option;

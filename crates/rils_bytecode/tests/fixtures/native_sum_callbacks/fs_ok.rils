@@ -1,0 +1,2 @@
+fn convert(value: bool) -> string { "converted" }
+std::fs::try_exists("__rils_missing_native_sum_callbacks__/file.txt").map(convert)

@@ -1,0 +1,13 @@
+struct Item { text: string }
+fn text(item: Item) -> string { item.text }
+fn pass(item: Item) -> Item { item }
+fn length(item: Item) -> usize { item.text.len() }
+fn output(value: usize) -> Item { Item { text: "result" } }
+fn combine(left: Item, right: Item) -> Item {
+    assert!(text(left) == "left");
+    right
+}
+assert!(text(core::ops::apply_twice(Item { text: "twice" }, pass)) == "twice");
+assert!(text(core::ops::combine(Item { text: "left" }, Item { text: "right" }, combine)) == "right");
+assert!(text(core::ops::chain(length, Item { text: "input" }, output)) == "result");
+42

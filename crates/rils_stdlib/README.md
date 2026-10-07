@@ -34,7 +34,15 @@ Option/Result 的普通消费式方法从 receiver、参数和返回签名生成
 `Value::Option` / `Value::Result`。可变 Option receiver 使用保留原路径的原生视图，
 写回时保持借用记录，支持非 Clone 字段与集合元素。普通 sum 方法中的显式 `panic!`
 分支由宏生成隐藏的可失败实现，调用边界接收错误。Rust 宿主调用消费式或可变 sum 方法
-使用 `call_native_owned_symbol()`；标签查询仍可使用借用切片入口。回调桥接继续迁移。
+使用 `call_native_owned_symbol()`；标签查询仍可使用借用切片入口。
+
+Option/Result 回调也从签名生成拥有型桥接，直接调用宏生成的隐藏可失败方法体，
+运行时不按 `map/and_then` 等名称定义语义。回调参数与结果按所有权传递，
+共享谓词引用仅用于当前调用；返回 sum 保留完整布局及用户/标准库声明。
+即使回调未执行，也要解析输出类型；缺失类型或布局直接报错。
+Rust 使用 `call_native_symbol_with_callback(symbol, arguments, context, expected, callback)`，
+其中参数和回调参数均为 `Vec<Value>`，泛型 sum 的 `expected` 应为完整返回类型。
+自由函数回调共享这一拥有型传参协议，不复制非 Copy 参数或闭包捕获环境。
 
 `#[export_rils]` 只可标在固有 impl 的方法上。Rust trait impl 必须在整个 impl 块上
 标记 `#[rils_impl]`，由宏一并导出 trait 身份、方法和关联类型；trait 方法不能单独标记

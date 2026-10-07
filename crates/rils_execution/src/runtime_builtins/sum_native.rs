@@ -40,12 +40,27 @@ pub(super) fn string_argument(value: Value) -> Result<String, String> {
         .map_err(|failure| failure.1)
 }
 
+#[derive(Clone)]
 pub(super) struct SumBridge {
     layout: Rc<DynamicLayout>,
     codec: NativeRecordCodec,
 }
 
 impl SumBridge {
+    pub(super) fn rils_type(&self) -> &Type {
+        self.layout.rils_type()
+    }
+
+    pub(super) fn for_type(&self, ty: &Type, context: &NativeOwnedContext) -> Result<Self, String> {
+        if !ty.is_concrete_type() {
+            return Err(format!("cannot infer the complete native sum type: {ty}"));
+        }
+        Ok(Self {
+            layout: self.codec.resolve_layout(ty, &context.hosts)?,
+            codec: self.codec.clone(),
+        })
+    }
+
     pub(super) fn new(
         value: &Value,
         owner: &str,
@@ -176,6 +191,20 @@ impl SumBridge {
             None => self.layout.clone(),
         };
         let value = self.encode_option(value, layout)?;
+        crate::value::native_instance::from_native(value, Rc::new(self.codec.clone()))
+    }
+
+    pub(super) fn export_result(
+        &mut self,
+        value: NativeResult<Value, Value>,
+    ) -> Result<Value, String> {
+        let (index, value) = match value {
+            NativeResult::Ok(value) => (0, value),
+            NativeResult::Err(value) => (1, value),
+        };
+        let item = self.item_layout(index)?;
+        let value = self.codec.into_native(value, item)?;
+        let value = DynamicValue::variant(self.layout.clone(), index, value)?;
         crate::value::native_instance::from_native(value, Rc::new(self.codec.clone()))
     }
 

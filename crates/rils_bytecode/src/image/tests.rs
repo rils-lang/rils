@@ -1158,7 +1158,7 @@ fn exported_callback_function_native_imports_are_verified() {
     assert_eq!(module.execute_value().unwrap(), Value::from_i32(3));
 
     let mut restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    restored.native_imports[0].signature.return_type = Type::Bool;
+    restored.native_imports[0].signature.return_type = Type::Unknown;
     assert!(
         restored
             .verify()

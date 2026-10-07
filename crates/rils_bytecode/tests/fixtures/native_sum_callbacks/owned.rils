@@ -1,0 +1,51 @@
+struct Item { text: string }
+fn text(item: Item) -> string { item.text }
+enum Failure { Message(string) }
+
+fn identity(item: Item) -> Item { item }
+fn wrap(item: Item) -> Option<Item> { Some(item) }
+fn fallback() -> Option<Item> { Some(Item { text: "fallback" }) }
+fn keep(item: &Item) -> bool { item.text.len() > 0usize }
+fn reject(item: &Item) -> bool { item.text.len() == 0usize }
+fn success(item: Item) -> Result<Item, Failure> { Ok(item) }
+fn change_error(error: Failure) -> string {
+    match error { Failure::Message(text) => text }
+}
+fn recover(error: Failure) -> Result<Item, string> {
+    match error { Failure::Message(text) => Ok(Item { text: text }) }
+}
+fn skip_item(item: Item) -> Item { loop {} }
+fn skip_wrap(item: Item) -> Option<Item> { loop {} }
+fn skip_error(error: Failure) -> string { loop {} }
+fn skip_recover(error: Failure) -> Result<Item, string> { loop {} }
+fn skip_success(item: Item) -> Result<Item, Failure> { loop {} }
+
+assert!(text(Some(Item { text: "map" }).map(identity).unwrap()) == "map");
+let absent_map: Option<Item> = None;
+assert!(absent_map.map(skip_item).is_none());
+assert!(text(Some(Item { text: "chain" }).and_then(wrap).unwrap()) == "chain");
+let absent_chain: Option<Item> = None;
+assert!(absent_chain.and_then(skip_wrap).is_none());
+let absent_else: Option<Item> = None;
+assert!(text(absent_else.or_else(fallback).unwrap()) == "fallback");
+assert!(text(Some(Item { text: "keep" }).filter(keep).unwrap()) == "keep");
+assert!(Some(Item { text: "reject" }).filter(reject).is_none());
+assert!(text(Some(Item { text: "left" }).or_else(fallback).unwrap()) == "left");
+
+let good_map: Result<Item, Failure> = Ok(Item { text: "good" });
+assert!(text(good_map.map(identity).unwrap()) == "good");
+let bad_map: Result<Item, Failure> = Err(Failure::Message("bad"));
+assert!(change_error(bad_map.map(skip_item).unwrap_err()) == "bad");
+let bad_error: Result<Item, Failure> = Err(Failure::Message("changed"));
+assert!(bad_error.map_err(change_error).unwrap_err() == "changed");
+let good_error: Result<Item, Failure> = Ok(Item { text: "untouched" });
+assert!(text(good_error.map_err(skip_error).unwrap()) == "untouched");
+let good_chain: Result<Item, Failure> = Ok(Item { text: "chained" });
+assert!(text(good_chain.and_then(success).unwrap()) == "chained");
+let bad_chain: Result<Item, Failure> = Err(Failure::Message("unchanged"));
+assert!(change_error(bad_chain.and_then(skip_success).unwrap_err()) == "unchanged");
+let bad_recover: Result<Item, Failure> = Err(Failure::Message("recovered"));
+assert!(text(bad_recover.or_else(recover).unwrap()) == "recovered");
+let good_recover: Result<Item, Failure> = Ok(Item { text: "skipped" });
+assert!(text(good_recover.or_else(skip_recover).unwrap()) == "skipped");
+42

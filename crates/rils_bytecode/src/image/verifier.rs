@@ -51,11 +51,17 @@ impl BytecodeModule {
                         })
                 });
             let specialized_empty_collection = import.specialized_empty_collection_type().is_some();
+            let valid_callback = expected
+                .as_ref()
+                .is_some_and(|erased| import.valid_callback_specialization(erased));
             if self.native_imports[..index]
                 .iter()
                 .any(|previous| previous == import)
                 || !self.valid_signature(&import.signature)
-                || (expected.as_ref() != Some(&import.signature) && !specialized_empty_collection)
+                || (rils_builtins::requires_native_callback(&import.symbol) && !valid_callback)
+                || (expected.as_ref() != Some(&import.signature)
+                    && !specialized_empty_collection
+                    && !valid_callback)
             {
                 return Err(BytecodeError::new(
                     format!("invalid native import `{}`", import.symbol),

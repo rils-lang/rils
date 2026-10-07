@@ -40,10 +40,31 @@ impl Interpreter {
             }
             _ => {}
         }
+        crate::runtime_builtins::call_native_symbol(symbol, arguments)
+            .ok_or_else(|| {
+                RuntimeError::new(format!("native method `{symbol}` is unavailable"), span)
+            })?
+            .map_err(|message| RuntimeError::new(message, span))
+    }
+
+    pub(super) fn call_native_owned_symbol(
+        &mut self,
+        symbol: &str,
+        arguments: Vec<Value>,
+        expected: Option<&Type>,
+        span: Span,
+        environment: EnvironmentRef,
+    ) -> Result<Value, RuntimeError> {
+        let context =
+            crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow());
         let result = crate::runtime_builtins::call_native_symbol_with_callback(
             symbol,
             arguments,
-            &mut |function, values| self.call(function.clone(), values, span),
+            &context,
+            expected,
+            &mut |function, values| {
+                self.call_owned(function.clone(), values, span, environment.clone())
+            },
         )
         .ok_or_else(|| {
             RuntimeError::new(format!("native method `{symbol}` is unavailable"), span)

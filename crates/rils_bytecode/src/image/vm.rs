@@ -572,12 +572,16 @@ impl<'a> VirtualMachine<'a> {
                     let value = if let Some(value) = native_empty {
                         value
                     } else if crate::runtime_builtins::requires_owned_native_call(&symbol) {
-                        let context = &self.native_context;
-                        crate::runtime_builtins::call_native_owned_symbol(
-                            &symbol, arguments, context,
-                        )
-                        .expect("owned native symbol is registered")
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?
+                        let expected = self.module.native_imports[import]
+                            .signature
+                            .return_type
+                            .substitute(&self.frame().type_bindings);
+                        self.call_native_owned_symbol(
+                            &symbol,
+                            arguments,
+                            Some(&expected),
+                            instruction.span,
+                        )?
                     } else {
                         self.call_native_symbol(&symbol, &arguments, instruction.span)?
                     };

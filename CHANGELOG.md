@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- Option/Result 回调方法从导出签名生成拥有型桥接并调用标准库方法体，移除按方法名分派和旧 sum 快照；回调参数与结果按所有权传递，覆盖非 Clone 用户类型、泛型函数、词法引用和自由函数回调。未执行回调的分支仍保留完整输出类型和声明；缺失布局直接报错。修复回调签名中的数值约束及泛型实参推导。**Rust API 迁移：** `NativeCallback` 的参数从 `&[Value]` 改为 `Vec<Value>`；`call_native_symbol_with_callback()` 接收拥有型参数、新增 `NativeOwnedContext` 和可选返回类型见证，泛型 sum 结果须传入完整类型。字节码 native import 保存经推导的回调返回类型；旧实验性 v8 字节码需重新编译，编码、格式号、C ABI 和版本号不变。
+
 - Option/Result 的普通消费式方法由过程宏根据签名生成拥有型转换，直接执行标准库方法体；移除运行时按方法名手写的 sum 分派及其旧值快照。`take/replace` 通过可变原生视图访问局部、结构体字段及集合元素，移动非 Clone 负载；整体替换保留借用记录，有存活子引用或负载已部分移出时失败并保留目标。`unwrap/expect` 等失败分支由宏从原方法体生成可失败实现，保留错误消息和源码位置。**Rust API 迁移：** 这些方法统一使用 `call_native_owned_symbol(symbol, Vec<Value>, &NativeOwnedContext)`；借用切片入口不再隐式复制消费式参数。可变 sum receiver 必须引用原生存储，宿主应先通过 `TypedStorageContext::construct_option()` 构造。标签查询仍支持借用入口。全局 `unwrap/unwrap_or` 从声明生成 `CallNative`，旧字节码需重新编译；IO/FS 返回值及错误 path 直接构造原生 sum 并保留声明，原生返回验证保留具体泛型与所有权。回调桥接及旧 Option/Result 变体继续迁移；源码接口、C ABI、版本号和 v8 编码不变。
 
 - `Ok` / `Err` 在解释器与 VM 中按完整 `Result<T, E>` 直接构造原生布局并消费负载，不再先创建旧 `Value::Result`。前端从返回声明、if/match 分支、泛型实参和 `?` 上下文补齐两侧类型；未标注返回类型的函数也向 VM 传入推断出的返回类型。限定标准库路径和 `use` 别名保留 sum 构造器身份，Analyzer 使用共享声明提供签名。非活动分支的类型或布局缺失同样报错。**迁移：** 无上下文的 `Ok(value)` / `Err(error)` 需提供完整 `Result<T, E>` 标注；实验性 v8 的操作码 32/33 在目标和源寄存器后新增完整 `Type`，旧字节码及包含它的 `.bytes` / `.rilslib` 需重新编译，格式号仍为 8。Rust 的 HIR/MIR `ResultOk/ResultErr` / `BuildResultOk/BuildResultErr` 新增必选 `result_type`，`ResolvedCall` 新增 `SumConstructor` 分支；宿主构造复用 `TypedStorageContext::construct_result()`。旧 Option/Result 变体及剩余适配器继续迁移；C ABI 和版本号不变。

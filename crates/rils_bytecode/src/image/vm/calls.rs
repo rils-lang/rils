@@ -40,9 +40,26 @@ impl VirtualMachine<'_> {
             }
             _ => {}
         }
+        crate::runtime_builtins::call_native_symbol(symbol, arguments)
+            .ok_or_else(|| {
+                BytecodeError::new(format!("native method `{symbol}` is unavailable"), span)
+            })?
+            .map_err(|message| BytecodeError::new(message, span))
+    }
+
+    pub(super) fn call_native_owned_symbol(
+        &mut self,
+        symbol: &str,
+        arguments: Vec<Value>,
+        expected: Option<&Type>,
+        span: Span,
+    ) -> Result<Value, BytecodeError> {
+        let context = self.native_context.clone();
         let result = crate::runtime_builtins::call_native_symbol_with_callback(
             symbol,
             arguments,
+            &context,
+            expected,
             &mut |function, values| self.invoke_native_callback(function, values, span),
         )
         .ok_or_else(|| {
@@ -59,7 +76,7 @@ impl VirtualMachine<'_> {
     fn invoke_native_callback(
         &mut self,
         function: &Value,
-        arguments: &[Value],
+        arguments: Vec<Value>,
         span: Span,
     ) -> Result<Value, BytecodeError> {
         let Value::BytecodeFunction(function) = function else {
@@ -89,11 +106,13 @@ impl VirtualMachine<'_> {
                 span,
             ));
         }
+        let mut call_arguments = function.bound_arguments.clone();
+        call_arguments.extend(arguments);
         let mut locals = new_local_storage(callee);
         let mut type_bindings = function.type_bindings.clone();
         type_bindings.extend(returns::resolve_type_bindings(
             callee,
-            function.bound_arguments.iter().chain(arguments),
+            call_arguments.iter(),
         ));
         let return_type = callee
             .return_type
@@ -102,11 +121,7 @@ impl VirtualMachine<'_> {
         for (local, capture) in locals.iter_mut().zip(&function.captures) {
             *local = capture.clone();
         }
-        for (local, argument) in locals
-            .iter()
-            .skip(callee.capture_count)
-            .zip(function.bound_arguments.iter().chain(arguments).cloned())
-        {
+        for (local, argument) in locals.iter().skip(callee.capture_count).zip(call_arguments) {
             local.borrow_mut().initialize(argument);
         }
         let active_depth = self.frames.len() - usize::from(self.root_is_module_entry);

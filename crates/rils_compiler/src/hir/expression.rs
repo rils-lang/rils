@@ -2,7 +2,26 @@ use super::*;
 
 impl<'a> FunctionLowerer<'a> {
     pub(super) fn expression(&mut self, expression: &Expr) -> Result<HirExpression, CompileError> {
-        let value = self.expression_value(expression)?;
+        let mut value = self.expression_value(expression)?;
+        if let HirExpression::CallNative {
+            symbol,
+            return_type,
+            ..
+        } = &mut value
+            && rils_builtins::requires_native_callback(symbol)
+        {
+            let expected = self
+                .expression_type(expression)
+                .map(|ty| self.signature_type(&ty))
+                .filter(Type::is_type_witness)
+                .ok_or_else(|| {
+                    CompileError::new(
+                        "cannot infer the complete native callback result type",
+                        expression.span(),
+                    )
+                })?;
+            *return_type = Some(expected);
+        }
         let constructs_storage = matches!(
             expression,
             Expr::Call { .. }

@@ -4,6 +4,9 @@ use crate::Value;
 
 pub trait NativeValue: Sized {
     fn from_value(value: &Value) -> Result<Self, String>;
+    fn from_owned_value(value: Value) -> Result<Self, String> {
+        Self::from_value(&value)
+    }
     fn into_value(self) -> Value;
 }
 
@@ -14,6 +17,10 @@ impl NativeValue for Value {
 
     fn into_value(self) -> Value {
         self
+    }
+
+    fn from_owned_value(value: Value) -> Result<Self, String> {
+        Ok(value)
     }
 }
 

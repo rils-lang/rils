@@ -39,8 +39,6 @@ impl Interpreter {
         environment: EnvironmentRef,
         expected: Option<&Type>,
     ) -> Result<Value, RuntimeError> {
-        let native_context =
-            crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow());
         let callee = match callee {
             Value::BuiltinBoundMethod(method) if matches!(method.method, BuiltinMethod::Native(symbol) if crate::runtime_builtins::requires_owned_native_call(symbol)) =>
             {
@@ -54,13 +52,7 @@ impl Interpreter {
                 let mut values = Vec::with_capacity(arguments.len() + 1);
                 values.push(receiver);
                 values.extend(arguments);
-                return crate::runtime_builtins::call_native_owned_symbol(
-                    symbol,
-                    values,
-                    &native_context,
-                )
-                .expect("owned native symbol is registered")
-                .map_err(|message| RuntimeError::new(message, span));
+                return self.call_native_owned_symbol(symbol, values, expected, span, environment);
             }
             other => other,
         };
@@ -76,18 +68,16 @@ impl Interpreter {
                 span,
             )?;
             validate_native_arguments(function.signature.as_ref(), &arguments, span)?;
-            let value = crate::runtime_builtins::call_native_owned_symbol(
-                symbol,
-                arguments,
-                &native_context,
-            )
-            .expect("owned native symbol is registered")
-            .map_err(|message| RuntimeError::new(message, span))?;
+            let value =
+                self.call_native_owned_symbol(symbol, arguments, expected, span, environment)?;
             return validate_native_return(function.signature.as_ref(), value, span, function.name);
         }
         if let Value::NativeFunction(function) = &callee
             && let NativeFunctionBody::RustOwned(callback) = function.body
         {
+            let native_context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                &environment.borrow(),
+            );
             check_arity(
                 function.name,
                 function.min_arity,

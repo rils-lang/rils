@@ -273,3 +273,16 @@ pub fn native_member_owner(
 pub fn native_member(symbol: &str) -> Option<&'static BuiltinMember> {
     native_member_owner(symbol).map(|(_, member)| member)
 }
+
+/// Whether an exported signature requires the runtime's callable bridge.
+pub fn requires_native_callback(symbol: &str) -> bool {
+    native_member(symbol)
+        .and_then(|member| member.signature)
+        .or_else(|| builtin_function(symbol).and_then(|function| function.signature))
+        .is_some_and(|signature| {
+            signature
+                .parameters
+                .iter()
+                .any(|parameter| matches!(parameter, TypePattern::Function { .. }))
+        })
+}

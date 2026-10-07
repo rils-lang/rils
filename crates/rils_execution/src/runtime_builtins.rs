@@ -31,7 +31,7 @@ mod vec_deque;
 mod vector;
 pub(crate) mod vector_dynamic;
 
-pub type NativeCallback<'a, E> = dyn FnMut(&Value, &[Value]) -> Result<Value, E> + 'a;
+pub type NativeCallback<'a, E> = dyn FnMut(&Value, Vec<Value>) -> Result<Value, E> + 'a;
 
 #[derive(Debug)]
 pub enum NativeCallError<E> {
@@ -108,7 +108,13 @@ pub fn call_native_owned_symbol(
 }
 
 pub fn requires_owned_native_call(symbol: &str) -> bool {
-    owned_sum_member(symbol).is_some() || native::is_owned_symbol(symbol)
+    requires_native_callback(symbol)
+        || owned_sum_member(symbol).is_some()
+        || native::is_owned_symbol(symbol)
+}
+
+pub fn requires_native_callback(symbol: &str) -> bool {
+    rils_builtins::requires_native_callback(symbol)
 }
 
 fn owned_sum_member(
@@ -127,13 +133,35 @@ fn owned_sum_member(
         .then_some((owner, member))
 }
 
+/// Calls an exported symbol with owned arguments and a fallible callable hook.
+/// `expected` supplies the complete result witness for generic sum outputs,
+/// including branches on which the callback is not invoked.
 pub fn call_native_symbol_with_callback<E>(
     symbol: &str,
-    arguments: &[Value],
+    arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+    expected: Option<&Type>,
     callback: &mut NativeCallback<'_, E>,
 ) -> Option<Result<Value, NativeCallError<E>>> {
-    native::call_callback_symbol(symbol, arguments, callback)
-        .or_else(|| call_native_symbol(symbol, arguments).map(|result| result.map_err(Into::into)))
+    if requires_native_callback(symbol) {
+        native::call_callback_symbol(symbol, arguments, context, expected, callback).map(|result| {
+            let value = result?;
+            if let Some(expected) = expected
+                && (!expected.is_concrete_type() || !expected.accepts(&value))
+            {
+                return Err(NativeCallError::Bridge(format!(
+                    "native callback result expects {expected}, found {}",
+                    value.type_name()
+                )));
+            }
+            Ok(value)
+        })
+    } else if requires_owned_native_call(symbol) {
+        call_native_owned_symbol(symbol, arguments, context)
+            .map(|result| result.map_err(Into::into))
+    } else {
+        call_native_symbol(symbol, &arguments).map(|result| result.map_err(Into::into))
+    }
 }
 
 #[cfg(test)]

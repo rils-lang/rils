@@ -1,0 +1,17 @@
+struct Item { text: string }
+fn text(item: Item) -> string { item.text }
+fn pass<T>(value: T) -> T { value }
+fn apply<T>(value: Option<T>) -> Option<T> { value.map(pass) }
+fn map_error<T, E>(value: Result<T, E>) -> Result<T, E> { value.map_err(pass) }
+fn capture() -> fn(Item) -> Item {
+    let text = "captured";
+    fn replace(item: Item) -> Item { Item { text: text } }
+    replace
+}
+assert!(text(apply(Some(Item { text: "generic" })).unwrap()) == "generic");
+let absent: Option<Item> = None;
+assert!(apply(absent).is_none());
+let failure: Result<i32, Item> = Err(Item { text: "error" });
+assert!(text(map_error(failure).unwrap_err()) == "error");
+assert!(text(Some(Item { text: "old" }).map(capture()).unwrap()) == "captured");
+42

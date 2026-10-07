@@ -10,6 +10,17 @@ mod native {
 
     impl<T> Option<T> {
         #[export_rils]
+        pub fn transform<U, F>(self, callback: F) -> Option<U>
+        where
+            F: FnOnce(T) -> U,
+        {
+            match self {
+                Self::Some(value) => Option::Some(callback(value)),
+                Self::None => Option::None,
+            }
+        }
+
+        #[export_rils]
         pub fn require(self, message: String) -> T {
             match self {
                 Self::Some(value) => value,

@@ -7,6 +7,16 @@ use rils_value::DynamicLayout;
 use super::{NativeRecordCodec, Type};
 
 impl NativeRecordCodec {
+    pub(crate) fn resolve_layout(
+        &self,
+        ty: &Type,
+        hosts: &[Rc<super::super::HostType>],
+    ) -> Result<Rc<DynamicLayout>, String> {
+        let structs = self.structs.values().cloned().collect::<Vec<_>>();
+        let enums = self.enums.values().cloned().collect::<Vec<_>>();
+        crate::runtime_builtins::resolve_layout(ty, &structs, &enums, hosts)
+    }
+
     pub(crate) fn retain_layout_declarations(
         &mut self,
         source: &Self,

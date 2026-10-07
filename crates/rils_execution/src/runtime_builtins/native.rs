@@ -305,7 +305,9 @@ pub fn call_owned_symbol(
     arguments: Vec<crate::Value>,
     context: &super::NativeOwnedContext,
 ) -> Option<Result<crate::Value, String>> {
-    if option::is_owned_symbol(symbol) {
+    if super::requires_native_callback(symbol) {
+        Some(Err("native callback context is unavailable".into()))
+    } else if option::is_owned_symbol(symbol) {
         option::call_owned_symbol(symbol, arguments, context)
     } else if result::is_owned_symbol(symbol) {
         result::call_owned_symbol(symbol, arguments, context)
@@ -360,14 +362,22 @@ mod callable_functions {
 
 pub fn call_callback_symbol<E>(
     symbol: &str,
-    arguments: &[crate::Value],
+    arguments: Vec<crate::Value>,
+    context: &super::NativeOwnedContext,
+    expected: Option<&crate::Type>,
     callback: &mut super::NativeCallback<'_, E>,
 ) -> Option<Result<crate::Value, super::NativeCallError<E>>> {
-    option::call_callback_symbol(symbol, arguments, callback)
-        .or_else(|| result::call_callback_symbol(symbol, arguments, callback))
-        .or_else(|| {
-            callable_functions::apply_twice::call_callback_symbol(symbol, arguments, callback)
-        })
-        .or_else(|| callable_functions::combine::call_callback_symbol(symbol, arguments, callback))
-        .or_else(|| callable_functions::chain::call_callback_symbol(symbol, arguments, callback))
+    if option::is_callback_symbol(symbol) {
+        option::call_callback_symbol(symbol, arguments, context, expected, callback)
+    } else if result::is_callback_symbol(symbol) {
+        result::call_callback_symbol(symbol, arguments, context, expected, callback)
+    } else if callable_functions::apply_twice::is_callback_symbol(symbol) {
+        callable_functions::apply_twice::call_callback_symbol(symbol, arguments, callback)
+    } else if callable_functions::combine::is_callback_symbol(symbol) {
+        callable_functions::combine::call_callback_symbol(symbol, arguments, callback)
+    } else if callable_functions::chain::is_callback_symbol(symbol) {
+        callable_functions::chain::call_callback_symbol(symbol, arguments, callback)
+    } else {
+        None
+    }
 }

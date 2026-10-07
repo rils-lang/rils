@@ -2,6 +2,27 @@
 mod fixture;
 
 #[test]
+fn renamed_callbacks_keep_their_declared_body_and_error_type() {
+    use fixture::Option;
+    assert!(matches!(
+        Option::Some("owned".to_owned()).transform(|value| value.len()),
+        Option::Some(5)
+    ));
+    assert!(matches!(
+        Option::Some("owned".to_owned()).__rils_try_transform(|value| Ok::<_, usize>(value.len())),
+        Ok(Option::Some(5))
+    ));
+    assert!(matches!(
+        Option::<String>::None.__rils_try_transform(|_| Err::<usize, _>(42)),
+        Ok(Option::None)
+    ));
+    assert!(matches!(
+        Option::Some("owned".to_owned()).__rils_try_transform(|_| Err::<usize, _>(42)),
+        Err(42)
+    ));
+}
+
+#[test]
 fn renamed_sum_methods_generate_fallible_bodies_for_panics_and_explicit_returns() {
     use fixture::Option;
 

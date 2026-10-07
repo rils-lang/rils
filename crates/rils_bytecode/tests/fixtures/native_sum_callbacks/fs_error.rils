@@ -1,0 +1,2 @@
+fn convert(value: string) -> usize { value.len() }
+std::fs::read_to_string("__rils_missing_native_sum_callbacks__/file.txt").map(convert)

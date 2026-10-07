@@ -84,7 +84,7 @@ pub(super) fn tokens(input: &Input) -> syn::Result<Tokens> {
         if let Type::BareFn(function) = parameter.ty.as_ref() {
             callback_count += 1;
             let function_value = format_ident!("callback_value_{index}");
-            imports.push(quote!(let #function_value = arguments[#index].clone();));
+            imports.push(quote!(let #function_value = arguments.next().expect("arity checked");));
             let callback_inputs = function
                 .inputs
                 .iter()
@@ -111,16 +111,16 @@ pub(super) fn tokens(input: &Input) -> syn::Result<Tokens> {
                     let values = vec![#(NativeValue::into_value(#names)),*];
                     let mut invoke = callback_cell.try_borrow_mut()
                         .map_err(|_| crate::runtime_builtins::NativeCallError::Bridge("reentrant native callback".into()))?;
-                    let result = (*invoke)(&#function_value, &values)
+                    let result = (*invoke)(&#function_value, values)
                         .map_err(crate::runtime_builtins::NativeCallError::Callback)?;
-                    <#result_type as NativeValue>::from_value(&result)
+                    <#result_type as NativeValue>::from_owned_value(result)
                         .map_err(crate::runtime_builtins::NativeCallError::Bridge)
                 }
             }});
         } else {
             let ty = runtime_type(input, &parameter.ty)?;
             imports.push(quote! {
-                let #binding = <#ty as crate::runtime_builtins::native_value::NativeValue>::from_value(&arguments[#index])
+                let #binding = <#ty as crate::runtime_builtins::native_value::NativeValue>::from_owned_value(arguments.next().expect("arity checked"))
                     .map_err(crate::runtime_builtins::NativeCallError::Bridge)?;
             });
             call_arguments.push(quote!(#binding));
@@ -135,9 +135,10 @@ pub(super) fn tokens(input: &Input) -> syn::Result<Tokens> {
     let result_type = runtime_type(input, &input.result()?)?;
     let arity = parameters.len();
     Ok(quote! {
+        pub fn is_callback_symbol(symbol: &str) -> bool { symbol == #path }
         pub fn call_callback_symbol<E>(
             symbol: &str,
-            arguments: &[crate::Value],
+            arguments: std::vec::Vec<crate::Value>,
             callback: &mut crate::runtime_builtins::NativeCallback<'_, E>,
         ) -> Option<Result<crate::Value, crate::runtime_builtins::NativeCallError<E>>> {
             if symbol != #path { return None; }
@@ -148,6 +149,7 @@ pub(super) fn tokens(input: &Input) -> syn::Result<Tokens> {
                         "native function expects {} arguments, found {}", #arity, arguments.len()
                     )));
                 }
+                let mut arguments = arguments.into_iter();
                 #(#imports)*
                 let callback_cell = std::cell::RefCell::new(callback);
                 let result: #result_type = #rust_adapter(#(#call_arguments),*)?;

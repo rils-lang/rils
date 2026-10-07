@@ -1,0 +1,14 @@
+fn keep(value: & &mut i32) -> bool { **value > 0 }
+fn pass(value: &mut i32) -> &mut i32 { value }
+fn recover(error: &mut i32) -> Result<&mut i32, string> { Ok(error) }
+let mut value = 40;
+{
+    let reference = Some(&mut value).filter(keep).map(pass).unwrap();
+    *reference = *reference + 1;
+}
+{
+    let error: Result<&mut i32, &mut i32> = Err(&mut value);
+    let recovered = error.or_else(recover).unwrap();
+    *recovered = *recovered + 1;
+}
+value
