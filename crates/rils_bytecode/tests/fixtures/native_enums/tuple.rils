@@ -1,0 +1,2 @@
+enum Choice<T> { Empty, Tuple(T) }
+Choice::Tuple("owned")

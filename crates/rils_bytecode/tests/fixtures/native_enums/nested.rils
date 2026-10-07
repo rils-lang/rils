@@ -1,0 +1,7 @@
+enum Inner { Empty, Full(string, i32) }
+enum Outer { Empty, Full(Inner) }
+let outer = Outer::Full(Inner::Full("owned", 37));
+match outer {
+    Outer::Full(Inner::Full(text, value)) => if text.len() == 5 { value + 5 } else { 0 },
+    _ => 0,
+}

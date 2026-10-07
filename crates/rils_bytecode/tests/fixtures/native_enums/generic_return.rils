@@ -1,0 +1,3 @@
+enum Choice<T> { Empty, Tuple(T) }
+fn make() -> Choice<i32> { Choice::Tuple(42) }
+make()

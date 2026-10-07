@@ -1,0 +1,9 @@
+#[derive(Debug)]
+enum Choice { Empty, Tuple(string, i32), Record { text: string, value: i32 } }
+let empty = Choice::Empty;
+let tuple = Choice::Tuple("owned", 42);
+let record = Choice::Record { text: "owned", value: 42 };
+println!("{:?}", &empty);
+println!("{:?}", &tuple);
+println!("{:?}", &record);
+42

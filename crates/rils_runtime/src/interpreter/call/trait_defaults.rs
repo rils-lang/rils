@@ -55,10 +55,12 @@ impl Interpreter {
         name: &str,
     ) -> Option<Value> {
         if !rils_builtins::is_iterator_default_method(name)
-            || rils_execution::value::native_instance::record_definition(object)
-                .ok()
-                .flatten()
-                .is_some()
+            || matches!(
+                rils_execution::value::native_instance::value_definition(object)
+                    .ok()
+                    .flatten(),
+                Some(Value::StructType(_) | Value::EnumType(_))
+            )
         {
             return None;
         }

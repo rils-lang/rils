@@ -1,0 +1,5 @@
+enum Choice<T> { Empty, Tuple(T), Record { item: T } }
+let tuple: Choice<i32> = Choice::Tuple(20);
+let record: Choice<i32> = Choice::Record { item: 22 };
+let first = match tuple { Choice::Tuple(item) => item, _ => 0 };
+match &record { Choice::Record { item: item } => first + *item, _ => 0 }

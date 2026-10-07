@@ -536,6 +536,9 @@ impl PartialEq for Value {
             if let Some(equal) = native_instance::records_equal(self, other) {
                 return equal;
             }
+            if let Some(equal) = native_instance::enums_equal(self, other) {
+                return equal;
+            }
             if let (Some(Ok(left)), Some(Ok(right))) = (
                 dynamic_sequence::view_vec(self),
                 dynamic_sequence::view_vec(other),

@@ -8,6 +8,19 @@ use crate::Type;
 
 use super::super::{DynamicObject, Value, record_codec::NativeRecordCodec};
 
+pub(super) fn debug_reference(
+    reference: &super::super::ReferenceValue,
+    formatter: &mut Formatter<'_>,
+) -> fmt::Result {
+    match reference.with_native_view(|view| format_view(view, formatter, true, true)) {
+        Ok(result) => result,
+        Err(_) => match reference.read() {
+            Ok(value) => write!(formatter, "{value:?}"),
+            Err(_) => formatter.write_str("<invalid reference>"),
+        },
+    }
+}
+
 pub(super) fn display(object: &DynamicObject, formatter: &mut Formatter<'_>) -> fmt::Result {
     format_object(object, formatter, false)
 }

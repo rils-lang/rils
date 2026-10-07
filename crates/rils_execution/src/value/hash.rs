@@ -150,8 +150,10 @@ impl HashKey {
                 Self::Composite(Box::new(StructuralKey { identity, value }))
             }
             Value::Dynamic(object)
-                if super::native_instance::record_definition(&Value::Dynamic(object.clone()))?
-                    .is_some() =>
+                if matches!(
+                    super::native_instance::definition(&object),
+                    Some(Value::StructType(_) | Value::EnumType(_))
+                ) =>
             {
                 let value = Value::Dynamic(object).clone_owned()?;
                 let identity = StructuralIdentity::from_value(&value)?;
@@ -228,6 +230,37 @@ impl StructuralIdentity {
             )
         };
         Ok(match value {
+            Value::Dynamic(_) if super::native_instance::enum_variant(value)?.is_some() => {
+                let variant = super::native_instance::enum_variant(value)?.expect("checked enum");
+                let traits = variant.definition.implemented_traits.borrow();
+                if !traits.contains("Eq") || !traits.contains("Hash") {
+                    return Err(unsupported());
+                }
+                let Some(Type::Named { name, arguments }) = Type::of_value(value) else {
+                    return Err(unsupported());
+                };
+                let mut payload = variant
+                    .field_names()
+                    .iter()
+                    .map(|field| {
+                        Ok((
+                            field.clone(),
+                            HashKey::from_value(&super::native_instance::borrow_variant_field(
+                                value,
+                                variant.index,
+                                field,
+                            )?)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                payload.sort_by(|left, right| left.0.cmp(&right.0));
+                Self::Enum {
+                    name,
+                    arguments: arguments.iter().map(ToString::to_string).collect(),
+                    variant: variant.name().to_owned(),
+                    payload,
+                }
+            }
             Value::Dynamic(_) => {
                 let definition =
                     super::native_instance::record_definition(value)?.ok_or_else(unsupported)?;

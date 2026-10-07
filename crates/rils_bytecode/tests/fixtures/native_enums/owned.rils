@@ -1,0 +1,7 @@
+enum Choice { Empty, Tuple(string, i32) }
+let choice = Choice::Tuple("owned", 37);
+match choice {
+    Choice::Tuple(text, 0) => if text.len() == 5 { 5 } else { 0 },
+    Choice::Tuple(text, value) => if text.len() == 5 { value + 5 } else { 0 },
+    Choice::Empty => 0,
+}

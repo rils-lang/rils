@@ -127,13 +127,16 @@ impl Interpreter {
     }
 
     fn trait_format_method(&self, value: &Value, trait_name: &str) -> Option<Rc<UserFunction>> {
-        if let Some(Value::StructType(definition)) =
-            rils_execution::value::native_instance::value_definition(value)
-                .ok()
-                .flatten()
-        {
-            return definition
-                .trait_methods
+        let definition = rils_execution::value::native_instance::value_definition(value)
+            .ok()
+            .flatten();
+        let methods = match &definition {
+            Some(Value::StructType(definition)) => Some(&definition.trait_methods),
+            Some(Value::EnumType(definition)) => Some(&definition.trait_methods),
+            _ => None,
+        };
+        if let Some(methods) = methods {
+            return methods
                 .borrow()
                 .get(trait_name)
                 .and_then(|methods| methods.get("fmt"))
@@ -169,6 +172,42 @@ impl Interpreter {
         span: Span,
     ) -> Result<(), RuntimeError> {
         let buffer = formatter_buffer(formatter, span)?;
+        if let Some(variant) = rils_execution::value::native_instance::enum_variant(value)
+            .map_err(|message| RuntimeError::new(message, span))?
+        {
+            let name = format!("{}::{}", variant.definition.name, variant.name());
+            let fields = variant
+                .field_names()
+                .into_iter()
+                .map(|field| {
+                    rils_execution::value::native_instance::borrow_variant_field(
+                        value,
+                        variant.index,
+                        &field,
+                    )
+                    .map(|value| (field, value))
+                    .map_err(|message| RuntimeError::new(message, span))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return match variant.declaration() {
+                EnumVariant::Unit { .. } => {
+                    buffer.write_str(&name);
+                    Ok(())
+                }
+                EnumVariant::Tuple { .. } => self.write_debug_tuple(
+                    &buffer,
+                    &name,
+                    &fields
+                        .into_iter()
+                        .map(|(_, value)| value)
+                        .collect::<Vec<_>>(),
+                    span,
+                ),
+                EnumVariant::Record { .. } => {
+                    self.write_debug_record(&buffer, &name, &fields, span)
+                }
+            };
+        }
         if let Some(definition) = rils_execution::value::native_instance::record_definition(value)
             .map_err(|message| RuntimeError::new(message, span))?
         {

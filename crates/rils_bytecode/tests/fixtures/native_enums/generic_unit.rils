@@ -1,0 +1,5 @@
+enum Choice<T> { Empty, Full(T) }
+fn make() -> Choice<i32> { Choice::Empty }
+let first: Choice<i32> = Choice::Empty;
+let returned = make();
+match &first { Choice::Empty => returned, _ => Choice::Full(0) }

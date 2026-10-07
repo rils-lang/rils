@@ -1,0 +1,8 @@
+mod left {
+    pub enum Choice<T> { Empty, Full(T) }
+    pub fn make() -> Choice<i32> { Choice::Full(42) }
+}
+mod right { pub enum Other { Empty, Full(string) } }
+use left::Choice as Imported;
+let value = left::make();
+match value { Imported::Full(number) => number, Imported::Empty => 0 }

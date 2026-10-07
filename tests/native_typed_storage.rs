@@ -1,5 +1,4 @@
 use rils::{BytecodeModule, Value, compile, eval, eval_value};
-use rils_execution::value::EnumPayload;
 
 #[test]
 fn function_returns_compose_concrete_layouts_including_inactive_branches() {
@@ -221,20 +220,29 @@ fn nominal_sum_in_enum_tuple_field_uses_concrete_storage() {
             ("interpreter", eval_value(source).unwrap()),
             ("VM", compile(source).unwrap().execute_value().unwrap()),
         ] {
-            let Value::Enum(instance) = value else {
-                panic!("expected enum value in {stage}");
+            let Value::Dynamic(_) = &value else {
+                panic!("expected native enum in {stage}");
+            };
+            let rils::Type::Named { arguments, .. } = rils::Type::of_value(&value).unwrap() else {
+                panic!("enum type");
             };
             if !expected_type.is_empty() {
-                assert_eq!(
-                    instance.type_arguments[0].to_string(),
-                    expected_type,
-                    "{stage}"
-                );
+                assert_eq!(arguments[0].to_string(), expected_type, "{stage}");
             }
-            let EnumPayload::Tuple(fields) = &instance.payload else {
-                panic!("expected tuple payload in {stage}");
-            };
-            assert!(matches!(fields[0], Value::Dynamic(_)), "{stage}");
+            rils_execution::RilsValue::new(value)
+                .with_native_view(|view| {
+                    assert_eq!(view.variant_index().unwrap(), 0, "{stage}");
+                    let payload = view.variant_payload().unwrap();
+                    let field = payload.field(0).unwrap();
+                    assert!(
+                        matches!(
+                            field.layout().unwrap().rils_type(),
+                            rils::Type::Option(_) | rils::Type::Result(_, _)
+                        ),
+                        "{stage}"
+                    );
+                })
+                .unwrap();
         }
     }
 }

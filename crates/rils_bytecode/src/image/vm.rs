@@ -601,7 +601,10 @@ impl<'a> VirtualMachine<'a> {
                             type_definition: definition.clone(),
                             variant,
                             payload: EnumPayload::Unit,
-                            type_arguments: Vec::new(),
+                            type_arguments: vec![
+                                Type::Unknown;
+                                definition.generic_parameters.len()
+                            ],
                         })));
                 }
                 operation @ (Instruction::BuildTuple { .. }

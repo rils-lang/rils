@@ -735,3 +735,65 @@ fn enum_copy_requires_an_explicit_declaration_and_copy_fields_in_every_variant()
         }
     }
 }
+
+#[test]
+fn enum_projections_keep_native_metadata_original_bytes_and_lexical_leases() {
+    use rils_execution::value::native_instance::{
+        borrow_field, borrow_variant_field, enum_variant,
+    };
+    let declarations = Declarations::fixture();
+    for (index, variant, name) in [(1, "Tuple", "0"), (2, "Record", "item")] {
+        let child = declarations.owned("original");
+        let payload = if index == 1 {
+            EnumPayload::Tuple(vec![child])
+        } else {
+            EnumPayload::Record(HashMap::from([("item".into(), child)]))
+        };
+        let value = native(
+            &declarations,
+            declarations.choice(variant, payload, Type::named("Owned")),
+        );
+        let active = enum_variant(&value).unwrap().unwrap();
+        assert!(Rc::ptr_eq(&active.definition, &declarations.enums[0]));
+        assert_eq!(active.index, index);
+        let owner = place(&value)
+            .project(DynamicPathStep::Variant(index))
+            .unwrap()
+            .field(name)
+            .unwrap();
+        let child = borrow_variant_field(&value, index, name).unwrap();
+        let number = borrow_field(&child, "number").unwrap();
+        owner
+            .field("number")
+            .unwrap()
+            .borrow(true, None)
+            .unwrap()
+            .write(Value::from_i32(43))
+            .unwrap();
+        assert_eq!(RilsValue::new(number).get_cloned::<i32>().unwrap(), 43);
+        assert!(
+            owner.take().is_err(),
+            "child reference prevents an ancestor move"
+        );
+        drop(child);
+        let moved = owner.take().unwrap();
+        assert!(
+            matches!(moved, Value::Dynamic(_)),
+            "enum child must stay native"
+        );
+        assert!(value.is_partially_moved());
+        owner.assign(moved).unwrap();
+        assert!(!value.is_partially_moved());
+        let slot = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+        slot.borrow_mut().initialize(value);
+        let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true)));
+        let field = borrow_variant_field(&reference, index, name).unwrap();
+        drop(reference);
+        assert!(
+            slot.borrow_mut().take().is_err(),
+            "projected field retains source lease"
+        );
+        drop(field);
+        assert!(slot.borrow_mut().take().is_ok());
+    }
+}

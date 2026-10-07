@@ -2,7 +2,7 @@
 //!
 //! The codec moves structural values into native fields and restores runtime
 //! wrappers at the execution boundary. Nominal declarations are retained in
-//! the codec so nested structs and enums can be reconstructed after a move.
+//! the codec so moved structs and enums keep their native storage and identity.
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
@@ -12,8 +12,8 @@ use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 use crate::{Type, ast::EnumVariant};
 
 use super::{
-    EnumInstance, EnumPayload, EnumType, FieldSlot, HashKey, IndexedStorage, StructType, Value,
-    native_layouts, native_string,
+    EnumPayload, EnumType, FieldSlot, HashKey, IndexedStorage, StructType, Value, native_layouts,
+    native_string,
 };
 
 #[derive(Clone, Default)]
@@ -374,7 +374,8 @@ impl NativeRecordCodec {
             }
             (Type::Named { name, arguments }, Value::Enum(instance))
                 if instance.type_definition.name == name
-                    && instance.type_arguments == arguments =>
+                    && crate::types::merge_type_arguments(&arguments, &instance.type_arguments)
+                        .is_some() =>
             {
                 let instance = Rc::try_unwrap(instance)
                     .map_err(|_| format!("cannot move a shared enum `{name}`"))?;
@@ -640,64 +641,11 @@ impl NativeRecordCodec {
             }
             Type::Named { name, arguments } if self.enums.contains_key(&name) => {
                 let definition = self.enums[&name].clone();
-                let (index, mut payload) = value.take_variant()?;
-                let declaration = definition
-                    .variants
-                    .get(index)
-                    .ok_or_else(|| format!("enum `{name}` has no variant at index {index}"))?;
-                let (variant, payload) = match declaration {
-                    EnumVariant::Unit { name, .. } => {
-                        if payload.descriptor().rils_type() != &Type::Unit {
-                            return Err(format!("unit variant `{name}` has a payload layout"));
-                        }
-                        (name.clone(), EnumPayload::Unit)
-                    }
-                    EnumVariant::Tuple { name, fields, .. } => {
-                        let layouts = payload.descriptor().record_fields().ok_or_else(|| {
-                            format!("tuple variant `{name}` has no aggregate layout")
-                        })?;
-                        if layouts.len() != fields.len()
-                            || layouts
-                                .iter()
-                                .enumerate()
-                                .any(|(index, field)| field.name() != index.to_string())
-                        {
-                            return Err(format!("tuple variant `{name}` has wrong field order"));
-                        }
-                        let mut values = Vec::with_capacity(fields.len());
-                        for index in 0..fields.len() {
-                            values.push(self.decode(payload.take_field(index)?)?);
-                        }
-                        (name.clone(), EnumPayload::Tuple(values))
-                    }
-                    EnumVariant::Record { name, fields, .. } => {
-                        let layouts = payload.descriptor().record_fields().ok_or_else(|| {
-                            format!("record variant `{name}` has no aggregate layout")
-                        })?;
-                        if layouts.len() != fields.len()
-                            || layouts
-                                .iter()
-                                .zip(fields)
-                                .any(|(layout, field)| layout.name() != field.name)
-                        {
-                            return Err(format!("record variant `{name}` has wrong field order"));
-                        }
-                        let mut values = HashMap::with_capacity(fields.len());
-                        for (index, field) in fields.iter().enumerate() {
-                            values.insert(
-                                field.name.clone(),
-                                self.decode(payload.take_field(index)?)?,
-                            );
-                        }
-                        (name.clone(), EnumPayload::Record(values))
-                    }
-                };
-                Ok(Value::Enum(Rc::new(EnumInstance {
-                    type_definition: definition,
-                    variant,
-                    payload,
-                    type_arguments: arguments,
-                })))
+                if definition.generic_parameters.len() != arguments.len() {
+                    return Err(format!("enum `{name}` has wrong type argument count"));
+                }
+                super::native_instance::validate_enum_layout(value.descriptor(), &definition)?;
+                super::native_instance::from_native(value, Rc::new(self.clone()))
             }
             ty if native_layouts::integer::layout(&ty).is_some() => {
                 native_layouts::integer::field_value(value, &ty)

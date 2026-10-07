@@ -1,0 +1,4 @@
+enum Choice { Empty, Full(i32) }
+let value = Choice::Empty;
+let moved = value;
+value

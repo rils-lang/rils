@@ -1,0 +1,3 @@
+#[derive(Clone)]
+enum Choice<T> { Empty, Full(T) }
+Choice::<i32>::Empty.clone()

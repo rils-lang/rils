@@ -1,0 +1,17 @@
+enum Counter { Next(i32), Done }
+impl Iterator for Counter {
+    type Item = i32;
+    fn next(&mut self) -> Option<i32> {
+        let value = match self { Counter::Next(value) => *value, Counter::Done => 22 };
+        if value < 22 {
+            *self = Counter::Next(value + 1);
+            Some(value)
+        } else {
+            *self = Counter::Done;
+            None
+        }
+    }
+}
+let mut sum = 1;
+for value in Counter::Next(20) { sum = sum + value; }
+sum

@@ -1,0 +1,2 @@
+enum Choice { Empty, Record { text: string, value: i32 } }
+Choice::Record { text: "owned", value: 42 }

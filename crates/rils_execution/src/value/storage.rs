@@ -90,7 +90,7 @@ impl<'a> TypedStorageContext<'a> {
         let expected = declarations::storage_type(expected);
         let expected = self.concrete_expected(&value, &expected)?;
         let expected = &expected;
-        if matches!(value, Value::Struct(_)) {
+        if matches!(value, Value::Struct(_) | Value::Enum(_)) {
             return self.compose_nominal(value, expected);
         }
         let value = self.compose_indexed(value, expected)?;

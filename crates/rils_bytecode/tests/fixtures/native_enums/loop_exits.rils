@@ -1,0 +1,19 @@
+enum Choice { Empty, Full(i32) }
+fn break_value() -> i32 {
+    let choice = Choice::Full(20);
+    let zero = 0;
+    match &choice { Choice::Full(value) => value, _ => &zero };
+    loop { match &choice { Choice::Full(value) => { if *value == 20 { break; } }, _ => { break; } } }
+    match choice { Choice::Full(value) => value, _ => 0 }
+}
+fn continue_value() -> i32 {
+    let choice = Choice::Full(22);
+    let mut turn = 0;
+    loop {
+        if turn == 1 { break; }
+        turn = 1;
+        match &choice { Choice::Full(value) => { if *value == 22 { continue; } }, _ => { break; } }
+    }
+    match choice { Choice::Full(value) => value, _ => 0 }
+}
+break_value() + continue_value()

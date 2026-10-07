@@ -5,6 +5,7 @@ use crate::{
     value::{EnumPayload, Value},
 };
 
+mod native_enum;
 mod native_record;
 
 pub(super) fn pattern_locals_valid(pattern: &HirPattern, local_count: usize) -> bool {
@@ -26,7 +27,13 @@ pub(super) fn pattern_locals_valid(pattern: &HirPattern, local_count: usize) -> 
 }
 
 pub(super) fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
+    if matches!(pattern, HirPattern::Wildcard | HirPattern::Binding(_)) {
+        return true;
+    }
     if let Some(matches) = native_record::matches(pattern, value) {
+        return matches;
+    }
+    if let Some(matches) = native_enum::matches(pattern, value) {
         return matches;
     }
     let borrowed = match value {
@@ -120,6 +127,9 @@ pub(super) fn collect_pattern_bindings(
     if let Some(result) = native_record::collect(pattern, value, bindings, false) {
         return result;
     }
+    if let Some(result) = native_enum::collect(pattern, value, bindings, false) {
+        return result;
+    }
     if let (HirPattern::Binding(local), Value::Reference(_)) = (pattern, value) {
         bindings.push((*local, value.clone()));
         return Ok(());
@@ -143,6 +153,9 @@ fn collect_pattern_bindings_inner(
     borrowed: bool,
 ) -> Result<(), String> {
     if let Some(result) = native_record::collect(pattern, value, bindings, borrowed) {
+        return result;
+    }
+    if let Some(result) = native_enum::collect(pattern, value, bindings, borrowed) {
         return result;
     }
     let materialized = value.materialize_native_sum().and_then(Result::ok);

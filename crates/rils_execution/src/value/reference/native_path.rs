@@ -201,6 +201,19 @@ impl ReferenceValue {
         }))
     }
 
+    /// Retain the source reference and project only the active enum payload.
+    pub fn project_native_variant(self: &Rc<Self>, index: usize) -> Result<Option<Self>, String> {
+        let Some(path) = self.native_path()? else {
+            return Ok(None);
+        };
+        let path = path.project(DynamicPathStep::Variant(index))?;
+        Ok(Some(Self {
+            mutable: self.mutable,
+            target: ReferenceTarget::DynamicField(Box::new(path)),
+            _guard: Some(self.clone()),
+        }))
+    }
+
     pub fn project_native_index(self: &Rc<Self>, index: usize) -> Result<Option<Self>, String> {
         self.project_native_index_with_codec(index, None)
     }

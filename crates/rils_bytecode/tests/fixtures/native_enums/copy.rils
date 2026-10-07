@@ -1,0 +1,6 @@
+#[derive(Clone, Copy)]
+enum Choice { Empty, Full(i32), Record { value: i32 } }
+let choice = Choice::Record { value: 42 };
+let copied = choice;
+let first = match copied { Choice::Record { value: value } => value, _ => 0 };
+match choice { Choice::Record { value: value } => if first == 42 { value } else { 0 }, _ => 0 }

@@ -1,0 +1,14 @@
+enum Counter { Empty, Full(i32) }
+trait Read { fn read(&self) -> i32; }
+impl Read for Counter {
+    fn read(&self) -> i32 { match self { Counter::Full(value) => *value, Counter::Empty => 0 } }
+}
+impl Counter {
+    fn bump(&mut self) { let value = self.read(); *self = Counter::Full(value + 1); }
+    fn finish(self) -> i32 { match self { Counter::Full(value) => value, Counter::Empty => 0 } }
+}
+let mut counter = Counter::Full(40);
+counter.bump();
+let seen = counter.read();
+counter.bump();
+if seen == 41 { counter.finish() } else { 0 }

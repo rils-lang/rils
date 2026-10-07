@@ -5,11 +5,13 @@
 
 ## Unreleased
 
-- 普通用户 struct 的独立存储、泛型实例、嵌套字段 move/恢复、方法 receiver 与 record 模式已接入原生布局；借用 record 模式绑定保留原字段身份，原生集合字段的方法及借用迭代器直接访问原对象。Copy 继续要求显式实现，不依据字段自动授予。Rust 宿主应使用 `RilsValue` 或原生视图读取记录，避免仅匹配旧 `Value::Struct`；独立 enum 与临时兼容构造值继续迁移。未冻结的 v8 类型表新增 opaque struct 标签以保留标准库声明属性，已有 `.rilbc` / `.bytes` 需重新编译；格式号仍为 8，C ABI 与版本号未变。
+- 普通用户 enum 的独立存储和泛型实例已接入原生布局，包括 unit、tuple、record 变体及方法 receiver。借用模式保留原变体字段的 bytes 所有者；拥有型模式先确认整条分支匹配成功再移动字段。泛型构造与模式绑定按实际声明替换类型参数，显式泛型 unit 变体也保留具体类型。Debug、结构相等和哈希键支持原生 enum，VM 的模式绑定引用在分支结束、break/continue 跳转及临时匹配结果被丢弃时释放；宿主 enum discriminant 与 raw flags 转换入口支持原生变体。Copy 仍要求显式实现，并检查所有变体的字段。**Rust API 迁移：** 宿主不能再以仅匹配 `Value::Enum` 的方式读取脚本 enum；请使用 `RilsValue::with_native_view()`、活动变体标签及其字段视图。临时兼容构造与部分借用 sum 适配器仍待清理；C ABI、版本号和未冻结的 v8 格式号不变。
+
+- 普通用户 struct 的独立存储、泛型实例、嵌套字段 move/恢复、方法 receiver 与 record 模式已接入原生布局；借用 record 模式绑定保留原字段身份，原生集合字段的方法及借用迭代器直接访问原对象。Copy 继续要求显式实现，不依据字段自动授予。Rust 宿主应使用 `RilsValue` 或原生视图读取记录，避免仅匹配旧 `Value::Struct`；独立 enum 的原生存储见上项，临时兼容构造值继续迁移。未冻结的 v8 类型表新增 opaque struct 标签以保留标准库声明属性，已有 `.rilbc` / `.bytes` 需重新编译；格式号仍为 8，C ABI 与版本号未变。
 
 - **破坏性所有权语义修正：** 用户 struct/enum 不再依据字段自动获得 Copy；必须显式 `impl Copy` 或 `#[derive(Copy)]`，并实现父 trait `Clone`；用户类型的 `Clone` bound 与 `.clone()` 也要求相应声明，通用的 `clone(&value)` 仍可显式复制拥有型值。检查覆盖所有 enum 变体及嵌套类型，空类型与 unit 变体也不例外。迁移重复使用同一值的源码时，可为符合条件的类型添加 `#[derive(Clone, Copy)]`，或使用引用/显式 Clone。Copy 声明进入现有字节码 trait 表，加载验证拒绝无效声明；未冻结的 v8 格式号不变，已有字节码应重新编译。
 
-- Rust 宿主的 `RilsValue::field()`、`struct_name()` 和 `field_name()` 现可读取带声明上下文的原生用户记录及其引用，保留原 bytes 所有者，避免解码中间记录。`with_ref` / `get_cloned` 可读取原生组合字段内的整数与浮点叶子，`into_owned` 按实际叶子布局移出拥有型标量；已有 `RilsHostType` 实现无需增加必选方法。独立 enum 与临时兼容构造值仍在迁移中；本项未改变 C ABI。
+- Rust 宿主的 `RilsValue::field()`、`struct_name()` 和 `field_name()` 现可读取带声明上下文的原生用户记录及其引用，保留原 bytes 所有者，避免解码中间记录。`with_ref` / `get_cloned` 可读取原生组合字段内的整数与浮点叶子，`into_owned` 按实际叶子布局移出拥有型标量；已有 `RilsHostType` 实现无需增加必选方法。独立 enum 也已接入原生存储，临时兼容构造值仍在迁移中；本项未改变 C ABI。
 
 - 宿主类型声明已贯通原生组合存储与构造上下文，涵盖 Option/Result、空集合、Box/Rc、Cell/RefCell、回调及嵌套记录。Rust 使用 `Engine::register_host_contract_types()` / `BytecodeHost::register_host_contract()` 安装 Manifest 类型，C API 冻结契约时自动登记；自定义 Rust 类型可向 VM 共享声明并保留其非 Copy 策略。宿主 enum 与 raw flags 使用同一变体声明，基类组合值保留实际宿主身份。**破坏性 Rust API / 类型身份调整：** `NativeOwnedContext` 新增 `hosts` 字段，已有字面量可补 `..Default::default()`，或改用 `from_environment()`；`register_native_type("host", "Item")` 的类型名改为 `host::Item`，签名与类型名比较应使用完整路径。读取组合结果应使用原生视图或 `as_option()` / `as_result()`。C ABI、版本号和 v8 编码未变；旧 flags 字节码需重新编译。
 

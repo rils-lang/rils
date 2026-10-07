@@ -39,7 +39,7 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 
 词法引用和函数值也有执行层注册的原生叶子布局：`Option<&mut T>`、`Result<fn(T) -> U, E>`、`Vec<fn(T) -> U>` 及包含它们的泛型记录可以参与原生组合存储。Copy 保留引用租约或函数身份，闭包的捕获状态继续共享；原生字段内的引用仍按来源检查作用域，不能因进入组合存储而逃逸。宿主声明已接入相同上下文：Option/Result、空集合、Box、Rc 和 Cell/RefCell 构造可递归组合宿主字段，保留声明的 Copy 策略与对象身份。Rust 宿主可用 `Engine::register_host_contract_types()` 和 `BytecodeHost::register_host_contract()` 安装 Manifest 类型；C API 冻结宿主契约时自动接入。`register_native_type()` 的自定义类型使用完整模块路径，默认非 Copy。
 
-原生值 crate 已支持运行时组合的 `Option<T>`、用户结构体、tuple、定长数组、带标签变体和拥有型序列布局；执行层可从已有 struct/enum 声明解析具体泛型实例的字段偏移和变体负载。带具体标准库元素布局的 `VecDeque<T>` 与 `BinaryHeap<T>` 在解释器和 VM 的类型化局部绑定中已使用动态原生序列存储；元素有可解析布局的类型化空 `Vec<T>` 也已接入，Rust 宿主可通过 `Value::as_vec()` 读取新旧表示。入队、出队、堆插入、堆弹出及清空等操作直接访问原生负载；支持 Clone 的组合元素端点克隆与容器克隆按原生布局递归读取负载。类型化局部绑定中的用户定义元素可在布局可解析时使用原生路径；其他构造上下文仍可能走旧容器路径。字节码中的本模块用户结构体字段 place 已使用经过验证的声明索引，解释器和 VM 的字段槽位也按声明顺序存放。独立 struct 的字段仍由 `Value::Struct` 持有；容器内原生用户记录的嵌套字段与索引引用已直接沿布局路径访问 bytes，支持 RefCell、借用迭代器、tuple/array/Vec 子字段、参数与方法 receiver 写回。整数、浮点数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数与 `string` 方法的原生对象注册由过程宏生成；两类方法返回的 `Option<T>` 已使用原生布局，`Option<T>` 自身的方法桥接当前通过过渡适配器读取原生负载，其他类型的可执行注册及实际值迁移仍在进行中。
+原生值 crate 已支持运行时组合的 `Option<T>`、用户结构体、tuple、定长数组、带标签变体和拥有型序列布局；执行层可从已有 struct/enum 声明解析具体泛型实例的字段偏移和变体负载。带具体标准库元素布局的 `VecDeque<T>` 与 `BinaryHeap<T>` 在解释器和 VM 的类型化局部绑定中已使用动态原生序列存储；元素有可解析布局的类型化空 `Vec<T>` 也已接入，Rust 宿主可通过 `Value::as_vec()` 读取新旧表示。入队、出队、堆插入、堆弹出及清空等操作直接访问原生负载；支持 Clone 的组合元素端点克隆与容器克隆按原生布局递归读取负载。类型化局部绑定中的用户定义元素可在布局可解析时使用原生路径；其他构造上下文仍可能走旧容器路径。字节码中的本模块用户结构体字段 place 已使用经过验证的声明索引，解释器和 VM 的字段槽位也按声明顺序存放。独立用户 struct/enum 已按具体类型存入原生布局；容器内原生用户记录的嵌套字段与索引引用已直接沿布局路径访问 bytes，支持 RefCell、借用迭代器、tuple/array/Vec 子字段、参数与方法 receiver 写回。整数、浮点数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数与 `string` 方法的原生对象注册由过程宏生成；两类方法返回的 `Option<T>` 已使用原生布局，`Option<T>` 自身的方法桥接当前通过过渡适配器读取原生负载，其他类型的可执行注册及实际值迁移仍在进行中。
 `VecDeque<T>` 和 `BinaryHeap<T>` 可通过 `into_iter()` 或 `for` 消费并遍历；队列保持队首到队尾的顺序，堆遍历不保证排序。集合实现 `IntoIterator`，产出的迭代器实现 `Iterator`。`Vec<T>` 的拥有型迭代接管原有元素存储，`iter()` 则借用元素并保留集合；字符串迭代按需生成下一项。
 
 项目中的公开源码声明可通过多层 `pub use` 重导出；Analyzer 的补全、Hover、跳转和引用查找
@@ -49,9 +49,9 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 
 ## Rust 嵌入
 
-执行层新增 `TypedStorageContext::compose_nominal()` 和共享 `NativeInstancePlace`，可把具体用户 struct/enum 按所有权转换成原生实例，沿字段路径 move、恢复和借用；类型定义与泛型参数保存在声明元数据中。`RilsValue::field()`、`struct_name()` 与 `field_name()` 可直接读取这类实例及其引用，字段 handle 保留原 bytes 所有者；数值叶子的 `with_ref` / `into_owned` 按实际布局转换。普通脚本 struct 的独立存储、泛型实例、字段 move/恢复、方法 receiver 和 record 模式已接入原生布局；构造过程仍有临时兼容值，独立 enum 实例继续迁移。用户类型只有显式实现 Copy 才可复制，字段全部为 Copy 并不会自动授予该能力。
+执行层新增 `TypedStorageContext::compose_nominal()` 和共享 `NativeInstancePlace`，可把具体用户 struct/enum 按所有权转换成原生实例，沿字段路径 move、恢复和借用；类型定义与泛型参数保存在声明元数据中。`RilsValue::field()`、`struct_name()` 与 `field_name()` 可直接读取这类实例及其引用，字段 handle 保留原 bytes 所有者；数值叶子的 `with_ref` / `into_owned` 按实际布局转换。普通脚本 struct/enum 的独立存储、泛型实例、字段 move/恢复、方法 receiver 与模式绑定已接入原生布局；enum 的 unit/tuple/record 变体保留标签、声明身份和具体类型参数。借用 enum 模式直接投影原字段，拥有型模式在整条分支匹配成功后移动绑定字段；Debug 与哈希键访问复用原生变体元数据。构造过程仍有临时兼容值，Option/Result 等剩余快照适配器继续迁移。用户类型只有显式实现 Copy 才可复制，字段全部为 Copy 并不会自动授予该能力。
 
-`RilsValue::with_native_view` 可在回调内沿原生布局读取 `Option`、`Result`、record 和序列的嵌套子值，不需要把复合值转换成拥有型 `Value`；`with_ref` 仍用于已知 Rust 叶子类型。视图不能离开回调。用户 struct receiver、字段中的原生集合方法及借用迭代器使用原对象的检查路径；剩余适配器仍在逐步迁移。
+`RilsValue::with_native_view` 可在回调内沿原生布局读取 `Option`、`Result`、record 和序列的嵌套子值，不需要把复合值转换成拥有型 `Value`；`with_ref` 仍用于已知 Rust 叶子类型。视图不能离开回调。用户 struct/enum receiver、变体字段投影、原生集合方法及借用迭代器使用原对象的检查路径；剩余适配器仍在逐步迁移。
 
 类型化空 `Vec<T>` 在元素有可解析的标准库原生布局时使用原生序列，包括 `Option<string>`、`Result<string, string>`、元组及嵌套 `Vec<string>`。这些复合元素可用拥有型方法移入、移出，并能建立索引引用和借用迭代器；内部读取借用的非 Copy 复合元素仍受 `Value` 转换边界限制。无法解析布局的用户定义元素暂时沿用旧容器路径。`Vec<string>` 借用读取字符串时，现有 `Value` 调用边界会克隆文本；索引直接移出非 Copy 字符串仍被拒绝。
 

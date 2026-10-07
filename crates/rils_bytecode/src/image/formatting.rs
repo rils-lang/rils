@@ -157,10 +157,11 @@ impl VirtualMachine<'_> {
     ) -> Result<Value, BytecodeError> {
         let buffer = crate::formatting::buffer_from_value(formatter)
             .map_err(|message| BytecodeError::new(message, span))?;
-        if rils_execution::value::native_instance::record_definition(value)
-            .map_err(|message| BytecodeError::new(message, span))?
-            .is_some()
-        {
+        if matches!(
+            rils_execution::value::native_instance::value_definition(value)
+                .map_err(|message| BytecodeError::new(message, span))?,
+            Some(Value::StructType(_) | Value::EnumType(_))
+        ) {
             self.write_structural_debug(&buffer, value, span)?;
             return Ok(format_ok());
         }
@@ -181,6 +182,35 @@ impl VirtualMachine<'_> {
         span: Span,
     ) -> Result<(), BytecodeError> {
         let (name, fields, tuple) = match value {
+            value
+                if rils_execution::value::native_instance::enum_variant(value)
+                    .map_err(|message| BytecodeError::new(message, span))?
+                    .is_some() =>
+            {
+                let variant = rils_execution::value::native_instance::enum_variant(value)
+                    .map_err(|message| BytecodeError::new(message, span))?
+                    .expect("checked enum");
+                let name = format!("{}::{}", variant.definition.name, variant.name());
+                if matches!(variant.declaration(), crate::ast::EnumVariant::Unit { .. }) {
+                    buffer.write_str(&name);
+                    return Ok(());
+                }
+                let tuple = matches!(variant.declaration(), crate::ast::EnumVariant::Tuple { .. });
+                let fields = variant
+                    .field_names()
+                    .into_iter()
+                    .map(|field| {
+                        rils_execution::value::native_instance::borrow_variant_field(
+                            value,
+                            variant.index,
+                            &field,
+                        )
+                        .map(|value| (if tuple { None } else { Some(field) }, value))
+                        .map_err(|message| BytecodeError::new(message, span))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                (name, fields, tuple)
+            }
             value
                 if rils_execution::value::native_instance::record_definition(value)
                     .map_err(|message| BytecodeError::new(message, span))?

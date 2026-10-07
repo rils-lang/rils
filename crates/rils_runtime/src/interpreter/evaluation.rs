@@ -23,6 +23,8 @@ impl Interpreter {
         let constructs_storage = matches!(
             expression,
             Expr::Call { .. }
+                | Expr::Path { .. }
+                | Expr::GenericPath { .. }
                 | Expr::RecordLiteral { .. }
                 | Expr::Tuple { .. }
                 | Expr::Array { .. }

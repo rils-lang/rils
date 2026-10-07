@@ -58,7 +58,7 @@ pub(super) fn matches(
     )
 }
 
-fn has_binding(pattern: &Pattern) -> bool {
+pub(super) fn has_binding(pattern: &Pattern) -> bool {
     match pattern {
         Pattern::Binding { .. } => true,
         Pattern::Some { inner, .. } | Pattern::Ok { inner, .. } | Pattern::Err { inner, .. } => {

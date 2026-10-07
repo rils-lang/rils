@@ -1,6 +1,7 @@
 use super::*;
 use crate::environment::StorageSlot;
 
+mod native_enum;
 mod native_record;
 
 pub(super) fn pattern_matches(
@@ -9,7 +10,13 @@ pub(super) fn pattern_matches(
     bindings: &mut Vec<(String, Value)>,
     environment: &EnvironmentRef,
 ) -> bool {
+    if matches!(pattern, Pattern::Wildcard { .. }) {
+        return true;
+    }
     if let Some(matches) = native_record::matches(pattern, value, bindings, environment, false) {
+        return matches;
+    }
+    if let Some(matches) = native_enum::matches(pattern, value, bindings, environment, false) {
         return matches;
     }
     if let (Pattern::Binding { name, .. }, Value::Reference(_)) = (pattern, value) {
@@ -37,6 +44,9 @@ fn pattern_matches_inner(
     borrowed: bool,
 ) -> bool {
     if let Some(matches) = native_record::matches(pattern, value, bindings, environment, borrowed) {
+        return matches;
+    }
+    if let Some(matches) = native_enum::matches(pattern, value, bindings, environment, borrowed) {
         return matches;
     }
     let materialized = match value.materialize_native_sum() {

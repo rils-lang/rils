@@ -588,6 +588,28 @@ impl Interpreter {
                 span,
             );
         }
+        if let Value::Dynamic(payload) = &object
+            && let Some(Value::EnumType(definition)) =
+                rils_execution::value::native_instance::definition(payload)
+        {
+            if name == "into_iter"
+                && definition.implemented_traits.borrow().contains("Iterator")
+                && !definition.methods.borrow().contains_key(name)
+            {
+                return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                    receiver: Rc::new(object),
+                    method: BuiltinMethod::IteratorIdentity,
+                })));
+            }
+            return member::bind_rils_method(
+                object,
+                &definition.methods,
+                &definition.trait_methods,
+                &definition.name,
+                name,
+                span,
+            );
+        }
         if name == "into_iter"
             && (matches!(
                 &object,

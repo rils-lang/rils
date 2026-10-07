@@ -72,7 +72,7 @@ impl VirtualMachine<'_> {
             Value::Dynamic(object)
                 if matches!(
                     rils_execution::value::native_instance::definition(&object),
-                    Some(Value::StructType(_))
+                    Some(Value::StructType(_) | Value::EnumType(_))
                 ) =>
             {
                 rils_execution::value::native_instance::NativeInstancePlace::new(object)

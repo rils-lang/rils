@@ -1,0 +1,13 @@
+enum Choice { Empty, Record { text: string, value: i32 } }
+fn run() -> i32 {
+    let choice = Choice::Record { text: "owned", value: 37 };
+    let seen = match &choice {
+        Choice::Record { value: value, text: text } => if text.len() == 5 { *value + 5 } else { 0 },
+        Choice::Empty => 0,
+    };
+    match choice {
+        Choice::Record { text: text, value: value } => if text.len() == 5 { seen } else { value },
+        Choice::Empty => 0,
+    }
+}
+run()

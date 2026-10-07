@@ -6,7 +6,11 @@ use rils_value::{DynamicPathStep, DynamicType, DynamicValue, DynamicValueRef};
 
 use super::{DynamicObject, ReferenceValue, Value, record_codec::NativeRecordCodec};
 
+mod enumeration;
 mod record;
+pub(crate) use enumeration::equal as enums_equal;
+pub(crate) use enumeration::validate_layout as validate_enum_layout;
+pub use enumeration::{NativeEnumVariant, borrow_variant_field, enum_variant};
 pub(crate) use record::equal as records_equal;
 pub use record::{borrow_field, record_definition, record_field_names};
 
@@ -57,7 +61,7 @@ pub fn value_definition(value: &Value) -> Result<Option<Value>, String> {
 fn expose(value: DynamicValue, codec: Rc<NativeRecordCodec>) -> Result<Value, String> {
     if matches!(
         codec.nominal_definition(value.descriptor().rils_type()),
-        Some(Value::StructType(_))
+        Some(Value::StructType(_) | Value::EnumType(_))
     ) {
         from_native(value, codec)
     } else if matches!(

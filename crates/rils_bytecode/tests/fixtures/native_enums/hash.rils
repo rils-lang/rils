@@ -1,0 +1,10 @@
+#[derive(Eq, Hash)]
+enum Choice { Empty, Tuple(i32), Record { item: i32 } }
+let mut values: HashSet<Choice> = HashSet::new();
+values.insert(Choice::Empty);
+values.insert(Choice::Tuple(42));
+values.insert(Choice::Record { item: 42 });
+let empty: Choice = Choice::Empty;
+let tuple = Choice::Tuple(42);
+let record = Choice::Record { item: 42 };
+if values.len() == 3usize && values.contains(&empty) && values.contains(&tuple) && values.contains(&record) { 42 } else { 0 }

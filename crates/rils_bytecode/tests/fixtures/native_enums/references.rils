@@ -1,0 +1,8 @@
+enum Holder<T> { Empty, Full(T) }
+fn run() -> i32 {
+    let mut number = 41;
+    let holder = Holder::Full(&mut number);
+    match holder { Holder::Full(reference) => { *reference = *reference + 1; }, _ => {} }
+    number
+}
+run()

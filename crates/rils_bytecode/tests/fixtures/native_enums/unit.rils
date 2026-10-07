@@ -1,0 +1,2 @@
+enum Choice { Empty, Full(i32) }
+Choice::Empty

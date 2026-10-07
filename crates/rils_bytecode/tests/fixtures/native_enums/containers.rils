@@ -1,0 +1,11 @@
+enum Choice { Empty, Full(string, i32) }
+struct Holder { item: Option<Choice>, items: Vec<Choice> }
+let mut items: Vec<Choice> = Vec::new();
+items.push(Choice::Full("owned", 37));
+let holder = Holder { item: Some(Choice::Empty), items: items };
+let empty = match holder.item { Some(Choice::Empty) => true, _ => false };
+let mut iterator = holder.items.into_iter();
+match iterator.next() {
+    Some(Choice::Full(text, value)) => if empty && text.len() == 5 { value + 5 } else { 0 },
+    _ => 0,
+}

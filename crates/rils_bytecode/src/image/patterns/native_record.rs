@@ -52,7 +52,7 @@ pub(super) fn collect(
     })())
 }
 
-fn has_binding(pattern: &HirPattern) -> bool {
+pub(super) fn has_binding(pattern: &HirPattern) -> bool {
     match pattern {
         HirPattern::Binding(_) => true,
         HirPattern::Some(inner) | HirPattern::Ok(inner) | HirPattern::Err(inner) => {

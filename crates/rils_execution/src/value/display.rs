@@ -303,6 +303,7 @@ impl fmt::Debug for Value {
             };
         }
         match self {
+            Self::Reference(reference) => native_view::debug_reference(reference, f),
             Self::Native(object) if object.descriptor().rils_type() == &crate::Type::String => {
                 write!(f, "{:?}", self.as_string().unwrap_or_default())
             }

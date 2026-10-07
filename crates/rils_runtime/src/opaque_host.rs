@@ -105,6 +105,45 @@ pub fn host_enum_raw(
     type_name: &str,
     definition: &HostEnumDefinition,
 ) -> Result<u128, String> {
+    if let Some(variant) = rils_execution::value::native_instance::enum_variant(value)? {
+        if variant.definition.name != type_name {
+            return Err(format!(
+                "expected host enum `{type_name}`, found `{}`",
+                variant.definition.name
+            ));
+        }
+        if variant.name() == HOST_FLAGS_RAW_VARIANT {
+            if definition.flags && variant.field_names() == ["0"] {
+                let raw = rils_execution::value::native_instance::borrow_variant_field(
+                    value,
+                    variant.index,
+                    "0",
+                )?;
+                return rils_execution::RilsValue::new(raw).get_cloned::<u128>();
+            }
+            return Err(format!(
+                "host enum `{type_name}` contains invalid flags payload"
+            ));
+        }
+        if !matches!(
+            variant.declaration(),
+            rils_frontend::ast::EnumVariant::Unit { .. }
+        ) {
+            return Err(format!(
+                "host enum `{type_name}` variants cannot carry payloads"
+            ));
+        }
+        return definition
+            .variants
+            .get(variant.name())
+            .copied()
+            .ok_or_else(|| {
+                format!(
+                    "host enum `{type_name}` has unknown variant `{}`",
+                    variant.name()
+                )
+            });
+    }
     let Value::Enum(instance) = value else {
         return Err(format!("expected host enum `{type_name}`"));
     };
