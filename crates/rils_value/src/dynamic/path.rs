@@ -21,6 +21,20 @@ pub struct DynamicValueRef<'a> {
 }
 
 impl<'a> DynamicValueRef<'a> {
+    /// Borrow the checked Rust leaf at this path without making an owned copy.
+    pub fn leaf(&self) -> Result<crate::NativeLeafRef<'_>, String> {
+        let (pointer, layout) = self.root.project(&self.path)?;
+        let DropKind::Rust { type_id, .. } = &layout.drop_kind else {
+            return Err(format!("{} is not a Rust leaf", layout.rils_type()));
+        };
+        // SAFETY: project checks every tag and initialized field. The view's
+        // immutable root borrow keeps this exact Rust layout alive.
+        Ok(
+            unsafe {
+                crate::NativeLeafRef::from_raw(pointer, *type_id, layout.rils_type().clone())
+            },
+        )
+    }
     pub fn sequence_borrows(&self) -> Result<Rc<super::SequenceBorrowLedger>, String> {
         let (pointer, layout) = self.root.project(&self.path)?;
         if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {

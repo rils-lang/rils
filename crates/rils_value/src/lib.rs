@@ -9,4 +9,4 @@ pub use dynamic::{
     DynamicPathLease, DynamicPathStep, DynamicType, DynamicValue, DynamicValueMut, DynamicValueRef,
     SequenceBorrowLedger, SequenceItemLease, SequenceIteratorLease,
 };
-pub use native::{NativeCallContext, NativeChildren, NativeObject, NativeType};
+pub use native::{NativeCallContext, NativeChildren, NativeLeafRef, NativeObject, NativeType};

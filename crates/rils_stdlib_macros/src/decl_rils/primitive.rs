@@ -279,6 +279,13 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
             #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
             pub struct Number<T>(pub T);
         ));
+        items.push(syn::parse_quote!(
+            impl<T> AsRef<T> for Number<T> {
+                fn as_ref(&self) -> &T {
+                    &self.0
+                }
+            }
+        ));
         for mapping in &definition.family {
             let primitive = &mapping.primitive;
             let mut cloned = template.clone();

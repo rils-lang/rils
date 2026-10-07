@@ -31,6 +31,7 @@ pub struct NativeRegistry {
     elements: &'static [ElementRegistration],
     pub(crate) keys: &'static [KeyRegistration],
     pub(crate) formats: &'static [crate::FormatRegistration],
+    pub(crate) equalities: &'static [crate::EqualityRegistration],
 }
 
 impl NativeRegistry {
@@ -43,6 +44,7 @@ impl NativeRegistry {
             elements,
             keys: &[],
             formats: &[],
+            equalities: &[],
         }
     }
 
@@ -56,6 +58,7 @@ impl NativeRegistry {
             elements,
             keys,
             formats: &[],
+            equalities: &[],
         }
     }
 
@@ -72,6 +75,14 @@ impl NativeRegistry {
 
     pub const fn with_formats(mut self, formats: &'static [crate::FormatRegistration]) -> Self {
         self.formats = formats;
+        self
+    }
+
+    pub const fn with_equalities(
+        mut self,
+        equalities: &'static [crate::EqualityRegistration],
+    ) -> Self {
+        self.equalities = equalities;
         self
     }
 

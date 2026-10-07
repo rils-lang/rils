@@ -158,3 +158,12 @@ pub const NATIVE_FORMAT_VEC: rils_native::FormatRegistration = rils_native::Form
     matches: |layout| is_native_vec(layout.rils_type()) && layout.sequence_item().is_some(),
     format: native_format::format,
 };
+
+#[path = "vector/equality.rs"]
+mod native_equality;
+
+pub const NATIVE_EQUALITY_VEC: rils_native::EqualityRegistration =
+    rils_native::EqualityRegistration::view(
+        |layout| is_native_vec(layout.rils_type()) && layout.sequence_item().is_some(),
+        native_equality::equal,
+    );

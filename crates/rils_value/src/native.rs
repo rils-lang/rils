@@ -6,6 +6,9 @@ use rils_syntax::Type;
 
 use crate::storage::Payload;
 
+mod leaf;
+pub use leaf::NativeLeafRef;
+
 type NativeMethod<V> = Rc<dyn for<'a> Fn(&NativeCallContext<'a, V>) -> Result<V, String>>;
 type VisitPayload<V> = fn(&NativeObject<V>, &mut dyn FnMut(&V)) -> Result<(), String>;
 type StatePayload<V> = fn(&NativeObject<V>) -> Result<bool, String>;
@@ -154,6 +157,47 @@ impl<V: 'static> NativeObject<V> {
                 .try_borrow()
                 .map(|payload| payload.with(f))
                 .map_err(|_| "native value is already mutably accessed".to_owned()),
+        }
+    }
+
+    /// Borrow erased Rust storage without converting or cloning the value.
+    /// The callback cannot return a view into a released storage guard.
+    ///
+    /// ```compile_fail
+    /// use std::rc::Rc;
+    /// use rils_syntax::Type;
+    /// use rils_value::{NativeObject, NativeType};
+    /// let object = NativeObject::new(
+    ///     Rc::new(NativeType::<()>::new::<String>(Type::String)),
+    ///     String::from("borrowed"),
+    /// ).unwrap();
+    /// let escaped = object.with_leaf(|leaf| leaf).unwrap();
+    /// drop(object);
+    /// escaped.with_rust::<String, _>(|value| println!("{value}"));
+    /// ```
+    pub fn with_leaf<R>(
+        &self,
+        callback: impl for<'a> FnOnce(NativeLeafRef<'a>) -> R,
+    ) -> Result<R, String> {
+        let read = |payload: &Payload| {
+            // SAFETY: this object's descriptor describes its initialized payload.
+            // The storage guard is held until the scoped callback returns.
+            callback(unsafe {
+                NativeLeafRef::from_raw(
+                    payload.pointer(),
+                    self.descriptor.rust_type,
+                    self.descriptor.rils_type.clone(),
+                )
+            })
+        };
+        match &self.storage {
+            NativeStorage::Inline(payload) => Ok(read(payload)),
+            NativeStorage::Shared(payload) => {
+                let payload = payload
+                    .try_borrow()
+                    .map_err(|_| "native value is already mutably accessed".to_owned())?;
+                Ok(read(&payload))
+            }
         }
     }
 

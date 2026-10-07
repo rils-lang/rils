@@ -207,6 +207,9 @@ mod native {
 
 pub use native::String;
 
+pub const NATIVE_EQUALITY_STRING: rils_native::EqualityRegistration =
+    rils_native::EqualityRegistration::of::<String>();
+
 fn native_element_matches(ty: &rils_syntax::Type) -> bool {
     ty == &rils_syntax::Type::String
 }

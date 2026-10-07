@@ -35,6 +35,7 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
     let mut elements = Vec::new();
     let mut keys = Vec::new();
     let mut formats = Vec::new();
+    let mut equalities = Vec::new();
     let mut dependencies = Vec::new();
     for relative in files {
         let absolute = root.join(&relative);
@@ -69,6 +70,8 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                         keys.push(quote!(#module::#ident));
                     } else if name == "NATIVE_FORMAT" || name.starts_with("NATIVE_FORMAT_") {
                         formats.push(quote!(#module::#ident));
+                    } else if name == "NATIVE_EQUALITY" || name.starts_with("NATIVE_EQUALITY_") {
+                        equalities.push(quote!(#module::#ident));
                     }
                 }
                 Item::Mod(item)
@@ -97,6 +100,9 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                             };
                             formats.extend(primitives.iter().map(|primitive| {
                                 quote!(rils_native::FormatRegistration::#formatting::<#primitive>())
+                            }));
+                            equalities.extend(primitives.iter().map(|primitive| {
+                                quote!(rils_native::EqualityRegistration::projected::<#module::Number<#primitive>, #primitive>())
                             }));
                         }
                         let Item::Struct(structure) = declaration else {
@@ -135,8 +141,9 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
         static ELEMENTS: &[rils_native::ElementRegistration] = &[#(#elements),*];
         static KEYS: &[rils_native::KeyRegistration] = &[#(#keys),*];
         static FORMATS: &[rils_native::FormatRegistration] = &[#(#formats),*];
+        static EQUALITIES: &[rils_native::EqualityRegistration] = &[#(#equalities),*];
         static REGISTRY: rils_native::NativeRegistry = rils_native::NativeRegistry::with_keys(LAYOUTS, ELEMENTS, KEYS)
-            .with_formats(FORMATS);
+            .with_formats(FORMATS).with_equalities(EQUALITIES);
 
         pub fn registry() -> &'static rils_native::NativeRegistry {
             &REGISTRY

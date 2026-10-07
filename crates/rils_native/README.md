@@ -3,3 +3,5 @@
 `rils_native` defines the runtime-independent registration interface for native Rils values. A registration contains function pointers for layout construction or borrowed element reads; it does not retain runtime values or execution state.
 
 `rils_stdlib` owns the registrations for built-in types. `rils_execution` queries the registry while resolving layouts and accessing native collections. The interpreter and bytecode VM share those results.
+
+`EqualityRegistration` compares borrowed Rust leaves or composed views without constructing execution values. `of<T>()` uses Rust `PartialEq`; `projected<Wrapper, T>()` accepts the wrapper and its leaf through `AsRef<T>`, after checking both Rust and Rils identities. A composed type supplies its own visitor with `view()`, so collection ordering stays with the collection implementation. Missing leaf registrations return an error.

@@ -2,6 +2,13 @@
 
 use rils_stdlib_macros::decl_rils;
 
+pub const NATIVE_EQUALITY_UNIT: rils_native::EqualityRegistration =
+    rils_native::EqualityRegistration::of::<()>();
+pub const NATIVE_EQUALITY_BOOL: rils_native::EqualityRegistration =
+    rils_native::EqualityRegistration::of::<bool>();
+pub const NATIVE_EQUALITY_CHAR: rils_native::EqualityRegistration =
+    rils_native::EqualityRegistration::of::<char>();
+
 pub const NATIVE_FORMAT_BOOL: rils_native::FormatRegistration =
     rils_native::FormatRegistration::of::<bool>();
 pub const NATIVE_FORMAT_CHAR: rils_native::FormatRegistration =

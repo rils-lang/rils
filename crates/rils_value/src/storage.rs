@@ -131,6 +131,11 @@ impl Payload {
         self.storage.is_inline()
     }
 
+    pub(crate) fn pointer(&self) -> *const u8 {
+        assert!(self.initialized);
+        self.storage.pointer()
+    }
+
     pub(crate) fn with<T, R>(&self, f: impl FnOnce(&T) -> R) -> R {
         // SAFETY: NativeObject checked TypeId and this payload is initialized.
         unsafe { f(&*self.storage.pointer().cast::<T>()) }
