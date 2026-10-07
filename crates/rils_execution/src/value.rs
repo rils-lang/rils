@@ -95,6 +95,8 @@ pub struct BytecodeFunctionValue {
     pub parameter_count: usize,
     pub captures: Vec<StorageRef>,
     pub bound_arguments: Vec<Value>,
+    /// Concrete lexical type parameters retained by a returned closure.
+    pub type_bindings: HashMap<String, Type>,
 }
 
 #[derive(Clone)]

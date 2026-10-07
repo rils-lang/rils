@@ -235,18 +235,21 @@ pub enum HirExpression {
     },
     ConstructRecord {
         type_id: TypeId,
+        expected: Type,
         variant: Option<String>,
         fields: Vec<(String, HirExpression)>,
         span: Span,
     },
     ConstructTupleVariant {
         type_id: TypeId,
+        expected: Type,
         variant: String,
         fields: Vec<HirExpression>,
         span: Span,
     },
     ConstructUnitVariant {
         type_id: TypeId,
+        expected: Type,
         variant: String,
         span: Span,
     },

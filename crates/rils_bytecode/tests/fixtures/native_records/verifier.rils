@@ -1,0 +1,7 @@
+struct Holder<T> { item: T }
+enum Choice<T> { Empty, Tuple(T), Record { item: T } }
+let record = Holder { item: 1 };
+let tuple = Choice::Tuple(2);
+let unit: Choice<i32> = Choice::Empty;
+let variant = Choice::Record { item: 3 };
+42

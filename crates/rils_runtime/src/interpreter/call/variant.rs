@@ -1,11 +1,12 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn construct_tuple_variant(
+    pub(in crate::interpreter) fn construct_tuple_variant(
         &self,
         constructor: Rc<VariantConstructor>,
         arguments: Vec<Value>,
         span: Span,
+        expected: Option<&Type>,
     ) -> Result<Value, RuntimeError> {
         let variant = constructor
             .type_definition
@@ -34,6 +35,12 @@ impl Interpreter {
         )?;
         let mut substitutions =
             generic_substitutions(&constructor.type_definition.generic_parameters);
+        super::super::construction::nominal::seed_arguments(
+            expected,
+            &constructor.type_definition.name,
+            &constructor.type_definition.generic_parameters,
+            &mut substitutions,
+        );
         for (field_type, value) in fields.iter().zip(&arguments) {
             infer_type_from_value(field_type, value, &mut substitutions)
                 .map_err(|message| RuntimeError::new(message, span))?;
@@ -66,14 +73,15 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Value::Enum(Rc::new(EnumInstance {
-            type_definition: constructor.type_definition.clone(),
-            variant: constructor.variant.clone(),
-            payload: EnumPayload::Tuple(values),
-            type_arguments: generic_arguments(
+        let ty = Type::Named {
+            name: constructor.type_definition.name.clone(),
+            arguments: generic_arguments(
                 &constructor.type_definition.generic_parameters,
                 &substitutions,
             ),
-        })))
+        };
+        storage
+            .construct_tuple_variant(&ty, &constructor.variant, values)
+            .map_err(|message| RuntimeError::new(message, span))
     }
 }

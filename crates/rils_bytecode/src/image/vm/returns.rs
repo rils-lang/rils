@@ -2,14 +2,16 @@
 
 use super::*;
 
-pub(super) fn resolve_return_type<'a>(
+pub(super) fn resolve_type_bindings<'a>(
     function: &BytecodeFunction,
     arguments: impl Iterator<Item = &'a Value>,
-) -> Option<Type> {
-    let expected = function.return_type.as_ref()?;
+) -> HashMap<String, Type> {
     let mut bindings = HashMap::new();
     for (parameter, argument) in function.parameter_types.iter().zip(arguments) {
-        if let (Some(parameter), Some(actual)) = (parameter, Type::of_value(argument)) {
+        if let Some(parameter) = parameter
+            && !parameter.is_concrete_type()
+            && let Some(actual) = Type::of_value(argument)
+        {
             // Aliases have already been checked by the frontend. Only retain
             // bindings established by a matching concrete signature shape.
             let mut inferred = bindings.clone();
@@ -21,5 +23,5 @@ pub(super) fn resolve_return_type<'a>(
         }
     }
     bindings.retain(|_, ty| *ty != Type::Unknown);
-    Some(expected.substitute(&bindings))
+    bindings
 }

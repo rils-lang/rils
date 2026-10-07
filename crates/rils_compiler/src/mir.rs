@@ -615,6 +615,7 @@ impl Builder {
             }
             HirExpression::ConstructRecord {
                 type_id,
+                expected,
                 variant,
                 fields,
                 span,
@@ -628,6 +629,7 @@ impl Builder {
                     MirInstruction::ConstructRecord {
                         destination,
                         type_id: *type_id,
+                        expected: expected.clone(),
                         variant: variant.clone(),
                         fields,
                     },
@@ -637,6 +639,7 @@ impl Builder {
             }
             HirExpression::ConstructTupleVariant {
                 type_id,
+                expected,
                 variant,
                 fields,
                 span,
@@ -650,6 +653,7 @@ impl Builder {
                     MirInstruction::ConstructTupleVariant {
                         destination,
                         type_id: *type_id,
+                        expected: expected.clone(),
                         variant: variant.clone(),
                         fields,
                     },
@@ -659,6 +663,7 @@ impl Builder {
             }
             HirExpression::ConstructUnitVariant {
                 type_id,
+                expected,
                 variant,
                 span,
             } => {
@@ -667,6 +672,7 @@ impl Builder {
                     MirInstruction::ConstructUnitVariant {
                         destination,
                         type_id: *type_id,
+                        expected: expected.clone(),
                         variant: variant.clone(),
                     },
                     *span,

@@ -1,5 +1,7 @@
 use super::*;
 
+pub(super) mod nominal;
+
 impl Interpreter {
     pub(super) fn construct_contextual_empty(
         &self,
@@ -65,6 +67,7 @@ impl Interpreter {
         &self,
         path: &[String],
         values: HashMap<String, Value>,
+        expected: Option<&Type>,
         span: Span,
         environment: &EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
@@ -78,6 +81,12 @@ impl Interpreter {
                 ));
             }
             let mut substitutions = generic_substitutions(&definition.generic_parameters);
+            nominal::seed_arguments(
+                expected,
+                &definition.name,
+                &definition.generic_parameters,
+                &mut substitutions,
+            );
             infer_named_fields(&definition.fields, &values, &mut substitutions, span, name)?;
             validate_generic_bounds(
                 &definition.generic_parameters,
@@ -94,20 +103,17 @@ impl Interpreter {
                 &substitutions,
                 environment,
             )?;
-            let slots = values
-                .into_iter()
-                .map(|(name, value)| {
-                    let type_annotation = Type::of_value(&value).unwrap_or(Type::Unknown);
-                    (name, FieldSlot::new(type_annotation, value))
-                })
-                .collect();
-            let fields = StructFields::from_map(definition.clone(), slots)
-                .map_err(|message| RuntimeError::new(message, span))?;
-            return Ok(Value::Struct(Rc::new(StructInstance {
-                type_arguments: generic_arguments(&definition.generic_parameters, &substitutions),
-                type_definition: definition,
-                fields: RefCell::new(fields),
-            })));
+            let ty = Type::Named {
+                name: definition.name.clone(),
+                arguments: generic_arguments(&definition.generic_parameters, &substitutions),
+            };
+            let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                &environment.borrow(),
+            );
+            return context
+                .storage()
+                .construct_record(&ty, None, values)
+                .map_err(|message| RuntimeError::new(message, span));
         }
         if path.len() >= 2 {
             let variant_name = path.last().expect("record path has variant");
@@ -132,6 +138,12 @@ impl Interpreter {
                     ));
                 };
                 let mut substitutions = generic_substitutions(&definition.generic_parameters);
+                nominal::seed_arguments(
+                    expected,
+                    &definition.name,
+                    &definition.generic_parameters,
+                    &mut substitutions,
+                );
                 infer_named_fields(fields, &values, &mut substitutions, span, variant_name)?;
                 validate_generic_bounds(
                     &definition.generic_parameters,
@@ -148,15 +160,17 @@ impl Interpreter {
                     &substitutions,
                     environment,
                 )?;
-                return Ok(Value::Enum(Rc::new(EnumInstance {
-                    type_arguments: generic_arguments(
-                        &definition.generic_parameters,
-                        &substitutions,
-                    ),
-                    type_definition: definition,
-                    variant: variant_name.clone(),
-                    payload: EnumPayload::Record(values),
-                })));
+                let ty = Type::Named {
+                    name: definition.name.clone(),
+                    arguments: generic_arguments(&definition.generic_parameters, &substitutions),
+                };
+                let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                    &environment.borrow(),
+                );
+                return context
+                    .storage()
+                    .construct_record(&ty, Some(variant_name), values)
+                    .map_err(|message| RuntimeError::new(message, span));
             }
         }
         Err(RuntimeError::new(

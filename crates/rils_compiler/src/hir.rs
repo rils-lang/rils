@@ -12,6 +12,7 @@ use crate::{
     types::{FunctionSignature, Type},
 };
 
+mod construction;
 mod expression;
 mod function;
 mod helpers;
@@ -155,7 +156,7 @@ struct FunctionLowerer<'a> {
     declaration_types: &'a rils_frontend::semantic::DeclarationTypeResolver,
     resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
     namespace: String,
-    self_type: Option<String>,
+    self_type: Option<Type>,
     return_type: Option<Type>,
     scopes: Vec<HashMap<String, LocalId>>,
     mutable: Vec<bool>,

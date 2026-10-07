@@ -1,0 +1,22 @@
+enum Choice<T> { Empty, Tuple(T), Record { item: T } }
+struct Holder<T> { item: Option<Choice<T>> }
+struct Envelope<T> { item: Result<Holder<T>, Choice<T>> }
+let nested: Envelope<i32> = Envelope { item: Ok(Holder { item: Some(Choice::Empty) }) };
+let tuple: Choice<Option<i32>> = Choice::Tuple(None);
+let record: Choice<Option<i32>> = Choice::Record { item: None };
+match &nested.item {
+    Ok(holder) => match &holder.item {
+        Some(choice) => match choice {
+            Choice::Empty => match &tuple {
+                Choice::Tuple(None) => match &record {
+                    Choice::Record { item: None } => 42,
+                    _ => 0,
+                },
+                _ => 0,
+            },
+            _ => 0,
+        },
+        _ => 0,
+    },
+    _ => 0,
+}

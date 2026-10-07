@@ -1,0 +1,1 @@
+std::fs::read_to_string("rils-native-error-file-that-should-never-exist.txt").unwrap_err()

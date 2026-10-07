@@ -1,0 +1,8 @@
+enum Choice<T> { Empty, Full(T) }
+fn make<T>(value: T) -> fn() -> Choice<T> {
+    let consumed = value;
+    fn callback() -> Choice<T> { Choice::Empty }
+    callback
+}
+let callback = make("owned");
+callback()

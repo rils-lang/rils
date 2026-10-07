@@ -1,0 +1,9 @@
+enum Choice<T> { Empty, Full(T) }
+struct Holder<T> { item: T }
+impl<T> Holder<T> {
+    fn missing(self) -> Choice<T> { Choice::Empty }
+    fn borrowed(&self) -> Choice<T> { Choice::Empty }
+}
+let holder = Holder { item: "owned" };
+assert!(type_of(holder.borrowed()) == "Choice<string>");
+holder.missing()

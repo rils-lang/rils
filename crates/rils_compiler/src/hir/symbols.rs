@@ -19,7 +19,7 @@ pub(super) struct FunctionDeclaration<'a> {
     pub(super) body: &'a Block,
     pub(super) span: Span,
     pub(super) exported: bool,
-    pub(super) self_type: Option<String>,
+    pub(super) self_type: Option<Type>,
 }
 
 #[derive(Clone, Copy)]
@@ -482,7 +482,13 @@ pub(super) fn collect_method_declarations<'a>(
                             body: &method.body,
                             span: method.span,
                             exported: false,
-                            self_type: Some(target_name.clone()),
+                            self_type: Some(match target {
+                                Type::Named { arguments, .. } => Type::Named {
+                                    name: target_name.clone(),
+                                    arguments: arguments.clone(),
+                                },
+                                _ => unreachable!("qualified_type_name requires a named target"),
+                            }),
                         },
                     ));
                 }

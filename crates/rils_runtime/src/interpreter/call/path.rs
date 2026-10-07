@@ -116,13 +116,9 @@ pub(super) fn resolve_associated_path(
                     RuntimeError::new(format!("enum `{root}` has no variant `{member}`"), span)
                 })?;
             match variant {
-                EnumVariant::Unit { .. } => Ok(Value::Enum(Rc::new(EnumInstance {
-                    type_arguments: vec![Type::Unknown; definition.generic_parameters.len()],
-                    type_definition: definition,
-                    variant: member.into(),
-                    payload: EnumPayload::Unit,
-                }))),
-                EnumVariant::Tuple { .. } | EnumVariant::Record { .. } => {
+                EnumVariant::Unit { .. }
+                | EnumVariant::Tuple { .. }
+                | EnumVariant::Record { .. } => {
                     Ok(Value::VariantConstructor(Rc::new(VariantConstructor {
                         type_definition: definition,
                         variant: member.into(),

@@ -10,8 +10,8 @@ use crate::{
     source::Span,
     types::Type,
     value::{
-        EnumInstance, EnumPayload, EnumType, FieldSlot, HostFunction, IndexedStorage, ModuleValue,
-        StructFields, StructInstance, StructType, Value,
+        EnumType, FieldSlot, HostFunction, IndexedStorage, ModuleValue, StructType, Value,
+        storage::TypedStorageContext,
     },
 };
 
@@ -403,46 +403,32 @@ fn io_error(
     source: &std::io::Error,
     path: Option<&str>,
 ) -> Value {
-    let kind = error_kind_name(source.kind());
+    let structs = [definition.clone()];
+    let enums = [kind_definition.clone()];
+    let storage = TypedStorageContext::new(&structs, &enums);
+    let kind = storage
+        .construct_unit_variant(
+            &Type::named(&kind_definition.name),
+            error_kind_name(source.kind()),
+        )
+        .expect("standard library error kind matches its declaration");
     let fields = HashMap::from([
-        (
-            "kind".into(),
-            FieldSlot::new(
-                Type::named("std::io::ErrorKind"),
-                Value::Enum(Rc::new(EnumInstance {
-                    type_definition: kind_definition.clone(),
-                    variant: kind.into(),
-                    payload: EnumPayload::Unit,
-                    type_arguments: Vec::new(),
-                })),
-            ),
-        ),
+        ("kind".into(), kind),
         (
             "message".into(),
-            FieldSlot::new(
-                Type::String,
-                crate::value::native_string(source.to_string()),
-            ),
+            crate::value::native_string(source.to_string()),
         ),
         (
             "path".into(),
-            FieldSlot::new(
-                Type::Option(Box::new(Type::String)),
-                Value::Option {
-                    value: path.map(|path| Rc::new(crate::value::native_string(path))),
-                    element_type: Some(Type::String),
-                },
-            ),
+            Value::Option {
+                value: path.map(|path| Rc::new(crate::value::native_string(path))),
+                element_type: Some(Type::String),
+            },
         ),
     ]);
-    Value::Struct(Rc::new(StructInstance {
-        type_definition: definition.clone(),
-        fields: RefCell::new(
-            StructFields::from_map(definition.clone(), fields)
-                .expect("standard library error fields match their declaration"),
-        ),
-        type_arguments: Vec::new(),
-    }))
+    storage
+        .construct_record(&Type::named(&definition.name), None, fields)
+        .expect("standard library error fields match their declaration")
 }
 
 fn string_vec(values: Vec<String>) -> Value {

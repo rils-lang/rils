@@ -437,9 +437,9 @@ impl<'a> FunctionLowerer<'a> {
 
     pub(super) fn resolve_self_path(&self, path: &[String]) -> Vec<String> {
         if path.first().is_some_and(|segment| segment == "Self")
-            && let Some(self_type) = &self.self_type
+            && let Some(Type::Named { name, .. }) = &self.self_type
         {
-            return self_type
+            return name
                 .split("::")
                 .map(str::to_owned)
                 .chain(path.iter().skip(1).cloned())

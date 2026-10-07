@@ -25,6 +25,10 @@ fn standalone_and_generic_records_retain_native_storage() {
             "Item",
         ),
         (include_str!("fixtures/native_records/empty.rils"), "Empty"),
+        (
+            include_str!("fixtures/native_records/phantom.rils"),
+            "Phantom<string>",
+        ),
     ] {
         for (backend, value) in run_all(source).into_iter().enumerate() {
             let Value::Dynamic(ref object) = value else {
@@ -98,10 +102,72 @@ fn record_ownership_methods_and_patterns_agree_across_backends() {
             include_str!("fixtures/native_records/clone.rils"),
             Value::from_i32(42),
         ),
+        (
+            "nested context types",
+            include_str!("fixtures/native_records/contextual.rils"),
+            Value::from_i32(42),
+        ),
     ] {
         for value in run_all(source) {
             assert_eq!(value, expected, "{name}: {source}");
         }
+    }
+}
+
+#[test]
+fn generic_constructors_keep_call_and_lexical_types_after_arguments_are_moved() {
+    for (source, expected) in [
+        (
+            include_str!("fixtures/native_records/generic_closure.rils"),
+            "Choice<string>",
+        ),
+        (
+            include_str!("fixtures/native_records/generic_method.rils"),
+            "Choice<string>",
+        ),
+    ] {
+        for value in run_all(source) {
+            assert!(matches!(value, Value::Dynamic(_)));
+            assert_eq!(Type::of_value(&value).unwrap().to_string(), expected);
+            assert!(!value.is_copy());
+        }
+    }
+}
+
+#[test]
+fn unresolved_phantom_arguments_cannot_create_instances() {
+    let source = include_str!("fixtures/native_records/unresolved.rils");
+    assert!(compile(source).is_err());
+    assert!(eval_value(source).is_err());
+}
+
+#[test]
+fn standard_io_errors_and_their_kinds_are_native_instances() {
+    let source = include_str!("fixtures/native_records/io_error.rils");
+    let module = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    let mut host = rils_bytecode::BytecodeHost::standard();
+    host.enable_standard_fs().unwrap();
+    for value in [
+        eval_value(source).unwrap(),
+        module.execute_value_with_host(&host).unwrap(),
+        loaded.execute_value_with_host(&host).unwrap(),
+    ] {
+        assert!(matches!(value, Value::Dynamic(_)));
+        assert_eq!(Type::of_value(&value), Some(Type::named("std::io::Error")));
+        let kind = rils_execution::value::native_instance::borrow_field(&value, "kind").unwrap();
+        let active = rils_execution::value::native_instance::enum_variant(&kind)
+            .unwrap()
+            .unwrap();
+        assert_eq!(active.name(), "NotFound");
+        assert!(
+            !RilsValue::new(value)
+                .field(1)
+                .unwrap()
+                .get_cloned::<String>()
+                .unwrap()
+                .is_empty()
+        );
     }
 }
 

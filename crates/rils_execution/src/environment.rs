@@ -159,6 +159,7 @@ impl StorageSlot {
 
 pub struct Environment {
     values: HashMap<String, StorageRef>,
+    type_bindings: HashMap<String, Type>,
     parent: Option<EnvironmentRef>,
     module: bool,
     module_path: Vec<String>,
@@ -166,6 +167,20 @@ pub struct Environment {
 }
 
 impl Environment {
+    pub fn set_type_bindings(&mut self, bindings: HashMap<String, Type>) {
+        self.type_bindings = bindings;
+    }
+
+    pub fn type_bindings(&self) -> HashMap<String, Type> {
+        let mut bindings = self
+            .parent
+            .as_ref()
+            .map(|parent| parent.borrow().type_bindings())
+            .unwrap_or_default();
+        bindings.extend(self.type_bindings.clone());
+        bindings
+    }
+
     pub fn visible_host_definitions(&self) -> Vec<Rc<crate::value::HostType>> {
         self.declarations.host_definitions()
     }
@@ -182,6 +197,7 @@ impl Environment {
     pub fn global() -> EnvironmentRef {
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
+            type_bindings: HashMap::new(),
             parent: None,
             module: false,
             module_path: Vec::new(),
@@ -194,6 +210,7 @@ impl Environment {
         let declarations = parent.borrow().declarations.clone();
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
+            type_bindings: HashMap::new(),
             parent: Some(parent),
             module: false,
             module_path,

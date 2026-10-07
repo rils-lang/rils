@@ -79,6 +79,10 @@ impl<'a> FunctionLowerer<'a> {
                     .type_annotation
                     .as_ref()
                     .map(|ty| self.signature_type(ty))
+                    .or_else(|| {
+                        (parameter.name == "self" && self.self_type.is_some())
+                            .then(|| self.signature_type(&Type::named("Self")))
+                    })
             })
             .collect();
         for parameter in declaration.parameters {

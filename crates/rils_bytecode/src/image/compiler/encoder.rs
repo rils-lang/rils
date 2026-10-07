@@ -375,32 +375,38 @@ fn encode_function(
                     MirInstruction::ConstructRecord {
                         destination,
                         type_id,
+                        expected,
                         variant,
                         fields,
                     } => Instruction::ConstructRecord {
                         destination,
                         type_id,
+                        expected,
                         variant,
                         fields,
                     },
                     MirInstruction::ConstructTupleVariant {
                         destination,
                         type_id,
+                        expected,
                         variant,
                         fields,
                     } => Instruction::ConstructTupleVariant {
                         destination,
                         type_id,
+                        expected,
                         variant,
                         fields,
                     },
                     MirInstruction::ConstructUnitVariant {
                         destination,
                         type_id,
+                        expected,
                         variant,
                     } => Instruction::ConstructUnitVariant {
                         destination,
                         type_id,
+                        expected,
                         variant,
                     },
                     MirInstruction::BuildTuple {

@@ -245,6 +245,7 @@ fn native_callable_fields_keep_reference_origins_in_captures_and_bound_arguments
             parameter_count: 0,
             captures,
             bound_arguments,
+            type_bindings: Default::default(),
         }));
         let callback_type = Type::function(vec![], Type::I32);
         let value = Value::Option {

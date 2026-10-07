@@ -359,12 +359,14 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
         Instruction::ConstructRecord {
             destination,
             type_id,
+            expected,
             variant,
             fields,
         } => {
             writer.u8(23);
             writer.index(*destination, "destination")?;
             writer.index(*type_id, "type")?;
+            write_type(writer, expected, 0)?;
             writer.bool(variant.is_some());
             if let Some(v) = variant {
                 writer.string(v)?;
@@ -374,23 +376,27 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
         Instruction::ConstructTupleVariant {
             destination,
             type_id,
+            expected,
             variant,
             fields,
         } => {
             writer.u8(24);
             writer.index(*destination, "destination")?;
             writer.index(*type_id, "type")?;
+            write_type(writer, expected, 0)?;
             writer.string(variant)?;
             writer.indices(fields)?;
         }
         Instruction::ConstructUnitVariant {
             destination,
             type_id,
+            expected,
             variant,
         } => {
             writer.u8(25);
             writer.index(*destination, "destination")?;
             writer.index(*type_id, "type")?;
+            write_type(writer, expected, 0)?;
             writer.string(variant)?;
         }
         Instruction::BuildTuple {
@@ -636,6 +642,7 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
         23 => {
             let destination = reader.index()?;
             let type_id = reader.index()?;
+            let expected = read_type(reader)?;
             let variant = if reader.bool()? {
                 Some(reader.string()?)
             } else {
@@ -644,6 +651,7 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
             Instruction::ConstructRecord {
                 destination,
                 type_id,
+                expected,
                 variant,
                 fields: read_fields(reader)?,
             }
@@ -651,12 +659,14 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
         24 => Instruction::ConstructTupleVariant {
             destination: reader.index()?,
             type_id: reader.index()?,
+            expected: read_type(reader)?,
             variant: reader.string()?,
             fields: reader.indices()?,
         },
         25 => Instruction::ConstructUnitVariant {
             destination: reader.index()?,
             type_id: reader.index()?,
+            expected: read_type(reader)?,
             variant: reader.string()?,
         },
         26 => Instruction::BuildTuple {

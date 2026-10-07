@@ -51,7 +51,7 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 
 ## Rust 嵌入
 
-执行层新增 `TypedStorageContext::compose_nominal()` 和共享 `NativeInstancePlace`，可把具体用户 struct/enum 按所有权转换成原生实例，沿字段路径 move、恢复和借用；类型定义与泛型参数保存在声明元数据中。`RilsValue::field()`、`struct_name()` 与 `field_name()` 可直接读取这类实例及其引用，字段 handle 保留原 bytes 所有者；数值叶子的 `with_ref` / `into_owned` 按实际布局转换。普通脚本 struct/enum 的独立存储、泛型实例、字段 move/恢复、方法 receiver 与模式绑定已接入原生布局；enum 的 unit/tuple/record 变体保留标签、声明身份和具体类型参数。借用 enum 模式直接投影原字段，拥有型模式在整条分支匹配成功后移动绑定字段；Debug 与哈希键访问复用原生变体元数据。构造过程仍有临时兼容值，Option/Result 等剩余快照适配器继续迁移。用户类型只有显式实现 Copy 才可复制，字段全部为 Copy 并不会自动授予该能力。
+执行层新增 `TypedStorageContext::compose_nominal()` 和共享 `NativeInstancePlace`，可把具体用户 struct/enum 按所有权转换成原生实例，沿字段路径 move、恢复和借用；类型定义与泛型参数保存在声明元数据中。`RilsValue::field()`、`struct_name()` 与 `field_name()` 可直接读取这类实例及其引用，字段 handle 保留原 bytes 所有者；数值叶子的 `with_ref` / `into_owned` 按实际布局转换。普通脚本 struct/enum 的独立存储、泛型实例、字段 move/恢复、方法 receiver 与模式绑定已接入原生布局；enum 的 unit/tuple/record 变体保留标签、声明身份和具体类型参数。借用 enum 模式直接投影原字段，拥有型模式在整条分支匹配成功后移动绑定字段；Debug 与哈希键访问复用原生变体元数据。普通 struct/enum、标准 IO 错误及宿主 enum 构造直接复用 `TypedStorageContext::construct_record/construct_tuple_variant/construct_unit_variant`，按完整实例类型分配布局并移入字段；嵌套构造接收外层类型标注，泛型调用和返回闭包保留从实参确定的类型参数。旧 `Value::Struct` / `Value::Enum` 暂用于 Rust 兼容转换，其他快照适配器继续迁移。实验性 v8 构造指令新增类型操作数，已有字节码需重新编译。用户类型只有显式实现 Copy 才可复制，字段全部为 Copy 并不会自动授予该能力。
 
 `RilsValue::with_native_view` 可在回调内沿原生布局读取 `Option`、`Result`、record 和序列的嵌套子值，不需要把复合值转换成拥有型 `Value`；`with_ref` 仍用于已知 Rust 叶子类型。视图不能离开回调。用户 struct/enum receiver、变体字段投影、原生集合方法及借用迭代器使用原对象的检查路径；剩余适配器仍在逐步迁移。
 

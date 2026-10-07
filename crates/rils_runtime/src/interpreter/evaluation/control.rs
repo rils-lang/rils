@@ -11,7 +11,7 @@ impl Interpreter {
                 callee,
                 arguments,
                 span,
-            } => self.evaluate_call(callee, arguments, *span, environment),
+            } => self.evaluate_call(callee, arguments, *span, environment, expression),
             Expr::If {
                 condition,
                 then_branch,
@@ -28,6 +28,7 @@ impl Interpreter {
         arguments: &[Expr],
         span: Span,
         environment: EnvironmentRef,
+        expression: &Expr,
     ) -> Result<Value, RuntimeError> {
         let callee_value = self.evaluate(callee, environment.clone())?;
         let arguments = arguments
@@ -76,6 +77,10 @@ impl Interpreter {
                     }
                 }
             }
+        }
+        if let Value::VariantConstructor(constructor) = callee_value {
+            let expected = self.constructor_type(expression, &environment)?;
+            return self.construct_tuple_variant(constructor, arguments, span, expected.as_ref());
         }
         self.call_owned(callee_value, arguments, span, environment)
     }

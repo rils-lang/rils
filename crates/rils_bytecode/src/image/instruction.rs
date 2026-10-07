@@ -133,18 +133,21 @@ pub(super) enum Instruction {
     ConstructRecord {
         destination: usize,
         type_id: usize,
+        expected: Type,
         variant: Option<String>,
         fields: Vec<(String, usize)>,
     },
     ConstructTupleVariant {
         destination: usize,
         type_id: usize,
+        expected: Type,
         variant: String,
         fields: Vec<usize>,
     },
     ConstructUnitVariant {
         destination: usize,
         type_id: usize,
+        expected: Type,
         variant: String,
     },
     BuildTuple {

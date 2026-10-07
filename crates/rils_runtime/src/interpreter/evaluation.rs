@@ -33,6 +33,7 @@ impl Interpreter {
                 | Expr::Block(_)
         );
         let storage_environment = constructs_storage.then(|| environment.clone());
+        let constructor_environment = environment.clone();
         let value = match expression {
             Expr::Call { .. }
             | Expr::If { .. }
@@ -41,6 +42,8 @@ impl Interpreter {
             | Expr::Try { .. } => self.evaluate_control(expression, environment),
             _ => self.evaluate_non_control(expression, environment),
         }?;
+        let value =
+            self.materialize_unit_constructor(value, expression, &constructor_environment)?;
         if let Some(environment) = storage_environment
             && self.pending_return.is_none()
             && self.pending_loop_flow.is_none()
@@ -152,7 +155,8 @@ impl Interpreter {
                         self.evaluate(&field.value, environment.clone())?,
                     );
                 }
-                self.construct_record(path, values, *span, &environment)
+                let expected = self.constructor_type(expression, &environment)?;
+                self.construct_record(path, values, expected.as_ref(), *span, &environment)
             }
             Expr::Assign {
                 target,

@@ -99,6 +99,7 @@ impl<'a> FunctionLowerer<'a> {
                 let (type_id, variant) = self.enum_variant_path(&segments, *span)?;
                 Ok(HirExpression::ConstructUnitVariant {
                     type_id,
+                    expected: self.constructor_type(expression, type_id)?,
                     variant,
                     span: *span,
                 })
@@ -475,6 +476,7 @@ impl<'a> FunctionLowerer<'a> {
                     let (type_id, variant) = self.enum_variant_path(&segments, *span)?;
                     return Ok(HirExpression::ConstructTupleVariant {
                         type_id,
+                        expected: self.constructor_type(expression, type_id)?,
                         variant,
                         fields: arguments
                             .iter()
@@ -742,6 +744,7 @@ impl<'a> FunctionLowerer<'a> {
                 }
                 Ok(HirExpression::ConstructRecord {
                     type_id,
+                    expected: self.constructor_type(expression, type_id)?,
                     variant,
                     fields: fields
                         .iter()

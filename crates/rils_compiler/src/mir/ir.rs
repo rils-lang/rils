@@ -184,18 +184,21 @@ pub enum MirInstruction {
     ConstructRecord {
         destination: Register,
         type_id: TypeId,
+        expected: Type,
         variant: Option<String>,
         fields: Vec<(String, Register)>,
     },
     ConstructTupleVariant {
         destination: Register,
         type_id: TypeId,
+        expected: Type,
         variant: String,
         fields: Vec<Register>,
     },
     ConstructUnitVariant {
         destination: Register,
         type_id: TypeId,
+        expected: Type,
         variant: String,
     },
     BuildTuple {

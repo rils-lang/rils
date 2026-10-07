@@ -36,6 +36,7 @@ impl<'a> VirtualMachine<'a> {
                 instruction: 0,
                 return_action: ReturnAction::Complete,
                 return_type: None,
+                type_bindings: HashMap::new(),
             }],
             steps: 0,
             max_steps: limits.max_steps,
@@ -75,7 +76,11 @@ impl<'a> VirtualMachine<'a> {
             ));
         }
         let locals = new_local_storage(callee);
-        let return_type = returns::resolve_return_type(callee, arguments.iter());
+        let type_bindings = returns::resolve_type_bindings(callee, arguments.iter());
+        let return_type = callee
+            .return_type
+            .as_ref()
+            .map(|ty| ty.substitute(&type_bindings));
         for (local, argument) in locals.iter().zip(arguments) {
             local.borrow_mut().initialize(argument);
         }
@@ -91,6 +96,7 @@ impl<'a> VirtualMachine<'a> {
                 instruction: 0,
                 return_action: ReturnAction::Complete,
                 return_type,
+                type_bindings,
             }],
             steps: 0,
             max_steps: limits.max_steps,

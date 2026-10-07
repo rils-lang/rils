@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use crate::value::{EnumInstance, EnumPayload, HostObject, HostType};
+use crate::value::{EnumPayload, HostObject, HostType, storage::TypedStorageContext};
 use crate::{HostEnumDefinition, Value};
 
 use rils_execution::value::host_declarations::{HOST_FLAGS_RAW_VARIANT, enum_definition};
@@ -86,17 +86,14 @@ pub fn host_enum_value(
         .ok_or_else(|| {
             format!("host enum `{type_name}` returned unknown discriminant 0x{raw:x}")
         })?;
-    let payload = if variant == HOST_FLAGS_RAW_VARIANT {
-        EnumPayload::Tuple(vec![Value::from_u128(raw)])
+    let ty = crate::Type::named(&type_name);
+    let enums = [enum_definition(type_name, definition)];
+    let storage = TypedStorageContext::new(&[], &enums);
+    if variant == HOST_FLAGS_RAW_VARIANT {
+        storage.construct_tuple_variant(&ty, &variant, vec![Value::from_u128(raw)])
     } else {
-        EnumPayload::Unit
-    };
-    Ok(Value::Enum(Rc::new(EnumInstance {
-        type_definition: enum_definition(type_name, definition),
-        variant,
-        payload,
-        type_arguments: Vec::new(),
-    })))
+        storage.construct_unit_variant(&ty, &variant)
+    }
 }
 
 /// Extracts the canonical host ABI discriminant from a matching Rils enum value.

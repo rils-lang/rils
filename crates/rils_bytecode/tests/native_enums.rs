@@ -3,7 +3,7 @@ use rils_execution::{Type, Value};
 use rils_runtime::eval_value;
 
 fn run_all(source: &str) -> [Value; 3] {
-    let module = compile(source).unwrap();
+    let module = compile(source).unwrap_or_else(|e| panic!("compile: {e} from {source}"));
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     [
         eval_value(source).unwrap_or_else(|e| panic!("interpreter: {e} from {source}")),

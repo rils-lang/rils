@@ -14,6 +14,7 @@ pub(super) struct Frame {
     instruction: usize,
     return_action: ReturnAction,
     return_type: Option<Type>,
+    type_bindings: HashMap<String, Type>,
 }
 
 enum ReturnAction {
@@ -91,6 +92,7 @@ impl<'a> VirtualMachine<'a> {
                             parameter_count: callee.parameter_count,
                             captures: Vec::new(),
                             bound_arguments: Vec::new(),
+                            type_bindings: HashMap::new(),
                         })));
                 }
                 Instruction::BindMethod {
@@ -107,6 +109,7 @@ impl<'a> VirtualMachine<'a> {
                             parameter_count: callee.parameter_count - 1,
                             captures: Vec::new(),
                             bound_arguments: vec![receiver],
+                            type_bindings: HashMap::new(),
                         })));
                 }
                 Instruction::BorrowTemporary {
@@ -149,6 +152,7 @@ impl<'a> VirtualMachine<'a> {
                         .into_iter()
                         .map(|local| self.frame().locals[local].clone())
                         .collect();
+                    let type_bindings = self.frame().type_bindings.clone();
                     self.frame_mut().registers[destination] =
                         Some(Value::BytecodeFunction(Rc::new(BytecodeFunctionValue {
                             function,
@@ -156,6 +160,7 @@ impl<'a> VirtualMachine<'a> {
                             parameter_count: callee.parameter_count,
                             captures,
                             bound_arguments: Vec::new(),
+                            type_bindings,
                         })));
                 }
                 Instruction::TakePlace { destination, place } => {
@@ -383,7 +388,11 @@ impl<'a> VirtualMachine<'a> {
                         .collect::<Result<Vec<_>, _>>()?;
                     let callee = &self.module.functions[function];
                     let locals = new_local_storage(callee);
-                    let return_type = returns::resolve_return_type(callee, arguments.iter());
+                    let type_bindings = returns::resolve_type_bindings(callee, arguments.iter());
+                    let return_type = callee
+                        .return_type
+                        .as_ref()
+                        .map(|ty| ty.substitute(&type_bindings));
                     for (local, argument) in locals.iter().zip(arguments) {
                         local.borrow_mut().initialize(argument);
                     }
@@ -394,6 +403,7 @@ impl<'a> VirtualMachine<'a> {
                         instruction: 0,
                         return_action: ReturnAction::Register(destination),
                         return_type,
+                        type_bindings,
                     });
                 }
                 Instruction::CallValue {
@@ -442,8 +452,15 @@ impl<'a> VirtualMachine<'a> {
                         ));
                     }
                     let mut locals = new_local_storage(bytecode_function);
-                    let return_type =
-                        returns::resolve_return_type(bytecode_function, call_arguments.iter());
+                    let mut type_bindings = callee.type_bindings.clone();
+                    type_bindings.extend(returns::resolve_type_bindings(
+                        bytecode_function,
+                        call_arguments.iter(),
+                    ));
+                    let return_type = bytecode_function
+                        .return_type
+                        .as_ref()
+                        .map(|ty| ty.substitute(&type_bindings));
                     for (local, capture) in locals.iter_mut().zip(&callee.captures) {
                         *local = capture.clone();
                     }
@@ -461,6 +478,7 @@ impl<'a> VirtualMachine<'a> {
                         instruction: 0,
                         return_action: ReturnAction::Register(destination),
                         return_type,
+                        type_bindings,
                     });
                 }
                 Instruction::CallImport {
@@ -568,44 +586,48 @@ impl<'a> VirtualMachine<'a> {
                 Instruction::ConstructRecord {
                     destination,
                     type_id,
+                    expected,
                     variant,
                     fields,
                 } => {
-                    let value =
-                        self.construct_record(type_id, variant, fields, instruction.span)?;
+                    let value = self.construct_record(
+                        type_id,
+                        &expected,
+                        variant,
+                        fields,
+                        instruction.span,
+                    )?;
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::ConstructTupleVariant {
                     destination,
                     type_id,
+                    expected,
                     variant,
                     fields,
                 } => {
-                    let value =
-                        self.construct_tuple_variant(type_id, variant, fields, instruction.span)?;
+                    let value = self.construct_tuple_variant(
+                        type_id,
+                        &expected,
+                        variant,
+                        fields,
+                        instruction.span,
+                    )?;
                     self.frame_mut().registers[destination] = Some(value);
                 }
                 Instruction::ConstructUnitVariant {
                     destination,
                     type_id,
+                    expected,
                     variant,
                 } => {
-                    let RuntimeType::Enum(definition) = &self.module.types[type_id] else {
-                        return Err(BytecodeError::new(
-                            "unit variant requires enum type",
-                            instruction.span,
-                        ));
-                    };
-                    self.frame_mut().registers[destination] =
-                        Some(Value::Enum(Rc::new(EnumInstance {
-                            type_definition: definition.clone(),
-                            variant,
-                            payload: EnumPayload::Unit,
-                            type_arguments: vec![
-                                Type::Unknown;
-                                definition.generic_parameters.len()
-                            ],
-                        })));
+                    let value = self.construct_unit_variant(
+                        type_id,
+                        &expected,
+                        &variant,
+                        instruction.span,
+                    )?;
+                    self.frame_mut().registers[destination] = Some(value);
                 }
                 operation @ (Instruction::BuildTuple { .. }
                 | Instruction::BuildArray { .. }

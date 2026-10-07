@@ -90,8 +90,15 @@ impl VirtualMachine<'_> {
             ));
         }
         let mut locals = new_local_storage(callee);
-        let return_type =
-            returns::resolve_return_type(callee, function.bound_arguments.iter().chain(arguments));
+        let mut type_bindings = function.type_bindings.clone();
+        type_bindings.extend(returns::resolve_type_bindings(
+            callee,
+            function.bound_arguments.iter().chain(arguments),
+        ));
+        let return_type = callee
+            .return_type
+            .as_ref()
+            .map(|ty| ty.substitute(&type_bindings));
         for (local, capture) in locals.iter_mut().zip(&function.captures) {
             *local = capture.clone();
         }
@@ -115,6 +122,7 @@ impl VirtualMachine<'_> {
                 instruction: 0,
                 return_action: ReturnAction::Complete,
                 return_type,
+                type_bindings,
             }],
             steps: self.steps,
             max_steps: self.max_steps,
@@ -169,7 +177,11 @@ impl VirtualMachine<'_> {
             return Err(BytecodeError::new("invalid iterator method layout", span));
         }
         let locals = new_local_storage(callee);
-        let return_type = returns::resolve_return_type(callee, arguments.iter());
+        let type_bindings = returns::resolve_type_bindings(callee, arguments.iter());
+        let return_type = callee
+            .return_type
+            .as_ref()
+            .map(|ty| ty.substitute(&type_bindings));
         for (local, argument) in locals.iter().zip(arguments) {
             local.borrow_mut().initialize(argument);
         }
@@ -180,6 +192,7 @@ impl VirtualMachine<'_> {
             instruction: 0,
             return_action,
             return_type,
+            type_bindings,
         });
         Ok(())
     }

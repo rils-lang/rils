@@ -1,5 +1,6 @@
 use super::*;
 
+mod construction;
 mod copy;
 
 impl BytecodeModule {
@@ -506,11 +507,18 @@ impl BytecodeModule {
                 Instruction::ConstructRecord {
                     destination,
                     type_id,
+                    expected,
+                    variant,
                     fields,
                     ..
                 } => {
                     if invalid_register(*destination)
-                        || *type_id >= self.types.len()
+                        || !self.valid_record_constructor(
+                            *type_id,
+                            expected,
+                            variant.as_deref(),
+                            fields,
+                        )
                         || fields
                             .iter()
                             .any(|(_, register)| invalid_register(*register))
@@ -524,11 +532,13 @@ impl BytecodeModule {
                 Instruction::ConstructTupleVariant {
                     destination,
                     type_id,
+                    expected,
+                    variant,
                     fields,
                     ..
                 } => {
                     if invalid_register(*destination)
-                        || *type_id >= self.types.len()
+                        || !self.valid_tuple_constructor(*type_id, expected, variant, fields.len())
                         || fields.iter().any(|register| invalid_register(*register))
                     {
                         return Err(BytecodeError::new(
@@ -540,9 +550,13 @@ impl BytecodeModule {
                 Instruction::ConstructUnitVariant {
                     destination,
                     type_id,
+                    expected,
+                    variant,
                     ..
                 } => {
-                    if invalid_register(*destination) || *type_id >= self.types.len() {
+                    if invalid_register(*destination)
+                        || !self.valid_unit_constructor(*type_id, expected, variant)
+                    {
                         return Err(BytecodeError::new(
                             "invalid unit variant construction",
                             instruction.span,

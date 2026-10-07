@@ -64,6 +64,9 @@ impl Interpreter {
             .filter(|parameter| substitutions.get(&parameter.name) == Some(&Type::Unknown))
             .cloned()
             .collect::<Vec<_>>();
+        environment
+            .borrow_mut()
+            .set_type_bindings(substitutions.clone());
         let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
             &function.closure.borrow(),
         );

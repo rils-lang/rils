@@ -124,7 +124,7 @@ impl Interpreter {
             }
             Value::Function(function) => return self.call_user_function(function, arguments, span),
             Value::VariantConstructor(constructor) => {
-                return self.construct_tuple_variant(constructor, arguments, span);
+                return self.construct_tuple_variant(constructor, arguments, span, None);
             }
             _ => {}
         }
@@ -466,7 +466,7 @@ impl Interpreter {
                 self.call(Value::Function(function), arguments, span)
             }
             Value::VariantConstructor(constructor) => {
-                self.construct_tuple_variant(constructor, arguments.to_vec(), span)
+                self.construct_tuple_variant(constructor, arguments.to_vec(), span, None)
             }
             value => Err(RuntimeError::new(
                 format!("{} is not callable", value.type_name()),

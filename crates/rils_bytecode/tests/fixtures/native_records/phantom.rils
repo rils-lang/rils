@@ -1,0 +1,6 @@
+struct Phantom<T> {}
+fn make<T>(value: T) -> Phantom<T> {
+    let consumed = value;
+    (Phantom {})
+}
+make("owned")
