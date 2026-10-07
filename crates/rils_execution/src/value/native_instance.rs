@@ -8,10 +8,8 @@ use super::{DynamicObject, ReferenceValue, Value, record_codec::NativeRecordCode
 
 mod enumeration;
 mod record;
-pub(crate) use enumeration::equal as enums_equal;
 pub(crate) use enumeration::validate_layout as validate_enum_layout;
 pub use enumeration::{NativeEnumVariant, borrow_variant_field, enum_variant};
-pub(crate) use record::equal as records_equal;
 pub use record::{borrow_field, record_definition, record_field_names};
 
 /// Retain declaration identities alongside bytes, without reconstructing

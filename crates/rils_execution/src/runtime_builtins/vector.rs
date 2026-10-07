@@ -91,14 +91,17 @@ pub(super) fn iter(arguments: &[Value]) -> Result<Value, String> {
 
 pub(super) fn contains(arguments: &[Value]) -> Result<Value, String> {
     let storage = receiver(arguments, 2, false)?;
-    let needle = import_receiver(&arguments[1])?;
-    Ok(Value::Bool(
-        storage
-            .elements
-            .borrow()
-            .iter()
-            .any(|slot| slot.value.as_ref() == Some(&needle)),
-    ))
+    let elements = storage.elements.borrow();
+    for slot in elements.iter() {
+        let item = slot
+            .value
+            .as_ref()
+            .ok_or("cannot compare a moved Vec element")?;
+        if crate::value::equality::query_equal(item, &arguments[1])? {
+            return Ok(Value::Bool(true));
+        }
+    }
+    Ok(Value::Bool(false))
 }
 
 pub(super) fn push(

@@ -9,6 +9,9 @@ use super::record_codec::NativeRecordCodec;
 
 #[path = "reference/host_view.rs"]
 mod host_view;
+#[path = "reference/inspection.rs"]
+mod inspection;
+pub(crate) use inspection::BorrowedTarget;
 #[path = "reference/native_path.rs"]
 mod native_path;
 use super::{

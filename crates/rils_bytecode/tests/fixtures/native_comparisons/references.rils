@@ -1,0 +1,12 @@
+fn run() -> i32 {
+    let number = 42;
+    let reference = &number;
+    let alias = reference;
+    let other = &number;
+    let mut items: Vec<&i32> = Vec::new();
+    items.push(reference);
+    assert!(items.contains(&alias));
+    assert!(!items.contains(&other));
+    42
+}
+run()

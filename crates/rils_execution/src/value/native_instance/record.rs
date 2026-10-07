@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use super::{NativeInstancePlace, Value, value_definition};
-use crate::{Type, value::StructType};
+use crate::value::StructType;
 
 pub fn record_definition(value: &Value) -> Result<Option<Rc<StructType>>, String> {
     if !matches!(value, Value::Dynamic(_) | Value::Reference(_)) {
@@ -44,36 +44,4 @@ pub fn borrow_field(value: &Value, name: &str) -> Result<Value, String> {
         _ => return Err("value is not a native record".into()),
     };
     Ok(Value::Reference(Rc::new(reference)))
-}
-
-pub(crate) fn equal(left: &Value, right: &Value) -> Option<bool> {
-    let definition = record_definition(left)
-        .ok()
-        .flatten()
-        .or_else(|| record_definition(right).ok().flatten())?;
-    let actual_type = |value: &Value| match value {
-        Value::Reference(reference) => reference
-            .native_layout()
-            .ok()
-            .flatten()
-            .map(|layout| layout.rils_type().clone()),
-        _ => Type::of_value(value),
-    };
-    if actual_type(left) != actual_type(right) {
-        return Some(false);
-    }
-    Some(definition.fields.iter().all(|field| {
-        let read = |value: &Value| borrow_field(value, &field.name);
-        let (Ok(left), Ok(right)) = (read(left), read(right)) else {
-            return false;
-        };
-        if let Some(equal) = equal(&left, &right) {
-            return equal;
-        }
-        let read = |value: Value| match value {
-            Value::Reference(reference) => reference.read(),
-            value => Ok(value),
-        };
-        matches!((read(left), read(right)), (Ok(left), Ok(right)) if left == right)
-    }))
 }

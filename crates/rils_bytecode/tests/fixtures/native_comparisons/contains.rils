@@ -1,0 +1,24 @@
+#[derive(Eq)]
+struct Item { text: string, count: i32 }
+fn run() -> i32 {
+    let mut items: Vec<Item> = Vec::new();
+    items.push(Item { text: "owned", count: 42 });
+    let needle = Item { text: "owned", count: 42 };
+    let absent = Item { text: "owned", count: 41 };
+    assert!(items.contains(&needle));
+    assert!(!items.contains(&absent));
+    let mut texts: Vec<string> = Vec::new();
+    texts.push("owned");
+    assert!(texts.contains(&needle.text));
+    {
+        let first = &mut items[0];
+        let second = &mut items[0];
+        assert!(texts.contains(&first.text));
+        second.count = 43;
+        assert!(first.count == 43);
+    }
+    items.clear();
+    assert!(items.is_empty());
+    needle.count
+}
+run()

@@ -42,7 +42,9 @@ pub(super) fn binary(
 ) -> Result<Value, BytecodeError> {
     use BinaryOp::*;
     if matches!(operator, Equal | NotEqual) {
-        let equal = left == right;
+        let equal = left
+            .try_equal(&right)
+            .map_err(|message| BytecodeError::new(message, span))?;
         return Ok(Value::Bool(if operator == Equal { equal } else { !equal }));
     }
     if operator == Add

@@ -181,13 +181,17 @@ impl ReferenceValue {
     pub fn native_layout(&self) -> Result<Option<Rc<DynamicLayout>>, String> {
         match &self.target {
             ReferenceTarget::Storage(target) => {
-                return target.borrow().with_value(Self::native_root_layout);
+                return target
+                    .try_borrow()
+                    .map_err(|_| "reference target is already mutably accessed".to_owned())?
+                    .with_value(Self::native_root_layout);
             }
 
             ReferenceTarget::IndexedElement { sequence, index } => {
                 return sequence
                     .elements
-                    .borrow()
+                    .try_borrow()
+                    .map_err(|_| "referenced sequence is already mutably accessed".to_owned())?
                     .get(*index)
                     .and_then(|slot| slot.value.as_ref())
                     .ok_or_else(|| "native projection target was moved".to_owned())

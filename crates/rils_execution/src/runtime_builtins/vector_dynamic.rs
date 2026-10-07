@@ -400,17 +400,12 @@ fn call(name: &str, arguments: &[Value], object: &NativeReceiver) -> Result<Valu
             record_codec::from_native(value)
         }
         "contains" => {
-            let needle = import_receiver(arguments.get(1).ok_or("missing Vec element")?)?;
+            let needle = arguments.get(1).ok_or("missing Vec element")?;
             let length = object.with(|payload| payload.sequence_len())??;
             for index in 0..length {
-                if record_codec::from_native(object.with(|view| {
-                    view.with_sequence_item(
-                        index,
-                        crate::value::runtime_layouts::clone_borrowed_element,
-                    )
-                })???)?
-                    == needle
-                {
+                if object.with(|view| {
+                    crate::value::equality::view_query_equal(view.sequence_item(index)?, needle)
+                })?? {
                     return Ok(Value::Bool(true));
                 }
             }

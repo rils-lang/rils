@@ -26,7 +26,9 @@ impl Interpreter {
         use BinaryOp::*;
 
         if matches!(operator, Equal | NotEqual) {
-            let equal = left == right;
+            let equal = left
+                .try_equal(&right)
+                .map_err(|message| RuntimeError::new(message, span))?;
             return Ok(Value::Bool(if operator == Equal { equal } else { !equal }));
         }
 

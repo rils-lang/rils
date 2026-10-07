@@ -18,10 +18,10 @@ mod display;
 
 #[path = "value/hash.rs"]
 mod hash;
+use hash::clone_hash_map;
 pub use hash::{
     BTreeMapValue, BTreeSetValue, HashKey, HashMapValue, HashSetValue, MapCollection, SetCollection,
 };
-use hash::{btree_maps_equal, clone_hash_map, hash_maps_equal};
 
 #[path = "value/range.rs"]
 mod range;
@@ -56,6 +56,7 @@ pub use string::{native_string, string_payload};
 #[path = "value/character.rs"]
 mod character;
 pub use character::{char_payload, native_char};
+pub mod equality;
 mod ownership;
 #[path = "value/scalar.rs"]
 mod scalar;
@@ -511,115 +512,6 @@ impl Value {
     }
 }
 
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        if matches!(self, Self::Dynamic(_)) || matches!(other, Self::Dynamic(_)) {
-            if let Some(equal) = native_instance::records_equal(self, other) {
-                return equal;
-            }
-            if let Some(equal) = native_instance::enums_equal(self, other) {
-                return equal;
-            }
-            if let (Some(Ok(left)), Some(Ok(right))) = (
-                dynamic_sequence::view_vec(self),
-                dynamic_sequence::view_vec(other),
-            ) {
-                return left == right;
-            }
-            if let (Some((left, _, _)), Some((right, _, _))) = (self.as_result(), other.as_result())
-            {
-                return left == right;
-            }
-            return match (
-                dynamic_option::view_any(self),
-                dynamic_option::view_any(other),
-            ) {
-                (Some(Ok((left, _))), Some(Ok((right, _)))) => left == right,
-                _ => false,
-            };
-        }
-        match (self, other) {
-            (Self::Unit, Self::Unit) => true,
-            (Self::Bool(left), Self::Bool(right)) => left == right,
-            (Self::I16(left), Self::I16(right)) => left == right,
-            (Self::I64(left), Self::I64(right)) => left == right,
-            (Self::I128(left), Self::I128(right)) => left == right,
-            (Self::Isize(left), Self::Isize(right)) => left == right,
-            (Self::U8(left), Self::U8(right)) => left == right,
-            (Self::U16(left), Self::U16(right)) => left == right,
-            (Self::U32(left), Self::U32(right)) => left == right,
-            (Self::U64(left), Self::U64(right)) => left == right,
-            (Self::U128(left), Self::U128(right)) => left == right,
-            (Self::Usize(left), Self::Usize(right)) => left == right,
-            (Self::Native(_), Self::Usize(right)) => {
-                self.as_usize().is_some_and(|left| left == *right)
-            }
-            (Self::Usize(left), Self::Native(_)) => {
-                other.as_usize().is_some_and(|right| *left == right)
-            }
-            (Self::F32(left), Self::F32(right)) => left == right,
-            (Self::F64(left), Self::F64(right)) => left == right,
-            (Self::Native(_), Self::F32(right)) => self.as_f32().is_some_and(|left| left == *right),
-            (Self::F32(left), Self::Native(_)) => {
-                other.as_f32().is_some_and(|right| *left == right)
-            }
-            (Self::Native(_), Self::F64(right)) => self.as_f64().is_some_and(|left| left == *right),
-            (Self::F64(left), Self::Native(_)) => {
-                other.as_f64().is_some_and(|right| *left == right)
-            }
-            (Self::Char(left), Self::Char(right)) => left == right,
-            (Self::Native(_), Self::Char(right)) => {
-                char_payload(self).is_some_and(|left| left == *right)
-            }
-            (Self::Char(left), Self::Native(_)) => {
-                char_payload(other).is_some_and(|right| *left == right)
-            }
-            (Self::Native(left), Self::Native(right)) => native_ops::equal(left, right),
-            (Self::Native(_), legacy)
-                if matches!(Type::of_value(legacy), Some(Type::Integer(_))) =>
-            {
-                let lowered = crate::numeric::lower_migrated_integer(self.clone());
-                !matches!(&lowered, Self::Native(_)) && &lowered == legacy
-            }
-            (legacy, Self::Native(_))
-                if matches!(Type::of_value(legacy), Some(Type::Integer(_))) =>
-            {
-                let lowered = crate::numeric::lower_migrated_integer(other.clone());
-                !matches!(&lowered, Self::Native(_)) && legacy == &lowered
-            }
-            (Self::Tuple(left), Self::Tuple(right))
-            | (Self::Array(left), Self::Array(right))
-            | (Self::Vec(left), Self::Vec(right)) => sequence_equal(left, right),
-            (Self::Reference(left), Self::Reference(right)) => Rc::ptr_eq(left, right),
-            (Self::Option { value: None, .. }, Self::Option { value: None, .. }) => true,
-            (
-                Self::Option {
-                    value: Some(left), ..
-                },
-                Self::Option {
-                    value: Some(right), ..
-                },
-            ) => left == right,
-            (Self::Result { value: left, .. }, Self::Result { value: right, .. }) => {
-                match (left, right) {
-                    (Ok(left), Ok(right)) | (Err(left), Err(right)) => left == right,
-                    _ => false,
-                }
-            }
-            (Self::HashMap(left), Self::HashMap(right)) => hash_maps_equal(left, right),
-            (Self::BTreeMap(left), Self::BTreeMap(right)) => btree_maps_equal(left, right),
-            (Self::BTreeSet(left), Self::BTreeSet(right)) => {
-                left.entries.borrow().eq(&right.entries.borrow())
-            }
-            (Self::HashSet(left), Self::HashSet(right)) => {
-                *left.entries.borrow() == *right.entries.borrow()
-            }
-
-            _ => false,
-        }
-    }
-}
-
 pub fn enum_variant_name(variant: &EnumVariant) -> &str {
     match variant {
         EnumVariant::Unit { name, .. }
@@ -649,14 +541,4 @@ fn clone_sequence(sequence: &IndexedStorage) -> Result<IndexedStorage, String> {
         elements: RefCell::new(elements),
         element_type: RefCell::new(sequence.element_type.borrow().clone()),
     })
-}
-
-fn sequence_equal(left: &IndexedStorage, right: &IndexedStorage) -> bool {
-    let left = left.elements.borrow();
-    let right = right.elements.borrow();
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right.iter())
-            .all(|(left, right)| left.value == right.value)
 }

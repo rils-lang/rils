@@ -1,0 +1,20 @@
+#[derive(Eq)]
+struct Item { text: string, count: i32 }
+enum Choice { Empty, Item(Item) }
+fn build(text: string, count: i32) -> Option<Vec<Result<Choice, string>>> {
+    let mut items: Vec<Result<Choice, string>> = Vec::new();
+    items.push(Ok(Choice::Item(Item { text: text, count: count })));
+    items.push(Err("error"));
+    Some(items)
+}
+fn run() -> i32 {
+    assert!(build("same", 42) == build("same", 42));
+    assert!(build("same", 42) != build("same", 41));
+    let none: Option<Vec<Result<Choice, string>>> = None;
+    assert!(build("same", 42) != none);
+    let ok: Result<Option<string>, string> = Ok(Some("text"));
+    let err: Result<Option<string>, string> = Err("text");
+    assert!(ok != err);
+    42
+}
+run()

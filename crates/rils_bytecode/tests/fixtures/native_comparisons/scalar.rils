@@ -1,0 +1,20 @@
+fn run() -> i32 {
+    let signed: Option<i128> = Some(-170141183460469231731687303715884105727i128);
+    let same: Option<i128> = Some(-170141183460469231731687303715884105727i128);
+    assert!(signed == same);
+    let maximum: Result<u128, string> = Ok(340282366920938463463374607431768211455u128);
+    let other: Result<u128, string> = Ok(340282366920938463463374607431768211454u128);
+    assert!(maximum != other);
+    let mut items: Vec<usize> = Vec::new();
+    items.push(42usize);
+    let needle = 42usize;
+    assert!(items.contains(&needle));
+    let negative: Option<f64> = Some(-0.0);
+    let positive: Option<f64> = Some(0.0);
+    assert!(negative == positive);
+    let nan: Option<f64> = Some(f64::NAN);
+    let another_nan: Option<f64> = Some(f64::NAN);
+    assert!(nan != another_nan);
+    42
+}
+run()
