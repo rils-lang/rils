@@ -3,6 +3,7 @@ use crate::environment::StorageSlot;
 
 mod native_enum;
 mod native_record;
+mod native_sum;
 
 pub(super) fn pattern_matches(
     pattern: &Pattern,
@@ -12,6 +13,9 @@ pub(super) fn pattern_matches(
 ) -> bool {
     if matches!(pattern, Pattern::Wildcard { .. }) {
         return true;
+    }
+    if let Some(matches) = native_sum::matches(pattern, value, bindings, environment) {
+        return matches;
     }
     if let Some(matches) = native_record::matches(pattern, value, bindings, environment, false) {
         return matches;

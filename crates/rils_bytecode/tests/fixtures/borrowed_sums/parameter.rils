@@ -1,0 +1,10 @@
+fn item(value: &Option<i32>, fallback: &i32) -> &i32 {
+    match value { Some(number) => number, None => fallback }
+}
+fn run() -> i32 {
+    let value: Option<i32> = Some(42);
+    let fallback = 0;
+    let number = item(&value, &fallback);
+    *number
+}
+run()

@@ -1,0 +1,15 @@
+struct Item<T> { value: T, text: string }
+enum Choice<T> { Empty, Full(T) }
+fn run() -> i32 {
+    let value: Option<Result<Choice<Item<i32>>, string>> = Some(Ok(Choice::Full(Item { value: 42, text: "owned" })));
+    let seen = match &value {
+        Some(Ok(Choice::Full(Item { value: 0, text: _ }))) => 0,
+        Some(Ok(Choice::Full(Item { value: count, text: text }))) => if text.len() == 5 { *count } else { 0 },
+        _ => 0,
+    };
+    match value {
+        Some(Ok(Choice::Full(Item { value: count, text: text }))) => if text.len() == 5 { seen + count - 42 } else { 0 },
+        _ => 0,
+    }
+}
+run()

@@ -60,6 +60,17 @@ impl StorageSlot {
         )
     }
 
+    pub(crate) fn with_value_mut<R>(
+        &mut self,
+        callback: impl FnOnce(&mut Value) -> Result<R, String>,
+    ) -> Result<R, String> {
+        callback(
+            self.value
+                .as_mut()
+                .ok_or("reference target has been moved")?,
+        )
+    }
+
     pub fn take(&mut self) -> Result<Value, AccessError> {
         let value = self.value.as_ref().ok_or(AccessError::Moved)?;
         if matches!(value, Value::Reference(_)) {

@@ -1,0 +1,2 @@
+let mut value: Option<i32> = Some(1);
+match &value { Some(child) => { value = Some(42); *child }, None => 0 }

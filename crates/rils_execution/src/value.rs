@@ -41,6 +41,7 @@ mod record;
 pub use record::StructFields;
 mod slot;
 pub use slot::FieldSlot;
+pub mod borrowed_sum;
 pub mod host_declarations;
 pub mod native_instance;
 #[path = "value/native_layouts.rs"]

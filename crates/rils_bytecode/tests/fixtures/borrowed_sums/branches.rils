@@ -1,0 +1,12 @@
+fn run() -> i32 {
+    let some: Option<i32> = Some(10);
+    let none: Option<i32> = None;
+    let ok: Result<i32, i32> = Ok(20);
+    let err: Result<i32, i32> = Err(12);
+    let a = match &some { Some(0) => 0, Some(value) => *value, None => 0 };
+    let b = match &none { Some(_) => 100, None => 0 };
+    let c = match &ok { Err(_) => 100, Ok(value) => *value };
+    let d = match &err { Ok(_) => 100, Err(value) => *value };
+    a + b + c + d
+}
+run()

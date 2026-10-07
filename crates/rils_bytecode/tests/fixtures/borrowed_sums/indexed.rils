@@ -1,0 +1,10 @@
+fn run() -> i32 {
+    let pair: (Option<i32>, Result<i32, i32>) = (Some(20), Err(22));
+    let items: [Option<i32>; 2] = [None, Some(42)];
+    let a = match &pair.0 { Some(number) => *number, None => 0 };
+    let b = match &pair.1 { Err(number) => *number, Ok(_) => 0 };
+    let c = match &items[0] { None => 0, Some(_) => 100 };
+    let d = match &items[1] { Some(number) => *number, None => 0 };
+    a + b + c + d - 42
+}
+run()

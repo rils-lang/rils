@@ -5,7 +5,9 @@
 
 ## Unreleased
 
-- 普通用户 enum 的独立存储和泛型实例已接入原生布局，包括 unit、tuple、record 变体及方法 receiver。借用模式保留原变体字段的 bytes 所有者；拥有型模式先确认整条分支匹配成功再移动字段。泛型构造与模式绑定按实际声明替换类型参数，显式泛型 unit 变体也保留具体类型。Debug、结构相等和哈希键支持原生 enum，VM 的模式绑定引用在分支结束、break/continue 跳转及临时匹配结果被丢弃时释放；宿主 enum discriminant 与 raw flags 转换入口支持原生变体。Copy 仍要求显式实现，并检查所有变体的字段。**Rust API 迁移：** 宿主不能再以仅匹配 `Value::Enum` 的方式读取脚本 enum；请使用 `RilsValue::with_native_view()`、活动变体标签及其字段视图。临时兼容构造与部分借用 sum 适配器仍待清理；C ABI、版本号和未冻结的 v8 格式号不变。
+- 原生 Option/Result 的借用模式直接读取活动分支标签并投影原负载，涵盖嵌套 sum、泛型 struct/enum、集合及局部引用；负载无需 Clone。绑定保留原对象与词法来源，子引用存活期间禁止替换父容器，退出作用域后恢复替换。小型 Copy 容器按需转移到共享存储，不复制数据；活动 sum 负载写回复用检查路径，允许同一位置存在多个可变引用，拒绝共享非 Copy 输入及有后代引用的父负载替换。解释器、VM 与加载后的字节码采用相同语义；C ABI、版本号和 v8 编码不变。
+
+- 普通用户 enum 的独立存储和泛型实例已接入原生布局，包括 unit、tuple、record 变体及方法 receiver。借用模式保留原变体字段的 bytes 所有者；拥有型模式先确认整条分支匹配成功再移动字段。泛型构造与模式绑定按实际声明替换类型参数，显式泛型 unit 变体也保留具体类型。Debug、结构相等和哈希键支持原生 enum，VM 的模式绑定引用在分支结束、break/continue 跳转及临时匹配结果被丢弃时释放；宿主 enum discriminant 与 raw flags 转换入口支持原生变体。Copy 仍要求显式实现，并检查所有变体的字段。**Rust API 迁移：** 宿主不能再以仅匹配 `Value::Enum` 的方式读取脚本 enum；请使用 `RilsValue::with_native_view()`、活动变体标签及其字段视图。临时兼容构造仍待清理，借用 Option/Result 模式迁移见上项；C ABI、版本号和未冻结的 v8 格式号不变。
 
 - 普通用户 struct 的独立存储、泛型实例、嵌套字段 move/恢复、方法 receiver 与 record 模式已接入原生布局；借用 record 模式绑定保留原字段身份，原生集合字段的方法及借用迭代器直接访问原对象。Copy 继续要求显式实现，不依据字段自动授予。Rust 宿主应使用 `RilsValue` 或原生视图读取记录，避免仅匹配旧 `Value::Struct`；独立 enum 的原生存储见上项，临时兼容构造值继续迁移。未冻结的 v8 类型表新增 opaque struct 标签以保留标准库声明属性，已有 `.rilbc` / `.bytes` 需重新编译；格式号仍为 8，C ABI 与版本号未变。
 

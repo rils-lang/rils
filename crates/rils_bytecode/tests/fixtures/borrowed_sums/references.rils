@@ -1,0 +1,7 @@
+fn run() -> i32 {
+    let mut number = 41;
+    let value: Option<&mut i32> = Some(&mut number);
+    match &value { Some(reference) => { **reference = **reference + 1; }, None => {} }
+    number
+}
+run()

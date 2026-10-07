@@ -1,0 +1,9 @@
+fn run() -> i32 {
+    let mut value: Option<i32> = Some(1);
+    loop {
+        match &value { Some(_) => { break; }, None => {} }
+    }
+    value = Some(42);
+    match value { Some(number) => number, None => 0 }
+}
+run()

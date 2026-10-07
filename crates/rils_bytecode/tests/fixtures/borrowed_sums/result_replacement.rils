@@ -1,0 +1,2 @@
+let mut value: Result<i32, i32> = Err(1);
+match &value { Err(child) => { value = Ok(42); *child }, Ok(_) => 0 }

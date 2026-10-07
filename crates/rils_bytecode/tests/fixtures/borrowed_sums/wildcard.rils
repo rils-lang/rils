@@ -1,0 +1,6 @@
+fn run() -> i32 {
+    let mut value: Result<Option<string>, string> = Ok(Some("owned"));
+    match &value { Ok(Some(_)) => { value = Err("done"); }, _ => {} }
+    match value { Err(text) => if text.len() == 4 { 42 } else { 0 }, _ => 0 }
+}
+run()

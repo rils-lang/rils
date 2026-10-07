@@ -1,0 +1,11 @@
+struct Items { values: Vec<i32>, pair: (i32, i32), numbers: [i32; 2] }
+fn run() -> i32 {
+    let mut values: Vec<i32> = Vec::new();
+    values.push(10);
+    let result: Result<Option<Items>, string> = Ok(Some(Items { values: values, pair: (20, 4), numbers: [3, 5] }));
+    match &result {
+        Ok(Some(Items { values: values, pair: pair, numbers: numbers })) => values[0] + pair.0 + pair.1 + numbers[0] + numbers[1],
+        _ => 0,
+    }
+}
+run()

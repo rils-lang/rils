@@ -581,6 +581,22 @@ impl ReferenceValue {
             ReferenceTarget::Storage(target) => target
                 .borrow()
                 .with_value(|value| crate::host_value::with_native_value(value, callback)),
+            ReferenceTarget::StructField { instance, index } => {
+                let fields = instance.fields.borrow();
+                let value = fields
+                    .get_index(*index)
+                    .and_then(|slot| slot.value.as_ref())
+                    .ok_or("native projection target was moved")?;
+                crate::host_value::with_native_value(value, callback)
+            }
+            ReferenceTarget::IndexedElement { sequence, index } => {
+                let elements = sequence.elements.borrow();
+                let value = elements
+                    .get(*index)
+                    .and_then(|slot| slot.value.as_ref())
+                    .ok_or("native projection target was moved")?;
+                crate::host_value::with_native_value(value, callback)
+            }
             ReferenceTarget::DynamicIndexedElement {
                 sequence,
                 index,

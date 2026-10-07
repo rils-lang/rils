@@ -71,7 +71,7 @@ impl NativePath {
             .with_view(|view| view.layout())
             .map_err(|_| AssignError::Undefined)?
             .map_err(|_| AssignError::Undefined)?;
-        let mut codec = self.codec.as_ref().clone();
+        let mut codec = self.codec.as_ref().clone().with_owned_conversion();
         let value = codec
             .into_native(value, layout.clone())
             .map_err(|_| AssignError::TypeMismatch(layout.rils_type().clone()))?;
@@ -122,39 +122,52 @@ impl ReferenceValue {
                 )?
             }
             _ => {
-                let value = match &self.target {
-                    ReferenceTarget::Storage(target) => target
-                        .borrow()
-                        .read()
-                        .map_err(|error| format!("{error:?}"))?,
+                return match &self.target {
+                    ReferenceTarget::Storage(target) => {
+                        target.borrow_mut().with_value_mut(Self::retain_native_root)
+                    }
                     ReferenceTarget::StructField { instance, index } => instance
                         .fields
-                        .borrow()
-                        .get_index(*index)
-                        .and_then(|slot| slot.value.clone())
-                        .ok_or("native projection target was moved")?,
+                        .borrow_mut()
+                        .get_index_mut(*index)
+                        .and_then(|slot| slot.value.as_mut())
+                        .ok_or_else(|| "native projection target was moved".to_owned())
+                        .and_then(Self::retain_native_root),
                     ReferenceTarget::IndexedElement { sequence, index } => sequence
                         .elements
-                        .borrow()
-                        .get(*index)
-                        .and_then(|slot| slot.value.clone())
-                        .ok_or("native projection target was moved")?,
-                    _ => return Ok(None),
+                        .borrow_mut()
+                        .get_mut(*index)
+                        .and_then(|slot| slot.value.as_mut())
+                        .ok_or_else(|| "native projection target was moved".to_owned())
+                        .and_then(Self::retain_native_root),
+                    _ => Ok(None),
                 };
-                match value {
-                    Value::Reference(reference) => return reference.native_path(),
-                    Value::Dynamic(object) if !object.is_inline() => {
-                        let codec = object
-                            .descriptor()
-                            .metadata::<NativeRecordCodec>()
-                            .unwrap_or_default();
-                        NativePath::new(object.into_compact(), vec![], codec)?
-                    }
-                    _ => return Ok(None),
-                }
             }
         };
         Ok(Some(path))
+    }
+
+    fn retain_native_root(value: &mut Value) -> Result<Option<NativePath>, String> {
+        if let Value::Reference(reference) = value {
+            return reference.native_path();
+        }
+        let Value::Dynamic(object) = value else {
+            return Ok(None);
+        };
+        if object.is_inline() {
+            let Value::Dynamic(object) = std::mem::replace(value, Value::Unit) else {
+                unreachable!()
+            };
+            *value = Value::Dynamic(object.into_shared());
+        }
+        let Value::Dynamic(object) = value else {
+            unreachable!()
+        };
+        let codec = object
+            .descriptor()
+            .metadata::<NativeRecordCodec>()
+            .unwrap_or_default();
+        NativePath::new(object.clone().into_compact(), vec![], codec).map(Some)
     }
 
     pub(crate) fn with_native_mut<R>(
@@ -172,9 +185,41 @@ impl ReferenceValue {
     }
 
     pub fn native_layout(&self) -> Result<Option<Rc<DynamicLayout>>, String> {
+        match &self.target {
+            ReferenceTarget::Storage(target) => {
+                return target.borrow().with_value(Self::native_root_layout);
+            }
+            ReferenceTarget::StructField { instance, index } => {
+                return instance
+                    .fields
+                    .borrow()
+                    .get_index(*index)
+                    .and_then(|slot| slot.value.as_ref())
+                    .ok_or_else(|| "native projection target was moved".to_owned())
+                    .and_then(Self::native_root_layout);
+            }
+            ReferenceTarget::IndexedElement { sequence, index } => {
+                return sequence
+                    .elements
+                    .borrow()
+                    .get(*index)
+                    .and_then(|slot| slot.value.as_ref())
+                    .ok_or_else(|| "native projection target was moved".to_owned())
+                    .and_then(Self::native_root_layout);
+            }
+            _ => {}
+        }
         self.native_path()?
             .map(|path| path.with_view(|view| view.layout())?)
             .transpose()
+    }
+
+    fn native_root_layout(value: &Value) -> Result<Option<Rc<DynamicLayout>>, String> {
+        match value {
+            Value::Dynamic(object) => Ok(Some(object.descriptor().layout_handle())),
+            Value::Reference(reference) => reference.native_layout(),
+            _ => Ok(None),
+        }
     }
 
     pub fn native_type_definition(&self) -> Result<Option<Value>, String> {
@@ -203,10 +248,18 @@ impl ReferenceValue {
 
     /// Retain the source reference and project only the active enum payload.
     pub fn project_native_variant(self: &Rc<Self>, index: usize) -> Result<Option<Self>, String> {
+        self.project_native_step(DynamicPathStep::Variant(index))
+    }
+
+    /// Project a checked layout step while retaining the original lexical source.
+    pub fn project_native_step(
+        self: &Rc<Self>,
+        step: DynamicPathStep,
+    ) -> Result<Option<Self>, String> {
         let Some(path) = self.native_path()? else {
             return Ok(None);
         };
-        let path = path.project(DynamicPathStep::Variant(index))?;
+        let path = path.project(step)?;
         Ok(Some(Self {
             mutable: self.mutable,
             target: ReferenceTarget::DynamicField(Box::new(path)),
