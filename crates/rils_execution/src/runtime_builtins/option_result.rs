@@ -135,15 +135,9 @@ pub(super) fn call_owned(
             } else {
                 left.xor(right)
             };
-            match crate::value::dynamic_option::construct(selected, &item_type)? {
-                crate::value::dynamic_option::Construction::Native(value) => Ok(value),
-                crate::value::dynamic_option::Construction::Unsupported(value) => {
-                    Ok(Value::Option {
-                        value: value.map(Rc::new),
-                        element_type: Some(item_type),
-                    })
-                }
-            }
+            context
+                .storage()
+                .construct_option(&Type::Option(Box::new(item_type)), selected)
         }
         ("Result", "unwrap") => {
             take_result(receiver)?.map_err(|error| format!("called `unwrap` on Err({error})"))
@@ -165,15 +159,9 @@ pub(super) fn call_owned(
             } else {
                 branch.err()
             };
-            match crate::value::dynamic_option::construct(item, &item_type)? {
-                crate::value::dynamic_option::Construction::Native(value) => Ok(value),
-                crate::value::dynamic_option::Construction::Unsupported(item) => {
-                    Ok(Value::Option {
-                        value: item.map(Rc::new),
-                        element_type: Some(item_type),
-                    })
-                }
-            }
+            context
+                .storage()
+                .construct_option(&Type::Option(Box::new(item_type)), item)
         }
         ("Result", "unwrap_or") => {
             let default = arguments.pop().expect("arity checked");

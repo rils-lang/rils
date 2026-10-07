@@ -294,6 +294,7 @@ impl Interpreter {
                     body: function_body,
                     closure: environment.clone(),
                     semantic_expression_ids,
+                    typeck_results: self.typeck_results.clone(),
                 }));
                 environment
                     .borrow_mut()

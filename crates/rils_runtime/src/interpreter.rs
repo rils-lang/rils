@@ -80,7 +80,8 @@ pub struct Interpreter {
     output_handler: Rc<crate::OutputHandler>,
     host_value_formatter: Option<Rc<crate::HostValueFormatter>>,
     semantic_expression_ids: Option<rils_frontend::semantic::ExpressionIdentityMap>,
-    typeck_results: Option<rils_frontend::TypeckResults>,
+    typeck_results: Option<Rc<rils_frontend::TypeckResults>>,
+    builtin_default_functions: RefCell<HashMap<(String, String), Rc<UserFunction>>>,
     frontend_semantics_verified: bool,
     frontend_verified_trait_impls: HashSet<rils_frontend::ImplId>,
     frontend_impl_ids: HashMap<Span, rils_frontend::ImplId>,
@@ -108,6 +109,7 @@ impl Interpreter {
             host_value_formatter: None,
             semantic_expression_ids: None,
             typeck_results: None,
+            builtin_default_functions: RefCell::new(HashMap::new()),
             frontend_semantics_verified: false,
             frontend_verified_trait_impls: HashSet::new(),
             frontend_impl_ids: HashMap::new(),
@@ -296,7 +298,7 @@ impl Interpreter {
                 program,
                 crate::SourceId::UNKNOWN,
             ));
-        self.typeck_results = Some(analysis.typeck_results.clone());
+        self.typeck_results = Some(Rc::new(analysis.typeck_results.clone()));
         let result = self.execute_inner(program);
         self.semantic_expression_ids = None;
         self.typeck_results = None;
@@ -345,7 +347,7 @@ impl Interpreter {
             ));
         }
         self.semantic_expression_ids = Some(expression_ids);
-        self.typeck_results = Some(analysis.typeck_results.clone());
+        self.typeck_results = Some(Rc::new(analysis.typeck_results.clone()));
         let previous_semantics_verified =
             std::mem::replace(&mut self.frontend_semantics_verified, true);
         let previous_verified_trait_impls = std::mem::replace(

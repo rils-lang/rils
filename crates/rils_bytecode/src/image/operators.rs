@@ -1,22 +1,23 @@
 use crate::{
     ast::{BinaryOp, UnaryOp},
     source::Span,
+    types::Type,
     value::Value,
 };
 
 use super::BytecodeError;
 
 pub(super) fn condition_value(value: &Value, span: Span) -> Result<bool, BytecodeError> {
-    match value {
-        Value::Unit => Err(BytecodeError::new(
+    match Type::of_value(value) {
+        Some(Type::Unit) => Err(BytecodeError::new(
             "`()` cannot be used as a condition",
             span,
         )),
-        Value::Option { .. } => Err(BytecodeError::new(
+        Some(Type::Option(_)) => Err(BytecodeError::new(
             "Option cannot be used as a condition",
             span,
         )),
-        value => Ok(value.is_truthy()),
+        _ => Ok(value.is_truthy()),
     }
 }
 

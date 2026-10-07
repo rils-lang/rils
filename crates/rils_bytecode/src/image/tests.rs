@@ -910,7 +910,8 @@ fn links_and_executes_core_imports() {
             let text = "rils";
             let copied = clone(&text);
             let option = Some(type_of(copied));
-            if is_some(option) && is_none(None) {
+            let missing: Option<i32> = None;
+            if is_some(option) && is_none(missing) {
                 unwrap_or(Some(40), 0) + unwrap_or(Err("missing"), 2)
             } else {
                 0
@@ -1193,7 +1194,7 @@ fn option_result_native_methods_and_global_helpers_match_interpreter() {
             && success.is_ok() && failure.is_err()
             && Ok(4).ok().unwrap() == 4
             && Err("error").err().unwrap() == "error"
-            && is_some(Some(5)) && is_none(None)
+            && is_some(Some(5)) && is_none(missing)
             && is_ok(global_success) && is_err(global_failure)
     "#;
     let module = compile(source).unwrap();
@@ -1969,7 +1970,7 @@ fn compiles_array_index_and_tuple_field_assignment() {
 #[test]
 fn compiles_option_result_and_question_mark() {
     assert_matches_interpreter("Some(42)");
-    assert_matches_interpreter("None");
+    assert_matches_interpreter("let item: Option<i32> = None; item");
     assert_matches_interpreter("Ok(\"value\")");
     assert_matches_interpreter("Err(7)");
 

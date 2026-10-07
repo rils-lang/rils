@@ -462,6 +462,12 @@ fn resolve_callee(
         {
             return Some(ResolvedCall::Definition(definition));
         }
+        if trait_name.rsplit("::").next() == Some("IntoIterator")
+            && member == "into_iter"
+            && matches!(receiver_type, Type::Named { name, .. } if iterator_types.contains(name))
+        {
+            return Some(ResolvedCall::IteratorIdentity);
+        }
     }
     if let Expr::Member { object, .. } = callee
         && expression_ids

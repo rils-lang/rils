@@ -452,9 +452,11 @@ fn encode_function(
                     MirInstruction::BuildOptionSome {
                         destination,
                         source,
+                        item_type,
                     } => Instruction::BuildOptionSome {
                         destination,
                         source,
+                        item_type,
                     },
                     MirInstruction::BuildResultOk {
                         destination,

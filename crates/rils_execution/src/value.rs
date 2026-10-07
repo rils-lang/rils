@@ -83,6 +83,7 @@ pub struct UserFunction {
     pub body: Block,
     pub closure: EnvironmentRef,
     pub semantic_expression_ids: Option<rils_frontend::semantic::ExpressionIdentityMap>,
+    pub typeck_results: Option<Rc<rils_frontend::TypeckResults>>,
 }
 
 #[derive(Clone)]
@@ -115,9 +116,17 @@ pub struct NativeFunction {
 #[derive(Clone, Copy)]
 pub enum NativeFunctionBody {
     Rust(fn(&[Value]) -> Result<Value, String>),
-    RustOwned(fn(Vec<Value>) -> Result<Value, String>),
+    RustOwned(NativeOwnedFunction),
     Symbol(&'static str),
 }
+
+/// An owned native call receives visible declarations and the checked result
+/// type when invoked from a typed expression.
+pub type NativeOwnedFunction = fn(
+    Vec<Value>,
+    &crate::runtime_builtins::NativeOwnedContext,
+    Option<&Type>,
+) -> Result<Value, String>;
 
 #[derive(Clone)]
 pub struct HostFunction {

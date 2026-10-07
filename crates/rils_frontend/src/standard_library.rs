@@ -193,9 +193,18 @@ pub(crate) fn builtin_trait_member_type_with_iterator_item(
     name: &str,
     iterator_item: Option<Type>,
 ) -> Option<Type> {
-    let member = rils_builtins::builtin_member(trait_name, name)?;
+    let (member, self_type, mut generics) =
+        if let Some(member) = builtin_trait_member_for_type(object, trait_name, name) {
+            let (_, self_type, generics) = builtin_owner(object)?;
+            (member, self_type, generics)
+        } else {
+            (
+                rils_builtins::builtin_member(trait_name, name)?,
+                object.clone(),
+                HashMap::new(),
+            )
+        };
     let signature = member.signature?;
-    let mut generics = HashMap::new();
     if let Some(item) = iterator_item {
         generics.insert("Iterator::Item", item);
     }
@@ -207,9 +216,9 @@ pub(crate) fn builtin_trait_member_type_with_iterator_item(
             .parameters
             .iter()
             .copied()
-            .map(|pattern| resolve_member_pattern(pattern, object, &generics))
+            .map(|pattern| resolve_member_pattern(pattern, &self_type, &generics))
             .collect(),
-        resolve_member_pattern(signature.result, object, &generics),
+        resolve_member_pattern(signature.result, &self_type, &generics),
     ))
 }
 

@@ -145,7 +145,7 @@ pub(super) fn builtin_default_hir(
                 span,
             },
             DefaultPlan::Option(inner) => HirExpression::OptionNone {
-                item_type: Some(inner.clone()),
+                item_type: inner.clone(),
                 span,
             },
             DefaultPlan::EmptyCollection { name, arguments } => {

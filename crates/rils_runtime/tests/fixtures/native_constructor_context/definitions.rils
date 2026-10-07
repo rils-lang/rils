@@ -1,0 +1,8 @@
+struct Item { value: i32 }
+fn empty() -> Option<Item> { None }
+fn present() -> Option<Item> { Some(Item { value: 42 }) }
+fn make<T>(hint: T) -> fn() -> Option<T> {
+    fn later() -> Option<T> { None }
+    later
+}
+let saved = make("owned");

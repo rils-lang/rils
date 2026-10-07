@@ -170,11 +170,12 @@ pub(super) enum Instruction {
     },
     BuildOptionNone {
         destination: usize,
-        item_type: Option<Type>,
+        item_type: Type,
     },
     BuildOptionSome {
         destination: usize,
         source: usize,
+        item_type: Type,
     },
     BuildResultOk {
         destination: usize,

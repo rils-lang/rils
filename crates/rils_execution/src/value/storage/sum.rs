@@ -8,10 +8,16 @@ use super::{NativeRecordCodec, Type, TypedStorageContext, Value};
 
 impl TypedStorageContext<'_> {
     pub fn construct_option(&self, ty: &Type, item: Option<Value>) -> Result<Value, String> {
-        let Type::Option(_) = ty else {
+        let ty = super::declarations::storage_type(ty);
+        let Type::Option(_) = &ty else {
             return Err("Option construction requires an Option type".into());
         };
-        let layout = self.layout(ty)?;
+        if !ty.is_concrete_type() {
+            return Err(format!(
+                "cannot infer the complete native Option type: {ty}"
+            ));
+        }
+        let layout = self.layout(&ty)?;
         let mut codec =
             NativeRecordCodec::with_definitions(self.structs, self.enums).with_owned_conversion();
         let payload = match item {

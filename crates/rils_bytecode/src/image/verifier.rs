@@ -620,10 +620,7 @@ impl BytecodeModule {
                             instruction.span,
                         ));
                     }
-                    if item_type
-                        .as_ref()
-                        .is_some_and(|item| matches!(item, Type::Unknown))
-                    {
+                    if !item_type.is_type_witness() {
                         return Err(BytecodeError::new(
                             "invalid None item type",
                             instruction.span,
@@ -633,8 +630,22 @@ impl BytecodeModule {
                 Instruction::BuildOptionSome {
                     destination,
                     source,
+                    item_type,
+                } => {
+                    if invalid_register(*destination) || invalid_register(*source) {
+                        return Err(BytecodeError::new(
+                            "invalid Some construction operands",
+                            instruction.span,
+                        ));
+                    }
+                    if !item_type.is_type_witness() {
+                        return Err(BytecodeError::new(
+                            "invalid Some item type",
+                            instruction.span,
+                        ));
+                    }
                 }
-                | Instruction::BuildResultOk {
+                Instruction::BuildResultOk {
                     destination,
                     source,
                 }

@@ -1,0 +1,15 @@
+struct Item { text: string, value: i32 }
+fn run() -> i32 {
+    let empty: Option<Item> = None;
+    let chosen = empty.or(Some(Item { text: "or", value: 10 }));
+    let selected = chosen.unwrap();
+    let absent: Option<Item> = None;
+    let single = Some(Item { text: "xor", value: 10 }).xor(absent);
+    let ok: Result<Item, string> = Ok(Item { text: "ok", value: 10 });
+    let err: Result<string, Item> = Err(Item { text: "err", value: 12 });
+    let single_item = single.unwrap();
+    let ok_item = ok.ok().unwrap();
+    let err_item = err.err().unwrap();
+    selected.value + single_item.value + ok_item.value + err_item.value
+}
+run()

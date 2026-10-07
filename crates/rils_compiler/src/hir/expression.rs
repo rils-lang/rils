@@ -43,18 +43,10 @@ impl<'a> FunctionLowerer<'a> {
                 )?,
                 span: *span,
             }),
-            Expr::Variable { name, span } if name == "None" => {
-                let item_type = match self.typeck_results.expression_type(expression_id) {
-                    Some(Type::Option(inner)) if !matches!(inner.as_ref(), Type::Unknown) => {
-                        Some(self.signature_type(inner))
-                    }
-                    _ => None,
-                };
-                Ok(HirExpression::OptionNone {
-                    item_type,
-                    span: *span,
-                })
-            }
+            Expr::Variable { name, span } if name == "None" => Ok(HirExpression::OptionNone {
+                item_type: self.option_item_type(expression)?,
+                span: *span,
+            }),
             Expr::Variable { name, span } => {
                 if let Some(local) = self.lookup(name) {
                     Ok(HirExpression::Local { local, span: *span })
@@ -267,6 +259,24 @@ impl<'a> FunctionLowerer<'a> {
                 arguments,
                 span,
             } => {
+                if matches!(
+                    self.typeck_results.resolved_call(expression_id),
+                    Some(rils_frontend::semantic::ResolvedCall::IteratorIdentity)
+                ) {
+                    let receiver = match callee.as_ref() {
+                        Expr::Member { object, .. } if arguments.is_empty() => object.as_ref(),
+                        Expr::Path { .. } | Expr::QualifiedPath { .. } if arguments.len() == 1 => {
+                            &arguments[0]
+                        }
+                        _ => {
+                            return Err(CompileError::unsupported(
+                                "invalid iterator identity call",
+                                *span,
+                            ));
+                        }
+                    };
+                    return self.expression(receiver);
+                }
                 if let Some((name, signature, capability)) = self.resolved_import(expression_id) {
                     if let Some(symbol) = rils_builtins::builtin_function(name)
                         .and_then(|declaration| declaration.native_symbol)
@@ -300,16 +310,6 @@ impl<'a> FunctionLowerer<'a> {
                     ..
                 } = callee.as_ref()
                 {
-                    if trait_name.rsplit("::").next() == Some("IntoIterator")
-                        && member == "into_iter"
-                        && arguments.len() == 1
-                        && matches!(
-                            self.typeck_results.resolved_call(expression_id),
-                            Some(rils_frontend::semantic::ResolvedCall::IteratorIdentity)
-                        )
-                    {
-                        return self.expression(&arguments[0]);
-                    }
                     if trait_name == "Default" && member == "default" {
                         if !arguments.is_empty() {
                             return Err(CompileError::unsupported(
@@ -586,15 +586,6 @@ impl<'a> FunctionLowerer<'a> {
                             span: *span,
                         });
                     }
-                    if name == "into_iter"
-                        && arguments.is_empty()
-                        && matches!(
-                            self.typeck_results.resolved_call(expression_id),
-                            Some(rils_frontend::semantic::ResolvedCall::IteratorIdentity)
-                        )
-                    {
-                        return self.expression(object);
-                    }
                     if let Some(rils_frontend::semantic::ResolvedCall::NumericIntrinsic {
                         symbol,
                         receiver: Some(_),
@@ -672,7 +663,11 @@ impl<'a> FunctionLowerer<'a> {
                     };
                     let value = Box::new(self.expression(argument)?);
                     return Ok(match name.as_str() {
-                        "Some" => HirExpression::OptionSome { value, span: *span },
+                        "Some" => HirExpression::OptionSome {
+                            value,
+                            item_type: self.option_item_type(expression)?,
+                            span: *span,
+                        },
                         "Ok" => HirExpression::ResultOk { value, span: *span },
                         "Err" => HirExpression::ResultErr { value, span: *span },
                         _ => unreachable!(),

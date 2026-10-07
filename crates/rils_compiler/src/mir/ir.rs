@@ -221,11 +221,12 @@ pub enum MirInstruction {
     },
     BuildOptionNone {
         destination: Register,
-        item_type: Option<Type>,
+        item_type: Type,
     },
     BuildOptionSome {
         destination: Register,
         source: Register,
+        item_type: Type,
     },
     BuildResultOk {
         destination: Register,

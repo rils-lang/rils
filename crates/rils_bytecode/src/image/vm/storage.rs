@@ -14,6 +14,7 @@ impl VirtualMachine<'_> {
                 source,
                 expected,
             } => {
+                let expected = expected.substitute(&self.frame().type_bindings);
                 let value = self.take_register(source, span)?;
                 let value = self
                     .native_context
@@ -77,42 +78,26 @@ impl VirtualMachine<'_> {
                 destination,
                 item_type,
             } => {
-                let constructed = item_type
-                    .as_ref()
-                    .map(|item_type| self.native_context.none(item_type))
-                    .transpose();
-                self.frame_mut().registers[destination] = Some(match constructed {
-                    Ok(Some(value)) => value,
-                    Ok(None) | Err(_) => Value::Option {
-                        value: None,
-                        element_type: item_type,
-                    },
-                });
+                let item_type = item_type.substitute(&self.frame().type_bindings);
+                let value = self
+                    .native_context
+                    .none(&item_type)
+                    .map_err(|message| BytecodeError::new(message, span))?;
+                self.frame_mut().registers[destination] = Some(value);
             }
             Instruction::BuildOptionSome {
                 destination,
                 source,
+                item_type,
             } => {
+                let item_type = item_type.substitute(&self.frame().type_bindings);
                 let value = self.take_register(source, span)?;
-                let element_type = Type::of_value(&value);
-                let constructed = match element_type.as_ref() {
-                    Some(item_type) => {
-                        rils_execution::value::dynamic_option::construct(Some(value), item_type)
-                            .map_err(|message| BytecodeError::new(message, span))?
-                    }
-                    None => rils_execution::value::dynamic_option::Construction::Unsupported(Some(
-                        value,
-                    )),
-                };
-                self.frame_mut().registers[destination] = Some(match constructed {
-                    rils_execution::value::dynamic_option::Construction::Native(value) => value,
-                    rils_execution::value::dynamic_option::Construction::Unsupported(value) => {
-                        Value::Option {
-                            value: value.map(Rc::new),
-                            element_type,
-                        }
-                    }
-                });
+                let value = self
+                    .native_context
+                    .storage()
+                    .construct_option(&Type::Option(Box::new(item_type)), Some(value))
+                    .map_err(|message| BytecodeError::new(message, span))?;
+                self.frame_mut().registers[destination] = Some(value);
             }
             Instruction::BuildResultOk {
                 destination,

@@ -3,13 +3,13 @@ use super::*;
 pub(super) fn builtin_default_value(
     ty: &Type,
     context: &crate::runtime_builtins::NativeOwnedContext,
-) -> Option<Value> {
+) -> Result<Option<Value>, String> {
     use rils_frontend::default::DefaultPlan;
 
     fn materialize(
         plan: &DefaultPlan,
         context: &crate::runtime_builtins::NativeOwnedContext,
-    ) -> Option<Value> {
+    ) -> Result<Option<Value>, String> {
         let sequence = |values: Vec<(Value, Type)>| {
             Rc::new(IndexedStorage {
                 active_iterators: std::cell::Cell::new(0),
@@ -22,7 +22,7 @@ pub(super) fn builtin_default_value(
                 element_type: RefCell::new(None),
             })
         };
-        Some(match plan {
+        Ok(Some(match plan {
             DefaultPlan::Unit => Value::Unit,
             DefaultPlan::Bool => Value::Bool(false),
             DefaultPlan::Integer(crate::IntegerType::I8) => crate::numeric::native_i8(0),
@@ -41,43 +41,48 @@ pub(super) fn builtin_default_value(
             DefaultPlan::Float(crate::FloatType::F64) => Value::from_f64(0.0),
             DefaultPlan::Char => rils_execution::value::native_char('\0'),
             DefaultPlan::String => rils_execution::value::native_string(""),
-            DefaultPlan::Tuple(elements) => Value::Tuple(sequence(
-                elements
-                    .iter()
-                    .map(|element| {
-                        let value = materialize(element, context)?;
-                        let ty = Type::of_value(&value)?;
-                        Some((value, ty))
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-            )),
+            DefaultPlan::Tuple(elements) => {
+                let mut values = Vec::with_capacity(elements.len());
+                for element in elements {
+                    let Some(value) = materialize(element, context)? else {
+                        return Ok(None);
+                    };
+                    let ty = Type::of_value(&value).ok_or("default value has no concrete type")?;
+                    values.push((value, ty));
+                }
+                Value::Tuple(sequence(values))
+            }
             DefaultPlan::Array {
                 element,
                 element_type,
                 length,
             } => {
-                let values = (0..*length)
-                    .map(|_| Some((materialize(element, context)?, element_type.clone())))
-                    .collect::<Option<Vec<_>>>()?;
+                let mut values = Vec::with_capacity(*length);
+                for _ in 0..*length {
+                    let Some(value) = materialize(element, context)? else {
+                        return Ok(None);
+                    };
+                    values.push((value, element_type.clone()));
+                }
                 let sequence = sequence(values);
                 *sequence.element_type.borrow_mut() = Some(element_type.clone());
                 Value::Array(sequence)
             }
-            DefaultPlan::Option(inner) => context.none(inner).unwrap_or_else(|_| Value::Option {
-                value: None,
-                element_type: Some(inner.clone()),
-            }),
+            DefaultPlan::Option(inner) => context.none(inner)?,
             DefaultPlan::EmptyCollection { name, arguments } => {
                 let ty = Type::Named {
                     name: name.clone(),
                     arguments: arguments.clone(),
                 };
-                context.empty_collection(&ty).ok()?
+                context.empty_collection(&ty)?
             }
-            DefaultPlan::TraitCall(_) => return None,
-        })
+            DefaultPlan::TraitCall(_) => return Ok(None),
+        }))
     }
-    materialize(&rils_frontend::default::default_plan(ty)?, context)
+    let Some(plan) = rils_frontend::default::default_plan(ty) else {
+        return Ok(None);
+    };
+    materialize(&plan, context)
 }
 
 pub(crate) fn builtin_runtime_member(

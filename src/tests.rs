@@ -1849,7 +1849,7 @@ fn annotations_check_initializers_assignments_parameters_and_returns() {
 
 #[test]
 fn option_cannot_be_used_as_an_implicit_nullable_condition() {
-    let error = eval_value("if None { 1 } else { 2 }").unwrap_err();
+    let error = eval_value("let value: Option<i32> = None; if value { 1 } else { 2 }").unwrap_err();
     assert!(
         error
             .to_string()
@@ -1915,7 +1915,8 @@ fn match_bindings_are_scoped_to_the_selected_arm() {
 
 #[test]
 fn match_reports_non_exhaustive_values() {
-    let error = eval_value("match None { Some(value) => value }").unwrap_err();
+    let error = eval_value("let item: Option<i32> = None; match item { Some(value) => value }")
+        .unwrap_err();
     assert!(error.to_string().contains("non-exhaustive match"));
 }
 

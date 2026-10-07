@@ -99,8 +99,11 @@ impl Interpreter {
             &mut self.semantic_expression_ids,
             function.semantic_expression_ids.clone(),
         );
+        let previous_typeck_results =
+            std::mem::replace(&mut self.typeck_results, function.typeck_results.clone());
         let result = self.execute_statements(&function.body.statements, environment.clone());
         self.semantic_expression_ids = previous_expression_ids;
+        self.typeck_results = previous_typeck_results;
         self.function_depth -= 1;
         let result = match result {
             Err(error) if error.message == TRY_RETURN_SIGNAL => {

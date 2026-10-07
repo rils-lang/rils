@@ -195,16 +195,16 @@ impl Interpreter {
     }
 
     pub(super) fn condition_value(&self, value: &Value, span: Span) -> Result<bool, RuntimeError> {
-        match value {
-            Value::Option { .. } => Err(RuntimeError::new(
+        match Type::of_value(value) {
+            Some(Type::Option(_)) => Err(RuntimeError::new(
                 "Option cannot be used as a condition; use `is_some` or `is_none`",
                 span,
             )),
-            Value::Unit => Err(RuntimeError::new(
+            Some(Type::Unit) => Err(RuntimeError::new(
                 "`()` cannot be used as a condition",
                 span,
             )),
-            value => Ok(value.is_truthy()),
+            _ => Ok(value.is_truthy()),
         }
     }
 }

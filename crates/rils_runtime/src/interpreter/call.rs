@@ -28,6 +28,17 @@ impl Interpreter {
         span: Span,
         environment: EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
+        self.call_owned_with_type(callee, arguments, span, environment, None)
+    }
+
+    pub(super) fn call_owned_with_type(
+        &mut self,
+        callee: Value,
+        arguments: Vec<Value>,
+        span: Span,
+        environment: EnvironmentRef,
+        expected: Option<&Type>,
+    ) -> Result<Value, RuntimeError> {
         let native_context =
             crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow());
         let callee = match callee {
@@ -85,7 +96,8 @@ impl Interpreter {
                 span,
             )?;
             validate_native_arguments(function.signature.as_ref(), &arguments, span)?;
-            let value = callback(arguments).map_err(|message| RuntimeError::new(message, span))?;
+            let value = callback(arguments, &native_context, expected)
+                .map_err(|message| RuntimeError::new(message, span))?;
             return validate_native_return(function.signature.as_ref(), value, span, function.name);
         }
         match callee {
@@ -202,7 +214,11 @@ impl Interpreter {
                             .map(Value::clone_owned)
                             .collect::<Result<Vec<_>, _>>()
                             .map_err(|message| RuntimeError::new(message, span))?;
-                        callback(owned).map_err(|message| RuntimeError::new(message, span))?
+                        let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                            &self.globals.borrow(),
+                        );
+                        callback(owned, &context, None)
+                            .map_err(|message| RuntimeError::new(message, span))?
                     }
                     NativeFunctionBody::Symbol(symbol) => {
                         self.call_native_symbol(symbol, arguments, span)?
@@ -274,7 +290,9 @@ impl Interpreter {
                     let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
                         &selector.environment.borrow(),
                     );
-                    if let Some(value) = builtin_default_value(&target, &context) {
+                    if let Some(value) = builtin_default_value(&target, &context)
+                        .map_err(|message| RuntimeError::new(message, span))?
+                    {
                         return Ok(value);
                     }
                     let Type::Named { name, .. } = &target else {

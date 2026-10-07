@@ -132,8 +132,7 @@ impl<'a> FunctionLowerer<'a> {
                         self.expression_type(initializer)
                             .map(|ty| self.signature_type(&ty))
                     });
-                let mut initializer = self.expression(initializer)?;
-                apply_option_type(&mut initializer, type_annotation.as_ref());
+                let initializer = self.expression(initializer)?;
                 let local = self.mutable.len();
                 self.mutable.push(*mutable);
                 self.scopes.last_mut().unwrap().insert(name.clone(), local);
@@ -182,13 +181,10 @@ impl<'a> FunctionLowerer<'a> {
                 })
             }
             Stmt::Return { value, span } if self.in_function => {
-                let mut value = value
+                let value = value
                     .as_ref()
                     .map(|value| self.expression(value))
                     .transpose()?;
-                if let Some(value) = &mut value {
-                    apply_option_type(value, self.return_type.as_ref());
-                }
                 Ok(HirStatement::Return { value, span: *span })
             }
             Stmt::Break { value, span } => Ok(HirStatement::Break {
@@ -203,10 +199,7 @@ impl<'a> FunctionLowerer<'a> {
                 expression,
                 terminated,
             } => {
-                let mut expression_value = self.expression(expression)?;
-                if self.in_function && !terminated {
-                    apply_option_type(&mut expression_value, self.return_type.as_ref());
-                }
+                let expression_value = self.expression(expression)?;
                 Ok(HirStatement::Expression {
                     expression: expression_value,
                     terminated: *terminated,
@@ -287,13 +280,5 @@ impl<'a> FunctionLowerer<'a> {
                 statement_span(unsupported),
             )),
         }
-    }
-}
-
-fn apply_option_type(expression: &mut HirExpression, expected: Option<&Type>) {
-    if let (HirExpression::OptionNone { item_type, .. }, Some(Type::Option(inner))) =
-        (expression, expected)
-    {
-        *item_type = Some(inner.as_ref().clone());
     }
 }

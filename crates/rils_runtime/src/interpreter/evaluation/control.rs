@@ -82,7 +82,14 @@ impl Interpreter {
             let expected = self.constructor_type(expression, &environment)?;
             return self.construct_tuple_variant(constructor, arguments, span, expected.as_ref());
         }
-        self.call_owned(callee_value, arguments, span, environment)
+        let expected = self.constructor_type(expression, &environment)?;
+        self.call_owned_with_type(
+            callee_value,
+            arguments,
+            span,
+            environment,
+            expected.as_ref(),
+        )
     }
 
     fn evaluate_if(

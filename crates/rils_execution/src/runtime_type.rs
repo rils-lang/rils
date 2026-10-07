@@ -184,15 +184,7 @@ fn accepts(expected: &Type, value: &Value) -> bool {
         (Type::Named { name, arguments }, Value::BorrowedIndexedIterator(iterator))
             if name == "Iter" =>
         {
-            arguments.len() == 1
-                && merge_types(
-                    &arguments[0],
-                    &Type::Reference {
-                        mutable: false,
-                        inner: Box::new(iterator.element_type.clone()),
-                    },
-                )
-                .is_some()
+            arguments.len() == 1 && merge_types(&arguments[0], &iterator.item_type()).is_some()
         }
         (Type::Named { name, arguments }, Value::BorrowedMapIterator(iterator))
             if name == "Iter" =>
@@ -523,10 +515,7 @@ fn type_of_value(value: &Value) -> Option<Type> {
         )),
         Value::BorrowedIndexedIterator(iterator) => Some(Type::Named {
             name: "Iter".into(),
-            arguments: vec![Type::Reference {
-                mutable: false,
-                inner: Box::new(iterator.element_type.clone()),
-            }],
+            arguments: vec![iterator.item_type()],
         }),
         Value::BorrowedMapIterator(iterator) => Some(Type::Named {
             name: "Iter".into(),

@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod returns;
+
 impl Inferencer<'_> {
     pub(super) fn apply_expected_type(&mut self, expression: &Expr, expected: &Type) {
         let expected = self.resolve_type(expected);
@@ -121,6 +123,7 @@ impl Inferencer<'_> {
                 if let Some(argument) = arguments.first() {
                     self.apply_expected_type(argument, inner);
                 }
+                self.record_sum_type(expression, &expected);
             }
             (
                 Expr::Call {
@@ -136,6 +139,7 @@ impl Inferencer<'_> {
                 if let Some(argument) = arguments.first() {
                     self.apply_expected_type(argument, ty);
                 }
+                self.record_sum_type(expression, &expected);
             }
             (Expr::Tuple { elements, .. }, Type::Tuple(types)) => {
                 for (element, expected) in elements.iter().zip(types) {
@@ -173,6 +177,24 @@ impl Inferencer<'_> {
         }
     }
 
+    fn record_sum_type(&mut self, expression: &Expr, expected: &Type) {
+        if !is_known(expected) {
+            return;
+        }
+        let id = self.expression_ids.id(expression);
+        let actual = self
+            .result
+            .expression_types_by_id
+            .get(&id)
+            .cloned()
+            .map(|actual| self.resolve_type(&actual));
+        if actual.is_some_and(|actual| merge_types(&actual, expected).is_some()) {
+            self.result
+                .expression_types_by_id
+                .insert(id, expected.clone());
+        }
+    }
+
     pub(super) fn apply_expected_block_tail(&mut self, block: &Block, expected: &Type) {
         if let Some(Stmt::Expr {
             expression,
@@ -184,13 +206,8 @@ impl Inferencer<'_> {
     }
 
     pub(super) fn apply_expected_returns(&mut self, block: &Block, expected: &Type) {
-        for statement in &block.statements {
-            if let Stmt::Return {
-                value: Some(value), ..
-            } = statement
-            {
-                self.apply_expected_type(value, expected);
-            }
-        }
+        returns::visit_block(block, &mut |value| {
+            self.apply_expected_type(value, expected)
+        });
     }
 }

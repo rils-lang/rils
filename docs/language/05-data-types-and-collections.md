@@ -7,6 +7,11 @@
 `is_some/is_none/is_ok/is_err` 只读取标签，不要求负载实现 Clone。
 用户 struct/enum 的 Copy 仍须显式实现，字段均为 Copy 不会自动赋予该能力。
 
+`Some` 和 `None` 必须能确定完整的元素类型，构造失败不会回退为无类型的值。
+类型标注、数组其他元素、比较另一侧、if 分支或方法实参可提供上下文，例如
+`let absent: Option<i32> = None;` 和 `None.xor(Some(42))`。
+独立的 `None` 或仅调用 `is_none(None)` 无法确定元素类型，会报错；请先提供类型标注。
+
 [← 返回语言手册目录](README.md)
 
 ## Struct

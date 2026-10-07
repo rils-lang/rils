@@ -53,7 +53,11 @@ impl Interpreter {
                 .and_then(|ids| ids.get(expression))
                 .and_then(|id| self.typeck_results.as_ref()?.expression_type(id))
         {
-            let expected = expand_type_aliases(inferred, &environment, expression.span())?;
+            let expected = expand_type_aliases(
+                &inferred.substitute(&environment.borrow().type_bindings()),
+                &environment,
+                expression.span(),
+            )?;
             if rils_frontend::semantic::requires_storage_declaration(&expected) {
                 let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
                     &environment.borrow(),
@@ -116,6 +120,16 @@ impl Interpreter {
                 self.evaluate_sequence(expression, environment)
             }
             Expr::Try { .. } => self.evaluate_control(expression, environment),
+            Expr::Variable { name, span } if name == "None" => {
+                let expected = self.constructor_type(expression, &environment)?;
+                let Some(expected @ Type::Option(_)) = expected else {
+                    return Err(RuntimeError::new("cannot infer the type of None", *span));
+                };
+                crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow())
+                    .storage()
+                    .construct_option(&expected, None)
+                    .map_err(|message| RuntimeError::new(message, *span))
+            }
             Expr::Variable { name, span } => environment.borrow().take(name).map_err(|error| {
                 RuntimeError::new(
                     match error {

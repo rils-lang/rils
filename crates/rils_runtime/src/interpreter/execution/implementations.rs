@@ -357,6 +357,7 @@ impl Interpreter {
                         body: function_body,
                         closure: method_environment,
                         semantic_expression_ids,
+                        typeck_results: self.typeck_results.clone(),
                     });
                     let (inherent_methods, trait_methods) = match &target_value {
                         Value::StructType(definition) => {

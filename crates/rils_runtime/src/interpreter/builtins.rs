@@ -96,27 +96,23 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Option(Box::new(Type::Unknown)),
             )),
-            body: NativeFunctionBody::RustOwned(|arguments| {
+            body: NativeFunctionBody::RustOwned(|arguments, context, expected| {
                 let value = arguments
                     .into_iter()
                     .next()
                     .expect("Some arity was checked");
-                let item_type = Type::of_value(&value);
-                let constructed = match item_type.as_ref() {
-                    Some(item_type) => {
-                        crate::value::dynamic_option::construct(Some(value), item_type)?
-                    }
-                    None => crate::value::dynamic_option::Construction::Unsupported(Some(value)),
+                let inferred = || {
+                    Type::of_value(&value)
+                        .map(|item_type| Type::Option(Box::new(item_type)))
+                        .ok_or("Some item has no concrete type")
                 };
-                match constructed {
-                    crate::value::dynamic_option::Construction::Native(value) => Ok(value),
-                    crate::value::dynamic_option::Construction::Unsupported(value) => {
-                        Ok(Value::Option {
-                            value: value.map(Rc::new),
-                            element_type: item_type,
-                        })
-                    }
-                }
+                let actual = inferred()?;
+                let ty = expected
+                    .map(|expected| {
+                        merge_types(expected, &actual).unwrap_or_else(|| actual.clone())
+                    })
+                    .unwrap_or(actual);
+                context.storage().construct_option(&ty, Some(value))
             }),
         },
         NativeFunction {
@@ -184,16 +180,6 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             body: NativeFunctionBody::Rust(runtime_unwrap_or),
         },
     ];
-
-    environment.borrow_mut().define(
-        "None",
-        Value::Option {
-            value: None,
-            element_type: None,
-        },
-        false,
-        None,
-    );
 
     for mut function in builtins {
         let declaration_path = match function.binding_name {

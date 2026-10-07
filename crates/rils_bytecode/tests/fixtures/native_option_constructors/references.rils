@@ -1,0 +1,11 @@
+fn run() -> i32 {
+    let mut value = 0;
+    let first = Some(&mut value);
+    let second = Some(&mut value);
+    let first_ref = first.unwrap();
+    let second_ref = second.unwrap();
+    *first_ref = 20;
+    *second_ref = *second_ref + 22;
+    value
+}
+run()

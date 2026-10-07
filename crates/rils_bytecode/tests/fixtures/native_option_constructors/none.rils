@@ -1,0 +1,3 @@
+struct Item { text: string, value: i32 }
+let item: Option<Item> = None;
+item

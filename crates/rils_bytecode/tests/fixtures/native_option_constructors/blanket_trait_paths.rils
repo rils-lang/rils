@@ -1,0 +1,5 @@
+let mut iterator = IntoIterator::into_iter(40..43);
+Iterator::next(&mut iterator);
+Iterator::next(&mut iterator);
+let value = Iterator::next(&mut iterator).unwrap();
+if Iterator::next(&mut iterator) == None { value } else { 0 }

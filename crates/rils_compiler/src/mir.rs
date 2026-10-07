@@ -750,13 +750,18 @@ impl Builder {
                 );
                 Ok(destination)
             }
-            HirExpression::OptionSome { value, span } => {
+            HirExpression::OptionSome {
+                value,
+                item_type,
+                span,
+            } => {
                 let source = self.expression(value)?;
                 let destination = self.register();
                 self.emit(
                     MirInstruction::BuildOptionSome {
                         destination,
                         source,
+                        item_type: item_type.clone(),
                     },
                     *span,
                 );

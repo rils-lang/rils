@@ -40,7 +40,11 @@
 
 动态布局现可组合用户结构体字段：声明顺序决定字段索引，布局计算字段对齐和偏移，布局描述保存名称到索引的映射。字段活跃标记位于值的存储中，嵌入其他结构或 `Option<T>` 后仍能正确处理单字段 move、回填与析构。执行层的 `RecordLayoutResolver` 从现有 `StructType` 声明与具体泛型实参递归解析布局并缓存描述符；没有已注册原生布局的字段明确报错。已解析的本模块用户结构体字段在字节码中保存类型与字段索引，并通过 verifier 校验；解释器按字段声明缓存名称到索引的映射。两端的用户实例直接使用原生 bytes，字段 place 与词法引用沿检查过的布局路径读取、移动和写回。旧 `Value::Struct` / `Value::Enum`、`StructInstance` / `EnumInstance` / `EnumPayload` / `StructFields` 及 `compose_nominal` 已删除；Rust 构造入口使用 `TypedStorageContext::construct_record/construct_tuple_variant/construct_unit_variant`，读取使用 `RilsValue` 或 `NativeInstancePlace`。`NativeRecordCodec` 移入已有原生值时保留布局所涉及的声明身份，拒绝同名但身份冲突的声明，解码后继续保留具体泛型与显式 Copy 策略。磁盘字节码不直接写入平台相关的字节偏移。
 
-`Option<T>` 的构造入口消耗 `Option<Value>`，若子类型尚无原生布局则把原值归还给旧表示路径。解释器的 `Some` 与 VM 的构造指令使用拥有的实参；唯一持有的原生 `string` 通过 `NativeObject::into_rust` 移出后进入动态子布局，避免文本克隆。共享原生句柄在借用型运行时入口下需显式生成独立负载；`Option<T>` 的通用读取桥会暂时移出、解码并恢复负载，因此非 Copy 子值的读取仍可能产生 Clone，后续应改为针对布局的借用访问。
+语言的 `Some`、`None`、Option 默认值及拥有型 `or/xor`、`Result::ok/err` 使用 `TypedStorageContext::construct_option`，提供完整类型、可见声明和拥有型子值；无布局或未解析类型明确报错。调用帧先替换泛型绑定，嵌套 sum 构造表达式也保留完整预期类型；标准库路径在构造器中统一规范化。唯一持有的原生 `string` 通过 `NativeObject::into_rust` 移出后进入动态子布局，避免文本克隆。低层 `dynamic_option::construct` 的 Unsupported 结果仍供尚未迁移的适配器使用；它不再是语言 Some/None 的回退路径。部分借用读取桥仍产生快照，后续应改为针对布局的借用访问。
+
+共享签名解析优先读取对应 trait impl 的导出签名；`IntoIterator::into_iter` 等调用保留实现声明的具体关联类型，用户泛型实现按实参替换类型参数。引用字段调用标准库方法时，根据声明的 receiver 模式借用原字段，避免先读取副本再绑定方法。
+
+解释器的标准库 Iterator 默认方法从声明解析参数、返回及关联类型，并缓存带共享前端类型检查结果的函数，继续执行 trait 定义中的方法体。函数值保留其自身的类型表和克隆 AST 的表达式身份，调用结束后恢复调用方表；跨次 `Engine::eval_value` 调用也使用函数定义时的类型信息。Rust 直接构造 `UserFunction` 时，`semantic_expression_ids` 应与 `typeck_results: Option<Rc<TypeckResults>>` 来自同一次分析；无需表达式类型表的函数可填写 `None`。
 
 包含 Rils 值的原生容器通过 `NativeChildren` 向 place 层报告嵌套引用、活动引用和部分 move；负载正在被可变访问时，这些检查保守地视为存在风险。继续迁移容器前，需要从标准库声明生成类型描述及操作绑定，并为每个容器实现该报告接口。动态 Rils 类型无法直接实例化任意 `Vec<T>` 的 Rust 单态化版本，仍需独立的运行时布局与元素操作表。
 

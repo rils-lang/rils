@@ -1,0 +1,3 @@
+let values = [None, Some(21)];
+let chosen = None.xor(Some(21));
+values[1usize].unwrap() + chosen.unwrap()

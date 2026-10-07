@@ -268,11 +268,12 @@ pub enum HirExpression {
         span: Span,
     },
     OptionNone {
-        item_type: Option<Type>,
+        item_type: Type,
         span: Span,
     },
     OptionSome {
         value: Box<HirExpression>,
+        item_type: Type,
         span: Span,
     },
     ResultOk {

@@ -111,6 +111,7 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span));
             }
             if let Some(reference) = place.projection_guard(span)? {
+                let projected = Value::Reference(reference.clone());
                 if let Some(projected) = reference
                     .project_native_field(name)
                     .map_err(|message| RuntimeError::new(message, span))?
@@ -122,7 +123,21 @@ impl Interpreter {
                             RuntimeError::new("projected field has no native storage", span)
                         });
                 }
-                let method = selected_method(&Value::Reference(reference), name, span)?;
+                if let Some((_, mode)) =
+                    super::super::call::builtin_runtime_member(&projected, name)
+                {
+                    let receiver = match mode {
+                        rils_builtins::ReceiverMode::Owned => {
+                            drop(projected);
+                            drop(reference);
+                            place.read(span)?
+                        }
+                        rils_builtins::ReceiverMode::Shared => place.borrow(false, span)?,
+                        rils_builtins::ReceiverMode::Mutable => place.borrow(true, span)?,
+                    };
+                    return self.resolve_member(receiver, name, span);
+                }
+                let method = selected_method(&projected, name, span)?;
                 if let Some(method) = method {
                     let receiver = match method
                         .parameters
@@ -130,7 +145,11 @@ impl Interpreter {
                         .and_then(|parameter| parameter.type_annotation.as_ref())
                     {
                         Some(Type::Reference { mutable, .. }) => place.borrow(*mutable, span)?,
-                        _ => place.read(span)?,
+                        _ => {
+                            drop(projected);
+                            drop(reference);
+                            place.read(span)?
+                        }
                     };
                     return self.resolve_member(receiver, name, span);
                 }

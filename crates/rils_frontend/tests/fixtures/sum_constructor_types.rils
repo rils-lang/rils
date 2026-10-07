@@ -1,0 +1,2 @@
+let value: Option<Result<i32, string>> = Some(Ok(42));
+let error: Option<Result<string, i32>> = Some(Err(42));

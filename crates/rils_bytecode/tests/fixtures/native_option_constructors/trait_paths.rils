@@ -1,0 +1,22 @@
+struct Source<T> { value: T }
+struct Once<T> { value: Option<T> }
+
+impl<T> Iterator for Once<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        self.value.take()
+    }
+}
+
+impl<T> IntoIterator for Source<T> {
+    type Item = T;
+    type IntoIter = Once<T>;
+
+    fn into_iter(self) -> Once<T> {
+        Once { value: Some(self.value) }
+    }
+}
+
+let mut iterator = IntoIterator::into_iter(Source { value: 42 });
+Iterator::next(&mut iterator).unwrap()

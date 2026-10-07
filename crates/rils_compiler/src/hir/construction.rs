@@ -1,6 +1,20 @@
 use super::*;
 
 impl FunctionLowerer<'_> {
+    pub(super) fn option_item_type(&self, expression: &Expr) -> Result<Type, CompileError> {
+        if let Some(Type::Option(inner)) = self
+            .expression_type(expression)
+            .map(|ty| self.signature_type(&ty))
+            && inner.is_type_witness()
+        {
+            return Ok(*inner);
+        }
+        Err(CompileError::unsupported(
+            "cannot infer the concrete Option item type",
+            expression.span(),
+        ))
+    }
+
     pub(super) fn constructor_type(
         &self,
         expression: &Expr,

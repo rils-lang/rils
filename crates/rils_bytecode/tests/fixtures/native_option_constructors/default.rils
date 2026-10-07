@@ -1,0 +1,2 @@
+struct Item { text: string, value: i32 }
+<Option<Item> as Default>::default()

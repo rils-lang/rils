@@ -6,6 +6,8 @@ Rils 的执行后端分为两条路径：树遍历解释器负责快速验证完
 
 ## 当前实现
 
+`BuildOptionNone` 和 `BuildOptionSome` 在 HIR、MIR 与磁盘编码中携带必选元素 `Type`，VM 先替换调用帧泛型绑定，再经共享构造器直接生成原生 Option。构造失败保留明确错误，不回退到旧值；verifier 递归拒绝推导占位类型并校验寄存器。操作码 30 在目标寄存器后直接编码元素类型，删除旧可选类型标志；操作码 31 在目标和源寄存器后增加元素类型。`ApplyStorage` 同样先替换帧绑定。格式号保持未冻结的 v8，旧字节码及包含它的 `.bytes` / `.rilslib` 应从源码重新编译。
+
 `TryResult`、拥有型 sum 模式和格式化结果检查使用共享的原生 sum 操作，不构造旧 Option/Result 包装。Err 在当前帧完整返回类型的上下文中转移，成功分支类型可与源 Result 不同；拥有型模式先沿原负载投影匹配，再移动绑定，借用模式保留来源。嵌套字段解码继续保留原生 sum 和用户声明信息。标签查询由标准库过程宏桥接，VM 不另写方法语义；本次不改变指令或 v8 编码。
 
 用户构造指令 `ConstructRecord` / `ConstructTupleVariant` / `ConstructUnitVariant` 在 HIR、MIR 和磁盘编码中携带实例 `Type`；VM 先用调用帧的泛型绑定替换参数，再经共享构造器分配原生布局并消费字段。外层声明类型传入嵌套记录和变体，不先创建旧 Struct/Enum 值。verifier 校验类型身份、泛型参数数量、变体形态、字段数量及名称唯一性，并拒绝推导占位类型；泛型参数可留至调用时替换。闭包在进程内保留词法类型绑定，实参移出或创建函数返回后仍能构造相应实例。操作码 23/24/25 在 type_id 后新增受限 Type 编码；格式号保持未冻结的 v8，旧字节码及包含它的 `.bytes` / `.rilslib` 需从源码重新编译。
@@ -186,7 +188,7 @@ game.validate_host(&game_host)?;
 当前已实现实验性 `.rilbc` v8。它采用带版本的显式小端容器，不直接序列化任何 Rust enum、地址或
 内存布局：
 `Range<T>` 等原生负载在加载后由运行时构造，字节码只保留构造指令与类型信息；所有整数宽度及 `f32`、`f64` 常量加载时构造成原生内联值。原生类型描述和 Rust 分配器所有权不进入磁盘格式。
-`BuildOptionNone` 指令携带可选的元素类型；存在具体类型时，VM 按标准库登记的子类型布局构造原生 `Option<T>`。该指令编码已在未冻结的 v8 内调整，此前生成的 v8 文件必须重新编译。
+`BuildOptionNone` 和 `BuildOptionSome` 指令均携带必选的元素类型；VM 替换泛型绑定后，按当前可见声明解析子布局并构造原生 `Option<T>`，未解析类型或缺失布局报错。两条指令的编码已在未冻结的 v8 内调整，此前生成的 v8 文件必须重新编译。
 
 ```text
 magic | format version | language version | host ABI | pointer width | flags | section directory | CRC32

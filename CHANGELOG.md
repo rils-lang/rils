@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `Some`、`None` 和 Option 的默认值直接使用具体元素类型与可见声明构造原生布局；未解析类型或缺失布局明确报错，不再回退为旧 `Value::Option`。共享前端为嵌套 `Some/Ok/Err` 构造表达式保留完整预期类型，数组、分支和方法实参可补齐元素类型；独立 `None` 或 `is_none(None)` 需添加具体类型标注。泛型函数在分配布局前替换调用帧绑定；函数保留定义时的类型检查结果，跨多次 `eval` 或返回闭包调用仍使用原类型。标准 Iterator 默认方法按导出签名分析和缓存，执行 trait 中的原方法体。拥有型 `Option::or/xor` 和 `Result::ok/err` 复用类型化构造器，保留非 Clone 用户负载及局部引用。**迁移：** 实验性 v8 的 `BuildOptionNone` 改为必选元素 `Type`，`BuildOptionSome` 新增元素 `Type`；旧 `.rilbc` / `.bytes` / `.rilslib` 内字节码需从源码重新编译，格式号仍为 8。Rust 的 `NativeFunctionBody::RustOwned` 回调新增 `&NativeOwnedContext` 与 `Option<&Type>` 参数；借助上下文和结果类型调用 `TypedStorageContext::construct_option()`。直接构造 `UserFunction` 时须填写新增的 `typeck_results`：有 `semantic_expression_ids` 的函数应保存对应分析结果的 `Rc`，无需表达式类型表的宿主函数可用 `None`。旧 Option/Result 变体及部分适配器继续迁移；C ABI 与版本号不变。
+
 - 原生 Option/Result 的 `?`、拥有型模式、回调返回解构和格式化结果检查不再还原成旧 sum 包装；嵌套字段解码也保留原生布局、具体泛型与用户声明身份。模式先确认整条分支匹配，再转移非 Copy 负载；`?` 按目标返回声明构造 Err，允许成功分支类型改变。`is_some/is_none/is_ok/is_err` 的生成桥接只读取标签，非 Clone 负载也可查询。**Rust API 迁移：** 删除 `value::owned_sum::materialize()`；消费式读取使用 `dynamic_option::take_owned()` / `dynamic_result::take_owned()`，类型化构造使用 `TypedStorageContext::construct_option()` / `construct_result()`，借用读取优先使用 `RilsValue::with_native_view()`。`NativeRecordCodec::from_native()` 返回的 Option/Result 也保持原生表示。旧 sum 构造变体与部分借用快照适配仍在迁移；C ABI、版本号和 v8 编码不变。
 
 - 原生宿主 enum 保留完整 Manifest 契约身份（整数宽度、discriminant、flags 和变体名称），相同契约重新构造的值可移入当前执行上下文；不同契约不能混用。VM 在执行前校验字节码中的宿主 enum 形状并链接已安装契约，方法和 trait 表仍属于各自执行声明。Rust 直接构造 `EnumType` 时须填写新增的 `host_definition`，脚本类型使用 `None`；宿主 enum 使用共享 `host_declarations::enum_definition()`。该身份在进程内链接，不改变 v8 编码或 C ABI。

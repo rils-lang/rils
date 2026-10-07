@@ -1,0 +1,4 @@
+let missing = empty();
+let item = present().unwrap();
+let deferred = saved();
+if missing.is_none() && deferred.is_none() { item.value } else { 0 }
