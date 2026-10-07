@@ -1,0 +1,4 @@
+struct Pair { first: Host, second: Host }
+struct Holder<T> { item: T }
+struct Phantom<T> {}
+enum Choice<T> { Empty, Tuple(T), Record { item: T } }

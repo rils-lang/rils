@@ -1,4 +1,5 @@
 mod generics;
+mod witness;
 pub use generics::infer_generic_arguments;
 
 use std::{collections::HashMap, fmt};
