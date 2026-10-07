@@ -29,6 +29,29 @@ impl DynamicValue {
 }
 
 impl DynamicValueMut<'_> {
+    /// Replace this projection with the same layout, transferring the previous
+    /// payload. Root references retain their borrow ledger across replacement.
+    pub fn replace_value(&mut self, value: DynamicValue) -> Result<DynamicValue, String> {
+        value.ensure_initialized()?;
+        if value.has_path_references() {
+            return Err("cannot transfer a referenced native replacement".into());
+        }
+        if !self.view().layout()?.compatible_with(value.descriptor()) {
+            return Err("native replacement has a different layout".into());
+        }
+        if !self.path.is_empty() {
+            return self
+                .root
+                .replace_path_reference(&self.path, value)?
+                .ok_or("native projection was moved".into());
+        }
+        self.root.check_path_write(&[], true)?;
+        let ledger = self.root.path_borrows.take();
+        let previous = std::mem::replace(self.root, value);
+        self.root.path_borrows = ledger.map(std::cell::OnceCell::from).unwrap_or_default();
+        Ok(previous)
+    }
+
     pub fn view(&self) -> DynamicValueRef<'_> {
         DynamicValueRef {
             root: self.root,

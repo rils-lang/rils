@@ -126,3 +126,52 @@ fn mutable_views_reject_invalid_and_moved_projections() {
     drop(value);
     assert_eq!(drops.get(), 1);
 }
+
+#[test]
+fn whole_value_replacement_retains_root_leases_and_transfers_one_destructor() {
+    let drops = Rc::new(Cell::new(0));
+    let item = DynamicLayout::of::<Probe>(Type::named("Probe"));
+    let layout = DynamicLayout::option(item.clone()).unwrap();
+    let mut value = DynamicValue::some(
+        layout.clone(),
+        DynamicValue::from_rust(item.clone(), Probe(drops.clone())).unwrap(),
+    )
+    .unwrap();
+    let first = value.reference_path(&[]).unwrap();
+    let second = value.reference_path(&[]).unwrap();
+    let previous = value
+        .view_mut()
+        .replace_value(DynamicValue::none(layout.clone()).unwrap())
+        .unwrap();
+    assert!(value.has_path_references());
+    assert!(!previous.has_path_references());
+    assert_eq!(drops.get(), 0);
+    drop(previous);
+    assert_eq!(drops.get(), 1);
+    let next = DynamicValue::some(
+        layout.clone(),
+        DynamicValue::from_rust(item.clone(), Probe(drops.clone())).unwrap(),
+    )
+    .unwrap();
+    value.view_mut().replace_value(next).unwrap();
+    let child = value.reference_path(&[Step::Some]).unwrap();
+    assert!(
+        value
+            .view_mut()
+            .replace_value(DynamicValue::none(layout.clone()).unwrap())
+            .is_err()
+    );
+    assert!(value.view().option_is_some().unwrap());
+    assert_eq!(drops.get(), 1);
+    drop(child);
+    let previous = value
+        .view_mut()
+        .replace_value(DynamicValue::none(layout).unwrap())
+        .unwrap();
+    drop(previous);
+    assert_eq!(drops.get(), 2);
+    assert!(value.has_path_references());
+    drop(first);
+    drop(second);
+    assert!(!value.has_path_references());
+}
