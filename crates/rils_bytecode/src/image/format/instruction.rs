@@ -456,18 +456,22 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
         Instruction::BuildResultOk {
             destination,
             source,
+            result_type,
         } => {
             writer.u8(32);
             writer.index(*destination, "destination")?;
             writer.index(*source, "source")?;
+            write_type(writer, result_type, 0)?;
         }
         Instruction::BuildResultErr {
             destination,
             source,
+            result_type,
         } => {
             writer.u8(33);
             writer.index(*destination, "destination")?;
             writer.index(*source, "source")?;
+            write_type(writer, result_type, 0)?;
         }
         Instruction::TryResult {
             destination,
@@ -698,10 +702,12 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
         32 => Instruction::BuildResultOk {
             destination: reader.index()?,
             source: reader.index()?,
+            result_type: read_type(reader)?,
         },
         33 => Instruction::BuildResultErr {
             destination: reader.index()?,
             source: reader.index()?,
+            result_type: read_type(reader)?,
         },
         34 => Instruction::TryResult {
             destination: reader.index()?,

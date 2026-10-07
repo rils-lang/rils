@@ -278,10 +278,12 @@ pub enum HirExpression {
     },
     ResultOk {
         value: Box<HirExpression>,
+        result_type: Type,
         span: Span,
     },
     ResultErr {
         value: Box<HirExpression>,
+        result_type: Type,
         span: Span,
     },
     Try {

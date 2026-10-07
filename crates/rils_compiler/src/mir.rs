@@ -767,25 +767,35 @@ impl Builder {
                 );
                 Ok(destination)
             }
-            HirExpression::ResultOk { value, span } => {
+            HirExpression::ResultOk {
+                value,
+                result_type,
+                span,
+            } => {
                 let source = self.expression(value)?;
                 let destination = self.register();
                 self.emit(
                     MirInstruction::BuildResultOk {
                         destination,
                         source,
+                        result_type: result_type.clone(),
                     },
                     *span,
                 );
                 Ok(destination)
             }
-            HirExpression::ResultErr { value, span } => {
+            HirExpression::ResultErr {
+                value,
+                result_type,
+                span,
+            } => {
                 let source = self.expression(value)?;
                 let destination = self.register();
                 self.emit(
                     MirInstruction::BuildResultErr {
                         destination,
                         source,
+                        result_type: result_type.clone(),
                     },
                     *span,
                 );

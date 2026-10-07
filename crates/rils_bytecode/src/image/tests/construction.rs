@@ -1,6 +1,97 @@
 use super::*;
 
 #[test]
+fn result_constructors_validate_complete_types_and_registers_before_execution() {
+    for (success, source) in [
+        (
+            true,
+            include_str!("../../../tests/fixtures/native_result_constructors/ok.rils"),
+        ),
+        (
+            false,
+            include_str!("../../../tests/fixtures/native_result_constructors/err.rils"),
+        ),
+    ] {
+        let module = compile(source).unwrap();
+        let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+        for case in 0..7 {
+            let mut invalid = loaded.clone();
+            let instruction = invalid
+                .functions
+                .iter_mut()
+                .flat_map(|function| &mut function.instructions)
+                .find(|instruction| {
+                    matches!(
+                        (&instruction.instruction, success),
+                        (Instruction::BuildResultOk { .. }, true)
+                            | (Instruction::BuildResultErr { .. }, false)
+                    )
+                })
+                .unwrap();
+            let (destination, source, result_type) = match &mut instruction.instruction {
+                Instruction::BuildResultOk {
+                    destination,
+                    source,
+                    result_type,
+                }
+                | Instruction::BuildResultErr {
+                    destination,
+                    source,
+                    result_type,
+                } => (destination, source, result_type),
+                _ => unreachable!(),
+            };
+            match case {
+                0 => *result_type = Type::Unknown,
+                1 => *result_type = Type::Option(Box::new(Type::I32)),
+                2 => *result_type = Type::Result(Box::new(Type::Unknown), Box::new(Type::String)),
+                3 => *result_type = Type::Result(Box::new(Type::I32), Box::new(Type::Unknown)),
+                4 => {
+                    *result_type = Type::Result(
+                        Box::new(Type::I32),
+                        Box::new(Type::Tuple(vec![Type::Unknown])),
+                    )
+                }
+                5 => *destination = usize::MAX,
+                _ => *source = usize::MAX,
+            }
+            assert!(invalid.verify().is_err(), "Ok={success}, case={case}");
+            assert!(invalid.to_bytes().is_err(), "Ok={success}, case={case}");
+            assert!(
+                invalid.execute_value().is_err(),
+                "Ok={success}, case={case}"
+            );
+        }
+        let mut missing_layout = loaded;
+        for instruction in missing_layout
+            .functions
+            .iter_mut()
+            .flat_map(|function| &mut function.instructions)
+        {
+            if let Instruction::BuildResultOk { result_type, .. }
+            | Instruction::BuildResultErr { result_type, .. } = &mut instruction.instruction
+            {
+                // The inactive branch must also have an available layout.
+                *result_type = if success {
+                    Type::Result(
+                        Box::new(Type::named("Item")),
+                        Box::new(Type::named("Unregistered")),
+                    )
+                } else {
+                    Type::Result(
+                        Box::new(Type::named("Unregistered")),
+                        Box::new(Type::named("Failure")),
+                    )
+                };
+            }
+        }
+        missing_layout.verify().unwrap();
+        let error = missing_layout.execute_value().unwrap_err();
+        assert!(error.message.contains("Unregistered"), "{error}");
+    }
+}
+
+#[test]
 fn option_constructors_reject_missing_layouts_and_nested_inference_types() {
     for (present, source) in [
         (

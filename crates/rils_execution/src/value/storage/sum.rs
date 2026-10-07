@@ -39,10 +39,16 @@ impl TypedStorageContext<'_> {
         ty: &Type,
         branch: Result<Value, Value>,
     ) -> Result<Value, String> {
-        let Type::Result(_, _) = ty else {
+        let ty = super::declarations::storage_type(ty);
+        let Type::Result(_, _) = &ty else {
             return Err("Result construction requires a Result type".into());
         };
-        let layout = self.layout(ty)?;
+        if !ty.is_concrete_type() {
+            return Err(format!(
+                "cannot infer the complete native Result type: {ty}"
+            ));
+        }
+        let layout = self.layout(&ty)?;
         let (index, item) = match branch {
             Ok(item) => (0, item),
             Err(item) => (1, item),

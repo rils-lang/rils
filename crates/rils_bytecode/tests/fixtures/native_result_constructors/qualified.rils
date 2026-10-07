@@ -1,0 +1,11 @@
+use core::result::{Ok as success, Err as failure};
+fn local() -> Result<i32, string> {
+    {
+        success(20)
+    }
+}
+let first: Result<i32, string> = local();
+let second: Result<i32, string> = success(22);
+let error: Result<i32, string> = core::result::Err("missing");
+let alias_error: Result<i32, string> = failure("missing");
+if error.is_err() && alias_error.is_err() { first.unwrap() + second.unwrap() } else { 0 }

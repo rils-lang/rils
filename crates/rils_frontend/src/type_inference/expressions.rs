@@ -280,7 +280,10 @@ impl Inferencer<'_> {
                 }
             }
             Expr::Try { operand, .. } => match self.expression(operand, returns) {
-                Type::Result(ok, _) => *ok,
+                Type::Result(ok, error) => {
+                    returns.push(Type::Result(Box::new(Type::Unknown), error));
+                    *ok
+                }
                 _ => Type::Unknown,
             },
             Expr::RecordLiteral { path, fields, .. } => self.record_literal(path, fields, returns),
@@ -381,6 +384,17 @@ impl Inferencer<'_> {
                 if let Some(ty) = self.tuple_variant_type(callee, arguments, &argument_types) {
                     return ty;
                 }
+                if let Some(name) = self.sum_constructor(callee) {
+                    self.result.sum_constructors.insert(id, name);
+                    let payload =
+                        Box::new(argument_types.first().cloned().unwrap_or(Type::Unknown));
+                    return match name {
+                        "Some" => Type::Option(payload),
+                        "Ok" => Type::Result(payload, Box::new(Type::Unknown)),
+                        "Err" => Type::Result(Box::new(Type::Unknown), payload),
+                        _ => unreachable!(),
+                    };
+                }
                 if let Expr::Path { segments, .. } = callee.as_ref() {
                     match segments.join("::").as_str() {
                         "Vec::new" | "std::collections::Vec::new" => {
@@ -418,17 +432,6 @@ impl Inferencer<'_> {
                 }
                 if let Expr::Variable { name, .. } = callee.as_ref() {
                     return match name.as_str() {
-                        "Some" => Type::Option(Box::new(
-                            argument_types.first().cloned().unwrap_or(Type::Unknown),
-                        )),
-                        "Ok" => Type::Result(
-                            Box::new(argument_types.first().cloned().unwrap_or(Type::Unknown)),
-                            Box::new(Type::Unknown),
-                        ),
-                        "Err" => Type::Result(
-                            Box::new(Type::Unknown),
-                            Box::new(argument_types.first().cloned().unwrap_or(Type::Unknown)),
-                        ),
                         "is_ok" | "is_err" => Type::Bool,
                         "None" => Type::Option(Box::new(Type::Unknown)),
                         "unwrap" => value_inner(argument_types.first().cloned()),
@@ -479,7 +482,11 @@ impl Inferencer<'_> {
                         inferencer.expression(&arm.expression, returns)
                     }));
                 }
-                merge_all(arm_types)
+                let merged = merge_all(arm_types);
+                for arm in arms {
+                    self.apply_expected_type(&arm.expression, &merged);
+                }
+                merged
             }
             Expr::Block(block) => self.block(block, returns),
         }

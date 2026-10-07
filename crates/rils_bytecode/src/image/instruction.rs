@@ -180,10 +180,12 @@ pub(super) enum Instruction {
     BuildResultOk {
         destination: usize,
         source: usize,
+        result_type: Type,
     },
     BuildResultErr {
         destination: usize,
         source: usize,
+        result_type: Type,
     },
     TryResult {
         destination: usize,

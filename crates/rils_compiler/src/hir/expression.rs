@@ -259,6 +259,11 @@ impl<'a> FunctionLowerer<'a> {
                 arguments,
                 span,
             } => {
+                if let Some(rils_frontend::semantic::ResolvedCall::SumConstructor { name }) =
+                    self.typeck_results.resolved_call(expression_id)
+                {
+                    return self.sum_constructor(expression, name, arguments, *span);
+                }
                 if matches!(
                     self.typeck_results.resolved_call(expression_id),
                     Some(rils_frontend::semantic::ResolvedCall::IteratorIdentity)
@@ -651,27 +656,6 @@ impl<'a> FunctionLowerer<'a> {
                         ),
                         *span,
                     ));
-                }
-                if let Expr::Variable { name, .. } = callee.as_ref()
-                    && matches!(name.as_str(), "Some" | "Ok" | "Err")
-                {
-                    let [argument] = arguments.as_slice() else {
-                        return Err(CompileError::unsupported(
-                            format!("`{name}` expects exactly one argument"),
-                            *span,
-                        ));
-                    };
-                    let value = Box::new(self.expression(argument)?);
-                    return Ok(match name.as_str() {
-                        "Some" => HirExpression::OptionSome {
-                            value,
-                            item_type: self.option_item_type(expression)?,
-                            span: *span,
-                        },
-                        "Ok" => HirExpression::ResultOk { value, span: *span },
-                        "Err" => HirExpression::ResultErr { value, span: *span },
-                        _ => unreachable!(),
-                    });
                 }
                 if matches!(callee.as_ref(), Expr::Variable { .. })
                     && let Some(callable) = self.resolved_definition(expression_id)

@@ -883,6 +883,9 @@ impl Analyzer {
             inference.expression_ids.into_ids(),
             inference.expression_types_by_id,
         );
+        for (id, name) in inference.sum_constructors {
+            typeck_results.resolve_call(id, crate::semantic::ResolvedCall::SumConstructor { name });
+        }
         crate::semantic::resolve_program_calls(
             program,
             self.source_id,

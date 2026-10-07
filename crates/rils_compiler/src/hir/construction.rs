@@ -1,6 +1,54 @@
 use super::*;
 
 impl FunctionLowerer<'_> {
+    pub(super) fn sum_constructor(
+        &mut self,
+        expression: &Expr,
+        name: &str,
+        arguments: &[Expr],
+        span: Span,
+    ) -> Result<HirExpression, CompileError> {
+        let [argument] = arguments else {
+            return Err(CompileError::unsupported(
+                format!("`{name}` expects exactly one argument"),
+                span,
+            ));
+        };
+        let value = Box::new(self.expression(argument)?);
+        Ok(match name {
+            "Some" => HirExpression::OptionSome {
+                value,
+                item_type: self.option_item_type(expression)?,
+                span,
+            },
+            "Ok" => HirExpression::ResultOk {
+                value,
+                result_type: self.result_type(expression)?,
+                span,
+            },
+            "Err" => HirExpression::ResultErr {
+                value,
+                result_type: self.result_type(expression)?,
+                span,
+            },
+            _ => unreachable!("frontend only resolves declared sum constructors"),
+        })
+    }
+
+    pub(super) fn result_type(&self, expression: &Expr) -> Result<Type, CompileError> {
+        if let Some(ty @ Type::Result(_, _)) = self
+            .expression_type(expression)
+            .map(|ty| self.signature_type(&ty))
+            && ty.is_type_witness()
+        {
+            return Ok(ty);
+        }
+        Err(CompileError::unsupported(
+            "cannot infer the complete Result type",
+            expression.span(),
+        ))
+    }
+
     pub(super) fn option_item_type(&self, expression: &Expr) -> Result<Type, CompileError> {
         if let Some(Type::Option(inner)) = self
             .expression_type(expression)

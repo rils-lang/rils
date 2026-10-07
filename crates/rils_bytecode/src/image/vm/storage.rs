@@ -102,26 +102,30 @@ impl VirtualMachine<'_> {
             Instruction::BuildResultOk {
                 destination,
                 source,
+                result_type,
             } => {
+                let result_type = result_type.substitute(&self.frame().type_bindings);
                 let value = self.take_register(source, span)?;
-                let ok_type = Type::of_value(&value);
-                self.frame_mut().registers[destination] = Some(Value::Result {
-                    value: Ok(Rc::new(value)),
-                    ok_type,
-                    error_type: None,
-                });
+                let value = self
+                    .native_context
+                    .storage()
+                    .construct_result(&result_type, Ok(value))
+                    .map_err(|message| BytecodeError::new(message, span))?;
+                self.frame_mut().registers[destination] = Some(value);
             }
             Instruction::BuildResultErr {
                 destination,
                 source,
+                result_type,
             } => {
+                let result_type = result_type.substitute(&self.frame().type_bindings);
                 let value = self.take_register(source, span)?;
-                let error_type = Type::of_value(&value);
-                self.frame_mut().registers[destination] = Some(Value::Result {
-                    value: Err(Rc::new(value)),
-                    ok_type: None,
-                    error_type,
-                });
+                let value = self
+                    .native_context
+                    .storage()
+                    .construct_result(&result_type, Err(value))
+                    .map_err(|message| BytecodeError::new(message, span))?;
+                self.frame_mut().registers[destination] = Some(value);
             }
             _ => unreachable!("non-storage instruction"),
         }

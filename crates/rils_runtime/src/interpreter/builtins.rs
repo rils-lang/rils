@@ -1,5 +1,7 @@
 use super::*;
 
+mod sums;
+
 pub(super) fn install_builtins(environment: &EnvironmentRef) {
     let builtins = [
         NativeFunction {
@@ -96,24 +98,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Option(Box::new(Type::Unknown)),
             )),
-            body: NativeFunctionBody::RustOwned(|arguments, context, expected| {
-                let value = arguments
-                    .into_iter()
-                    .next()
-                    .expect("Some arity was checked");
-                let inferred = || {
-                    Type::of_value(&value)
-                        .map(|item_type| Type::Option(Box::new(item_type)))
-                        .ok_or("Some item has no concrete type")
-                };
-                let actual = inferred()?;
-                let ty = expected
-                    .map(|expected| {
-                        merge_types(expected, &actual).unwrap_or_else(|| actual.clone())
-                    })
-                    .unwrap_or(actual);
-                context.storage().construct_option(&ty, Some(value))
-            }),
+            body: NativeFunctionBody::RustOwned(sums::some),
         },
         NativeFunction {
             binding_name: "Ok",
@@ -124,18 +109,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
-            body: NativeFunctionBody::Rust(|arguments| {
-                let native =
-                    rils_stdlib::stdlib::prelude::ok::<_, Rc<Value>>(Rc::new(arguments[0].clone()));
-                Ok(Value::Result {
-                    value: match native {
-                        rils_stdlib::stdlib::result::Result::Ok(value) => Ok(value),
-                        rils_stdlib::stdlib::result::Result::Err(value) => Err(value),
-                    },
-                    ok_type: Type::of_value(&arguments[0]),
-                    error_type: None,
-                })
-            }),
+            body: NativeFunctionBody::RustOwned(sums::ok),
         },
         NativeFunction {
             binding_name: "Err",
@@ -146,19 +120,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
                 vec![Type::Unknown],
                 Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown)),
             )),
-            body: NativeFunctionBody::Rust(|arguments| {
-                let native = rils_stdlib::stdlib::prelude::err::<Rc<Value>, _>(Rc::new(
-                    arguments[0].clone(),
-                ));
-                Ok(Value::Result {
-                    value: match native {
-                        rils_stdlib::stdlib::result::Result::Ok(value) => Ok(value),
-                        rils_stdlib::stdlib::result::Result::Err(value) => Err(value),
-                    },
-                    ok_type: None,
-                    error_type: Type::of_value(&arguments[0]),
-                })
-            }),
+            body: NativeFunctionBody::RustOwned(sums::err),
         },
         NativeFunction {
             binding_name: "unwrap",

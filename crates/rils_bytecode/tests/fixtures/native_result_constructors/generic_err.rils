@@ -1,0 +1,4 @@
+struct Item { value: i32, text: string }
+struct Failure { code: i32 }
+fn failure<T, E>(success_hint: T, error: E) -> Result<T, E> { Err(error) }
+failure(Item { value: 0, text: "hint" }, Failure { code: 42 })

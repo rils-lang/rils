@@ -1,0 +1,4 @@
+struct Item { value: i32, text: string }
+struct Failure { code: i32 }
+let value: Result<Item, Failure> = Err(Failure { code: 42 });
+value

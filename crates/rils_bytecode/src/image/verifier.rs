@@ -648,12 +648,28 @@ impl BytecodeModule {
                 Instruction::BuildResultOk {
                     destination,
                     source,
+                    result_type,
                 }
                 | Instruction::BuildResultErr {
                     destination,
                     source,
+                    result_type,
+                } => {
+                    if invalid_register(*destination) || invalid_register(*source) {
+                        return Err(BytecodeError::new(
+                            "invalid Result construction operands",
+                            instruction.span,
+                        ));
+                    }
+                    if !matches!(result_type, Type::Result(_, _)) || !result_type.is_type_witness()
+                    {
+                        return Err(BytecodeError::new(
+                            "invalid Result construction type",
+                            instruction.span,
+                        ));
+                    }
                 }
-                | Instruction::TryResult {
+                Instruction::TryResult {
                     destination,
                     source,
                 } => {

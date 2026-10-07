@@ -1,0 +1,10 @@
+struct Item { value: i32, text: string }
+fn success() -> Result<Item, string> {
+    Ok(Item { value: 20, text: "owned" })
+}
+fn failure() -> Result<i32, string> { Err("missing") }
+fn make<T>(hint: T) -> fn() -> Result<T, string> {
+    fn later() -> Result<T, string> { Err("deferred") }
+    later
+}
+let saved = make(Item { value: 0, text: "hint" });

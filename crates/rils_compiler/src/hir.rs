@@ -153,6 +153,7 @@ struct FunctionLowerer<'a> {
     host_contract: &'a HostContract,
     expression_ids: &'a rils_frontend::semantic::ExpressionIdentityMap,
     typeck_results: &'a rils_frontend::semantic::TypeckResults,
+    def_map: &'a rils_frontend::semantic::DefMap,
     declaration_types: &'a rils_frontend::semantic::DeclarationTypeResolver,
     resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
     namespace: String,

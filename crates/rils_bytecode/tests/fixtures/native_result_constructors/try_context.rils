@@ -1,0 +1,15 @@
+fn declared() -> Result<i32, string> {
+    let value = Ok(20)?;
+    Ok(value)
+}
+fn inferred() {
+    let value: i32 = Err("missing")?;
+    Ok(value)
+}
+fn outer() -> Result<i32, usize> {
+    fn inner() -> Result<i32, string> { Err("inner") }
+    let error = inner().unwrap_err();
+    let length = error.len();
+    if error == "inner" { Ok(22) } else { Err(length) }
+}
+if inferred().is_err() { declared().unwrap() + outer().unwrap() } else { 0 }

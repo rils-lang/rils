@@ -231,10 +231,12 @@ pub enum MirInstruction {
     BuildResultOk {
         destination: Register,
         source: Register,
+        result_type: Type,
     },
     BuildResultErr {
         destination: Register,
         source: Register,
+        result_type: Type,
     },
     TryResult {
         destination: Register,

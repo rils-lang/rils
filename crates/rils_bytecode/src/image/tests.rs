@@ -912,7 +912,8 @@ fn links_and_executes_core_imports() {
             let option = Some(type_of(copied));
             let missing: Option<i32> = None;
             if is_some(option) && is_none(missing) {
-                unwrap_or(Some(40), 0) + unwrap_or(Err("missing"), 2)
+            let missing: Result<i32, string> = Err("missing");
+            unwrap_or(Some(40), 0) + unwrap_or(missing, 2)
             } else {
                 0
             }
@@ -1190,10 +1191,12 @@ fn option_result_native_methods_and_global_helpers_match_interpreter() {
         let failure: Result<i32, string> = Err("failed");
         let global_success: Result<i32, string> = Ok(3);
         let global_failure: Result<i32, string> = Err("failed");
+        let extracted_success: Result<i32, string> = Ok(4);
+        let extracted_failure: Result<i32, string> = Err("error");
         present.is_some() && missing.is_none()
             && success.is_ok() && failure.is_err()
-            && Ok(4).ok().unwrap() == 4
-            && Err("error").err().unwrap() == "error"
+            && extracted_success.ok().unwrap() == 4
+            && extracted_failure.err().unwrap() == "error"
             && is_some(Some(5)) && is_none(missing)
             && is_ok(global_success) && is_err(global_failure)
     "#;
@@ -1971,8 +1974,8 @@ fn compiles_array_index_and_tuple_field_assignment() {
 fn compiles_option_result_and_question_mark() {
     assert_matches_interpreter("Some(42)");
     assert_matches_interpreter("let item: Option<i32> = None; item");
-    assert_matches_interpreter("Ok(\"value\")");
-    assert_matches_interpreter("Err(7)");
+    assert_matches_interpreter("let value: Result<string, i32> = Ok(\"value\"); value");
+    assert_matches_interpreter("let value: Result<string, i32> = Err(7); value");
 
     let source = r#"
             fn read(flag: bool) -> Result<i32, string> {
@@ -2003,7 +2006,7 @@ fn compiles_match_literals_options_results_and_bindings() {
     );
     assert_matches_interpreter(
         r#"
-                let value = Err("failed");
+                let value: Result<string, string> = Err("failed");
                 match value {
                     Ok(inner) => inner,
                     Err(message) => message,

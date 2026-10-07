@@ -66,6 +66,7 @@ struct ProgramLowerer {
     host_contract: HostContract,
     expression_ids: rils_frontend::semantic::ExpressionIdentityMap,
     typeck_results: rils_frontend::semantic::TypeckResults,
+    def_map: rils_frontend::semantic::DefMap,
     declaration_types: rils_frontend::semantic::DeclarationTypeResolver,
     resolved_definitions: HashMap<rils_frontend::DefId, MethodInfo>,
 }
@@ -382,6 +383,7 @@ impl ProgramLowerer {
             host_contract: host.clone(),
             expression_ids,
             typeck_results: analysis.typeck_results.clone(),
+            def_map: analysis.def_map.clone(),
             declaration_types,
             resolved_definitions,
         })
@@ -424,6 +426,7 @@ impl ProgramLowerer {
             &self.host_contract,
             &self.expression_ids,
             &self.typeck_results,
+            &self.def_map,
             &self.declaration_types,
             &self.resolved_definitions,
             generated.clone(),
@@ -484,6 +487,7 @@ impl ProgramLowerer {
                     &self.host_contract,
                     &self.expression_ids,
                     &self.typeck_results,
+                    &self.def_map,
                     &self.declaration_types,
                     &self.resolved_definitions,
                     generated.clone(),

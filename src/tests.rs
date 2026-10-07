@@ -471,8 +471,14 @@ fn builtin_result_constructs_matches_and_unwraps_values() {
         42
     );
 
-    assert_eq!(integer("unwrap(Ok(42))"), 42);
-    assert_eq!(integer("unwrap_or(Err(\"failed\"), 42)"), 42);
+    assert_eq!(
+        integer("let value: Result<i32, string> = Ok(42); unwrap(value)"),
+        42
+    );
+    assert_eq!(
+        integer("let value: Result<i32, string> = Err(\"failed\"); unwrap_or(value, 42)"),
+        42
+    );
     assert_eq!(
         integer(
             r#"
@@ -487,7 +493,12 @@ fn builtin_result_constructs_matches_and_unwraps_values() {
         integer("let value: Result<i32, string> = Err(\"failed\"); value.unwrap_or(42)"),
         42
     );
-    assert_eq!(integer("core::result::unwrap(core::result::Ok(42))"), 42);
+    assert_eq!(
+        integer(
+            "let value: Result<i32, string> = core::result::Ok(42); core::result::unwrap(value)"
+        ),
+        42
+    );
 }
 
 #[test]

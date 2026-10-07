@@ -12,6 +12,16 @@
 `let absent: Option<i32> = None;` 和 `None.xor(Some(42))`。
 独立的 `None` 或仅调用 `is_none(None)` 无法确定元素类型，会报错；请先提供类型标注。
 
+`Ok` / `Err` 同样需要完整的 `Result<T, E>`，包括当前未激活的分支类型。类型可来自绑定、函数返回声明、if/match 的其他分支、泛型实参或 `?` 所在函数的返回类型；函数未写返回标注时也可从成功和错误分支共同推断。构造直接消费负载进入原生存储，不要求负载实现 Clone。无其他上下文的 `Ok(42)` 无法确定 `E`，`Err("missing")` 无法确定 `T`，都会报错。
+
+```rust
+let success: Result<i32, string> = Ok(42);
+let failure: Result<i32, string> = Err("missing");
+fn choose(flag: bool) {
+    if flag { Ok(42) } else { Err("missing") }
+}
+```
+
 [← 返回语言手册目录](README.md)
 
 ## Struct

@@ -1,15 +1,23 @@
-//! Visit return values in one function, excluding nested function declarations.
+//! Visit explicit and propagated returns without entering nested functions.
 
 use super::{Block, Expr, Stmt};
 
 pub(super) fn visit_block(block: &Block, visitor: &mut impl FnMut(&Expr)) {
+    walk_block(block, visitor, &mut |_| {});
+}
+
+pub(super) fn visit_try_operands(block: &Block, visitor: &mut impl FnMut(&Expr)) {
+    walk_block(block, &mut |_| {}, visitor);
+}
+
+fn walk_block(block: &Block, visitor: &mut impl FnMut(&Expr), propagated: &mut impl FnMut(&Expr)) {
     for statement in &block.statements {
         match statement {
             Stmt::Return {
                 value: Some(value), ..
             } => {
                 visitor(value);
-                visit_expression(value, visitor);
+                walk_expression(value, visitor, propagated);
             }
             Stmt::Let {
                 initializer: expression,
@@ -19,24 +27,28 @@ pub(super) fn visit_block(block: &Block, visitor: &mut impl FnMut(&Expr)) {
             | Stmt::Break {
                 value: Some(expression),
                 ..
-            } => visit_expression(expression, visitor),
+            } => walk_expression(expression, visitor, propagated),
             Stmt::While {
                 condition, body, ..
             } => {
-                visit_expression(condition, visitor);
-                visit_block(body, visitor);
+                walk_expression(condition, visitor, propagated);
+                walk_block(body, visitor, propagated);
             }
-            Stmt::Loop { body, .. } => visit_block(body, visitor),
+            Stmt::Loop { body, .. } => walk_block(body, visitor, propagated),
             Stmt::For { iterable, body, .. } => {
-                visit_expression(iterable, visitor);
-                visit_block(body, visitor);
+                walk_expression(iterable, visitor, propagated);
+                walk_block(body, visitor, propagated);
             }
             _ => {}
         }
     }
 }
 
-fn visit_expression(expression: &Expr, visitor: &mut impl FnMut(&Expr)) {
+fn walk_expression(
+    expression: &Expr,
+    visitor: &mut impl FnMut(&Expr),
+    propagated: &mut impl FnMut(&Expr),
+) {
     match expression {
         Expr::Member { object, .. }
         | Expr::Borrow { target: object, .. }
@@ -45,10 +57,11 @@ fn visit_expression(expression: &Expr, visitor: &mut impl FnMut(&Expr)) {
         }
         | Expr::Cast {
             operand: object, ..
+        } => walk_expression(object, visitor, propagated),
+        Expr::Try { operand, .. } => {
+            propagated(operand);
+            walk_expression(operand, visitor, propagated);
         }
-        | Expr::Try {
-            operand: object, ..
-        } => visit_expression(object, visitor),
         Expr::Index {
             object: left,
             index: right,
@@ -66,32 +79,32 @@ fn visit_expression(expression: &Expr, visitor: &mut impl FnMut(&Expr)) {
             end: right,
             ..
         } => {
-            visit_expression(left, visitor);
-            visit_expression(right, visitor);
+            walk_expression(left, visitor, propagated);
+            walk_expression(right, visitor, propagated);
         }
         Expr::Tuple { elements, .. } | Expr::Array { elements, .. } => {
             for element in elements {
-                visit_expression(element, visitor);
+                walk_expression(element, visitor, propagated);
             }
             if let Expr::Array {
                 repeat: Some(repeat),
                 ..
             } = expression
             {
-                visit_expression(repeat, visitor);
+                walk_expression(repeat, visitor, propagated);
             }
         }
         Expr::RecordLiteral { fields, .. } => {
             for field in fields {
-                visit_expression(&field.value, visitor);
+                walk_expression(&field.value, visitor, propagated);
             }
         }
         Expr::Call {
             callee, arguments, ..
         } => {
-            visit_expression(callee, visitor);
+            walk_expression(callee, visitor, propagated);
             for argument in arguments {
-                visit_expression(argument, visitor);
+                walk_expression(argument, visitor, propagated);
             }
         }
         Expr::If {
@@ -100,19 +113,19 @@ fn visit_expression(expression: &Expr, visitor: &mut impl FnMut(&Expr)) {
             else_branch,
             ..
         } => {
-            visit_expression(condition, visitor);
-            visit_block(then_branch, visitor);
+            walk_expression(condition, visitor, propagated);
+            walk_block(then_branch, visitor, propagated);
             if let Some(branch) = else_branch {
-                visit_expression(branch, visitor);
+                walk_expression(branch, visitor, propagated);
             }
         }
         Expr::Match { value, arms, .. } => {
-            visit_expression(value, visitor);
+            walk_expression(value, visitor, propagated);
             for arm in arms {
-                visit_expression(&arm.expression, visitor);
+                walk_expression(&arm.expression, visitor, propagated);
             }
         }
-        Expr::Block(block) => visit_block(block, visitor),
+        Expr::Block(block) => walk_block(block, visitor, propagated),
         Expr::Literal { .. }
         | Expr::Variable { .. }
         | Expr::Path { .. }

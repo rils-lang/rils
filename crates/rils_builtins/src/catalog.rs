@@ -169,7 +169,15 @@ pub fn builtin(path: &str) -> Option<&'static BuiltinDeclaration> {
     BUILTINS.iter().find(|item| item.path == path)
 }
 pub fn builtin_function(path: &str) -> Option<&'static BuiltinDeclaration> {
-    builtin(path).filter(|item| item.kind == BuiltinKind::Function)
+    builtin(path)
+        .or_else(|| {
+            let (module, member) = path.rsplit_once("::")?;
+            builtin_module_members(module)
+                .contains(&member)
+                .then(|| builtin(member))
+                .flatten()
+        })
+        .filter(|item| item.kind == BuiltinKind::Function)
 }
 
 pub fn standard_host_capabilities() -> Vec<&'static str> {

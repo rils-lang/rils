@@ -14,6 +14,7 @@ impl<'a> FunctionLowerer<'a> {
         host_contract: &'a HostContract,
         expression_ids: &'a rils_frontend::semantic::ExpressionIdentityMap,
         typeck_results: &'a rils_frontend::semantic::TypeckResults,
+        def_map: &'a rils_frontend::semantic::DefMap,
         declaration_types: &'a rils_frontend::semantic::DeclarationTypeResolver,
         resolved_definitions: &'a HashMap<rils_frontend::DefId, MethodInfo>,
         generated: GeneratedFunctions,
@@ -27,6 +28,7 @@ impl<'a> FunctionLowerer<'a> {
             host_contract,
             expression_ids,
             typeck_results,
+            def_map,
             declaration_types,
             resolved_definitions,
             namespace: String::new(),
@@ -70,7 +72,18 @@ impl<'a> FunctionLowerer<'a> {
             .rsplit_once("::")
             .map_or_else(String::new, |(namespace, _)| namespace.to_string());
         self.self_type = declaration.self_type;
-        self.return_type = declaration.return_type.map(|ty| self.signature_type(ty));
+        self.return_type = declaration
+            .return_type
+            .or_else(|| {
+                let definition = self.def_map.definition_at(declaration.name_span)?;
+                match definition.inferred_type.as_ref()? {
+                    Type::Function { return_type, .. } if return_type.is_type_witness() => {
+                        Some(return_type.as_ref())
+                    }
+                    _ => None,
+                }
+            })
+            .map(|ty| self.signature_type(ty));
         let parameter_types = declaration
             .parameters
             .iter()
@@ -208,6 +221,7 @@ impl<'a> FunctionLowerer<'a> {
             }
             Stmt::Function {
                 name,
+                name_span,
                 generic_parameters,
                 parameters,
                 return_type,
@@ -240,6 +254,7 @@ impl<'a> FunctionLowerer<'a> {
                     self.host_contract,
                     self.expression_ids,
                     self.typeck_results,
+                    self.def_map,
                     self.declaration_types,
                     self.resolved_definitions,
                     self.generated.clone(),
@@ -255,7 +270,7 @@ impl<'a> FunctionLowerer<'a> {
                 let qualified_name = format!("{}${}@{}", self.namespace, name, span.start);
                 let lowered = child.lower_function(FunctionDeclaration {
                     name,
-                    name_span: *span,
+                    name_span: *name_span,
                     qualified_name,
                     parameters,
                     return_type: return_type.as_ref(),

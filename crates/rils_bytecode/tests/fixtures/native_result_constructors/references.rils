@@ -1,0 +1,13 @@
+fn run() -> i32 {
+    let mut value = 0;
+    {
+        let left: Result<&mut i32, string> = Ok(&mut value);
+        let right: Result<usize, &mut i32> = Err(&mut value);
+        let first = left.unwrap();
+        let second = right.unwrap_err();
+        *first = 20;
+        *second = *second + 22;
+    }
+    value
+}
+run()

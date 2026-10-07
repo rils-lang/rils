@@ -1,0 +1,5 @@
+fn call() -> i32 {
+    fn Ok(value: i32) -> i32 { value + 22 }
+    Ok(20)
+}
+call()

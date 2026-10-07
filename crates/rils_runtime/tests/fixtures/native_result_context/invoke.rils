@@ -1,0 +1,4 @@
+let item = success().unwrap();
+let missing = failure();
+let deferred = saved();
+if missing.is_err() && deferred.is_err() { item.value + 22 } else { 0 }

@@ -180,6 +180,9 @@ impl SemanticOwnerIds {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedCall {
     Definition(DefId),
+    SumConstructor {
+        name: &'static str,
+    },
     IteratorIdentity,
     TraitDefault {
         trait_name: &'static str,
@@ -398,7 +401,11 @@ pub(crate) fn resolve_project_calls(
                     self_type,
                     host_types: &host_types,
                 };
-                if let Some(call) = resolve_callee(callee, arguments, &context) {
+                if !matches!(
+                    results.resolved_call(id),
+                    Some(ResolvedCall::SumConstructor { .. })
+                ) && let Some(call) = resolve_callee(callee, arguments, &context)
+                {
                     results.resolve_call(id, call);
                 }
             },

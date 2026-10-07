@@ -461,16 +461,20 @@ fn encode_function(
                     MirInstruction::BuildResultOk {
                         destination,
                         source,
+                        result_type,
                     } => Instruction::BuildResultOk {
                         destination,
                         source,
+                        result_type,
                     },
                     MirInstruction::BuildResultErr {
                         destination,
                         source,
+                        result_type,
                     } => Instruction::BuildResultErr {
                         destination,
                         source,
+                        result_type,
                     },
                     MirInstruction::TryResult {
                         destination,

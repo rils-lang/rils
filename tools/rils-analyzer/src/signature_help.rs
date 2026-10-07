@@ -167,6 +167,10 @@ fn semantic_signature_at_call(
         .typeck_results
         .resolved_call_containing(source, open)?;
     match call {
+        rils_frontend::ResolvedCall::SumConstructor { name } => Some((
+            (*name).into(),
+            rils_frontend::standard_library::standard_function_signature(name)?,
+        )),
         rils_frontend::ResolvedCall::Definition(definition) => {
             let definition = analysis.def_map.definition(*definition)?;
             function_signature(definition.name.clone(), definition.inferred_type.clone()?)

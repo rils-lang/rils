@@ -1,0 +1,6 @@
+use core::result::{Ok as success, Err as failure};
+use core::option::Some as present;
+let first: Result<i32, string> = core::result::Ok(20);
+let second: Result<i32, string> = success(22);
+let error: Result<i32, string> = failure("missing");
+let option: Option<i32> = present(42);

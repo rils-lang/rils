@@ -1,0 +1,7 @@
+fn choose(flag: bool) {
+    if flag { return Ok(20); }
+    Err("missing")
+}
+let first = choose(true).unwrap();
+let second = match true { true => Ok(22), false => Err("missing") };
+first + second.unwrap()

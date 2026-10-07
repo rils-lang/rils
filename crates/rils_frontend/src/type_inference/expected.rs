@@ -8,6 +8,18 @@ impl Inferencer<'_> {
     pub(super) fn apply_expected_type(&mut self, expression: &Expr, expected: &Type) {
         let expected = self.resolve_type(expected);
         match (expression, &expected) {
+            (Expr::Try { operand, .. }, _) => {
+                let id = self.expression_ids.id(operand);
+                if let Some(Type::Result(_, error)) =
+                    self.result.expression_types_by_id.get(&id).cloned()
+                {
+                    self.apply_expected_type(
+                        operand,
+                        &Type::Result(Box::new(expected.clone()), error),
+                    );
+                    self.record_compatible_type(expression, &expected);
+                }
+            }
             (Expr::RecordLiteral { path, fields, .. }, Type::Named { name, arguments })
                 if is_known(&expected) =>
             {
@@ -114,32 +126,32 @@ impl Inferencer<'_> {
                 let id = self.expression_ids.id(expression);
                 self.result.expression_types_by_id.insert(id, expected);
             }
-            (
-                Expr::Call {
-                    callee, arguments, ..
-                },
-                Type::Option(inner),
-            ) if matches!(callee.as_ref(), Expr::Variable { name, .. } if name == "Some") => {
+            (Expr::Call { arguments, .. }, Type::Option(inner))
+                if self
+                    .result
+                    .sum_constructors
+                    .get(&self.expression_ids.id(expression))
+                    == Some(&"Some") =>
+            {
                 if let Some(argument) = arguments.first() {
                     self.apply_expected_type(argument, inner);
                 }
-                self.record_sum_type(expression, &expected);
+                self.record_compatible_type(expression, &expected);
             }
-            (
-                Expr::Call {
-                    callee, arguments, ..
-                },
-                Type::Result(ok, error),
-            ) => {
-                let ty = match callee.as_ref() {
-                    Expr::Variable { name, .. } if name == "Ok" => ok,
-                    Expr::Variable { name, .. } if name == "Err" => error,
+            (Expr::Call { arguments, .. }, Type::Result(ok, error)) => {
+                let ty = match self
+                    .result
+                    .sum_constructors
+                    .get(&self.expression_ids.id(expression))
+                {
+                    Some(&"Ok") => ok,
+                    Some(&"Err") => error,
                     _ => return,
                 };
                 if let Some(argument) = arguments.first() {
                     self.apply_expected_type(argument, ty);
                 }
-                self.record_sum_type(expression, &expected);
+                self.record_compatible_type(expression, &expected);
             }
             (Expr::Tuple { elements, .. }, Type::Tuple(types)) => {
                 for (element, expected) in elements.iter().zip(types) {
@@ -177,7 +189,7 @@ impl Inferencer<'_> {
         }
     }
 
-    fn record_sum_type(&mut self, expression: &Expr, expected: &Type) {
+    fn record_compatible_type(&mut self, expression: &Expr, expected: &Type) {
         if !is_known(expected) {
             return;
         }
@@ -209,5 +221,20 @@ impl Inferencer<'_> {
         returns::visit_block(block, &mut |value| {
             self.apply_expected_type(value, expected)
         });
+    }
+
+    pub(super) fn apply_function_return_type(&mut self, block: &Block, expected: &Type) {
+        self.apply_expected_block_tail(block, expected);
+        self.apply_expected_returns(block, expected);
+        if let Type::Result(_, error_type) = expected {
+            returns::visit_try_operands(block, &mut |operand| {
+                let id = self.expression_ids.id(operand);
+                if let Some(Type::Result(ok, _)) =
+                    self.result.expression_types_by_id.get(&id).cloned()
+                {
+                    self.apply_expected_type(operand, &Type::Result(ok, error_type.clone()));
+                }
+            });
+        }
     }
 }

@@ -300,27 +300,27 @@ fn generic_function_parameters_resolve_nominal_sum_layouts() {
 }
 
 #[test]
-fn nominal_sum_formatting_matches_legacy_value() {
-    for (definition, legacy_source, typed_source) in [
+fn nominal_sum_formatting_matches_return_and_binding_contexts() {
+    for (definition, return_source, typed_source) in [
         (
             "struct Item { value: i32 }",
-            "Some(Item { value: 7 })",
+            "fn make() -> Option<Item> { Some(Item { value: 7 }) } make()",
             "let wrapped: Option<Item> = Some(Item { value: 7 }); wrapped",
         ),
         (
             "struct Item { value: i32 }",
-            "Ok(Item { value: 7 })",
+            "fn make() -> Result<Item, string> { Ok(Item { value: 7 }) } make()",
             "let outcome: Result<Item, string> = Ok(Item { value: 7 }); outcome",
         ),
         (
             "enum Choice { Empty, Item(i32) }",
-            "Ok(Choice::Item(7))",
+            "fn make() -> Result<Choice, string> { Ok(Choice::Item(7)) } make()",
             "let outcome: Result<Choice, string> = Ok(Choice::Item(7)); outcome",
         ),
     ] {
-        let legacy = eval_value(&format!("{definition} {legacy_source}")).unwrap();
+        let returned = eval_value(&format!("{definition} {return_source}")).unwrap();
         let typed = eval_value(&format!("{definition} {typed_source}")).unwrap();
-        assert_eq!(typed.to_string(), legacy.to_string());
-        assert_eq!(format!("{typed:?}"), format!("{legacy:?}"));
+        assert_eq!(typed.to_string(), returned.to_string());
+        assert_eq!(format!("{typed:?}"), format!("{returned:?}"));
     }
 }

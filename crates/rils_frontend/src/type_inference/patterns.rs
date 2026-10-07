@@ -10,6 +10,7 @@ impl Inferencer<'_> {
                     name,
                     *span,
                     Binding {
+                        constructor: None,
                         ty: if borrowed {
                             Type::Reference {
                                 mutable: false,

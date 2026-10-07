@@ -1,0 +1,7 @@
+struct Item { value: i32, text: string }
+fn transform(item: Item) -> Result<Item, string> {
+    Ok(Item { value: item.value + 22, text: item.text })
+}
+let value: Result<Item, string> = Ok(Item { value: 20, text: "owned" });
+let item = value.and_then(transform).unwrap();
+item.value
