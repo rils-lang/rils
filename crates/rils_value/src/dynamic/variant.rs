@@ -134,6 +134,7 @@ impl DynamicValue {
         index: usize,
         mut payload: Self,
     ) -> Result<Self, String> {
+        payload.ensure_initialized()?;
         let DropKind::Variant(variant) = &descriptor.drop_kind else {
             return Err("variant constructor requires a variant layout".into());
         };
@@ -161,6 +162,7 @@ impl DynamicValue {
     }
 
     pub fn variant_index(&self) -> Result<usize, String> {
+        self.ensure_initialized()?;
         if !matches!(self.descriptor.drop_kind, DropKind::Variant(_)) {
             return Err("value is not a variant".into());
         }

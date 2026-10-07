@@ -34,7 +34,13 @@ fn format_object(
     formatter: &mut Formatter<'_>,
     debug: bool,
 ) -> fmt::Result {
-    match object.with(|payload| format_view(payload.view(), formatter, debug, true)) {
+    match object.with(|payload| {
+        let view = payload.view();
+        if view.layout().is_err() {
+            return formatter.write_str("<moved>");
+        }
+        format_view(view, formatter, debug, true)
+    }) {
         Ok(result) => result,
         Err(_) => write!(formatter, "<{}>", object.descriptor().layout().rils_type()),
     }

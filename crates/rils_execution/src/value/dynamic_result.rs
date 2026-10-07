@@ -22,20 +22,14 @@ pub fn take_owned_with_definitions(
         Value::Dynamic(object)
             if matches!(object.descriptor().layout().rils_type(), Type::Result(_, _)) =>
         {
-            if object
-                .descriptor()
-                .has_owned_operation(super::owned_sum::DECODE_OPERATION)
-            {
-                let value = object.call_owned(super::owned_sum::DECODE_OPERATION)?;
-                return take_owned_with_definitions(value, structs, enums);
-            }
+            let codec = super::sum::codec(&object, structs, enums)?;
             let value = object.into_value().map_err(|failure| failure.1)?;
             let (index, item) = value.take_variant()?;
-            let item = NativeRecordCodec::with_definitions(structs, enums).from_native(item)?;
-            if index == 0 {
-                Ok(Ok(item))
-            } else {
-                Ok(Err(item))
+            let item = codec.from_native(item)?;
+            match index {
+                0 => Ok(Ok(item)),
+                1 => Ok(Err(item)),
+                _ => Err("Result has an invalid variant tag".into()),
             }
         }
         Value::Result { value, .. } => match value {
@@ -54,10 +48,10 @@ pub fn take_owned_with_definitions(
     }
 }
 
-fn read_item(payload: &DynamicValue) -> Result<Value, String> {
+fn read_item(payload: &DynamicValue, codec: &NativeRecordCodec) -> Result<Value, String> {
     let item =
         crate::value::runtime_layouts::clone_borrowed_view(payload.view().variant_payload()?)?;
-    NativeRecordCodec::new().from_native(item)
+    codec.from_native(item)
 }
 
 type ResultView = (Result<Value, Value>, Type, Type);
@@ -71,19 +65,19 @@ pub fn view(value: &Value) -> Option<Result<ResultView, String>> {
     };
     let ok_type = (**ok_type).clone();
     let error_type = (**error_type).clone();
-    Some(
+    Some(super::sum::codec(object, &[], &[]).and_then(|codec| {
         object
             .with(|payload| {
                 let index = payload.variant_index()?;
-                let item = read_item(payload)?;
+                let item = read_item(payload, &codec)?;
                 Ok((
                     if index == 0 { Ok(item) } else { Err(item) },
                     ok_type,
                     error_type,
                 ))
             })
-            .and_then(|result| result),
-    )
+            .and_then(|result| result)
+    }))
 }
 
 pub fn materialize(value: &Value) -> Option<Result<Value, String>> {

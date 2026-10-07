@@ -209,6 +209,9 @@ impl DynamicLayout {
 impl DynamicValue {
     /// Transfer each element into a checked native sequence.
     pub fn sequence(descriptor: Rc<DynamicLayout>, items: Vec<Self>) -> Result<Self, String> {
+        for item in &items {
+            item.ensure_initialized()?;
+        }
         let DropKind::Sequence { item } = &descriptor.drop_kind else {
             return Err("sequence constructor requires a sequence layout".into());
         };

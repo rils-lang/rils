@@ -130,14 +130,11 @@ fn host_fields_use_registered_copy_policy_and_drop_the_payload_once() {
         assert_eq!(copied.is_ok(), copy);
         drop(copied);
         let restored = record_codec::from_native(payload).unwrap();
-        let Value::Option {
-            value: Some(restored_owner),
-            ..
-        } = restored
-        else {
-            panic!("host option")
-        };
-        let Value::HostObject(restored) = restored_owner.as_ref() else {
+        assert!(matches!(restored, Value::Dynamic(_)));
+        let restored_owner = rils_execution::value::dynamic_option::take_owned(restored)
+            .unwrap()
+            .unwrap();
+        let Value::HostObject(restored) = &restored_owner else {
             panic!("host leaf")
         };
         assert!(Rc::ptr_eq(restored, &host));

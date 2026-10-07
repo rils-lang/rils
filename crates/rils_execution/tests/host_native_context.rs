@@ -103,14 +103,11 @@ fn non_copy_host_borrowed_reads_keep_identity_and_drop_once() {
     assert!(!snapshot.descriptor().is_copy());
     assert!(snapshot.copy_owned().is_err());
     let snapshot = record_codec::from_native(snapshot).unwrap();
-    let Value::Option {
-        value: Some(snapshot),
-        ..
-    } = snapshot
-    else {
-        panic!("borrowed option")
-    };
-    let Value::HostObject(snapshot_owner) = snapshot.as_ref() else {
+    assert!(matches!(snapshot, Value::Dynamic(_)));
+    let snapshot = rils_execution::value::dynamic_option::take_owned(snapshot)
+        .unwrap()
+        .unwrap();
+    let Value::HostObject(snapshot_owner) = &snapshot else {
         panic!("host leaf")
     };
     assert!(Rc::ptr_eq(snapshot_owner, &owner));

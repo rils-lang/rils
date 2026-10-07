@@ -1,0 +1,16 @@
+struct Item { text: string, number: i32 }
+enum Choice { Empty, Record { item: Item } }
+fn run() -> i32 {
+    let nested: Option<Result<Choice, string>> = Some(Ok(Choice::Record {
+        item: Item { text: "owned", number: 42 }
+    }));
+    match nested {
+        Some(Err(_)) => 1,
+        Some(Ok(Choice::Record { item: Item { text: _, number: 0 } })) => 2,
+        Some(Ok(Choice::Record { item: Item { text, number } })) => {
+            if text == "owned" { number } else { 3 }
+        },
+        _ => 4
+    }
+}
+run()

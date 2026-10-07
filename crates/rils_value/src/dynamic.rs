@@ -15,6 +15,7 @@ mod path;
 mod path_borrows;
 mod record;
 mod sequence;
+mod sum;
 mod variant;
 mod visit;
 pub use object::{CompactDynamicObject, DynamicObject};
@@ -269,6 +270,7 @@ impl DynamicValue {
     }
 
     pub fn some(descriptor: Rc<DynamicLayout>, mut item: Self) -> Result<Self, String> {
+        item.ensure_initialized()?;
         let DropKind::Option {
             item: expected,
             item_offset,
@@ -297,6 +299,7 @@ impl DynamicValue {
     }
 
     pub fn is_some(&self) -> Result<bool, String> {
+        self.ensure_initialized()?;
         if !matches!(self.descriptor.drop_kind, DropKind::Option { .. }) {
             return Err("value is not optional".into());
         }
@@ -400,6 +403,7 @@ impl DynamicValue {
     }
 
     pub fn copy_owned(&self) -> Result<Self, String> {
+        self.ensure_initialized()?;
         // SAFETY: this owner retains the initialized source for the whole copy.
         unsafe { Self::copy_at(self.descriptor.clone(), self.storage.pointer()) }
     }
@@ -426,6 +430,14 @@ impl DynamicValue {
             descriptor,
             initialized: false,
             path_borrows: OnceCell::new(),
+        }
+    }
+
+    fn ensure_initialized(&self) -> Result<(), String> {
+        if self.initialized {
+            Ok(())
+        } else {
+            Err("native value has been moved".into())
         }
     }
 }

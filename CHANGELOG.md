@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 原生 Option/Result 的 `?`、拥有型模式、回调返回解构和格式化结果检查不再还原成旧 sum 包装；嵌套字段解码也保留原生布局、具体泛型与用户声明身份。模式先确认整条分支匹配，再转移非 Copy 负载；`?` 按目标返回声明构造 Err，允许成功分支类型改变。`is_some/is_none/is_ok/is_err` 的生成桥接只读取标签，非 Clone 负载也可查询。**Rust API 迁移：** 删除 `value::owned_sum::materialize()`；消费式读取使用 `dynamic_option::take_owned()` / `dynamic_result::take_owned()`，类型化构造使用 `TypedStorageContext::construct_option()` / `construct_result()`，借用读取优先使用 `RilsValue::with_native_view()`。`NativeRecordCodec::from_native()` 返回的 Option/Result 也保持原生表示。旧 sum 构造变体与部分借用快照适配仍在迁移；C ABI、版本号和 v8 编码不变。
+
 - 原生宿主 enum 保留完整 Manifest 契约身份（整数宽度、discriminant、flags 和变体名称），相同契约重新构造的值可移入当前执行上下文；不同契约不能混用。VM 在执行前校验字节码中的宿主 enum 形状并链接已安装契约，方法和 trait 表仍属于各自执行声明。Rust 直接构造 `EnumType` 时须填写新增的 `host_definition`，脚本类型使用 `None`；宿主 enum 使用共享 `host_declarations::enum_definition()`。该身份在进程内链接，不改变 v8 编码或 C ABI。
 
 - **破坏性 Rust API 调整：** 删除旧 `Value::Struct` / `Value::Enum`、`StructInstance`、`EnumInstance`、`EnumPayload`、`StructFields`、旧记录字段引用构造函数及 `TypedStorageContext::compose_nominal()`。用户实例构造、字段读写、模式、格式化与哈希统一使用原生布局；编解码保留声明身份、具体泛型和显式 Copy 策略，拒绝同名但身份冲突的声明。**迁移：** Rust 宿主使用 `TypedStorageContext::construct_record()` / `construct_tuple_variant()` / `construct_unit_variant()` 创建实例，提供完整具体 `Type` 及拥有型字段；读取使用 `RilsValue::field()` / `with_native_view()`，字段 move/恢复/引用使用 `NativeInstancePlace`。Rils 源码语义、C ABI、版本号和实验性 v8 编码未改变。

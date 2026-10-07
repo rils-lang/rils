@@ -60,33 +60,24 @@ pub(super) fn call<E>(
                 Operation::OptionAndThen => native.__rils_try_and_then(|value| {
                     let mapped = invoke(function, &[value.as_ref().clone()])
                         .map_err(NativeCallError::Callback)?;
-                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
-                    let Value::Option {
-                        value,
-                        element_type,
-                    } = mapped
-                    else {
+                    let Some(Type::Option(element_type)) = Type::of_value(&mapped) else {
                         return Err("Option::and_then callback must return Option".into());
                     };
-                    mapped_type = element_type;
+                    mapped_type = Some(*element_type);
+                    let value = crate::value::dynamic_option::take_owned(mapped)?;
                     Ok::<_, NativeCallError<E>>(match value {
-                        Some(value) => NativeOption::Some(value),
+                        Some(value) => NativeOption::Some(Rc::new(value)),
                         None => NativeOption::None,
                     })
                 })?,
                 Operation::OptionOrElse => native.__rils_try_or_else(|| {
                     let mapped = invoke(function, &[]).map_err(NativeCallError::Callback)?;
-                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
-                    let Value::Option {
-                        value,
-                        element_type: callback_type,
-                    } = mapped
-                    else {
+                    let Some(Type::Option(callback_type)) = Type::of_value(&mapped) else {
                         return Err("Option::or_else callback must return Option".into());
                     };
                     if merge_types(
                         element_type.as_ref().unwrap_or(&Type::Unknown),
-                        callback_type.as_ref().unwrap_or(&Type::Unknown),
+                        &callback_type,
                     )
                     .is_none()
                     {
@@ -94,9 +85,10 @@ pub(super) fn call<E>(
                             "Option::or_else callback returned an incompatible Option".into()
                         );
                     }
-                    mapped_type = callback_type;
+                    mapped_type = Some(*callback_type);
+                    let value = crate::value::dynamic_option::take_owned(mapped)?;
                     Ok::<_, NativeCallError<E>>(match value {
-                        Some(value) => NativeOption::Some(value),
+                        Some(value) => NativeOption::Some(Rc::new(value)),
                         None => NativeOption::None,
                     })
                 })?,
@@ -163,18 +155,13 @@ pub(super) fn call<E>(
                 Operation::ResultAndThen => native.__rils_try_and_then(|value| {
                     let mapped = invoke(function, &[value.as_ref().clone()])
                         .map_err(NativeCallError::Callback)?;
-                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
-                    let Value::Result {
-                        value,
-                        ok_type: callback_ok,
-                        error_type: callback_error,
-                    } = mapped
+                    let Some(Type::Result(callback_ok, callback_error)) = Type::of_value(&mapped)
                     else {
                         return Err("Result combinator callback must return Result".into());
                     };
                     if merge_types(
                         error_type.as_ref().unwrap_or(&Type::Unknown),
-                        callback_error.as_ref().unwrap_or(&Type::Unknown),
+                        &callback_error,
                     )
                     .is_none()
                     {
@@ -182,40 +169,34 @@ pub(super) fn call<E>(
                             "Result combinator callback returned an incompatible Result".into()
                         );
                     }
-                    mapped_ok = callback_ok;
-                    mapped_error = callback_error;
+                    mapped_ok = Some(*callback_ok);
+                    mapped_error = Some(*callback_error);
+                    let value = crate::value::dynamic_result::take_owned(mapped)?;
                     Ok::<_, NativeCallError<E>>(match value {
-                        Ok(value) => NativeResult::Ok(value),
-                        Err(value) => NativeResult::Err(value),
+                        Ok(value) => NativeResult::Ok(Rc::new(value)),
+                        Err(value) => NativeResult::Err(Rc::new(value)),
                     })
                 })?,
                 Operation::ResultOrElse => native.__rils_try_or_else(|value| {
                     let mapped = invoke(function, &[value.as_ref().clone()])
                         .map_err(NativeCallError::Callback)?;
-                    let mapped = crate::value::owned_sum::materialize(mapped, &[], &[])?;
-                    let Value::Result {
-                        value,
-                        ok_type: callback_ok,
-                        error_type: callback_error,
-                    } = mapped
+                    let Some(Type::Result(callback_ok, callback_error)) = Type::of_value(&mapped)
                     else {
                         return Err("Result combinator callback must return Result".into());
                     };
-                    if merge_types(
-                        ok_type.as_ref().unwrap_or(&Type::Unknown),
-                        callback_ok.as_ref().unwrap_or(&Type::Unknown),
-                    )
-                    .is_none()
+                    if merge_types(ok_type.as_ref().unwrap_or(&Type::Unknown), &callback_ok)
+                        .is_none()
                     {
                         return Err(
                             "Result combinator callback returned an incompatible Result".into()
                         );
                     }
-                    mapped_ok = callback_ok;
-                    mapped_error = callback_error;
+                    mapped_ok = Some(*callback_ok);
+                    mapped_error = Some(*callback_error);
+                    let value = crate::value::dynamic_result::take_owned(mapped)?;
                     Ok::<_, NativeCallError<E>>(match value {
-                        Ok(value) => NativeResult::Ok(value),
-                        Err(value) => NativeResult::Err(value),
+                        Ok(value) => NativeResult::Ok(Rc::new(value)),
+                        Err(value) => NativeResult::Err(Rc::new(value)),
                     })
                 })?,
                 _ => unreachable!(),

@@ -1,5 +1,12 @@
 # Struct、Enum 与集合
 
+原生 `Option<T>` / `Result<T, E>` 的嵌套字段和模式绑定保留具体类型及原生存储。
+拥有型模式先确认整条分支匹配成功，再移动绑定的非 Copy 负载；借用模式保持原对象的引用。
+`?` 只传播错误分支，按当前函数返回声明建立目标 Result，例如
+`Result<i32, Error>` 的 Err 可以传播到返回 `Result<string, Error>` 的函数。
+`is_some/is_none/is_ok/is_err` 只读取标签，不要求负载实现 Clone。
+用户 struct/enum 的 Copy 仍须显式实现，字段均为 Copy 不会自动赋予该能力。
+
 [← 返回语言手册目录](README.md)
 
 ## Struct

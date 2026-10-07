@@ -118,30 +118,12 @@ impl Interpreter {
                 }
                 let value = self.evaluate(operand, environment.clone())?;
                 let (structs, enums) = environment.borrow().visible_type_definitions();
-                let value = crate::value::owned_sum::materialize(value, &structs, &enums)
+                let value = crate::value::sum::try_result(value, &structs, &enums)
                     .map_err(|message| RuntimeError::new(message, *span))?;
-                let Value::Result {
-                    value, error_type, ..
-                } = value
-                else {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "the `?` operator requires Result, found {}",
-                            value.type_name()
-                        ),
-                        *span,
-                    ));
-                };
                 match value {
-                    Ok(value) => Rc::try_unwrap(value)
-                        .or_else(|value| value.clone_owned())
-                        .map_err(|message| RuntimeError::new(message, *span)),
+                    Ok(value) => Ok(value),
                     Err(error) => {
-                        self.pending_return = Some(Value::Result {
-                            value: Err(error),
-                            ok_type: None,
-                            error_type,
-                        });
+                        self.pending_return = Some(error);
                         Err(RuntimeError::new(TRY_RETURN_SIGNAL, *span))
                     }
                 }
@@ -153,9 +135,6 @@ impl Interpreter {
                 value, arms, span, ..
             } => {
                 let value = self.evaluate(value, environment.clone())?;
-                let (structs, enums) = environment.borrow().visible_type_definitions();
-                let value = crate::value::owned_sum::materialize(value, &structs, &enums)
-                    .map_err(|message| RuntimeError::new(message, *span))?;
                 for arm in arms {
                     self.tick(arm.pattern.span())?;
                     let mut bindings = Vec::new();

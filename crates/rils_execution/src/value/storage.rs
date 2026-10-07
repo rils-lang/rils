@@ -16,6 +16,7 @@ mod assignment;
 mod construction;
 mod declarations;
 mod indexed;
+mod sum;
 pub use assignment::{NativeDeclaration, constrain_assignment, native_declaration};
 
 /// The three payload families that can represent a stored script value.
@@ -136,8 +137,10 @@ impl<'a> TypedStorageContext<'a> {
                     value.type_name()
                 ));
             }
-            let value = super::owned_sum::materialize(value, self.structs, self.enums)?;
-            return self.compose_variant(value, expected);
+            let layout = self.layout(expected)?;
+            let mut codec = NativeRecordCodec::with_definitions(self.structs, self.enums);
+            let payload = codec.into_native(value, layout)?;
+            return super::native_instance::from_native(payload, Rc::new(codec));
         }
         if !matches!(expected, Type::Option(_) | Type::Result(_, _))
             || !matches!(value, Value::Option { .. } | Value::Result { .. })
@@ -155,20 +158,9 @@ impl<'a> TypedStorageContext<'a> {
             // until a concrete declaration is available.
             return Ok(value);
         };
-        let payload = NativeRecordCodec::with_definitions(self.structs, self.enums)
-            .into_native(value, layout.clone())?;
-        let codec = Rc::new(NativeRecordCodec::with_definitions(
-            self.structs,
-            self.enums,
-        ));
-        let decode_codec = codec.clone();
-        let descriptor = Rc::new(
-            DynamicType::new(layout)
-                .register_metadata(codec)
-                .register_owned_operation(super::owned_sum::DECODE_OPERATION, move |value| {
-                    decode_codec.from_native(value)
-                }),
-        );
+        let mut codec = NativeRecordCodec::with_definitions(self.structs, self.enums);
+        let payload = codec.into_native(value, layout.clone())?;
+        let descriptor = Rc::new(DynamicType::new(layout).register_metadata(Rc::new(codec)));
         DynamicObject::new(descriptor, payload).map(Value::Dynamic)
     }
 }

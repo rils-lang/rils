@@ -44,13 +44,8 @@ impl NativeOwnedContext {
     }
 
     pub fn none(&self, item: &Type) -> Result<Value, String> {
-        self.storage().apply_declared(
-            Value::Option {
-                value: None,
-                element_type: Some(item.clone()),
-            },
-            &Type::Option(Box::new(item.clone())),
-        )
+        self.storage()
+            .construct_option(&Type::Option(Box::new(item.clone())), None)
     }
 }
 

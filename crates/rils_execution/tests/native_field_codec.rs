@@ -39,15 +39,15 @@ fn opaque_native_generic_leaf_survives_an_optional_field() {
     };
     let native = record_codec::into_native(optional, optional_layout).unwrap();
     let restored = record_codec::from_native(native).unwrap();
-    let Value::Option {
-        value: Some(value),
-        element_type: Some(restored_type),
-    } = restored
-    else {
-        panic!("expected an optional native value");
-    };
-    assert_eq!(restored_type, shared_type);
-    let Value::Dynamic(object) = value.as_ref() else {
+    assert!(matches!(restored, Value::Dynamic(_)));
+    assert_eq!(
+        Type::of_value(&restored),
+        Some(Type::Option(Box::new(shared_type)))
+    );
+    let value = rils_execution::value::dynamic_option::take_owned(restored)
+        .unwrap()
+        .unwrap();
+    let Value::Dynamic(object) = &value else {
         panic!("opaque native leaf must retain its dynamic handle");
     };
     let payload = object

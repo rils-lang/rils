@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 
 use rils_bytecode::{BytecodeHost, BytecodeModule, HostContract, compile_with_host};
-use rils_execution::{FunctionSignature, Type, Value, value::owned_sum};
+use rils_execution::{
+    FunctionSignature, Type, Value,
+    value::{dynamic_option, dynamic_result},
+};
 use rils_runtime::{Engine, OpaqueHostHandle, opaque_host_handle, opaque_host_value_typed};
 
 fn contract() -> HostContract {
@@ -98,31 +101,24 @@ fn check_native(value: Value, name: &str, copy: bool) {
         value.type_name()
     );
     assert_eq!(value.is_copy(), copy, "{name}: Copy policy");
-    let value = owned_sum::materialize(value, &[], &[]).unwrap();
     if name == "none" || name == "default" {
-        assert!(matches!(value, Value::Option { value: None, .. }));
+        assert!(dynamic_option::take_owned(value).unwrap().is_none());
     } else if name == "result_error" {
-        assert!(matches!(value, Value::Result { value: Err(_), .. }));
+        assert!(dynamic_result::take_owned(value).unwrap().is_err());
     } else if name == "nested_record" {
-        let Value::Option {
-            value: Some(value), ..
-        } = value
-        else {
-            panic!("record option")
-        };
-        let Value::Dynamic(record) = value.as_ref() else {
+        let value = dynamic_option::take_owned(value)
+            .unwrap()
+            .expect("record option");
+        let Value::Dynamic(record) = &value else {
             panic!("record lost native storage");
         };
         assert!(
             matches!(record.descriptor().layout().rils_type(), Type::Named { name, .. } if name == "Holder")
         );
     } else {
-        let Value::Option {
-            value: Some(value), ..
-        } = value
-        else {
-            panic!("host option")
-        };
+        let value = dynamic_option::take_owned(value)
+            .unwrap()
+            .expect("host option");
         assert_eq!(opaque_host_handle(&value).unwrap().object_id, 42, "{name}");
     }
 }
@@ -340,13 +336,9 @@ fn manifest_inline_values_enums_and_raw_flags_keep_their_declared_layouts() {
         ] {
             assert!(matches!(value, Value::Dynamic(_)), "{kind}");
             assert!(value.is_copy(), "{kind}");
-            let value = owned_sum::materialize(value, &[], &[]).unwrap();
-            let Value::Option {
-                value: Some(value), ..
-            } = value
-            else {
-                panic!("{kind}: optional transport")
-            };
+            let value = dynamic_option::take_owned(value)
+                .unwrap()
+                .expect("optional transport");
             match kind {
                 "handle" => assert_eq!(opaque_host_handle(&value).unwrap().object_id, 42),
                 "inline" => assert_eq!(inline_host_value(&value).unwrap().bytes, [42; 16]),
@@ -457,13 +449,9 @@ fn composed_base_types_preserve_the_actual_host_identity() {
             Type::of_value(&value),
             Some(Type::Option(Box::new(Type::named("host::Base"))))
         );
-        let value = owned_sum::materialize(value, &[], &[]).unwrap();
-        let Value::Option {
-            value: Some(value), ..
-        } = value
-        else {
-            panic!("base option")
-        };
+        let value = dynamic_option::take_owned(value)
+            .unwrap()
+            .expect("base option");
         assert_eq!(value.type_name(), "host::Data");
         assert_eq!(opaque_host_handle(&value).unwrap().type_id, 2);
     }

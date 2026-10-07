@@ -39,9 +39,9 @@ impl Value {
             && merge_types(expected, object.descriptor().layout().rils_type()).is_none()
             && expected.accepts(&self)
         {
-            return crate::value::owned_sum::materialize(self, &[], &[])
-                .ok()?
-                .constrain_owned(expected);
+            // Preserve the owner here. The execution site's typed storage
+            // context supplies nominal and host layouts for the conversion.
+            return Some(self);
         }
         if matches!((&self, expected), (Self::Result { .. }, Type::Result(_, _))) {
             expected.constrain(&self)?;

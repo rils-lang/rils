@@ -1,0 +1,17 @@
+struct Item { value: i32, text: string }
+fn run() -> i32 {
+    let some: Option<Item> = Some(Item { value: 1, text: "some" });
+    let none: Option<Item> = None;
+    let ok: Result<Item, Item> = Ok(Item { value: 21, text: "ok" });
+    let err: Result<Item, Item> = Err(Item { value: 21, text: "err" });
+    if !some.is_some() || some.is_none() || none.is_some() || !none.is_none() {
+        return 1;
+    }
+    if !ok.is_ok() || ok.is_err() || err.is_ok() || !err.is_err() {
+        return 2;
+    }
+    let a = match ok { Ok(Item { value, text: _ }) => value, _ => 3 };
+    let b = match err { Err(Item { value, text: _ }) => value, _ => 4 };
+    a + b
+}
+run()

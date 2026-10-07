@@ -128,6 +128,7 @@ impl<V> DynamicObject<V> {
     }
 
     pub fn new(descriptor: Rc<DynamicType<V>>, value: DynamicValue) -> Result<Self, String> {
+        value.ensure_initialized()?;
         if !value.descriptor().compatible_with(descriptor.layout()) {
             return Err("dynamic value layout does not match its type".into());
         }
@@ -145,6 +146,7 @@ impl<V> DynamicObject<V> {
     /// Keep one shared storage identity even when the enclosed layout is Copy.
     /// Interior-mutable wrappers use this so borrowed views see later writes.
     pub fn new_shared(descriptor: Rc<DynamicType<V>>, value: DynamicValue) -> Result<Self, String> {
+        value.ensure_initialized()?;
         if !value.descriptor().compatible_with(descriptor.layout()) {
             return Err("dynamic value layout does not match its type".into());
         }

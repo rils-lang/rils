@@ -1,5 +1,5 @@
 use super::*;
-use rils_execution::value::borrowed_sum::{self, Branch};
+use rils_execution::value::{borrowed_sum::Branch, sum};
 
 pub(super) fn matches(
     pattern: &Pattern,
@@ -14,16 +14,33 @@ pub(super) fn matches(
         Pattern::Err { inner, .. } => (Branch::Err, Some(inner)),
         _ => return None,
     };
-    let actual = match borrowed_sum::branch(value) {
+    let actual = match sum::branch(value) {
         Ok(Some(branch)) => branch,
         Ok(None) => return None,
         Err(_) => return Some(false),
     };
-    Some(
-        actual == expected
-            && inner.is_none_or(|pattern| {
-                borrowed_sum::payload(value, actual)
-                    .is_ok_and(|child| pattern_matches(pattern, &child, bindings, environment))
-            }),
-    )
+    Some((|| {
+        if actual != expected {
+            return false;
+        }
+        let Some(pattern) = inner else { return true };
+        let Ok(child) = sum::borrow_payload(value, actual) else {
+            return false;
+        };
+        let mut probes = Vec::new();
+        if !pattern_matches(pattern, &child, &mut probes, environment) {
+            return false;
+        }
+        if matches!(value, Value::Reference(_)) {
+            bindings.extend(probes);
+            return true;
+        }
+        drop(probes);
+        drop(child);
+        if !native_record::has_binding(pattern) {
+            return true;
+        }
+        sum::bind_payload(value, actual)
+            .is_ok_and(|child| pattern_matches(pattern, &child, bindings, environment))
+    })())
 }

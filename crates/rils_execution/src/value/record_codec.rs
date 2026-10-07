@@ -17,6 +17,8 @@ use super::{
 
 #[path = "record_codec/declarations.rs"]
 mod declarations;
+#[path = "record_codec/sum.rs"]
+mod sum;
 
 #[derive(Clone, Default)]
 pub struct NativeRecordCodec {
@@ -136,12 +138,7 @@ impl NativeRecordCodec {
             && object.descriptor().layout().rils_type() != &ty
             && ty.accepts(&value)
         {
-            let Value::Dynamic(object) = value else {
-                unreachable!()
-            };
-            let payload = object.into_value().map_err(|error| error.1)?;
-            let value = self.decode(payload)?;
-            return self.encode(value, layout);
+            return self.recompose_sum(value, layout);
         }
         match (ty, value) {
             (Type::Reference { .. }, Value::Reference(value)) => {
@@ -438,22 +435,8 @@ impl NativeRecordCodec {
                     descriptor, value,
                 )?))
             }
-            Type::Option(item_type) => {
-                let item = value.take_option()?;
-                let item = item.map(|item| self.decode(item)).transpose()?;
-                Ok(Value::Option {
-                    value: item.map(Rc::new),
-                    element_type: Some(*item_type),
-                })
-            }
-            Type::Result(ok_type, error_type) => {
-                let (index, item) = value.take_variant()?;
-                let item = Rc::new(self.decode(item)?);
-                Ok(Value::Result {
-                    value: if index == 0 { Ok(item) } else { Err(item) },
-                    ok_type: Some(*ok_type),
-                    error_type: Some(*error_type),
-                })
+            Type::Option(_) | Type::Result(_, _) => {
+                super::native_instance::from_native(value, Rc::new(self.clone()))
             }
             Type::Tuple(elements) => {
                 let slots = self.take_indexed_fields(&mut value, &elements)?;

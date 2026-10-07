@@ -158,6 +158,153 @@ enum ChoiceFields {
     Record(HashMap<String, Value>),
 }
 
+#[test]
+fn nested_native_sums_preserve_nominal_declarations_during_owned_extraction() {
+    use rils_execution::value::{
+        dynamic_option, dynamic_result, native_instance::record_definition,
+    };
+    let declarations = Declarations::fixture();
+    let option_type = Type::Option(Box::new(Type::named("Owned")));
+    let result_type = Type::Result(Box::new(option_type.clone()), Box::new(Type::String));
+    let inner = declarations
+        .context()
+        .construct_option(&option_type, Some(declarations.owned("nested")))
+        .unwrap();
+    let outer = declarations
+        .context()
+        .construct_result(&result_type, Ok(inner))
+        .unwrap();
+    let inner = dynamic_result::take_owned(outer).unwrap().unwrap();
+    assert!(matches!(inner, Value::Dynamic(_)));
+    assert_eq!(Type::of_value(&inner), Some(option_type));
+    let record = dynamic_option::take_owned(inner).unwrap().unwrap();
+    let retained = record_definition(&record).unwrap().unwrap();
+    assert!(Rc::ptr_eq(&retained, &declarations.structs[1]));
+    assert!(!record.is_copy(), "fields alone do not imply Copy");
+    assert_eq!(
+        place(&record)
+            .field("text")
+            .unwrap()
+            .take()
+            .unwrap()
+            .as_string()
+            .as_deref(),
+        Some("nested")
+    );
+}
+
+#[test]
+fn native_sum_probes_and_bindings_use_original_non_clone_payloads() {
+    use rils_execution::value::{borrowed_sum::Branch, native_instance::record_definition, sum};
+    let declarations = Declarations::fixture();
+    for branch in [Branch::Some, Branch::Ok, Branch::Err] {
+        let item = declarations.owned("original");
+        let value = match branch {
+            Branch::Some => declarations
+                .context()
+                .construct_option(&Type::Option(Box::new(Type::named("Owned"))), Some(item)),
+            Branch::Ok => declarations.context().construct_result(
+                &Type::Result(Box::new(Type::named("Owned")), Box::new(Type::String)),
+                Ok(item),
+            ),
+            Branch::Err => declarations.context().construct_result(
+                &Type::Result(Box::new(Type::I32), Box::new(Type::named("Owned"))),
+                Err(item),
+            ),
+            _ => unreachable!(),
+        }
+        .unwrap();
+        assert_eq!(sum::branch(&value).unwrap(), Some(branch));
+        let (symbol, expected) = match branch {
+            Branch::Some => ("core::option::option::is_some", true),
+            Branch::Ok => ("core::result::result::is_ok", true),
+            Branch::Err => ("core::result::result::is_ok", false),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            rils_execution::runtime_builtins::call_native_symbol(
+                symbol,
+                std::slice::from_ref(&value)
+            ),
+            Some(Ok(Value::Bool(expected)))
+        );
+        let probe = sum::borrow_payload(&value, branch).unwrap();
+        assert!(Rc::ptr_eq(
+            &record_definition(&probe).unwrap().unwrap(),
+            &declarations.structs[1]
+        ));
+        assert!(
+            sum::bind_payload(&value, branch).is_err(),
+            "a probe must block the move"
+        );
+        drop(probe);
+        let item = sum::bind_payload(&value, branch).unwrap();
+        assert!(Rc::ptr_eq(
+            &record_definition(&item).unwrap().unwrap(),
+            &declarations.structs[1]
+        ));
+        assert_eq!(
+            place(&item)
+                .field("text")
+                .unwrap()
+                .take()
+                .unwrap()
+                .as_string()
+                .as_deref(),
+            Some("original")
+        );
+        assert!(sum::branch(&value).is_err());
+        assert_eq!(value.to_string(), "<moved>");
+        assert_eq!(format!("{value:#?}"), "<moved>");
+    }
+}
+
+#[test]
+fn native_sum_extraction_rejects_conflicting_nominal_contexts() {
+    use rils_execution::value::dynamic_option;
+    let source = Declarations::fixture();
+    let other = Declarations::fixture();
+    let value = source
+        .context()
+        .construct_option(
+            &Type::Option(Box::new(Type::named("Owned"))),
+            Some(source.owned("source")),
+        )
+        .unwrap();
+    let error = dynamic_option::take_owned_with_definitions(value, &other.structs, &other.enums)
+        .unwrap_err();
+    assert!(error.contains("conflicting native declaration"), "{error}");
+}
+
+#[test]
+fn only_error_propagation_may_change_an_inactive_result_type() {
+    use rils_execution::value::dynamic_result;
+    let declarations = Declarations::fixture();
+    let source = Type::Result(Box::new(Type::I32), Box::new(Type::named("Owned")));
+    let target = Type::Result(Box::new(Type::String), Box::new(Type::named("Owned")));
+    let context = declarations.context();
+    let value = context
+        .construct_result(&source, Err(declarations.owned("source")))
+        .unwrap();
+    assert!(context.apply_declared(value, &target).is_err());
+    let value = context
+        .construct_result(&source, Err(declarations.owned("propagated")))
+        .unwrap();
+    let value = context.propagate_result_error(value, &target).unwrap();
+    assert_eq!(Type::of_value(&value), Some(target));
+    let item = dynamic_result::take_owned(value).unwrap().unwrap_err();
+    assert_eq!(
+        place(&item)
+            .field("text")
+            .unwrap()
+            .take()
+            .unwrap()
+            .as_string()
+            .as_deref(),
+        Some("propagated")
+    );
+}
+
 fn place(value: &Value) -> NativeInstancePlace {
     let Value::Dynamic(object) = value else {
         panic!("native instance")

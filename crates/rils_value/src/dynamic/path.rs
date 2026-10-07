@@ -139,6 +139,7 @@ impl DynamicValue {
         &self,
         path: &[DynamicPathStep],
     ) -> Result<(*const u8, Rc<DynamicLayout>), String> {
+        self.ensure_initialized()?;
         let mut pointer = self.storage.pointer();
         let mut layout = self.descriptor.clone();
         for step in path {
@@ -289,6 +290,7 @@ impl DynamicValue {
         path: &[DynamicPathStep],
         mut value: Self,
     ) -> Result<(), String> {
+        value.ensure_initialized()?;
         let (parent, index, offset, layout) = self.field_parent(path)?;
         if !layout.compatible_with(&value.descriptor) {
             return Err(format!(
@@ -345,6 +347,7 @@ impl DynamicValue {
         path: &[DynamicPathStep],
         value: Self,
     ) -> Result<Option<Self>, String> {
+        value.ensure_initialized()?;
         self.check_path_write(path, true)?;
         match path.split_last() {
             Some((DynamicPathStep::Field(_), _)) => {
@@ -404,6 +407,7 @@ impl DynamicValue {
         path: &[DynamicPathStep],
         mut value: Self,
     ) -> Result<Option<Self>, String> {
+        value.ensure_initialized()?;
         let (parent, index, offset, layout) = self.field_parent(path)?;
         if !layout.compatible_with(&value.descriptor) {
             return Err(format!(

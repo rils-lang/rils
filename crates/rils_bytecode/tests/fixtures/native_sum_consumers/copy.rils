@@ -1,0 +1,9 @@
+#[derive(Clone, Copy)]
+struct Point { value: i32 }
+fn run() -> i32 {
+    let value: Option<Point> = Some(Point { value: 21 });
+    let a = match value { Some(Point { value }) => value, _ => 0 };
+    let b = match value { Some(Point { value }) => value, _ => 0 };
+    a + b
+}
+run()

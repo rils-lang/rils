@@ -77,25 +77,11 @@ pub fn take_owned_with_definitions(
         Value::Dynamic(object)
             if matches!(object.descriptor().layout().rils_type(), Type::Option(_)) =>
         {
-            if object
-                .descriptor()
-                .has_owned_operation(super::owned_sum::DECODE_OPERATION)
-            {
-                let value = object.call_owned(super::owned_sum::DECODE_OPERATION)?;
-                return take_owned_with_definitions(value, structs, enums);
-            }
+            let codec = super::sum::codec(&object, structs, enums)?;
             let value = object.into_value().map_err(|failure| failure.1)?;
             value
                 .take_option()?
-                .map(|item| {
-                    if matches!(item.descriptor().rils_type(), Type::Option(_)) {
-                        let layout = item.layout_handle();
-                        let descriptor = Rc::new(DynamicType::new(layout));
-                        DynamicObject::new(descriptor, item).map(Value::Dynamic)
-                    } else {
-                        NativeRecordCodec::with_definitions(structs, enums).from_native(item)
-                    }
-                })
+                .map(|item| codec.from_native(item))
                 .transpose()
         }
         Value::Option { value, .. } => value
@@ -137,22 +123,17 @@ pub fn view(value: &Value) -> Option<Result<(Option<Value>, Type), String>> {
 }
 
 fn view_composite(object: &DynamicObject) -> Result<Option<Value>, String> {
-    let Type::Option(item_type) = object.descriptor().layout().rils_type() else {
+    let Type::Option(_) = object.descriptor().layout().rils_type() else {
         return Err("dynamic value is not an option".into());
     };
-    let nested_option = matches!(item_type.as_ref(), Type::Option(_));
+    let codec = super::sum::codec(object, &[], &[])?;
     object.with(|payload| {
         let view = payload.view();
         if !view.option_is_some()? {
             return Ok(None);
         }
         let item = crate::value::runtime_layouts::clone_borrowed_view(view.option_item()?)?;
-        let value = if nested_option {
-            let layout = item.layout_handle();
-            Value::Dynamic(DynamicObject::new(Rc::new(DynamicType::new(layout)), item)?)
-        } else {
-            NativeRecordCodec::new().from_native(item)?
-        };
+        let value = codec.from_native(item)?;
         Ok(Some(value))
     })?
 }

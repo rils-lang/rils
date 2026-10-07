@@ -7,7 +7,7 @@ use rils_value::DynamicLayout;
 use super::{NativeRecordCodec, Type};
 
 impl NativeRecordCodec {
-    pub(super) fn retain_layout_declarations(
+    pub(crate) fn retain_layout_declarations(
         &mut self,
         source: &Self,
         layout: &DynamicLayout,

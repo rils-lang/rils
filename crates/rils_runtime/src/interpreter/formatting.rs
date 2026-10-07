@@ -104,19 +104,15 @@ impl Interpreter {
             &[self_reference, formatter_reference],
             span,
         )?;
-        let result = crate::value::owned_sum::materialize(result, &[], &[])
+        let result = crate::value::dynamic_result::take_owned(result)
             .map_err(|message| RuntimeError::new(message, span))?;
         match result {
-            Value::Result {
-                value: Ok(value), ..
-            } if matches!(value.as_ref(), Value::Unit) => Ok(()),
-            Value::Result {
-                value: Err(error), ..
-            } => Err(RuntimeError::new(
+            Ok(Value::Unit) => Ok(()),
+            Err(error) => Err(RuntimeError::new(
                 format!("formatting failed: {error}"),
                 span,
             )),
-            value => Err(RuntimeError::new(
+            Ok(value) => Err(RuntimeError::new(
                 format!(
                     "{trait_name}::fmt returned {}, expected Result<(), FormatError>",
                     value.type_name()

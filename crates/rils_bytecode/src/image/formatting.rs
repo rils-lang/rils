@@ -105,19 +105,15 @@ impl VirtualMachine<'_> {
             arguments,
         )?
         .execute()?;
-        let result = crate::value::owned_sum::materialize(result, &[], &[])
+        let result = crate::value::dynamic_result::take_owned(result)
             .map_err(|message| BytecodeError::new(message, span))?;
         match result {
-            Value::Result {
-                value: Ok(value), ..
-            } if matches!(value.as_ref(), Value::Unit) => Ok(()),
-            Value::Result {
-                value: Err(error), ..
-            } => Err(BytecodeError::new(
+            Ok(Value::Unit) => Ok(()),
+            Err(error) => Err(BytecodeError::new(
                 format!("formatting failed: {error}"),
                 span,
             )),
-            value => Err(BytecodeError::new(
+            Ok(value) => Err(BytecodeError::new(
                 format!(
                     "format method returned {}, expected Result<(), FormatError>",
                     value.type_name()

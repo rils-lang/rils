@@ -1,0 +1,10 @@
+struct Error { message: string }
+fn fail() -> Result<i32, Error> { Err(Error { message: "owned" }) }
+fn propagate() -> Result<string, Error> {
+    let value = fail()?;
+    if value == 0 { Ok("zero") } else { Ok("nonzero") }
+}
+match propagate() {
+    Err(Error { message }) => if message == "owned" { 42 } else { 0 },
+    _ => 1
+}

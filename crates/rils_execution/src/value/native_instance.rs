@@ -61,21 +61,11 @@ fn expose(value: DynamicValue, codec: Rc<NativeRecordCodec>) -> Result<Value, St
     if matches!(
         codec.nominal_definition(value.descriptor().rils_type()),
         Some(Value::StructType(_) | Value::EnumType(_))
-    ) {
-        from_native(value, codec)
-    } else if matches!(
+    ) || matches!(
         value.descriptor().rils_type(),
         crate::Type::Option(_) | crate::Type::Result(_, _)
     ) {
-        let decode_codec = codec.clone();
-        let descriptor = Rc::new(
-            DynamicType::new(value.layout_handle())
-                .register_metadata(codec)
-                .register_owned_operation(super::owned_sum::DECODE_OPERATION, move |value| {
-                    decode_codec.from_native(value)
-                }),
-        );
-        DynamicObject::new(descriptor, value).map(Value::Dynamic)
+        from_native(value, codec)
     } else if let crate::Type::Tuple(types) = value.descriptor().rils_type() {
         let types = types.clone();
         expose_indexed(value, &types, None, codec).map(|sequence| Value::Tuple(Rc::new(sequence)))
@@ -131,6 +121,16 @@ impl NativeInstancePlace {
             .descriptor()
             .metadata::<NativeRecordCodec>()
             .ok_or("native instance has no declaration context")?;
+        Self::with_codec(object, codec)
+    }
+
+    pub(super) fn with_codec(
+        object: DynamicObject,
+        codec: Rc<NativeRecordCodec>,
+    ) -> Result<Self, String> {
+        if object.is_inline() {
+            return Err("native owner place requires shared storage".into());
+        }
         Ok(Self {
             object,
             path: vec![],

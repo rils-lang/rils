@@ -173,6 +173,7 @@ impl DynamicValue {
             ));
         }
         for (index, (field, value)) in record.fields.iter().zip(&values).enumerate() {
+            value.ensure_initialized()?;
             if !field.layout.compatible_with(&value.descriptor) {
                 return Err(format!(
                     "record field `{}` at index {index} has a different layout",
@@ -325,6 +326,7 @@ impl DynamicValue {
 
     /// Restore one empty nested field using its registered concrete layout.
     pub fn put_field_path(&mut self, path: &[usize], mut value: Self) -> Result<(), String> {
+        value.ensure_initialized()?;
         let (parent, index, offset, layout) = self.field_path_parent(path)?;
         if !layout.compatible_with(&value.descriptor) {
             return Err(format!(
@@ -425,6 +427,7 @@ impl DynamicValue {
 
     /// Fill an empty field with a value of its exact registered layout.
     pub fn put_field(&mut self, index: usize, mut value: Self) -> Result<(), String> {
+        value.ensure_initialized()?;
         let field = self.record_field(index)?;
         if !field.layout.compatible_with(&value.descriptor) {
             return Err(format!(

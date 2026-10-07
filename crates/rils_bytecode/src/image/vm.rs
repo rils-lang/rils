@@ -646,39 +646,27 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let result = self.take_register(source, instruction.span)?;
                     let (structs, enums) = self.type_definitions();
-                    let result = crate::value::owned_sum::materialize(result, &structs, &enums)
+                    let result = crate::value::sum::try_result(result, &structs, &enums)
                         .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     match result {
-                        Value::Result {
-                            value: Ok(value), ..
-                        } => {
-                            let value = Rc::try_unwrap(value)
-                                .or_else(|value| value.clone_owned())
-                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                        Ok(value) => {
                             self.frame_mut().registers[destination] = Some(value);
                         }
-                        Value::Result {
-                            value: Err(error),
-                            error_type,
-                            ..
-                        } => {
-                            let result = Value::Result {
-                                value: Err(error),
-                                ok_type: None,
-                                error_type,
-                            };
-                            if let Some(value) = self.finish_return(result, instruction.span)? {
+                        Err(error) => {
+                            let expected = self.frame().return_type.as_ref().ok_or_else(|| {
+                                BytecodeError::new(
+                                    "the `?` operator requires a Result return type",
+                                    instruction.span,
+                                )
+                            })?;
+                            let error = self
+                                .native_context
+                                .storage()
+                                .propagate_result_error(error, expected)
+                                .map_err(|message| BytecodeError::new(message, instruction.span))?;
+                            if let Some(value) = self.finish_return(error, instruction.span)? {
                                 return Ok(value);
                             }
-                        }
-                        value => {
-                            return Err(BytecodeError::new(
-                                format!(
-                                    "the `?` operator requires Result, found {}",
-                                    value.type_name()
-                                ),
-                                instruction.span,
-                            ));
                         }
                     }
                 }
@@ -688,12 +676,6 @@ impl<'a> VirtualMachine<'a> {
                     pattern,
                 } => {
                     let value = self.take_register(source, instruction.span)?;
-                    let value = crate::value::owned_sum::materialize(
-                        value,
-                        &self.native_context.structs,
-                        &self.native_context.enums,
-                    )
-                    .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     self.frame_mut().registers[source] = Some(value);
                     let matched = self.frame().registers[source]
                         .as_ref()

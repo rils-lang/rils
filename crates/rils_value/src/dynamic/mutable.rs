@@ -60,6 +60,7 @@ impl DynamicValueMut<'_> {
         index: usize,
         item: DynamicValue,
     ) -> Result<DynamicValue, String> {
+        item.ensure_initialized()?;
         let mut path = self.path.clone();
         path.push(super::DynamicPathStep::Index(index));
         self.root.check_path_write(&path, true)?;
@@ -80,6 +81,7 @@ impl DynamicValueMut<'_> {
     }
 
     pub fn push_sequence_item(&mut self, item: DynamicValue) -> Result<(), String> {
+        item.ensure_initialized()?;
         let layout = self.view().layout()?;
         let DropKind::Sequence { item: expected } = &layout.drop_kind else {
             return Err("value is not a sequence".into());
@@ -95,6 +97,7 @@ impl DynamicValueMut<'_> {
     }
 
     pub fn push_sequence_front(&mut self, item: DynamicValue) -> Result<(), String> {
+        item.ensure_initialized()?;
         let layout = self.view().layout()?;
         let DropKind::Sequence { item: expected } = &layout.drop_kind else {
             return Err("value is not a sequence".into());
@@ -110,6 +113,7 @@ impl DynamicValueMut<'_> {
     }
 
     pub fn insert_sequence_item(&mut self, index: usize, item: DynamicValue) -> Result<(), String> {
+        item.ensure_initialized()?;
         let layout = self.view().layout()?;
         let DropKind::Sequence { item: expected } = &layout.drop_kind else {
             return Err("value is not a sequence".into());

@@ -104,9 +104,19 @@ impl Interpreter {
         self.function_depth -= 1;
         let result = match result {
             Err(error) if error.message == TRY_RETURN_SIGNAL => {
-                let value = self.pending_return.take().ok_or_else(|| {
+                let mut value = self.pending_return.take().ok_or_else(|| {
                     RuntimeError::new("missing Result value for `?` return", span)
                 })?;
+                if let Some(return_type) = &function.return_type {
+                    let expected = expand_type_aliases(
+                        &return_type.substitute(&substitutions),
+                        &function.closure,
+                        span,
+                    )?;
+                    value = storage
+                        .propagate_result_error(value, &expected)
+                        .map_err(|message| RuntimeError::new(message, span))?;
+                }
                 Ok(Flow::Return(value))
             }
             result => result,
