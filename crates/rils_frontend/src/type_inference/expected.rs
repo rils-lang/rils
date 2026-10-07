@@ -6,6 +6,79 @@ impl Inferencer<'_> {
     pub(super) fn apply_expected_type(&mut self, expression: &Expr, expected: &Type) {
         let expected = self.resolve_type(expected);
         match (expression, &expected) {
+            (Expr::RecordLiteral { path, fields, .. }, Type::Named { name, arguments })
+                if is_known(&expected) =>
+            {
+                let id = self.expression_ids.id(expression);
+                if self
+                    .result
+                    .expression_types_by_id
+                    .get(&id)
+                    .is_none_or(|actual| merge_types(actual, &expected).is_none())
+                {
+                    return;
+                }
+                let Some(definition) = self.types.get(name).cloned() else {
+                    return;
+                };
+                let substitutions = definition
+                    .generic_parameters
+                    .iter()
+                    .cloned()
+                    .zip(arguments.iter().cloned())
+                    .collect();
+                let declared = path
+                    .last()
+                    .and_then(|variant| definition.variants.get(variant))
+                    .and_then(|variant| match variant {
+                        VariantDefinition::Record(fields) => Some(fields),
+                        _ => None,
+                    })
+                    .unwrap_or(&definition.fields);
+                for field in fields {
+                    if let Some(ty) = declared.get(&field.name) {
+                        self.apply_expected_type(&field.value, &ty.substitute(&substitutions));
+                    }
+                }
+                self.result.expression_types_by_id.insert(id, expected);
+            }
+            (
+                Expr::Call {
+                    callee,
+                    arguments: values,
+                    ..
+                },
+                Type::Named { name, arguments },
+            ) if is_known(&expected)
+                && self
+                    .nominal_variant_type(callee)
+                    .is_some_and(|actual| merge_types(&actual, &expected).is_some()) =>
+            {
+                let Some(definition) = self.types.get(name).cloned() else {
+                    return;
+                };
+                let path = match callee.as_ref() {
+                    Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } => segments,
+                    _ => return,
+                };
+                let Some(VariantDefinition::Tuple(fields)) = path
+                    .last()
+                    .and_then(|variant| definition.variants.get(variant))
+                else {
+                    return;
+                };
+                let substitutions = definition
+                    .generic_parameters
+                    .iter()
+                    .cloned()
+                    .zip(arguments.iter().cloned())
+                    .collect();
+                for (value, ty) in values.iter().zip(fields) {
+                    self.apply_expected_type(value, &ty.substitute(&substitutions));
+                }
+                let id = self.expression_ids.id(expression);
+                self.result.expression_types_by_id.insert(id, expected);
+            }
             (Expr::Path { .. } | Expr::GenericPath { .. }, Type::Named { .. })
                 if is_known(&expected)
                     && self
@@ -47,6 +120,21 @@ impl Inferencer<'_> {
             ) if matches!(callee.as_ref(), Expr::Variable { name, .. } if name == "Some") => {
                 if let Some(argument) = arguments.first() {
                     self.apply_expected_type(argument, inner);
+                }
+            }
+            (
+                Expr::Call {
+                    callee, arguments, ..
+                },
+                Type::Result(ok, error),
+            ) => {
+                let ty = match callee.as_ref() {
+                    Expr::Variable { name, .. } if name == "Ok" => ok,
+                    Expr::Variable { name, .. } if name == "Err" => error,
+                    _ => return,
+                };
+                if let Some(argument) = arguments.first() {
+                    self.apply_expected_type(argument, ty);
                 }
             }
             (Expr::Tuple { elements, .. }, Type::Tuple(types)) => {

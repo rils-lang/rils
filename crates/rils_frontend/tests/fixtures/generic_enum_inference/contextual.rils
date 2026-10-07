@@ -1,0 +1,6 @@
+enum Choice<T> { Empty, Tuple(T), Record { item: T } }
+struct Holder<T> { item: Option<Choice<T>> }
+let holder: Holder<i32> = Holder { item: Some(Choice::Empty) };
+let tuple: Choice<Option<i32>> = Choice::Tuple(None);
+let record: Choice<Option<i32>> = Choice::Record { item: None };
+42

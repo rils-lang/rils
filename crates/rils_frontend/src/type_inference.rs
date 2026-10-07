@@ -850,7 +850,7 @@ impl<'a> Inferencer<'a> {
                         let resolved = method
                             .return_type
                             .as_ref()
-                            .map(|ty| inferencer.syntax_type(ty))
+                            .map(|ty| resolve_impl_self(&inferencer.syntax_type(ty), &target))
                             .unwrap_or_else(|| inferred_return(method_returns, tail));
                         if method.return_type.is_some() {
                             inferencer.apply_expected_block_tail(&method.body, &resolved);
