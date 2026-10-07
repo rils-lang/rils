@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     hir::{HirLiteral, HirPattern},
-    value::{EnumPayload, Value},
+    value::Value,
 };
 
 mod native_enum;
@@ -64,62 +64,7 @@ pub(super) fn pattern_matches(pattern: &HirPattern, value: &Value) -> bool {
         HirPattern::Err(inner) => {
             matches!(value, Value::Result { value: Err(value), .. } if pattern_matches(inner, value))
         }
-        HirPattern::TupleVariant { path, fields } => {
-            let Some((enum_path, variant_name)) = pattern_variant(path) else {
-                return false;
-            };
-            let Value::Enum(instance) = value else {
-                return false;
-            };
-            let EnumPayload::Tuple(values) = &instance.payload else {
-                return false;
-            };
-            type_path_matches(&instance.type_definition.name, enum_path)
-                && instance.variant == variant_name
-                && fields.len() == values.len()
-                && fields
-                    .iter()
-                    .zip(values)
-                    .all(|(pattern, value)| pattern_matches(pattern, value))
-        }
-        HirPattern::Record { path, fields } => {
-            if let Value::Struct(instance) = value
-                && type_path_matches(&instance.type_definition.name, path)
-            {
-                let values = instance.fields.borrow();
-                return fields.len() == values.len()
-                    && fields.iter().all(|(name, pattern)| {
-                        values
-                            .get(name)
-                            .and_then(|field| field.value.as_ref())
-                            .is_some_and(|value| pattern_matches(pattern, value))
-                    });
-            }
-            let Some((enum_path, variant_name)) = pattern_variant(path) else {
-                return false;
-            };
-            let Value::Enum(instance) = value else {
-                return false;
-            };
-            let EnumPayload::Record(values) = &instance.payload else {
-                return false;
-            };
-            type_path_matches(&instance.type_definition.name, enum_path)
-                && instance.variant == variant_name
-                && fields.len() == values.len()
-                && fields.iter().all(|(name, pattern)| {
-                    values
-                        .get(name)
-                        .is_some_and(|value| pattern_matches(pattern, value))
-                })
-        }
-        HirPattern::Path(path) => {
-            let Some((enum_path, variant_name)) = pattern_variant(path) else {
-                return false;
-            };
-            matches!(value, Value::Enum(instance) if type_path_matches(&instance.type_definition.name, enum_path)
-                && instance.variant == variant_name && matches!(instance.payload, EnumPayload::Unit))
-        }
+        HirPattern::TupleVariant { .. } | HirPattern::Record { .. } | HirPattern::Path(_) => false,
     }
 }
 
@@ -206,35 +151,7 @@ fn collect_pattern_bindings_inner(
                 collect_pattern_bindings_inner(inner, value, bindings, borrowed)?;
             }
         }
-        HirPattern::TupleVariant { fields, .. } => {
-            if let Value::Enum(instance) = value
-                && let EnumPayload::Tuple(values) = &instance.payload
-            {
-                for (pattern, value) in fields.iter().zip(values) {
-                    collect_pattern_bindings_inner(pattern, value, bindings, borrowed)?;
-                }
-            }
-        }
-        HirPattern::Record { fields, .. } => match value {
-            Value::Struct(instance) => {
-                let values = instance.fields.borrow();
-                for (name, pattern) in fields {
-                    if let Some(value) = values.get(name).and_then(|field| field.value.as_ref()) {
-                        collect_pattern_bindings_inner(pattern, value, bindings, borrowed)?;
-                    }
-                }
-            }
-            Value::Enum(instance) => {
-                if let EnumPayload::Record(values) = &instance.payload {
-                    for (name, pattern) in fields {
-                        if let Some(value) = values.get(name) {
-                            collect_pattern_bindings_inner(pattern, value, bindings, borrowed)?;
-                        }
-                    }
-                }
-            }
-            _ => {}
-        },
+        HirPattern::TupleVariant { .. } | HirPattern::Record { .. } => {}
         HirPattern::Wildcard | HirPattern::Literal(_) | HirPattern::None | HirPattern::Path(_) => {}
     }
     Ok(())

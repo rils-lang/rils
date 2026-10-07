@@ -230,49 +230,7 @@ impl VirtualMachine<'_> {
                     .collect::<Result<Vec<_>, _>>()?;
                 (definition.name.clone(), fields, false)
             }
-            Value::Struct(instance) => {
-                let slots = instance.fields.borrow();
-                let values = instance
-                    .type_definition
-                    .fields
-                    .iter()
-                    .map(|field| {
-                        slots
-                            .get(&field.name)
-                            .and_then(|slot| slot.value.clone())
-                            .map(|value| (Some(field.name.clone()), value))
-                            .ok_or_else(|| {
-                                BytecodeError::new(
-                                    format!("cannot format moved field `{}`", field.name),
-                                    span,
-                                )
-                            })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                (instance.type_definition.name.clone(), values, false)
-            }
-            Value::Enum(instance) => match &instance.payload {
-                EnumPayload::Unit => {
-                    buffer.write_str(&format!(
-                        "{}::{}",
-                        instance.type_definition.name, instance.variant
-                    ));
-                    return Ok(());
-                }
-                EnumPayload::Tuple(values) => (
-                    format!("{}::{}", instance.type_definition.name, instance.variant),
-                    values.iter().cloned().map(|value| (None, value)).collect(),
-                    true,
-                ),
-                EnumPayload::Record(values) => (
-                    format!("{}::{}", instance.type_definition.name, instance.variant),
-                    values
-                        .iter()
-                        .map(|(name, value)| (Some(name.clone()), value.clone()))
-                        .collect(),
-                    false,
-                ),
-            },
+
             value => {
                 return Err(BytecodeError::new(
                     format!("derived Debug cannot format `{}`", value.type_name()),

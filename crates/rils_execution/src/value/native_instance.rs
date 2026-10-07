@@ -15,7 +15,7 @@ pub(crate) use record::equal as records_equal;
 pub use record::{borrow_field, record_definition, record_field_names};
 
 /// Retain declaration identities alongside bytes, without reconstructing
-/// StructFields or enum payload slots. Copy instances still need a stable
+/// legacy field slots. Copy instances still need a stable
 /// owner so lexical references observe later field writes.
 pub fn from_native(value: DynamicValue, codec: Rc<NativeRecordCodec>) -> Result<Value, String> {
     let descriptor = Rc::new(DynamicType::new(value.layout_handle()).register_metadata(codec));
@@ -52,8 +52,7 @@ pub fn value_definition(value: &Value) -> Result<Option<Value>, String> {
     match value {
         Value::Dynamic(object) => Ok(definition(object)),
         Value::Reference(reference) => reference.native_type_definition(),
-        Value::Struct(instance) => Ok(Some(Value::StructType(instance.type_definition.clone()))),
-        Value::Enum(instance) => Ok(Some(Value::EnumType(instance.type_definition.clone()))),
+
         _ => Ok(None),
     }
 }

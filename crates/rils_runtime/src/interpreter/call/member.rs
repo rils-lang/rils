@@ -161,36 +161,7 @@ pub(super) fn take_struct_field(
             .map(Some)
             .map_err(|message| RuntimeError::new(message, span));
     }
-    let Value::Struct(instance) = value else {
-        return Ok(None);
-    };
-    if !instance.fields.borrow().contains_key(name) {
-        return Ok(None);
-    }
-    let mut fields = instance.fields.borrow_mut();
-    let field = fields.get_mut(name).expect("field presence was checked");
-    let value = field.value.as_ref().ok_or_else(|| {
-        RuntimeError::new(
-            format!(
-                "use of moved field `{}.{name}`",
-                instance.type_definition.name
-            ),
-            span,
-        )
-    })?;
-    if value.is_copy() {
-        return value
-            .clone_owned()
-            .map(Some)
-            .map_err(|message| RuntimeError::new(message, span));
-    }
-    if field.references > 0 {
-        return Err(RuntimeError::new(
-            format!("cannot move field `{name}` while it is referenced"),
-            span,
-        ));
-    }
-    Ok(Some(field.value.take().expect("field value was checked")))
+    Ok(None)
 }
 
 pub(super) fn read_borrowed_field(
@@ -214,17 +185,7 @@ pub(super) fn read_borrowed_field(
                 })?;
             (value, format!("tuple field `{index}`"))
         }
-        Value::Struct(instance) => {
-            let fields = instance.fields.borrow();
-            let Some(field) = fields.get(name) else {
-                return Ok(None);
-            };
-            let value =
-                field.value.as_ref().cloned().ok_or_else(|| {
-                    RuntimeError::new(format!("use of moved field `{name}`"), span)
-                })?;
-            (value, format!("field `{name}`"))
-        }
+
         Value::Dynamic(object) => {
             let Some(index) = object.descriptor().layout().record_field_index(name) else {
                 return Ok(None);

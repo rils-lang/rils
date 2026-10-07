@@ -92,78 +92,7 @@ fn pattern_matches_inner(
             } => pattern_matches_inner(inner, value, bindings, environment, borrowed),
             _ => false,
         },
-        Pattern::TupleVariant { path, fields, .. } => {
-            if path.len() < 2 {
-                return false;
-            }
-            let variant_name = &path[path.len() - 1];
-            let Value::Enum(instance) = value else {
-                return false;
-            };
-            let EnumPayload::Tuple(values) = &instance.payload else {
-                return false;
-            };
-            nominal_type_matches(path, &instance.type_definition, environment)
-                && instance.variant == *variant_name
-                && fields.len() == values.len()
-                && fields.iter().zip(values).all(|(pattern, value)| {
-                    pattern_matches_inner(pattern, value, bindings, environment, borrowed)
-                })
-        }
-        Pattern::Record { path, fields, .. } => {
-            if let Value::Struct(instance) = value
-                && struct_type_matches(path, &instance.type_definition, environment)
-            {
-                let values = instance.fields.borrow();
-                return fields.len() == values.len()
-                    && fields.iter().all(|(name, pattern)| {
-                        values
-                            .get(name)
-                            .and_then(|field| field.value.as_ref())
-                            .is_some_and(|value| {
-                                pattern_matches_inner(
-                                    pattern,
-                                    value,
-                                    bindings,
-                                    environment,
-                                    borrowed,
-                                )
-                            })
-                    });
-            }
-            let values = match value {
-                Value::Enum(instance)
-                    if path.len() >= 2
-                        && nominal_type_matches(path, &instance.type_definition, environment)
-                        && instance.variant == path[path.len() - 1] =>
-                {
-                    let EnumPayload::Record(values) = &instance.payload else {
-                        return false;
-                    };
-                    values
-                }
-                _ => return false,
-            };
-            fields.len() == values.len()
-                && fields.iter().all(|(name, pattern)| {
-                    values.get(name).is_some_and(|value| {
-                        pattern_matches_inner(pattern, value, bindings, environment, borrowed)
-                    })
-                })
-        }
-        Pattern::Path { path, .. } => {
-            if path.len() < 2 {
-                return false;
-            }
-            let variant_name = &path[path.len() - 1];
-            matches!(
-                value,
-                Value::Enum(instance)
-                    if nominal_type_matches(path, &instance.type_definition, environment)
-                        && instance.variant == *variant_name
-                        && matches!(instance.payload, EnumPayload::Unit)
-            )
-        }
+        Pattern::TupleVariant { .. } | Pattern::Record { .. } | Pattern::Path { .. } => false,
     }
 }
 

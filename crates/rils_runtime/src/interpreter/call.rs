@@ -611,31 +611,13 @@ impl Interpreter {
             );
         }
         if name == "into_iter"
-            && (matches!(
+            && matches!(
                 &object,
                 Value::OwnedIterator(_)
                     | Value::BorrowedIndexedIterator(_)
                     | Value::BorrowedMapIterator(_)
                     | Value::BorrowedSetIterator(_)
-            ) || match &object {
-                Value::Struct(instance) => {
-                    instance
-                        .type_definition
-                        .implemented_traits
-                        .borrow()
-                        .contains("Iterator")
-                        && !instance.type_definition.methods.borrow().contains_key(name)
-                }
-                Value::Enum(instance) => {
-                    instance
-                        .type_definition
-                        .implemented_traits
-                        .borrow()
-                        .contains("Iterator")
-                        && !instance.type_definition.methods.borrow().contains_key(name)
-                }
-                _ => false,
-            })
+            )
         {
             return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(object),
@@ -643,22 +625,6 @@ impl Interpreter {
             })));
         }
         match &object {
-            Value::Struct(instance) => member::bind_rils_method(
-                object.clone(),
-                &instance.type_definition.methods,
-                &instance.type_definition.trait_methods,
-                &instance.type_definition.name,
-                name,
-                span,
-            ),
-            Value::Enum(instance) => member::bind_rils_method(
-                object.clone(),
-                &instance.type_definition.methods,
-                &instance.type_definition.trait_methods,
-                &instance.type_definition.name,
-                name,
-                span,
-            ),
             Value::Reference(reference) => {
                 if let Some(projected) = reference
                     .project_native_field(name)
@@ -715,22 +681,6 @@ impl Interpreter {
                     return Ok(member);
                 }
                 match borrowed {
-                    Value::Struct(instance) => member::bind_rils_method(
-                        object.clone(),
-                        &instance.type_definition.methods,
-                        &instance.type_definition.trait_methods,
-                        &instance.type_definition.name,
-                        name,
-                        span,
-                    ),
-                    Value::Enum(instance) => member::bind_rils_method(
-                        object.clone(),
-                        &instance.type_definition.methods,
-                        &instance.type_definition.trait_methods,
-                        &instance.type_definition.name,
-                        name,
-                        span,
-                    ),
                     _ if name == "clone" => {
                         Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(object.clone()),

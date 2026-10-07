@@ -151,16 +151,7 @@ pub(super) fn infer_type_from_value(
             }
             Ok(())
         }
-        (Type::Named { name, arguments }, Value::Struct(instance))
-            if instance.type_definition.name == *name =>
-        {
-            infer_type_arguments(arguments, &instance.type_arguments, substitutions)
-        }
-        (Type::Named { name, arguments }, Value::Enum(instance))
-            if instance.type_definition.name == *name =>
-        {
-            infer_type_arguments(arguments, &instance.type_arguments, substitutions)
-        }
+
         (Type::Named { name, arguments }, value @ Value::Dynamic(_)) => {
             let Some(Type::Named {
                 name: actual_name,

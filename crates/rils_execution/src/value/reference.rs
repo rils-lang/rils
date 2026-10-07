@@ -12,8 +12,8 @@ mod host_view;
 #[path = "reference/native_path.rs"]
 mod native_path;
 use super::{
-    DynamicObject, EnumType, HashKey, IndexedStorage, MapCollection, SetCollection, StructInstance,
-    StructType, Value,
+    DynamicObject, EnumType, HashKey, IndexedStorage, MapCollection, SetCollection, StructType,
+    Value,
 };
 use native_path::NativePath;
 
@@ -25,10 +25,6 @@ pub struct ReferenceValue {
 
 enum ReferenceTarget {
     Storage(StorageRef),
-    StructField {
-        instance: Rc<StructInstance>,
-        index: usize,
-    },
     IndexedElement {
         sequence: Rc<IndexedStorage>,
         index: usize,
@@ -67,8 +63,7 @@ impl ReferenceValue {
             .is_some_and(|guard| guard.is_local_to(environment))
             || match &self.target {
                 ReferenceTarget::Storage(target) => environment.borrow().owns_storage(target),
-                ReferenceTarget::StructField { .. }
-                | ReferenceTarget::IndexedElement { .. }
+                ReferenceTarget::IndexedElement { .. }
                 | ReferenceTarget::DynamicIndexedElement { .. }
                 | ReferenceTarget::DynamicCell { .. }
                 | ReferenceTarget::DynamicField(_)
@@ -85,55 +80,6 @@ impl ReferenceValue {
             target: ReferenceTarget::Storage(target),
             _guard: None,
         }
-    }
-
-    pub fn new_struct_field(
-        instance: Rc<StructInstance>,
-        name: String,
-        mutable: bool,
-    ) -> Result<Self, String> {
-        Self::new_guarded_struct_field(instance, name, mutable, None)
-    }
-
-    pub fn new_guarded_struct_field(
-        instance: Rc<StructInstance>,
-        name: String,
-        mutable: bool,
-        guard: Option<Rc<ReferenceValue>>,
-    ) -> Result<Self, String> {
-        let index = instance
-            .type_definition
-            .field_index(&name)
-            .ok_or_else(|| format!("unknown field `{name}`"))?;
-        Self::new_guarded_struct_field_index(instance, index, mutable, guard)
-    }
-
-    pub fn new_guarded_struct_field_index(
-        instance: Rc<StructInstance>,
-        index: usize,
-        mutable: bool,
-        guard: Option<Rc<ReferenceValue>>,
-    ) -> Result<Self, String> {
-        let name = instance
-            .type_definition
-            .fields
-            .get(index)
-            .map(|field| field.name.as_str())
-            .ok_or_else(|| format!("record field index {index} is out of bounds"))?;
-        let mut fields = instance.fields.borrow_mut();
-        let field = fields
-            .get_index_mut(index)
-            .ok_or_else(|| format!("unknown field `{name}`"))?;
-        if field.value.is_none() {
-            return Err(format!("cannot reference moved field `{name}`"));
-        }
-        field.references += 1;
-        drop(fields);
-        Ok(Self {
-            mutable,
-            target: ReferenceTarget::StructField { instance, index },
-            _guard: guard,
-        })
     }
 
     pub fn new_indexed_element(
@@ -347,14 +293,7 @@ impl ReferenceValue {
         }
         match &self.target {
             ReferenceTarget::Storage(target) => Ok(Self::new_storage(target.clone(), mutable)),
-            ReferenceTarget::StructField { instance, index } => {
-                Self::new_guarded_struct_field_index(
-                    instance.clone(),
-                    *index,
-                    mutable,
-                    self._guard.clone(),
-                )
-            }
+
             ReferenceTarget::IndexedElement { sequence, index } => {
                 Self::new_guarded_indexed_element(
                     sequence.clone(),
@@ -427,15 +366,7 @@ impl ReferenceValue {
                 .borrow()
                 .read()
                 .map_err(|_| "reference target has been moved".into()),
-            ReferenceTarget::StructField { instance, index } => instance
-                .fields
-                .borrow()
-                .get_index(*index)
-                .and_then(|field| field.value.clone())
-                .ok_or_else(|| {
-                    let name = &instance.type_definition.fields[*index].name;
-                    format!("reference target field `{name}` has been moved")
-                }),
+
             ReferenceTarget::IndexedElement { sequence, index } => sequence
                 .elements
                 .borrow()
@@ -535,14 +466,7 @@ impl ReferenceValue {
             ReferenceTarget::Storage(target) => target
                 .borrow()
                 .with_value(|value| crate::host_value::with_rust_value(value, callback)),
-            ReferenceTarget::StructField { instance, index } => {
-                let fields = instance.fields.borrow();
-                let value = fields
-                    .get_index(*index)
-                    .and_then(|field| field.value.as_ref())
-                    .ok_or("reference target field has been moved")?;
-                crate::host_value::with_rust_value(value, callback)
-            }
+
             ReferenceTarget::IndexedElement { sequence, index } => {
                 let elements = sequence.elements.borrow();
                 let value = elements
@@ -581,14 +505,7 @@ impl ReferenceValue {
             ReferenceTarget::Storage(target) => target
                 .borrow()
                 .with_value(|value| crate::host_value::with_native_value(value, callback)),
-            ReferenceTarget::StructField { instance, index } => {
-                let fields = instance.fields.borrow();
-                let value = fields
-                    .get_index(*index)
-                    .and_then(|slot| slot.value.as_ref())
-                    .ok_or("native projection target was moved")?;
-                crate::host_value::with_native_value(value, callback)
-            }
+
             ReferenceTarget::IndexedElement { sequence, index } => {
                 let elements = sequence.elements.borrow();
                 let value = elements
@@ -624,14 +541,7 @@ impl ReferenceValue {
         }
         match &self.target {
             ReferenceTarget::Storage(target) => target.borrow_mut().assign_through_reference(value),
-            ReferenceTarget::StructField { instance, index } => {
-                let mut fields = instance.fields.borrow_mut();
-                let field = fields.get_index_mut(*index).ok_or(AssignError::Undefined)?;
-                field
-                    .assign(value)
-                    .map_err(|_| AssignError::TypeMismatch(field.type_annotation.clone()))?;
-                Ok(())
-            }
+
             ReferenceTarget::IndexedElement { sequence, index } => {
                 if sequence.active_iterators.get() > 0 {
                     return Err(AssignError::BorrowedTarget);
@@ -714,11 +624,7 @@ impl Drop for ReferenceValue {
     fn drop(&mut self) {
         match &self.target {
             ReferenceTarget::Storage(target) => target.borrow_mut().remove_reference(),
-            ReferenceTarget::StructField { instance, index } => {
-                if let Some(field) = instance.fields.borrow_mut().get_index_mut(*index) {
-                    field.references = field.references.saturating_sub(1);
-                }
-            }
+
             ReferenceTarget::IndexedElement { sequence, index } => {
                 if let Some(slot) = sequence.elements.borrow_mut().get_mut(*index) {
                     slot.references = slot.references.saturating_sub(1);

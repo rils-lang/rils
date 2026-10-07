@@ -4,7 +4,6 @@ use std::any::Any;
 use std::rc::Rc;
 
 use crate::Value;
-use crate::value::ReferenceValue;
 use crate::value::storage::StoredDataRef;
 use rils_stdlib::stdlib::{float::Number as FloatNumber, integer::Number as IntegerNumber};
 use rils_value::DynamicValueRef;
@@ -123,17 +122,7 @@ impl RilsValue {
                 .ok_or("result has no native record field")?;
             return Ok(Self::new(Value::Reference(Rc::new(projected))));
         }
-        let (instance, guard) = match &self.value {
-            Value::Struct(instance) => (instance.clone(), None),
-            Value::Reference(reference) => match reference.read()? {
-                Value::Struct(instance) => (instance, Some(reference.clone())),
-                _ => return Err("result is not a script struct".into()),
-            },
-            _ => return Err("result is not a script struct".into()),
-        };
-        let reference =
-            ReferenceValue::new_guarded_struct_field_index(instance, index, false, guard)?;
-        Ok(Self::new(Value::Reference(Rc::new(reference))))
+        Err("result is not a script struct".into())
     }
 
     pub fn struct_name(&self) -> Option<String> {
@@ -148,22 +137,14 @@ impl RilsValue {
 
     fn struct_definition(&self) -> Option<Rc<crate::value::StructType>> {
         match &self.value {
-            Value::Struct(instance) => Some(instance.type_definition.clone()),
             Value::Dynamic(object) => match crate::value::native_instance::definition(object)? {
                 Value::StructType(definition) => Some(definition),
                 _ => None,
             },
-            Value::Reference(reference) => {
-                if let Some(Value::StructType(definition)) =
-                    reference.native_type_definition().ok()?
-                {
-                    return Some(definition);
-                }
-                match reference.read().ok()? {
-                    Value::Struct(instance) => Some(instance.type_definition.clone()),
-                    _ => None,
-                }
-            }
+            Value::Reference(reference) => match reference.native_type_definition().ok()? {
+                Some(Value::StructType(definition)) => Some(definition),
+                _ => None,
+            },
             _ => None,
         }
     }

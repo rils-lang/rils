@@ -392,6 +392,7 @@ pub(super) fn read_runtime_type(reader: &mut Reader<'_>) -> Result<RuntimeType> 
             associated_types: RefCell::new(HashMap::new()),
         }))),
         1 => Ok(RuntimeType::Enum(Rc::new(EnumType {
+            host_definition: None,
             name: reader.string()?,
             generic_parameters: reader.collection(read_generic_parameter)?,
             variants: reader.collection(read_enum_variant)?,

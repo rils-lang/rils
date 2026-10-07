@@ -241,8 +241,9 @@ let text = Message::Write { text: "hello" };
 空 variant 应写成 unit variant；空 record variant 暂不支持。Tuple 和 record variant 的内容会按照声明类型检查。
 
 普通用户 struct/enum 的独立实例使用原生组合布局。Enum 保留活动变体标签，各变体字段按声明布局存放；
-泛型实例保留具体类型，例如 `Choice<i32>`。构造中的临时兼容表示尚未全部清除，Rust 宿主应通过
-`RilsValue::with_native_view()` 读取活动变体及字段，不依赖旧 `Value::Enum` 负载。
+泛型实例保留具体类型，例如 `Choice<i32>`。构造和字段访问直接使用原生布局，旧 `Value::Struct` /
+`Value::Enum` 及实例包装类型已删除。Rust 宿主使用 `TypedStorageContext` 的声明驱动构造器创建实例，
+通过 `RilsValue::with_native_view()` 读取活动变体及字段，通过 `RilsValue::field()` 借用 struct 字段。
 
 字段为 Copy 不会自动使 enum 成为 Copy，包括 unit 变体。只有显式实现 `Copy`，并且所有变体的
 全部字段都满足 Copy，整个 enum 才可复制；非 Copy 值仍默认 move，复制必须显式 Clone。

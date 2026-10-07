@@ -49,6 +49,7 @@ fn declarations() -> (Vec<Rc<StructType>>, Vec<Rc<EnumType>>) {
                 variants,
                 ..
             } => enums.push(Rc::new(EnumType {
+                host_definition: None,
                 name,
                 generic_parameters,
                 variants,

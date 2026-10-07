@@ -9,12 +9,14 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 
-use crate::{Type, ast::EnumVariant};
+use crate::Type;
 
 use super::{
-    EnumPayload, EnumType, FieldSlot, HashKey, IndexedStorage, StructType, Value, native_layouts,
-    native_string,
+    EnumType, FieldSlot, HashKey, IndexedStorage, StructType, Value, native_layouts, native_string,
 };
+
+#[path = "record_codec/declarations.rs"]
+mod declarations;
 
 #[derive(Clone, Default)]
 pub struct NativeRecordCodec {
@@ -170,6 +172,12 @@ impl NativeRecordCodec {
                 DynamicValue::from_rust(layout, text)
             }
             (ty, Value::Dynamic(object)) if object.descriptor().layout().rils_type() == &ty => {
+                if !object.descriptor().layout().compatible_with(&layout) {
+                    return Err("value has a different native layout".into());
+                }
+                if let Some(source) = object.descriptor().metadata::<NativeRecordCodec>() {
+                    self.retain_layout_declarations(&source, &layout)?;
+                }
                 let value = match object.into_value() {
                     Ok(value) => value,
                     Err(failure) if self.require_owned => {
@@ -333,148 +341,7 @@ impl NativeRecordCodec {
                 }
                 self.encode_map(layout, map.entries.into_inner())
             }
-            (Type::Named { name, arguments }, Value::Struct(instance))
-                if instance.type_definition.name == name
-                    && crate::types::merge_type_arguments(&arguments, &instance.type_arguments)
-                        .is_some() =>
-            {
-                let instance = Rc::try_unwrap(instance)
-                    .map_err(|_| format!("cannot move a shared struct `{name}`"))?;
-                let definition = instance.type_definition;
-                self.structs.insert(name.clone(), definition.clone());
-                let fields = layout
-                    .record_fields()
-                    .ok_or_else(|| format!("expected a record native layout for `{name}`"))?;
-                let slots = instance.fields.into_inner().into_slots();
-                if slots.len() != fields.len() || slots.len() != definition.fields.len() {
-                    return Err(format!(
-                        "struct `{name}` field count does not match its layout"
-                    ));
-                }
-                let values = slots
-                    .into_iter()
-                    .zip(fields)
-                    .zip(&definition.fields)
-                    .map(|((slot, field), declaration)| {
-                        if field.name() != declaration.name {
-                            return Err(format!(
-                                "struct `{name}` field order differs from its declaration"
-                            ));
-                        }
-                        if slot.references != 0 {
-                            return Err(format!("cannot move referenced field `{}`", field.name()));
-                        }
-                        let value = slot
-                            .value
-                            .ok_or_else(|| format!("cannot move field `{}` twice", field.name()))?;
-                        self.encode(value, field.layout_handle())
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                DynamicValue::record(layout, values)
-            }
-            (Type::Named { name, arguments }, Value::Enum(instance))
-                if instance.type_definition.name == name
-                    && crate::types::merge_type_arguments(&arguments, &instance.type_arguments)
-                        .is_some() =>
-            {
-                let instance = Rc::try_unwrap(instance)
-                    .map_err(|_| format!("cannot move a shared enum `{name}`"))?;
-                let definition = instance.type_definition;
-                let (index, declaration) = definition
-                    .variants
-                    .iter()
-                    .enumerate()
-                    .find(|(_, variant)| super::enum_variant_name(variant) == instance.variant)
-                    .ok_or_else(|| format!("unknown variant `{}::{}`", name, instance.variant))?;
-                let payload_layout = layout
-                    .variant_alternatives()
-                    .and_then(|variants| variants.get(index))
-                    .ok_or_else(|| format!("missing native payload layout for `{name}`"))?
-                    .clone();
-                let payload = match (declaration, instance.payload) {
-                    (EnumVariant::Unit { .. }, EnumPayload::Unit) => {
-                        if payload_layout.rils_type() != &Type::Unit {
-                            return Err(format!(
-                                "unit variant `{}::{}` has a payload layout",
-                                name, instance.variant
-                            ));
-                        }
-                        DynamicValue::from_rust(payload_layout, ())?
-                    }
-                    (EnumVariant::Tuple { fields, .. }, EnumPayload::Tuple(values)) => {
-                        let layouts = payload_layout
-                            .record_fields()
-                            .ok_or_else(|| "tuple variant has no aggregate layout".to_owned())?;
-                        if values.len() != fields.len() || values.len() != layouts.len() {
-                            return Err(format!(
-                                "variant `{}::{}` has wrong arity",
-                                name, instance.variant
-                            ));
-                        }
-                        if layouts
-                            .iter()
-                            .zip(fields)
-                            .enumerate()
-                            .any(|(index, (layout, _))| layout.name() != index.to_string())
-                        {
-                            return Err(format!(
-                                "variant `{}::{}` tuple field order differs from its declaration",
-                                name, instance.variant
-                            ));
-                        }
-                        let values = values
-                            .into_iter()
-                            .zip(layouts)
-                            .map(|(value, field)| self.encode(value, field.layout_handle()))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        DynamicValue::record(payload_layout, values)?
-                    }
-                    (EnumVariant::Record { fields, .. }, EnumPayload::Record(mut values)) => {
-                        let layouts = payload_layout
-                            .record_fields()
-                            .ok_or_else(|| "record variant has no aggregate layout".to_owned())?;
-                        if values.len() != fields.len() || values.len() != layouts.len() {
-                            return Err(format!(
-                                "variant `{}::{}` has wrong field count",
-                                name, instance.variant
-                            ));
-                        }
-                        if layouts
-                            .iter()
-                            .zip(fields)
-                            .any(|(layout, field)| layout.name() != field.name)
-                        {
-                            return Err(format!(
-                                "variant `{}::{}` record field order differs from its declaration",
-                                name, instance.variant
-                            ));
-                        }
-                        let values = layouts
-                            .iter()
-                            .map(|field| {
-                                let value = values.remove(field.name()).ok_or_else(|| {
-                                    format!(
-                                        "variant `{}::{}` lacks field `{}`",
-                                        name,
-                                        instance.variant,
-                                        field.name()
-                                    )
-                                })?;
-                                self.encode(value, field.layout_handle())
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-                        DynamicValue::record(payload_layout, values)?
-                    }
-                    _ => {
-                        return Err(format!(
-                            "variant `{}::{}` has wrong payload shape",
-                            name, instance.variant
-                        ));
-                    }
-                };
-                self.enums.insert(name.clone(), definition);
-                DynamicValue::variant(layout, index, payload)
-            }
+
             (ty, value) if native_layouts::integer::layout(&ty).is_some() => {
                 native_layouts::integer::option_item(&value, &ty, layout)
                     .ok_or_else(|| format!("no integer codec for {ty}"))?

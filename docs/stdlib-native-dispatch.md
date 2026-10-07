@@ -36,7 +36,7 @@
 
 `DynamicLayout` 已为上述泛型方向提供可组合的布局：`Option<T>` 按子类型的尺寸和对齐计算负载位置，并通过子类型的析构操作处理嵌套值；`None` 只保存标记字节。`DynamicObject<V>` 让 Copy 布局使用内联句柄，其他布局使用共享存储；`DynamicType<V>` 可按任意名称注册操作，并在调用时校验 receiver 的布局身份。整数族、浮点数、`string` 与 `Option<T>` 的布局工厂已由 `decl_rils_layout` 从标准库声明生成；整数和字符串方法返回的 `Option<T>` 已沿用动态构造入口。`Option<T>` 的可执行方法注册仍需扩展过程宏，目前由过渡适配器读取其原生负载。
 
-动态布局现可组合用户结构体字段：声明顺序决定字段索引，布局计算字段对齐和偏移，布局描述保存名称到索引的映射。字段活跃标记位于值的存储中，嵌入其他结构或 `Option<T>` 后仍能正确处理单字段 move、回填与析构。执行层的 `RecordLayoutResolver` 从现有 `StructType` 声明与具体泛型实参递归解析布局并缓存描述符；没有已注册原生布局的字段明确报错。已解析的本模块用户结构体字段在字节码中保存类型与字段索引，并通过 verifier 校验；解释器按字段声明缓存名称到索引的映射。两端的 `Value::Struct` 实例已改用按声明顺序排列的 `FieldSlot`，VM 字段 place 和词法字段引用直接按索引定位槽位。字段值目前仍是 `Value`，后续要把构造、字段读写及嵌套引用报告接入动态 bytes。磁盘字节码不直接写入平台相关的字节偏移。
+动态布局现可组合用户结构体字段：声明顺序决定字段索引，布局计算字段对齐和偏移，布局描述保存名称到索引的映射。字段活跃标记位于值的存储中，嵌入其他结构或 `Option<T>` 后仍能正确处理单字段 move、回填与析构。执行层的 `RecordLayoutResolver` 从现有 `StructType` 声明与具体泛型实参递归解析布局并缓存描述符；没有已注册原生布局的字段明确报错。已解析的本模块用户结构体字段在字节码中保存类型与字段索引，并通过 verifier 校验；解释器按字段声明缓存名称到索引的映射。两端的用户实例直接使用原生 bytes，字段 place 与词法引用沿检查过的布局路径读取、移动和写回。旧 `Value::Struct` / `Value::Enum`、`StructInstance` / `EnumInstance` / `EnumPayload` / `StructFields` 及 `compose_nominal` 已删除；Rust 构造入口使用 `TypedStorageContext::construct_record/construct_tuple_variant/construct_unit_variant`，读取使用 `RilsValue` 或 `NativeInstancePlace`。`NativeRecordCodec` 移入已有原生值时保留布局所涉及的声明身份，拒绝同名但身份冲突的声明，解码后继续保留具体泛型与显式 Copy 策略。磁盘字节码不直接写入平台相关的字节偏移。
 
 `Option<T>` 的构造入口消耗 `Option<Value>`，若子类型尚无原生布局则把原值归还给旧表示路径。解释器的 `Some` 与 VM 的构造指令使用拥有的实参；唯一持有的原生 `string` 通过 `NativeObject::into_rust` 移出后进入动态子布局，避免文本克隆。共享原生句柄在借用型运行时入口下需显式生成独立负载；`Option<T>` 的通用读取桥会暂时移出、解码并恢复负载，因此非 Copy 子值的读取仍可能产生 Clone，后续应改为针对布局的借用访问。
 
@@ -49,6 +49,11 @@
 具备具体类型的 `Result<T, E>` 在两个分支的布局均可读取时，类型化绑定会使用 `DynamicLayout::variant` 保存带标签负载。基础标量、`string` 及 Copy 的嵌套布局已接入；解释器和 VM 的方法、模式匹配、`?` 与格式化入口可读取新旧表示。Rust 宿主通过 `Value::as_result()` 读取。非 Copy 复合分支和用户定义子类型尚未进入这条运行时路径。
 
 ## 当前调用链与后续工作
+
+宿主 enum 的声明保留完整 Manifest 契约身份，包括整数宽度、discriminant、flags 和变体名称。
+同一契约重新构造的值可绑定到当前执行声明；方法和 trait 表保持执行上下文的所有权。
+VM 校验字节码里的宿主 enum 形状后链接已安装契约。不同契约，以及同名但身份不同的脚本声明，不能混用。
+直接构造 `EnumType` 的 Rust 代码需要填写 `host_definition`：脚本声明用 `None`，宿主 enum 使用共享声明工厂。
 
 标准库导出声明生成规范符号路径、类型检查元信息和原生桥接入口。前端解析数值方法及导出方法后，HIR/MIR 生成符号原生导入；解释器和 VM 从同一份声明定位执行入口。Prelude 中的转发函数使用 `#[native_method(core::...)]` 声明目标。
 

@@ -142,27 +142,7 @@ impl Interpreter {
                 .and_then(|methods| methods.get("fmt"))
                 .cloned();
         }
-        let value = match value {
-            Value::Reference(reference) => reference.read().ok()?,
-            value => value.clone(),
-        };
-        match value {
-            Value::Struct(instance) => instance
-                .type_definition
-                .trait_methods
-                .borrow()
-                .get(trait_name)
-                .and_then(|methods| methods.get("fmt"))
-                .cloned(),
-            Value::Enum(instance) => instance
-                .type_definition
-                .trait_methods
-                .borrow()
-                .get(trait_name)
-                .and_then(|methods| methods.get("fmt"))
-                .cloned(),
-            _ => None,
-        }
+        None
     }
 
     pub(super) fn write_derived_debug(
@@ -222,76 +202,10 @@ impl Interpreter {
                 .collect::<Result<Vec<_>, _>>()?;
             return self.write_debug_record(&buffer, &definition.name, &fields, span);
         }
-        let value = dereference_value(value, span)?;
-        match value {
-            Value::Struct(instance) => {
-                let fields = instance.fields.borrow();
-                let mut values = Vec::with_capacity(instance.type_definition.fields.len());
-                for field in &instance.type_definition.fields {
-                    let value = fields
-                        .get(&field.name)
-                        .and_then(|slot| slot.value.clone())
-                        .ok_or_else(|| {
-                            RuntimeError::new(
-                                format!("cannot format moved field `{}`", field.name),
-                                span,
-                            )
-                        })?;
-                    values.push((field.name.clone(), value));
-                }
-                self.write_debug_record(&buffer, &instance.type_definition.name, &values, span)
-            }
-            Value::Enum(instance) => match &instance.payload {
-                EnumPayload::Unit => {
-                    buffer.write_str(&format!(
-                        "{}::{}",
-                        instance.type_definition.name, instance.variant
-                    ));
-                    Ok(())
-                }
-                EnumPayload::Tuple(values) => {
-                    let name = format!("{}::{}", instance.type_definition.name, instance.variant);
-                    self.write_debug_tuple(&buffer, &name, values, span)
-                }
-                EnumPayload::Record(values) => {
-                    let variant = instance
-                        .type_definition
-                        .variants
-                        .iter()
-                        .find(|variant| enum_variant_name(variant) == instance.variant)
-                        .ok_or_else(|| {
-                            RuntimeError::new("enum variant metadata is unavailable", span)
-                        })?;
-                    let EnumVariant::Record { fields, .. } = variant else {
-                        return Err(RuntimeError::new(
-                            "enum payload does not match its metadata",
-                            span,
-                        ));
-                    };
-                    let ordered = fields
-                        .iter()
-                        .map(|field| {
-                            values
-                                .get(&field.name)
-                                .cloned()
-                                .map(|value| (field.name.clone(), value))
-                                .ok_or_else(|| {
-                                    RuntimeError::new(
-                                        format!("cannot format moved field `{}`", field.name),
-                                        span,
-                                    )
-                                })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let name = format!("{}::{}", instance.type_definition.name, instance.variant);
-                    self.write_debug_record(&buffer, &name, &ordered, span)
-                }
-            },
-            value => Err(RuntimeError::new(
-                format!("derived Debug cannot format `{}`", value.type_name()),
-                span,
-            )),
-        }
+        Err(RuntimeError::new(
+            format!("derived Debug cannot format `{}`", value.type_name()),
+            span,
+        ))
     }
 
     fn write_debug_record(
@@ -390,15 +304,6 @@ pub(super) fn formatter_buffer(
     span: Span,
 ) -> Result<Rc<FormatterBuffer>, RuntimeError> {
     crate::formatting::buffer_from_value(value).map_err(|message| RuntimeError::new(message, span))
-}
-
-fn dereference_value(value: &Value, span: Span) -> Result<Value, RuntimeError> {
-    match value {
-        Value::Reference(reference) => reference
-            .read()
-            .map_err(|message| RuntimeError::new(message, span)),
-        value => Ok(value.clone()),
-    }
 }
 
 #[cfg(test)]

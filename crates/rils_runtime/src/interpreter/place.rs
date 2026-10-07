@@ -5,13 +5,6 @@ pub(super) enum Place {
         slot: crate::environment::StorageRef,
         name: String,
     },
-    StructField {
-        instance: Rc<StructInstance>,
-        name: String,
-        owner: String,
-        mutable: bool,
-        guard: Option<Rc<ReferenceValue>>,
-    },
     NativeField {
         place: rils_execution::value::native_instance::NativeInstancePlace,
         name: String,
@@ -57,11 +50,7 @@ impl Place {
         }
         let value = match self {
             Self::Storage { slot, .. } => slot.borrow().read().ok(),
-            Self::StructField { instance, name, .. } => instance
-                .fields
-                .borrow()
-                .get(name)
-                .and_then(|slot| slot.value.clone()),
+
             Self::IndexedElement {
                 sequence, index, ..
             } => sequence
@@ -91,12 +80,7 @@ impl Place {
             Self::Storage { slot, name } => slot.borrow().read().map_err(|_| {
                 RuntimeError::new(format!("cannot access moved value `{name}`"), span)
             }),
-            Self::StructField { instance, name, .. } => instance
-                .fields
-                .borrow()
-                .get(name)
-                .and_then(|field| field.value.clone())
-                .ok_or_else(|| RuntimeError::new(format!("use of moved field `{name}`"), span)),
+
             Self::IndexedElement {
                 sequence, index, ..
             } => {
@@ -161,45 +145,7 @@ impl Place {
             Self::Reference { reference } => reference
                 .write(value)
                 .map_err(|error| super::evaluation::assignment_error(error, "reference", span)),
-            Self::StructField {
-                instance,
-                name,
-                owner,
-                mutable,
-                guard: _guard,
-            } => {
-                if !mutable {
-                    return Err(RuntimeError::new(
-                        format!("cannot assign to field `{name}` of immutable place `{owner}`"),
-                        span,
-                    ));
-                }
-                let mut fields = instance.fields.borrow_mut();
-                let field = fields
-                    .get_mut(&name)
-                    .ok_or_else(|| RuntimeError::new(format!("unknown field `{name}`"), span))?;
-                if field.references > 0
-                    || field
-                        .value
-                        .as_ref()
-                        .is_some_and(Value::has_active_references)
-                {
-                    return Err(RuntimeError::new(
-                        format!("cannot replace field `{name}` while it is referenced"),
-                        span,
-                    ));
-                }
-                field.assign(value).map_err(|_| {
-                    RuntimeError::new(
-                        format!(
-                            "cannot assign a value incompatible with field `{name}` of type {}",
-                            field.type_annotation
-                        ),
-                        span,
-                    )
-                })?;
-                Ok(())
-            }
+
             Self::IndexedElement {
                 sequence,
                 index,
@@ -304,26 +250,7 @@ impl Place {
                 }
                 Rc::new(ReferenceValue::new_storage(slot, mutable))
             }
-            Self::StructField {
-                instance,
-                name,
-                owner,
-                mutable: owner_mutable,
-                guard,
-            } => {
-                if mutable && !owner_mutable {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "cannot mutably reference field `{name}` of immutable place `{owner}`"
-                        ),
-                        span,
-                    ));
-                }
-                Rc::new(
-                    ReferenceValue::new_guarded_struct_field(instance, name, mutable, guard)
-                        .map_err(|message| RuntimeError::new(message, span))?,
-                )
-            }
+
             Self::IndexedElement {
                 sequence,
                 index,
@@ -383,7 +310,7 @@ impl Place {
                 Ok(Value::Reference(reference)) => reference.mutable,
                 _ => slot.borrow().is_mutable(),
             },
-            Self::StructField { mutable, .. } => *mutable,
+
             Self::IndexedElement { mutable, .. } => *mutable,
             Self::DynamicIndexedElement { mutable, .. } => *mutable,
             Self::Reference { reference } => reference.mutable,
@@ -394,7 +321,7 @@ impl Place {
         match self {
             Self::NativeField { owner, name, .. } => format!("{owner}.{name}"),
             Self::Storage { name, .. } => name.clone(),
-            Self::StructField { owner, name, .. } => format!("{owner}.{name}"),
+
             Self::IndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
             Self::DynamicIndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
             Self::Reference { .. } => "reference".into(),
@@ -418,12 +345,7 @@ impl Place {
                     value => Ok(value),
                 }
             }
-            Self::StructField { instance, name, .. } => instance
-                .fields
-                .borrow()
-                .get(name)
-                .and_then(|field| field.value.clone())
-                .ok_or_else(|| RuntimeError::new(format!("use of moved field `{name}`"), span)),
+
             Self::IndexedElement {
                 sequence, index, ..
             } => sequence
@@ -470,21 +392,7 @@ impl Place {
                 Value::Reference(reference) => Ok(Some(reference)),
                 _ => Ok(None),
             },
-            Self::StructField {
-                instance,
-                name,
-                mutable,
-                guard,
-                ..
-            } => Ok(Some(Rc::new(
-                ReferenceValue::new_guarded_struct_field(
-                    instance.clone(),
-                    name.clone(),
-                    *mutable,
-                    guard.clone(),
-                )
-                .map_err(|message| RuntimeError::new(message, span))?,
-            ))),
+
             Self::IndexedElement {
                 sequence,
                 index,
@@ -620,28 +528,10 @@ impl Interpreter {
                         reference: Rc::new(reference),
                     });
                 }
-                let Value::Struct(instance) = value else {
-                    return Err(RuntimeError::new(
-                        format!("{} has no field `{name}`", value.type_name()),
-                        span,
-                    ));
-                };
-                if instance.type_definition.field_index(name).is_none() {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "struct `{}` has no field `{name}`",
-                            instance.type_definition.name
-                        ),
-                        span,
-                    ));
-                }
-                Ok(Place::StructField {
-                    instance,
-                    name: name.clone(),
-                    owner: owner_name,
-                    mutable,
-                    guard,
-                })
+                Err(RuntimeError::new(
+                    format!("{} has no field `{name}`", value.type_name()),
+                    span,
+                ))
             }
             Expr::Index { object, index, .. } => {
                 let owner = self.resolve_place(object, environment, span)?;

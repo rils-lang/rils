@@ -93,6 +93,7 @@ fn runtime_type(definition: HirTypeDefinition) -> RuntimeType {
             generic_parameters,
             variants,
         } => RuntimeType::Enum(Rc::new(EnumType {
+            host_definition: None,
             name,
             generic_parameters,
             variants,

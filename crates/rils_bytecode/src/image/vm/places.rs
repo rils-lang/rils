@@ -13,7 +13,6 @@ enum ResolvedProjection {
 
 enum PlaceContainer {
     NativeOwner(rils_execution::value::native_instance::NativeInstancePlace),
-    Struct(Rc<StructInstance>),
     Indexed(Rc<IndexedStorage>),
     DynamicIndexed(rils_execution::value::DynamicObject),
     DynamicRecord(rils_execution::value::DynamicObject),
@@ -79,7 +78,7 @@ impl VirtualMachine<'_> {
                     .map(PlaceContainer::NativeOwner)
                     .map_err(|message| BytecodeError::new(message, span))
             }
-            Value::Struct(instance) => Ok(PlaceContainer::Struct(instance)),
+
             Value::Tuple(sequence) | Value::Array(sequence) | Value::Vec(sequence) => {
                 Ok(PlaceContainer::Indexed(sequence))
             }
@@ -247,49 +246,6 @@ impl VirtualMachine<'_> {
             })
     }
 
-    fn struct_field<'a>(
-        &self,
-        instance: &'a StructInstance,
-        projection: &'a ResolvedProjection,
-        span: Span,
-    ) -> Result<(usize, &'a str), BytecodeError> {
-        match projection {
-            ResolvedProjection::Field(name) => instance
-                .type_definition
-                .field_index(name)
-                .map(|index| (index, name.as_str()))
-                .ok_or_else(|| BytecodeError::new(format!("unknown field `{name}`"), span)),
-            ResolvedProjection::RecordField { type_id, index } => {
-                let Some(RuntimeType::Struct(definition)) = self.module.types.get(*type_id) else {
-                    return Err(BytecodeError::new("invalid record field type", span));
-                };
-                if definition.name != instance.type_definition.name {
-                    return Err(BytecodeError::new(
-                        "record field projection does not match its type",
-                        span,
-                    ));
-                }
-                let expected = definition.fields.get(*index).ok_or_else(|| {
-                    BytecodeError::new("record field index is out of bounds", span)
-                })?;
-                let actual = instance.type_definition.fields.get(*index).ok_or_else(|| {
-                    BytecodeError::new("record field index is out of bounds", span)
-                })?;
-                if expected.name != actual.name {
-                    return Err(BytecodeError::new(
-                        "record field projection does not match its declaration",
-                        span,
-                    ));
-                }
-                Ok((*index, &actual.name))
-            }
-            ResolvedProjection::Index(_) => Err(BytecodeError::new(
-                "expected a record field projection",
-                span,
-            )),
-        }
-    }
-
     fn projected_value(
         &self,
         container: &PlaceContainer,
@@ -298,20 +254,6 @@ impl VirtualMachine<'_> {
         span: Span,
     ) -> Result<Value, BytecodeError> {
         match (container, projection) {
-            (
-                PlaceContainer::Struct(instance),
-                projection
-                @ (ResolvedProjection::Field(_) | ResolvedProjection::RecordField { .. }),
-            ) => {
-                let (index, field) = self.struct_field(instance, projection, span)?;
-                let fields = instance.fields.borrow();
-                let slot = fields
-                    .get_index(index)
-                    .ok_or_else(|| BytecodeError::new(format!("unknown field `{field}`"), span))?;
-                slot.value.clone().ok_or_else(|| {
-                    BytecodeError::new(format!("field `{field}` has been moved"), span)
-                })
-            }
             (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(index)) => {
                 let elements = sequence.elements.borrow();
                 let slot = elements.get(*index).ok_or_else(|| {
@@ -377,18 +319,7 @@ impl VirtualMachine<'_> {
                 .native_owner_projection(&owner, projection, span)?
                 .take()
                 .map_err(|message| BytecodeError::new(message, span)),
-            (
-                PlaceContainer::Struct(instance),
-                projection
-                @ (ResolvedProjection::Field(_) | ResolvedProjection::RecordField { .. }),
-            ) => {
-                let (index, field) = self.struct_field(&instance, projection, span)?;
-                take_field_slot(
-                    instance.fields.borrow_mut().get_index_mut(index),
-                    field,
-                    span,
-                )
-            }
+
             (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(index)) => {
                 if *index >= sequence.elements.borrow().len() {
                     return Err(BytecodeError::new(
@@ -438,19 +369,7 @@ impl VirtualMachine<'_> {
                 .native_owner_projection(&owner, projection, span)?
                 .assign(value)
                 .map_err(|message| BytecodeError::new(message, span)),
-            (
-                PlaceContainer::Struct(instance),
-                projection
-                @ (ResolvedProjection::Field(_) | ResolvedProjection::RecordField { .. }),
-            ) => {
-                let (index, field) = self.struct_field(&instance, projection, span)?;
-                store_field_slot(
-                    instance.fields.borrow_mut().get_index_mut(index),
-                    field,
-                    value,
-                    span,
-                )
-            }
+
             (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(index)) => {
                 if *index >= sequence.elements.borrow().len() {
                     return Err(BytecodeError::new(
@@ -514,19 +433,6 @@ impl VirtualMachine<'_> {
                 continue;
             }
             let reference = match (&container, projection) {
-                (
-                    PlaceContainer::Struct(instance),
-                    projection @ (ResolvedProjection::Field(_)
-                    | ResolvedProjection::RecordField { .. }),
-                ) => {
-                    let (field_index, _) = self.struct_field(instance, projection, span)?;
-                    ReferenceValue::new_guarded_struct_field_index(
-                        instance.clone(),
-                        field_index,
-                        mutable,
-                        guard,
-                    )
-                }
                 (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(element)) => {
                     ReferenceValue::new_guarded_indexed_element(
                         sequence.clone(),

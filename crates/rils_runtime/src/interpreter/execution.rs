@@ -409,6 +409,7 @@ impl Interpreter {
                         .map(|trait_name| (declaration_name.clone(), trait_name.clone())),
                 );
                 let definition = EnumType {
+                    host_definition: None,
                     name: declaration_name,
                     generic_parameters: generic_parameters.clone(),
                     variants,

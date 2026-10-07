@@ -139,12 +139,11 @@ impl HashKey {
             Value::U128(value) => Self::U128(value),
             Value::Usize(value) => Self::Usize(value),
             Value::Char(value) => Self::Char(value),
-            Value::Tuple(_)
+
+            value @ (Value::Tuple(_)
             | Value::Array(_)
             | Value::Option { .. }
-            | Value::Result { .. }
-            | Value::Struct(_)
-            | Value::Enum(_) => {
+            | Value::Result { .. }) => {
                 let value = value.clone_owned()?;
                 let identity = StructuralIdentity::from_value(&value)?;
                 Self::Composite(Box::new(StructuralKey { identity, value }))
@@ -318,62 +317,7 @@ impl StructuralIdentity {
             Value::Result {
                 value: Err(value), ..
             } => Self::ResultErr(Box::new(HashKey::from_value(value)?)),
-            Value::Struct(instance) => {
-                let traits = instance.type_definition.implemented_traits.borrow();
-                if !traits.contains("Eq") || !traits.contains("Hash") {
-                    return Err(unsupported());
-                }
-                let mut fields = instance
-                    .fields
-                    .borrow()
-                    .iter()
-                    .map(|(name, slot)| {
-                        Ok((
-                            name.clone(),
-                            HashKey::from_value(slot.value.as_ref().ok_or("moved key field")?)?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, String>>()?;
-                fields.sort_by(|left, right| left.0.cmp(&right.0));
-                Self::Struct {
-                    name: instance.type_definition.name.clone(),
-                    arguments: instance
-                        .type_arguments
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                    fields,
-                }
-            }
-            Value::Enum(instance) => {
-                let traits = instance.type_definition.implemented_traits.borrow();
-                if !traits.contains("Eq") || !traits.contains("Hash") {
-                    return Err(unsupported());
-                }
-                let mut payload = match &instance.payload {
-                    super::EnumPayload::Unit => Vec::new(),
-                    super::EnumPayload::Tuple(values) => values
-                        .iter()
-                        .enumerate()
-                        .map(|(index, value)| Ok((index.to_string(), HashKey::from_value(value)?)))
-                        .collect::<Result<Vec<_>, String>>()?,
-                    super::EnumPayload::Record(values) => values
-                        .iter()
-                        .map(|(name, value)| Ok((name.clone(), HashKey::from_value(value)?)))
-                        .collect::<Result<Vec<_>, String>>()?,
-                };
-                payload.sort_by(|left, right| left.0.cmp(&right.0));
-                Self::Enum {
-                    name: instance.type_definition.name.clone(),
-                    arguments: instance
-                        .type_arguments
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                    variant: instance.variant.clone(),
-                    payload,
-                }
-            }
+
             _ => return Err(unsupported()),
         })
     }

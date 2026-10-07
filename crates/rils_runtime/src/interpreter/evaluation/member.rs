@@ -23,11 +23,6 @@ impl Interpreter {
             {
                 return self.resolve_member(value, name, span);
             }
-            if let Value::Struct(instance) = &value
-                && instance.fields.borrow().contains_key(name)
-            {
-                return self.resolve_member(value, name, span);
-            }
             if matches!(&value, Value::Tuple(_)) && name.parse::<usize>().is_ok() {
                 return self.resolve_member(value, name, span);
             }
@@ -141,9 +136,7 @@ impl Interpreter {
                 }
             }
             let value = place.projection_value(span)?;
-            if matches!(&value, Value::Struct(instance) if instance.fields.borrow().contains_key(name))
-                || matches!(&value, Value::Tuple(_) if name.parse::<usize>().is_ok())
-            {
+            if matches!(&value, Value::Tuple(_) if name.parse::<usize>().is_ok()) {
                 // The owner is only a projection. Transfer ownership at the final
                 // field instead of moving every intermediate non-Copy record.
                 return self.resolve_member(value, name, span);

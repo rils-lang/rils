@@ -12,14 +12,7 @@ impl ReferenceValue {
             ReferenceTarget::Storage(target) => target
                 .borrow()
                 .with_value(|value| with_host_value(value, callback)),
-            ReferenceTarget::StructField { instance, index } => {
-                let fields = instance.fields.borrow();
-                let value = fields
-                    .get_index(*index)
-                    .and_then(|field| field.value.as_ref())
-                    .ok_or("reference target field has been moved")?;
-                with_host_value(value, callback)
-            }
+
             ReferenceTarget::IndexedElement { sequence, index } => {
                 let elements = sequence.elements.borrow();
                 let value = elements

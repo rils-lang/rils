@@ -1,9 +1,7 @@
 use std::fmt;
 
-use crate::ast::EnumVariant;
-
 use super::hash::{display_hash_map, display_hash_set};
-use super::{BuiltinType, EnumPayload, IndexedStorage, Value, enum_variant_name};
+use super::{BuiltinType, IndexedStorage, Value};
 
 #[path = "display/native_view.rs"]
 mod native_view;
@@ -95,58 +93,7 @@ impl fmt::Display for Value {
             Self::EnumType(definition) => write!(f, "<enum {}>", definition.name),
             Self::TraitType(definition) => write!(f, "<trait {}>", definition.name),
             Self::TypeAlias(definition) => write!(f, "<type alias {}>", definition.name),
-            Self::Struct(instance) => {
-                write!(f, "{} {{ ", instance.type_definition.name)?;
-                let fields = instance.fields.borrow();
-                for (index, field) in instance.type_definition.fields.iter().enumerate() {
-                    if index > 0 {
-                        write!(f, ", ")?;
-                    }
-                    let value = &fields[&field.name].value;
-                    if let Some(value) = value {
-                        write!(f, "{}: {value}", field.name)?;
-                    } else {
-                        write!(f, "{}: <moved>", field.name)?;
-                    }
-                }
-                write!(f, " }}")
-            }
-            Self::Enum(instance) => {
-                write!(f, "{}::{}", instance.type_definition.name, instance.variant)?;
-                match &instance.payload {
-                    EnumPayload::Unit => Ok(()),
-                    EnumPayload::Tuple(values) => {
-                        write!(f, "(")?;
-                        for (index, value) in values.iter().enumerate() {
-                            if index > 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{value}")?;
-                        }
-                        write!(f, ")")
-                    }
-                    EnumPayload::Record(values) => {
-                        write!(f, " {{ ")?;
-                        let variant = instance
-                            .type_definition
-                            .variants
-                            .iter()
-                            .find(|variant| enum_variant_name(variant) == instance.variant)
-                            .expect("enum instance refers to a declared variant");
-                        let fields = match variant {
-                            EnumVariant::Record { fields, .. } => fields,
-                            _ => unreachable!(),
-                        };
-                        for (index, field) in fields.iter().enumerate() {
-                            if index > 0 {
-                                write!(f, ", ")?;
-                            }
-                            write!(f, "{}: {}", field.name, values[&field.name])?;
-                        }
-                        write!(f, " }}")
-                    }
-                }
-            }
+
             Self::VariantConstructor(constructor) => write!(
                 f,
                 "<constructor {}::{}>",
@@ -245,50 +192,7 @@ impl fmt::Debug for Value {
                 Self::Result {
                     value: Err(value), ..
                 } => f.debug_tuple("Err").field(value).finish(),
-                Self::Struct(instance) => {
-                    let fields = instance.fields.borrow();
-                    let mut structure = f.debug_struct(&instance.type_definition.name);
-                    for field in &instance.type_definition.fields {
-                        match &fields[&field.name].value {
-                            Some(value) => {
-                                structure.field(&field.name, value);
-                            }
-                            None => {
-                                structure.field(&field.name, &"<moved>");
-                            }
-                        }
-                    }
-                    structure.finish()
-                }
-                Self::Enum(instance) => {
-                    let name = format!("{}::{}", instance.type_definition.name, instance.variant);
-                    match &instance.payload {
-                        EnumPayload::Unit => f.write_str(&name),
-                        EnumPayload::Tuple(values) => {
-                            let mut tuple = f.debug_tuple(&name);
-                            for value in values {
-                                tuple.field(value);
-                            }
-                            tuple.finish()
-                        }
-                        EnumPayload::Record(values) => {
-                            let variant = instance
-                                .type_definition
-                                .variants
-                                .iter()
-                                .find(|variant| enum_variant_name(variant) == instance.variant)
-                                .expect("enum instance refers to a declared variant");
-                            let EnumVariant::Record { fields, .. } = variant else {
-                                unreachable!()
-                            };
-                            let mut structure = f.debug_struct(&name);
-                            for field in fields {
-                                structure.field(&field.name, &values[&field.name]);
-                            }
-                            structure.finish()
-                        }
-                    }
-                }
+
                 Self::Reference(reference) => match reference.read() {
                     Ok(value) => write!(f, "{value:#?}"),
                     Err(_) => f.write_str("<invalid reference>"),

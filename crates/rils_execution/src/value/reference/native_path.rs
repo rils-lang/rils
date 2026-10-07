@@ -126,13 +126,7 @@ impl ReferenceValue {
                     ReferenceTarget::Storage(target) => {
                         target.borrow_mut().with_value_mut(Self::retain_native_root)
                     }
-                    ReferenceTarget::StructField { instance, index } => instance
-                        .fields
-                        .borrow_mut()
-                        .get_index_mut(*index)
-                        .and_then(|slot| slot.value.as_mut())
-                        .ok_or_else(|| "native projection target was moved".to_owned())
-                        .and_then(Self::retain_native_root),
+
                     ReferenceTarget::IndexedElement { sequence, index } => sequence
                         .elements
                         .borrow_mut()
@@ -189,15 +183,7 @@ impl ReferenceValue {
             ReferenceTarget::Storage(target) => {
                 return target.borrow().with_value(Self::native_root_layout);
             }
-            ReferenceTarget::StructField { instance, index } => {
-                return instance
-                    .fields
-                    .borrow()
-                    .get_index(*index)
-                    .and_then(|slot| slot.value.as_ref())
-                    .ok_or_else(|| "native projection target was moved".to_owned())
-                    .and_then(Self::native_root_layout);
-            }
+
             ReferenceTarget::IndexedElement { sequence, index } => {
                 return sequence
                     .elements

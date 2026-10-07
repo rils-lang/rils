@@ -7,10 +7,9 @@ use std::{
 use rils_execution::{
     Type, Value,
     value::{
-        BTreeMapValue, BTreeSetValue, BinaryHeapValue, EnumInstance, EnumPayload, EnumType,
-        FieldSlot, HashKey, HashMapValue, HashSetValue, IndexedStorage, StructFields,
-        StructInstance, StructType, VecDequeValue, native_layouts, record_codec,
-        record_layout::RecordLayoutResolver,
+        BTreeMapValue, BTreeSetValue, BinaryHeapValue, EnumType, FieldSlot, HashKey, HashMapValue,
+        HashSetValue, IndexedStorage, StructType, VecDequeValue, native_layouts, record_codec,
+        record_layout::RecordLayoutResolver, storage::TypedStorageContext,
     },
 };
 use rils_frontend::{
@@ -187,22 +186,23 @@ fn definition(name: &str, fields: Vec<(&str, Type)>) -> Rc<StructType> {
 }
 
 fn instance(definition: Rc<StructType>, values: Vec<Value>) -> Value {
-    let slots = definition
+    instance_with_declarations(definition.clone(), values, &[definition])
+}
+
+fn instance_with_declarations(
+    definition: Rc<StructType>,
+    values: Vec<Value>,
+    declarations: &[Rc<StructType>],
+) -> Value {
+    let fields = definition
         .fields
         .iter()
         .zip(values)
-        .map(|(field, value)| {
-            (
-                field.name.clone(),
-                FieldSlot::new(field.type_annotation.clone(), value),
-            )
-        })
+        .map(|(field, value)| (field.name.clone(), value))
         .collect();
-    Value::Struct(Rc::new(StructInstance {
-        fields: RefCell::new(StructFields::from_map(definition.clone(), slots).unwrap()),
-        type_definition: definition,
-        type_arguments: vec![],
-    }))
+    TypedStorageContext::new(declarations, &[])
+        .construct_record(&Type::named(&definition.name), None, fields)
+        .unwrap()
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn nested_user_struct_fields_are_inline_in_native_bytes() {
         )
     };
     let make_outer = || {
-        instance(
+        instance_with_declarations(
             outer.clone(),
             vec![
                 make_inner("first"),
@@ -231,6 +231,7 @@ fn nested_user_struct_fields_are_inline_in_native_bytes() {
                     element_type: Some(Type::named("Inner")),
                 },
             ],
+            &[inner.clone(), outer.clone()],
         )
     };
     let declarations = vec![inner.clone(), outer.clone()];
@@ -251,6 +252,7 @@ fn nested_user_struct_fields_are_inline_in_native_bytes() {
 fn generic_enum_record_payload_keeps_nested_struct_inline() {
     let inner = definition("Item", vec![("text", Type::String)]);
     let choice = Rc::new(EnumType {
+        host_definition: None,
         name: "Choice".into(),
         generic_parameters: vec![GenericParameter {
             name: "T".into(),
@@ -278,24 +280,25 @@ fn generic_enum_record_payload_keeps_nested_struct_inline() {
         implemented_traits: RefCell::default(),
         associated_types: RefCell::default(),
     });
-    let make = || {
-        Value::Enum(Rc::new(EnumInstance {
-            type_definition: choice.clone(),
-            variant: "Filled".into(),
-            payload: EnumPayload::Record(std::collections::HashMap::from([(
-                "item".into(),
-                instance(inner.clone(), vec![Value::from_string("inside")]),
-            )])),
-            type_arguments: vec![Type::named("Item")],
-        }))
-    };
     let structs = vec![inner.clone()];
     let enums = vec![choice.clone()];
-    let mut resolver = RecordLayoutResolver::with_enums(&structs, &enums);
     let ty = Type::Named {
         name: "Choice".into(),
         arguments: vec![Type::named("Item")],
     };
+    let make = || {
+        TypedStorageContext::new(&structs, &enums)
+            .construct_record(
+                &ty,
+                Some("Filled"),
+                HashMap::from([(
+                    "item".into(),
+                    instance(inner.clone(), vec![Value::from_string("inside")]),
+                )]),
+            )
+            .unwrap()
+    };
+    let mut resolver = RecordLayoutResolver::with_enums(&structs, &enums);
     let layout = resolver.resolve(&ty).unwrap();
     let mut codec = record_codec::NativeRecordCodec::new();
     let native = codec.into_native(make(), layout).unwrap();
@@ -335,21 +338,19 @@ fn generic_struct_fields_use_concrete_native_layouts() {
         implemented_traits: RefCell::default(),
         associated_types: RefCell::default(),
     });
-    let make = || {
-        let slots = std::collections::HashMap::from([(
-            "item".into(),
-            FieldSlot::new(Type::String, Value::from_string("generic")),
-        )]);
-        Value::Struct(Rc::new(StructInstance {
-            type_definition: holder.clone(),
-            fields: RefCell::new(StructFields::from_map(holder.clone(), slots).unwrap()),
-            type_arguments: vec![Type::String],
-        }))
-    };
     let declarations = vec![holder.clone()];
     let ty = Type::Named {
         name: "Holder".into(),
         arguments: vec![Type::String],
+    };
+    let make = || {
+        TypedStorageContext::new(&declarations, &[])
+            .construct_record(
+                &ty,
+                None,
+                HashMap::from([("item".into(), Value::from_string("generic"))]),
+            )
+            .unwrap()
     };
     let mut resolver = RecordLayoutResolver::new(&declarations);
     let layout = resolver.resolve(&ty).unwrap();
@@ -621,5 +622,5 @@ fn nominal_codec_rejects_a_layout_with_swapped_field_names() {
         .into_native(value, wrong)
         .err()
         .unwrap();
-    assert!(error.contains("field order"));
+    assert!(error.contains("different native layout"));
 }

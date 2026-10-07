@@ -1,14 +1,11 @@
 //! Runtime bridge between static [`Type`] descriptions and dynamically stored [`Value`]s.
 
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
 use crate::{
     ast::EnumVariant,
-    types::{FunctionSignature, RuntimeValue, Type, merge_type_arguments, merge_types},
-    value::{
-        EnumInstance, EnumPayload, FieldSlot, StructFields, StructInstance, Value,
-        enum_variant_name,
-    },
+    types::{FunctionSignature, RuntimeValue, Type, merge_types},
+    value::{FieldSlot, Value, enum_variant_name},
 };
 
 impl RuntimeValue for Value {
@@ -69,18 +66,11 @@ impl Value {
                 self, expected,
             ));
         }
-        if Type::of_value(&self).as_ref() == Some(expected) {
-            if matches!(self, Self::Native(_) | Self::Dynamic(_)) && expected.accepts(&self) {
-                return Some(self);
-            }
-            if matches!(self, Self::Struct(_) | Self::Enum(_))
-                && expected.constrain(&self).is_some()
-            {
-                // Nominal values need their nested fields checked as well.
-                // Once checked, keep the original owner instead of the
-                // temporary reconstructed value.
-                return Some(self);
-            }
+        if Type::of_value(&self).as_ref() == Some(expected)
+            && matches!(self, Self::Native(_) | Self::Dynamic(_))
+            && expected.accepts(&self)
+        {
+            return Some(self);
         }
         expected.constrain(&self)
     }
@@ -275,14 +265,7 @@ fn accepts(expected: &Type, value: &Value) -> bool {
                         .is_none_or(|actual| merge_types(expected_ok, actual).is_some())
             }
         },
-        (Type::Named { name, arguments }, Value::Struct(instance)) => {
-            instance.type_definition.name == *name
-                && type_arguments_compatible(arguments, &instance.type_arguments)
-        }
-        (Type::Named { name, arguments }, Value::Enum(instance)) => {
-            instance.type_definition.name == *name
-                && type_arguments_compatible(arguments, &instance.type_arguments)
-        }
+
         (Type::Named { name, arguments }, Value::HostObject(object)) => {
             arguments.is_empty()
                 && (object.type_definition.name == *name
@@ -452,89 +435,7 @@ fn constrain(expected: &Type, value: &Value) -> Option<Value> {
             ok_type: Some((**ok_type).clone()),
             error_type: Some((**error_type).clone()),
         }),
-        (Type::Named { arguments, .. }, Value::Struct(instance)) => {
-            let type_arguments = merge_type_arguments(arguments, &instance.type_arguments)?;
-            let substitutions = instance
-                .type_definition
-                .generic_parameters
-                .iter()
-                .map(|parameter| parameter.name.clone())
-                .zip(type_arguments.iter().cloned())
-                .collect::<HashMap<_, _>>();
-            let source_fields = instance.fields.borrow();
-            let mut fields = HashMap::new();
-            for definition in &instance.type_definition.fields {
-                let expected = definition.type_annotation.substitute(&substitutions);
-                let value = source_fields.get(&definition.name)?.value.as_ref()?;
-                let constrained = expected.constrain(value)?;
-                fields.insert(
-                    definition.name.clone(),
-                    FieldSlot::new(expected, constrained),
-                );
-            }
-            Some(Value::Struct(Rc::new(StructInstance {
-                type_definition: instance.type_definition.clone(),
-                fields: std::cell::RefCell::new(
-                    StructFields::from_map(instance.type_definition.clone(), fields).ok()?,
-                ),
-                type_arguments,
-            })))
-        }
-        (Type::Named { arguments, .. }, Value::Enum(instance)) => {
-            let type_arguments = merge_type_arguments(arguments, &instance.type_arguments)?;
-            let substitutions = instance
-                .type_definition
-                .generic_parameters
-                .iter()
-                .map(|parameter| parameter.name.clone())
-                .zip(type_arguments.iter().cloned())
-                .collect::<HashMap<_, _>>();
-            let variant = instance
-                .type_definition
-                .variants
-                .iter()
-                .find(|variant| enum_variant_name(variant) == instance.variant)?;
-            let payload = match (variant, &instance.payload) {
-                (EnumVariant::Unit { .. }, EnumPayload::Unit) => EnumPayload::Unit,
-                (
-                    EnumVariant::Tuple {
-                        fields: definitions,
-                        ..
-                    },
-                    EnumPayload::Tuple(values),
-                ) if definitions.len() == values.len() => EnumPayload::Tuple(
-                    definitions
-                        .iter()
-                        .zip(values)
-                        .map(|(definition, value)| {
-                            definition.substitute(&substitutions).constrain(value)
-                        })
-                        .collect::<Option<Vec<_>>>()?,
-                ),
-                (
-                    EnumVariant::Record {
-                        fields: definitions,
-                        ..
-                    },
-                    EnumPayload::Record(values),
-                ) => {
-                    let mut constrained = values.clone();
-                    for definition in definitions {
-                        let expected = definition.type_annotation.substitute(&substitutions);
-                        let value = constrained.get(&definition.name)?;
-                        constrained.insert(definition.name.clone(), expected.constrain(value)?);
-                    }
-                    EnumPayload::Record(constrained)
-                }
-                _ => return None,
-            };
-            Some(Value::Enum(Rc::new(EnumInstance {
-                type_definition: instance.type_definition.clone(),
-                variant: instance.variant.clone(),
-                payload,
-                type_arguments,
-            })))
-        }
+
         _ => Some(value.clone()),
     }
 }
@@ -752,14 +653,7 @@ fn type_of_value(value: &Value) -> Option<Type> {
             Box::new(ok_type.clone().unwrap_or(Type::Unknown)),
             Box::new(error_type.clone().unwrap_or(Type::Unknown)),
         )),
-        Value::Struct(instance) => Some(Type::Named {
-            name: instance.type_definition.name.clone(),
-            arguments: instance.type_arguments.clone(),
-        }),
-        Value::Enum(instance) => Some(Type::Named {
-            name: instance.type_definition.name.clone(),
-            arguments: instance.type_arguments.clone(),
-        }),
+
         Value::BuiltinFunction(_) => Some(Type::opaque_function()),
         Value::BuiltinType(_)
         | Value::Module(_)
@@ -769,14 +663,6 @@ fn type_of_value(value: &Value) -> Option<Type> {
         | Value::TraitType(_)
         | Value::TypeAlias(_) => None,
     }
-}
-
-fn type_arguments_compatible(expected: &[Type], actual: &[Type]) -> bool {
-    expected.len() == actual.len()
-        && expected
-            .iter()
-            .zip(actual)
-            .all(|(expected, actual)| merge_types(expected, actual).is_some())
 }
 
 fn function_type(function: &crate::value::UserFunction) -> Type {

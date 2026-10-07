@@ -24,6 +24,7 @@ pub fn install(
     let error_kind_declaration = rils_builtins::builtin("std::io::ErrorKind")
         .expect("std::io::ErrorKind is declared in rils_builtins");
     let error_kind = Rc::new(EnumType {
+        host_definition: None,
         name: "std::io::ErrorKind".into(),
         generic_parameters: Vec::new(),
         variants: error_kind_declaration

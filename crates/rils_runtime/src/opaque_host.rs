@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use crate::value::{EnumPayload, HostObject, HostType, storage::TypedStorageContext};
+use crate::value::{HostObject, HostType, storage::TypedStorageContext};
 use crate::{HostEnumDefinition, Value};
 
 use rils_execution::value::host_declarations::{HOST_FLAGS_RAW_VARIANT, enum_definition};
@@ -141,40 +141,5 @@ pub fn host_enum_raw(
                 )
             });
     }
-    let Value::Enum(instance) = value else {
-        return Err(format!("expected host enum `{type_name}`"));
-    };
-    if instance.type_definition.name != type_name {
-        return Err(format!(
-            "expected host enum `{type_name}`, found `{}`",
-            instance.type_definition.name
-        ));
-    }
-    if instance.variant == HOST_FLAGS_RAW_VARIANT {
-        if definition.flags
-            && let EnumPayload::Tuple(values) = &instance.payload
-            && let [raw] = values.as_slice()
-            && let Some(raw) = raw.as_u128()
-        {
-            return Ok(raw);
-        }
-        return Err(format!(
-            "host enum `{type_name}` contains invalid flags payload"
-        ));
-    }
-    if !matches!(instance.payload, EnumPayload::Unit) {
-        return Err(format!(
-            "host enum `{type_name}` variants cannot carry payloads"
-        ));
-    }
-    definition
-        .variants
-        .get(&instance.variant)
-        .copied()
-        .ok_or_else(|| {
-            format!(
-                "host enum `{type_name}` has unknown variant `{}`",
-                instance.variant
-            )
-        })
+    Err(format!("expected host enum `{type_name}`"))
 }

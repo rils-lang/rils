@@ -12,8 +12,8 @@ use crate::{
     source::{SourceFile, SourceId, Span},
     types::{FunctionSignature, IntegerType, Type},
     value::{
-        BytecodeFunctionValue, BytecodeIteratorValue, EnumPayload, EnumType, FieldSlot,
-        IndexedStorage, ReferenceValue, StructInstance, StructType, Value, native_range,
+        BytecodeFunctionValue, BytecodeIteratorValue, EnumType, FieldSlot, IndexedStorage,
+        ReferenceValue, StructType, Value, native_range,
     },
 };
 

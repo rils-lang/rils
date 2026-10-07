@@ -36,9 +36,6 @@ pub mod dynamic_option;
 pub mod dynamic_result;
 pub mod dynamic_sequence;
 pub mod owned_sum;
-#[path = "value/record.rs"]
-mod record;
-pub use record::StructFields;
 mod slot;
 pub use slot::FieldSlot;
 pub mod borrowed_sum;
@@ -177,8 +174,11 @@ impl StructType {
     }
 }
 
+#[derive(Clone)]
 pub struct EnumType {
     pub name: String,
+    /// Portable host identity; script declarations use their registered object.
+    pub host_definition: Option<rils_host::HostEnumDefinition>,
     pub generic_parameters: Vec<GenericParameter>,
     pub variants: Vec<EnumVariant>,
     pub methods: RefCell<HashMap<String, Rc<UserFunction>>>,
@@ -209,13 +209,6 @@ pub struct TypeAliasType {
 }
 
 #[derive(Clone)]
-pub struct StructInstance {
-    pub type_definition: Rc<StructType>,
-    pub fields: RefCell<StructFields>,
-    pub type_arguments: Vec<Type>,
-}
-
-#[derive(Clone)]
 pub struct IndexedStorage {
     pub elements: RefCell<Vec<FieldSlot>>,
     pub element_type: RefCell<Option<Type>>,
@@ -232,21 +225,6 @@ pub struct VecDequeValue {
 pub struct BinaryHeapValue {
     pub elements: RefCell<Vec<Value>>,
     pub element_type: RefCell<Option<Type>>,
-}
-
-#[derive(Clone)]
-pub enum EnumPayload {
-    Unit,
-    Tuple(Vec<Value>),
-    Record(HashMap<String, Value>),
-}
-
-#[derive(Clone)]
-pub struct EnumInstance {
-    pub type_definition: Rc<EnumType>,
-    pub variant: String,
-    pub payload: EnumPayload,
-    pub type_arguments: Vec<Type>,
 }
 
 #[derive(Clone)]
@@ -356,8 +334,6 @@ pub enum Value {
     EnumType(Rc<EnumType>),
     TraitType(Rc<TraitType>),
     TypeAlias(Rc<TypeAliasType>),
-    Struct(Rc<StructInstance>),
-    Enum(Rc<EnumInstance>),
     VariantConstructor(Rc<VariantConstructor>),
     BoundMethod(Rc<BoundMethod>),
     BuiltinBoundMethod(Rc<BuiltinBoundMethod>),
@@ -516,8 +492,6 @@ impl Value {
             Self::EnumType(definition) => format!("type {}", definition.name),
             Self::TraitType(definition) => format!("trait {}", definition.name),
             Self::TypeAlias(definition) => format!("type alias {}", definition.name),
-            Self::Struct(instance) => instance.type_definition.name.clone(),
-            Self::Enum(instance) => instance.type_definition.name.clone(),
         }
     }
 
@@ -636,24 +610,7 @@ impl PartialEq for Value {
             (Self::HashSet(left), Self::HashSet(right)) => {
                 *left.entries.borrow() == *right.entries.borrow()
             }
-            (Self::Struct(left), Self::Struct(right)) => {
-                let left_fields = left.fields.borrow();
-                let right_fields = right.fields.borrow();
-                left.type_definition.name == right.type_definition.name
-                    && left.type_arguments == right.type_arguments
-                    && left_fields.len() == right_fields.len()
-                    && left_fields.iter().all(|(name, field)| {
-                        right_fields
-                            .get(name)
-                            .is_some_and(|other| field.value == other.value)
-                    })
-            }
-            (Self::Enum(left), Self::Enum(right)) => {
-                left.type_definition.name == right.type_definition.name
-                    && left.type_arguments == right.type_arguments
-                    && left.variant == right.variant
-                    && enum_payload_equal(&left.payload, &right.payload)
-            }
+
             _ => false,
         }
     }
@@ -698,13 +655,4 @@ fn sequence_equal(left: &IndexedStorage, right: &IndexedStorage) -> bool {
             .iter()
             .zip(right.iter())
             .all(|(left, right)| left.value == right.value)
-}
-
-fn enum_payload_equal(left: &EnumPayload, right: &EnumPayload) -> bool {
-    match (left, right) {
-        (EnumPayload::Unit, EnumPayload::Unit) => true,
-        (EnumPayload::Tuple(left), EnumPayload::Tuple(right)) => left == right,
-        (EnumPayload::Record(left), EnumPayload::Record(right)) => left == right,
-        _ => false,
-    }
 }

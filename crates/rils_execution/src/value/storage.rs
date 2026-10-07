@@ -67,33 +67,10 @@ impl<'a> TypedStorageContext<'a> {
         crate::runtime_builtins::resolve_layout(ty, self.structs, self.enums, self.hosts)
     }
 
-    /// Consume a user struct/enum into native instance storage. Backends can
-    /// switch their constructor and place paths together using this boundary.
-    pub fn compose_nominal(&self, value: Value, expected: &Type) -> Result<Value, String> {
-        let expected = declarations::storage_type(expected);
-        let expected = self.concrete_expected(&value, &expected)?;
-        let mut codec =
-            NativeRecordCodec::with_definitions(self.structs, self.enums).with_owned_conversion();
-        if codec.nominal_definition(&expected).is_none() {
-            return Err(format!("no user instance declaration for {expected}"));
-        }
-        if !expected.accepts(&value) {
-            return Err(format!(
-                "declared {expected} does not accept {}",
-                value.type_name()
-            ));
-        }
-        let payload = codec.into_native(value, self.layout(&expected)?)?;
-        super::native_instance::from_native(payload, Rc::new(codec))
-    }
-
     pub fn apply_declared(&self, value: Value, expected: &Type) -> Result<Value, String> {
         let expected = declarations::storage_type(expected);
         let expected = self.concrete_expected(&value, &expected)?;
         let expected = &expected;
-        if matches!(value, Value::Struct(_) | Value::Enum(_)) {
-            return self.compose_nominal(value, expected);
-        }
         let value = self.compose_indexed(value, expected)?;
         let value = self.attach_result_witness(value, expected)?;
         let value = self.compose_variant(value, expected)?;

@@ -149,29 +149,17 @@ pub(crate) fn equal(left: &Value, right: &Value) -> Option<bool> {
             .map(|layout| layout.rils_type().clone()),
         _ => Type::of_value(value),
     };
-    let active = |value: &Value| match value {
-        Value::Enum(instance) => Some(instance.variant.clone()),
-        _ => enum_variant(value)
+    let active = |value: &Value| {
+        enum_variant(value)
             .ok()
             .flatten()
-            .map(|variant| variant.name().to_owned()),
+            .map(|variant| variant.name().to_owned())
     };
     if ty(left) != ty(right) || active(left) != active(right) {
         return Some(false);
     }
     Some(variant.field_names().iter().all(|name| {
-        let field = |value: &Value| match value {
-            Value::Enum(instance) => match &instance.payload {
-                crate::value::EnumPayload::Tuple(fields) => name
-                    .parse::<usize>()
-                    .ok()
-                    .and_then(|index| fields.get(index))
-                    .cloned(),
-                crate::value::EnumPayload::Record(fields) => fields.get(name).cloned(),
-                _ => None,
-            },
-            _ => borrow_variant_field(value, variant.index, name).ok(),
-        };
+        let field = |value: &Value| borrow_variant_field(value, variant.index, name).ok();
         let (Some(left), Some(right)) = (field(left), field(right)) else {
             return false;
         };

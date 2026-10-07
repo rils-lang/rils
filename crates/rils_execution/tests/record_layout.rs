@@ -7,8 +7,10 @@ use std::{
 use rils_execution::{
     Type, Value,
     value::{
-        EnumType, FieldSlot, StructFields, StructType,
+        EnumType, StructType,
+        native_instance::NativeInstancePlace,
         record_layout::{NativeLayoutProvider, RecordLayoutResolver},
+        storage::TypedStorageContext,
     },
 };
 use rils_frontend::{
@@ -121,6 +123,7 @@ fn declaration_provider_resolves_nested_generic_collection_fields() {
 #[test]
 fn resolves_generic_enum_payloads_as_tagged_native_layouts() {
     let enums = vec![Rc::new(EnumType {
+        host_definition: None,
         name: "Choice".into(),
         generic_parameters: vec![GenericParameter {
             is_const: false,
@@ -336,30 +339,42 @@ fn rejects_recursive_or_unregistered_field_layouts() {
 }
 
 #[test]
-fn runtime_record_slots_follow_declaration_order_and_reject_missing_fields() {
+fn native_record_fields_follow_declaration_order_and_reject_missing_fields() {
     let definition = definition(
         "Pair",
         &[],
         vec![("first", Type::I32), ("second", Type::I32)],
     );
-    let slots = HashMap::from([
-        (
-            "second".into(),
-            FieldSlot::new(Type::I32, Value::from_i32(2)),
-        ),
-        (
-            "first".into(),
-            FieldSlot::new(Type::I32, Value::from_i32(1)),
-        ),
+    let fields = HashMap::from([
+        ("second".into(), Value::from_i32(2)),
+        ("first".into(), Value::from_i32(1)),
     ]);
-    let fields = StructFields::from_map(definition.clone(), slots).unwrap();
+    let declarations = [definition.clone()];
+    let context = TypedStorageContext::new(&declarations, &[]);
+    let Value::Dynamic(value) = context
+        .construct_record(&Type::named("Pair"), None, fields)
+        .unwrap()
+    else {
+        panic!("native record");
+    };
+    let layout = value.descriptor().layout();
     assert_eq!(definition.field_index("first"), Some(0));
     assert_eq!(definition.field_index("second"), Some(1));
-    assert_eq!(fields.get_index(0).unwrap().value, Some(Value::from_i32(1)));
+    assert_eq!(layout.record_field_index("first"), Some(0));
+    assert_eq!(layout.record_field_index("second"), Some(1));
+    let place = NativeInstancePlace::new(value).unwrap();
     assert_eq!(
-        fields.get("second").unwrap().value,
-        Some(Value::from_i32(2))
+        place.field("first").unwrap().take().unwrap().as_i32(),
+        Some(1)
     );
-    assert!(fields.get("missing").is_none());
-    assert!(StructFields::from_map(definition, HashMap::new()).is_err());
+    assert_eq!(
+        place.field("second").unwrap().take().unwrap().as_i32(),
+        Some(2)
+    );
+    assert!(place.field("missing").is_err());
+    assert!(
+        context
+            .construct_record(&Type::named("Pair"), None, HashMap::new())
+            .is_err()
+    );
 }

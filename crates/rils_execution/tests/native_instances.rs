@@ -8,9 +8,9 @@ use rils_execution::{
     RilsValue, Type, Value,
     environment::{AccessError, StorageSlot},
     value::{
-        EnumInstance, EnumPayload, EnumType, FieldSlot, HostObject, HostType, IndexedStorage,
-        ReferenceValue, StructFields, StructInstance, StructType,
+        EnumType, FieldSlot, HostObject, HostType, IndexedStorage, ReferenceValue, StructType,
         native_instance::{NativeInstancePlace, definition},
+        record_codec::NativeRecordCodec,
         storage::TypedStorageContext,
     },
 };
@@ -53,6 +53,7 @@ impl Declarations {
                     variants,
                     ..
                 } => declarations.enums.push(Rc::new(EnumType {
+                    host_definition: None,
                     name,
                     generic_parameters,
                     variants,
@@ -97,26 +98,26 @@ impl Declarations {
     }
 
     fn record(&self, name: &str, arguments: Vec<Type>, fields: Vec<(&str, Value)>) -> Value {
-        let definition = self
-            .structs
-            .iter()
-            .find(|definition| definition.name == name)
-            .unwrap()
-            .clone();
-        let fields = fields
-            .into_iter()
-            .map(|(name, value)| {
-                (
-                    name.into(),
-                    FieldSlot::new(Type::of_value(&value).unwrap(), value),
-                )
-            })
-            .collect();
-        Value::Struct(Rc::new(StructInstance {
-            fields: RefCell::new(StructFields::from_map(definition.clone(), fields).unwrap()),
-            type_definition: definition,
-            type_arguments: arguments,
-        }))
+        self.try_record(name, arguments, fields).unwrap()
+    }
+
+    fn try_record(
+        &self,
+        name: &str,
+        arguments: Vec<Type>,
+        fields: Vec<(&str, Value)>,
+    ) -> Result<Value, String> {
+        self.context().construct_record(
+            &Type::Named {
+                name: name.into(),
+                arguments,
+            },
+            None,
+            fields
+                .into_iter()
+                .map(|(name, value)| (name.into(), value))
+                .collect(),
+        )
     }
 
     fn owned(&self, text: &str) -> Value {
@@ -130,19 +131,31 @@ impl Declarations {
         )
     }
 
-    fn choice(&self, variant: &str, payload: EnumPayload, item: Type) -> Value {
-        Value::Enum(Rc::new(EnumInstance {
-            type_definition: self.enums[0].clone(),
-            variant: variant.into(),
-            payload,
-            type_arguments: vec![item],
-        }))
+    fn choice(&self, variant: &str, fields: ChoiceFields, item: Type) -> Value {
+        self.try_choice(variant, fields, item).unwrap()
+    }
+
+    fn try_choice(&self, variant: &str, fields: ChoiceFields, item: Type) -> Result<Value, String> {
+        let ty = Type::Named {
+            name: self.enums[0].name.clone(),
+            arguments: vec![item],
+        };
+        match fields {
+            ChoiceFields::Unit => self.context().construct_unit_variant(&ty, variant),
+            ChoiceFields::Tuple(fields) => {
+                self.context().construct_tuple_variant(&ty, variant, fields)
+            }
+            ChoiceFields::Record(fields) => {
+                self.context().construct_record(&ty, Some(variant), fields)
+            }
+        }
     }
 }
 
-fn native(declarations: &Declarations, value: Value) -> Value {
-    let ty = Type::of_value(&value).unwrap();
-    declarations.context().compose_nominal(value, &ty).unwrap()
+enum ChoiceFields {
+    Unit,
+    Tuple(Vec<Value>),
+    Record(HashMap<String, Value>),
 }
 
 fn place(value: &Value) -> NativeInstancePlace {
@@ -155,13 +168,10 @@ fn place(value: &Value) -> NativeInstancePlace {
 #[test]
 fn owner_moves_refills_and_preserves_nested_native_instances() {
     let declarations = Declarations::fixture();
-    let value = native(
-        &declarations,
-        declarations.record(
-            "Outer",
-            vec![],
-            vec![("inner", declarations.owned("original"))],
-        ),
+    let value = declarations.record(
+        "Outer",
+        vec![],
+        vec![("inner", declarations.owned("original"))],
     );
     let root = place(&value);
     let inner = root.field("inner").unwrap();
@@ -207,7 +217,7 @@ fn owner_moves_refills_and_preserves_nested_native_instances() {
 #[test]
 fn storage_take_rejects_partial_moves_and_reassignment_keeps_the_descriptor() {
     let declarations = Declarations::fixture();
-    let value = native(&declarations, declarations.owned("first"));
+    let value = declarations.owned("first");
     let mut storage = StorageSlot::uninitialized(true);
     storage.initialize(value);
     let root = place(&storage.read().unwrap());
@@ -243,13 +253,10 @@ fn storage_take_rejects_partial_moves_and_reassignment_keeps_the_descriptor() {
 #[test]
 fn copy_owners_are_independent_and_mutable_references_share_one_place() {
     let declarations = Declarations::fixture();
-    let value = native(
-        &declarations,
-        declarations.record(
-            "Point",
-            vec![],
-            vec![("x", Value::from_i32(1)), ("y", Value::from_i32(2))],
-        ),
+    let value = declarations.record(
+        "Point",
+        vec![],
+        vec![("x", Value::from_i32(1)), ("y", Value::from_i32(2))],
     );
     assert!(value.is_copy());
     let copied = value.clone_owned().unwrap();
@@ -276,10 +283,7 @@ fn copy_owners_are_independent_and_mutable_references_share_one_place() {
 #[test]
 fn leases_block_moves_and_parent_replacement_but_allow_other_fields() {
     let declarations = Declarations::fixture();
-    let value = native(
-        &declarations,
-        declarations.record("Outer", vec![], vec![("inner", declarations.owned("live"))]),
-    );
+    let value = declarations.record("Outer", vec![], vec![("inner", declarations.owned("live"))]);
     let inner = place(&value).field("inner").unwrap();
     let text = inner.field("text").unwrap();
     let reference = Rc::new(text.borrow(false, None).unwrap());
@@ -305,13 +309,10 @@ fn leases_block_moves_and_parent_replacement_but_allow_other_fields() {
 #[test]
 fn host_field_handles_keep_the_original_bytes_owner_without_snapshots() {
     let declarations = Declarations::fixture();
-    let value = native(
-        &declarations,
-        declarations.record(
-            "Outer",
-            vec![],
-            vec![("inner", declarations.owned("borrowed"))],
-        ),
+    let value = declarations.record(
+        "Outer",
+        vec![],
+        vec![("inner", declarations.owned("borrowed"))],
     );
     let root = place(&value);
     let result = RilsValue::new(value);
@@ -351,17 +352,14 @@ fn generic_enum_variants_and_nested_sum_sequence_paths_track_partial_moves() {
     let item_type = Type::named("Owned");
     for variant in ["Empty", "Tuple", "Record"] {
         let payload = match variant {
-            "Empty" => EnumPayload::Unit,
-            "Tuple" => EnumPayload::Tuple(vec![declarations.owned("tuple")]),
-            _ => EnumPayload::Record(HashMap::from([(
+            "Empty" => ChoiceFields::Unit,
+            "Tuple" => ChoiceFields::Tuple(vec![declarations.owned("tuple")]),
+            _ => ChoiceFields::Record(HashMap::from([(
                 "item".into(),
                 declarations.owned("record"),
             )])),
         };
-        let value = native(
-            &declarations,
-            declarations.choice(variant, payload, item_type.clone()),
-        );
+        let value = declarations.choice(variant, payload, item_type.clone());
         assert_eq!(
             Type::of_value(&value),
             Some(Type::Named {
@@ -395,26 +393,23 @@ fn generic_enum_variants_and_nested_sum_sequence_paths_track_partial_moves() {
         name: "Choice".into(),
         arguments: vec![item_type.clone()],
     };
-    let wrapped = native(
-        &declarations,
-        declarations.record(
-            "Wrapped",
-            vec![],
-            vec![(
-                "item",
-                Value::Option {
-                    value: Some(Rc::new(declarations.choice(
-                        "Record",
-                        EnumPayload::Record(HashMap::from([(
-                            "item".into(),
-                            declarations.owned("wrapped"),
-                        )])),
-                        item_type.clone(),
-                    ))),
-                    element_type: Some(choice_type),
-                },
-            )],
-        ),
+    let wrapped = declarations.record(
+        "Wrapped",
+        vec![],
+        vec![(
+            "item",
+            Value::Option {
+                value: Some(Rc::new(declarations.choice(
+                    "Record",
+                    ChoiceFields::Record(HashMap::from([(
+                        "item".into(),
+                        declarations.owned("wrapped"),
+                    )])),
+                    item_type.clone(),
+                ))),
+                element_type: Some(choice_type),
+            },
+        )],
     );
     let nested = place(&wrapped)
         .field("item")
@@ -432,23 +427,20 @@ fn generic_enum_variants_and_nested_sum_sequence_paths_track_partial_moves() {
     nested.assign(text).unwrap();
     assert!(!wrapped.is_partially_moved());
 
-    let listed = native(
-        &declarations,
-        declarations.record(
-            "Listed",
-            vec![],
-            vec![(
-                "items",
-                Value::Vec(Rc::new(IndexedStorage {
-                    active_iterators: Cell::new(0),
-                    element_type: RefCell::new(Some(item_type.clone())),
-                    elements: RefCell::new(vec![FieldSlot::new(
-                        item_type,
-                        declarations.owned("listed"),
-                    )]),
-                })),
-            )],
-        ),
+    let listed = declarations.record(
+        "Listed",
+        vec![],
+        vec![(
+            "items",
+            Value::Vec(Rc::new(IndexedStorage {
+                active_iterators: Cell::new(0),
+                element_type: RefCell::new(Some(item_type.clone())),
+                elements: RefCell::new(vec![FieldSlot::new(
+                    item_type,
+                    declarations.owned("listed"),
+                )]),
+            })),
+        )],
     );
     let nested = place(&listed)
         .field("items")
@@ -487,17 +479,16 @@ fn moved_and_replaced_host_fields_drop_exactly_once() {
             payload: Rc::new(Probe(drops.clone())),
         }))
     };
-    let old = declarations.record(
-        "HostHolder",
-        vec![],
-        vec![
-            ("first", host_value(&first_drops)),
-            ("second", host_value(&second_drops)),
-        ],
-    );
     let hosts = [host.clone()];
     let value = TypedStorageContext::with_hosts(&declarations.structs, &declarations.enums, &hosts)
-        .compose_nominal(old, &Type::named("HostHolder"))
+        .construct_record(
+            &Type::named("HostHolder"),
+            None,
+            HashMap::from([
+                ("first".into(), host_value(&first_drops)),
+                ("second".into(), host_value(&second_drops)),
+            ]),
+        )
         .unwrap();
     let root = place(&value);
     let moved = root.field("first").unwrap().take().unwrap();
@@ -519,7 +510,7 @@ fn moved_and_replaced_host_fields_drop_exactly_once() {
 fn root_references_keep_declarations_and_local_origins() {
     let declarations = Declarations::fixture();
     let environment = rils_execution::environment::Environment::global();
-    let value = native(&declarations, declarations.owned("root"));
+    let value = declarations.owned("root");
     environment.borrow_mut().define("record", value, true, None);
     let storage = environment.borrow().slot("record").unwrap();
     let reference = Rc::new(ReferenceValue::new_storage(storage.clone(), true));
@@ -546,19 +537,17 @@ fn root_references_keep_declarations_and_local_origins() {
 fn owned_conversion_rejects_shared_non_copy_payloads_instead_of_cloning() {
     let declarations = Declarations::fixture();
     let source = Value::from_string("shared");
-    let record = declarations.record(
-        "Owned",
-        vec![],
-        vec![("text", source.clone()), ("number", Value::from_i32(42))],
-    );
     assert!(
         declarations
-            .context()
-            .compose_nominal(record, &Type::named("Owned"))
+            .try_record(
+                "Owned",
+                vec![],
+                vec![("text", source.clone()), ("number", Value::from_i32(42))],
+            )
             .is_err()
     );
     assert_eq!(source.as_string().as_deref(), Some("shared"));
-    let value = native(&declarations, declarations.owned("original"));
+    let value = declarations.owned("original");
     let text = place(&value).field("text").unwrap();
     assert!(text.assign(source.clone()).is_err());
     assert_eq!(
@@ -566,14 +555,11 @@ fn owned_conversion_rejects_shared_non_copy_payloads_instead_of_cloning() {
         Some("original")
     );
 
-    let shared = native(&declarations, declarations.owned("native shared"));
-    let outer = native(
-        &declarations,
-        declarations.record(
-            "Outer",
-            vec![],
-            vec![("inner", declarations.owned("untouched"))],
-        ),
+    let shared = declarations.owned("native shared");
+    let outer = declarations.record(
+        "Outer",
+        vec![],
+        vec![("inner", declarations.owned("untouched"))],
     );
     assert!(
         place(&outer)
@@ -618,13 +604,10 @@ fn generic_instance_fields_keep_reference_and_callback_identities() {
         signature: Some(FunctionSignature::fixed(vec![Type::I32], Type::I32)),
         function: Rc::new(|arguments| Ok(Value::from_i32(arguments[0].as_i32().unwrap() + 1))),
     });
-    let value = native(
-        &declarations,
-        declarations.record(
-            "Holder",
-            vec![callback_type.clone()],
-            vec![("item", Value::HostFunction(callback.clone()))],
-        ),
+    let value = declarations.record(
+        "Holder",
+        vec![callback_type.clone()],
+        vec![("item", Value::HostFunction(callback.clone()))],
     );
     assert_eq!(
         Type::of_value(&value),
@@ -659,13 +642,10 @@ fn generic_instance_fields_keep_reference_and_callback_identities() {
         mutable: true,
         inner: Box::new(Type::I32),
     };
-    let value = native(
-        &declarations,
-        declarations.record(
-            "Holder",
-            vec![reference_type],
-            vec![("item", Value::Reference(reference.clone()))],
-        ),
+    let value = declarations.record(
+        "Holder",
+        vec![reference_type],
+        vec![("item", Value::Reference(reference.clone()))],
     );
     assert!(value.contains_local_reference(&environment));
     let copied = value.clone_owned().unwrap();
@@ -703,13 +683,11 @@ fn enum_copy_requires_an_explicit_declaration_and_copy_fields_in_every_variant()
                     }
                 };
                 let payload = match variant {
-                    "Empty" => EnumPayload::Unit,
-                    "Tuple" => EnumPayload::Tuple(vec![item()]),
-                    _ => EnumPayload::Record(HashMap::from([("item".into(), item())])),
+                    "Empty" => ChoiceFields::Unit,
+                    "Tuple" => ChoiceFields::Tuple(vec![item()]),
+                    _ => ChoiceFields::Record(HashMap::from([("item".into(), item())])),
                 };
-                let value = declarations.choice(variant, payload, item_type);
-                let ty = Type::of_value(&value).unwrap();
-                let result = declarations.context().compose_nominal(value, &ty);
+                let result = declarations.try_choice(variant, payload, item_type);
                 if declared && !eligible {
                     assert!(
                         result.err().unwrap().contains("non-Copy fields"),
@@ -737,6 +715,66 @@ fn enum_copy_requires_an_explicit_declaration_and_copy_fields_in_every_variant()
 }
 
 #[test]
+fn native_codec_moves_retain_exact_declarations_and_explicit_copy_policy() {
+    for declared in [false, true] {
+        let declarations = Declarations::fixture();
+        if declared {
+            declarations.enums[0]
+                .implemented_traits
+                .borrow_mut()
+                .extend(["Clone".into(), "Copy".into()]);
+        }
+        for variant in ["Empty", "Tuple", "Record"] {
+            let fields = match variant {
+                "Empty" => ChoiceFields::Unit,
+                "Tuple" => ChoiceFields::Tuple(vec![Value::from_i32(42)]),
+                _ => ChoiceFields::Record(HashMap::from([("item".into(), Value::from_i32(42))])),
+            };
+            let value = declarations.choice(variant, fields, Type::I32);
+            let ty = Type::of_value(&value).unwrap();
+            let mut codec = NativeRecordCodec::new();
+            let bytes = codec
+                .into_native(value, declarations.context().layout(&ty).unwrap())
+                .unwrap();
+            let value = codec.from_native(bytes).unwrap();
+            let Value::Dynamic(object) = &value else {
+                panic!("native instance");
+            };
+            let Some(Value::EnumType(definition)) = definition(object) else {
+                panic!("retained enum declaration");
+            };
+            assert!(Rc::ptr_eq(&definition, &declarations.enums[0]));
+            assert_eq!(Type::of_value(&value), Some(ty));
+            assert_eq!(value.is_copy(), declared, "{variant}: explicit Copy");
+            let mut slot = StorageSlot::uninitialized(false);
+            slot.initialize(value);
+            drop(slot.take().unwrap());
+            assert_eq!(slot.take().is_ok(), declared);
+        }
+    }
+}
+
+#[test]
+fn native_codec_rejects_conflicting_declaration_identities() {
+    let source = Declarations::fixture();
+    let other = Declarations::fixture();
+    let value = source.record(
+        "Point",
+        vec![],
+        vec![("x", Value::from_i32(1)), ("y", Value::from_i32(2))],
+    );
+    let mut codec = NativeRecordCodec::with_definitions(&other.structs, &other.enums);
+    let error = codec
+        .into_native(
+            value,
+            source.context().layout(&Type::named("Point")).unwrap(),
+        )
+        .err()
+        .unwrap();
+    assert!(error.contains("conflicting native declaration for `Point`"));
+}
+
+#[test]
 fn enum_projections_keep_native_metadata_original_bytes_and_lexical_leases() {
     use rils_execution::value::native_instance::{
         borrow_field, borrow_variant_field, enum_variant,
@@ -745,14 +783,11 @@ fn enum_projections_keep_native_metadata_original_bytes_and_lexical_leases() {
     for (index, variant, name) in [(1, "Tuple", "0"), (2, "Record", "item")] {
         let child = declarations.owned("original");
         let payload = if index == 1 {
-            EnumPayload::Tuple(vec![child])
+            ChoiceFields::Tuple(vec![child])
         } else {
-            EnumPayload::Record(HashMap::from([("item".into(), child)]))
+            ChoiceFields::Record(HashMap::from([("item".into(), child)]))
         };
-        let value = native(
-            &declarations,
-            declarations.choice(variant, payload, Type::named("Owned")),
-        );
+        let value = declarations.choice(variant, payload, Type::named("Owned"));
         let active = enum_variant(&value).unwrap().unwrap();
         assert!(Rc::ptr_eq(&active.definition, &declarations.enums[0]));
         assert_eq!(active.index, index);

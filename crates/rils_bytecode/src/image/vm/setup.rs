@@ -21,7 +21,7 @@ impl<'a> VirtualMachine<'a> {
         limits: crate::ExecutionLimits,
     ) -> Result<Self, BytecodeError> {
         register_type_traits(module);
-        extend_module_types(&mut native_context, module);
+        extend_module_types(&mut native_context, module)?;
         validate_copy_types(module, &native_context)?;
         let entry = &module.functions[module.entry];
         Ok(Self {
@@ -55,7 +55,7 @@ impl<'a> VirtualMachine<'a> {
         arguments: Vec<Value>,
     ) -> Result<Self, BytecodeError> {
         register_type_traits(module);
-        extend_module_types(&mut native_context, module);
+        extend_module_types(&mut native_context, module)?;
         validate_copy_types(module, &native_context)?;
         let callee = &module.functions[function];
         if callee.capture_count != 0 {
@@ -134,7 +134,7 @@ fn register_type_traits(module: &BytecodeModule) {
 fn extend_module_types(
     context: &mut crate::runtime_builtins::NativeOwnedContext,
     module: &BytecodeModule,
-) {
+) -> Result<(), BytecodeError> {
     for definition in &module.types {
         match definition {
             RuntimeType::Struct(definition) => {
@@ -154,13 +154,23 @@ fn extend_module_types(
                     .iter_mut()
                     .find(|existing| existing.name == definition.name)
                 {
-                    *existing = definition.clone();
+                    *existing = if existing.host_definition.is_some() {
+                        Rc::new(
+                            rils_execution::value::host_declarations::link_enum_declaration(
+                                definition, existing,
+                            )
+                            .map_err(|message| BytecodeError::new(message, Span::default()))?,
+                        )
+                    } else {
+                        definition.clone()
+                    };
                 } else {
                     context.enums.push(definition.clone());
                 }
             }
         }
     }
+    Ok(())
 }
 
 fn validate_copy_types(

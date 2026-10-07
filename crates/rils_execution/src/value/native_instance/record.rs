@@ -63,17 +63,7 @@ pub(crate) fn equal(left: &Value, right: &Value) -> Option<bool> {
         return Some(false);
     }
     Some(definition.fields.iter().all(|field| {
-        let read = |value: &Value| -> Result<Value, String> {
-            match value {
-                Value::Struct(instance) => instance
-                    .fields
-                    .borrow()
-                    .get(&field.name)
-                    .and_then(|slot| slot.value.clone())
-                    .ok_or("record field was moved".into()),
-                value => borrow_field(value, &field.name),
-            }
-        };
+        let read = |value: &Value| borrow_field(value, &field.name);
         let (Ok(left), Ok(right)) = (read(left), read(right)) else {
             return false;
         };

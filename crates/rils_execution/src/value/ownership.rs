@@ -31,30 +31,7 @@ impl Value {
                 .borrow()
                 .iter()
                 .all(|slot| slot.value.as_ref().is_some_and(Value::is_copy)),
-            Self::Struct(instance) => {
-                instance
-                    .type_definition
-                    .implemented_traits
-                    .borrow()
-                    .contains("Copy")
-                    && instance
-                        .fields
-                        .borrow()
-                        .values()
-                        .all(|field| field.value.as_ref().is_some_and(Value::is_copy))
-            }
-            Self::Enum(instance) => {
-                instance
-                    .type_definition
-                    .implemented_traits
-                    .borrow()
-                    .contains("Copy")
-                    && match &instance.payload {
-                        EnumPayload::Unit => true,
-                        EnumPayload::Tuple(values) => values.iter().all(Value::is_copy),
-                        EnumPayload::Record(values) => values.values().all(Value::is_copy),
-                    }
-            }
+
             Self::Function(_)
             | Self::BytecodeFunction(_)
             | Self::NativeFunction(_)
@@ -151,17 +128,7 @@ impl Value {
                 .values()
                 .filter_map(|slot| slot.value.as_ref())
                 .any(Value::contains_reference),
-            Self::Struct(instance) => instance
-                .fields
-                .borrow()
-                .values()
-                .filter_map(|field| field.value.as_ref())
-                .any(Value::contains_reference),
-            Self::Enum(instance) => match &instance.payload {
-                EnumPayload::Unit => false,
-                EnumPayload::Tuple(values) => values.iter().any(Value::contains_reference),
-                EnumPayload::Record(values) => values.values().any(Value::contains_reference),
-            },
+
             Self::OwnedIterator(iterator) => iterator.contains_reference(),
             Self::BorrowedIndexedIterator(_) => true,
             Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => true,
@@ -226,21 +193,7 @@ impl Value {
                 .iter()
                 .filter_map(|slot| slot.value.as_ref())
                 .any(|value| value.contains_local_reference(environment)),
-            Self::Struct(instance) => instance
-                .fields
-                .borrow()
-                .values()
-                .filter_map(|field| field.value.as_ref())
-                .any(|value| value.contains_local_reference(environment)),
-            Self::Enum(instance) => match &instance.payload {
-                EnumPayload::Unit => false,
-                EnumPayload::Tuple(values) => values
-                    .iter()
-                    .any(|value| value.contains_local_reference(environment)),
-                EnumPayload::Record(values) => values
-                    .values()
-                    .any(|value| value.contains_local_reference(environment)),
-            },
+
             _ => false,
         }
     }
@@ -268,13 +221,7 @@ impl Value {
                 .borrow()
                 .iter()
                 .any(|value| value.has_active_references()),
-            Self::Struct(instance) => instance.fields.borrow().values().any(|field| {
-                field.references > 0
-                    || field
-                        .value
-                        .as_ref()
-                        .is_some_and(Value::has_active_references)
-            }),
+
             Self::Tuple(sequence) | Self::Array(sequence) | Self::Vec(sequence) => {
                 sequence.active_iterators.get() > 0
                     || sequence.elements.borrow().iter().any(|slot| {
@@ -320,11 +267,7 @@ impl Value {
             Self::Native(object) => {
                 object.is_partially_moved() || object.any_child(Value::is_partially_moved)
             }
-            Self::Struct(instance) => instance
-                .fields
-                .borrow()
-                .values()
-                .any(|field| field.value.is_none()),
+
             Self::Tuple(sequence) | Self::Array(sequence) | Self::Vec(sequence) => sequence
                 .elements
                 .borrow()
@@ -411,54 +354,7 @@ impl Value {
                 return Err("iterators cannot be cloned".into());
             }
             Self::BytecodeIterator(_) => return Err("iterators cannot be cloned".into()),
-            Self::Struct(instance) => {
-                let source = instance.fields.borrow();
-                let mut fields = HashMap::new();
-                for (name, field) in source.iter() {
-                    let value = field.value.as_ref().ok_or_else(|| {
-                        format!(
-                            "cannot clone partially moved struct `{}`",
-                            instance.type_definition.name
-                        )
-                    })?;
-                    fields.insert(
-                        name.clone(),
-                        FieldSlot::new(field.type_annotation.clone(), value.clone_owned()?),
-                    );
-                }
-                Self::Struct(Rc::new(StructInstance {
-                    type_definition: instance.type_definition.clone(),
-                    fields: RefCell::new(StructFields::from_map(
-                        instance.type_definition.clone(),
-                        fields,
-                    )?),
-                    type_arguments: instance.type_arguments.clone(),
-                }))
-            }
-            Self::Enum(instance) => {
-                let payload = match &instance.payload {
-                    EnumPayload::Unit => EnumPayload::Unit,
-                    EnumPayload::Tuple(values) => {
-                        EnumPayload::Tuple(values.iter().map(Value::clone_owned).collect::<Result<
-                            Vec<_>,
-                            _,
-                        >>(
-                        )?)
-                    }
-                    EnumPayload::Record(values) => EnumPayload::Record(
-                        values
-                            .iter()
-                            .map(|(name, value)| Ok((name.clone(), value.clone_owned()?)))
-                            .collect::<Result<HashMap<_, _>, String>>()?,
-                    ),
-                };
-                Self::Enum(Rc::new(EnumInstance {
-                    type_definition: instance.type_definition.clone(),
-                    variant: instance.variant.clone(),
-                    payload,
-                    type_arguments: instance.type_arguments.clone(),
-                }))
-            }
+
             Self::Native(object) => Self::Native(native_ops::clone_owned(object)?),
             Self::Dynamic(object) => {
                 if self.is_partially_moved() {
