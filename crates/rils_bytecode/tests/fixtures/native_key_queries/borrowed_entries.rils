@@ -1,0 +1,15 @@
+let mut map: HashMap<string, Option<string>> = HashMap::new();
+map.insert("entry", Some("value"));
+let mut set: HashSet<string> = HashSet::new();
+set.insert("entry");
+let mut count = 0usize;
+for entry in map.iter() {
+    if entry.0.len() == 5usize && map.contains_key(entry.0) && set.contains(entry.0) && entry.1.is_some() { count = count + 1usize; }
+}
+let mut tree: BTreeMap<i128, string> = BTreeMap::new();
+tree.insert(i128::MIN, "low");
+tree.insert(i128::MAX, "high");
+for entry in tree.iter() {
+    if tree.contains_key(entry.0) && entry.1.len() > 0usize { count = count + 1usize; }
+}
+if count == 3usize { 42 } else { 0 }

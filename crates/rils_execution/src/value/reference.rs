@@ -11,7 +11,6 @@ use super::record_codec::NativeRecordCodec;
 mod host_view;
 #[path = "reference/inspection.rs"]
 mod inspection;
-pub(crate) use inspection::BorrowedTarget;
 #[path = "reference/native_path.rs"]
 mod native_path;
 use super::{
@@ -247,9 +246,7 @@ impl ReferenceValue {
         key: HashKey,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
-        if !map.contains_key(&key) {
-            return Err("iterator map key no longer exists".into());
-        }
+        map.with_entry(&key, |_, _| ())?;
         map.borrowed().set(map.borrowed().get() + 1);
         Ok(Self {
             mutable: false,
@@ -263,7 +260,7 @@ impl ReferenceValue {
         key: HashKey,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
-        if map.value(&key).is_none() {
+        if !map.with_entry(&key, |_, slot| slot.value.is_some())? {
             return Err("iterator map value no longer exists".into());
         }
         map.borrowed().set(map.borrowed().get() + 1);
@@ -279,9 +276,7 @@ impl ReferenceValue {
         key: HashKey,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
-        if !set.contains(&key) {
-            return Err("iterator set item no longer exists".into());
-        }
+        set.with_item(&key, |_| ())?;
         set.borrowed().set(set.borrowed().get() + 1);
         Ok(Self {
             mutable: false,
@@ -465,39 +460,13 @@ impl ReferenceValue {
         &self,
         callback: impl FnOnce(&T) -> R,
     ) -> Result<R, String> {
-        match &self.target {
-            ReferenceTarget::Storage(target) => target
-                .borrow()
-                .with_value(|value| crate::host_value::with_rust_value(value, callback)),
-
-            ReferenceTarget::IndexedElement { sequence, index } => {
-                let elements = sequence.elements.borrow();
-                let value = elements
-                    .get(*index)
-                    .and_then(|slot| slot.value.as_ref())
-                    .ok_or("reference target element has been moved")?;
+        self.with_borrowed_target(|value| match value {
+            super::borrowed::Read::View(view) => view.with_rust(callback),
+            super::borrowed::Read::Leaf(leaf) => leaf.with_rust(callback),
+            super::borrowed::Read::Legacy(value) => {
                 crate::host_value::with_rust_value(value, callback)
             }
-            ReferenceTarget::DynamicIndexedElement {
-                sequence,
-                index,
-                field,
-                ..
-            } => sequence.with(|value| {
-                value.with_sequence_item(*index, |item| match field {
-                    Some(field) => item.view().field(*field)?.with_rust(callback),
-                    None => item.with(callback),
-                })
-            })??,
-            ReferenceTarget::DynamicCell { cell, .. } => cell.with(|payload| {
-                payload
-                    .with::<ErasedRefCell, _>(|value| value.value.with(|item| item.with(callback)))
-            })???,
-            ReferenceTarget::DynamicField(path) => {
-                path.with_view(|view| view.with_rust(callback))?
-            }
-            _ => Err("reference target has no direct Rust borrow view".into()),
-        }
+        })?
     }
 
     pub(crate) fn with_native_view<R>(
@@ -534,7 +503,20 @@ impl ReferenceValue {
                 })
             })??,
             ReferenceTarget::DynamicField(path) => path.with_view(callback),
-            _ => Err("reference target has no native layout view".into()),
+            ReferenceTarget::MapKey { map, key } => {
+                map.with_entry(key, |key, _| key.with_native_view(callback))?
+            }
+            ReferenceTarget::MapValue { map, key } => map.with_entry(key, |_, slot| {
+                crate::host_value::with_native_value(
+                    slot.value
+                        .as_ref()
+                        .ok_or("referenced map value was moved")?,
+                    callback,
+                )
+            })?,
+            ReferenceTarget::SetItem { set, key } => {
+                set.with_item(key, |key| key.with_native_view(callback))?
+            }
         }
     }
 

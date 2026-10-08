@@ -1,23 +1,19 @@
 //! Compatibility referents can be inspected while their original slots stay borrowed.
 
-use super::{DynamicValueRef, ReferenceTarget, ReferenceValue, Value};
-
-pub(crate) enum BorrowedTarget<'a> {
-    Value(&'a Value),
-    Native(DynamicValueRef<'a>),
-}
+use super::super::borrowed::{Read, with_read};
+use super::{ReferenceTarget, ReferenceValue};
 
 impl ReferenceValue {
     /// Inspect one reference target, preserving any reference stored inside it.
     pub(crate) fn with_borrowed_target<R>(
         &self,
-        callback: impl for<'a> FnOnce(BorrowedTarget<'a>) -> R,
+        callback: impl for<'a> FnOnce(Read<'a>) -> R,
     ) -> Result<R, String> {
         match &self.target {
             ReferenceTarget::Storage(target) => target
                 .try_borrow()
                 .map_err(|_| "reference target is already mutably accessed".to_owned())?
-                .with_value(|value| Ok(callback(BorrowedTarget::Value(value)))),
+                .with_value(|value| with_read(value, false, callback)),
             ReferenceTarget::IndexedElement { sequence, index } => {
                 let elements = sequence
                     .elements
@@ -27,17 +23,28 @@ impl ReferenceValue {
                     .get(*index)
                     .and_then(|slot| slot.value.as_ref())
                     .ok_or("referenced element was moved")?;
-                Ok(callback(BorrowedTarget::Value(item)))
+                with_read(item, false, callback)
             }
             ReferenceTarget::DynamicIndexedElement { .. }
             | ReferenceTarget::DynamicCell { .. }
             | ReferenceTarget::DynamicField(_) => {
-                self.with_native_view(|view| callback(BorrowedTarget::Native(view)))
+                self.with_native_view(|view| callback(Read::View(view)))
             }
-            // Compatibility map/set projections still use their old read API.
-            _ => self
-                .read()
-                .map(|value| callback(BorrowedTarget::Value(&value))),
+            ReferenceTarget::MapKey { map, key } => {
+                map.with_entry(key, |key, _| key.with_read(callback))?
+            }
+            ReferenceTarget::MapValue { map, key } => map.with_entry(key, |_, slot| {
+                with_read(
+                    slot.value
+                        .as_ref()
+                        .ok_or("referenced map value was moved")?,
+                    false,
+                    callback,
+                )
+            })?,
+            ReferenceTarget::SetItem { set, key } => {
+                set.with_item(key, |key| key.with_read(callback))?
+            }
         }
     }
 }

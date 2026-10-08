@@ -6,6 +6,10 @@ use rils_runtime::eval_value;
 fn native_key_queries_agree_in_interpreter_vm_and_loaded_vm() {
     for (name, source) in [
         (
+            "borrowed_entries",
+            include_str!("fixtures/native_key_queries/borrowed_entries.rils"),
+        ),
+        (
             "nested",
             include_str!("fixtures/native_key_queries/nested.rils"),
         ),

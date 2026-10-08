@@ -207,6 +207,12 @@ mod native {
 
 pub use native::String;
 
+impl std::fmt::Debug for String {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self.as_ref(), formatter)
+    }
+}
+
 pub const NATIVE_EQUALITY_STRING: rils_native::EqualityRegistration =
     rils_native::EqualityRegistration::of::<String>();
 

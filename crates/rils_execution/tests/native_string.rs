@@ -22,7 +22,7 @@ fn string_uses_native_storage_across_clone_display_and_hash_keys() {
     assert_eq!(value.clone_owned().unwrap(), value);
     assert_eq!(
         HashKey::from_value(&value).unwrap(),
-        HashKey::String(Rc::from("héllo"))
+        HashKey::String(Rc::new("héllo".to_owned().into()))
     );
     assert!(matches!(
         HashKey::from_value(&value).unwrap().to_value(),

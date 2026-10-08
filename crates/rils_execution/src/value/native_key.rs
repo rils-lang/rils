@@ -24,7 +24,7 @@ fn read(
     ordered: bool,
     dereference: bool,
 ) -> Result<NativeKey, String> {
-    let codec = super::borrowed::native_codec(value)?.unwrap_or_default();
+    let codec = super::borrowed::native_codec(value)?;
     with_read(value, dereference, |value| {
         let registry = rils_stdlib::native::registry();
         match value {
@@ -37,7 +37,11 @@ fn read(
                         actual.rils_type()
                     ));
                 }
-                native(view, &codec, ordered)
+                native(
+                    view,
+                    codec.as_deref().unwrap_or(&NativeRecordCodec::default()),
+                    ordered,
+                )
             }
             Read::Leaf(leaf) => {
                 if leaf.rils_type() != layout.rils_type() {

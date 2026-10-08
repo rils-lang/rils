@@ -2,7 +2,6 @@
 
 use rils_value::{DynamicValueRef, NativeLeafRef};
 
-use super::reference::BorrowedTarget;
 use super::{Type, Value};
 
 pub(crate) fn native_codec(
@@ -27,10 +26,7 @@ pub(crate) fn with_read<R>(
     callback: impl for<'a> FnOnce(Read<'a>) -> R,
 ) -> Result<R, String> {
     if dereference && let Value::Reference(reference) = value {
-        return reference.with_borrowed_target(|target| match target {
-            BorrowedTarget::Value(value) => with_read(value, false, callback),
-            BorrowedTarget::Native(view) => Ok(callback(Read::View(view))),
-        })?;
+        return reference.with_borrowed_target(callback);
     }
     macro_rules! scalar {
         ($item:expr) => {

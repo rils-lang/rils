@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::Value;
 use crate::value::storage::StoredDataRef;
 use rils_stdlib::stdlib::{float::Number as FloatNumber, integer::Number as IntegerNumber};
-use rils_value::DynamicValueRef;
+use rils_value::{DynamicValueRef, NativeLeafRef};
 
 /// Maps a Rust host type to the exact Rust payload stored for its Rils type.
 pub trait RilsHostType: Sized + 'static {
@@ -21,7 +21,15 @@ pub trait RilsHostType: Sized + 'static {
         view: DynamicValueRef<'_>,
         callback: impl FnOnce(&Self) -> R,
     ) -> Result<R, String> {
-        view.with_rust::<Self::Native, _>(|value| callback(Self::as_native_ref(value)))
+        Self::with_leaf_ref(&view.leaf()?, callback)
+    }
+
+    /// Read a checked leaf from standalone, composed, or compatibility storage.
+    fn with_leaf_ref<R>(
+        leaf: &NativeLeafRef<'_>,
+        callback: impl FnOnce(&Self) -> R,
+    ) -> Result<R, String> {
+        leaf.with_rust::<Self::Native, _>(|value| callback(Self::as_native_ref(value)))
     }
 }
 
@@ -46,11 +54,11 @@ macro_rules! wrapped_host_type {
             fn from_native(value: Self::Native) -> Self { value.0 }
             fn as_native_ref(value: &Self::Native) -> &Self { &value.0 }
 
-            fn with_composed_ref<R>(view: DynamicValueRef<'_>, callback: impl FnOnce(&Self) -> R) -> Result<R, String> {
-                if view.layout()?.is_rust_type::<Self>() {
-                    view.with_rust(callback)
+            fn with_leaf_ref<R>(leaf: &NativeLeafRef<'_>, callback: impl FnOnce(&Self) -> R) -> Result<R, String> {
+                if leaf.is_rust_type::<Self>() {
+                    leaf.with_rust(callback)
                 } else {
-                    view.with_rust::<Self::Native, _>(|value| callback(&value.0))
+                    leaf.with_rust::<Self::Native, _>(|value| callback(&value.0))
                 }
             }
         }

@@ -180,6 +180,14 @@ impl ReferenceValue {
 
     pub fn native_layout(&self) -> Result<Option<Rc<DynamicLayout>>, String> {
         match &self.target {
+            ReferenceTarget::MapKey { .. }
+            | ReferenceTarget::MapValue { .. }
+            | ReferenceTarget::SetItem { .. } => {
+                return self.with_borrowed_target(|value| match value {
+                    super::super::borrowed::Read::View(view) => view.layout().map(Some),
+                    _ => Ok(None),
+                })?;
+            }
             ReferenceTarget::Storage(target) => {
                 return target
                     .try_borrow()
@@ -227,7 +235,19 @@ impl ReferenceValue {
                     .ok_or("native projection target was moved")?;
                 super::super::borrowed::native_codec(value)
             }
-            _ => Ok(None),
+            ReferenceTarget::MapKey { map, key } => {
+                map.with_entry(key, |key, _| key.native_codec())?
+            }
+            ReferenceTarget::MapValue { map, key } => map.with_entry(key, |_, slot| {
+                super::super::borrowed::native_codec(
+                    slot.value
+                        .as_ref()
+                        .ok_or("referenced map value was moved")?,
+                )
+            })?,
+            ReferenceTarget::SetItem { set, key } => {
+                set.with_item(key, |key| key.native_codec())?
+            }
         }
     }
 

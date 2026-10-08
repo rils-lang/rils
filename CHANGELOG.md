@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 旧 HashMap/HashSet/BTreeMap/BTreeSet 的键、值和元素投影已接入共享借用读取，比较、原生查询与 `RilsValue::with_ref()` 不再通过 `ReferenceValue::read()` 重建快照；读取期间保留集合 guard，冲突访问、已 move 值及失效条目明确报错。原生组合投影保留布局及名义类型声明，`Eq + Hash` 与显式 Copy 规则不变。**Rust API 迁移：** `HashKey::String` 的负载由 `Rc<str>` 改为 `Rc<rils_stdlib::stdlib::string::String>`；优先使用 `HashKey::from_value(&Value::from_string(...))` 构造键。`RilsHostType` 新增有默认实现的 `with_leaf_ref()`，原始标量与包装标量的借用映射复用该入口。旧 Value 集合存储、拥有型快照接口继续迁移；C ABI、v8 编码和版本号不变。
+
 - HashMap/HashSet/BTreeMap/BTreeSet 的原生键查询直接读取借用视图，移除 `HashKey → Value → native` 快照转换；`get_cloned` 只复制返回值，查询不要求键实现 Clone，仍检查完整类型与用户类型的 `Eq + Hash`。BinaryHeap 的原生比较也直接读取注册的键身份。**Rust API 迁移：** `KeyRegistration::key` 改为接收 `&NativeLeafRef`，新增必填 `ordered` 能力标志；使用受检的 `with_rust` 读取负载。基础键注册由标准库声明自动收集；自建 `NativeRegistry` 也须显式注册整数等基础键。键身份仍可持有字符串和复合身份数据，并非零分配哈希。旧 Value 变体及旧集合存储接口继续迁移；C ABI、v8 编码和版本号不变。
 
 - 原生 Option/Result、用户记录、enum 和 Vec 的相等比较直接借用活动负载与字段，不再解码为旧 `Value` 快照；`Vec::contains` 借用元素和查询参数，支持非 Copy、非 Clone 记录。数值比较注册从标准库声明自动收集，包装标量与组合中的原始标量通过安全的借用映射比较，保留浮点 NaN 与正负零规则。缺少原生比较注册、已移出字段及冲突访问通过解释器与 VM 的源码位置报告。Rust 宿主可用 `Value::try_equal()` 获取比较错误，`PartialEq` 兼容接口仍将失败表示为 false。旧 Option/Result 变体及宿主快照读取接口继续迁移；C ABI、字节码编码和版本号不变。
