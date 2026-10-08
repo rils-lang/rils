@@ -2,6 +2,22 @@
 
 use rils_stdlib_macros::decl_rils;
 
+pub const NATIVE_KEY_UNIT: rils_native::KeyRegistration = rils_native::KeyRegistration {
+    matches: |ty| ty == &rils_syntax::Type::Unit,
+    key: |leaf| leaf.with_rust::<(), _>(|_| rils_native::NativeKey::Unit),
+    ordered: false,
+};
+pub const NATIVE_KEY_BOOL: rils_native::KeyRegistration = rils_native::KeyRegistration {
+    matches: |ty| ty == &rils_syntax::Type::Bool,
+    key: |leaf| leaf.with_rust::<bool, _>(|value| rils_native::NativeKey::Bool(*value)),
+    ordered: true,
+};
+pub const NATIVE_KEY_CHAR: rils_native::KeyRegistration = rils_native::KeyRegistration {
+    matches: |ty| ty == &rils_syntax::Type::Char,
+    key: |leaf| leaf.with_rust::<char, _>(|value| rils_native::NativeKey::Char(*value)),
+    ordered: true,
+};
+
 pub const NATIVE_EQUALITY_UNIT: rils_native::EqualityRegistration =
     rils_native::EqualityRegistration::of::<()>();
 pub const NATIVE_EQUALITY_BOOL: rils_native::EqualityRegistration =

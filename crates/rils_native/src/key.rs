@@ -1,7 +1,6 @@
 //! Owned key identities extracted without materializing interpreter values.
 
-use rils_syntax::{IntegerType, Type};
-use rils_value::DynamicValueRef;
+use rils_value::{DynamicValueRef, NativeLeafRef};
 
 use crate::NativeRegistry;
 
@@ -43,47 +42,31 @@ impl NativeRegistry {
                 .collect::<Result<Vec<_>, _>>()
                 .map(NativeKey::Fields);
         }
-        let key = match layout.rils_type() {
-            Type::Unit => view.with_rust::<(), _>(|_| NativeKey::Unit)?,
-            Type::Bool => view.with_rust::<bool, _>(|value| NativeKey::Bool(*value))?,
-            Type::Char => view.with_rust::<char, _>(|value| NativeKey::Char(*value))?,
-            Type::Integer(kind) => integer_key(&view, *kind)?,
-            ty => {
-                let registration = self
-                    .keys
-                    .iter()
-                    .find(|registration| (registration.matches)(ty))
-                    .ok_or_else(|| format!("{ty} has no registered native key identity"))?;
-                (registration.key)(view)?
-            }
-        };
-        Ok(key)
+        self.key_leaf(&view.leaf()?)
     }
-}
 
-fn integer_key(view: &DynamicValueRef<'_>, kind: IntegerType) -> Result<NativeKey, String> {
-    macro_rules! signed {
-        ($ty:ty) => {
-            view.with_rust::<$ty, _>(|value| NativeKey::Signed(*value as i128))
-        };
+    pub fn key_leaf(&self, leaf: &NativeLeafRef<'_>) -> Result<NativeKey, String> {
+        self.leaf_key(leaf, false)
     }
-    macro_rules! unsigned {
-        ($ty:ty) => {
-            view.with_rust::<$ty, _>(|value| NativeKey::Unsigned(*value as u128))
-        };
+
+    pub fn ordered_key(&self, view: DynamicValueRef<'_>) -> Result<NativeKey, String> {
+        self.ordered_key_leaf(&view.leaf()?)
     }
-    match kind {
-        IntegerType::I8 => signed!(i8),
-        IntegerType::I16 => signed!(i16),
-        IntegerType::I32 => signed!(i32),
-        IntegerType::I64 => signed!(i64),
-        IntegerType::I128 => signed!(i128),
-        IntegerType::Isize => signed!(isize),
-        IntegerType::U8 => unsigned!(u8),
-        IntegerType::U16 => unsigned!(u16),
-        IntegerType::U32 => unsigned!(u32),
-        IntegerType::U64 => unsigned!(u64),
-        IntegerType::U128 => unsigned!(u128),
-        IntegerType::Usize => unsigned!(usize),
+
+    pub fn ordered_key_leaf(&self, leaf: &NativeLeafRef<'_>) -> Result<NativeKey, String> {
+        self.leaf_key(leaf, true)
+    }
+
+    fn leaf_key(&self, leaf: &NativeLeafRef<'_>, ordered: bool) -> Result<NativeKey, String> {
+        let ty = leaf.rils_type();
+        let registration = self
+            .keys
+            .iter()
+            .find(|registration| (registration.matches)(ty))
+            .ok_or_else(|| format!("{ty} has no registered native key identity"))?;
+        if ordered && !registration.ordered {
+            return Err(format!("{ty} has no registered native key ordering"));
+        }
+        (registration.key)(leaf)
     }
 }

@@ -13,6 +13,18 @@ pub trait HeapElement: Ord + Clone {}
 macro_rules! heap_elements {
     ($($ty:ty),* $(,)?) => {
         $(impl HeapElement for $ty {})*
+
+        /// Extract an ordered identity using the same element declarations as
+        /// the Rust implementation; the execution layer needs no type list.
+        pub fn native_heap_key(
+            view: rils_value::DynamicValueRef<'_>,
+        ) -> Result<rils_native::NativeKey, String> {
+            let leaf = view.leaf()?;
+            if !($(leaf.is_rust_type::<$ty>())||*) {
+                return Err(format!("BinaryHeap does not support ordering {}", leaf.rils_type()));
+            }
+            crate::native::registry().ordered_key_leaf(&leaf)
+        }
     };
 }
 

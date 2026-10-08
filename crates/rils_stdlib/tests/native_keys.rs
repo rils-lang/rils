@@ -97,3 +97,87 @@ fn native_key_rejects_unregistered_leaf() {
             .contains("no registered native key")
     );
 }
+
+#[test]
+fn generated_integer_keys_support_raw_and_wrapped_storage_at_every_width() {
+    use rils_stdlib::stdlib::integer::Number;
+    use rils_value::NativeLeafRef;
+    let registry = rils_stdlib::native::registry();
+    macro_rules! check {
+        ($ty:ty, $kind:ident, $identity:ident, $wide:ty) => {
+            for raw in [<$ty>::MIN, 0, <$ty>::MAX] {
+                let ty = Type::Integer(IntegerType::$kind);
+                let wrapped = Number::<$ty>(raw);
+                let expected = NativeKey::$identity(raw as $wide);
+                let stored =
+                    DynamicValue::from_rust(DynamicLayout::copy_of::<$ty>(ty.clone()), raw)
+                        .unwrap();
+                assert_eq!(
+                    rils_stdlib::stdlib::collections::native_heap_key(stored.view()),
+                    Ok(expected.clone())
+                );
+                for leaf in [
+                    NativeLeafRef::from_rust(&raw, ty.clone()),
+                    NativeLeafRef::from_rust(&wrapped, ty),
+                ] {
+                    assert_eq!(registry.key_leaf(&leaf).unwrap(), expected);
+                    assert_eq!(registry.ordered_key_leaf(&leaf).unwrap(), expected);
+                }
+            }
+        };
+    }
+    check!(i8, I8, Signed, i128);
+    check!(i16, I16, Signed, i128);
+    check!(i32, I32, Signed, i128);
+    check!(i64, I64, Signed, i128);
+    check!(i128, I128, Signed, i128);
+    check!(isize, Isize, Signed, i128);
+    check!(u8, U8, Unsigned, u128);
+    check!(u16, U16, Unsigned, u128);
+    check!(u32, U32, Unsigned, u128);
+    check!(u64, U64, Unsigned, u128);
+    check!(u128, U128, Unsigned, u128);
+    check!(usize, Usize, Unsigned, u128);
+}
+
+#[test]
+fn key_registrations_reject_wrong_physical_types_and_unsupported_ordering() {
+    use rils_value::NativeLeafRef;
+    let registry = rils_stdlib::native::registry();
+    assert!(
+        registry
+            .key_leaf(&NativeLeafRef::from_rust(&42_u32, Type::I32))
+            .is_err()
+    );
+    assert_eq!(
+        registry.key_leaf(&NativeLeafRef::from_rust(&(), Type::Unit)),
+        Ok(NativeKey::Unit)
+    );
+    assert!(
+        registry
+            .ordered_key_leaf(&NativeLeafRef::from_rust(&(), Type::Unit))
+            .is_err()
+    );
+    assert!(
+        registry
+            .ordered_key_leaf(&NativeLeafRef::from_rust(&f64::NAN, Type::F64))
+            .is_err()
+    );
+    let option = DynamicValue::none(
+        DynamicLayout::option(DynamicLayout::copy_of::<i32>(Type::I32)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(registry.key(option.view()), Ok(NativeKey::None));
+    assert!(registry.ordered_key(option.view()).is_err());
+    let boolean =
+        DynamicValue::from_rust(DynamicLayout::copy_of::<bool>(Type::Bool), true).unwrap();
+    assert_eq!(
+        registry.ordered_key(boolean.view()),
+        Ok(NativeKey::Bool(true))
+    );
+    assert!(
+        rils_stdlib::stdlib::collections::native_heap_key(boolean.view())
+            .unwrap_err()
+            .contains("does not support ordering")
+    );
+}

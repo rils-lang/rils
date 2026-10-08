@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use rils_syntax::Type;
-use rils_value::{DynamicLayout, DynamicValue, DynamicValueRef};
+use rils_value::{DynamicLayout, DynamicValue, DynamicValueRef, NativeLeafRef};
 
 pub type LayoutResolver<'a> = dyn FnMut(&Type) -> Result<Rc<DynamicLayout>, String> + 'a;
 pub type LayoutFactory =
@@ -22,7 +22,9 @@ pub struct ElementRegistration {
 /// A native leaf's immutable identity for hash and ordered collections.
 pub struct KeyRegistration {
     pub matches: fn(&Type) -> bool,
-    pub key: fn(DynamicValueRef<'_>) -> Result<crate::NativeKey, String>,
+    pub key: fn(&NativeLeafRef<'_>) -> Result<crate::NativeKey, String>,
+    /// Whether this identity preserves the declaration's total ordering.
+    pub ordered: bool,
 }
 
 /// Immutable registration table. It stores function pointers, not runtime values.

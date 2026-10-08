@@ -228,7 +228,7 @@ pub const NATIVE_ELEMENT_STRING: rils_native::ElementRegistration =
     };
 
 fn native_string_key(
-    item: rils_value::DynamicValueRef<'_>,
+    item: &rils_value::NativeLeafRef<'_>,
 ) -> Result<rils_native::NativeKey, std::string::String> {
     item.with_rust::<String, _>(|value| rils_native::NativeKey::String(value.as_ref().clone()))
 }
@@ -236,6 +236,7 @@ fn native_string_key(
 pub const NATIVE_KEY_STRING: rils_native::KeyRegistration = rils_native::KeyRegistration {
     matches: native_element_matches,
     key: native_string_key,
+    ordered: true,
 };
 
 fn format_native_string(

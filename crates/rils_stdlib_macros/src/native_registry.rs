@@ -104,6 +104,29 @@ fn collect(folder: &LitStr) -> syn::Result<proc_macro2::TokenStream> {
                             equalities.extend(primitives.iter().map(|primitive| {
                                 quote!(rils_native::EqualityRegistration::projected::<#module::Number<#primitive>, #primitive>())
                             }));
+                            if family.mac.path.is_ident("primitive_integer_family") {
+                                keys.extend(primitives.iter().map(|primitive| {
+                                    let (identity, width) = if primitive.to_string().starts_with('i') {
+                                        (format_ident!("Signed"), quote!(i128))
+                                    } else {
+                                        (format_ident!("Unsigned"), quote!(u128))
+                                    };
+                                    quote!(rils_native::KeyRegistration {
+                                        matches: |ty| matches!(ty, rils_syntax::Type::Integer(kind)
+                                            if kind.name() == stringify!(#primitive)),
+                                        key: |leaf| {
+                                            if leaf.is_rust_type::<#primitive>() {
+                                                leaf.with_rust::<#primitive, _>(|value|
+                                                    rils_native::NativeKey::#identity(*value as #width))
+                                            } else {
+                                                leaf.with_rust::<#module::Number<#primitive>, _>(|value|
+                                                    rils_native::NativeKey::#identity(*value.as_ref() as #width))
+                                            }
+                                        },
+                                        ordered: true,
+                                    })
+                                }));
+                            }
                         }
                         let Item::Struct(structure) = declaration else {
                             continue;
