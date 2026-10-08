@@ -41,6 +41,8 @@ Option/Result 的普通消费式方法和回调方法由过程宏按签名生成
 
 原生 Option/Result、记录、enum 和 Vec 的比较直接借用活动负载与字段，`Vec::contains(&value)` 也读取原元素和查询值，不隐式复制内容。基础数值比较由标准库声明生成注册，包装类型与原始标量通过安全的借用映射比较。Rust 宿主可用 `Value::try_equal()` 获取缺失注册、已 move 字段或访问冲突等错误；旧 sum 变体及拥有型快照接口仍在迁移。
 
+原生 HashMap/HashSet/BTreeMap/BTreeSet 的键查询读取原始借用值，不再复制键负载或还原成旧 `Value`；`get_cloned` 仅复制返回值。整数、bool、char、string 的键能力来自标准库注册，BinaryHeap 比较复用有序键注册。查询保留完整泛型类型与 `Eq + Hash` 检查，不隐式授予 Copy/Clone。不可变键身份仍可能分配字符串或复合身份数据。
+
 `Some(value)`、类型明确的 `None` 和 Option 默认值在解释器与 VM 中直接构造原生布局并消费子值，覆盖基础值、标准库容器、用户 struct/enum、函数及局部引用。数组、比较、if 分支、泛型实参和方法参数可补齐构造类型；未解析的元素类型或缺失布局报错，不回退到旧值。拥有型 `Option::or/xor` 与 `Result::ok/err` 也复用同一构造器。`Ok` / `Err` 也按完整 `Result<T, E>` 直接构造原生布局；返回声明、if/match 分支、泛型实参和 `?` 上下文可补齐两侧类型。限定路径与 `use` 别名保留构造器身份；无上下文的 `Ok(value)` / `Err(error)` 需补完整标注，非活动分支也必须有布局。剩余借用适配继续迁移。Rust 宿主可用 `RilsValue::with_native_view()` 借用组合负载，使用 `TypedStorageContext::construct_option/construct_result` 构造拥有型组合值，或用 `Value::as_option()` 读取可转换的新旧 Option 表示；基础值可通过 `Value::as_i8()`、`Value::as_i32()`、`Value::as_usize()` 和 `Value::as_string()` 读取。实验性 v8 的 Option/Result 构造操作数已变化，旧字节码需重新编译，格式号不变。
 
 词法引用和函数值也有执行层注册的原生叶子布局：`Option<&mut T>`、`Result<fn(T) -> U, E>`、`Vec<fn(T) -> U>` 及包含它们的泛型记录可以参与原生组合存储。Copy 保留引用租约或函数身份，闭包的捕获状态继续共享；原生字段内的引用仍按来源检查作用域，不能因进入组合存储而逃逸。宿主声明已接入相同上下文：Option/Result、空集合、Box、Rc 和 Cell/RefCell 构造可递归组合宿主字段，保留声明的 Copy 策略与对象身份。Rust 宿主可用 `Engine::register_host_contract_types()` 和 `BytecodeHost::register_host_contract()` 安装 Manifest 类型；C API 冻结宿主契约时自动接入。`register_native_type()` 的自定义类型使用完整模块路径，默认非 Copy。

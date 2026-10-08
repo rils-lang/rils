@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- HashMap/HashSet/BTreeMap/BTreeSet 的原生键查询直接读取借用视图，移除 `HashKey → Value → native` 快照转换；`get_cloned` 只复制返回值，查询不要求键实现 Clone，仍检查完整类型与用户类型的 `Eq + Hash`。BinaryHeap 的原生比较也直接读取注册的键身份。**Rust API 迁移：** `KeyRegistration::key` 改为接收 `&NativeLeafRef`，新增必填 `ordered` 能力标志；使用受检的 `with_rust` 读取负载。基础键注册由标准库声明自动收集；自建 `NativeRegistry` 也须显式注册整数等基础键。键身份仍可持有字符串和复合身份数据，并非零分配哈希。旧 Value 变体及旧集合存储接口继续迁移；C ABI、v8 编码和版本号不变。
+
 - 原生 Option/Result、用户记录、enum 和 Vec 的相等比较直接借用活动负载与字段，不再解码为旧 `Value` 快照；`Vec::contains` 借用元素和查询参数，支持非 Copy、非 Clone 记录。数值比较注册从标准库声明自动收集，包装标量与组合中的原始标量通过安全的借用映射比较，保留浮点 NaN 与正负零规则。缺少原生比较注册、已移出字段及冲突访问通过解释器与 VM 的源码位置报告。Rust 宿主可用 `Value::try_equal()` 获取比较错误，`PartialEq` 兼容接口仍将失败表示为 false。旧 Option/Result 变体及宿主快照读取接口继续迁移；C ABI、字节码编码和版本号不变。
 
 - 原生 Option/Result、用户记录和 Vec 的 Display/Debug 直接读取借用视图，不再为了输出复制负载；嵌套非 Clone 字段可正常显示，Debug 中的字符串保留引号。基础数值、字符串和 Vec 的格式化由标准库注册并自动收集。模式绑定和 sum 哈希键保留原生存储与完整泛型类型。**Rust API 迁移：** 删除 `Value::materialize_native_sum()` 及 `dynamic_option::materialize()` / `dynamic_result::materialize()`；读取分支和借用 payload 使用 `value::sum::branch()` / `borrow_payload()`，消费 payload 使用 `dynamic_option::take_owned()` / `dynamic_result::take_owned()`。旧 Option/Result 变体及其他借用适配仍在迁移；字节码编码和版本号不变。

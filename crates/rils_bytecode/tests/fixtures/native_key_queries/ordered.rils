@@ -1,0 +1,20 @@
+let mut map: BTreeMap<i128, i32> = BTreeMap::new();
+map.insert(i128::MIN, 1);
+map.insert(i128::MAX, 42);
+let high = i128::MAX;
+let mut set: BTreeSet<string> = BTreeSet::new();
+set.insert("键");
+set.insert("alpha");
+let text = "键";
+let mut heap: BinaryHeap<u128> = BinaryHeap::new();
+heap.push(0u128);
+heap.push(u128::MAX);
+heap.push(42u128);
+let mut words: BinaryHeap<string> = BinaryHeap::new();
+words.push("alpha");
+words.push("zebra");
+words.push("beta");
+let valid = map.contains_key(&high) && map.get_cloned(&high) == Some(42) && set.contains(&text)
+    && heap.peek_cloned() == Some(u128::MAX) && heap.pop() == Some(u128::MAX) && heap.pop() == Some(42u128)
+    && words.peek_cloned() == Some("zebra") && words.pop() == Some("zebra") && words.pop() == Some("beta");
+if valid && map.remove(&high) == Some(42) && set.remove(&text) { 42 } else { 0 }

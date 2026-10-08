@@ -217,6 +217,14 @@ for value in values {
 两种容器都提供 `iter()`：Map 产生 `(&K, &V)`，Set 产生 `&T`；哈希容器的遍历顺序不保证固定。
 借用迭代器或其产出的引用仍存活时，不能结构修改原集合。
 
+原生 Map/Set 的 `contains_key` / `contains`、`get_cloned`、`remove` 直接借用查询键，
+支持 Option/Result、tuple、数组及合法用户类型的组合，不要求查询键实现 Clone。
+`get_cloned` 仍需复制返回值。查询检查完整键类型，用户 struct/enum 仍须实现 `Eq + Hash`；
+字段可 Copy 不会自动使用户类型成为 Copy。整数、bool、char、string 的键身份与有序键能力
+由标准库注册，BinaryHeap 的原生比较也复用这套注册。字符串及复合键的不可变身份数据
+仍可能分配空间，但不再构造查询键的旧 Value 快照。
+
+
 ```rust
 let mut scores: HashMap<string, i32> = HashMap::new();
 let player = "alice";

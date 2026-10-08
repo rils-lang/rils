@@ -205,7 +205,30 @@ impl ReferenceValue {
     }
 
     pub(crate) fn native_codec(&self) -> Result<Option<Rc<NativeRecordCodec>>, String> {
-        Ok(self.native_path()?.map(|path| path.codec))
+        // Declaration lookup must not promote storage or acquire a mutable borrow.
+        match &self.target {
+            ReferenceTarget::DynamicField(path) => Ok(Some(path.codec.clone())),
+            ReferenceTarget::DynamicIndexedElement { codec, .. } => Ok(codec.clone()),
+            ReferenceTarget::DynamicCell { structs, enums, .. } => Ok(Some(Rc::new(
+                NativeRecordCodec::with_definitions(structs, enums),
+            ))),
+            ReferenceTarget::Storage(target) => target
+                .try_borrow()
+                .map_err(|_| "reference target is already mutably accessed".to_owned())?
+                .with_value(super::super::borrowed::native_codec),
+            ReferenceTarget::IndexedElement { sequence, index } => {
+                let elements = sequence
+                    .elements
+                    .try_borrow()
+                    .map_err(|_| "referenced sequence is already mutably accessed".to_owned())?;
+                let value = elements
+                    .get(*index)
+                    .and_then(|slot| slot.value.as_ref())
+                    .ok_or("native projection target was moved")?;
+                super::super::borrowed::native_codec(value)
+            }
+            _ => Ok(None),
+        }
     }
 
     fn native_root_layout(value: &Value) -> Result<Option<Rc<DynamicLayout>>, String> {

@@ -9,7 +9,7 @@ use rils_builtins::builtin;
 use rils_native::NativeKey;
 use rils_value::{DynamicLayout, DynamicType, DynamicValue};
 
-use crate::value::{DynamicObject, HashKey, Value, record_codec::NativeRecordCodec};
+use crate::value::{DynamicObject, Value, record_codec::NativeRecordCodec};
 
 use crate::value::native_receiver::NativeReceiver;
 use rils_value::DynamicValueRef;
@@ -122,13 +122,16 @@ pub(super) fn call_owned_symbol(
         let mut values = arguments.into_iter();
         values.next();
         let value = values.next().expect("arity checked");
-        if kind == SetKind::BTree {
-            HashKey::from_ordered_value(&value)
-                .map_err(|_| "BTreeSet elements must be bool, integer, char, or string")?;
-        }
         let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
         let native = codec.into_native(value, item_layout)?;
-        let key = rils_stdlib::native::registry().key(native.view())?;
+        let key = crate::value::native_key::native(native.view(), &codec, kind == SetKind::BTree)
+            .map_err(|error| {
+            if kind == SetKind::BTree {
+                format!("BTreeSet elements must be a registered ordered value: {error}")
+            } else {
+                error
+            }
+        })?;
         let index = object.with(|set| find(&set, &key))??;
         if index.is_some() {
             return Ok(Value::Bool(false));
@@ -230,7 +233,7 @@ fn dispatch(
         .sequence_item()
         .ok_or("set has no native item layout")?
         .clone();
-    let mutating = matches!(method, "clear" | "insert" | "remove");
+    let mutating = matches!(method, "clear" | "remove");
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err(format!(
             "{} mutation requires a mutable reference",
@@ -248,28 +251,12 @@ fn dispatch(
                 .map_err(|error| mutation_error(kind, error))?;
             Ok(Value::Unit)
         }
-        "contains" | "insert" | "remove" => {
+        "contains" | "remove" => {
             let item = arguments.get(1).ok_or("missing set element")?;
-            let (key, native) = encode_key(kind, item, item_layout)?;
+            let key = crate::value::native_key::query(item, &item_layout, kind == SetKind::BTree)?;
             let index = object.with(|set| find(&set, &key))??;
             match method {
                 "contains" => Ok(Value::Bool(index.is_some())),
-                "insert" => {
-                    if index.is_some() {
-                        return Ok(Value::Bool(false));
-                    }
-                    object
-                        .with_mut(|mut set| {
-                            let position = if kind == SetKind::BTree {
-                                insertion_index(&set.view(), &key)?
-                            } else {
-                                set.sequence_len()?
-                            };
-                            set.insert_sequence_item(position, native)
-                        })?
-                        .map_err(|error| mutation_error(kind, error))?;
-                    Ok(Value::Bool(true))
-                }
                 "remove" => {
                     if let Some(index) = index {
                         object
@@ -353,21 +340,6 @@ fn other_set(kind: SetKind, value: &Value) -> Result<NativeReceiver, String> {
         return Err(format!("expected {} receiver", kind.name()));
     }
     Ok(object)
-}
-
-fn encode_key(
-    kind: SetKind,
-    value: &Value,
-    layout: Rc<DynamicLayout>,
-) -> Result<(NativeKey, DynamicValue), String> {
-    let key = match kind {
-        SetKind::Hash => HashKey::from_value(value)?,
-        SetKind::BTree => HashKey::from_ordered_value(value)
-            .map_err(|_| "BTreeSet elements must be bool, integer, char, or string".to_owned())?,
-    };
-    let native = NativeRecordCodec::new().into_native(key.to_value(), layout)?;
-    let identity = rils_stdlib::native::registry().key(native.view())?;
-    Ok((identity, native))
 }
 
 fn find(set: &DynamicValueRef<'_>, key: &NativeKey) -> Result<Option<usize>, String> {

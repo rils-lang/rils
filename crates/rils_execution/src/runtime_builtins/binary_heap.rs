@@ -2,12 +2,11 @@ use crate::value::native_receiver::NativeReceiver;
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};
 
 use rils_builtins::{BuiltinMember, ReceiverMode, TypePattern};
-use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::DynamicValue;
 
 use crate::{
     types::{Type, merge_types},
-    value::{BinaryHeapValue, HashKey, Value},
+    value::{BinaryHeapValue, Value},
 };
 
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
@@ -97,12 +96,6 @@ pub(super) fn call_owned_symbol(
             return Err("BinaryHeap mutation requires a mutable reference".into());
         }
         let item = arguments.pop().expect("arity checked");
-        if !orderable(&item) {
-            return Err(format!(
-                "BinaryHeap does not support ordering {}",
-                item.type_name()
-            ));
-        }
         if let Some(object) = NativeReceiver::from_value(&arguments[0])? {
             if !crate::value::native_layouts::binary_heap::matches(
                 object.descriptor().layout().rils_type(),
@@ -128,6 +121,12 @@ pub(super) fn call_owned_symbol(
             );
             let item = codec.into_native(item, layout)?;
             return push_dynamic_item(&object, item);
+        }
+        if !orderable(&item) {
+            return Err(format!(
+                "BinaryHeap does not support ordering {}",
+                item.type_name()
+            ));
         }
         match super::import_receiver(&arguments[0])? {
             Value::BinaryHeap(heap) => push_heap_item(&heap, item),
@@ -171,12 +170,6 @@ fn call_dynamic(name: &str, arguments: &[Value], object: &NativeReceiver) -> Res
         )),
         "push" => {
             let item = arguments.get(1).ok_or("missing BinaryHeap element")?;
-            if !orderable(item) {
-                return Err(format!(
-                    "BinaryHeap does not support ordering {}",
-                    item.type_name()
-                ));
-            }
             let item = crate::value::record_codec::into_native(item.clone(), item_layout.clone())?;
             push_dynamic_item(object, item)
         }
@@ -220,9 +213,10 @@ fn call_dynamic(name: &str, arguments: &[Value], object: &NativeReceiver) -> Res
                 if value.sequence_len()? == 0 {
                     Ok(None)
                 } else {
-                    value
-                        .with_sequence_item(0, native_key)?
-                        .map(|key| Some(key.to_value()))
+                    let item = crate::value::runtime_layouts::clone_borrowed_view(
+                        value.sequence_item(0)?,
+                    )?;
+                    crate::value::record_codec::from_native(item).map(Some)
                 }
             })??;
             Ok(Value::Option {
@@ -239,6 +233,7 @@ fn call_dynamic(name: &str, arguments: &[Value], object: &NativeReceiver) -> Res
 }
 
 fn push_dynamic_item(object: &NativeReceiver, item: DynamicValue) -> Result<Value, String> {
+    rils_stdlib::stdlib::collections::native_heap_key(item.view())?;
     object.with_mut(|mut value| {
         value.push_sequence_item(item)?;
         let mut index = value.sequence_len()? - 1;
@@ -283,19 +278,9 @@ fn compare_native_items(
     left: usize,
     right: usize,
 ) -> Result<Ordering, String> {
-    let left = value.with_sequence_item(left, native_key)??;
-    let right = value.with_sequence_item(right, native_key)??;
+    let left = rils_stdlib::stdlib::collections::native_heap_key(value.sequence_item(left)?)?;
+    let right = rils_stdlib::stdlib::collections::native_heap_key(value.sequence_item(right)?)?;
     Ok(left.cmp(&right))
-}
-
-fn native_key(value: &DynamicValue) -> Result<HashKey, String> {
-    let value = if value.descriptor().rils_type() == &Type::String {
-        let text = value.with::<NativeString, _>(|text| std::string::String::from(text.clone()))?;
-        crate::value::native_string(text)
-    } else {
-        crate::value::record_codec::from_native(value.copy_owned()?)?
-    };
-    HashKey::from_ordered_value(&value)
 }
 
 fn call_heap(name: &str, arguments: &[Value], heap: &BinaryHeapValue) -> Result<Value, String> {

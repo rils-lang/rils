@@ -1,17 +1,27 @@
-//! Borrow readers retain original storage guards across recursive comparisons.
+//! Borrow readers retain original storage guards across recursive inspections.
 
 use rils_value::{DynamicValueRef, NativeLeafRef};
 
-use super::super::reference::BorrowedTarget;
+use super::reference::BorrowedTarget;
 use super::{Type, Value};
 
-pub(super) enum Read<'a> {
+pub(crate) fn native_codec(
+    value: &Value,
+) -> Result<Option<std::rc::Rc<super::record_codec::NativeRecordCodec>>, String> {
+    match value {
+        Value::Dynamic(object) => Ok(object.descriptor().metadata()),
+        Value::Reference(reference) => reference.native_codec(),
+        _ => Ok(None),
+    }
+}
+
+pub(crate) enum Read<'a> {
     View(DynamicValueRef<'a>),
     Leaf(NativeLeafRef<'a>),
     Legacy(&'a Value),
 }
 
-pub(super) fn with_read<R>(
+pub(crate) fn with_read<R>(
     value: &Value,
     dereference: bool,
     callback: impl for<'a> FnOnce(Read<'a>) -> R,

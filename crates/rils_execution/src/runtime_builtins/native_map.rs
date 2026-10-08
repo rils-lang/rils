@@ -6,9 +6,7 @@ use rils_builtins::builtin;
 use rils_native::NativeKey;
 use rils_value::{DynamicLayout, DynamicPathStep, DynamicType, DynamicValue};
 
-use crate::value::{
-    DynamicObject, HashKey, OwnedIteratorValue, Value, record_codec::NativeRecordCodec,
-};
+use crate::value::{DynamicObject, OwnedIteratorValue, Value, record_codec::NativeRecordCodec};
 
 use crate::value::native_receiver::NativeReceiver;
 use rils_value::DynamicValueRef;
@@ -130,13 +128,17 @@ pub(super) fn call_owned_symbol(
         values.next();
         let key = values.next().expect("arity checked");
         let value = values.next().expect("arity checked");
-        if kind == MapKind::BTree {
-            HashKey::from_ordered_value(&key)
-                .map_err(|_| "BTreeMap key must be bool, integer, char, or string")?;
-        }
         let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
         let native_key = codec.into_native(key, key_layout)?;
-        let identity = rils_stdlib::native::registry().key(native_key.view())?;
+        let identity =
+            crate::value::native_key::native(native_key.view(), &codec, kind == MapKind::BTree)
+                .map_err(|error| {
+                    if kind == MapKind::BTree {
+                        format!("BTreeMap key must be a registered ordered value: {error}")
+                    } else {
+                        error
+                    }
+                })?;
         let native_value = codec.into_native(value, value_layout.clone())?;
         let pair = DynamicValue::record(pair_layout, vec![native_key, native_value])?;
         let index = object.with(|map| find(&map, &identity))??;
@@ -253,7 +255,7 @@ fn dispatch(
     }
     let key_layout = fields[0].layout_handle();
     let value_layout = fields[1].layout_handle();
-    let mutating = matches!(method, "clear" | "insert" | "remove");
+    let mutating = matches!(method, "clear" | "remove");
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err(format!(
             "{} mutation requires a mutable reference",
@@ -271,11 +273,11 @@ fn dispatch(
                 .map_err(|error| mutation_error(kind, error))?;
             Ok(Value::Unit)
         }
-        "contains_key" | "insert" | "get_cloned" | "remove" => {
-            let (key, native_key) = encode_key(
-                kind,
+        "contains_key" | "get_cloned" | "remove" => {
+            let key = crate::value::native_key::query(
                 arguments.get(1).ok_or("missing map key")?,
-                key_layout.clone(),
+                &key_layout,
+                kind == MapKind::BTree,
             )?;
             let index = object.with(|map| find(&map, &key))??;
             match method {
@@ -301,33 +303,6 @@ fn dispatch(
                         None
                     };
                     native_option(value, value_layout)
-                }
-                "insert" => {
-                    let value = arguments.get(2).ok_or("missing map value")?.clone();
-                    let native_value =
-                        NativeRecordCodec::new().into_native(value, value_layout.clone())?;
-                    let pair =
-                        DynamicValue::record(pair_layout.clone(), vec![native_key, native_value])?;
-                    let previous = object
-                        .with_mut(|mut map| -> Result<Option<DynamicValue>, String> {
-                            map.sequence_borrows()?.check_structural_mutation()?;
-                            if let Some(index) = index {
-                                let mut previous = map.replace_sequence_item(index, pair)?;
-                                Ok(Some(
-                                    previous.take_path_field(&[DynamicPathStep::Field(1)])?,
-                                ))
-                            } else {
-                                let position = if kind == MapKind::BTree {
-                                    insertion_index(&map.view(), &key)?
-                                } else {
-                                    map.sequence_len()?
-                                };
-                                map.insert_sequence_item(position, pair)?;
-                                Ok(None)
-                            }
-                        })?
-                        .map_err(|error| mutation_error(kind, error))?;
-                    native_option(previous, value_layout)
                 }
                 _ => unreachable!(),
             }
@@ -364,21 +339,6 @@ fn dispatch(
         }
         _ => unreachable!(),
     }
-}
-
-fn encode_key(
-    kind: MapKind,
-    value: &Value,
-    layout: Rc<DynamicLayout>,
-) -> Result<(NativeKey, DynamicValue), String> {
-    let key = match kind {
-        MapKind::Hash => HashKey::from_value(value)?,
-        MapKind::BTree => HashKey::from_ordered_value(value)
-            .map_err(|_| "BTreeMap key must be bool, integer, char, or string".to_owned())?,
-    };
-    let native = NativeRecordCodec::new().into_native(key.to_value(), layout)?;
-    let identity = rils_stdlib::native::registry().key(native.view())?;
-    Ok((identity, native))
 }
 
 fn entry_key(entry: &DynamicValue) -> Result<NativeKey, String> {

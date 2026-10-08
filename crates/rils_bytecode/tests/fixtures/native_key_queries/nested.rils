@@ -1,0 +1,20 @@
+#[derive(Eq, Hash)]
+struct Key { text: string, number: i32 }
+#[derive(Eq, Hash)]
+enum Tag { Empty, Tuple(string), Record { text: string, number: i32 } }
+let mut records: HashMap<Key, i32> = HashMap::new();
+records.insert(Key { text: "owned", number: 7 }, 42);
+let query = Key { text: "owned", number: 7 };
+let found = records.get_cloned(&query) == Some(42);
+let mut tags: HashSet<Option<Result<Tag, string>>> = HashSet::new();
+tags.insert(Some(Ok(Tag::Record { text: "tag", number: 3 })));
+tags.insert(Some(Err("failed")));
+tags.insert(None);
+let present: Option<Result<Tag, string>> = Some(Ok(Tag::Record { text: "tag", number: 3 }));
+let absent: Option<Result<Tag, string>> = Some(Ok(Tag::Empty));
+let failed: Option<Result<Tag, string>> = Some(Err("failed"));
+let none: Option<Result<Tag, string>> = None;
+let result = found && records.contains_key(&query) && tags.contains(&present) && !tags.contains(&absent)
+    && tags.contains(&failed) && tags.contains(&none);
+let removed = records.remove(&query) == Some(42) && tags.remove(&present);
+if result && removed && records.is_empty() && tags.len() == 2usize { 42 } else { 0 }

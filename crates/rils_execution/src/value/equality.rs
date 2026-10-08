@@ -9,8 +9,7 @@ use crate::Type;
 
 mod legacy;
 mod mixed;
-mod read;
-use read::{Read, with_read};
+use super::borrowed::{Read, with_read};
 
 impl Value {
     /// Compare values without cloning their native payloads.

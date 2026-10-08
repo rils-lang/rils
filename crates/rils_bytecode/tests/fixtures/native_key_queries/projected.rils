@@ -1,0 +1,16 @@
+struct Holder { text: string, option: Option<string> }
+let holder = Holder { text: "projected", option: Some("inside") };
+let mut strings: HashSet<string> = HashSet::new();
+strings.insert("projected");
+let mut options: HashMap<Option<string>, i32> = HashMap::new();
+options.insert(Some("inside"), 42);
+let mut arrays: HashSet<[i32; 2]> = HashSet::new();
+arrays.insert([4, 2]);
+let array = [4, 2];
+let mut tuples: HashSet<(string, i32)> = HashSet::new();
+tuples.insert(("pair", 7));
+let tuple = ("pair", 7);
+let mut borrowed = false;
+for item in strings.iter() { borrowed = strings.contains(item); }
+if borrowed && strings.contains(&holder.text) && options.get_cloned(&holder.option) == Some(42)
+    && arrays.contains(&array) && tuples.contains(&tuple) { 42 } else { 0 }
