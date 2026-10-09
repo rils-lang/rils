@@ -235,6 +235,13 @@ Rust 宿主可用 `HashKey::from_owned_value(value, expected, ordered)` 构造�
 不能隐式复制后消费，需显式调用 `clone_owned()`。`HashKey::clone()` 只复制句柄。
 集合的显式 Clone 和产生新集合的集合运算会在调用时复制键；缺少 Clone 返回错误。
 显示与借用键投影读取原负载，不要求 Clone。
+借用集合迭代器的 `keys` 与 `ReferenceValue::new_map_key/new_map_value/new_set_item` 使用
+`Rc<KeyIdentity>`；可从已有拥有型键调用 `key.identity()`，或直接从查询值构造身份。
+这些定位信息不持有键负载；所有迭代器和产出引用释放后，即使仍保留定位缓存，也能移动原键。
+实际读取始终查找集合内的条目并保留访问 guard，失效条目或访问冲突返回错误。
+已移除 `MapCollection::contains_key/value` 和 `SetCollection::contains`；宿主直接查询旧存储时，
+应先使用 `entries.try_borrow()` 获取 guard，再通过 `&KeyIdentity` 查询条目。
+
 
 
 

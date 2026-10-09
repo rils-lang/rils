@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-use super::{FieldSlot, Value};
+use super::FieldSlot;
 use crate::types::Type;
 
 #[path = "hash/key.rs"]
@@ -56,28 +56,6 @@ impl MapCollection {
             Self::BTree(map) => &map.borrowed,
         }
     }
-
-    pub fn contains_key(&self, key: &HashKey) -> bool {
-        match self {
-            Self::Hash(map) => map.entries.borrow().contains_key(key),
-            Self::BTree(map) => map.entries.borrow().contains_key(key),
-        }
-    }
-
-    pub fn value(&self, key: &HashKey) -> Option<Value> {
-        match self {
-            Self::Hash(map) => map
-                .entries
-                .borrow()
-                .get(key)
-                .and_then(|slot| slot.value.clone()),
-            Self::BTree(map) => map
-                .entries
-                .borrow()
-                .get(key)
-                .and_then(|slot| slot.value.clone()),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -91,13 +69,6 @@ impl SetCollection {
         match self {
             Self::Hash(set) => &set.borrowed,
             Self::BTree(set) => &set.borrowed,
-        }
-    }
-
-    pub fn contains(&self, key: &HashKey) -> bool {
-        match self {
-            Self::Hash(set) => set.entries.borrow().contains(key),
-            Self::BTree(set) => set.entries.borrow().contains(key),
         }
     }
 }

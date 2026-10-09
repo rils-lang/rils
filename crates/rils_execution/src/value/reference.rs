@@ -14,8 +14,8 @@ mod inspection;
 #[path = "reference/native_path.rs"]
 mod native_path;
 use super::{
-    DynamicObject, EnumType, HashKey, IndexedStorage, MapCollection, SetCollection, StructType,
-    Value,
+    DynamicObject, EnumType, HashKey, IndexedStorage, KeyIdentity, MapCollection, SetCollection,
+    StructType, Value,
 };
 use native_path::NativePath;
 
@@ -46,15 +46,15 @@ enum ReferenceTarget {
     DynamicField(Box<NativePath>),
     MapKey {
         map: MapCollection,
-        key: HashKey,
+        key: Rc<KeyIdentity>,
     },
     MapValue {
         map: MapCollection,
-        key: HashKey,
+        key: Rc<KeyIdentity>,
     },
     SetItem {
         set: SetCollection,
-        key: HashKey,
+        key: Rc<KeyIdentity>,
     },
 }
 
@@ -243,7 +243,7 @@ impl ReferenceValue {
 
     pub fn new_map_key(
         map: MapCollection,
-        key: HashKey,
+        key: Rc<KeyIdentity>,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
         map.with_entry(&key, |_, _| ())?;
@@ -257,7 +257,7 @@ impl ReferenceValue {
 
     pub fn new_map_value(
         map: MapCollection,
-        key: HashKey,
+        key: Rc<KeyIdentity>,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
         if !map.with_entry(&key, |_, slot| slot.value.is_some())? {
@@ -273,7 +273,7 @@ impl ReferenceValue {
 
     pub fn new_set_item(
         set: SetCollection,
-        key: HashKey,
+        key: Rc<KeyIdentity>,
         guard: Option<Rc<ReferenceValue>>,
     ) -> Result<Self, String> {
         set.with_item(&key, |_| ())?;
@@ -445,9 +445,11 @@ impl ReferenceValue {
             ReferenceTarget::MapKey { map, key } => {
                 map.with_entry(key, |stored, _| stored.to_value())?
             }
-            ReferenceTarget::MapValue { map, key } => map
-                .value(key)
-                .ok_or_else(|| "iterator map value no longer exists".into()),
+            ReferenceTarget::MapValue { map, key } => map.with_entry(key, |_, slot| {
+                slot.value
+                    .clone()
+                    .ok_or_else(|| "iterator map value no longer exists".into())
+            })?,
             ReferenceTarget::SetItem { set, key } => set.with_item(key, HashKey::to_value)?,
         }
     }

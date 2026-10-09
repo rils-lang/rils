@@ -235,18 +235,26 @@ fn insert_failure_preserves_entries_and_rejects_shared_non_copy_inputs() {
         let locator = HashKey::from_value(&Value::from_string("original")).unwrap();
         use rils_execution::value::{MapCollection, SetCollection};
         let borrowed = match &source {
-            Value::HashMap(map) => {
-                ReferenceValue::new_map_key(MapCollection::Hash(map.clone()), locator, None)
-            }
-            Value::BTreeMap(map) => {
-                ReferenceValue::new_map_key(MapCollection::BTree(map.clone()), locator, None)
-            }
-            Value::HashSet(set) => {
-                ReferenceValue::new_set_item(SetCollection::Hash(set.clone()), locator, None)
-            }
-            Value::BTreeSet(set) => {
-                ReferenceValue::new_set_item(SetCollection::BTree(set.clone()), locator, None)
-            }
+            Value::HashMap(map) => ReferenceValue::new_map_key(
+                MapCollection::Hash(map.clone()),
+                locator.identity(),
+                None,
+            ),
+            Value::BTreeMap(map) => ReferenceValue::new_map_key(
+                MapCollection::BTree(map.clone()),
+                locator.identity(),
+                None,
+            ),
+            Value::HashSet(set) => ReferenceValue::new_set_item(
+                SetCollection::Hash(set.clone()),
+                locator.identity(),
+                None,
+            ),
+            Value::BTreeSet(set) => ReferenceValue::new_set_item(
+                SetCollection::BTree(set.clone()),
+                locator.identity(),
+                None,
+            ),
             _ => unreachable!(),
         }
         .unwrap();
@@ -380,4 +388,89 @@ fn owned_keys_reject_dynamic_aliases_and_copy_shared_copy_aggregates() {
     let key = HashKey::from_owned_value(Value::Array(fields.clone()), None, false).unwrap();
     fields.elements.borrow_mut()[0].value = Some(Value::from_i32(9));
     assert_eq!(format!("{}", key.into_value().unwrap()), "[7]");
+}
+
+#[test]
+fn borrowed_iterator_identity_cache_does_not_retain_non_clone_key_payloads() {
+    for kind in KINDS {
+        let source = empty(kind);
+        let receiver = reference(source.clone(), true);
+        let key = no_clone("borrow then move 🦀");
+        let original = address(&key);
+        insert(kind, &receiver, key, Value::from_i32(7)).unwrap();
+        let mut iterator = call_native_owned_symbol(
+            symbol(kind, "iter"),
+            vec![receiver.clone()],
+            &NativeOwnedContext::default(),
+        )
+        .unwrap()
+        .unwrap();
+        let identities = match &iterator {
+            Value::BorrowedMapIterator(iter) => iter.keys.clone(),
+            Value::BorrowedSetIterator(iter) => iter.keys.clone(),
+            _ => panic!("expected borrowed compatibility iterator"),
+        };
+        assert_eq!(identities[0].ty(), &Type::String);
+        assert!(into_iterator(source.clone()).is_err());
+        let projected = next_builtin(&mut iterator).unwrap().unwrap().unwrap();
+        let (key, value) = if kind.ends_with("Map") {
+            let Value::Tuple(pair) = projected else {
+                panic!("map pair")
+            };
+            let mut fields = pair.elements.borrow_mut();
+            (fields[0].value.take().unwrap(), fields[1].value.take())
+        } else {
+            (projected, None)
+        };
+        assert_eq!(address(&key), original);
+        let Value::Reference(key_ref) = &key else {
+            panic!("key reference")
+        };
+        assert!(key_ref.read().is_err()); // Actual payload has no Clone implementation.
+        assert!(next_builtin(&mut iterator).unwrap().unwrap().is_none());
+        drop(iterator);
+        assert!(into_iterator(source.clone()).is_err()); // Yielded references retain the guard.
+        drop(key);
+        if value.is_some() {
+            assert!(into_iterator(source.clone()).is_err());
+        }
+        drop(value);
+        let moved = next_key(kind, source);
+        assert_eq!(address(&moved), original); // Retained identities cannot impede the move.
+        assert_eq!(identities[0].ty(), &Type::String);
+    }
+}
+
+#[test]
+fn borrowed_iterator_creation_reports_entry_conflicts_without_acquiring_a_lease() {
+    for kind in KINDS {
+        let source = empty(kind);
+        let receiver = reference(source.clone(), true);
+        insert(kind, &receiver, no_clone("key"), Value::Unit).unwrap();
+        macro_rules! check {
+            ($collection:expr) => {{
+                let entries = $collection.entries.borrow_mut();
+                assert!(
+                    call_native_owned_symbol(
+                        symbol(kind, "iter"),
+                        vec![receiver.clone()],
+                        &NativeOwnedContext::default(),
+                    )
+                    .unwrap()
+                    .unwrap_err()
+                    .contains("mutably accessed")
+                );
+                assert_eq!($collection.borrowed.get(), 0);
+                assert_eq!(entries.len(), 1);
+            }};
+        }
+        match &source {
+            Value::HashMap(map) => check!(map),
+            Value::BTreeMap(map) => check!(map),
+            Value::HashSet(set) => check!(set),
+            Value::BTreeSet(set) => check!(set),
+            _ => unreachable!(),
+        }
+        assert_eq!(next_key(kind, source).as_string().unwrap(), "key");
+    }
 }

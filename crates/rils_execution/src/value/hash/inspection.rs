@@ -1,11 +1,11 @@
 //! Hold collection storage guards for the complete projected read.
-use super::{HashKey, MapCollection, SetCollection};
+use super::{HashKey, KeyIdentity, MapCollection, SetCollection};
 use crate::value::FieldSlot;
 
 impl MapCollection {
     pub(crate) fn with_entry<R>(
         &self,
-        key: &HashKey,
+        key: &KeyIdentity,
         callback: impl for<'a> FnOnce(&'a HashKey, &'a FieldSlot) -> R,
     ) -> Result<R, String> {
         macro_rules! inspect {
@@ -30,7 +30,7 @@ impl MapCollection {
 impl SetCollection {
     pub(crate) fn with_item<R>(
         &self,
-        key: &HashKey,
+        key: &KeyIdentity,
         callback: impl for<'a> FnOnce(&'a HashKey) -> R,
     ) -> Result<R, String> {
         macro_rules! inspect {

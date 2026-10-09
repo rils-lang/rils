@@ -3,8 +3,8 @@ use std::{cell::Cell, rc::Rc};
 use crate::{
     types::Type,
     value::{
-        BorrowedMapIteratorValue, BorrowedSetIteratorValue, HashKey, MapCollection, ReferenceValue,
-        SetCollection, Value,
+        BorrowedMapIteratorValue, BorrowedSetIteratorValue, HashKey, KeyIdentity, MapCollection,
+        ReferenceValue, SetCollection, Value,
     },
 };
 
@@ -34,17 +34,45 @@ fn call(owner: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     if matches!(collection, Value::Dynamic(_)) {
         return None;
     }
-    Some(match (owner, collection) {
+    Some((|| match (owner, collection) {
         ("HashMap", Value::HashMap(map)) => {
-            let keys = map.entries.borrow().keys().cloned().collect();
-            let key_type = map.key_type.borrow().clone();
-            let value_type = map.value_type.borrow().clone();
+            let keys = map
+                .entries
+                .try_borrow()
+                .map_err(|_| "iter map is already mutably accessed")?
+                .keys()
+                .map(HashKey::identity)
+                .collect();
+            let key_type = map
+                .key_type
+                .try_borrow()
+                .map_err(|_| "iter map key type is already mutably accessed")?
+                .clone();
+            let value_type = map
+                .value_type
+                .try_borrow()
+                .map_err(|_| "iter map value type is already mutably accessed")?
+                .clone();
             borrowed_map(source, MapCollection::Hash(map), keys, key_type, value_type)
         }
         ("BTreeMap", Value::BTreeMap(map)) => {
-            let keys = map.entries.borrow().keys().cloned().collect();
-            let key_type = map.key_type.borrow().clone();
-            let value_type = map.value_type.borrow().clone();
+            let keys = map
+                .entries
+                .try_borrow()
+                .map_err(|_| "iter map is already mutably accessed")?
+                .keys()
+                .map(HashKey::identity)
+                .collect();
+            let key_type = map
+                .key_type
+                .try_borrow()
+                .map_err(|_| "iter map key type is already mutably accessed")?
+                .clone();
+            let value_type = map
+                .value_type
+                .try_borrow()
+                .map_err(|_| "iter map value type is already mutably accessed")?
+                .clone();
             borrowed_map(
                 source,
                 MapCollection::BTree(map),
@@ -54,23 +82,43 @@ fn call(owner: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
             )
         }
         ("HashSet", Value::HashSet(set)) => {
-            let keys = set.entries.borrow().iter().cloned().collect();
-            let element_type = set.element_type.borrow().clone();
+            let keys = set
+                .entries
+                .try_borrow()
+                .map_err(|_| "iter set is already mutably accessed")?
+                .iter()
+                .map(HashKey::identity)
+                .collect();
+            let element_type = set
+                .element_type
+                .try_borrow()
+                .map_err(|_| "iter set element type is already mutably accessed")?
+                .clone();
             borrowed_set(source, SetCollection::Hash(set), keys, element_type)
         }
         ("BTreeSet", Value::BTreeSet(set)) => {
-            let keys = set.entries.borrow().iter().cloned().collect();
-            let element_type = set.element_type.borrow().clone();
+            let keys = set
+                .entries
+                .try_borrow()
+                .map_err(|_| "iter set is already mutably accessed")?
+                .iter()
+                .map(HashKey::identity)
+                .collect();
+            let element_type = set
+                .element_type
+                .try_borrow()
+                .map_err(|_| "iter set element type is already mutably accessed")?
+                .clone();
             borrowed_set(source, SetCollection::BTree(set), keys, element_type)
         }
         _ => Err("iter receiver has the wrong collection type".into()),
-    })
+    })())
 }
 
 fn borrowed_map(
     source: &Rc<ReferenceValue>,
     map: MapCollection,
-    keys: Vec<HashKey>,
+    keys: Vec<Rc<KeyIdentity>>,
     key_type: Type,
     value_type: Type,
 ) -> Result<Value, String> {
@@ -90,7 +138,7 @@ fn borrowed_map(
 fn borrowed_set(
     source: &Rc<ReferenceValue>,
     set: SetCollection,
-    keys: Vec<HashKey>,
+    keys: Vec<Rc<KeyIdentity>>,
     element_type: Type,
 ) -> Result<Value, String> {
     set.borrowed().set(set.borrowed().get() + 1);

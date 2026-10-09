@@ -103,16 +103,16 @@ fn string_address(value: Value) -> usize {
 fn project_key(value: &Value, key: HashKey) -> Value {
     let reference = match value {
         Value::HashMap(map) => {
-            ReferenceValue::new_map_key(MapCollection::Hash(map.clone()), key, None)
+            ReferenceValue::new_map_key(MapCollection::Hash(map.clone()), key.identity(), None)
         }
         Value::BTreeMap(map) => {
-            ReferenceValue::new_map_key(MapCollection::BTree(map.clone()), key, None)
+            ReferenceValue::new_map_key(MapCollection::BTree(map.clone()), key.identity(), None)
         }
         Value::HashSet(set) => {
-            ReferenceValue::new_set_item(SetCollection::Hash(set.clone()), key, None)
+            ReferenceValue::new_set_item(SetCollection::Hash(set.clone()), key.identity(), None)
         }
         Value::BTreeSet(set) => {
-            ReferenceValue::new_set_item(SetCollection::BTree(set.clone()), key, None)
+            ReferenceValue::new_set_item(SetCollection::BTree(set.clone()), key.identity(), None)
         }
         _ => unreachable!(),
     };

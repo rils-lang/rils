@@ -101,6 +101,10 @@ impl HashKey {
             Err(value) => value.clone_owned(), // Only Copy reaches this branch.
         }
     }
+    /// Share lookup identity without retaining the owned key payload.
+    pub fn identity(&self) -> Rc<KeyIdentity> {
+        self.identity.clone()
+    }
     pub fn ty(&self) -> Type {
         self.identity.ty.clone()
     }

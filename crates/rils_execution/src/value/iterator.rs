@@ -6,7 +6,7 @@ use crate::types::Type;
 
 use super::record_codec::NativeRecordCodec;
 use super::{
-    FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue, SetCollection, Value,
+    FieldSlot, IndexedStorage, KeyIdentity, MapCollection, ReferenceValue, SetCollection, Value,
 };
 
 type ValueGenerator = Box<dyn Iterator<Item = Result<Value, String>>>;
@@ -356,7 +356,7 @@ impl Drop for BorrowedIndexedIteratorValue {
 pub struct BorrowedMapIteratorValue {
     pub source: Rc<ReferenceValue>,
     pub map: MapCollection,
-    pub keys: Vec<HashKey>,
+    pub keys: Vec<Rc<KeyIdentity>>,
     pub index: std::cell::Cell<usize>,
     pub key_type: Type,
     pub value_type: Type,
@@ -418,7 +418,7 @@ impl Drop for BorrowedMapIteratorValue {
 pub struct BorrowedSetIteratorValue {
     pub source: Rc<ReferenceValue>,
     pub set: SetCollection,
-    pub keys: Vec<HashKey>,
+    pub keys: Vec<Rc<KeyIdentity>>,
     pub index: std::cell::Cell<usize>,
     pub element_type: Type,
 }

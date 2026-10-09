@@ -78,8 +78,9 @@ fn string_projections_borrow_the_actual_stored_key_and_hold_the_collection_guard
         let source = map(ordered, key.clone(), Value::from_i32(42));
         // Deliberately use an equal key with a different buffer as the locator.
         let locator = HashKey::from_value(&Value::from_string("原始🦀")).unwrap();
-        let projected =
-            reference(ReferenceValue::new_map_key(source.clone(), locator, None).unwrap());
+        let projected = reference(
+            ReferenceValue::new_map_key(source.clone(), locator.identity(), None).unwrap(),
+        );
         assert_eq!(
             borrowed_equal(&projected, &Value::from_string("原始🦀")),
             Ok(true)
@@ -94,8 +95,9 @@ fn string_projections_borrow_the_actual_stored_key_and_hold_the_collection_guard
         assert_eq!(source.borrowed().get(), 0);
         let source = set(ordered, key);
         let locator = HashKey::from_value(&Value::from_string("原始🦀")).unwrap();
-        let projected =
-            reference(ReferenceValue::new_set_item(source.clone(), locator, None).unwrap());
+        let projected = reference(
+            ReferenceValue::new_set_item(source.clone(), locator.identity(), None).unwrap(),
+        );
         assert_eq!(
             RilsValue::new(projected).with_ref::<String, _>(|text| {
                 assert!(set_is_locked(&source));
@@ -113,7 +115,8 @@ fn scalar_projection_matrix_uses_registered_raw_and_wrapped_host_views() {
         for ordered in [false, true] {
             let key = HashKey::from_value(&value).unwrap();
             let source = set(ordered, key.clone());
-            let projected = reference(ReferenceValue::new_set_item(source, key, None).unwrap());
+            let projected =
+                reference(ReferenceValue::new_set_item(source, key.identity(), None).unwrap());
             assert_eq!(borrowed_equal(&projected, &value), Ok(true));
             assert_eq!(
                 RilsValue::new(projected).with_ref::<T, _>(|value| *value),
@@ -171,7 +174,7 @@ fn map_values_borrow_non_clone_payloads_and_keep_drop_ownership() {
         let key = HashKey::from_value(&Value::from_i32(7)).unwrap();
         let source = map(ordered, key.clone(), payload);
         let projected =
-            reference(ReferenceValue::new_map_value(source.clone(), key, None).unwrap());
+            reference(ReferenceValue::new_map_value(source.clone(), key.identity(), None).unwrap());
         assert!(
             RilsValue::new(projected)
                 .with_ref::<Probe, _>(|probe| {
@@ -193,7 +196,7 @@ fn missing_moved_and_conflicting_collection_targets_return_errors() {
     for ordered in [false, true] {
         let source = map(ordered, key.clone(), Value::from_string("value"));
         let projected =
-            reference(ReferenceValue::new_map_value(source.clone(), key.clone(), None).unwrap());
+            reference(ReferenceValue::new_map_value(source.clone(), key.identity(), None).unwrap());
         macro_rules! check_map {
             ($map:expr) => {{
                 let mut entries = $map.entries.borrow_mut();
@@ -208,6 +211,10 @@ fn missing_moved_and_conflicting_collection_targets_return_errors() {
                         .unwrap_err()
                         .contains("mutably accessed")
                 );
+                let Value::Reference(reference) = &projected else {
+                    panic!("reference")
+                };
+                assert!(reference.read().unwrap_err().contains("mutably accessed"));
                 entries.get_mut(&key).unwrap().value = None;
                 drop(entries);
                 assert!(
@@ -231,7 +238,7 @@ fn missing_moved_and_conflicting_collection_targets_return_errors() {
         assert_eq!(source.borrowed().get(), 0);
         let source = set(ordered, key.clone());
         let projected =
-            reference(ReferenceValue::new_set_item(source.clone(), key.clone(), None).unwrap());
+            reference(ReferenceValue::new_set_item(source.clone(), key.identity(), None).unwrap());
         macro_rules! check_set {
             ($set:expr) => {{
                 let mut entries = $set.entries.borrow_mut();
@@ -286,7 +293,7 @@ fn native_sum_projections_keep_layout_and_serve_native_collection_queries() {
     .unwrap();
     let key = HashKey::from_value(&value).unwrap();
     let source = set(false, key.clone());
-    let projected = reference(ReferenceValue::new_set_item(source, key, None).unwrap());
+    let projected = reference(ReferenceValue::new_set_item(source, key.identity(), None).unwrap());
     let Value::Reference(reference) = &projected else {
         unreachable!()
     };
@@ -363,10 +370,11 @@ fn nominal_collection_projections_retain_trait_metadata_for_native_queries() {
     let key = HashKey::from_value(&make()).unwrap();
     let legacy = map(false, key.clone(), make());
     let key_ref =
-        reference(ReferenceValue::new_map_key(legacy.clone(), key.clone(), None).unwrap());
-    let value_ref = reference(ReferenceValue::new_map_value(legacy, key.clone(), None).unwrap());
-    let set_ref =
-        reference(ReferenceValue::new_set_item(set(false, key.clone()), key, None).unwrap());
+        reference(ReferenceValue::new_map_key(legacy.clone(), key.identity(), None).unwrap());
+    let value_ref = reference(ReferenceValue::new_map_value(legacy, key.identity(), None).unwrap());
+    let set_ref = reference(
+        ReferenceValue::new_set_item(set(false, key.clone()), key.identity(), None).unwrap(),
+    );
     let set_layout = DynamicLayout::sequence(
         Type::Named {
             name: "HashSet".into(),
