@@ -6,7 +6,7 @@ use std::{collections::HashMap, fmt};
 
 use crate::source::{ExprId, Span};
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum IntegerType {
     I8,
@@ -96,7 +96,7 @@ impl fmt::Display for IntegerType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FloatType {
     F32,
     F64,
@@ -154,7 +154,7 @@ impl FunctionSignature {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Type {
     Unit,
     Bool,

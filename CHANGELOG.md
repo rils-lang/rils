@@ -5,9 +5,11 @@
 
 ## Unreleased
 
+- 旧 HashMap/HashSet/BTreeMap/BTreeSet 的查询改为借用提取标准库注册的键身份，`contains`、`get_cloned`、`remove` 不再复制查询负载，支持非 Clone 查询值。身份保留整数宽度、容器种类、名义类型及非活动分支的泛型参数；无法补全类型时明确报错。**Rust API 迁移：** `HashKey` 从公开 enum 改为不透明键对象，删除 `StructuralKey`；原 `HashKey::I32(n)` 等构造改用 `HashKey::from_value(&Value::from_i32(n))`，借用读取使用 `with_ref()`。直接操作旧集合时，可用 `KeyIdentity::from_value(value, Some(&key_type), ordered)` 配合 `get`/`contains`/`remove`，无需构造拥有型键。旧键构造和显式快照接口仍在迁移；C ABI、v8 编码和版本号不变。
+
 - 旧 HashMap/HashSet/BTreeMap/BTreeSet 的消费式迭代器直接移出键；独占字符串保留原缓冲区，复合键保留原生负载与完整类型，非 Clone map value 不经复制。部分 move 的 Map 在转移条目前报错，集合访问冲突返回错误而非 panic；失败保留原条目。Rust API、C ABI 和 v8 编码不变。
 
-- 旧 HashMap/HashSet/BTreeMap/BTreeSet 的键、值和元素投影已接入共享借用读取，比较、原生查询与 `RilsValue::with_ref()` 不再通过 `ReferenceValue::read()` 重建快照；读取期间保留集合 guard，冲突访问、已 move 值及失效条目明确报错。原生组合投影保留布局及名义类型声明，`Eq + Hash` 与显式 Copy 规则不变。**Rust API 迁移：** `HashKey::String` 的负载由 `Rc<str>` 改为 `Rc<rils_stdlib::stdlib::string::String>`；优先使用 `HashKey::from_value(&Value::from_string(...))` 构造键。`RilsHostType` 新增有默认实现的 `with_leaf_ref()`，原始标量与包装标量的借用映射复用该入口。旧 Value 集合存储、拥有型快照接口继续迁移；C ABI、v8 编码和版本号不变。
+- 旧 HashMap/HashSet/BTreeMap/BTreeSet 的键、值和元素投影已接入共享借用读取，比较、原生查询与 `RilsValue::with_ref()` 不再通过 `ReferenceValue::read()` 重建快照；读取期间保留集合 guard，冲突访问、已 move 值及失效条目明确报错。原生组合投影保留布局及名义类型声明，`Eq + Hash` 与显式 Copy 规则不变。**Rust API 迁移：** 键负载保留原生表示；`HashKey` 当前的构造与查询方式见上方迁移说明。`RilsHostType` 新增有默认实现的 `with_leaf_ref()`，原始标量与包装标量的借用映射复用该入口。旧 Value 集合存储、拥有型快照接口继续迁移；C ABI、v8 编码和版本号不变。
 
 - HashMap/HashSet/BTreeMap/BTreeSet 的原生键查询直接读取借用视图，移除 `HashKey → Value → native` 快照转换；`get_cloned` 只复制返回值，查询不要求键实现 Clone，仍检查完整类型与用户类型的 `Eq + Hash`。BinaryHeap 的原生比较也直接读取注册的键身份。**Rust API 迁移：** `KeyRegistration::key` 改为接收 `&NativeLeafRef`，新增必填 `ordered` 能力标志；使用受检的 `with_rust` 读取负载。基础键注册由标准库声明自动收集；自建 `NativeRegistry` 也须显式注册整数等基础键。键身份仍可持有字符串和复合身份数据，并非零分配哈希。旧 Value 变体及旧集合存储接口继续迁移；C ABI、v8 编码和版本号不变。
 

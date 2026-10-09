@@ -217,3 +217,7 @@ fn check_annotation(expected: &Type, actual: Option<&Type>) -> Result<(), String
     }
     Ok(())
 }
+
+#[path = "native_key/identity.rs"]
+mod identity;
+pub(crate) use identity::identity;

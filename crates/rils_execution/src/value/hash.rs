@@ -1,4 +1,4 @@
-// StructuralKey's mutable Value snapshot does not participate in Eq, Hash, or Ord.
+// HashKey's owned payload does not participate in Eq, Hash, or Ord.
 #![allow(clippy::mutable_key_type)]
 
 use std::{
@@ -13,7 +13,7 @@ use crate::types::Type;
 
 #[path = "hash/key.rs"]
 mod key;
-pub use key::HashKey;
+pub use key::{HashKey, KeyIdentity};
 #[path = "hash/inspection.rs"]
 mod inspection;
 

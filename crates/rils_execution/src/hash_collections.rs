@@ -6,7 +6,8 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use crate::{
     types::{Type, merge_types},
     value::{
-        FieldSlot, HashKey, HashMapValue, HashSetValue, IndexedStorage, OwnedIteratorValue, Value,
+        FieldSlot, HashKey, HashMapValue, HashSetValue, IndexedStorage, KeyIdentity,
+        OwnedIteratorValue, Value,
     },
 };
 
@@ -25,7 +26,7 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
             Ok(Value::Unit)
         }
         "contains_key" => {
-            let key = hash_argument(arguments, 1)?;
+            let key = query_argument(arguments, 1, &map.key_type.borrow())?;
             Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
         }
         "insert" => {
@@ -53,7 +54,7 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
             option(previous.and_then(|slot| slot.value), value_type)
         }
         "get_cloned" => {
-            let key = hash_argument(arguments, 1)?;
+            let key = query_argument(arguments, 1, &map.key_type.borrow())?;
             let value = map
                 .entries
                 .borrow()
@@ -65,7 +66,7 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
         }
         "remove" => {
             reject_referenced_map(&map)?;
-            let key = hash_argument(arguments, 1)?;
+            let key = query_argument(arguments, 1, &map.key_type.borrow())?;
             let value = map
                 .entries
                 .borrow_mut()
@@ -111,7 +112,7 @@ pub(crate) fn call_set(method: &str, arguments: &[Value]) -> Result<Value, Strin
             Ok(Value::Unit)
         }
         "contains" => {
-            let key = hash_argument(arguments, 1)?;
+            let key = query_argument(arguments, 1, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow().contains(&key)))
         }
         "insert" => {
@@ -123,7 +124,7 @@ pub(crate) fn call_set(method: &str, arguments: &[Value]) -> Result<Value, Strin
             Ok(Value::Bool(inserted))
         }
         "remove" => {
-            let key = hash_argument(arguments, 1)?;
+            let key = query_argument(arguments, 1, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
         }
         "is_subset" | "is_superset" | "is_disjoint" => {
@@ -305,4 +306,16 @@ fn tuple(values: Vec<Value>) -> Value {
         ),
         element_type: RefCell::new(None),
     }))
+}
+
+fn query_argument(
+    arguments: &[Value],
+    index: usize,
+    expected: &Type,
+) -> Result<KeyIdentity, String> {
+    KeyIdentity::from_value(
+        arguments.get(index).ok_or("missing hash collection key")?,
+        Some(expected),
+        false,
+    )
 }

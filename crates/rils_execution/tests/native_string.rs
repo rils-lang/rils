@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use rils_builtins::{TypePattern, builtin};
 use rils_execution::{Value, runtime_builtins, value::HashKey};
 
@@ -22,7 +20,7 @@ fn string_uses_native_storage_across_clone_display_and_hash_keys() {
     assert_eq!(value.clone_owned().unwrap(), value);
     assert_eq!(
         HashKey::from_value(&value).unwrap(),
-        HashKey::String(Rc::new("héllo".to_owned().into()))
+        HashKey::from_value(&Value::from_string("héllo")).unwrap()
     );
     assert!(matches!(
         HashKey::from_value(&value).unwrap().to_value(),

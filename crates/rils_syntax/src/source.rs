@@ -70,7 +70,7 @@ impl ModuleId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
     pub source: SourceId,
     pub start: usize,

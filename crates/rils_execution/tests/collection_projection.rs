@@ -72,10 +72,9 @@ fn set_is_locked(set: &SetCollection) -> bool {
 fn string_projections_borrow_the_actual_stored_key_and_hold_the_collection_guard() {
     for ordered in [false, true] {
         let key = HashKey::from_value(&Value::from_string("原始🦀")).unwrap();
-        let HashKey::String(text) = &key else {
-            unreachable!()
-        };
-        let address = text.as_ref().as_ref().as_ptr() as usize;
+        let address = key
+            .with_ref::<String, _>(|text| text.as_ptr() as usize)
+            .unwrap();
         let source = map(ordered, key.clone(), Value::from_i32(42));
         // Deliberately use an equal key with a different buffer as the locator.
         let locator = HashKey::from_value(&Value::from_string("原始🦀")).unwrap();
@@ -169,7 +168,7 @@ fn map_values_borrow_non_clone_payloads_and_keep_drop_ownership() {
             )
             .unwrap(),
         );
-        let key = HashKey::I32(7);
+        let key = HashKey::from_value(&Value::from_i32(7)).unwrap();
         let source = map(ordered, key.clone(), payload);
         let projected =
             reference(ReferenceValue::new_map_value(source.clone(), key, None).unwrap());
@@ -190,7 +189,7 @@ fn map_values_borrow_non_clone_payloads_and_keep_drop_ownership() {
 
 #[test]
 fn missing_moved_and_conflicting_collection_targets_return_errors() {
-    let key = HashKey::I32(7);
+    let key = HashKey::from_value(&Value::from_i32(7)).unwrap();
     for ordered in [false, true] {
         let source = map(ordered, key.clone(), Value::from_string("value"));
         let projected =
@@ -417,19 +416,17 @@ fn nominal_collection_projections_retain_trait_metadata_for_native_queries() {
 #[test]
 fn consuming_unique_string_key_moves_the_buffer_while_shared_keys_stay_independent() {
     let key = HashKey::from_value(&Value::from_string("独占内容")).unwrap();
-    let HashKey::String(text) = &key else {
-        unreachable!()
-    };
-    let original = text.as_ref().as_ref().as_ptr() as usize;
+    let original = key
+        .with_ref::<String, _>(|text| text.as_ptr() as usize)
+        .unwrap();
     assert_eq!(
         RilsValue::new(key.into_value()).with_ref::<String, _>(|text| text.as_ptr() as usize),
         Ok(original)
     );
     let key = HashKey::from_value(&Value::from_string("共享内容")).unwrap();
-    let HashKey::String(text) = &key else {
-        unreachable!()
-    };
-    let original = text.as_ref().as_ref().as_ptr() as usize;
+    let original = key
+        .with_ref::<String, _>(|text| text.as_ptr() as usize)
+        .unwrap();
     let copied = RilsValue::new(key.clone().into_value());
     assert_ne!(
         copied
@@ -439,5 +436,5 @@ fn consuming_unique_string_key_moves_the_buffer_while_shared_keys_stay_independe
     );
     assert_eq!(copied.get_cloned::<String>().unwrap(), "共享内容");
     assert_eq!(key.ty(), Type::String);
-    assert_eq!(format!("{key:?}"), "String(\"共享内容\")");
+    assert!(format!("{key:?}").contains("共享内容"));
 }

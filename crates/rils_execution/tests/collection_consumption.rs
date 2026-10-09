@@ -123,10 +123,9 @@ fn project_key(value: &Value, key: HashKey) -> Value {
 fn consuming_collections_moves_unique_string_buffers_and_empties_the_source() {
     for kind in KINDS {
         let key = HashKey::from_value(&Value::from_string("owned key 🦀")).unwrap();
-        let HashKey::String(text) = &key else {
-            unreachable!()
-        };
-        let address = text.as_ref().as_ref().as_ptr() as usize;
+        let address = key
+            .with_ref::<String, _>(|text| text.as_ptr() as usize)
+            .unwrap();
         let source = collection(kind, key, Value::from_string("owned value"));
         let mut iter = iterator(source.clone());
         with_entries!(&source, entries, assert!(entries.borrow().is_empty()));
@@ -143,10 +142,9 @@ fn consuming_collections_moves_unique_string_buffers_and_empties_the_source() {
 fn shared_keys_keep_an_independent_string_when_the_iterator_is_consumed() {
     for kind in KINDS {
         let key = HashKey::from_value(&Value::from_string("shared key")).unwrap();
-        let HashKey::String(text) = &key else {
-            unreachable!()
-        };
-        let address = text.as_ref().as_ref().as_ptr() as usize;
+        let address = key
+            .with_ref::<String, _>(|text| text.as_ptr() as usize)
+            .unwrap();
         let mut iter = iterator(collection(kind, key.clone(), Value::Unit));
         let (moved, _) = split_entry(kind, next(&mut iter).unwrap());
         assert_ne!(string_address(moved), address);
@@ -216,14 +214,22 @@ fn non_clone_map_values_drop_once_on_yield_and_on_abandoned_iteration() {
     for kind in [Kind::HashMap, Kind::BTreeMap] {
         for consume in [false, true] {
             let drops = Rc::new(Cell::new(0));
-            let source = collection(kind, HashKey::I32(7), probe(&drops));
+            let source = collection(
+                kind,
+                HashKey::from_value(&Value::from_i32(7)).unwrap(),
+                probe(&drops),
+            );
             let second = FieldSlot::new(Type::named("Probe"), probe(&drops));
             match &source {
                 Value::HashMap(map) => {
-                    map.entries.borrow_mut().insert(HashKey::I32(8), second);
+                    map.entries
+                        .borrow_mut()
+                        .insert(HashKey::from_value(&Value::from_i32(8)).unwrap(), second);
                 }
                 Value::BTreeMap(map) => {
-                    map.entries.borrow_mut().insert(HashKey::I32(8), second);
+                    map.entries
+                        .borrow_mut()
+                        .insert(HashKey::from_value(&Value::from_i32(8)).unwrap(), second);
                 }
                 _ => unreachable!(),
             }
@@ -241,7 +247,11 @@ fn non_clone_map_values_drop_once_on_yield_and_on_abandoned_iteration() {
 #[test]
 fn consumption_rejects_access_conflicts_and_active_projections_without_draining() {
     for kind in KINDS {
-        let source = collection(kind, HashKey::I32(7), Value::Unit);
+        let source = collection(
+            kind,
+            HashKey::from_value(&Value::from_i32(7)).unwrap(),
+            Value::Unit,
+        );
         with_entries!(&source, entries, {
             let guard = entries.borrow();
             assert!(
@@ -261,7 +271,7 @@ fn consumption_rejects_access_conflicts_and_active_projections_without_draining(
             );
             assert_eq!(guard.len(), 1);
         });
-        let reference = project_key(&source, HashKey::I32(7));
+        let reference = project_key(&source, HashKey::from_value(&Value::from_i32(7)).unwrap());
         assert!(into_iterator(source.clone()).is_err());
         with_entries!(&source, entries, assert_eq!(entries.borrow().len(), 1));
         drop(reference);
@@ -272,19 +282,23 @@ fn consumption_rejects_access_conflicts_and_active_projections_without_draining(
 #[test]
 fn partially_moved_maps_fail_before_transferring_entries() {
     for kind in [Kind::HashMap, Kind::BTreeMap] {
-        let source = collection(kind, HashKey::I32(7), Value::from_string("value"));
+        let source = collection(
+            kind,
+            HashKey::from_value(&Value::from_i32(7)).unwrap(),
+            Value::from_string("value"),
+        );
         let take = |source: &Value| match source {
             Value::HashMap(map) => map
                 .entries
                 .borrow_mut()
-                .get_mut(&HashKey::I32(7))
+                .get_mut(&HashKey::from_value(&Value::from_i32(7)).unwrap())
                 .unwrap()
                 .value
                 .take(),
             Value::BTreeMap(map) => map
                 .entries
                 .borrow_mut()
-                .get_mut(&HashKey::I32(7))
+                .get_mut(&HashKey::from_value(&Value::from_i32(7)).unwrap())
                 .unwrap()
                 .value
                 .take(),

@@ -224,6 +224,12 @@ for value in values {
 由标准库注册，BinaryHeap 的原生比较也复用这套注册。字符串及复合键的不可变身份数据
 仍可能分配空间，但不再构造查询键的旧 Value 快照。
 
+Rust 宿主保留的旧 Map/Set 查询也直接借用提取键身份，不要求查询值实现 Clone。
+查询身份包含完整类型：例如不同整数宽度、`None::<i32>` 与 `None::<string>` 不混用；
+旧包装的缺失类型可由集合声明补全，仍无法确定类型时返回错误。
+`HashKey` 是不透明的拥有型键，直接访问旧 Rust 集合时应使用 `KeyIdentity` 查询，
+避免用 `HashKey::from_value()` 为查询额外创建负载快照。键身份自身仍可能分配字符串或复合数据。
+
 
 ```rust
 let mut scores: HashMap<string, i32> = HashMap::new();

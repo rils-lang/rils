@@ -20,7 +20,8 @@ mod display;
 mod hash;
 use hash::clone_hash_map;
 pub use hash::{
-    BTreeMapValue, BTreeSetValue, HashKey, HashMapValue, HashSetValue, MapCollection, SetCollection,
+    BTreeMapValue, BTreeSetValue, HashKey, HashMapValue, HashSetValue, KeyIdentity, MapCollection,
+    SetCollection,
 };
 
 #[path = "value/range.rs"]

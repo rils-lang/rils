@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     types::{Type, merge_types},
-    value::{BTreeMapValue, FieldSlot, HashKey, IndexedStorage, Value},
+    value::{BTreeMapValue, FieldSlot, HashKey, IndexedStorage, KeyIdentity, Value},
 };
 
 pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
@@ -26,7 +26,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
             Ok(Value::Unit)
         }
         "contains_key" => {
-            let key = key(arguments, 1)?;
+            let key = query(arguments, &map.key_type.borrow())?;
             Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
         }
         "insert" => {
@@ -49,7 +49,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
             option(previous.and_then(|slot| slot.value), value_type)
         }
         "get_cloned" => {
-            let key = key(arguments, 1)?;
+            let key = query(arguments, &map.key_type.borrow())?;
             let value = map
                 .entries
                 .borrow()
@@ -61,7 +61,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
         }
         "remove" => {
             reject_referenced(&map)?;
-            let key = key(arguments, 1)?;
+            let key = query(arguments, &map.key_type.borrow())?;
             let value = map
                 .entries
                 .borrow_mut()
@@ -178,4 +178,12 @@ fn tuple(values: Vec<Value>) -> Value {
         ),
         element_type: RefCell::new(None),
     }))
+}
+
+fn query(arguments: &[Value], expected: &Type) -> Result<KeyIdentity, String> {
+    KeyIdentity::from_value(
+        arguments.get(1).ok_or("missing BTreeMap key")?,
+        Some(expected),
+        true,
+    )
 }

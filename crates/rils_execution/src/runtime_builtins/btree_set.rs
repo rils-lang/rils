@@ -5,7 +5,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     types::{Type, merge_types},
-    value::{BTreeSetValue, HashKey, Value},
+    value::{BTreeSetValue, HashKey, KeyIdentity, Value},
 };
 
 pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
@@ -28,7 +28,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
             Ok(Value::Unit)
         }
         "contains" => {
-            let key = key(arguments, 1)?;
+            let key = query(arguments, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow().contains(&key)))
         }
         "insert" => {
@@ -40,7 +40,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
             Ok(Value::Bool(inserted))
         }
         "remove" => {
-            let key = key(arguments, 1)?;
+            let key = query(arguments, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
         }
         "first_cloned" | "last_cloned" => {
@@ -141,4 +141,12 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
 fn key(arguments: &[Value], index: usize) -> Result<HashKey, String> {
     HashKey::from_ordered_value(arguments.get(index).ok_or("missing BTreeSet element")?)
         .map_err(|_| "BTreeSet elements must be bool, integer, char, or string".into())
+}
+
+fn query(arguments: &[Value], expected: &Type) -> Result<KeyIdentity, String> {
+    KeyIdentity::from_value(
+        arguments.get(1).ok_or("missing BTreeSet key")?,
+        Some(expected),
+        true,
+    )
 }
