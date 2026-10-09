@@ -102,10 +102,7 @@ pub(super) fn call_owned_symbol(
             return Err(format!("{}::insert requires `&mut self`", kind.name()));
         }
         let Some(object) = NativeReceiver::from_value(&arguments[0])? else {
-            return match kind {
-                SetKind::Hash => crate::hash_collections::call_set("insert", &arguments),
-                SetKind::BTree => super::btree_set::call("insert", &arguments),
-            };
+            return super::compatibility_insert::set(arguments, kind == SetKind::BTree);
         };
         if !kind.matches(object.descriptor().layout().rils_type()) {
             return Err(format!(
@@ -122,7 +119,8 @@ pub(super) fn call_owned_symbol(
         let mut values = arguments.into_iter();
         values.next();
         let value = values.next().expect("arity checked");
-        let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
+        let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums)
+            .with_owned_conversion();
         let native = codec.into_native(value, item_layout)?;
         let key = crate::value::native_key::native(native.view(), &codec, kind == SetKind::BTree)
             .map_err(|error| {

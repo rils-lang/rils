@@ -113,7 +113,7 @@ pub(super) fn clone_hash_map(map: &HashMapValue) -> Result<HashMapValue, String>
                 .as_ref()
                 .ok_or_else(|| "cannot clone a partially moved HashMap".to_string())?;
             Ok((
-                key.clone(),
+                key.clone_owned()?,
                 FieldSlot::new(slot.type_annotation.clone(), value.clone_owned()?),
             ))
         })
@@ -137,7 +137,7 @@ pub(super) fn clone_btree_map(map: &BTreeMapValue) -> Result<BTreeMapValue, Stri
                 .as_ref()
                 .ok_or("cannot clone a partially moved BTreeMap")?;
             Ok((
-                key.clone(),
+                key.clone_owned()?,
                 FieldSlot::new(slot.type_annotation.clone(), value.clone_owned()?),
             ))
         })
@@ -171,7 +171,7 @@ pub(super) fn display_btree_map(f: &mut fmt::Formatter<'_>, map: &BTreeMapValue)
         write!(
             f,
             "{}: {}",
-            key.to_value(),
+            key,
             slot.value
                 .as_ref()
                 .map_or_else(|| "<moved>".into(), ToString::to_string)
@@ -186,7 +186,7 @@ pub(super) fn display_btree_set(f: &mut fmt::Formatter<'_>, set: &BTreeSetValue)
         if index > 0 {
             write!(f, ", ")?;
         }
-        write!(f, "{}", key.to_value())?;
+        write!(f, "{key}")?;
     }
     write!(f, "}}")
 }
@@ -209,7 +209,7 @@ pub(super) fn display_hash_map(f: &mut fmt::Formatter<'_>, map: &HashMapValue) -
         .map(|(key, slot)| {
             format!(
                 "{}: {}",
-                key.to_value(),
+                key,
                 slot.value
                     .as_ref()
                     .map_or_else(|| "<moved>".into(), ToString::to_string)
@@ -222,10 +222,7 @@ pub(super) fn display_hash_map(f: &mut fmt::Formatter<'_>, map: &HashMapValue) -
 
 pub(super) fn display_hash_set(f: &mut fmt::Formatter<'_>, set: &HashSetValue) -> fmt::Result {
     let entries = set.entries.borrow();
-    let mut values = entries
-        .iter()
-        .map(|key| key.to_value().to_string())
-        .collect::<Vec<_>>();
+    let mut values = entries.iter().map(ToString::to_string).collect::<Vec<_>>();
     values.sort();
     write!(f, "{{{}}}", values.join(", "))
 }

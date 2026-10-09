@@ -14,6 +14,7 @@ mod callback;
 mod cell_native;
 mod collection_constructor;
 mod collection_iter;
+mod compatibility_insert;
 mod context;
 pub use context::NativeOwnedContext;
 pub(crate) use context::resolve_layout;

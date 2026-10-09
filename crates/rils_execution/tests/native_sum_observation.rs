@@ -231,7 +231,7 @@ fn sum_hash_keys_retain_native_storage_and_complete_type_witnesses() {
     ] {
         let original = native(input, &ty);
         let key = HashKey::from_value(&original).unwrap();
-        let stored = key.to_value();
+        let stored = key.to_value().unwrap();
         assert!(
             matches!(stored, Value::Dynamic(_)),
             "key must not rebuild legacy sum storage"

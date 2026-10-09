@@ -364,7 +364,7 @@ impl NativeRecordCodec {
             .ok_or_else(|| "expected a native set sequence layout".to_owned())?;
         let values = entries
             .into_iter()
-            .map(|key| self.encode(key.into_value(), item.clone()))
+            .map(|key| self.encode(key.into_value()?, item.clone()))
             .collect::<Result<Vec<_>, _>>()?;
         DynamicValue::sequence(layout, values)
     }
@@ -397,7 +397,7 @@ impl NativeRecordCodec {
                 DynamicValue::record(
                     pair.clone(),
                     vec![
-                        self.encode(key.into_value(), key_layout.clone())?,
+                        self.encode(key.into_value()?, key_layout.clone())?,
                         self.encode(value, value_layout.clone())?,
                     ],
                 )

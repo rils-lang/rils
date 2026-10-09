@@ -4,8 +4,8 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    types::{Type, merge_types},
-    value::{BTreeMapValue, FieldSlot, HashKey, IndexedStorage, KeyIdentity, Value},
+    types::Type,
+    value::{BTreeMapValue, FieldSlot, IndexedStorage, KeyIdentity, Value},
 };
 
 pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
@@ -29,25 +29,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
             let key = query(arguments, &map.key_type.borrow())?;
             Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
         }
-        "insert" => {
-            reject_referenced(&map)?;
-            let key = key(arguments, 1)?;
-            let value = arguments.get(2).ok_or("missing BTreeMap value")?.clone();
-            let key_type = merge_types(&map.key_type.borrow(), &key.ty())
-                .ok_or("BTreeMap key type mismatch")?;
-            let value_type = merge_types(
-                &map.value_type.borrow(),
-                &Type::of_value(&value).unwrap_or(Type::Unknown),
-            )
-            .ok_or("BTreeMap value type mismatch")?;
-            let previous = map
-                .entries
-                .borrow_mut()
-                .insert(key, FieldSlot::new(value_type.clone(), value));
-            *map.key_type.borrow_mut() = key_type;
-            *map.value_type.borrow_mut() = value_type.clone();
-            option(previous.and_then(|slot| slot.value), value_type)
-        }
+        "insert" => Err("insert requires owned arguments".into()),
         "get_cloned" => {
             let key = query(arguments, &map.key_type.borrow())?;
             let value = map
@@ -77,7 +59,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                 entries.last_key_value()
             };
             option(
-                key.map(|(key, _)| key.to_value()),
+                key.map(|(key, _)| key.to_value()).transpose()?,
                 map.key_type.borrow().clone(),
             )
         }
@@ -96,12 +78,15 @@ pub(crate) fn into_iter(map: Rc<BTreeMapValue>) -> Result<Value, String> {
     if entries.values().any(|slot| slot.value.is_none()) {
         return Err("cannot iterate a partially moved BTreeMap".into());
     }
+    for key in entries.keys() {
+        key.check_move()?;
+    }
     let entries = std::mem::take(&mut *entries);
     let values = entries.into_iter().map(|(key, slot)| {
-        tuple(vec![
-            key.into_value(),
+        Ok(tuple(vec![
+            key.into_value()?,
             slot.value.expect("unreferenced BTreeMap entry is present"),
-        ])
+        ]))
     });
     let collection_type = Type::Named {
         name: "BTreeMap".into(),
@@ -132,11 +117,6 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             arguments.len()
         ))
     })
-}
-
-fn key(arguments: &[Value], index: usize) -> Result<HashKey, String> {
-    HashKey::from_ordered_value(arguments.get(index).ok_or("missing BTreeMap key")?)
-        .map_err(|_| "BTreeMap key must be bool, integer, char, or string".into())
 }
 
 fn reject_referenced(map: &BTreeMapValue) -> Result<(), String> {

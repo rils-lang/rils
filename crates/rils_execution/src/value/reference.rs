@@ -442,17 +442,13 @@ impl ReferenceValue {
                 }
             }
             ReferenceTarget::DynamicField(path) => path.read(),
-            ReferenceTarget::MapKey { map, key } => map
-                .contains_key(key)
-                .then(|| key.to_value())
-                .ok_or_else(|| "iterator map key no longer exists".into()),
+            ReferenceTarget::MapKey { map, key } => {
+                map.with_entry(key, |stored, _| stored.to_value())?
+            }
             ReferenceTarget::MapValue { map, key } => map
                 .value(key)
                 .ok_or_else(|| "iterator map value no longer exists".into()),
-            ReferenceTarget::SetItem { set, key } => set
-                .contains(key)
-                .then(|| key.to_value())
-                .ok_or_else(|| "iterator set item no longer exists".into()),
+            ReferenceTarget::SetItem { set, key } => set.with_item(key, HashKey::to_value)?,
         }
     }
 

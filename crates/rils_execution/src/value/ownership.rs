@@ -340,12 +340,24 @@ impl Value {
             Self::BTreeMap(map) => Self::BTreeMap(Rc::new(hash::clone_btree_map(map)?)),
             Self::BTreeSet(set) => Self::BTreeSet(Rc::new(BTreeSetValue {
                 borrowed: std::cell::Cell::new(0),
-                entries: RefCell::new(set.entries.borrow().clone()),
+                entries: RefCell::new(
+                    set.entries
+                        .borrow()
+                        .iter()
+                        .map(super::HashKey::clone_owned)
+                        .collect::<Result<_, _>>()?,
+                ),
                 element_type: RefCell::new(set.element_type.borrow().clone()),
             })),
             Self::HashSet(set) => Self::HashSet(Rc::new(HashSetValue {
                 borrowed: std::cell::Cell::new(0),
-                entries: RefCell::new(set.entries.borrow().clone()),
+                entries: RefCell::new(
+                    set.entries
+                        .borrow()
+                        .iter()
+                        .map(super::HashKey::clone_owned)
+                        .collect::<Result<_, _>>()?,
+                ),
                 element_type: RefCell::new(set.element_type.borrow().clone()),
             })),
             Self::OwnedIterator(_) => return Err("iterators cannot be cloned".into()),

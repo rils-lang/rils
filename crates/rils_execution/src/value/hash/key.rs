@@ -7,6 +7,8 @@ use std::{
     hash::{Hash, Hasher},
     rc::Rc,
 };
+#[path = "key/ownership.rs"]
+mod ownership;
 #[path = "key/view.rs"]
 mod view;
 
@@ -57,17 +59,47 @@ impl HashKey {
             value: Rc::new(value),
         })
     }
-    pub fn to_value(&self) -> Value {
-        self.value
-            .clone_owned()
-            .expect("stored key remains complete")
-    }
-    pub fn into_value(self) -> Value {
-        Rc::try_unwrap(self.value).unwrap_or_else(|value| {
-            value
-                .clone_owned()
-                .expect("shared stored key remains cloneable")
+    /// Move the input into a key; shared non-Copy payloads are rejected.
+    pub fn from_owned_value(
+        value: Value,
+        expected: Option<&Type>,
+        ordered: bool,
+    ) -> Result<Self, String> {
+        // Validate under shared guards before inspecting legacy Copy metadata.
+        if matches!(value, Value::Reference(_)) {
+            return Err("an owned key cannot be a reference".into());
+        }
+        let identity = KeyIdentity::from_value(&value, expected, ordered)?;
+        let value = ownership::own(value)?;
+        Ok(Self {
+            identity: Rc::new(identity),
+            value: Rc::new(value),
         })
+    }
+    /// Explicitly clone the payload. Missing Clone support is an ordinary error.
+    pub fn to_value(&self) -> Result<Value, String> {
+        self.value.clone_owned()
+    }
+    pub fn clone_owned(&self) -> Result<Self, String> {
+        Ok(Self {
+            identity: self.identity.clone(),
+            value: Rc::new(self.to_value()?),
+        })
+    }
+    pub(crate) fn check_move(&self) -> Result<(), String> {
+        if Rc::strong_count(&self.value) != 1 && !self.value.is_copy() {
+            return Err(
+                "cannot move a shared non-Copy collection key; explicitly clone it first".into(),
+            );
+        }
+        Ok(())
+    }
+    pub fn into_value(self) -> Result<Value, String> {
+        self.check_move()?;
+        match Rc::try_unwrap(self.value) {
+            Ok(value) => Ok(value),
+            Err(value) => value.clone_owned(), // Only Copy reaches this branch.
+        }
     }
     pub fn ty(&self) -> Type {
         self.identity.ty.clone()
@@ -109,5 +141,11 @@ impl Ord for HashKey {
 impl Hash for HashKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.identity.hash(state);
+    }
+}
+
+impl fmt::Display for HashKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.value.fmt(formatter)
     }
 }

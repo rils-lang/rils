@@ -134,11 +134,11 @@ pub(crate) fn declared_iterator_type(collection_type: &Type) -> Option<Type> {
 }
 
 pub(crate) fn generated_collection_iterator(
-    items: impl Iterator<Item = Value> + 'static,
+    items: impl Iterator<Item = Result<Value, String>> + 'static,
     item_type: Type,
     collection_type: &Type,
 ) -> Value {
-    let mut iterator = OwnedIteratorValue::from_generator(items, item_type);
+    let mut iterator = OwnedIteratorValue::from_fallible_generator(items, item_type);
     if let Some(iterator_type) = declared_iterator_type(collection_type) {
         iterator = iterator.with_iterator_type(iterator_type);
     }

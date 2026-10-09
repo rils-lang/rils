@@ -23,7 +23,7 @@ fn string_uses_native_storage_across_clone_display_and_hash_keys() {
         HashKey::from_value(&Value::from_string("héllo")).unwrap()
     );
     assert!(matches!(
-        HashKey::from_value(&value).unwrap().to_value(),
+        HashKey::from_value(&value).unwrap().to_value().unwrap(),
         Value::Native(_)
     ));
 }

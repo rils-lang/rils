@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 旧 HashMap/HashSet/BTreeMap/BTreeSet 的拥有型插入直接移动键和值，支持非 Clone 负载；原生插入也拒绝共享非 Copy 输入的隐式复制。显式集合 Clone 与集合运算在复制处创建独立键，消费式迭代在取出条目前拒绝共享非 Copy 键。显示直接借用键负载，键投影的快照读取使用真实存储条目。**Rust API 迁移：** 新增 `HashKey::from_owned_value(value, expected, ordered)`；`to_value()`、`into_value()` 改为返回 `Result<Value, String>`，调用方须处理错误。需要独立副本时显式调用 `HashKey::clone_owned()`；`Clone::clone` 仅复制句柄，不能据此消费非 Copy 键。旧集合存储仍在迁移；C ABI、v8 编码和版本号不变。
+
 - 旧 HashMap/HashSet/BTreeMap/BTreeSet 的查询改为借用提取标准库注册的键身份，`contains`、`get_cloned`、`remove` 不再复制查询负载，支持非 Clone 查询值。身份保留整数宽度、容器种类、名义类型及非活动分支的泛型参数；无法补全类型时明确报错。**Rust API 迁移：** `HashKey` 从公开 enum 改为不透明键对象，删除 `StructuralKey`；原 `HashKey::I32(n)` 等构造改用 `HashKey::from_value(&Value::from_i32(n))`，借用读取使用 `with_ref()`。直接操作旧集合时，可用 `KeyIdentity::from_value(value, Some(&key_type), ordered)` 配合 `get`/`contains`/`remove`，无需构造拥有型键。旧键构造和显式快照接口仍在迁移；C ABI、v8 编码和版本号不变。
 
 - 旧 HashMap/HashSet/BTreeMap/BTreeSet 的消费式迭代器直接移出键；独占字符串保留原缓冲区，复合键保留原生负载与完整类型，非 Clone map value 不经复制。部分 move 的 Map 在转移条目前报错，集合访问冲突返回错误而非 panic；失败保留原条目。Rust API、C ABI 和 v8 编码不变。

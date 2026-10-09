@@ -199,3 +199,40 @@ fn mismatched_native_payload_type_is_returned_without_reading_its_bytes() {
     assert!(message.contains("Vec"));
     assert_eq!(value.into_rust::<String>().ok(), Some("typed".to_owned()));
 }
+
+#[test]
+fn unique_native_ownership_rejects_shared_non_copy_and_detaches_shared_copy() {
+    let value = NativeObject::<()>::new(
+        Rc::new(NativeType::new::<String>(Type::String)),
+        "owned".to_owned(),
+    )
+    .unwrap();
+    let address = value
+        .with::<String, _>(|text| text.as_ptr() as usize)
+        .unwrap();
+    let alias = value.clone();
+    let failure = value.into_unique().err().unwrap();
+    assert!(failure.1.contains("shared"));
+    drop(alias);
+    let value = failure.0.into_unique().ok().unwrap();
+    let text = value.into_rust::<String>().ok().unwrap();
+    assert_eq!(text.as_ptr() as usize, address);
+
+    let ty = Type::Array {
+        element: Box::new(Type::USIZE),
+        length: 8,
+    };
+    let value = NativeObject::<()>::new(
+        Rc::new(NativeType::new::<[usize; 8]>(ty).with_copy::<[usize; 8]>()),
+        [7usize; 8],
+    )
+    .unwrap();
+    assert!(!value.is_inline());
+    let alias = value.clone();
+    let unique = value.into_unique().ok().unwrap();
+    unique
+        .with_mut::<[usize; 8], _>(|items| items[0] = 9)
+        .unwrap();
+    assert_eq!(alias.with::<[usize; 8], _>(|items| items[0]), Ok(7));
+    assert_eq!(unique.into_rust::<[usize; 8]>().ok().unwrap()[0], 9);
+}

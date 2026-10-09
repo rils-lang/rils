@@ -229,6 +229,13 @@ Rust 宿主保留的旧 Map/Set 查询也直接借用提取键身份，不要求
 旧包装的缺失类型可由集合声明补全，仍无法确定类型时返回错误。
 `HashKey` 是不透明的拥有型键，直接访问旧 Rust 集合时应使用 `KeyIdentity` 查询，
 避免用 `HashKey::from_value()` 为查询额外创建负载快照。键身份自身仍可能分配字符串或复合数据。
+拥有型插入使用 `call_native_owned_symbol` 传入 `Vec<Value>`，旧集合也直接移入键和值。
+Rust 宿主可用 `HashKey::from_owned_value(value, expected, ordered)` 构造拥有型键。
+`to_value()` 显式复制负载，`into_value()` 消费负载，两者均返回 `Result`；共享非 Copy 键
+不能隐式复制后消费，需显式调用 `clone_owned()`。`HashKey::clone()` 只复制句柄。
+集合的显式 Clone 和产生新集合的集合运算会在调用时复制键；缺少 Clone 返回错误。
+显示与借用键投影读取原负载，不要求 Clone。
+
 
 
 ```rust

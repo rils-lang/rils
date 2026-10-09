@@ -420,14 +420,16 @@ fn consuming_unique_string_key_moves_the_buffer_while_shared_keys_stay_independe
         .with_ref::<String, _>(|text| text.as_ptr() as usize)
         .unwrap();
     assert_eq!(
-        RilsValue::new(key.into_value()).with_ref::<String, _>(|text| text.as_ptr() as usize),
+        RilsValue::new(key.into_value().unwrap())
+            .with_ref::<String, _>(|text| text.as_ptr() as usize),
         Ok(original)
     );
     let key = HashKey::from_value(&Value::from_string("共享内容")).unwrap();
     let original = key
         .with_ref::<String, _>(|text| text.as_ptr() as usize)
         .unwrap();
-    let copied = RilsValue::new(key.clone().into_value());
+    assert!(key.clone().into_value().is_err());
+    let copied = RilsValue::new(key.clone_owned().unwrap().into_value().unwrap());
     assert_ne!(
         copied
             .with_ref::<String, _>(|text| text.as_ptr() as usize)

@@ -139,16 +139,19 @@ fn consuming_collections_moves_unique_string_buffers_and_empties_the_source() {
 }
 
 #[test]
-fn shared_keys_keep_an_independent_string_when_the_iterator_is_consumed() {
+fn shared_non_copy_keys_require_an_explicit_clone_before_consumption() {
     for kind in KINDS {
         let key = HashKey::from_value(&Value::from_string("shared key")).unwrap();
         let address = key
             .with_ref::<String, _>(|text| text.as_ptr() as usize)
             .unwrap();
-        let mut iter = iterator(collection(kind, key.clone(), Value::Unit));
+        let shared = collection(kind, key.clone(), Value::Unit);
+        assert!(into_iterator(shared.clone()).is_err());
+        with_entries!(&shared, entries, assert_eq!(entries.borrow().len(), 1));
+        let mut iter = iterator(collection(kind, key.clone_owned().unwrap(), Value::Unit));
         let (moved, _) = split_entry(kind, next(&mut iter).unwrap());
         assert_ne!(string_address(moved), address);
-        assert_eq!(key.to_value().as_string().unwrap(), "shared key");
+        assert_eq!(key.to_value().unwrap().as_string().unwrap(), "shared key");
     }
 }
 

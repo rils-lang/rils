@@ -31,14 +31,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
             let key = query(arguments, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow().contains(&key)))
         }
-        "insert" => {
-            let key = key(arguments, 1)?;
-            let element_type = merge_types(&set.element_type.borrow(), &key.ty())
-                .ok_or("BTreeSet element type mismatch")?;
-            let inserted = set.entries.borrow_mut().insert(key);
-            *set.element_type.borrow_mut() = element_type;
-            Ok(Value::Bool(inserted))
-        }
+        "insert" => Err("insert requires owned arguments".into()),
         "remove" => {
             let key = query(arguments, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
@@ -51,7 +44,7 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                 entries.last()
             };
             Ok(Value::Option {
-                value: key.map(HashKey::to_value).map(Rc::new),
+                value: key.map(HashKey::to_value).transpose()?.map(Rc::new),
                 element_type: Some(set.element_type.borrow().clone()),
             })
         }
@@ -77,12 +70,22 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                 "is_disjoint" => Ok(Value::Bool(left.is_disjoint(&right))),
                 _ => {
                     let entries = match method {
-                        "union" => left.union(&right).cloned().collect(),
-                        "intersection" => left.intersection(&right).cloned().collect(),
-                        "difference" => left.difference(&right).cloned().collect(),
-                        "symmetric_difference" => {
-                            left.symmetric_difference(&right).cloned().collect()
-                        }
+                        "union" => left
+                            .union(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
+                        "intersection" => left
+                            .intersection(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
+                        "difference" => left
+                            .difference(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
+                        "symmetric_difference" => left
+                            .symmetric_difference(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
                         _ => unreachable!(),
                     };
                     Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
@@ -102,12 +105,14 @@ pub(crate) fn into_iter(set: Rc<BTreeSetValue>) -> Result<Value, String> {
         return Err("cannot mutate BTreeSet while it is borrowed by an iterator".into());
     }
     let element_type = set.element_type.borrow().clone();
-    let entries = std::mem::take(
-        &mut *set
-            .entries
-            .try_borrow_mut()
-            .map_err(|_| "cannot consume BTreeSet while its entries are accessed")?,
-    );
+    let mut entries = set
+        .entries
+        .try_borrow_mut()
+        .map_err(|_| "cannot consume BTreeSet while its entries are accessed")?;
+    for key in entries.iter() {
+        key.check_move()?;
+    }
+    let entries = std::mem::take(&mut *entries);
     let collection_type = Type::Named {
         name: "BTreeSet".into(),
         arguments: vec![element_type.clone()],
@@ -136,11 +141,6 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             arguments.len()
         ))
     })
-}
-
-fn key(arguments: &[Value], index: usize) -> Result<HashKey, String> {
-    HashKey::from_ordered_value(arguments.get(index).ok_or("missing BTreeSet element")?)
-        .map_err(|_| "BTreeSet elements must be bool, integer, char, or string".into())
 }
 
 fn query(arguments: &[Value], expected: &Type) -> Result<KeyIdentity, String> {

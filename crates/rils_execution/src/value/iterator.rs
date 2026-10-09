@@ -9,12 +9,14 @@ use super::{
     FieldSlot, HashKey, IndexedStorage, MapCollection, ReferenceValue, SetCollection, Value,
 };
 
+type ValueGenerator = Box<dyn Iterator<Item = Result<Value, String>>>;
+
 #[derive(Clone)]
 pub struct OwnedIteratorValue {
     pub items: RefCell<VecDeque<Value>>,
     native_items: Option<Rc<RefCell<std::vec::IntoIter<DynamicValue>>>>,
     native_codec: Option<Rc<NativeRecordCodec>>,
-    generated_items: Option<Rc<RefCell<Box<dyn Iterator<Item = Value>>>>>,
+    generated_items: Option<Rc<RefCell<ValueGenerator>>>,
     slots: Option<RefCell<std::vec::IntoIter<FieldSlot>>>,
     pub element_type: Type,
     pub iterator_type: Option<Type>,
@@ -87,6 +89,13 @@ impl OwnedIteratorValue {
         items: impl Iterator<Item = Value> + 'static,
         element_type: Type,
     ) -> Self {
+        Self::from_fallible_generator(items.map(Ok), element_type)
+    }
+
+    pub fn from_fallible_generator(
+        items: impl Iterator<Item = Result<Value, String>> + 'static,
+        element_type: Type,
+    ) -> Self {
         Self {
             items: RefCell::new(VecDeque::new()),
             native_items: None,
@@ -122,7 +131,7 @@ impl OwnedIteratorValue {
                 .transpose();
         }
         if let Some(items) = &self.generated_items {
-            return Ok(items.borrow_mut().next());
+            return items.borrow_mut().next().transpose();
         }
         if let Some(slots) = &self.slots {
             return slots
@@ -164,9 +173,10 @@ impl OwnedIteratorValue {
             return Ok(());
         }
         if let Some(generated_items) = &self.generated_items {
-            self.items
-                .borrow_mut()
-                .extend(generated_items.borrow_mut().by_ref());
+            let mut items = self.items.borrow_mut();
+            for item in generated_items.borrow_mut().by_ref() {
+                items.push_back(item?);
+            }
             return Ok(());
         }
         if let Some(slots) = &self.slots {

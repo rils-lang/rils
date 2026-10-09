@@ -229,6 +229,22 @@ impl<V: 'static> NativeObject<V> {
         }
     }
 
+    /// Detach a Copy payload or require exclusive ownership of non-Copy bytes.
+    pub fn into_unique(self) -> Result<Self, Box<(Self, String)>> {
+        if matches!(&self.storage, NativeStorage::Inline(_))
+            || matches!(&self.storage, NativeStorage::Shared(value) if Rc::strong_count(value) == 1)
+        {
+            return Ok(self);
+        }
+        if self.descriptor.is_copy() {
+            return self.copy_owned().map_err(|error| Box::new((self, error)));
+        }
+        Err(Box::new((
+            self,
+            "native payload is shared and cannot be moved".into(),
+        )))
+    }
+
     pub fn with_mut<T: 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R, String> {
         self.check_type::<T>()?;
         match &self.storage {

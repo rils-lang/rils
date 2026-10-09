@@ -29,30 +29,7 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
             let key = query_argument(arguments, 1, &map.key_type.borrow())?;
             Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
         }
-        "insert" => {
-            reject_referenced_map(&map)?;
-            let key_value = arguments
-                .get(1)
-                .ok_or_else(|| "missing HashMap key".to_string())?;
-            let key = HashKey::from_value(key_value)?;
-            let value = arguments
-                .get(2)
-                .ok_or_else(|| "missing HashMap value".to_string())?
-                .clone();
-            let key_type = merge_collection_type(&map.key_type, key.ty(), "HashMap key")?;
-            let value_type = merge_collection_type(
-                &map.value_type,
-                Type::of_value(&value).unwrap_or(Type::Unknown),
-                "HashMap value",
-            )?;
-            let previous = map
-                .entries
-                .borrow_mut()
-                .insert(key, FieldSlot::new(value_type.clone(), value));
-            *map.key_type.borrow_mut() = key_type;
-            *map.value_type.borrow_mut() = value_type.clone();
-            option(previous.and_then(|slot| slot.value), value_type)
-        }
+        "insert" => Err("insert requires owned arguments".into()),
         "get_cloned" => {
             let key = query_argument(arguments, 1, &map.key_type.borrow())?;
             let value = map
@@ -75,7 +52,11 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
             option(value, map.value_type.borrow().clone())
         }
         "keys_cloned" => Ok(iterator(
-            map.entries.borrow().keys().map(HashKey::to_value).collect(),
+            map.entries
+                .borrow()
+                .keys()
+                .map(HashKey::to_value)
+                .collect::<Result<_, _>>()?,
             map.key_type.borrow().clone(),
         )),
         "values_cloned" => Ok(iterator(
@@ -115,14 +96,7 @@ pub(crate) fn call_set(method: &str, arguments: &[Value]) -> Result<Value, Strin
             let key = query_argument(arguments, 1, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow().contains(&key)))
         }
-        "insert" => {
-            let key = hash_argument(arguments, 1)?;
-            let element_type =
-                merge_collection_type(&set.element_type, key.ty(), "HashSet element")?;
-            let inserted = set.entries.borrow_mut().insert(key);
-            *set.element_type.borrow_mut() = element_type;
-            Ok(Value::Bool(inserted))
-        }
+        "insert" => Err("insert requires owned arguments".into()),
         "remove" => {
             let key = query_argument(arguments, 1, &set.element_type.borrow())?;
             Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
@@ -151,10 +125,22 @@ pub(crate) fn call_set(method: &str, arguments: &[Value]) -> Result<Value, Strin
             let left = set.entries.borrow();
             let right = other.entries.borrow();
             let entries = match method {
-                "union" => left.union(&right).cloned().collect(),
-                "intersection" => left.intersection(&right).cloned().collect(),
-                "difference" => left.difference(&right).cloned().collect(),
-                "symmetric_difference" => left.symmetric_difference(&right).cloned().collect(),
+                "union" => left
+                    .union(&right)
+                    .map(HashKey::clone_owned)
+                    .collect::<Result<_, _>>()?,
+                "intersection" => left
+                    .intersection(&right)
+                    .map(HashKey::clone_owned)
+                    .collect::<Result<_, _>>()?,
+                "difference" => left
+                    .difference(&right)
+                    .map(HashKey::clone_owned)
+                    .collect::<Result<_, _>>()?,
+                "symmetric_difference" => left
+                    .symmetric_difference(&right)
+                    .map(HashKey::clone_owned)
+                    .collect::<Result<_, _>>()?,
                 _ => unreachable!(),
             };
             let element_type =
@@ -181,12 +167,15 @@ pub(crate) fn into_iter_map(map: Rc<HashMapValue>) -> Result<Value, String> {
     if entries.values().any(|slot| slot.value.is_none()) {
         return Err("cannot iterate a partially moved HashMap".into());
     }
+    for key in entries.keys() {
+        key.check_move()?;
+    }
     let entries = std::mem::take(&mut *entries);
     let values = entries.into_iter().map(|(key, slot)| {
-        tuple(vec![
-            key.into_value(),
+        Ok(tuple(vec![
+            key.into_value()?,
             slot.value.expect("unreferenced HashMap value is present"),
-        ])
+        ]))
     });
     let collection_type = Type::Named {
         name: "HashMap".into(),
@@ -204,12 +193,14 @@ pub(crate) fn into_iter_set(set: Rc<HashSetValue>) -> Result<Value, String> {
         return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
     }
     let element_type = set.element_type.borrow().clone();
-    let entries = std::mem::take(
-        &mut *set
-            .entries
-            .try_borrow_mut()
-            .map_err(|_| "cannot consume HashSet while its entries are accessed")?,
-    );
+    let mut entries = set
+        .entries
+        .try_borrow_mut()
+        .map_err(|_| "cannot consume HashSet while its entries are accessed")?;
+    for key in entries.iter() {
+        key.check_move()?;
+    }
+    let entries = std::mem::take(&mut *entries);
     let collection_type = Type::Named {
         name: "HashSet".into(),
         arguments: vec![element_type.clone()],
@@ -219,14 +210,6 @@ pub(crate) fn into_iter_set(set: Rc<HashSetValue>) -> Result<Value, String> {
         element_type,
         &collection_type,
     ))
-}
-
-fn hash_argument(arguments: &[Value], index: usize) -> Result<HashKey, String> {
-    HashKey::from_value(
-        arguments
-            .get(index)
-            .ok_or_else(|| "missing hash collection key".to_string())?,
-    )
 }
 
 fn hash_map(value: &Value) -> Result<Rc<HashMapValue>, String> {
@@ -269,19 +252,6 @@ fn reject_referenced_map(map: &HashMapValue) -> Result<(), String> {
     } else {
         Ok(())
     }
-}
-
-fn merge_collection_type(
-    target: &RefCell<Type>,
-    actual: Type,
-    subject: &str,
-) -> Result<Type, String> {
-    merge_types(&target.borrow(), &actual).ok_or_else(|| {
-        format!(
-            "{subject} type mismatch: expected {}, found {actual}",
-            target.borrow()
-        )
-    })
 }
 
 fn option(value: Option<Value>, element_type: Type) -> Result<Value, String> {
