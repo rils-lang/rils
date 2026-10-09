@@ -1,4 +1,5 @@
 //! Owned fallback while compatibility Map/Set storage is being retired.
+use crate::value::borrowed::with_legacy;
 use crate::{
     Type,
     types::merge_types,
@@ -61,11 +62,11 @@ pub(super) fn map(arguments: Vec<Value>, ordered: bool) -> Result<Value, String>
             })
         }};
     }
-    match super::import_receiver(&receiver)? {
+    with_legacy(&receiver, |value| match value {
         Value::HashMap(map) if !ordered => insert!(map),
         Value::BTreeMap(map) if ordered => insert!(map),
         _ => Err("wrong map receiver".into()),
-    }
+    })
 }
 
 pub(super) fn set(arguments: Vec<Value>, ordered: bool) -> Result<Value, String> {
@@ -99,9 +100,9 @@ pub(super) fn set(arguments: Vec<Value>, ordered: bool) -> Result<Value, String>
             Ok(Value::Bool(inserted))
         }};
     }
-    match super::import_receiver(&receiver)? {
+    with_legacy(&receiver, |value| match value {
         Value::HashSet(set) if !ordered => insert!(set),
         Value::BTreeSet(set) if ordered => insert!(set),
         _ => Err("wrong set receiver".into()),
-    }
+    })
 }

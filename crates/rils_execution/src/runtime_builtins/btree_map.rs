@@ -3,6 +3,8 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+use crate::value::borrowed::with_legacy;
+
 use crate::{
     types::Type,
     value::{BTreeMapValue, FieldSlot, IndexedStorage, KeyIdentity, Value},
@@ -14,63 +16,128 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
     if mutating && !matches!(receiver, Value::Reference(reference) if reference.mutable) {
         return Err("BTreeMap mutation requires a mutable reference".into());
     }
-    let Value::BTreeMap(map) = super::import_receiver(receiver)? else {
-        return Err("expected BTreeMap receiver".into());
-    };
-    match method {
-        "len" => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
-        "is_empty" => Ok(Value::Bool(map.entries.borrow().is_empty())),
-        "clear" => {
-            reject_referenced(&map)?;
-            map.entries.borrow_mut().clear();
-            Ok(Value::Unit)
+    with_legacy(receiver, |value| {
+        let Value::BTreeMap(map) = value else {
+            return Err("expected BTreeMap receiver".into());
+        };
+        match method {
+            "len" => Ok(crate::numeric::native_usize(
+                map.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .len(),
+            )),
+            "is_empty" => Ok(Value::Bool(
+                map.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .is_empty(),
+            )),
+            "clear" => {
+                reject_referenced(map)?;
+                map.entries
+                    .try_borrow_mut()
+                    .map_err(|_| "collection entries are accessed")?
+                    .clear();
+                Ok(Value::Unit)
+            }
+            "contains_key" => {
+                let key = query(
+                    arguments,
+                    &*map
+                        .key_type
+                        .try_borrow()
+                        .map_err(|_| "collection key type is accessed")?,
+                )?;
+                Ok(Value::Bool(
+                    map.entries
+                        .try_borrow()
+                        .map_err(|_| "collection entries are accessed")?
+                        .contains_key(&key),
+                ))
+            }
+            "insert" => Err("insert requires owned arguments".into()),
+            "get_cloned" => {
+                let key = query(
+                    arguments,
+                    &*map
+                        .key_type
+                        .try_borrow()
+                        .map_err(|_| "collection key type is accessed")?,
+                )?;
+                let value = map
+                    .entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .get(&key)
+                    .and_then(|slot| slot.value.as_ref())
+                    .map(Value::clone_owned)
+                    .transpose()?;
+                option(
+                    value,
+                    map.value_type
+                        .try_borrow()
+                        .map_err(|_| "collection value type is accessed")?
+                        .clone(),
+                )
+            }
+            "remove" => {
+                reject_referenced(map)?;
+                let key = query(
+                    arguments,
+                    &*map
+                        .key_type
+                        .try_borrow()
+                        .map_err(|_| "collection key type is accessed")?,
+                )?;
+                let value_type = map
+                    .value_type
+                    .try_borrow()
+                    .map_err(|_| "collection value type is accessed")?
+                    .clone();
+                let value = map
+                    .entries
+                    .try_borrow_mut()
+                    .map_err(|_| "collection entries are accessed")?
+                    .remove(&key)
+                    .and_then(|slot| slot.value);
+                option(value, value_type)
+            }
+            "first_key_cloned" | "last_key_cloned" => {
+                let entries = map
+                    .entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?;
+                let key = if method == "first_key_cloned" {
+                    entries.first_key_value()
+                } else {
+                    entries.last_key_value()
+                };
+                option(
+                    key.map(|(key, _)| key.to_value()).transpose()?,
+                    map.key_type
+                        .try_borrow()
+                        .map_err(|_| "collection key type is accessed")?
+                        .clone(),
+                )
+            }
+            _ => Err("unsupported BTreeMap operation".into()),
         }
-        "contains_key" => {
-            let key = query(arguments, &map.key_type.borrow())?;
-            Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
-        }
-        "insert" => Err("insert requires owned arguments".into()),
-        "get_cloned" => {
-            let key = query(arguments, &map.key_type.borrow())?;
-            let value = map
-                .entries
-                .borrow()
-                .get(&key)
-                .and_then(|slot| slot.value.as_ref())
-                .map(Value::clone_owned)
-                .transpose()?;
-            option(value, map.value_type.borrow().clone())
-        }
-        "remove" => {
-            reject_referenced(&map)?;
-            let key = query(arguments, &map.key_type.borrow())?;
-            let value = map
-                .entries
-                .borrow_mut()
-                .remove(&key)
-                .and_then(|slot| slot.value);
-            option(value, map.value_type.borrow().clone())
-        }
-        "first_key_cloned" | "last_key_cloned" => {
-            let entries = map.entries.borrow();
-            let key = if method == "first_key_cloned" {
-                entries.first_key_value()
-            } else {
-                entries.last_key_value()
-            };
-            option(
-                key.map(|(key, _)| key.to_value()).transpose()?,
-                map.key_type.borrow().clone(),
-            )
-        }
-        _ => Err("unsupported BTreeMap operation".into()),
-    }
+    })
 }
 
 pub(crate) fn into_iter(map: Rc<BTreeMapValue>) -> Result<Value, String> {
     reject_referenced(&map)?;
-    let key_type = map.key_type.borrow().clone();
-    let value_type = map.value_type.borrow().clone();
+    let key_type = map
+        .key_type
+        .try_borrow()
+        .map_err(|_| "collection key type is accessed")?
+        .clone();
+    let value_type = map
+        .value_type
+        .try_borrow()
+        .map_err(|_| "collection value type is accessed")?
+        .clone();
     let mut entries = map
         .entries
         .try_borrow_mut()

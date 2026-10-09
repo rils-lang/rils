@@ -57,7 +57,7 @@ pub use string::{native_string, string_payload};
 #[path = "value/character.rs"]
 mod character;
 pub use character::{char_payload, native_char};
-mod borrowed;
+pub(crate) mod borrowed;
 pub mod equality;
 pub(crate) mod native_key;
 mod ownership;

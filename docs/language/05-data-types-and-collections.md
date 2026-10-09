@@ -241,6 +241,12 @@ Rust 宿主可用 `HashKey::from_owned_value(value, expected, ordered)` 构造�
 实际读取始终查找集合内的条目并保留访问 guard，失效条目或访问冲突返回错误。
 已移除 `MapCollection::contains_key/value` 和 `SetCollection::contains`；宿主直接查询旧存储时，
 应先使用 `entries.try_borrow()` 获取 guard，再通过 `&KeyIdentity` 查询条目。
+旧集合的方法调用和借用迭代器创建直接读取原 receiver；方法执行期间保留局部槽位、
+索引元素或外层 Map 条目的来源 guard，集合运算同时保留两个输入的来源 guard。
+这不增加 Rils 的独占可变借用规则；多个词法 `&mut` 仍可依次操作同一集合。
+宿主直接调用修改方法须传入可变引用；条目或类型元数据的访问冲突返回错误，
+Map 删除在取出条目前检查返回类型元数据，失败保留原条目。
+
 
 
 

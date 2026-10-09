@@ -3,6 +3,8 @@
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+use crate::value::borrowed::with_legacy;
+
 use crate::{
     types::{Type, merge_types},
     value::{
@@ -12,154 +14,291 @@ use crate::{
 };
 
 pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, String> {
-    let map = hash_map(
-        arguments
-            .first()
-            .ok_or_else(|| "missing HashMap receiver".to_string())?,
-    )?;
-    match method {
-        "len" => Ok(crate::numeric::native_usize(map.entries.borrow().len())),
-        "is_empty" => Ok(Value::Bool(map.entries.borrow().is_empty())),
-        "clear" => {
-            reject_referenced_map(&map)?;
-            map.entries.borrow_mut().clear();
-            Ok(Value::Unit)
-        }
-        "contains_key" => {
-            let key = query_argument(arguments, 1, &map.key_type.borrow())?;
-            Ok(Value::Bool(map.entries.borrow().contains_key(&key)))
-        }
-        "insert" => Err("insert requires owned arguments".into()),
-        "get_cloned" => {
-            let key = query_argument(arguments, 1, &map.key_type.borrow())?;
-            let value = map
-                .entries
-                .borrow()
-                .get(&key)
-                .and_then(|slot| slot.value.as_ref())
-                .map(Value::clone_owned)
-                .transpose()?;
-            option(value, map.value_type.borrow().clone())
-        }
-        "remove" => {
-            reject_referenced_map(&map)?;
-            let key = query_argument(arguments, 1, &map.key_type.borrow())?;
-            let value = map
-                .entries
-                .borrow_mut()
-                .remove(&key)
-                .and_then(|slot| slot.value);
-            option(value, map.value_type.borrow().clone())
-        }
-        "keys_cloned" => Ok(iterator(
-            map.entries
-                .borrow()
-                .keys()
-                .map(HashKey::to_value)
-                .collect::<Result<_, _>>()?,
-            map.key_type.borrow().clone(),
-        )),
-        "values_cloned" => Ok(iterator(
-            map.entries
-                .borrow()
-                .values()
-                .map(|slot| {
-                    slot.value
-                        .as_ref()
-                        .ok_or_else(|| "HashMap contains a moved value".to_string())?
-                        .clone_owned()
-                })
-                .collect::<Result<_, _>>()?,
-            map.value_type.borrow().clone(),
-        )),
-        _ => Err(format!("unknown HashMap method `{method}`")),
+    let receiver = arguments.first().ok_or("missing HashMap receiver")?;
+    if matches!(method, "clear" | "insert" | "remove")
+        && !matches!(receiver, Value::Reference(reference) if reference.mutable)
+    {
+        return Err("HashMap mutation requires a mutable reference".into());
     }
+    with_legacy(receiver, |value| {
+        let Value::HashMap(map) = value else {
+            return Err("expected HashMap receiver".into());
+        };
+        match method {
+            "len" => Ok(crate::numeric::native_usize(
+                map.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .len(),
+            )),
+            "is_empty" => Ok(Value::Bool(
+                map.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .is_empty(),
+            )),
+            "clear" => {
+                reject_referenced_map(map)?;
+                map.entries
+                    .try_borrow_mut()
+                    .map_err(|_| "collection entries are accessed")?
+                    .clear();
+                Ok(Value::Unit)
+            }
+            "contains_key" => {
+                let key = query_argument(
+                    arguments,
+                    1,
+                    &*map
+                        .key_type
+                        .try_borrow()
+                        .map_err(|_| "collection key type is accessed")?,
+                )?;
+                Ok(Value::Bool(
+                    map.entries
+                        .try_borrow()
+                        .map_err(|_| "collection entries are accessed")?
+                        .contains_key(&key),
+                ))
+            }
+            "insert" => Err("insert requires owned arguments".into()),
+            "get_cloned" => {
+                let key = query_argument(
+                    arguments,
+                    1,
+                    &*map
+                        .key_type
+                        .try_borrow()
+                        .map_err(|_| "collection key type is accessed")?,
+                )?;
+                let value = map
+                    .entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .get(&key)
+                    .and_then(|slot| slot.value.as_ref())
+                    .map(Value::clone_owned)
+                    .transpose()?;
+                option(
+                    value,
+                    map.value_type
+                        .try_borrow()
+                        .map_err(|_| "collection value type is accessed")?
+                        .clone(),
+                )
+            }
+            "remove" => {
+                reject_referenced_map(map)?;
+                let key = query_argument(
+                    arguments,
+                    1,
+                    &*map
+                        .key_type
+                        .try_borrow()
+                        .map_err(|_| "collection key type is accessed")?,
+                )?;
+                let value_type = map
+                    .value_type
+                    .try_borrow()
+                    .map_err(|_| "collection value type is accessed")?
+                    .clone();
+                let value = map
+                    .entries
+                    .try_borrow_mut()
+                    .map_err(|_| "collection entries are accessed")?
+                    .remove(&key)
+                    .and_then(|slot| slot.value);
+                option(value, value_type)
+            }
+            "keys_cloned" => Ok(iterator(
+                map.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .keys()
+                    .map(HashKey::to_value)
+                    .collect::<Result<_, _>>()?,
+                map.key_type
+                    .try_borrow()
+                    .map_err(|_| "collection key type is accessed")?
+                    .clone(),
+            )),
+            "values_cloned" => Ok(iterator(
+                map.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .values()
+                    .map(|slot| {
+                        slot.value
+                            .as_ref()
+                            .ok_or_else(|| "HashMap contains a moved value".to_string())?
+                            .clone_owned()
+                    })
+                    .collect::<Result<_, _>>()?,
+                map.value_type
+                    .try_borrow()
+                    .map_err(|_| "collection value type is accessed")?
+                    .clone(),
+            )),
+            _ => Err(format!("unknown HashMap method `{method}`")),
+        }
+    })
 }
 
 pub(crate) fn call_set(method: &str, arguments: &[Value]) -> Result<Value, String> {
-    let set = hash_set(
-        arguments
-            .first()
-            .ok_or_else(|| "missing HashSet receiver".to_string())?,
-    )?;
-    if matches!(method, "clear" | "insert" | "remove") && set.borrowed.get() > 0 {
-        return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
+    let receiver = arguments.first().ok_or("missing HashSet receiver")?;
+    if matches!(method, "clear" | "insert" | "remove")
+        && !matches!(receiver, Value::Reference(reference) if reference.mutable)
+    {
+        return Err("HashSet mutation requires a mutable reference".into());
     }
-    match method {
-        "len" => Ok(crate::numeric::native_usize(set.entries.borrow().len())),
-        "is_empty" => Ok(Value::Bool(set.entries.borrow().is_empty())),
-        "clear" => {
-            set.entries.borrow_mut().clear();
-            Ok(Value::Unit)
+    with_legacy(receiver, |value| {
+        let Value::HashSet(set) = value else {
+            return Err("expected HashSet receiver".into());
+        };
+        if matches!(method, "clear" | "insert" | "remove") && set.borrowed.get() > 0 {
+            return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
         }
-        "contains" => {
-            let key = query_argument(arguments, 1, &set.element_type.borrow())?;
-            Ok(Value::Bool(set.entries.borrow().contains(&key)))
-        }
-        "insert" => Err("insert requires owned arguments".into()),
-        "remove" => {
-            let key = query_argument(arguments, 1, &set.element_type.borrow())?;
-            Ok(Value::Bool(set.entries.borrow_mut().remove(&key)))
-        }
-        "is_subset" | "is_superset" | "is_disjoint" => {
-            let other = hash_set(
-                arguments
-                    .get(1)
-                    .ok_or_else(|| "missing other HashSet".to_string())?,
-            )?;
-            let left = set.entries.borrow();
-            let right = other.entries.borrow();
-            Ok(Value::Bool(match method {
-                "is_subset" => left.is_subset(&right),
-                "is_superset" => left.is_superset(&right),
-                "is_disjoint" => left.is_disjoint(&right),
-                _ => unreachable!(),
-            }))
-        }
-        "union" | "intersection" | "difference" | "symmetric_difference" => {
-            let other = hash_set(
-                arguments
-                    .get(1)
-                    .ok_or_else(|| "missing other HashSet".to_string())?,
-            )?;
-            let left = set.entries.borrow();
-            let right = other.entries.borrow();
-            let entries = match method {
-                "union" => left
-                    .union(&right)
-                    .map(HashKey::clone_owned)
-                    .collect::<Result<_, _>>()?,
-                "intersection" => left
-                    .intersection(&right)
-                    .map(HashKey::clone_owned)
-                    .collect::<Result<_, _>>()?,
-                "difference" => left
-                    .difference(&right)
-                    .map(HashKey::clone_owned)
-                    .collect::<Result<_, _>>()?,
-                "symmetric_difference" => left
-                    .symmetric_difference(&right)
-                    .map(HashKey::clone_owned)
-                    .collect::<Result<_, _>>()?,
-                _ => unreachable!(),
-            };
-            let element_type =
-                merge_types(&set.element_type.borrow(), &other.element_type.borrow())
+        match method {
+            "len" => Ok(crate::numeric::native_usize(
+                set.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .len(),
+            )),
+            "is_empty" => Ok(Value::Bool(
+                set.entries
+                    .try_borrow()
+                    .map_err(|_| "collection entries are accessed")?
+                    .is_empty(),
+            )),
+            "clear" => {
+                set.entries
+                    .try_borrow_mut()
+                    .map_err(|_| "collection entries are accessed")?
+                    .clear();
+                Ok(Value::Unit)
+            }
+            "contains" => {
+                let key = query_argument(
+                    arguments,
+                    1,
+                    &*set
+                        .element_type
+                        .try_borrow()
+                        .map_err(|_| "collection element type is accessed")?,
+                )?;
+                Ok(Value::Bool(
+                    set.entries
+                        .try_borrow()
+                        .map_err(|_| "collection entries are accessed")?
+                        .contains(&key),
+                ))
+            }
+            "insert" => Err("insert requires owned arguments".into()),
+            "remove" => {
+                let key = query_argument(
+                    arguments,
+                    1,
+                    &*set
+                        .element_type
+                        .try_borrow()
+                        .map_err(|_| "collection element type is accessed")?,
+                )?;
+                Ok(Value::Bool(
+                    set.entries
+                        .try_borrow_mut()
+                        .map_err(|_| "collection entries are accessed")?
+                        .remove(&key),
+                ))
+            }
+            "is_subset" | "is_superset" | "is_disjoint" => {
+                with_legacy(arguments.get(1).ok_or("missing other HashSet")?, |value| {
+                    let Value::HashSet(other) = value else {
+                        return Err("expected other HashSet".into());
+                    };
+                    let left = set
+                        .entries
+                        .try_borrow()
+                        .map_err(|_| "collection entries are accessed")?;
+                    let right = other
+                        .entries
+                        .try_borrow()
+                        .map_err(|_| "collection entries are accessed")?;
+                    Ok(Value::Bool(match method {
+                        "is_subset" => left.is_subset(&right),
+                        "is_superset" => left.is_superset(&right),
+                        "is_disjoint" => left.is_disjoint(&right),
+                        _ => unreachable!(),
+                    }))
+                })
+            }
+            "union" | "intersection" | "difference" | "symmetric_difference" => {
+                with_legacy(arguments.get(1).ok_or("missing other HashSet")?, |value| {
+                    let Value::HashSet(other) = value else {
+                        return Err("expected other HashSet".into());
+                    };
+                    let left = set
+                        .entries
+                        .try_borrow()
+                        .map_err(|_| "collection entries are accessed")?;
+                    let right = other
+                        .entries
+                        .try_borrow()
+                        .map_err(|_| "collection entries are accessed")?;
+                    let entries = match method {
+                        "union" => left
+                            .union(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
+                        "intersection" => left
+                            .intersection(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
+                        "difference" => left
+                            .difference(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
+                        "symmetric_difference" => left
+                            .symmetric_difference(&right)
+                            .map(HashKey::clone_owned)
+                            .collect::<Result<_, _>>()?,
+                        _ => unreachable!(),
+                    };
+                    let element_type = merge_types(
+                        &*set
+                            .element_type
+                            .try_borrow()
+                            .map_err(|_| "collection element type is accessed")?,
+                        &*other
+                            .element_type
+                            .try_borrow()
+                            .map_err(|_| "collection element type is accessed")?,
+                    )
                     .ok_or_else(|| "HashSet element types do not match".to_string())?;
-            Ok(Value::HashSet(Rc::new(HashSetValue {
-                borrowed: std::cell::Cell::new(0),
-                entries: RefCell::new(entries),
-                element_type: RefCell::new(element_type),
-            })))
+                    Ok(Value::HashSet(Rc::new(HashSetValue {
+                        borrowed: std::cell::Cell::new(0),
+                        entries: RefCell::new(entries),
+                        element_type: RefCell::new(element_type),
+                    })))
+                })
+            }
+            _ => Err(format!("unknown HashSet method `{method}`")),
         }
-        _ => Err(format!("unknown HashSet method `{method}`")),
-    }
+    })
 }
 
 pub(crate) fn into_iter_map(map: Rc<HashMapValue>) -> Result<Value, String> {
     reject_referenced_map(&map)?;
-    let key_type = map.key_type.borrow().clone();
-    let value_type = map.value_type.borrow().clone();
+    let key_type = map
+        .key_type
+        .try_borrow()
+        .map_err(|_| "collection key type is accessed")?
+        .clone();
+    let value_type = map
+        .value_type
+        .try_borrow()
+        .map_err(|_| "collection value type is accessed")?
+        .clone();
     let mut entries = map
         .entries
         .try_borrow_mut()
@@ -192,7 +331,11 @@ pub(crate) fn into_iter_set(set: Rc<HashSetValue>) -> Result<Value, String> {
     if set.borrowed.get() > 0 {
         return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
     }
-    let element_type = set.element_type.borrow().clone();
+    let element_type = set
+        .element_type
+        .try_borrow()
+        .map_err(|_| "collection element type is accessed")?
+        .clone();
     let mut entries = set
         .entries
         .try_borrow_mut()
@@ -210,27 +353,6 @@ pub(crate) fn into_iter_set(set: Rc<HashSetValue>) -> Result<Value, String> {
         element_type,
         &collection_type,
     ))
-}
-
-fn hash_map(value: &Value) -> Result<Rc<HashMapValue>, String> {
-    match read(value)? {
-        Value::HashMap(map) => Ok(map),
-        value => Err(format!("expected HashMap, found {}", value.type_name())),
-    }
-}
-
-fn hash_set(value: &Value) -> Result<Rc<HashSetValue>, String> {
-    match read(value)? {
-        Value::HashSet(set) => Ok(set),
-        value => Err(format!("expected HashSet, found {}", value.type_name())),
-    }
-}
-
-fn read(value: &Value) -> Result<Value, String> {
-    match value {
-        Value::Reference(reference) => reference.read(),
-        value => Ok(value.clone()),
-    }
 }
 
 fn reject_referenced_map(map: &HashMapValue) -> Result<(), String> {

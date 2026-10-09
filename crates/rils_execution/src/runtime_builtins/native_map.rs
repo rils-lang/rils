@@ -11,7 +11,7 @@ use crate::value::{DynamicObject, OwnedIteratorValue, Value, record_codec::Nativ
 use crate::value::native_receiver::NativeReceiver;
 use rils_value::DynamicValueRef;
 
-use super::{NativeOwnedContext, import_receiver};
+use super::NativeOwnedContext;
 
 fn owned_insert_kind(symbol: &str) -> Option<MapKind> {
     [("HashMap", MapKind::Hash), ("BTreeMap", MapKind::BTree)]
@@ -217,17 +217,9 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             }
             return dispatch(kind, method, arguments, receiver, &object);
         }
-        match import_receiver(receiver)? {
-            Value::HashMap(_) if kind == MapKind::Hash => {
-                crate::hash_collections::call_map(method, arguments)
-            }
-            Value::BTreeMap(_) if kind == MapKind::BTree => {
-                super::btree_map::call(method, arguments)
-            }
-            _ => Err(format!(
-                "{}::{method} received the wrong collection",
-                kind.name()
-            )),
+        match kind {
+            MapKind::Hash => crate::hash_collections::call_map(method, arguments),
+            MapKind::BTree => super::btree_map::call(method, arguments),
         }
     })())
 }

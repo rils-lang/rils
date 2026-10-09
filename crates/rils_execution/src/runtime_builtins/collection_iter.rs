@@ -1,5 +1,6 @@
 use std::{cell::Cell, rc::Rc};
 
+use crate::value::borrowed::{Read, with_read};
 use crate::{
     types::Type,
     value::{
@@ -22,97 +23,107 @@ fn call(owner: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let Some(Value::Reference(source)) = arguments.first() else {
         return Some(Err("collection iter requires a borrowed receiver".into()));
     };
-    match source.native_layout() {
-        Ok(Some(layout)) if layout.sequence_item().is_some() => return None,
-        Err(error) => return Some(Err(error)),
-        _ => {}
+    let result = with_read(&arguments[0], true, |read| {
+        let collection = match read {
+            Read::View(_) => return None,
+            Read::Legacy(collection) => collection,
+            _ => return Some(Err("iter receiver has the wrong collection type".into())),
+        };
+        Some((|| match (owner, collection) {
+            ("HashMap", Value::HashMap(map)) => {
+                let keys = map
+                    .entries
+                    .try_borrow()
+                    .map_err(|_| "iter map is already mutably accessed")?
+                    .keys()
+                    .map(HashKey::identity)
+                    .collect();
+                let key_type = map
+                    .key_type
+                    .try_borrow()
+                    .map_err(|_| "iter map key type is already mutably accessed")?
+                    .clone();
+                let value_type = map
+                    .value_type
+                    .try_borrow()
+                    .map_err(|_| "iter map value type is already mutably accessed")?
+                    .clone();
+                borrowed_map(
+                    source,
+                    MapCollection::Hash(map.clone()),
+                    keys,
+                    key_type,
+                    value_type,
+                )
+            }
+            ("BTreeMap", Value::BTreeMap(map)) => {
+                let keys = map
+                    .entries
+                    .try_borrow()
+                    .map_err(|_| "iter map is already mutably accessed")?
+                    .keys()
+                    .map(HashKey::identity)
+                    .collect();
+                let key_type = map
+                    .key_type
+                    .try_borrow()
+                    .map_err(|_| "iter map key type is already mutably accessed")?
+                    .clone();
+                let value_type = map
+                    .value_type
+                    .try_borrow()
+                    .map_err(|_| "iter map value type is already mutably accessed")?
+                    .clone();
+                borrowed_map(
+                    source,
+                    MapCollection::BTree(map.clone()),
+                    keys,
+                    key_type,
+                    value_type,
+                )
+            }
+            ("HashSet", Value::HashSet(set)) => {
+                let keys = set
+                    .entries
+                    .try_borrow()
+                    .map_err(|_| "iter set is already mutably accessed")?
+                    .iter()
+                    .map(HashKey::identity)
+                    .collect();
+                let element_type = set
+                    .element_type
+                    .try_borrow()
+                    .map_err(|_| "iter set element type is already mutably accessed")?
+                    .clone();
+                borrowed_set(source, SetCollection::Hash(set.clone()), keys, element_type)
+            }
+            ("BTreeSet", Value::BTreeSet(set)) => {
+                let keys = set
+                    .entries
+                    .try_borrow()
+                    .map_err(|_| "iter set is already mutably accessed")?
+                    .iter()
+                    .map(HashKey::identity)
+                    .collect();
+                let element_type = set
+                    .element_type
+                    .try_borrow()
+                    .map_err(|_| "iter set element type is already mutably accessed")?
+                    .clone();
+                borrowed_set(
+                    source,
+                    SetCollection::BTree(set.clone()),
+                    keys,
+                    element_type,
+                )
+            }
+            _ => Err("iter receiver has the wrong collection type".into()),
+        })())
+    });
+    match result {
+        Ok(result) => result,
+        Err(error) => Some(Err(error)),
     }
-    let collection = match source.read() {
-        Ok(collection) => collection,
-        Err(message) => return Some(Err(message)),
-    };
-    if matches!(collection, Value::Dynamic(_)) {
-        return None;
-    }
-    Some((|| match (owner, collection) {
-        ("HashMap", Value::HashMap(map)) => {
-            let keys = map
-                .entries
-                .try_borrow()
-                .map_err(|_| "iter map is already mutably accessed")?
-                .keys()
-                .map(HashKey::identity)
-                .collect();
-            let key_type = map
-                .key_type
-                .try_borrow()
-                .map_err(|_| "iter map key type is already mutably accessed")?
-                .clone();
-            let value_type = map
-                .value_type
-                .try_borrow()
-                .map_err(|_| "iter map value type is already mutably accessed")?
-                .clone();
-            borrowed_map(source, MapCollection::Hash(map), keys, key_type, value_type)
-        }
-        ("BTreeMap", Value::BTreeMap(map)) => {
-            let keys = map
-                .entries
-                .try_borrow()
-                .map_err(|_| "iter map is already mutably accessed")?
-                .keys()
-                .map(HashKey::identity)
-                .collect();
-            let key_type = map
-                .key_type
-                .try_borrow()
-                .map_err(|_| "iter map key type is already mutably accessed")?
-                .clone();
-            let value_type = map
-                .value_type
-                .try_borrow()
-                .map_err(|_| "iter map value type is already mutably accessed")?
-                .clone();
-            borrowed_map(
-                source,
-                MapCollection::BTree(map),
-                keys,
-                key_type,
-                value_type,
-            )
-        }
-        ("HashSet", Value::HashSet(set)) => {
-            let keys = set
-                .entries
-                .try_borrow()
-                .map_err(|_| "iter set is already mutably accessed")?
-                .iter()
-                .map(HashKey::identity)
-                .collect();
-            let element_type = set
-                .element_type
-                .try_borrow()
-                .map_err(|_| "iter set element type is already mutably accessed")?
-                .clone();
-            borrowed_set(source, SetCollection::Hash(set), keys, element_type)
-        }
-        ("BTreeSet", Value::BTreeSet(set)) => {
-            let keys = set
-                .entries
-                .try_borrow()
-                .map_err(|_| "iter set is already mutably accessed")?
-                .iter()
-                .map(HashKey::identity)
-                .collect();
-            let element_type = set
-                .element_type
-                .try_borrow()
-                .map_err(|_| "iter set element type is already mutably accessed")?
-                .clone();
-            borrowed_set(source, SetCollection::BTree(set), keys, element_type)
-        }
-        _ => Err("iter receiver has the wrong collection type".into()),
-    })())
 }
 
 fn borrowed_map(

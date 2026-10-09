@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 旧 Map/Set 方法及借用迭代器创建改为在原始 receiver guard 内执行，不再通过 `ReferenceValue::read()` / `import_receiver()` 构造 receiver 快照；集合运算同时保护两个输入来源，嵌套索引与 Map value receiver 保留来源访问约束。条目和类型元数据访问冲突返回错误；Map 删除在修改前检查返回类型元数据。旧 HashMap/HashSet 的修改入口补齐 `&mut self` 校验，宿主直接调用这些入口需传入可变引用。旧集合存储与显式 Clone 接口仍保留，C ABI、v8 编码及版本号不变。
+
 - 旧 Map/Set 的借用迭代器与键、值、元素引用仅保存 `Rc<KeyIdentity>`，定位缓存不再额外持有键负载；读取仍访问原条目，借用 guard 继续阻止结构修改和消费。迭代器创建和 Map 值快照读取遇到条目访问冲突时返回错误。**Rust API 迁移：** `ReferenceValue::new_map_key/new_map_value/new_set_item` 的键参数以及借用集合迭代器的 `keys` 元素改为 `Rc<KeyIdentity>`；从已有键调用 `key.identity()`，或用 `Rc::new(KeyIdentity::from_value(...)?)` 构造查询身份。移除未受检的 `MapCollection::contains_key/value` 和 `SetCollection::contains`，直接查找应持有 `entries.try_borrow()` guard 并用 `&KeyIdentity` 查询。旧集合存储仍保留，C ABI、v8 编码与版本号不变。
 
 - 旧 HashMap/HashSet/BTreeMap/BTreeSet 的拥有型插入直接移动键和值，支持非 Clone 负载；原生插入也拒绝共享非 Copy 输入的隐式复制。显式集合 Clone 与集合运算在复制处创建独立键，消费式迭代在取出条目前拒绝共享非 Copy 键。显示直接借用键负载，键投影的快照读取使用真实存储条目。**Rust API 迁移：** 新增 `HashKey::from_owned_value(value, expected, ordered)`；`to_value()`、`into_value()` 改为返回 `Result<Value, String>`，调用方须处理错误。需要独立副本时显式调用 `HashKey::clone_owned()`；`Clone::clone` 仅复制句柄，不能据此消费非 Copy 键。旧集合存储仍在迁移；C ABI、v8 编码和版本号不变。

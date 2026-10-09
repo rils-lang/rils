@@ -57,3 +57,16 @@ pub(crate) fn with_read<R>(
         value => Ok(callback(Read::Legacy(value))),
     }
 }
+
+/// Run a compatibility receiver operation under its original storage guards.
+/// Nested references are followed without constructing an owned Value snapshot.
+pub(crate) fn with_legacy<R>(
+    value: &Value,
+    callback: impl FnOnce(&Value) -> Result<R, String>,
+) -> Result<R, String> {
+    with_read(value, true, |read| match read {
+        Read::Legacy(value @ Value::Reference(_)) => with_legacy(value, callback),
+        Read::Legacy(value) => callback(value),
+        _ => Err("expected a compatibility receiver".into()),
+    })?
+}
