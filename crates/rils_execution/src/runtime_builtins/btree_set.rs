@@ -102,13 +102,18 @@ pub(crate) fn into_iter(set: Rc<BTreeSetValue>) -> Result<Value, String> {
         return Err("cannot mutate BTreeSet while it is borrowed by an iterator".into());
     }
     let element_type = set.element_type.borrow().clone();
-    let entries = std::mem::take(&mut *set.entries.borrow_mut());
+    let entries = std::mem::take(
+        &mut *set
+            .entries
+            .try_borrow_mut()
+            .map_err(|_| "cannot consume BTreeSet while its entries are accessed")?,
+    );
     let collection_type = Type::Named {
         name: "BTreeSet".into(),
         arguments: vec![element_type.clone()],
     };
     Ok(crate::iteration::generated_collection_iterator(
-        entries.into_iter().map(|key| key.to_value()),
+        entries.into_iter().map(HashKey::into_value),
         element_type,
         &collection_type,
     ))

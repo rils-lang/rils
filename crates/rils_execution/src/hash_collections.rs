@@ -173,10 +173,17 @@ pub(crate) fn into_iter_map(map: Rc<HashMapValue>) -> Result<Value, String> {
     reject_referenced_map(&map)?;
     let key_type = map.key_type.borrow().clone();
     let value_type = map.value_type.borrow().clone();
-    let entries = std::mem::take(&mut *map.entries.borrow_mut());
+    let mut entries = map
+        .entries
+        .try_borrow_mut()
+        .map_err(|_| "cannot consume HashMap while its entries are accessed")?;
+    if entries.values().any(|slot| slot.value.is_none()) {
+        return Err("cannot iterate a partially moved HashMap".into());
+    }
+    let entries = std::mem::take(&mut *entries);
     let values = entries.into_iter().map(|(key, slot)| {
         tuple(vec![
-            key.to_value(),
+            key.into_value(),
             slot.value.expect("unreferenced HashMap value is present"),
         ])
     });
@@ -196,13 +203,18 @@ pub(crate) fn into_iter_set(set: Rc<HashSetValue>) -> Result<Value, String> {
         return Err("cannot mutate HashSet while it is borrowed by an iterator".into());
     }
     let element_type = set.element_type.borrow().clone();
-    let entries = std::mem::take(&mut *set.entries.borrow_mut());
+    let entries = std::mem::take(
+        &mut *set
+            .entries
+            .try_borrow_mut()
+            .map_err(|_| "cannot consume HashSet while its entries are accessed")?,
+    );
     let collection_type = Type::Named {
         name: "HashSet".into(),
         arguments: vec![element_type.clone()],
     };
     Ok(crate::iteration::generated_collection_iterator(
-        entries.into_iter().map(|key| key.to_value()),
+        entries.into_iter().map(HashKey::into_value),
         element_type,
         &collection_type,
     ))
@@ -239,13 +251,18 @@ fn read(value: &Value) -> Result<Value, String> {
 
 fn reject_referenced_map(map: &HashMapValue) -> Result<(), String> {
     if map.borrowed.get() > 0
-        || map.entries.borrow().values().any(|slot| {
-            slot.references > 0
-                || slot
-                    .value
-                    .as_ref()
-                    .is_some_and(Value::has_active_references)
-        })
+        || map
+            .entries
+            .try_borrow()
+            .map_err(|_| "cannot mutate HashMap while its entries are accessed")?
+            .values()
+            .any(|slot| {
+                slot.references > 0
+                    || slot
+                        .value
+                        .as_ref()
+                        .is_some_and(Value::has_active_references)
+            })
     {
         Err("cannot mutate a HashMap while a value is referenced".into())
     } else {

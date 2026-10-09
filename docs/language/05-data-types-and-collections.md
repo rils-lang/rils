@@ -215,7 +215,7 @@ for value in values {
 非泛型 struct 和 enum。后两者可用 `#[derive(Eq, Hash)]`；浮点数会在静态分析阶段拒绝。
 `HashMap<K, V>::into_iter()` 返回 `core::collections::HashMapIntoIter<K, V>`，逐项移出键值对；`HashSet<T>::into_iter()` 返回 `core::collections::HashSetIntoIter<T>`，逐项移出元素。
 两种容器都提供 `iter()`：Map 产生 `(&K, &V)`，Set 产生 `&T`；哈希容器的遍历顺序不保证固定。
-借用迭代器或其产出的引用仍存活时，不能结构修改原集合。宿主保留的旧 Map/Set 存储也遵守这项规则；投影的比较、原生集合键查询和 Rust 借用读取持有原条目的共享访问 guard，不复制键或值。原生组合投影保留布局与声明上下文，访问冲突、已移出值或失效条目返回错误。
+借用迭代器或其产出的引用仍存活时，不能结构修改原集合。宿主保留的旧 Map/Set 存储也遵守这项规则；投影的比较、原生集合键查询和 Rust 借用读取持有原条目的共享访问 guard，不复制键或值。原生组合投影保留布局与声明上下文，访问冲突、已移出值或失效条目返回错误。 旧 Map/Set 的消费式迭代直接移动键和值，独占字符串与原生复合键不重建负载；若 Map 含已移出的 value，或集合正被借用/访问，则在取出条目前报错并保留集合内容。
 
 原生 Map/Set 的 `contains_key` / `contains`、`get_cloned`、`remove` 直接借用查询键，
 支持 Option/Result、tuple、数组及合法用户类型的组合，不要求查询键实现 Clone。

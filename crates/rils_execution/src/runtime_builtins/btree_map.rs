@@ -89,10 +89,17 @@ pub(crate) fn into_iter(map: Rc<BTreeMapValue>) -> Result<Value, String> {
     reject_referenced(&map)?;
     let key_type = map.key_type.borrow().clone();
     let value_type = map.value_type.borrow().clone();
-    let entries = std::mem::take(&mut *map.entries.borrow_mut());
+    let mut entries = map
+        .entries
+        .try_borrow_mut()
+        .map_err(|_| "cannot consume BTreeMap while its entries are accessed")?;
+    if entries.values().any(|slot| slot.value.is_none()) {
+        return Err("cannot iterate a partially moved BTreeMap".into());
+    }
+    let entries = std::mem::take(&mut *entries);
     let values = entries.into_iter().map(|(key, slot)| {
         tuple(vec![
-            key.to_value(),
+            key.into_value(),
             slot.value.expect("unreferenced BTreeMap entry is present"),
         ])
     });
@@ -134,13 +141,18 @@ fn key(arguments: &[Value], index: usize) -> Result<HashKey, String> {
 
 fn reject_referenced(map: &BTreeMapValue) -> Result<(), String> {
     if map.borrowed.get() > 0
-        || map.entries.borrow().values().any(|slot| {
-            slot.references > 0
-                || slot
-                    .value
-                    .as_ref()
-                    .is_some_and(Value::has_active_references)
-        })
+        || map
+            .entries
+            .try_borrow()
+            .map_err(|_| "cannot mutate BTreeMap while its entries are accessed")?
+            .values()
+            .any(|slot| {
+                slot.references > 0
+                    || slot
+                        .value
+                        .as_ref()
+                        .is_some_and(Value::has_active_references)
+            })
     {
         Err("cannot mutate BTreeMap while a value is referenced".into())
     } else {
