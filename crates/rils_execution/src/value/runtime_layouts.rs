@@ -41,6 +41,27 @@ pub(crate) fn accepts_view(view: DynamicValueRef<'_>, expected: &Type) -> Result
         return Ok(true);
     }
     match (expected, layout.rils_type()) {
+        (
+            Type::ArrayParameter { element, .. } | Type::Slice(element),
+            Type::Array {
+                element: actual,
+                length,
+            },
+        ) => {
+            // Keep the element witness even when there are no fields to inspect.
+            if crate::types::merge_types(element, actual).is_some() {
+                return Ok(true);
+            }
+            if *length == 0 {
+                return Ok(false);
+            }
+            for index in 0..*length {
+                if !accepts_view(view.field(index)?, element)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
         (Type::Named { name, arguments }, _) if layout.is_rust_type::<Rc<HostObject>>() => view
             .with_rust::<Rc<HostObject>, _>(|object| {
                 arguments.is_empty()
@@ -76,6 +97,11 @@ pub(crate) fn accepts_view(view: DynamicValueRef<'_>, expected: &Type) -> Result
                 ..
             },
         ) if length == actual_length => {
+            // Equal element witnesses were accepted above; an empty payload
+            // cannot establish compatibility between different element types.
+            if *length == 0 {
+                return Ok(false);
+            }
             for index in 0..*length {
                 if !accepts_view(view.field(index)?, element)? {
                     return Ok(false);

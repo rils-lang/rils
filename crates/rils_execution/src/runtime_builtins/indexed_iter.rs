@@ -61,7 +61,21 @@ fn borrow_inner(
     let native = crate::value::native_receiver::NativeReceiver::from_value(&Value::Reference(
         receiver.clone(),
     ))?;
-    let (storage, length, element_type) = if let Some(object) = native
+    let (storage, length, element_type) = if let Some(object) = &native
+        && let Type::Array { element, length } = object.descriptor().layout().rils_type()
+    {
+        object.with(|view| {
+            if view.is_partially_moved()? {
+                return Err("cannot iterate a partially moved array".into());
+            }
+            Ok::<_, String>(())
+        })??;
+        (
+            IndexedIteratorStorage::NativeArray,
+            *length,
+            element.as_ref().clone(),
+        )
+    } else if let Some(object) = native
         && object.descriptor().layout().sequence_item().is_some()
     {
         let element_type = object

@@ -4,10 +4,7 @@ use std::rc::Rc;
 
 use crate::{
     Type, hash_collections, runtime_builtins,
-    value::{
-        DynamicObject, IndexedStorage, OwnedIteratorValue, Value, native_ops,
-        record_codec::NativeRecordCodec,
-    },
+    value::{DynamicObject, IndexedStorage, OwnedIteratorValue, Value, native_ops},
 };
 
 pub enum IntoIteratorResult {
@@ -36,6 +33,11 @@ pub fn into_iterator_with_context(
         | Value::BorrowedIndexedIterator(_)
         | Value::BorrowedMapIterator(_)
         | Value::BorrowedSetIterator(_)) => value,
+        Value::Dynamic(object)
+            if matches!(object.descriptor().layout().rils_type(), Type::Array { .. }) =>
+        {
+            crate::value::native_array::into_iterator(object, context)?
+        }
         Value::Array(storage) | Value::Vec(storage) => owned_indexed_iterator(storage)?,
         Value::VecDeque(queue) => {
             let element_type = queue.element_type.borrow().clone().unwrap_or(Type::Unknown);
@@ -115,8 +117,8 @@ pub(crate) fn native_sequence_into_iterator(
         .ok_or("native collection has no item layout")?
         .rils_type()
         .clone();
+    let codec = crate::value::sum::codec(&object, &context.structs, &context.enums)?;
     let items = object.with_mut(|payload| payload.take_all_sequence_items())??;
-    let codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums);
     let mut iterator = OwnedIteratorValue::from_native(items, item_type, codec);
     if let Some(iterator_type) = iterator_type {
         iterator = iterator.with_iterator_type(iterator_type);

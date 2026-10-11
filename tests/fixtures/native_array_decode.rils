@@ -1,0 +1,45 @@
+struct Item { value: string }
+struct Holder { items: [Item; 2] }
+fn check() -> bool {
+    let optional: Option<[i32; 2]> = Some([3, 4]);
+    let original = optional.unwrap();
+    let mut copied = original;
+    copied[0usize] = 8;
+    let reader = &copied[1usize];
+    let writer = &mut copied[1usize];
+    *writer = 9;
+    let expected = 8;
+    if *reader != 9 || original[0usize] != 3 || copied.len() != 2usize || !copied.contains(&expected) { return false; }
+    let mut sum = 0;
+    for value in original.iter() { sum = sum + *value; }
+    if sum != 7 { return false; }
+    let mut owned_numbers = original.into_iter();
+    if owned_numbers.next().unwrap() != 3 { return false; }
+    let result: Result<[[i32; 2]; 2], string> = Ok([[1, 2], [3, 4]]);
+    let mut matrix = result.unwrap();
+    matrix[0usize][1usize] = 10;
+    if matrix[0usize][1usize] != 10 { return false; }
+    let mut rows: Vec<[string; 2]> = Vec::new();
+    rows.push(["one", "three"]);
+    let row = rows.pop().unwrap();
+    let query = "one";
+    if row.len() != 2usize || !row.contains(&query) { return false; }
+    let mut size = 0usize;
+    for text in row { size = size + text.len(); }
+    let holder = Holder { items: [Item { value: "a" }, Item { value: "bb" }] };
+    let items = holder.items;
+    let converted: Vec<Item> = Vec::from(items);
+    for item in converted { size = size + item.value.len(); }
+    let empty_option: Option<[Item; 0]> = Some([]);
+    let empty = empty_option.unwrap();
+    if !empty.is_empty() || empty.len() != 0usize { return false; }
+    let empty_vec: Vec<Item> = Vec::from(empty);
+    if !empty_vec.is_empty() { return false; }
+    let mut target = 11;
+    let references: Option<[&mut i32; 1]> = Some([&mut target]);
+    let refs = references.unwrap();
+    let access = refs[0usize];
+    *access = 12;
+    size == 11usize && target == 12
+}
+check()

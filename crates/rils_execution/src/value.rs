@@ -36,6 +36,7 @@ pub type DynamicObject = rils_value::DynamicObject<Value>;
 pub mod dynamic_option;
 pub mod dynamic_result;
 pub mod dynamic_sequence;
+pub(crate) mod native_array;
 mod slot;
 pub mod sum;
 pub use slot::FieldSlot;

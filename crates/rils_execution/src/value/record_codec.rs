@@ -4,16 +4,14 @@
 //! wrappers at the execution boundary. Nominal declarations are retained in
 //! the codec so moved structs and enums keep their native storage and identity.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 
 use crate::Type;
 
-use super::{
-    EnumType, FieldSlot, HashKey, IndexedStorage, StructType, Value, native_layouts, native_string,
-};
+use super::{EnumType, FieldSlot, HashKey, StructType, Value, native_layouts, native_string};
 
 #[path = "record_codec/declarations.rs"]
 mod declarations;
@@ -406,7 +404,7 @@ impl NativeRecordCodec {
         DynamicValue::sequence(layout, values)
     }
 
-    fn decode(&self, mut value: DynamicValue) -> Result<Value, String> {
+    fn decode(&self, value: DynamicValue) -> Result<Value, String> {
         if super::runtime_layouts::is_execution_leaf(value.descriptor()) {
             return super::runtime_layouts::decode(value);
         }
@@ -435,17 +433,8 @@ impl NativeRecordCodec {
                     descriptor, value,
                 )?))
             }
-            Type::Option(_) | Type::Result(_, _) | Type::Tuple(_) => {
+            Type::Option(_) | Type::Result(_, _) | Type::Tuple(_) | Type::Array { .. } => {
                 super::native_instance::from_native(value, Rc::new(self.clone()))
-            }
-            Type::Array { element, length } => {
-                let types = vec![(*element).clone(); length];
-                let slots = self.take_indexed_fields(&mut value, &types)?;
-                Ok(Value::Array(Rc::new(IndexedStorage {
-                    elements: RefCell::new(slots),
-                    element_type: RefCell::new(Some(*element)),
-                    active_iterators: Default::default(),
-                })))
             }
             _ if value.descriptor().sequence_item().is_some() => {
                 let layout = value.layout_handle();
@@ -515,27 +504,5 @@ impl NativeRecordCodec {
             }
             ty => Err(format!("no owned native field decoder for {ty}")),
         }
-    }
-
-    fn take_indexed_fields(
-        &self,
-        value: &mut DynamicValue,
-        types: &[Type],
-    ) -> Result<Vec<FieldSlot>, String> {
-        let fields = value
-            .descriptor()
-            .record_fields()
-            .ok_or_else(|| "expected a tuple or array native layout".to_owned())?;
-        if fields.len() != types.len() {
-            return Err("tuple or array length does not match its layout".into());
-        }
-        types
-            .iter()
-            .enumerate()
-            .map(|(index, ty)| {
-                let item = self.decode(value.take_field(index)?)?;
-                Ok(FieldSlot::new(ty.clone(), item))
-            })
-            .collect()
     }
 }

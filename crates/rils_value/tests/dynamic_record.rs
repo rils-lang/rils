@@ -296,3 +296,15 @@ fn highly_aligned_field_uses_aligned_heap_storage() {
     assert!(!value.is_inline());
     assert_eq!(value.with_field::<Aligned, _>(1, |item| item.0), Ok(9));
 }
+
+#[test]
+fn zero_length_array_copy_requires_copy_element_layout() {
+    let owned = DynamicLayout::array(DynamicLayout::of::<String>(Type::String), 0).unwrap();
+    assert!(!owned.is_copy());
+    let payload = DynamicValue::record(owned, vec![]).unwrap();
+    assert!(payload.copy_owned().is_err());
+    let copy = DynamicLayout::array(DynamicLayout::copy_of::<i32>(Type::I32), 0).unwrap();
+    assert!(copy.is_copy());
+    let payload = DynamicValue::record(copy, vec![]).unwrap();
+    assert!(payload.copy_owned().is_ok());
+}

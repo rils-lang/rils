@@ -172,6 +172,14 @@ impl VirtualMachine<'_> {
             .map_err(|message| BytecodeError::new(message, span))?
             .map_err(|message| BytecodeError::new(message, span))?;
         if let ResolvedProjection::Index(index) = projection {
+            if let Type::Array { length, .. } = layout.rils_type()
+                && index >= length
+            {
+                return Err(BytecodeError::new(
+                    format!("index {index} is out of bounds"),
+                    span,
+                ));
+            }
             if layout.record_fields().is_some() {
                 return owner
                     .field(&index.to_string())
@@ -333,10 +341,31 @@ impl VirtualMachine<'_> {
     ) -> Result<Value, BytecodeError> {
         let (container, projection) = self.place_parent(place, span)?;
         match (container, projection) {
-            (PlaceContainer::NativeOwner(owner), projection) => self
-                .native_owner_projection(&owner, projection, span)?
-                .take()
-                .map_err(|message| BytecodeError::new(message, span)),
+            (PlaceContainer::NativeOwner(owner), projection) => {
+                let indexed_array = matches!(projection, ResolvedProjection::Index(_))
+                    && matches!(
+                        owner
+                            .field_layout()
+                            .map_err(|message| BytecodeError::new(message, span))?
+                            .rils_type(),
+                        Type::Array { .. }
+                    );
+                let child = self.native_owner_projection(&owner, projection, span)?;
+                if indexed_array
+                    && !child
+                        .field_layout()
+                        .map_err(|message| BytecodeError::new(message, span))?
+                        .is_copy()
+                {
+                    return Err(BytecodeError::new(
+                        "cannot move a non-Copy value out through indexing",
+                        span,
+                    ));
+                }
+                child
+                    .take()
+                    .map_err(|message| BytecodeError::new(message, span))
+            }
 
             (PlaceContainer::Indexed(sequence), ResolvedProjection::Index(index)) => {
                 if *index >= sequence.elements.borrow().len() {

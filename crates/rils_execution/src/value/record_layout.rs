@@ -119,10 +119,7 @@ impl<'a> RecordLayoutResolver<'a> {
             }
             Type::Array { element, length } => {
                 let item = self.resolve(element)?;
-                let fields = (0..*length)
-                    .map(|index| (index.to_string(), item.clone()))
-                    .collect();
-                DynamicLayout::aggregate(ty.clone(), fields)
+                DynamicLayout::array(item, *length)
             }
             Type::Named { name, arguments } => self.resolve_named(name, arguments, ty),
             _ => Err(format!("no native layout is registered for {ty}")),

@@ -6,6 +6,7 @@ pub(super) enum Place {
         name: String,
     },
     NativeField {
+        indexed: bool,
         place: rils_execution::value::native_instance::NativeInstancePlace,
         name: String,
         owner: String,
@@ -68,7 +69,10 @@ impl Place {
         match value {
             Some(Value::Dynamic(object))
                 if rils_execution::value::native_instance::definition(&object).is_some()
-                    || matches!(object.descriptor().layout().rils_type(), Type::Tuple(_)) =>
+                    || matches!(
+                        object.descriptor().layout().rils_type(),
+                        Type::Tuple(_) | Type::Array { .. }
+                    ) =>
             {
                 rils_execution::value::native_instance::NativeInstancePlace::new(object)
                     .map(Some)
@@ -80,9 +84,22 @@ impl Place {
 
     pub(super) fn read(&self, span: Span) -> Result<Value, RuntimeError> {
         match self {
-            Self::NativeField { place, .. } => place
-                .take()
-                .map_err(|message| RuntimeError::new(message, span)),
+            Self::NativeField { place, indexed, .. } => {
+                if *indexed
+                    && !place
+                        .field_layout()
+                        .map_err(|message| RuntimeError::new(message, span))?
+                        .is_copy()
+                {
+                    return Err(RuntimeError::new(
+                        "cannot move a non-Copy value out through indexing",
+                        span,
+                    ));
+                }
+                place
+                    .take()
+                    .map_err(|message| RuntimeError::new(message, span))
+            }
             Self::Storage { slot, name } => slot.borrow().read().map_err(|_| {
                 RuntimeError::new(format!("cannot access moved value `{name}`"), span)
             }),
@@ -481,6 +498,7 @@ impl Interpreter {
                 let owner_name = owner.description();
                 if let Some(place) = owner.native_owner(span)? {
                     return Ok(Place::NativeField {
+                        indexed: false,
                         place: place
                             .field(name)
                             .map_err(|message| RuntimeError::new(message, span))?,
@@ -551,11 +569,43 @@ impl Interpreter {
                 let owner = self.resolve_place(object, environment, span)?;
                 let mutable = owner.is_mutable();
                 let owner_name = owner.description();
-                let guard = owner.projection_guard(span)?;
                 let index = self.evaluate(index, environment.clone())?;
                 let Some(index) = index.as_usize() else {
                     return Err(RuntimeError::new("collection indices must be usize", span));
                 };
+                if let Some(place) = owner.native_owner(span)?
+                    && matches!(
+                        place
+                            .field_layout()
+                            .map_err(|message| RuntimeError::new(message, span))?
+                            .rils_type(),
+                        Type::Array { .. }
+                    )
+                {
+                    let layout = place
+                        .field_layout()
+                        .map_err(|message| RuntimeError::new(message, span))?;
+                    let Type::Array { length, .. } = layout.rils_type() else {
+                        unreachable!()
+                    };
+                    if index >= *length {
+                        return Err(RuntimeError::new(
+                            format!("index {index} is out of bounds"),
+                            span,
+                        ));
+                    }
+                    return Ok(Place::NativeField {
+                        indexed: true,
+                        place: place
+                            .field(&index.to_string())
+                            .map_err(|message| RuntimeError::new(message, span))?,
+                        name: index.to_string(),
+                        owner: owner_name,
+                        mutable,
+                        source: owner.native_source(),
+                    });
+                }
+                let guard = owner.projection_guard(span)?;
                 if let Some(reference) = &guard
                     && let Some(projected) = reference
                         .project_native_index(index)

@@ -12,8 +12,9 @@ fn receiver(
         Err(error) => return Some(Err(error)),
     };
     let layout = object.descriptor().layout();
-    let matches = matches!(layout.rils_type(), Type::Named { name, .. } if name == owner)
-        && layout.sequence_item().is_some();
+    let matches = (owner == "Vec" && matches!(layout.rils_type(), Type::Array { .. }))
+        || matches!(layout.rils_type(), Type::Named { name, .. } if name == owner)
+            && layout.sequence_item().is_some();
     matches.then_some(Ok(object))
 }
 
@@ -34,7 +35,10 @@ pub(super) fn query(
     };
     Some(
         object
-            .with(|value| value.sequence_len())
+            .with(|value| match value.layout()?.rils_type() {
+                Type::Array { length, .. } => Ok(*length),
+                _ => value.sequence_len(),
+            })
             .and_then(|length| {
                 length.map(|length| match method {
                     "len" => crate::numeric::native_usize(length),

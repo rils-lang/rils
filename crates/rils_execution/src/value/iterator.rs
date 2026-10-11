@@ -241,6 +241,7 @@ pub struct BorrowedIndexedIteratorValue {
 }
 
 pub enum IndexedIteratorStorage {
+    NativeArray,
     Legacy(Rc<IndexedStorage>),
     Native {
         ledger: Rc<rils_value::SequenceBorrowLedger>,
@@ -277,6 +278,14 @@ impl BorrowedIndexedIteratorValue {
                 Value::Array(source) | Value::Vec(source) if Rc::ptr_eq(storage, &source) => {}
                 _ => return Err("iterator source has been replaced".into()),
             },
+            IndexedIteratorStorage::NativeArray => {
+                self.source.with_native_view(|view| {
+                    if !matches!(view.layout()?.rils_type(), Type::Array { element, length } if **element == self.element_type && *length == self.length) {
+                        return Err("iterator source has been replaced".into());
+                    }
+                    Ok::<_, String>(())
+                })??;
+            }
             IndexedIteratorStorage::Native { ledger, .. } => {
                 let current = self
                     .source
@@ -321,7 +330,7 @@ impl BorrowedIndexedIteratorValue {
                 false,
                 Some(self.source.clone()),
             )?,
-            IndexedIteratorStorage::Native { .. } => self
+            IndexedIteratorStorage::Native { .. } | IndexedIteratorStorage::NativeArray => self
                 .source
                 .project_native_index_with_codec(index, self.native_codec.clone())?
                 .ok_or("iterator element has no native path")?

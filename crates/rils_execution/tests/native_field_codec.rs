@@ -660,3 +660,47 @@ fn decoded_tuple_preserves_nominal_identity_and_explicit_copy_policy() {
     };
     assert!(Rc::ptr_eq(&restored, &item));
 }
+
+#[test]
+fn empty_native_arrays_keep_transitive_element_declarations_without_runtime_context() {
+    let inner = definition("Inner", vec![("number", Type::I32)]);
+    let item = definition("Item", vec![("child", Type::named("Inner"))]);
+    let definitions = [inner, item.clone()];
+    let ty = Type::Array {
+        element: Box::new(Type::named("Item")),
+        length: 0,
+    };
+    let context = TypedStorageContext::new(&definitions, &[]);
+    let payload = DynamicValue::record(context.layout(&ty).unwrap(), vec![]).unwrap();
+    let value = record_codec::NativeRecordCodec::with_definitions(&definitions, &[])
+        .from_native(payload)
+        .unwrap();
+    let option = context
+        .construct_option(&Type::Option(Box::new(ty.clone())), Some(value))
+        .unwrap();
+    let value = rils_execution::value::dynamic_option::take_owned(option)
+        .unwrap()
+        .unwrap();
+    assert_eq!(Type::of_value(&value), Some(ty));
+    let symbol = rils_builtins::builtin_member("Vec", "from")
+        .unwrap()
+        .native_symbol
+        .unwrap();
+    let converted = rils_execution::runtime_builtins::call_native_owned_symbol(
+        symbol,
+        vec![value],
+        &Default::default(),
+    )
+    .unwrap()
+    .unwrap();
+    let Value::Dynamic(object) = converted else {
+        panic!("native Vec")
+    };
+    let layout = object.descriptor().layout().sequence_item().unwrap();
+    assert_eq!(layout.rils_type(), &Type::named("Item"));
+    assert!(!layout.is_copy());
+    assert_eq!(
+        layout.record_fields().unwrap()[0].layout().rils_type(),
+        &Type::named("Inner")
+    );
+}

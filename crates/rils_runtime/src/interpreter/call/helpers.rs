@@ -115,6 +115,7 @@ pub(crate) fn builtin_runtime_member(
             _ => return None,
         },
         Value::Reference(_) => match reference_layout.as_ref()?.rils_type() {
+            Type::Array { .. } => "Vec",
             Type::Option(_) => "Option",
             Type::Result(_, _) => "Result",
             Type::String => "string",
@@ -133,6 +134,7 @@ pub(crate) fn builtin_runtime_member(
             "Result"
         }
         Value::Dynamic(object) => match object.descriptor().layout().rils_type() {
+            Type::Array { .. } => "Vec",
             Type::Named { name, .. } => name.as_str(),
             _ => return None,
         },
@@ -148,7 +150,13 @@ pub(crate) fn builtin_runtime_member(
             .then(|| rils_builtins::builtin_member("Iterator", name))
             .flatten()
     })?;
-    if matches!(value, Value::Array(_)) && !rils_builtins::sequence_view_member(member, true) {
+    let array = match Type::of_value(value) {
+        Some(Type::Array { .. }) => true,
+        Some(Type::Reference { inner, .. }) => matches!(*inner, Type::Array { .. }),
+        _ => false,
+    };
+    if array && !rils_builtins::sequence_view_member(member, !matches!(value, Value::Reference(_)))
+    {
         return None;
     }
     let method = BuiltinMethod::Native(member.native_symbol?);

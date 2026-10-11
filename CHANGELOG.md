@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 原生定长数组从 Option/Result、集合或字段取出后保留原生布局，不再重建 `Value::Array` 和字段槽位。两种后端支持原生索引、赋值、词法引用、查询、借用迭代、消费式迭代及 `Vec::from(array)`；非 Copy 元素不能通过索引移出，消费式迭代按需移动且提前结束正确析构。空数组保留元素及其依赖声明，原生 `[T; 0]` 的 Copy 也要求 T 为 Copy；`[T; N]` 参数及 slice 类型检查读取布局见证。**Rust API 迁移：** 数组解码结果改为 `Value::Dynamic`，宿主应使用布局视图或 `NativeInstancePlace`；新建原生数组布局使用 `DynamicLayout::array(item_layout, length)`，以保留空数组的 Copy 策略。旧数组/tuple 构造与兼容集合返回路径继续迁移，C ABI、v8 编码和版本号不变。
+
 - 原生 tuple 从 Option/Result 解包、序列取出或字段移出后保留布局、声明身份及原生负载，不再拆回旧字段槽位；解释器的嵌套 tuple 字段投影复用原生所有权 place，支持部分 move、恢复和引用写回；中间字段为引用时保留来源句柄并继续访问原对象。Copy 副本独立，用户类型仍须显式实现 Copy。**Rust API 迁移：** `NativeRecordCodec::from_native()` 及原生字段消费返回的 tuple 现为 `Value::Dynamic`，应使用布局视图或 `NativeInstancePlace` 读取，不能仅匹配 `Value::Tuple`。旧 tuple 构造、数组解码与兼容集合返回路径继续迁移；C ABI、v8 编码和版本号不变。
 
 - 借用迭代器的 `next()` 返回值直接构造原生 `Option`，原生与兼容 Map 的借用条目直接构造原生引用 tuple；`Some`/`None` 保留完整引用类型，未知类型在推进迭代器前报错。返回值复制仅复制引用句柄，原集合租约持续到最后一个引用释放。引用的运行时类型读取与匹配改为检查借用视图，不再要求被引用值支持 Clone。**Rust API 迁移：** 借用 Map 迭代条目及借用迭代器的 `next` 标准库调用结果现为 `Value::Dynamic`，宿主应按布局读取，不再匹配 `Value::Tuple` / `Value::Option`；新增 `TypedStorageContext::construct_tuple` 直接构造原生 tuple。 独立原生 tuple/array 保留稳定所有者，VM 字段访问复用原生所有权 place，Copy 后字段修改互不影响。拥有型集合返回值及旧快照解码接口仍在迁移，C ABI、v8 编码和版本号不变。

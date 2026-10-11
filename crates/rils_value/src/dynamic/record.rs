@@ -84,6 +84,22 @@ impl DynamicLayout {
         Ok(layout)
     }
 
+    /// Compose a fixed array while retaining the element's Copy policy at length zero.
+    pub fn array(item: Rc<Self>, length: usize) -> Result<Rc<Self>, String> {
+        let ty = Type::Array {
+            element: Box::new(item.rils_type().clone()),
+            length,
+        };
+        let fields = (0..length)
+            .map(|index| (index.to_string(), item.clone()))
+            .collect();
+        let mut layout = Self::aggregate(ty, fields)?;
+        let descriptor = Rc::get_mut(&mut layout).expect("new array layout has one owner");
+        descriptor.copy = item.copy;
+        descriptor.bitwise_copy = item.bitwise_copy;
+        Ok(layout)
+    }
+
     /// Compose a tuple or fixed array using the same movable, aligned slots as
     /// records. Each child keeps its own layout and destructor.
     pub fn aggregate(rils_type: Type, fields: Vec<(String, Rc<Self>)>) -> Result<Rc<Self>, String> {

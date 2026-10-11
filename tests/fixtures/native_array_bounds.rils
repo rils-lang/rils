@@ -1,0 +1,6 @@
+fn check() -> i32 {
+    let optional: Option<[i32; 1]> = Some([7]);
+    let array = optional.unwrap();
+    array[1usize]
+}
+check()

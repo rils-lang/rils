@@ -220,13 +220,44 @@ pub(crate) fn call_owned_symbol(
 pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
     let receiver = arguments.first()?;
     let object = NativeReceiver::from_value(receiver).ok()??;
-    if !crate::value::native_layouts::vec::matches(object.descriptor().layout().rils_type()) {
+    let array = matches!(object.descriptor().layout().rils_type(), Type::Array { .. });
+    if !array
+        && !crate::value::native_layouts::vec::matches(object.descriptor().layout().rils_type())
+    {
         return None;
     }
     let member = builtin("Vec")?
         .members
         .iter()
         .find(|member| member.native_symbol == Some(symbol))?;
+    if array {
+        return match member.name {
+            "iter" => Some(indexed_iter::borrow(arguments)),
+            "len" | "is_empty" => super::sequence_receiver::query("Vec", member.name, arguments),
+            "contains" => Some((|| {
+                if arguments.len() != 2 {
+                    return Err("contains expects a receiver and query".into());
+                }
+                object.with(|view| {
+                    for index in 0..view
+                        .layout()?
+                        .record_fields()
+                        .ok_or("array has no fields")?
+                        .len()
+                    {
+                        if crate::value::equality::view_query_equal(
+                            view.field(index)?,
+                            &arguments[1],
+                        )? {
+                            return Ok(Value::Bool(true));
+                        }
+                    }
+                    Ok(Value::Bool(false))
+                })?
+            })()),
+            _ => Some(Err(format!("array does not support `{}`", member.name))),
+        };
+    }
     Some(call(member.name, arguments, &object))
 }
 

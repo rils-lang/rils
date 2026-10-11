@@ -1,0 +1,6 @@
+fn check() -> string {
+    let optional: Option<[string; 1]> = Some(["owned"]);
+    let array = optional.unwrap();
+    array[0usize]
+}
+check()

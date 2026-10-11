@@ -50,7 +50,11 @@ pub(super) fn from_array(
             arguments.len()
         ));
     }
-    let Value::Array(array) = arguments.pop().expect("arity checked") else {
+    let value = arguments.pop().expect("arity checked");
+    if let Value::Dynamic(object) = value {
+        return crate::value::native_array::into_vec(object, context);
+    }
+    let Value::Array(array) = value else {
         return Err("Vec::from expects an array".into());
     };
     if array

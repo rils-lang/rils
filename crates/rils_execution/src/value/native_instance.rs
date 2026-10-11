@@ -68,40 +68,15 @@ fn expose(value: DynamicValue, codec: Rc<NativeRecordCodec>) -> Result<Value, St
         Some(Value::StructType(_) | Value::EnumType(_))
     ) || matches!(
         value.descriptor().rils_type(),
-        crate::Type::Option(_) | crate::Type::Result(_, _) | crate::Type::Tuple(_)
+        crate::Type::Option(_)
+            | crate::Type::Result(_, _)
+            | crate::Type::Tuple(_)
+            | crate::Type::Array { .. }
     ) {
         from_native(value, codec)
-    } else if let crate::Type::Array { element, length } = value.descriptor().rils_type() {
-        let element = element.as_ref().clone();
-        let types = vec![element.clone(); *length];
-        expose_indexed(value, &types, Some(element), codec)
-            .map(|sequence| Value::Array(Rc::new(sequence)))
     } else {
         codec.from_native(value)
     }
-}
-
-fn expose_indexed(
-    mut value: DynamicValue,
-    types: &[crate::Type],
-    element_type: Option<crate::Type>,
-    codec: Rc<NativeRecordCodec>,
-) -> Result<super::IndexedStorage, String> {
-    let slots = types
-        .iter()
-        .enumerate()
-        .map(|(index, ty)| {
-            Ok(super::FieldSlot::new(
-                ty.clone(),
-                expose(value.take_field(index)?, codec.clone())?,
-            ))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(super::IndexedStorage {
-        elements: std::cell::RefCell::new(slots),
-        element_type: std::cell::RefCell::new(element_type),
-        active_iterators: Default::default(),
-    })
 }
 
 /// An owner place carries a checked path, but does not acquire a lexical

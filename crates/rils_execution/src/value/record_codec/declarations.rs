@@ -22,21 +22,8 @@ impl NativeRecordCodec {
         source: &Self,
         layout: &DynamicLayout,
     ) -> Result<(), String> {
-        if let Type::Named { name, .. } = layout.rils_type() {
-            if (source.structs.contains_key(name) && self.enums.contains_key(name))
-                || (source.enums.contains_key(name) && self.structs.contains_key(name))
-            {
-                return Err(format!("conflicting native declaration for `{name}`"));
-            }
-            retain(&mut self.structs, &source.structs, name, Rc::ptr_eq)?;
-            retain(&mut self.enums, &source.enums, name, |left, right| {
-                Rc::ptr_eq(left, right)
-                    || matches!(
-                        (&left.host_definition, &right.host_definition),
-                        (Some(left), Some(right)) if left == right
-                    )
-            })?;
-        }
+        // Zero-sized arrays and phantom arguments have types without physical fields.
+        self.retain_type_declarations(source, layout.rils_type())?;
         if let Some(fields) = layout.record_fields() {
             for field in fields {
                 self.retain_layout_declarations(source, field.layout())?;
@@ -48,6 +35,70 @@ impl NativeRecordCodec {
         if let Some(variants) = layout.variant_alternatives() {
             for variant in variants {
                 self.retain_layout_declarations(source, variant)?;
+            }
+        }
+        Ok(())
+    }
+    fn retain_type_declarations(&mut self, source: &Self, ty: &Type) -> Result<(), String> {
+        let mut pending = vec![ty.clone()];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(ty) = pending.pop() {
+            match ty {
+                Type::Named { name, arguments } => {
+                    pending.extend(arguments);
+                    if !visited.insert(name.clone()) {
+                        continue;
+                    }
+                    if (source.structs.contains_key(&name) && self.enums.contains_key(&name))
+                        || (source.enums.contains_key(&name) && self.structs.contains_key(&name))
+                    {
+                        return Err(format!("conflicting native declaration for `{name}`"));
+                    }
+                    retain(&mut self.structs, &source.structs, &name, Rc::ptr_eq)?;
+                    retain(&mut self.enums, &source.enums, &name, |left, right| {
+                        Rc::ptr_eq(left, right)
+                            || matches!((&left.host_definition, &right.host_definition), (Some(left), Some(right)) if left == right)
+                    })?;
+                    if let Some(definition) = source.structs.get(&name) {
+                        pending.extend(
+                            definition
+                                .fields
+                                .iter()
+                                .map(|field| field.type_annotation.clone()),
+                        );
+                    }
+                    if let Some(definition) = source.enums.get(&name) {
+                        for variant in &definition.variants {
+                            match variant {
+                                crate::ast::EnumVariant::Unit { .. } => {}
+                                crate::ast::EnumVariant::Tuple { fields, .. } => {
+                                    pending.extend(fields.iter().cloned())
+                                }
+                                crate::ast::EnumVariant::Record { fields, .. } => pending.extend(
+                                    fields.iter().map(|field| field.type_annotation.clone()),
+                                ),
+                            }
+                        }
+                    }
+                }
+                Type::Tuple(fields) => pending.extend(fields),
+                Type::Array { element, .. }
+                | Type::ArrayParameter { element, .. }
+                | Type::Slice(element)
+                | Type::Option(element)
+                | Type::Reference { inner: element, .. } => pending.push(*element),
+                Type::Result(ok, error) => {
+                    pending.push(*ok);
+                    pending.push(*error);
+                }
+                Type::Function {
+                    parameters,
+                    return_type,
+                } => {
+                    pending.extend(parameters.into_iter().flatten());
+                    pending.push(*return_type);
+                }
+                _ => {}
             }
         }
         Ok(())
