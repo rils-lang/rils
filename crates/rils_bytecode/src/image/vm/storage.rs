@@ -24,21 +24,33 @@ impl VirtualMachine<'_> {
                 self.frame_mut().registers[destination] = Some(value);
             }
             Instruction::BuildTuple {
+                expected,
                 destination,
                 elements,
             } => {
                 let values = self.take_registers(elements, span)?;
-                self.frame_mut().registers[destination] =
-                    Some(sequence_value(values, false, span)?);
+                self.frame_mut().registers[destination] = Some(
+                    self.native_context
+                        .storage()
+                        .construct_tuple(&expected.substitute(&self.frame().type_bindings), values)
+                        .map_err(|message| BytecodeError::new(message, span))?,
+                );
             }
             Instruction::BuildArray {
+                expected,
                 destination,
                 elements,
             } => {
                 let values = self.take_registers(elements, span)?;
-                self.frame_mut().registers[destination] = Some(sequence_value(values, true, span)?);
+                self.frame_mut().registers[destination] = Some(
+                    self.native_context
+                        .storage()
+                        .construct_array(&expected.substitute(&self.frame().type_bindings), values)
+                        .map_err(|message| BytecodeError::new(message, span))?,
+                );
             }
             Instruction::BuildRepeatArray {
+                expected,
                 destination,
                 value,
                 count,
@@ -48,20 +60,16 @@ impl VirtualMachine<'_> {
                 let Some(count) = count.as_usize() else {
                     return Err(BytecodeError::new("array repeat count must be usize", span));
                 };
-                if !value.is_copy() {
-                    return Err(BytecodeError::new(
-                        "array repeat syntax requires a Copy value",
-                        span,
-                    ));
-                }
-                let values = (0..count)
-                    .map(|_| {
-                        value
-                            .clone_owned()
-                            .map_err(|message| BytecodeError::new(message, span))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.frame_mut().registers[destination] = Some(sequence_value(values, true, span)?);
+                self.frame_mut().registers[destination] = Some(
+                    self.native_context
+                        .storage()
+                        .construct_repeat_array(
+                            &expected.substitute(&self.frame().type_bindings),
+                            value,
+                            count,
+                        )
+                        .map_err(|message| BytecodeError::new(message, span))?,
+                );
             }
             Instruction::BuildRange {
                 destination,

@@ -254,10 +254,12 @@ pub enum HirExpression {
         span: Span,
     },
     Tuple {
+        expected: Type,
         elements: Vec<HirExpression>,
         span: Span,
     },
     Array {
+        expected: Type,
         elements: Vec<HirExpression>,
         repeat: Option<Box<HirExpression>>,
         span: Span,

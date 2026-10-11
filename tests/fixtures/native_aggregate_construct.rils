@@ -1,0 +1,26 @@
+struct Item { text: string }
+fn wrap<T>(value: T) -> (T, [Option<T>; 0]) { (value, []) }
+fn check() -> bool {
+    let original = (3, [4, 5]);
+    let mut copied = original;
+    copied.0 = 9;
+    copied.1[0usize] = 10;
+    if original.0 != 3 || original.1[0usize] != 4 { return false; }
+    let matrix = [[1, 2], [3, 4]];
+    let narrow: [(u8, [u16; 1]); 2] = [(1, [2]), (3, [4])];
+    if matrix[1usize][0usize] != 3 || narrow[0usize].1[0usize] != 2u16 { return false; }
+    let repeated = [7; 3];
+    if repeated.len() != 3usize { return false; }
+    let wrapped = wrap(Item { text: "owned" });
+    let payload = wrapped.0;
+    let empty = wrapped.1;
+    if payload.text != "owned" || !empty.is_empty() { return false; }
+    let defaults: ([string; 0], (i32, Option<string>)) = <([string; 0], (i32, Option<string>)) as Default>::default();
+    if !defaults.0.is_empty() || (defaults.1).0 != 0 || !(defaults.1).1.is_none() { return false; }
+    let mut target = 4;
+    let mut refs = (&mut target, [8, 9]);
+    *refs.0 = 5;
+    refs.1[1usize] = 12;
+    target == 5 && refs.1[1usize] == 12
+}
+check()

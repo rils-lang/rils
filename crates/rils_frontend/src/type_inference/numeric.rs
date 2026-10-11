@@ -93,38 +93,68 @@ impl Inferencer<'_> {
         }
     }
 
+    pub(super) fn merge_inferred_types(&mut self, left: &Type, right: &Type) -> Option<Type> {
+        self.unify(left, right);
+        // Keep unfixed numeric variables until the surrounding annotation has
+        // been applied, including variables nested in arrays and tuples.
+        merge_types(
+            &self.resolve_numeric_type(left, false),
+            &self.resolve_numeric_type(right, false),
+        )
+    }
+
     pub(super) fn resolve_type(&mut self, ty: &Type) -> Type {
+        self.resolve_numeric_type(ty, true)
+    }
+
+    pub(super) fn resolve_numeric_type(&mut self, ty: &Type, defaults: bool) -> Type {
         match ty {
             Type::IntegerInference(variable) => {
                 let root = self.numeric_root(*variable);
-                self.numeric_fixed.get(&root).cloned().unwrap_or(Type::I32)
+                self.numeric_fixed
+                    .get(&root)
+                    .cloned()
+                    .unwrap_or(if defaults {
+                        Type::I32
+                    } else {
+                        Type::IntegerInference(root)
+                    })
             }
             Type::FloatInference(variable) => {
                 let root = self.numeric_root(*variable);
-                self.numeric_fixed.get(&root).cloned().unwrap_or(Type::F64)
+                self.numeric_fixed
+                    .get(&root)
+                    .cloned()
+                    .unwrap_or(if defaults {
+                        Type::F64
+                    } else {
+                        Type::FloatInference(root)
+                    })
             }
-            Type::Option(inner) => Type::Option(Box::new(self.resolve_type(inner))),
+            Type::Option(inner) => {
+                Type::Option(Box::new(self.resolve_numeric_type(inner, defaults)))
+            }
             Type::Result(ok, error) => Type::Result(
-                Box::new(self.resolve_type(ok)),
-                Box::new(self.resolve_type(error)),
+                Box::new(self.resolve_numeric_type(ok, defaults)),
+                Box::new(self.resolve_numeric_type(error, defaults)),
             ),
             Type::Tuple(elements) => Type::Tuple(
                 elements
                     .iter()
-                    .map(|element| self.resolve_type(element))
+                    .map(|element| self.resolve_numeric_type(element, defaults))
                     .collect(),
             ),
             Type::ArrayParameter { element, length } => Type::ArrayParameter {
-                element: Box::new(self.resolve_type(element)),
+                element: Box::new(self.resolve_numeric_type(element, defaults)),
                 length: length.clone(),
             },
             Type::Array { element, length } => Type::Array {
-                element: Box::new(self.resolve_type(element)),
+                element: Box::new(self.resolve_numeric_type(element, defaults)),
                 length: *length,
             },
             Type::Reference { mutable, inner } => Type::Reference {
                 mutable: *mutable,
-                inner: Box::new(self.resolve_type(inner)),
+                inner: Box::new(self.resolve_numeric_type(inner, defaults)),
             },
             Type::Function {
                 parameters,
@@ -133,16 +163,16 @@ impl Inferencer<'_> {
                 parameters: parameters.as_ref().map(|parameters| {
                     parameters
                         .iter()
-                        .map(|parameter| self.resolve_type(parameter))
+                        .map(|parameter| self.resolve_numeric_type(parameter, defaults))
                         .collect()
                 }),
-                return_type: Box::new(self.resolve_type(return_type)),
+                return_type: Box::new(self.resolve_numeric_type(return_type, defaults)),
             },
             Type::Named { name, arguments } => Type::Named {
                 name: name.clone(),
                 arguments: arguments
                     .iter()
-                    .map(|argument| self.resolve_type(argument))
+                    .map(|argument| self.resolve_numeric_type(argument, defaults))
                     .collect(),
             },
             Type::Associated {
@@ -151,12 +181,12 @@ impl Inferencer<'_> {
                 name,
                 arguments,
             } => Type::Associated {
-                base: Box::new(self.resolve_type(base)),
+                base: Box::new(self.resolve_numeric_type(base, defaults)),
                 trait_name: trait_name.clone(),
                 name: name.clone(),
                 arguments: arguments
                     .iter()
-                    .map(|argument| self.resolve_type(argument))
+                    .map(|argument| self.resolve_numeric_type(argument, defaults))
                     .collect(),
             },
             other => other.clone(),

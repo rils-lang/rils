@@ -35,6 +35,18 @@ impl FunctionLowerer<'_> {
         })
     }
 
+    pub(super) fn aggregate_type(&self, expression: &Expr) -> Result<Type, CompileError> {
+        self.expression_type(expression)
+            .map(|ty| self.signature_type(&ty))
+            .filter(Type::is_type_witness)
+            .ok_or_else(|| {
+                CompileError::new(
+                    "cannot infer the complete aggregate type",
+                    expression.span(),
+                )
+            })
+    }
+
     pub(super) fn result_type(&self, expression: &Expr) -> Result<Type, CompileError> {
         if let Some(ty @ Type::Result(_, _)) = self
             .expression_type(expression)

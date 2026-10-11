@@ -3,6 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::{types::Type, value::Value};
 
 mod declarations;
+mod signatures;
 use declarations::TypeDeclarations;
 
 pub type EnvironmentRef = Rc<RefCell<Environment>>;

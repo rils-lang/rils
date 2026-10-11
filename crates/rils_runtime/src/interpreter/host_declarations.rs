@@ -3,6 +3,20 @@
 use super::*;
 
 impl Interpreter {
+    pub(crate) fn analyze_program(
+        &self,
+        program: &Program,
+    ) -> rils_frontend::analysis::DocumentAnalysis {
+        let environment = self.globals.borrow();
+        let functions = environment.host_function_signatures();
+        let types = environment
+            .visible_host_definitions()
+            .iter()
+            .map(|definition| definition.name.clone())
+            .collect();
+        rils_frontend::analysis::analyze_program_with_host_declarations(program, &functions, &types)
+    }
+
     pub(crate) fn register_host_contract_types(
         &mut self,
         contract: &rils_host::HostContract,

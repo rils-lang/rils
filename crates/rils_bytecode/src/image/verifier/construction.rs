@@ -2,6 +2,29 @@ use super::*;
 use crate::ast::EnumVariant;
 
 impl BytecodeModule {
+    pub(super) fn valid_aggregate_constructor(
+        &self,
+        instruction: &Instruction,
+        expected: &Type,
+    ) -> bool {
+        if !self.valid_type(expected) || !expected.is_type_witness() {
+            return false;
+        }
+        match (instruction, expected) {
+            (Instruction::BuildTuple { elements, .. }, Type::Tuple(types)) => {
+                elements.len() == types.len()
+            }
+            (Instruction::BuildArray { elements, .. }, Type::Array { length, .. }) => {
+                elements.len() == *length
+            }
+            (
+                Instruction::BuildRepeatArray { .. },
+                Type::Array { .. } | Type::ArrayParameter { .. },
+            ) => true,
+            _ => false,
+        }
+    }
+
     fn valid_constructor_type(&self, type_id: usize, expected: &Type) -> bool {
         let (name, arity) = match self.types.get(type_id) {
             Some(RuntimeType::Struct(definition)) => {

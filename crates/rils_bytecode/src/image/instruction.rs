@@ -151,14 +151,17 @@ pub(super) enum Instruction {
         variant: String,
     },
     BuildTuple {
+        expected: Type,
         destination: usize,
         elements: Vec<usize>,
     },
     BuildArray {
+        expected: Type,
         destination: usize,
         elements: Vec<usize>,
     },
     BuildRepeatArray {
+        expected: Type,
         destination: usize,
         value: usize,
         count: usize,

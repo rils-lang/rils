@@ -202,14 +202,17 @@ pub enum MirInstruction {
         variant: String,
     },
     BuildTuple {
+        expected: Type,
         destination: Register,
         elements: Vec<Register>,
     },
     BuildArray {
+        expected: Type,
         destination: Register,
         elements: Vec<Register>,
     },
     BuildRepeatArray {
+        expected: Type,
         destination: Register,
         value: Register,
         count: Register,

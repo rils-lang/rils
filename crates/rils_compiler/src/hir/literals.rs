@@ -93,7 +93,11 @@ pub(super) fn builtin_default_hir(
             span,
         ));
     };
-    fn lower(plan: &DefaultPlan, span: Span) -> Result<Option<HirExpression>, CompileError> {
+    fn lower(
+        plan: &DefaultPlan,
+        ty: &Type,
+        span: Span,
+    ) -> Result<Option<HirExpression>, CompileError> {
         let literal = |value| HirExpression::Literal { value, span };
         Ok(Some(match plan {
             DefaultPlan::Unit => literal(HirLiteral::Unit),
@@ -114,26 +118,36 @@ pub(super) fn builtin_default_hir(
             DefaultPlan::Float(crate::types::FloatType::F64) => literal(HirLiteral::F64(0.0)),
             DefaultPlan::Char => literal(HirLiteral::Char('\0')),
             DefaultPlan::String => literal(HirLiteral::String(String::new())),
-            DefaultPlan::Tuple(elements) => HirExpression::Tuple {
-                elements: elements
-                    .iter()
-                    .map(|element| {
-                        lower(element, span)?.ok_or_else(|| {
-                            CompileError::unsupported(
-                                "nested type does not implement Default",
-                                span,
-                            )
+            DefaultPlan::Tuple(elements) => {
+                let Type::Tuple(types) = ty else {
+                    return Err(CompileError::new("invalid tuple default type", span));
+                };
+                HirExpression::Tuple {
+                    expected: ty.clone(),
+                    elements: elements
+                        .iter()
+                        .zip(types)
+                        .map(|(element, field_type)| {
+                            lower(element, field_type, span)?.ok_or_else(|| {
+                                CompileError::unsupported(
+                                    "nested type does not implement Default",
+                                    span,
+                                )
+                            })
                         })
-                    })
-                    .collect::<Result<_, _>>()?,
-                span,
-            },
+                        .collect::<Result<_, _>>()?,
+                    span,
+                }
+            }
             DefaultPlan::Array {
-                element, length, ..
+                element,
+                element_type,
+                length,
             } => HirExpression::Array {
+                expected: ty.clone(),
                 elements: (0..*length)
                     .map(|_| {
-                        lower(element, span)?.ok_or_else(|| {
+                        lower(element, element_type, span)?.ok_or_else(|| {
                             CompileError::unsupported(
                                 "array element does not implement Default",
                                 span,
@@ -164,7 +178,7 @@ pub(super) fn builtin_default_hir(
             DefaultPlan::TraitCall(_) => return Ok(None),
         }))
     }
-    lower(&plan, span)
+    lower(&plan, ty, span)
 }
 
 pub(super) fn integer_constant_literal(

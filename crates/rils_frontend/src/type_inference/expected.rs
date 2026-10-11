@@ -2,11 +2,18 @@
 
 use super::*;
 
+mod calls;
 mod returns;
 
 impl Inferencer<'_> {
     pub(super) fn apply_expected_type(&mut self, expression: &Expr, expected: &Type) {
-        let expected = self.resolve_type(expected);
+        let expected = self.resolve_numeric_type(expected, false);
+        if let Expr::Call {
+            callee, arguments, ..
+        } = expression
+        {
+            self.apply_expected_call(expression, callee, arguments, &expected);
+        }
         match (expression, &expected) {
             (Expr::Try { operand, .. }, _) => {
                 let id = self.expression_ids.id(operand);
@@ -157,14 +164,26 @@ impl Inferencer<'_> {
                 for (element, expected) in elements.iter().zip(types) {
                     self.apply_expected_type(element, expected);
                 }
+                self.record_compatible_type(expression, &expected);
             }
             (
                 Expr::Array { elements, .. },
-                Type::Array { element, .. } | Type::ArrayParameter { element, .. },
+                Type::Array { element, .. }
+                | Type::ArrayParameter { element, .. }
+                | Type::Slice(element),
             ) => {
                 for value in elements {
                     self.apply_expected_type(value, element);
                 }
+                let id = self.expression_ids.id(expression);
+                let expected = match self.result.expression_types_by_id.get(&id) {
+                    Some(Type::Array { length, .. }) => Type::Array {
+                        element: element.clone(),
+                        length: *length,
+                    },
+                    _ => expected.clone(),
+                };
+                self.record_compatible_type(expression, &expected);
             }
             (Expr::Block(block), _) => self.apply_expected_block_tail(block, &expected),
             (
@@ -194,16 +213,16 @@ impl Inferencer<'_> {
             return;
         }
         let id = self.expression_ids.id(expression);
-        let actual = self
-            .result
-            .expression_types_by_id
-            .get(&id)
-            .cloned()
-            .map(|actual| self.resolve_type(&actual));
-        if actual.is_some_and(|actual| merge_types(&actual, expected).is_some()) {
-            self.result
-                .expression_types_by_id
-                .insert(id, expected.clone());
+        let Some(actual) = self.result.expression_types_by_id.get(&id).cloned() else {
+            return;
+        };
+        if let Some(merged) = self.merge_inferred_types(expected, &actual) {
+            let retained = if expected.is_type_witness() {
+                expected.clone()
+            } else {
+                merged
+            };
+            self.result.expression_types_by_id.insert(id, retained);
         }
     }
 

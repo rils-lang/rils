@@ -679,7 +679,11 @@ impl Builder {
                 );
                 Ok(destination)
             }
-            HirExpression::Tuple { elements, span } => {
+            HirExpression::Tuple {
+                elements,
+                expected,
+                span,
+            } => {
                 let elements = elements
                     .iter()
                     .map(|element| self.expression(element))
@@ -687,6 +691,7 @@ impl Builder {
                 let destination = self.register();
                 self.emit(
                     MirInstruction::BuildTuple {
+                        expected: expected.clone(),
                         destination,
                         elements,
                     },
@@ -695,6 +700,7 @@ impl Builder {
                 Ok(destination)
             }
             HirExpression::Array {
+                expected,
                 elements,
                 repeat,
                 span,
@@ -708,6 +714,7 @@ impl Builder {
                     let count = self.expression(count)?;
                     self.emit(
                         MirInstruction::BuildRepeatArray {
+                            expected: expected.clone(),
                             destination,
                             value: elements[0],
                             count,
@@ -717,6 +724,7 @@ impl Builder {
                 } else {
                     self.emit(
                         MirInstruction::BuildArray {
+                            expected: expected.clone(),
                             destination,
                             elements,
                         },

@@ -18,7 +18,6 @@ use crate::{
 };
 
 mod compiler;
-mod construction;
 mod core_imports;
 mod error;
 mod format;
@@ -35,7 +34,6 @@ pub(crate) use compiler::compile_program_with_host_and_session;
 #[cfg(test)]
 pub(crate) use compiler::compile_program_with_host_and_sources;
 pub use compiler::{compile, compile_with_host};
-use construction::*;
 use core_imports::*;
 pub use error::BytecodeError;
 pub use format::{BYTECODE_FORMAT_VERSION, BYTECODE_LANGUAGE_VERSION, BytecodeFormatError};

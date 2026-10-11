@@ -411,24 +411,30 @@ fn encode_function(
                         variant,
                     },
                     MirInstruction::BuildTuple {
+                        expected,
                         destination,
                         elements,
                     } => Instruction::BuildTuple {
+                        expected,
                         destination,
                         elements,
                     },
                     MirInstruction::BuildArray {
+                        expected,
                         destination,
                         elements,
                     } => Instruction::BuildArray {
+                        expected,
                         destination,
                         elements,
                     },
                     MirInstruction::BuildRepeatArray {
+                        expected,
                         destination,
                         value,
                         count,
                     } => Instruction::BuildRepeatArray {
+                        expected,
                         destination,
                         value,
                         count,

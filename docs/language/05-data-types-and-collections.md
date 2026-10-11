@@ -251,7 +251,7 @@ Map 删除在取出条目前检查返回类型元数据，失败保留原条目�
 最后一个引用释放前仍禁止结构修改源集合。未知元素类型在推进游标或返回 `None` 前报错。
 Rust 宿主应通过 `Value::Dynamic` 的布局视图读取这些返回值，不能继续按旧
 `Value::Option` / `Value::Tuple` 变体匹配。引用的类型读取及类型匹配直接访问借用视图，
-不要求被引用负载实现 Clone。独立原生 tuple/array 保留稳定字段所有者，Copy 后替换字段不会修改原值；引用字段仍指向同一个来源。原生 tuple 从 Option/Result 解包、序列取出或字段移出后也保持原生布局与声明身份，支持嵌套字段的 move、恢复和引用写回。Rust 宿主应使用布局视图或 `NativeInstancePlace` 访问这些 tuple，不能仅匹配 `Value::Tuple`。原生数组的解包和字段移出也保持原生存储；支持索引与赋值、词法引用、`len/is_empty/contains`、`iter/into_iter` 及 `Vec::from`。索引不能移出非 Copy 元素，消费式迭代和数组转 Vec 可以转移它们的所有权。空数组保留元素声明，原生 `[T; 0]` 只有 T 为 Copy 才可复制。Rust 宿主通过布局视图读取数组，构造布局使用 `DynamicLayout::array(item_layout, length)`。旧 tuple/数组构造及兼容集合返回值仍在迁移。
+不要求被引用负载实现 Clone。独立原生 tuple/array 保留稳定字段所有者，Copy 后替换字段不会修改原值；引用字段仍指向同一个来源。原生 tuple 从 Option/Result 解包、序列取出或字段移出后也保持原生布局与声明身份，支持嵌套字段的 move、恢复和引用写回。Rust 宿主应使用布局视图或 `NativeInstancePlace` 访问这些 tuple，不能仅匹配 `Value::Tuple`。原生数组的解包和字段移出也保持原生存储；支持索引与赋值、词法引用、`len/is_empty/contains`、`iter/into_iter` 及 `Vec::from`。索引不能移出非 Copy 元素，消费式迭代和数组转 Vec 可以转移它们的所有权。空数组保留元素声明，原生 `[T; 0]` 只有 T 为 Copy 才可复制。Rust 宿主通过布局视图读取数组，构造布局使用 `DynamicLayout::array(item_layout, length)`。tuple/数组字面量及内建默认值也直接按完整类型构造原生布局，包括泛型实例、空数组和嵌套引用；未能推断元素类型的 `[]` 必须补充类型上下文。宿主函数的返回值参与组合构造时，也需要注册明确签名；解释器从已注册声明向前端提供类型信息。Rust 宿主可使用 `TypedStorageContext::construct_tuple()` / `construct_array()` 消费拥有型元素。兼容集合返回值及旧变体仍在迁移。
 
 
 

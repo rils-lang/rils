@@ -1,5 +1,6 @@
 use super::*;
 use crate::FloatType;
+mod aggregate;
 mod construction;
 mod copy;
 mod returns;

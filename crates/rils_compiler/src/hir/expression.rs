@@ -793,6 +793,7 @@ impl<'a> FunctionLowerer<'a> {
                 })
             }
             Expr::Tuple { elements, span } => Ok(HirExpression::Tuple {
+                expected: self.aggregate_type(expression)?,
                 elements: elements
                     .iter()
                     .map(|element| self.expression(element))
@@ -804,6 +805,7 @@ impl<'a> FunctionLowerer<'a> {
                 repeat,
                 span,
             } => Ok(HirExpression::Array {
+                expected: self.aggregate_type(expression)?,
                 elements: elements
                     .iter()
                     .map(|element| self.expression(element))

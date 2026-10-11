@@ -182,7 +182,7 @@ impl Engine {
         let tokens = lexer::lex(source).map_err(RilsError::Lex)?;
         let program = parser::parse_with_native_macros(tokens, &self.native_macros)
             .map_err(RilsError::Parse)?;
-        let analysis = rils_frontend::analysis::analyze_program(&program);
+        let analysis = self.interpreter.analyze_program(&program);
         self.interpreter
             .execute_with_analysis(&program, &analysis)
             .map_err(RilsError::Runtime)
@@ -236,7 +236,7 @@ impl Engine {
             execute_project(sources, &mut self.interpreter, &HostContract::new())
                 .map_err(RilsError::Runtime)
         } else {
-            let analysis = rils_frontend::analysis::analyze_program(&program);
+            let analysis = self.interpreter.analyze_program(&program);
             self.interpreter
                 .execute_with_analysis(&program, &analysis)
                 .map_err(RilsError::Runtime)

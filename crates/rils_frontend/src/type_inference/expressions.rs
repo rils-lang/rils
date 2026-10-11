@@ -235,14 +235,8 @@ impl Inferencer<'_> {
                 for element in elements {
                     let actual = self.expression(element, returns);
                     element_type = Some(if let Some(current) = element_type {
-                        if (current.is_integer() && actual.is_integer())
-                            || (current.is_float() && actual.is_float())
-                        {
-                            self.unify(&current, &actual);
-                            current
-                        } else {
-                            merge_types(&current, &actual).unwrap_or(Type::Unknown)
-                        }
+                        self.merge_inferred_types(&current, &actual)
+                            .unwrap_or(Type::Unknown)
                     } else {
                         actual
                     });
@@ -460,7 +454,9 @@ impl Inferencer<'_> {
                 let else_type = else_branch
                     .as_ref()
                     .map_or(Type::Unit, |branch| self.expression(branch, returns));
-                let merged = merge_types(&then_type, &else_type).unwrap_or(Type::Unknown);
+                let merged = self
+                    .merge_inferred_types(&then_type, &else_type)
+                    .unwrap_or(Type::Unknown);
                 self.apply_expected_block_tail(then_branch, &merged);
                 if let Some(branch) = else_branch {
                     self.apply_expected_type(branch, &merged);

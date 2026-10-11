@@ -570,14 +570,17 @@ impl BytecodeModule {
                     }
                 }
                 Instruction::BuildTuple {
+                    expected,
                     destination,
                     elements,
                 }
                 | Instruction::BuildArray {
+                    expected,
                     destination,
                     elements,
                 } => {
-                    if invalid_register(*destination)
+                    if !self.valid_aggregate_constructor(&instruction.instruction, expected)
+                        || invalid_register(*destination)
                         || elements.iter().any(|register| invalid_register(*register))
                     {
                         return Err(BytecodeError::new(
@@ -587,11 +590,13 @@ impl BytecodeModule {
                     }
                 }
                 Instruction::BuildRepeatArray {
+                    expected,
                     destination,
                     value,
                     count,
                 } => {
-                    if invalid_register(*destination)
+                    if !self.valid_aggregate_constructor(&instruction.instruction, expected)
+                        || invalid_register(*destination)
                         || invalid_register(*value)
                         || invalid_register(*count)
                     {

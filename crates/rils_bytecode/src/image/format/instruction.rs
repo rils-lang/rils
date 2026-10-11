@@ -400,27 +400,33 @@ pub(super) fn write_instruction(writer: &mut Writer, value: &SpannedInstruction)
             writer.string(variant)?;
         }
         Instruction::BuildTuple {
+            expected,
             destination,
             elements,
         } => {
             writer.u8(26);
+            write_type(writer, expected, 0)?;
             writer.index(*destination, "destination")?;
             writer.indices(elements)?;
         }
         Instruction::BuildArray {
+            expected,
             destination,
             elements,
         } => {
             writer.u8(27);
+            write_type(writer, expected, 0)?;
             writer.index(*destination, "destination")?;
             writer.indices(elements)?;
         }
         Instruction::BuildRepeatArray {
+            expected,
             destination,
             value,
             count,
         } => {
             writer.u8(28);
+            write_type(writer, expected, 0)?;
             writer.index(*destination, "destination")?;
             writer.index(*value, "value")?;
             writer.index(*count, "repeat count")?;
@@ -673,14 +679,17 @@ pub(super) fn read_instruction(reader: &mut Reader<'_>) -> Result<SpannedInstruc
             variant: reader.string()?,
         },
         26 => Instruction::BuildTuple {
+            expected: read_type(reader)?,
             destination: reader.index()?,
             elements: reader.indices()?,
         },
         27 => Instruction::BuildArray {
+            expected: read_type(reader)?,
             destination: reader.index()?,
             elements: reader.indices()?,
         },
         28 => Instruction::BuildRepeatArray {
+            expected: read_type(reader)?,
             destination: reader.index()?,
             value: reader.index()?,
             count: reader.index()?,

@@ -181,7 +181,26 @@ fn inferred_bindings_compose_native_storage_without_annotations() {
 
 fn native_leaf_types(value: &Value) -> Vec<String> {
     match value {
-        Value::Dynamic(object) => vec![object.descriptor().layout().rils_type().to_string()],
+        Value::Dynamic(object) => object
+            .with(|payload| {
+                let mut pending = vec![payload.view()];
+                let mut types = Vec::new();
+                while let Some(view) = pending.pop() {
+                    let layout = view.layout().unwrap();
+                    if matches!(
+                        layout.rils_type(),
+                        rils::Type::Tuple(_) | rils::Type::Array { .. }
+                    ) {
+                        for index in (0..layout.record_fields().unwrap().len()).rev() {
+                            pending.push(view.field(index).unwrap());
+                        }
+                    } else {
+                        types.push(layout.rils_type().to_string());
+                    }
+                }
+                types
+            })
+            .unwrap(),
         Value::Tuple(sequence) => sequence
             .elements
             .borrow()
