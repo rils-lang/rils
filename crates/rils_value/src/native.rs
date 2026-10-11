@@ -6,6 +6,7 @@ use rils_syntax::Type;
 
 use crate::storage::Payload;
 
+mod composition;
 mod leaf;
 pub use leaf::NativeLeafRef;
 
@@ -29,6 +30,7 @@ pub trait NativeChildren<V>: 'static {
 /// A Rust type's Rils identity and registered operations. The registry does not
 /// prescribe any method names or traits.
 pub struct NativeType<V> {
+    composition: composition::NativeComposition<V>,
     rils_type: Type,
     rust_type: TypeId,
     copy: bool,
@@ -41,6 +43,7 @@ pub struct NativeType<V> {
 impl<V: 'static> NativeType<V> {
     pub fn new<T: 'static>(rils_type: Type) -> Self {
         Self {
+            composition: composition::NativeComposition::new::<T>(rils_type.clone()),
             rils_type,
             rust_type: TypeId::of::<T>(),
             copy: false,
@@ -56,6 +59,7 @@ impl<V: 'static> NativeType<V> {
     pub fn with_copy<T: Copy + 'static>(mut self) -> Self {
         assert_eq!(self.rust_type, TypeId::of::<T>());
         self.copy = true;
+        self.composition.layout = crate::DynamicLayout::copy_of::<T>(self.rils_type.clone());
         self
     }
 

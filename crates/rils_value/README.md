@@ -8,6 +8,10 @@
 
 `NativeType<V>` 描述 Rust 类型身份、Rils 类型和可注册的 Copy 保证。类型可通过 `register_method` 按任意名称登记操作，处理函数从 `NativeCallContext` 读取类型检查过的 receiver 与参数，也能构造同类型返回对象；存储层不预设 Clone、Equal、Display 或 Next。调用者负责把这些操作与 Rils 导出声明绑定。
 
+`NativeType::new::<T>()` 同时登记可组合的 Rust 叶子布局与双向拥有型转换，无需为每种 T 单独写适配器。`layout_handle()` 可用于组成 tuple、Option 等布局；`NativeObject::into_dynamic()` 移动实际 T，`descriptor.from_dynamic(value)` 将取出的叶子恢复为原生对象。组合 bytes 中保存 T 本身，不保存 `NativeObject` 或上层 `Value`。Copy 只由显式 `with_copy::<T>()` 开启，共享非 Copy、活动子引用和部分 move 会拒绝转换并返回原对象；反向转换检查 Rils 类型、Rust TypeId 和 Copy 策略，不把相同名称下的不同物理布局强制互转。
+
+布局只描述存储。组合调用方必须通过 `descriptor_handle()` 保留原 `NativeType`，并在上层声明上下文中传递方法与子值访问注册；不能只凭类型名称重建操作表。恢复对象后仍使用同一注册。此底层桥已覆盖非 Clone、自定义析构、高对齐、零尺寸及显式 Copy 负载；兼容 Map 的条目构造尚待接入执行层描述符上下文，当前仍使用旧 tuple 返回路径。
+
 `NativeObject::with_leaf()` 与 `DynamicValueRef::leaf()` 提供同一 `NativeLeafRef` 借用接口。访问前检查实际 Rust TypeId，`with_rust()` 仅在原所有者的访问 guard 存活时传入 `&T`；视图不复制负载、不暴露裸指针，也不能从作用域回调中逃逸。类型的格式化和比较操作由上层声明注册，底层存储不预设这些能力。
 
 `NativeObject<V>` 使用尺寸和对齐信息保存具体 Rust 布局。已登记 Copy 且不超过 32 字节、16 字节对齐的值直接放在对象内，不需要逐值分配；其余值使用共享堆存储，以支持词法引用和可变 receiver。擦除布局的分配与复制集中在 `storage.rs`，组合布局的移动与析构集中在 `dynamic.rs`；这些模块显式标注 `unsafe` 前提，不使用 `dyn Any` 作为负载。内联 Copy 值的可变方法需要上层 place 写回，不能通过克隆出的 handle 修改。包含 Rils 值的容器必须通过 `NativeChildren<V>` 报告嵌套值、活动引用和部分 move；Rils 的所有权与词法引用仍由执行层负责。

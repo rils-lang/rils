@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- `rils_value` 新增注册原生负载与动态组合布局之间的拥有型转换：`NativeType::layout_handle()`、`NativeObject::into_dynamic()`、`NativeType::from_dynamic()`，以及用于保留操作注册的 `descriptor_handle()`。`NativeType::new::<T>()` 自动注册 T 的布局和转换，非 Clone 负载可以移入组合存储再取回；Copy 仍须显式注册，失败返回原所有者。组合调用方须保留并传递描述符上下文；兼容 Map 的条目迁移尚待接入这套桥。现有语言语义、C ABI、v8 编码及版本号不变。
+
 - 整数方法的复合返回值统一通过类型化原生构造器生成：`overflowing_*` 不再重建旧 tuple 字段槽位，`try_from` 不再创建旧 `Value::Result`，checked 方法的 Option 也复用相同构造入口。覆盖全部 12 种整数类型；tuple 的 Copy 副本独立，`Result<T, string>` 的 Copy 判定包含非活动的 string 分支。**Rust API 迁移：** 直接调用整数 intrinsic 得到的 tuple/Result 现为 `Value::Dynamic`，应通过布局视图、`NativeInstancePlace` 或 `dynamic_result::take_owned()` 读取，不能仅匹配旧枚举变体。C ABI、v8 编码及版本号不变。
 
 - tuple、数组字面量及内建默认值在解释器和 VM 中直接按完整类型构造原生布局，不再先创建旧 `Value::Tuple` / `Value::Array`；空数组保留元素类型，无法推断时明确报错。嵌套数组和 tuple 的数值推导保留上下文约束；解释器分析复用已注册宿主函数的签名，宿主返回值可直接参与组合布局构造；Copy 仍要求字段能力及用户显式实现。**迁移：** Rust 宿主通过布局视图或 `NativeInstancePlace` 读取构造结果；`TypedStorageContext::construct_array()` 接收完整数组类型及拥有型元素。实验性 v8 的 `BuildTuple` / `BuildArray` / `BuildRepeatArray` 新增类型操作数，旧 `.rilbc` / `.bytes` / `.rilslib` 内字节码须重新编译，格式号仍为 8。兼容集合返回值和旧枚举变体继续迁移，C ABI 与版本号不变。
