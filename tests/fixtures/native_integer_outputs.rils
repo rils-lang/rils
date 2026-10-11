@@ -1,0 +1,204 @@
+{
+    let sum = i8::MAX.overflowing_add(1i8);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == i8::MIN);
+    let values = [sum, 1i8.overflowing_mul(2i8)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1i8.overflowing_shl(i8::BITS);
+    assert!(shifted.0 == 1i8 && shifted.1);
+    assert!(i8::MAX.checked_add(1i8).is_none());
+    assert!(1i8.checked_add(1i8).unwrap() == 2i8);
+    assert!(i8::try_from(1i32).unwrap() == 1i8);
+    assert!(i8::try_from(u128::MAX).is_err());
+}
+{
+    let sum = i16::MAX.overflowing_add(1i16);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == i16::MIN);
+    let values = [sum, 1i16.overflowing_mul(2i16)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1i16.overflowing_shl(i16::BITS);
+    assert!(shifted.0 == 1i16 && shifted.1);
+    assert!(i16::MAX.checked_add(1i16).is_none());
+    assert!(1i16.checked_add(1i16).unwrap() == 2i16);
+    assert!(i16::try_from(1i32).unwrap() == 1i16);
+    assert!(i16::try_from(u128::MAX).is_err());
+}
+{
+    let sum = i32::MAX.overflowing_add(1i32);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == i32::MIN);
+    let values = [sum, 1i32.overflowing_mul(2i32)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1i32.overflowing_shl(i32::BITS);
+    assert!(shifted.0 == 1i32 && shifted.1);
+    assert!(i32::MAX.checked_add(1i32).is_none());
+    assert!(1i32.checked_add(1i32).unwrap() == 2i32);
+    assert!(i32::try_from(1i32).unwrap() == 1i32);
+    assert!(i32::try_from(u128::MAX).is_err());
+}
+{
+    let sum = i64::MAX.overflowing_add(1i64);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == i64::MIN);
+    let values = [sum, 1i64.overflowing_mul(2i64)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1i64.overflowing_shl(i64::BITS);
+    assert!(shifted.0 == 1i64 && shifted.1);
+    assert!(i64::MAX.checked_add(1i64).is_none());
+    assert!(1i64.checked_add(1i64).unwrap() == 2i64);
+    assert!(i64::try_from(1i32).unwrap() == 1i64);
+    assert!(i64::try_from(u128::MAX).is_err());
+}
+{
+    let sum = i128::MAX.overflowing_add(1i128);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == i128::MIN);
+    let values = [sum, 1i128.overflowing_mul(2i128)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1i128.overflowing_shl(i128::BITS);
+    assert!(shifted.0 == 1i128 && shifted.1);
+    assert!(i128::MAX.checked_add(1i128).is_none());
+    assert!(1i128.checked_add(1i128).unwrap() == 2i128);
+    assert!(i128::try_from(1i32).unwrap() == 1i128);
+    assert!(i128::try_from(u128::MAX).is_err());
+}
+{
+    let sum = isize::MAX.overflowing_add(1isize);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == isize::MIN);
+    let values = [sum, 1isize.overflowing_mul(2isize)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1isize.overflowing_shl(isize::BITS);
+    assert!(shifted.0 == 1isize && shifted.1);
+    assert!(isize::MAX.checked_add(1isize).is_none());
+    assert!(1isize.checked_add(1isize).unwrap() == 2isize);
+    assert!(isize::try_from(1i32).unwrap() == 1isize);
+    assert!(isize::try_from(u128::MAX).is_err());
+}
+{
+    let sum = u8::MAX.overflowing_add(1u8);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == u8::MIN);
+    let values = [sum, 1u8.overflowing_mul(2u8)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1u8.overflowing_shl(u8::BITS);
+    assert!(shifted.0 == 1u8 && shifted.1);
+    assert!(u8::MAX.checked_add(1u8).is_none());
+    assert!(1u8.checked_add(1u8).unwrap() == 2u8);
+    assert!(u8::try_from(1i32).unwrap() == 1u8);
+    assert!(u8::try_from(u128::MAX).is_err());
+}
+{
+    let sum = u16::MAX.overflowing_add(1u16);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == u16::MIN);
+    let values = [sum, 1u16.overflowing_mul(2u16)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1u16.overflowing_shl(u16::BITS);
+    assert!(shifted.0 == 1u16 && shifted.1);
+    assert!(u16::MAX.checked_add(1u16).is_none());
+    assert!(1u16.checked_add(1u16).unwrap() == 2u16);
+    assert!(u16::try_from(1i32).unwrap() == 1u16);
+    assert!(u16::try_from(u128::MAX).is_err());
+}
+{
+    let sum = u32::MAX.overflowing_add(1u32);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == u32::MIN);
+    let values = [sum, 1u32.overflowing_mul(2u32)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1u32.overflowing_shl(u32::BITS);
+    assert!(shifted.0 == 1u32 && shifted.1);
+    assert!(u32::MAX.checked_add(1u32).is_none());
+    assert!(1u32.checked_add(1u32).unwrap() == 2u32);
+    assert!(u32::try_from(1i32).unwrap() == 1u32);
+    assert!(u32::try_from(u128::MAX).is_err());
+}
+{
+    let sum = u64::MAX.overflowing_add(1u64);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == u64::MIN);
+    let values = [sum, 1u64.overflowing_mul(2u64)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1u64.overflowing_shl(u64::BITS);
+    assert!(shifted.0 == 1u64 && shifted.1);
+    assert!(u64::MAX.checked_add(1u64).is_none());
+    assert!(1u64.checked_add(1u64).unwrap() == 2u64);
+    assert!(u64::try_from(1i32).unwrap() == 1u64);
+    assert!(u64::try_from(u128::MAX).is_err());
+}
+{
+    let sum = u128::MAX.overflowing_add(1u128);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == u128::MIN);
+    let values = [sum, 1u128.overflowing_mul(2u128)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1u128.overflowing_shl(u128::BITS);
+    assert!(shifted.0 == 1u128 && shifted.1);
+    assert!(u128::MAX.checked_add(1u128).is_none());
+    assert!(1u128.checked_add(1u128).unwrap() == 2u128);
+    assert!(u128::try_from(1i32).unwrap() == 1u128);
+    assert!(u128::try_from(-1i32).is_err());
+}
+{
+    let sum = usize::MAX.overflowing_add(1usize);
+    assert!(sum.1);
+    let mut copied = sum;
+    copied.1 = false;
+    assert!(sum.1 && !copied.1);
+    assert!(sum.0 == usize::MIN);
+    let values = [sum, 1usize.overflowing_mul(2usize)];
+    assert!(values[0usize].1 && !values[1usize].1);
+    let shifted = 1usize.overflowing_shl(usize::BITS);
+    assert!(shifted.0 == 1usize && shifted.1);
+    assert!(usize::MAX.checked_add(1usize).is_none());
+    assert!(1usize.checked_add(1usize).unwrap() == 2usize);
+    assert!(usize::try_from(1i32).unwrap() == 1usize);
+    assert!(usize::try_from(u128::MAX).is_err());
+}
+fn converted(value: i32) -> Result<(u8, bool), string> {
+    let number = u8::try_from(value)?;
+    Ok(number.overflowing_add(1u8))
+}
+assert!(converted(256).is_err());
+let result = converted(255).unwrap();
+assert!(result.0 == 0u8 && result.1);
+let mut pairs: Vec<(i16, bool)> = Vec::new();
+pairs.push(i16::MAX.overflowing_add(1i16));
+let last = pairs.pop().unwrap();
+assert!(last.0 == i16::MIN && last.1);
+true

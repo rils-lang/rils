@@ -115,28 +115,25 @@ fn native_i32_methods_cover_boundary_shapes() {
             .unwrap_err()
             .contains("missing its target")
     );
-    match execute_integer_intrinsic(
+    let result = execute_integer_intrinsic(
         "core::integer::try_from",
         Some(rils_execution::IntegerType::I32),
         &[Value::U128(u128::MAX)],
     )
-    .unwrap()
-    {
-        Value::Result {
-            value: Err(error),
-            ok_type,
-            error_type,
-        } => {
-            assert_eq!(ok_type, Some(Type::I32));
-            assert_eq!(error_type, Some(Type::String));
-            assert!(
-                error
-                    .as_string()
-                    .is_some_and(|message| message.contains("outside the `i32` range"))
-            );
-        }
-        value => panic!("expected failed conversion, found {value:?}"),
-    }
+    .unwrap();
+    assert!(matches!(result, Value::Dynamic(_)));
+    assert_eq!(
+        Type::of_value(&result),
+        Some(Type::Result(Box::new(Type::I32), Box::new(Type::String)))
+    );
+    let error = rils_execution::value::dynamic_result::take_owned(result)
+        .unwrap()
+        .unwrap_err();
+    assert!(
+        error
+            .as_string()
+            .is_some_and(|message| message.contains("outside the `i32` range"))
+    );
 }
 
 #[test]
@@ -166,24 +163,24 @@ fn generated_integer_family_runs_for_every_width() {
             integer_constant(target, rils_builtins::IntegerConstantId::Bits),
             Value::U32(target.bits())
         );
-        match execute_integer_intrinsic(
+        let result = execute_integer_intrinsic(
             "core::integer::try_from",
             Some(target),
             &[Value::from_i32(1)],
         )
-        .unwrap()
-        {
-            Value::Result {
-                value: Ok(value),
-                ok_type,
-                error_type,
-            } => {
-                assert_eq!(ok_type, Some(Type::Integer(target)));
-                assert_eq!(error_type, Some(Type::String));
-                assert_eq!(Type::of_value(value.as_ref()), Some(Type::Integer(target)));
-            }
-            value => panic!("expected successful {target} conversion, found {value:?}"),
-        }
+        .unwrap();
+        assert!(matches!(result, Value::Dynamic(_)));
+        assert_eq!(
+            Type::of_value(&result),
+            Some(Type::Result(
+                Box::new(Type::Integer(target)),
+                Box::new(Type::String)
+            ))
+        );
+        let value = rils_execution::value::dynamic_result::take_owned(result)
+            .unwrap()
+            .unwrap();
+        assert_eq!(Type::of_value(&value), Some(Type::Integer(target)));
     }
     assert_eq!(
         execute_integer_intrinsic("core::integer::saturating_neg", None, &[Value::U8(3)]),

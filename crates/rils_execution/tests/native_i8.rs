@@ -62,13 +62,14 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
         &[native_i8(i8::MAX), native_i8(1)],
     )
     .unwrap();
-    let Value::Tuple(fields) = overflow else {
-        panic!("overflowing_add returns a tuple");
+    let Value::Dynamic(object) = overflow else {
+        panic!("overflowing_add returns a native tuple");
     };
-    let fields = fields.elements.borrow();
-    assert!(matches!(fields[0].value, Some(Value::Native(_))));
-    assert_eq!(fields[0].value, Some(native_i8(i8::MIN)));
-    assert_eq!(fields[1].value, Some(Value::Bool(true)));
+    let place = rils_execution::value::native_instance::NativeInstancePlace::new(object).unwrap();
+    let number = place.field("0").unwrap().take().unwrap();
+    assert!(matches!(number, Value::Native(_)));
+    assert_eq!(number, native_i8(i8::MIN));
+    assert_eq!(place.field("1").unwrap().take().unwrap(), Value::Bool(true));
 
     assert_eq!(
         execute_integer_intrinsic("core::integer::abs", None, &[native_i8(i8::MIN)]).unwrap_err(),

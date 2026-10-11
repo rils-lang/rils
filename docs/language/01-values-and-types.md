@@ -61,6 +61,11 @@ let approximate = 16_777_217i32.to_f32();
 整数还提供 `checked_add/sub/mul/div/rem`、`wrapping_add/sub/mul`、`saturating_add/sub/mul` 和
 `overflowing_add/sub/mul`。普通运算符始终检查溢出；这些方法用于显式选择其他 Rust 风格行为。
 
+整数方法的 `(T, bool)`、`Option<T>` 和 `Result<T, string>` 返回值直接使用原生布局，
+完整保留整数类型和 sum 的两侧类型。overflow tuple 可以 Copy，副本字段独立；
+`Result<T, string>` 因 string 不满足 Copy 而按 move 传递，即使当前分支为 Ok。
+Rust 宿主应通过原生布局视图或消费式 Result 接口读取这些结果，不能仅匹配旧 `Value` 变体。
+
 整数也支持 `count_ones/count_zeros/leading_zeros/trailing_zeros`、`rotate_left/rotate_right`、
 `pow`、`div_euclid/rem_euclid` 和有符号整数的 `abs`。`neg/abs/pow` 分别提供适用的
 `checked_*`、`wrapping_*`、`saturating_*` 与 `overflowing_*` 形式；幂和旋转量使用 `u32`。

@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 整数方法的复合返回值统一通过类型化原生构造器生成：`overflowing_*` 不再重建旧 tuple 字段槽位，`try_from` 不再创建旧 `Value::Result`，checked 方法的 Option 也复用相同构造入口。覆盖全部 12 种整数类型；tuple 的 Copy 副本独立，`Result<T, string>` 的 Copy 判定包含非活动的 string 分支。**Rust API 迁移：** 直接调用整数 intrinsic 得到的 tuple/Result 现为 `Value::Dynamic`，应通过布局视图、`NativeInstancePlace` 或 `dynamic_result::take_owned()` 读取，不能仅匹配旧枚举变体。C ABI、v8 编码及版本号不变。
+
 - tuple、数组字面量及内建默认值在解释器和 VM 中直接按完整类型构造原生布局，不再先创建旧 `Value::Tuple` / `Value::Array`；空数组保留元素类型，无法推断时明确报错。嵌套数组和 tuple 的数值推导保留上下文约束；解释器分析复用已注册宿主函数的签名，宿主返回值可直接参与组合布局构造；Copy 仍要求字段能力及用户显式实现。**迁移：** Rust 宿主通过布局视图或 `NativeInstancePlace` 读取构造结果；`TypedStorageContext::construct_array()` 接收完整数组类型及拥有型元素。实验性 v8 的 `BuildTuple` / `BuildArray` / `BuildRepeatArray` 新增类型操作数，旧 `.rilbc` / `.bytes` / `.rilslib` 内字节码须重新编译，格式号仍为 8。兼容集合返回值和旧枚举变体继续迁移，C ABI 与版本号不变。
 
 - 原生定长数组从 Option/Result、集合或字段取出后保留原生布局，不再重建 `Value::Array` 和字段槽位。两种后端支持原生索引、赋值、词法引用、查询、借用迭代、消费式迭代及 `Vec::from(array)`；非 Copy 元素不能通过索引移出，消费式迭代按需移动且提前结束正确析构。空数组保留元素及其依赖声明，原生 `[T; 0]` 的 Copy 也要求 T 为 Copy；`[T; N]` 参数及 slice 类型检查读取布局见证。**Rust API 迁移：** 数组解码结果改为 `Value::Dynamic`，宿主应使用布局视图或 `NativeInstancePlace`；新建原生数组布局使用 `DynamicLayout::array(item_layout, length)`，以保留空数组的 Copy 策略。旧数组/tuple 构造与兼容集合返回路径继续迁移，C ABI、v8 编码和版本号不变。

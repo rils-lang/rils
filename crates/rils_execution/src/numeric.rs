@@ -140,20 +140,6 @@ pub fn execute_intrinsic(
     execute_integer_intrinsic(symbol, target, values)
 }
 
-fn tuple_value(value: Value, overflowed: bool) -> Result<Value, String> {
-    let types = [Type::of_value(&value).unwrap_or(Type::Unknown), Type::Bool];
-    Ok(Value::Tuple(std::rc::Rc::new(
-        crate::value::IndexedStorage {
-            active_iterators: std::cell::Cell::new(0),
-            elements: std::cell::RefCell::new(vec![
-                crate::value::FieldSlot::new(types[0].clone(), value),
-                crate::value::FieldSlot::new(Type::Bool, Value::Bool(overflowed)),
-            ]),
-            element_type: std::cell::RefCell::new(None),
-        },
-    )))
-}
-
 macro_rules! integer_binary {
     ($left:expr, $operator:expr, $right:expr, $constructor:path) => {{
         use BinaryOp::*;

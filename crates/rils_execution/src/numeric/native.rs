@@ -1,8 +1,6 @@
 //! Native integer methods generated from their Rust standard-library definitions.
 
-use std::rc::Rc;
-
-use crate::{Type, Value};
+use crate::{Type, Value, value::storage::TypedStorageContext};
 use rils_stdlib::stdlib::{
     float::Number as FloatNumber,
     integer::{Integer, Number},
@@ -149,32 +147,30 @@ macro_rules! integer_bridge {
                     Option::Some(value) => Some($constructor(value.0)),
                     Option::None => None,
                 };
-                match crate::value::dynamic_option::construct(
+                TypedStorageContext::new(&[], &[]).construct_option(
+                    &Type::Option(Box::new(Type::Integer(crate::IntegerType::$variant))),
                     item,
-                    &Type::Integer(crate::IntegerType::$variant),
-                )? {
-                    crate::value::dynamic_option::Construction::Native(value) => Ok(value),
-                    crate::value::dynamic_option::Construction::Unsupported(_) => {
-                        Err(format!("no native Option layout for {}", stringify!($primitive)))
-                    }
-                }
+                )
             }
         }
         impl NativeOutput for Result<Number<$primitive>, String> {
             fn into_value(self) -> std::result::Result<Value, String> {
-                Ok(Value::Result {
-                    value: match self {
-                        Result::Ok(value) => Ok(Rc::new($constructor(value.0))),
-                        Result::Err(message) => Err(Rc::new(crate::value::native_string(message))),
-                    },
-                    ok_type: Some(Type::Integer(crate::IntegerType::$variant)),
-                    error_type: Some(Type::String),
-                })
+                let branch = match self {
+                    Result::Ok(value) => Ok($constructor(value.0)),
+                    Result::Err(message) => Err(crate::value::native_string(message)),
+                };
+                TypedStorageContext::new(&[], &[]).construct_result(
+                    &Type::Result(Box::new(Type::Integer(crate::IntegerType::$variant)), Box::new(Type::String)),
+                    branch,
+                )
             }
         }
         impl NativeOutput for (Number<$primitive>, bool) {
             fn into_value(self) -> std::result::Result<Value, String> {
-                super::tuple_value($constructor(self.0.0), self.1)
+                TypedStorageContext::new(&[], &[]).construct_tuple(
+                    &Type::Tuple(vec![Type::Integer(crate::IntegerType::$variant), Type::Bool]),
+                    vec![$constructor(self.0.0), Value::Bool(self.1)],
+                )
             }
         }
     )*};

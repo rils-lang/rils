@@ -1,5 +1,9 @@
 # 字节码与预编译设计
 
+整数方法的 tuple、Option、Result 输出在共享执行层直接构造原生布局；VM 与解释器均调用
+标准库定义生成的整数桥接，保留完整结果类型和 Copy 策略，不在 VM 中单独重建旧组合值。
+该迁移不改变 v8 指令编码或宿主 ABI。
+
 tuple、数组和重复数组构造指令 `BuildTuple` / `BuildArray` / `BuildRepeatArray` 现携带完整
 类型见证，经 HIR/MIR 传递并在 VM 中替换泛型绑定，直接移入原生布局。verifier 检查类型形状、
 完整性、寄存器以及 tuple/数组列表长度，运行时验证子值布局。空数组保留元素类型与 Copy 策略。
