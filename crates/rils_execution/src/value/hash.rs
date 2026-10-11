@@ -16,8 +16,12 @@ mod key;
 pub use key::{HashKey, KeyIdentity};
 #[path = "hash/inspection.rs"]
 mod inspection;
+#[path = "hash/option_storage.rs"]
+mod option_storage;
+pub use option_storage::CollectionOptionStorage;
 
 pub struct HashMapValue {
+    pub option_storage: RefCell<CollectionOptionStorage>,
     pub borrowed: std::cell::Cell<usize>,
     pub entries: RefCell<HashMap<HashKey, FieldSlot>>,
     pub key_type: RefCell<Type>,
@@ -25,6 +29,7 @@ pub struct HashMapValue {
 }
 
 pub struct BTreeMapValue {
+    pub option_storage: RefCell<CollectionOptionStorage>,
     pub borrowed: std::cell::Cell<usize>,
     pub entries: RefCell<BTreeMap<HashKey, FieldSlot>>,
     pub key_type: RefCell<Type>,
@@ -32,12 +37,14 @@ pub struct BTreeMapValue {
 }
 
 pub struct BTreeSetValue {
+    pub option_storage: RefCell<CollectionOptionStorage>,
     pub borrowed: std::cell::Cell<usize>,
     pub entries: RefCell<BTreeSet<HashKey>>,
     pub element_type: RefCell<Type>,
 }
 
 pub struct HashSetValue {
+    pub option_storage: RefCell<CollectionOptionStorage>,
     pub borrowed: std::cell::Cell<usize>,
     pub entries: RefCell<HashSet<HashKey>>,
     pub element_type: RefCell<Type>,
@@ -90,6 +97,7 @@ pub(super) fn clone_hash_map(map: &HashMapValue) -> Result<HashMapValue, String>
         })
         .collect::<Result<HashMap<_, _>, String>>()?;
     Ok(HashMapValue {
+        option_storage: RefCell::new(map.option_storage.borrow().clone()),
         borrowed: std::cell::Cell::new(0),
         entries: RefCell::new(entries),
         key_type: RefCell::new(map.key_type.borrow().clone()),
@@ -114,6 +122,7 @@ pub(super) fn clone_btree_map(map: &BTreeMapValue) -> Result<BTreeMapValue, Stri
         })
         .collect::<Result<BTreeMap<_, _>, String>>()?;
     Ok(BTreeMapValue {
+        option_storage: RefCell::new(map.option_storage.borrow().clone()),
         borrowed: std::cell::Cell::new(0),
         entries: RefCell::new(entries),
         key_type: RefCell::new(map.key_type.borrow().clone()),

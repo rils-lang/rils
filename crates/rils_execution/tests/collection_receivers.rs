@@ -21,23 +21,27 @@ type GuardCheck = Rc<dyn Fn() -> bool>;
 fn empty(kind: &str) -> Value {
     match kind {
         "HashMap" => Value::HashMap(Rc::new(HashMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new(Default::default()),
             key_type: RefCell::new(Type::String),
             value_type: RefCell::new(Type::String),
         })),
         "BTreeMap" => Value::BTreeMap(Rc::new(BTreeMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new(Default::default()),
             key_type: RefCell::new(Type::String),
             value_type: RefCell::new(Type::String),
         })),
         "HashSet" => Value::HashSet(Rc::new(HashSetValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new(Default::default()),
             element_type: RefCell::new(Type::String),
         })),
         "BTreeSet" => Value::BTreeSet(Rc::new(BTreeSetValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new(Default::default()),
             element_type: RefCell::new(Type::String),
@@ -105,6 +109,7 @@ fn receiver(source: Value, shape: usize) -> (Value, GuardCheck) {
             let identity = key.identity();
             let ty = Type::of_value(&source).unwrap();
             let outer = Rc::new(HashMapValue {
+                option_storage: Default::default(),
                 borrowed: Cell::new(0),
                 key_type: RefCell::new(Type::I32),
                 value_type: RefCell::new(ty.clone()),

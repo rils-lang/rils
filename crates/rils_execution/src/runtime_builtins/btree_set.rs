@@ -84,15 +84,20 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                 } else {
                     entries.last()
                 };
-                Ok(Value::Option {
-                    value: key.map(HashKey::to_value).transpose()?.map(Rc::new),
-                    element_type: Some(
-                        set.element_type
-                            .try_borrow()
-                            .map_err(|_| "collection element type is accessed")?
-                            .clone(),
-                    ),
-                })
+                let element_type = set
+                    .element_type
+                    .try_borrow()
+                    .map_err(|_| "collection element type is accessed")?;
+                let output = set
+                    .option_storage
+                    .try_borrow_mut()
+                    .map_err(|_| "set Option storage is accessed")?
+                    .prepare_key(
+                        &element_type,
+                        key.map(HashKey::stored_value),
+                        &crate::value::storage::TypedStorageContext::new(&[], &[]),
+                    )?;
+                output.construct(key.map(HashKey::to_value).transpose()?)
             }
             "is_subset"
             | "is_superset"
@@ -150,6 +155,17 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                                 _ => unreachable!(),
                             };
                             Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
+                                option_storage: RefCell::new(
+                                    set.option_storage
+                                        .try_borrow()
+                                        .map_err(|_| "set Option storage is accessed")?
+                                        .merge(
+                                            &*other
+                                                .option_storage
+                                                .try_borrow()
+                                                .map_err(|_| "set Option storage is accessed")?,
+                                        )?,
+                                ),
                                 borrowed: std::cell::Cell::new(0),
                                 entries: RefCell::new(entries),
                                 element_type: RefCell::new(element_type),
@@ -198,6 +214,7 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
     }
     Some(if arguments.is_empty() {
         Ok(Value::BTreeSet(Rc::new(BTreeSetValue {
+            option_storage: Default::default(),
             borrowed: std::cell::Cell::new(0),
             entries: RefCell::new(Default::default()),
             element_type: RefCell::new(Type::Unknown),

@@ -17,21 +17,7 @@ impl TypedStorageContext<'_> {
                 "cannot infer the complete native Option type: {ty}"
             ));
         }
-        let layout = self.layout(&ty)?;
-        let mut codec =
-            NativeRecordCodec::with_definitions(self.structs, self.enums).with_owned_conversion();
-        let payload = match item {
-            Some(item) => {
-                let child = layout
-                    .option_item()
-                    .ok_or("Option has no item layout")?
-                    .clone();
-                let item = codec.into_native(item, child)?;
-                DynamicValue::some(layout, item)?
-            }
-            None => DynamicValue::none(layout)?,
-        };
-        super::super::native_instance::from_native(payload, Rc::new(codec))
+        PreparedOption::new(self, &ty, item.as_ref())?.construct(item)
     }
 
     pub fn construct_result(
@@ -87,5 +73,96 @@ impl TypedStorageContext<'_> {
             ));
         }
         self.construct_result(&expected, Err(error))
+    }
+}
+
+/// A complete Option layout and its declarations, prepared before moving a source.
+#[derive(Clone)]
+pub(crate) struct PreparedOption {
+    layout: Rc<rils_value::DynamicLayout>,
+    codec: NativeRecordCodec,
+    hosts: Vec<Rc<super::super::HostType>>,
+}
+
+impl PreparedOption {
+    pub(crate) fn check_move(value: &Value) -> Result<(), String> {
+        let unique = match value {
+            Value::Native(object) => object.is_uniquely_owned(),
+            Value::Dynamic(object) => object.is_uniquely_owned(),
+            _ => true,
+        };
+        if !unique && !value.is_copy() {
+            return Err("cannot move a shared non-Copy Option payload".into());
+        }
+        if value.has_active_references() || value.is_partially_moved() {
+            return Err("cannot move a referenced or partially moved Option payload".into());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn new(
+        context: &TypedStorageContext<'_>,
+        ty: &Type,
+        sample: Option<&Value>,
+    ) -> Result<Self, String> {
+        let Type::Option(item) = ty else {
+            return Err("expected Option type".into());
+        };
+        if !ty.is_concrete_type() {
+            return Err(format!(
+                "cannot infer the complete native Option type: {ty}"
+            ));
+        }
+        let mut codec = NativeRecordCodec::with_definitions(context.structs, context.enums)
+            .with_owned_conversion();
+        let child = match sample {
+            Some(value) => codec.layout_for_value(value, item, context.hosts)?,
+            None => codec.resolve_layout(item, context.hosts)?,
+        };
+        Ok(Self {
+            layout: rils_value::DynamicLayout::option(child)?,
+            hosts: context.hosts.to_vec(),
+            codec,
+        })
+    }
+
+    pub(crate) fn retain_sample(&mut self, value: &Value) -> Result<(), String> {
+        let child = self
+            .layout
+            .option_item()
+            .ok_or("Option has no item layout")?;
+        let candidate = self
+            .codec
+            .layout_for_value(value, child.rils_type(), &self.hosts)?;
+        if !child.compatible_with(&candidate) {
+            return Err(format!(
+                "conflicting native Option layout for {}",
+                child.rils_type()
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn merge(&mut self, other: &Self) -> Result<(), String> {
+        if !self.layout.compatible_with(&other.layout) {
+            return Err("conflicting native Option layouts".into());
+        }
+        self.codec
+            .retain_layout_declarations(&other.codec, &other.layout)
+    }
+
+    pub(crate) fn construct(mut self, item: Option<Value>) -> Result<Value, String> {
+        let payload = match item {
+            Some(item) => {
+                let child = self
+                    .layout
+                    .option_item()
+                    .ok_or("Option has no item layout")?
+                    .clone();
+                DynamicValue::some(self.layout, self.codec.into_native(item, child)?)?
+            }
+            None => DynamicValue::none(self.layout)?,
+        };
+        super::super::native_instance::from_native(payload, Rc::new(self.codec))
     }
 }

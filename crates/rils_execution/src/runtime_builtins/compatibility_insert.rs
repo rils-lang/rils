@@ -5,9 +5,12 @@ use crate::{
     types::merge_types,
     value::{FieldSlot, HashKey, Value},
 };
-use std::rc::Rc;
 
-pub(super) fn map(arguments: Vec<Value>, ordered: bool) -> Result<Value, String> {
+pub(super) fn map(
+    arguments: Vec<Value>,
+    ordered: bool,
+    context: &super::NativeOwnedContext,
+) -> Result<Value, String> {
     let mut arguments = arguments.into_iter();
     let receiver = arguments.next().ok_or("missing map receiver")?;
     if !matches!(&receiver, Value::Reference(reference) if reference.mutable) {
@@ -18,6 +21,7 @@ pub(super) fn map(arguments: Vec<Value>, ordered: bool) -> Result<Value, String>
     if arguments.next().is_some() {
         return Err("too many map arguments".into());
     }
+    crate::value::storage::PreparedOption::check_move(&value)?;
     macro_rules! insert {
         ($map:expr) => {{
             let map = $map;
@@ -53,13 +57,26 @@ pub(super) fn map(arguments: Vec<Value>, ordered: bool) -> Result<Value, String>
             }) {
                 return Err("cannot mutate a map while a value is referenced".into());
             }
+            let mut storage = map
+                .option_storage
+                .try_borrow_mut()
+                .map_err(|_| "map Option storage is accessed")?;
+            let mut prepared = storage.clone();
+            prepared.prepare_key(&next_key_type, [key.stored_value()], &context.storage())?;
+            let output = prepared.prepare(
+                &next_value_type,
+                std::iter::once(&value)
+                    .chain(entries.get(&key).and_then(|slot| slot.value.as_ref())),
+                &context.storage(),
+            )?;
+            if let Some(value) = entries.get(&key).and_then(|slot| slot.value.as_ref()) {
+                crate::value::storage::PreparedOption::check_move(value)?;
+            }
             let previous = entries.insert(key, FieldSlot::new(next_value_type.clone(), value));
             *key_type = next_key_type;
-            *value_type = next_value_type.clone();
-            Ok(Value::Option {
-                value: previous.and_then(|slot| slot.value).map(Rc::new),
-                element_type: Some(next_value_type),
-            })
+            *value_type = next_value_type;
+            *storage = prepared;
+            output.construct(previous.and_then(|slot| slot.value))
         }};
     }
     with_legacy(&receiver, |value| match value {
@@ -69,7 +86,11 @@ pub(super) fn map(arguments: Vec<Value>, ordered: bool) -> Result<Value, String>
     })
 }
 
-pub(super) fn set(arguments: Vec<Value>, ordered: bool) -> Result<Value, String> {
+pub(super) fn set(
+    arguments: Vec<Value>,
+    ordered: bool,
+    context: &super::NativeOwnedContext,
+) -> Result<Value, String> {
     let mut arguments = arguments.into_iter();
     let receiver = arguments.next().ok_or("missing set receiver")?;
     if !matches!(&receiver, Value::Reference(reference) if reference.mutable) {
@@ -95,6 +116,11 @@ pub(super) fn set(arguments: Vec<Value>, ordered: bool) -> Result<Value, String>
                 .entries
                 .try_borrow_mut()
                 .map_err(|_| "set entries are accessed")?;
+            let mut storage = set
+                .option_storage
+                .try_borrow_mut()
+                .map_err(|_| "set Option storage is accessed")?;
+            storage.prepare_key(&next_type, [key.stored_value()], &context.storage())?;
             let inserted = entries.insert(key);
             *element_type = next_type;
             Ok(Value::Bool(inserted))

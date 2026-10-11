@@ -19,6 +19,7 @@ mod declarations;
 mod indexed;
 mod sum;
 pub use assignment::{NativeDeclaration, constrain_assignment, native_declaration};
+pub(crate) use sum::PreparedOption;
 
 /// The three payload families that can represent a stored script value.
 /// References, call targets, modules and declarations remain execution values.

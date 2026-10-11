@@ -245,7 +245,12 @@ Rust 宿主可用 `HashKey::from_owned_value(value, expected, ordered)` 构造�
 索引元素或外层 Map 条目的来源 guard，集合运算同时保留两个输入的来源 guard。
 这不增加 Rils 的独占可变借用规则；多个词法 `&mut` 仍可依次操作同一集合。
 宿主直接调用修改方法须传入可变引用；条目或类型元数据的访问冲突返回错误，
-Map 删除在取出条目前检查返回类型元数据，失败保留原条目。
+Map 删除在取出条目前检查返回类型元数据和原生布局，布局检查失败保留原条目。
+兼容 HashMap/BTreeMap 的 `insert/get_cloned/remove`、BTreeMap 的 `first_key_cloned/last_key_cloned`
+及 BTreeSet 的 `first_cloned/last_cloned` 直接返回原生 Option，完整元素类型及描述符在集合变空后仍保留。
+替换/删除移动原负载；带 `cloned` 的接口仍要求 Clone。`None<T>` 的 Copy 能力同样取决于 T 的显式能力。
+Rust 宿主用布局视图读取或 `dynamic_option::take_owned()` 消费返回值；手工构造兼容 Map/Set
+需增加 `option_storage: Default::default()`，显式克隆应保留此字段。
 借用迭代器的 `next()` 返回原生 `Option`，Map 的借用条目是原生引用 tuple；
 两者都保留引用的完整类型及词法来源，不复制键或值。复制这些返回值只复制引用句柄，
 最后一个引用释放前仍禁止结构修改源集合。未知元素类型在推进游标或返回 `None` 前报错。

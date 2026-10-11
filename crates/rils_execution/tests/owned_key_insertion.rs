@@ -18,23 +18,27 @@ const KINDS: [&str; 4] = ["HashMap", "BTreeMap", "HashSet", "BTreeSet"];
 fn empty(kind: &str) -> Value {
     match kind {
         "HashMap" => Value::HashMap(Rc::new(HashMapValue {
+            option_storage: Default::default(),
             entries: RefCell::new(Default::default()),
             key_type: RefCell::new(Type::Unknown),
             value_type: RefCell::new(Type::Unknown),
             borrowed: Cell::new(0),
         })),
         "BTreeMap" => Value::BTreeMap(Rc::new(BTreeMapValue {
+            option_storage: Default::default(),
             entries: RefCell::new(Default::default()),
             key_type: RefCell::new(Type::Unknown),
             value_type: RefCell::new(Type::Unknown),
             borrowed: Cell::new(0),
         })),
         "HashSet" => Value::HashSet(Rc::new(HashSetValue {
+            option_storage: Default::default(),
             entries: RefCell::new(Default::default()),
             element_type: RefCell::new(Type::Unknown),
             borrowed: Cell::new(0),
         })),
         "BTreeSet" => Value::BTreeSet(Rc::new(BTreeSetValue {
+            option_storage: Default::default(),
             entries: RefCell::new(Default::default()),
             element_type: RefCell::new(Type::Unknown),
             borrowed: Cell::new(0),
@@ -481,5 +485,210 @@ fn borrowed_iterator_creation_reports_entry_conflicts_without_acquiring_a_lease(
             _ => unreachable!(),
         }
         assert_eq!(next_key(kind, source).as_string().unwrap(), "key");
+    }
+}
+
+fn native_option(value: Value, element: &Type, copy: bool) -> Option<Value> {
+    assert!(
+        matches!(value, Value::Dynamic(_)),
+        "Option output must use native storage"
+    );
+    assert_eq!(
+        Type::of_value(&value),
+        Some(Type::Option(Box::new(element.clone())))
+    );
+    assert_eq!(value.is_copy(), copy);
+    rils_execution::value::dynamic_option::take_owned(value).unwrap()
+}
+
+#[test]
+fn compatibility_map_options_preserve_non_clone_payloads_and_empty_type_witnesses() {
+    for kind in ["HashMap", "BTreeMap"] {
+        let source = empty(kind);
+        let receiver = reference(source.clone(), true);
+        let drops = Rc::new(Cell::new(0));
+        let ty = Type::named("Probe");
+        let first = insert(kind, &receiver, Value::from_i32(1), probe(&drops)).unwrap();
+        assert!(native_option(first, &ty, false).is_none());
+        assert!(call(kind, "get_cloned", &[receiver.clone(), Value::from_i32(1)]).is_err());
+        let miss = call(kind, "get_cloned", &[receiver.clone(), Value::from_i32(2)]).unwrap();
+        assert!(native_option(miss, &ty, false).is_none());
+        let old = insert(kind, &receiver, Value::from_i32(1), probe(&drops)).unwrap();
+        let old = native_option(old, &ty, false).unwrap();
+        assert!(matches!(old, Value::Native(_)));
+        assert!(old.clone_owned().is_err());
+        assert_eq!(drops.get(), 0);
+        drop(old);
+        assert_eq!(drops.get(), 1);
+        let removed = call(kind, "remove", &[receiver.clone(), Value::from_i32(1)]).unwrap();
+        let removed = native_option(removed, &ty, false).unwrap();
+        assert_eq!(len(&source), 0);
+        drop(removed);
+        assert_eq!(drops.get(), 2);
+        // No live payload is available to infer the descriptor now.
+        for method in ["get_cloned", "remove"] {
+            let none = call(kind, method, &[receiver.clone(), Value::from_i32(1)]).unwrap();
+            assert!(native_option(none, &ty, false).is_none());
+        }
+        insert(kind, &receiver, Value::from_i32(3), probe(&drops)).unwrap();
+        call(kind, "clear", std::slice::from_ref(&receiver)).unwrap();
+        assert_eq!(drops.get(), 3);
+        let cloned = reference(source.clone_owned().unwrap(), true);
+        let none = call(kind, "remove", &[cloned, Value::from_i32(3)]).unwrap();
+        assert!(native_option(none, &ty, false).is_none());
+    }
+}
+
+#[test]
+fn compatibility_option_outputs_cover_scalars_strings_and_ordered_endpoints() {
+    for kind in ["HashMap", "BTreeMap"] {
+        for value in [Value::from_i32(8), Value::from_string("payload")] {
+            let ty = Type::of_value(&value).unwrap();
+            let copy = value.is_copy();
+            let receiver = reference(empty(kind), true);
+            let none = insert(
+                kind,
+                &receiver,
+                Value::from_i32(1),
+                value.clone_owned().unwrap(),
+            )
+            .unwrap();
+            assert!(native_option(none, &ty, copy).is_none());
+            for method in ["get_cloned", "remove"] {
+                let result = call(kind, method, &[receiver.clone(), Value::from_i32(1)]).unwrap();
+                assert_eq!(native_option(result, &ty, copy).unwrap(), value);
+            }
+            if kind == "BTreeMap" {
+                for method in ["first_key_cloned", "last_key_cloned"] {
+                    let none = call(kind, method, std::slice::from_ref(&receiver)).unwrap();
+                    assert!(native_option(none, &Type::I32, true).is_none());
+                }
+            }
+        }
+    }
+    for kind in ["BTreeMap", "BTreeSet"] {
+        let receiver = reference(empty(kind), true);
+        for text in ["z", "a"] {
+            insert(kind, &receiver, Value::from_string(text), Value::Bool(true)).unwrap();
+        }
+        let endpoints = if kind == "BTreeMap" {
+            ["first_key_cloned", "last_key_cloned"]
+        } else {
+            ["first_cloned", "last_cloned"]
+        };
+        for (method, text) in endpoints.into_iter().zip(["a", "z"]) {
+            let result = call(kind, method, std::slice::from_ref(&receiver)).unwrap();
+            assert_eq!(
+                native_option(result, &Type::String, false),
+                Some(Value::from_string(text))
+            );
+        }
+        call(kind, "clear", std::slice::from_ref(&receiver)).unwrap();
+        for method in endpoints {
+            let none = call(kind, method, std::slice::from_ref(&receiver)).unwrap();
+            assert!(native_option(none, &Type::String, false).is_none());
+        }
+    }
+}
+
+#[test]
+fn compatibility_option_layout_failure_happens_before_removal() {
+    for kind in ["HashMap", "BTreeMap"] {
+        let source = empty(kind);
+        let receiver = reference(source.clone(), true);
+        insert(kind, &receiver, Value::from_i32(1), Value::from_i32(8)).unwrap();
+        let value_type = match &source {
+            Value::HashMap(map) => &map.value_type,
+            Value::BTreeMap(map) => &map.value_type,
+            _ => unreachable!(),
+        };
+        for ty in [Type::Unknown, Type::named("Missing"), Type::Bool] {
+            *value_type.borrow_mut() = ty;
+            assert!(call(kind, "remove", &[receiver.clone(), Value::from_i32(1)]).is_err());
+            assert_eq!(len(&source), 1);
+        }
+        *value_type.borrow_mut() = Type::I32;
+        let output = call(kind, "remove", &[receiver, Value::from_i32(1)]).unwrap();
+        assert_eq!(
+            native_option(output, &Type::I32, true),
+            Some(Value::from_i32(8))
+        );
+    }
+}
+
+#[test]
+fn generic_option_constructor_retains_custom_registration_in_nested_options() {
+    use rils_execution::value::storage::TypedStorageContext;
+    let drops = Rc::new(Cell::new(0));
+    let item_type = Type::named("Probe");
+    let option_type = Type::Option(Box::new(item_type.clone()));
+    let nested_type = Type::Option(Box::new(option_type.clone()));
+    let context = TypedStorageContext::new(&[], &[]);
+    let inner = context
+        .construct_option(&option_type, Some(probe(&drops)))
+        .unwrap();
+    let outer = context.construct_option(&nested_type, Some(inner)).unwrap();
+    let inner = native_option(outer, &option_type, false).unwrap();
+    let item = native_option(inner, &item_type, false).unwrap();
+    assert!(matches!(item, Value::Native(_)));
+    assert_eq!(drops.get(), 0);
+    drop(item);
+    assert_eq!(drops.get(), 1);
+}
+
+#[test]
+fn shared_native_payloads_fail_before_compatibility_map_mutation() {
+    for kind in ["HashMap", "BTreeMap"] {
+        for composed in [false, true] {
+            let source = empty(kind);
+            let receiver = reference(source.clone(), true);
+            let drops = Rc::new(Cell::new(0));
+            let value = probe(&drops);
+            let value = if composed {
+                rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+                    .construct_option(&Type::Option(Box::new(Type::named("Probe"))), Some(value))
+                    .unwrap()
+            } else {
+                value
+            };
+            assert!(
+                insert(kind, &receiver, Value::from_i32(1), value.clone())
+                    .unwrap_err()
+                    .contains("shared")
+            );
+            assert_eq!(len(&source), 0);
+            insert(kind, &receiver, Value::from_i32(1), value).unwrap();
+            let retained = match &source {
+                Value::HashMap(map) => map
+                    .entries
+                    .borrow()
+                    .values()
+                    .next()
+                    .unwrap()
+                    .value
+                    .clone()
+                    .unwrap(),
+                Value::BTreeMap(map) => map
+                    .entries
+                    .borrow()
+                    .values()
+                    .next()
+                    .unwrap()
+                    .value
+                    .clone()
+                    .unwrap(),
+                _ => unreachable!(),
+            };
+            assert!(
+                call(kind, "remove", &[receiver.clone(), Value::from_i32(1)])
+                    .unwrap_err()
+                    .contains("shared")
+            );
+            assert_eq!(len(&source), 1);
+            assert_eq!(drops.get(), 0);
+            drop(retained);
+            drop(call(kind, "remove", &[receiver, Value::from_i32(1)]).unwrap());
+            assert_eq!(drops.get(), 1);
+        }
     }
 }

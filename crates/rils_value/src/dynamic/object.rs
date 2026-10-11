@@ -189,6 +189,14 @@ impl<V> DynamicObject<V> {
         Self::new(self.descriptor.clone(), value)
     }
 
+    /// Whether moving this handle can take its bytes without sharing another owner.
+    pub fn is_uniquely_owned(&self) -> bool {
+        match &self.storage {
+            Storage::Inline(_) => true,
+            Storage::Shared(value) => Rc::strong_count(value) == 1,
+        }
+    }
+
     /// Consume a uniquely owned handle and transfer its composed bytes.
     /// Shared handles are returned intact so callers can retain the original
     /// value without silently cloning a non-Copy payload.

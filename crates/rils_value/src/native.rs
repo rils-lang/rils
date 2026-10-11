@@ -233,6 +233,14 @@ impl<V: 'static> NativeObject<V> {
         }
     }
 
+    /// Whether moving this handle can take its bytes without sharing another owner.
+    pub fn is_uniquely_owned(&self) -> bool {
+        match &self.storage {
+            NativeStorage::Inline(_) => true,
+            NativeStorage::Shared(value) => Rc::strong_count(value) == 1,
+        }
+    }
+
     /// Detach a Copy payload or require exclusive ownership of non-Copy bytes.
     pub fn into_unique(self) -> Result<Self, Box<(Self, String)>> {
         if matches!(&self.storage, NativeStorage::Inline(_))

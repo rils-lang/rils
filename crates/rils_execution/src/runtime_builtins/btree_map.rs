@@ -65,22 +65,34 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                         .try_borrow()
                         .map_err(|_| "collection key type is accessed")?,
                 )?;
-                let value = map
+                let entries = map
                     .entries
                     .try_borrow()
-                    .map_err(|_| "collection entries are accessed")?
+                    .map_err(|_| "collection entries are accessed")?;
+                let value_type = map
+                    .value_type
+                    .try_borrow()
+                    .map_err(|_| "collection value type is accessed")?;
+                let output = map
+                    .option_storage
+                    .try_borrow_mut()
+                    .map_err(|_| "map Option storage is accessed")?
+                    .prepare(
+                        &value_type,
+                        entries
+                            .get(&key)
+                            .and_then(|slot| slot.value.as_ref())
+                            .or_else(|| entries.values().find_map(|slot| slot.value.as_ref())),
+                        &crate::value::storage::TypedStorageContext::new(&[], &[]),
+                    )?;
+                let value = entries
                     .get(&key)
                     .and_then(|slot| slot.value.as_ref())
                     .map(Value::clone_owned)
                     .transpose()?;
-                option(
-                    value,
-                    map.value_type
-                        .try_borrow()
-                        .map_err(|_| "collection value type is accessed")?
-                        .clone(),
-                )
+                output.construct(value)
             }
+
             "remove" => {
                 reject_referenced(map)?;
                 let key = query(
@@ -95,13 +107,27 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                     .try_borrow()
                     .map_err(|_| "collection value type is accessed")?
                     .clone();
-                let value = map
+                let mut entries = map
                     .entries
                     .try_borrow_mut()
-                    .map_err(|_| "collection entries are accessed")?
-                    .remove(&key)
-                    .and_then(|slot| slot.value);
-                option(value, value_type)
+                    .map_err(|_| "collection entries are accessed")?;
+                let output = map
+                    .option_storage
+                    .try_borrow_mut()
+                    .map_err(|_| "map Option storage is accessed")?
+                    .prepare(
+                        &value_type,
+                        entries
+                            .get(&key)
+                            .and_then(|slot| slot.value.as_ref())
+                            .or_else(|| entries.values().find_map(|slot| slot.value.as_ref())),
+                        &crate::value::storage::TypedStorageContext::new(&[], &[]),
+                    )?;
+                if let Some(value) = entries.get(&key).and_then(|slot| slot.value.as_ref()) {
+                    crate::value::storage::PreparedOption::check_move(value)?;
+                }
+                let value = entries.remove(&key).and_then(|slot| slot.value);
+                output.construct(value)
             }
             "first_key_cloned" | "last_key_cloned" => {
                 let entries = map
@@ -113,13 +139,20 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
                 } else {
                     entries.last_key_value()
                 };
-                option(
-                    key.map(|(key, _)| key.to_value()).transpose()?,
-                    map.key_type
-                        .try_borrow()
-                        .map_err(|_| "collection key type is accessed")?
-                        .clone(),
-                )
+                let key_type = map
+                    .key_type
+                    .try_borrow()
+                    .map_err(|_| "collection key type is accessed")?;
+                let output = map
+                    .option_storage
+                    .try_borrow_mut()
+                    .map_err(|_| "map Option storage is accessed")?
+                    .prepare_key(
+                        &key_type,
+                        key.map(|(key, _)| key.stored_value()),
+                        &crate::value::storage::TypedStorageContext::new(&[], &[]),
+                    )?;
+                output.construct(key.map(|(key, _)| key.to_value()).transpose()?)
             }
             _ => Err("unsupported BTreeMap operation".into()),
         }
@@ -195,6 +228,7 @@ pub(super) fn call_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
     }
     Some(if arguments.is_empty() {
         Ok(Value::BTreeMap(Rc::new(BTreeMapValue {
+            option_storage: Default::default(),
             borrowed: std::cell::Cell::new(0),
             entries: RefCell::new(Default::default()),
             key_type: RefCell::new(Type::Unknown),
@@ -227,13 +261,6 @@ fn reject_referenced(map: &BTreeMapValue) -> Result<(), String> {
     } else {
         Ok(())
     }
-}
-
-fn option(value: Option<Value>, element_type: Type) -> Result<Value, String> {
-    Ok(Value::Option {
-        value: value.map(Rc::new),
-        element_type: Some(element_type),
-    })
 }
 
 fn query(arguments: &[Value], expected: &Type) -> Result<KeyIdentity, String> {

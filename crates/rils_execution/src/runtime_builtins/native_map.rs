@@ -101,7 +101,7 @@ pub(super) fn call_owned_symbol(
             return Err(format!("{}::insert requires `&mut self`", kind.name()));
         }
         let Some(object) = NativeReceiver::from_value(&arguments[0])? else {
-            return super::compatibility_insert::map(arguments, kind == MapKind::BTree);
+            return super::compatibility_insert::map(arguments, kind == MapKind::BTree, context);
         };
         if !kind.matches(object.descriptor().layout().rils_type()) {
             return Err(format!(

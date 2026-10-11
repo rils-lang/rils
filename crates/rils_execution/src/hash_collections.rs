@@ -68,22 +68,34 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
                         .try_borrow()
                         .map_err(|_| "collection key type is accessed")?,
                 )?;
-                let value = map
+                let entries = map
                     .entries
                     .try_borrow()
-                    .map_err(|_| "collection entries are accessed")?
+                    .map_err(|_| "collection entries are accessed")?;
+                let value_type = map
+                    .value_type
+                    .try_borrow()
+                    .map_err(|_| "collection value type is accessed")?;
+                let output = map
+                    .option_storage
+                    .try_borrow_mut()
+                    .map_err(|_| "map Option storage is accessed")?
+                    .prepare(
+                        &value_type,
+                        entries
+                            .get(&key)
+                            .and_then(|slot| slot.value.as_ref())
+                            .or_else(|| entries.values().find_map(|slot| slot.value.as_ref())),
+                        &crate::value::storage::TypedStorageContext::new(&[], &[]),
+                    )?;
+                let value = entries
                     .get(&key)
                     .and_then(|slot| slot.value.as_ref())
                     .map(Value::clone_owned)
                     .transpose()?;
-                option(
-                    value,
-                    map.value_type
-                        .try_borrow()
-                        .map_err(|_| "collection value type is accessed")?
-                        .clone(),
-                )
+                output.construct(value)
             }
+
             "remove" => {
                 reject_referenced_map(map)?;
                 let key = query_argument(
@@ -99,13 +111,27 @@ pub(crate) fn call_map(method: &str, arguments: &[Value]) -> Result<Value, Strin
                     .try_borrow()
                     .map_err(|_| "collection value type is accessed")?
                     .clone();
-                let value = map
+                let mut entries = map
                     .entries
                     .try_borrow_mut()
-                    .map_err(|_| "collection entries are accessed")?
-                    .remove(&key)
-                    .and_then(|slot| slot.value);
-                option(value, value_type)
+                    .map_err(|_| "collection entries are accessed")?;
+                let output = map
+                    .option_storage
+                    .try_borrow_mut()
+                    .map_err(|_| "map Option storage is accessed")?
+                    .prepare(
+                        &value_type,
+                        entries
+                            .get(&key)
+                            .and_then(|slot| slot.value.as_ref())
+                            .or_else(|| entries.values().find_map(|slot| slot.value.as_ref())),
+                        &crate::value::storage::TypedStorageContext::new(&[], &[]),
+                    )?;
+                if let Some(value) = entries.get(&key).and_then(|slot| slot.value.as_ref()) {
+                    crate::value::storage::PreparedOption::check_move(value)?;
+                }
+                let value = entries.remove(&key).and_then(|slot| slot.value);
+                output.construct(value)
             }
             "keys_cloned" => Ok(iterator(
                 map.entries
@@ -273,6 +299,17 @@ pub(crate) fn call_set(method: &str, arguments: &[Value]) -> Result<Value, Strin
                     )
                     .ok_or_else(|| "HashSet element types do not match".to_string())?;
                     Ok(Value::HashSet(Rc::new(HashSetValue {
+                        option_storage: RefCell::new(
+                            set.option_storage
+                                .try_borrow()
+                                .map_err(|_| "set Option storage is accessed")?
+                                .merge(
+                                    &*other
+                                        .option_storage
+                                        .try_borrow()
+                                        .map_err(|_| "set Option storage is accessed")?,
+                                )?,
+                        ),
                         borrowed: std::cell::Cell::new(0),
                         entries: RefCell::new(entries),
                         element_type: RefCell::new(element_type),
@@ -393,13 +430,6 @@ fn reject_referenced_map(map: &HashMapValue) -> Result<(), String> {
     } else {
         Ok(())
     }
-}
-
-fn option(value: Option<Value>, element_type: Type) -> Result<Value, String> {
-    Ok(Value::Option {
-        value: value.map(Rc::new),
-        element_type: Some(element_type),
-    })
 }
 
 fn iterator(items: VecDeque<Value>, element_type: Type) -> Value {

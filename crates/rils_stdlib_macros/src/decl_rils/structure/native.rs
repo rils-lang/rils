@@ -45,56 +45,58 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
                     #symbol => Some(Err("Vec::from requires an owned argument frame".into())),
                 });
             }
-            if definition.item.ident != "Vec" && shared_sequence_query(method) {
-                let owner = definition.item.ident.to_string();
-                return Ok(quote! {
-                    #symbol => super::super::sequence_receiver::query(#owner, stringify!(#name), arguments),
-                });
-            }
-            if definition.item.ident != "Vec" && mutable_sequence_clear(method) {
-                let owner = definition.item.ident.to_string();
-                return Ok(quote! {
-                    #symbol => super::super::sequence_receiver::clear(#owner, arguments),
-                });
-            }
             let call = match definition.item.ident.to_string().as_str() {
-                "HashSet" => quote!(super::super::native_set::call_symbol(symbol, arguments)?),
-                "HashMap" => quote!(super::super::native_map::call_symbol(symbol, arguments)?),
-                "VecDeque" => quote!(super::super::vec_deque::call_symbol(symbol, arguments)?),
-                "BinaryHeap" => quote!(super::super::binary_heap::call_symbol(symbol, arguments)?),
+                "HashSet" => quote!(super::super::native_set::call_symbol(symbol, arguments)),
+                "HashMap" => quote!(super::super::native_map::call_symbol(symbol, arguments)),
+                "VecDeque" => quote!(super::super::vec_deque::call_symbol(symbol, arguments)),
+                "BinaryHeap" => quote!(super::super::binary_heap::call_symbol(symbol, arguments)),
                 "BTreeSet" => quote!(
                     super::super::native_set::call_symbol(symbol, arguments)
-                        .or_else(|| super::super::btree_set::call_symbol(symbol, arguments))?
+                        .or_else(|| super::super::btree_set::call_symbol(symbol, arguments))
                 ),
                 "BTreeMap" => quote!(
                     super::super::native_map::call_symbol(symbol, arguments)
-                        .or_else(|| super::super::btree_map::call_symbol(symbol, arguments))?
+                        .or_else(|| super::super::btree_map::call_symbol(symbol, arguments))
                 ),
-                "Rc" | "Weak" => quote!(super::super::rc_native::call_symbol(symbol, arguments)?),
-                "Cell" | "RefCell" => quote!(super::super::cell_native::call_symbol(symbol, arguments)?),
+                "Rc" | "Weak" => quote!(super::super::rc_native::call_symbol(symbol, arguments)),
+                "Cell" | "RefCell" => quote!(super::super::cell_native::call_symbol(symbol, arguments)),
                 "Vec" if shared_scalar_query(method) => {
-                    quote!(super::super::vector::with_shared(arguments, |receiver| receiver.#name()))
+                    quote!(Some(super::super::vector::with_shared(arguments, |receiver| receiver.#name())))
                 }
                 // These receiver adapters also enforce per-operation reference and move rules.
                 // Rust resolves the adapter and checks its existence; no method-name list lives here.
-                "Vec" if method.sig.receiver().is_some_and(|receiver| receiver.reference.is_some() && receiver.mutability.is_none()) => quote!(super::super::vector::#name(arguments)),
+                "Vec" if method.sig.receiver().is_some_and(|receiver| receiver.reference.is_some() && receiver.mutability.is_none()) => quote!(Some(super::super::vector::#name(arguments))),
                 "Vec" => {
                     let inputs = (1..arity).map(|index| quote::format_ident!("input_{index}")).collect::<Vec<_>>();
-                    quote!(super::super::vector::#name(arguments, |receiver, #(#inputs),*| receiver.#name(#(#inputs),*)))
+                    quote!(Some(super::super::vector::#name(arguments, |receiver, #(#inputs),*| receiver.#name(#(#inputs),*))))
                 },
-                "Range" => quote!(super::super::range::#name(arguments)),
-                "Iter" => quote!(super::super::indexed_iter::#name(arguments)),
+                "Range" => quote!(Some(super::super::range::#name(arguments))),
+                "Iter" => quote!(Some(super::super::indexed_iter::#name(arguments))),
                 _ => return Err(Error::new_spanned(
                     &method.sig,
                     "exported native receiver has no value adapter; implement its conversion",
                 )),
             };
+            if definition.item.ident != "Vec" && shared_sequence_query(method) {
+                let owner = definition.item.ident.to_string();
+                return Ok(quote! {
+                    #symbol => super::super::sequence_receiver::query(#owner, stringify!(#name), arguments)
+                        .or_else(|| #call),
+                });
+            }
+            if definition.item.ident != "Vec" && mutable_sequence_clear(method) {
+                let owner = definition.item.ident.to_string();
+                return Ok(quote! {
+                    #symbol => super::super::sequence_receiver::clear(#owner, arguments)
+                        .or_else(|| #call),
+                });
+            }
             Ok(quote! {
-                #symbol => Some(if arguments.len() == #arity {
+                #symbol => if arguments.len() == #arity {
                     #call
                 } else {
-                    Err(format!("native method `{}` expects {} arguments, found {}", #symbol, #arity, arguments.len()))
-                }),
+                    Some(Err(format!("native method `{}` expects {} arguments, found {}", #symbol, #arity, arguments.len())))
+                },
             })
         })
         .collect::<syn::Result<Vec<_>>>()?;

@@ -360,6 +360,7 @@ impl Value {
             Self::HashMap(map) => Self::HashMap(Rc::new(clone_hash_map(map)?)),
             Self::BTreeMap(map) => Self::BTreeMap(Rc::new(hash::clone_btree_map(map)?)),
             Self::BTreeSet(set) => Self::BTreeSet(Rc::new(BTreeSetValue {
+                option_storage: RefCell::new(set.option_storage.borrow().clone()),
                 borrowed: std::cell::Cell::new(0),
                 entries: RefCell::new(
                     set.entries
@@ -371,6 +372,7 @@ impl Value {
                 element_type: RefCell::new(set.element_type.borrow().clone()),
             })),
             Self::HashSet(set) => Self::HashSet(Rc::new(HashSetValue {
+                option_storage: RefCell::new(set.option_storage.borrow().clone()),
                 borrowed: std::cell::Cell::new(0),
                 entries: RefCell::new(
                     set.entries

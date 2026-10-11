@@ -25,12 +25,14 @@ pub(super) fn empty(owner: &str) -> Result<Value, String> {
             element_type: RefCell::new(Some(Type::Unknown)),
         })),
         "HashMap" => Value::HashMap(Rc::new(HashMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new(HashMap::new()),
             key_type: RefCell::new(Type::Unknown),
             value_type: RefCell::new(Type::Unknown),
         })),
         "HashSet" => Value::HashSet(Rc::new(HashSetValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new(HashSet::new()),
             element_type: RefCell::new(Type::Unknown),

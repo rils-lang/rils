@@ -29,23 +29,27 @@ fn collection(kind: Kind, key: HashKey, value: Value) -> Value {
     let slot = FieldSlot::new(value_type.clone(), value);
     match kind {
         Kind::HashMap => Value::HashMap(Rc::new(HashMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new([(key, slot)].into()),
             key_type,
             value_type: RefCell::new(value_type),
         })),
         Kind::BTreeMap => Value::BTreeMap(Rc::new(BTreeMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new([(key, slot)].into()),
             key_type,
             value_type: RefCell::new(value_type),
         })),
         Kind::HashSet => Value::HashSet(Rc::new(HashSetValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new([key].into()),
             element_type: key_type,
         })),
         Kind::BTreeSet => Value::BTreeSet(Rc::new(BTreeSetValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new([key].into()),
             element_type: key_type,

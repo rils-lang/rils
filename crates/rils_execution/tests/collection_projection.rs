@@ -22,6 +22,7 @@ fn map(ordered: bool, key: HashKey, value: Value) -> MapCollection {
     let entry = (key, FieldSlot::new(ty.clone(), value));
     if ordered {
         MapCollection::BTree(Rc::new(BTreeMapValue {
+            option_storage: Default::default(),
             entries: RefCell::new(BTreeMap::from([entry])),
             borrowed: Cell::new(0),
             key_type,
@@ -29,6 +30,7 @@ fn map(ordered: bool, key: HashKey, value: Value) -> MapCollection {
         }))
     } else {
         MapCollection::Hash(Rc::new(HashMapValue {
+            option_storage: Default::default(),
             entries: RefCell::new(HashMap::from([entry])),
             borrowed: Cell::new(0),
             key_type,
@@ -40,12 +42,14 @@ fn set(ordered: bool, key: HashKey) -> SetCollection {
     let ty = RefCell::new(key.ty());
     if ordered {
         SetCollection::BTree(Rc::new(BTreeSetValue {
+            option_storage: Default::default(),
             entries: RefCell::new(BTreeSet::from([key])),
             borrowed: Cell::new(0),
             element_type: ty,
         }))
     } else {
         SetCollection::Hash(Rc::new(HashSetValue {
+            option_storage: Default::default(),
             entries: RefCell::new(HashSet::from([key])),
             borrowed: Cell::new(0),
             element_type: ty,

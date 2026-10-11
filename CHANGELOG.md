@@ -5,7 +5,9 @@
 
 ## Unreleased
 
-- 兼容 HashMap/BTreeMap 的拥有型迭代条目直接移入原生 tuple，不再创建旧字段槽位；条目声明和布局在清空来源前验证，迭代仍按需移动，提前结束正确析构。自定义 Native 负载保留原描述符、方法和子值访问注册，组合后的引用来源、活动引用及部分 move 检查继续生效，Copy 仍须显式注册。**Rust API 迁移：** 拥有型 Map 迭代条目现返回 `Value::Dynamic`，使用布局视图或 `NativeInstancePlace` 访问字段，不能仅匹配 `Value::Tuple`。集合自身的兼容存储及部分 Option 返回路径仍在迁移；C ABI、v8 编码与版本号不变。
+- 兼容 HashMap/BTreeMap 的 `insert/get_cloned/remove`、BTreeMap 的首尾键查询和 BTreeSet 的首尾查询直接返回原生 Option。集合保留输出布局及声明，删除至空、清空和显式克隆后仍保留完整类型；非 Clone 负载可通过替换/删除移动，Clone 接口仍要求显式能力。布局或声明冲突在修改条目前报错。修复生成的 `len/is_empty/clear` 入口遗漏兼容集合转发的问题。**Rust API 迁移：** 这些返回值改为 `Value::Dynamic`，使用布局视图或 `dynamic_option::take_owned()`；手工构造兼容 Map/Set 时增加 `option_storage: Default::default()`。`TypedStorageContext::construct_option()` 可从负载保留自定义 Native 描述符。旧集合存储、其他容器返回值及旧 Value 变体继续迁移；C ABI、v8 编码和版本号不变。
+
+- 兼容 HashMap/BTreeMap 的拥有型迭代条目直接移入原生 tuple，不再创建旧字段槽位；条目声明和布局在清空来源前验证，迭代仍按需移动，提前结束正确析构。自定义 Native 负载保留原描述符、方法和子值访问注册，组合后的引用来源、活动引用及部分 move 检查继续生效，Copy 仍须显式注册。**Rust API 迁移：** 拥有型 Map 迭代条目现返回 `Value::Dynamic`，使用布局视图或 `NativeInstancePlace` 访问字段，不能仅匹配 `Value::Tuple`。集合自身的兼容存储仍在迁移；C ABI、v8 编码与版本号不变。
 
 - `rils_value` 新增注册原生负载与动态组合布局之间的拥有型转换：`NativeType::layout_handle()`、`NativeObject::into_dynamic()`、`NativeType::from_dynamic()`，以及用于保留操作注册的 `descriptor_handle()`。`NativeType::new::<T>()` 自动注册 T 的布局和转换，非 Clone 负载可以移入组合存储再取回；Copy 仍须显式注册，失败返回原所有者。组合调用方须保留并传递描述符上下文；兼容 Map 的条目现已接入这套桥。现有语言语义、C ABI、v8 编码及版本号不变。
 

@@ -78,23 +78,27 @@ fn collection(kind: &str, native: bool) -> (Value, Vec<usize>) {
     let key = HashKey::from_owned_value(key, None, kind.starts_with("BTree")).unwrap();
     let source = match kind {
         "HashMap" => Value::HashMap(Rc::new(HashMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             key_type: RefCell::new(Type::String),
             value_type: RefCell::new(Type::String),
             entries: RefCell::new([(key, FieldSlot::new(Type::String, value))].into()),
         })),
         "BTreeMap" => Value::BTreeMap(Rc::new(BTreeMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             key_type: RefCell::new(Type::String),
             value_type: RefCell::new(Type::String),
             entries: RefCell::new([(key, FieldSlot::new(Type::String, value))].into()),
         })),
         "HashSet" => Value::HashSet(Rc::new(HashSetValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             element_type: RefCell::new(Type::String),
             entries: RefCell::new([key].into()),
         })),
         "BTreeSet" => Value::BTreeSet(Rc::new(BTreeSetValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             element_type: RefCell::new(Type::String),
             entries: RefCell::new([key].into()),

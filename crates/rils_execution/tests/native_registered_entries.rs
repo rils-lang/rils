@@ -22,6 +22,7 @@ fn map(tree: bool, value: Value) -> Value {
     );
     if tree {
         Value::BTreeMap(Rc::new(BTreeMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new([entry].into()),
             key_type: RefCell::new(Type::I32),
@@ -29,6 +30,7 @@ fn map(tree: bool, value: Value) -> Value {
         }))
     } else {
         Value::HashMap(Rc::new(HashMapValue {
+            option_storage: Default::default(),
             borrowed: Cell::new(0),
             entries: RefCell::new([entry].into()),
             key_type: RefCell::new(Type::I32),

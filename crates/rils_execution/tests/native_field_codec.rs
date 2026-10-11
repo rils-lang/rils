@@ -538,6 +538,7 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
                 arguments: vec![Type::I32],
             },
             Value::HashSet(Rc::new(HashSetValue {
+                option_storage: Default::default(),
                 borrowed: Cell::new(0),
                 entries: RefCell::new(HashSet::from([
                     HashKey::from_value(&Value::from_i32(3)).unwrap()
@@ -551,6 +552,7 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
                 arguments: vec![Type::String],
             },
             Value::BTreeSet(Rc::new(BTreeSetValue {
+                option_storage: Default::default(),
                 borrowed: Cell::new(0),
                 entries: RefCell::new(BTreeSet::from([HashKey::from_ordered_value(
                     &Value::from_string("key"),
@@ -565,6 +567,7 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
                 arguments: vec![Type::String, option_type.clone()],
             },
             Value::HashMap(Rc::new(HashMapValue {
+                option_storage: Default::default(),
                 borrowed: Cell::new(0),
                 entries: RefCell::new(HashMap::from([(
                     HashKey::from_value(&Value::from_string("key")).unwrap(),
@@ -580,6 +583,7 @@ fn standard_collection_fields_round_trip_without_value_payloads() {
                 arguments: vec![Type::I32, Type::Bool],
             },
             Value::BTreeMap(Rc::new(BTreeMapValue {
+                option_storage: Default::default(),
                 borrowed: Cell::new(0),
                 entries: RefCell::new(BTreeMap::from([(
                     HashKey::from_ordered_value(&Value::from_i32(4)).unwrap(),
