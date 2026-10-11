@@ -309,21 +309,10 @@ impl BorrowedIndexedIteratorValue {
                         .map(|reference| Value::Reference(Rc::new(reference)))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let types = match self.item_type() {
-                Type::Tuple(types) => types,
-                _ => unreachable!(),
-            };
-            let slots = fields
-                .into_iter()
-                .zip(types)
-                .map(|(value, type_annotation)| FieldSlot::new(type_annotation, value))
-                .collect();
+            let pair = super::storage::TypedStorageContext::new(&[], &[])
+                .construct_tuple(&self.item_type(), fields)?;
             self.index.set(index + 1);
-            return Ok(Some(Value::Tuple(Rc::new(IndexedStorage {
-                active_iterators: std::cell::Cell::new(0),
-                elements: RefCell::new(slots),
-                element_type: RefCell::new(None),
-            }))));
+            return Ok(Some(pair));
         }
         let reference = match &self.storage {
             IndexedIteratorStorage::Legacy(storage) => ReferenceValue::new_guarded_indexed_element(
@@ -391,19 +380,10 @@ impl BorrowedMapIteratorValue {
             key,
             Some(self.source.clone()),
         )?));
+        let pair = super::storage::TypedStorageContext::new(&[], &[])
+            .construct_tuple(&self.item_type(), vec![key_ref, value_ref])?;
         self.index.set(index + 1);
-        let item_type = self.item_type();
-        let Type::Tuple(types) = item_type else {
-            unreachable!()
-        };
-        Ok(Some(Value::Tuple(Rc::new(IndexedStorage {
-            active_iterators: std::cell::Cell::new(0),
-            elements: RefCell::new(vec![
-                FieldSlot::new(types[0].clone(), key_ref),
-                FieldSlot::new(types[1].clone(), value_ref),
-            ]),
-            element_type: RefCell::new(None),
-        }))))
+        Ok(Some(pair))
     }
 }
 

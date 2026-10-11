@@ -130,13 +130,33 @@ pub(super) fn next(arguments: &[Value]) -> Result<Value, String> {
     }
     let (value, item_type) = match receiver.read()? {
         Value::OwnedIterator(iterator) => (iterator.next()?, iterator.element_type.clone()),
-        Value::BorrowedIndexedIterator(iterator) => (iterator.next()?, iterator.item_type()),
-        Value::BorrowedMapIterator(iterator) => (iterator.next()?, iterator.item_type()),
-        Value::BorrowedSetIterator(iterator) => (iterator.next()?, iterator.item_type()),
+        Value::BorrowedIndexedIterator(iterator) => {
+            return borrowed_next(iterator.item_type(), || iterator.next());
+        }
+        Value::BorrowedMapIterator(iterator) => {
+            return borrowed_next(iterator.item_type(), || iterator.next());
+        }
+        Value::BorrowedSetIterator(iterator) => {
+            return borrowed_next(iterator.item_type(), || iterator.next());
+        }
         _ => return Err("next receiver is not Iter".into()),
     };
     Ok(Value::Option {
         value: value.map(Rc::new),
         element_type: Some(item_type),
     })
+}
+
+fn borrowed_next(
+    item_type: Type,
+    next: impl FnOnce() -> Result<Option<Value>, String>,
+) -> Result<Value, String> {
+    // Reject missing witnesses before advancing the iterator, including None.
+    if !item_type.is_concrete_type() {
+        return Err(format!(
+            "cannot infer the complete borrowed iterator item type: {item_type}"
+        ));
+    }
+    crate::value::storage::TypedStorageContext::new(&[], &[])
+        .construct_option(&Type::Option(Box::new(item_type)), next()?)
 }

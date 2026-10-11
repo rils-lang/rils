@@ -1,0 +1,25 @@
+fn check() -> bool {
+    let mut map: HashMap<i32, string> = HashMap::new();
+    map.insert(7, "seven");
+    let mut entries = map.iter();
+    let entry = entries.next().unwrap();
+    let first = *entry.0 == 7 && entry.1.len() == 5usize;
+    let exhausted = entries.next().is_none();
+    let mut tree: BTreeMap<i32, i32> = BTreeMap::new();
+    tree.insert(3, 30);
+    tree.insert(1, 10);
+    let mut total = 0;
+    for pair in tree.iter() {
+        let mut copied = pair;
+        let alternate = 8;
+        copied.0 = &alternate;
+        total = total + *pair.0 + *pair.1;
+        if *copied.0 != 8 { return false; }
+    }
+    let mut set: HashSet<i32> = HashSet::new();
+    set.insert(9);
+    let mut values = set.iter();
+    let value = values.next().unwrap();
+    first && exhausted && total == 44 && *value == 9 && values.next().is_none()
+}
+check()

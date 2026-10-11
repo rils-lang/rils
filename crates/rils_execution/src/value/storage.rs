@@ -12,6 +12,7 @@ use super::{
     dynamic_sequence, record_codec::NativeRecordCodec,
 };
 
+mod aggregate;
 mod assignment;
 mod construction;
 mod declarations;

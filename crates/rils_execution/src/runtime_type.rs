@@ -204,10 +204,7 @@ fn accepts(expected: &Type, value: &Value) -> bool {
             Value::Reference(reference),
         ) => {
             (!*expected_mutable || reference.mutable)
-                && reference
-                    .read()
-                    .ok()
-                    .is_some_and(|value| expected_inner.accepts(&value))
+                && reference.accepts_referent(expected_inner).unwrap_or(false)
         }
         (
             expected @ Type::Function { .. },
@@ -531,10 +528,7 @@ fn type_of_value(value: &Value) -> Option<Type> {
         }),
         Value::Reference(reference) => Some(Type::Reference {
             mutable: reference.mutable,
-            inner: Box::new(match reference.native_layout().ok()? {
-                Some(layout) => layout.rils_type().clone(),
-                None => Type::of_value(&reference.read().ok()?)?,
-            }),
+            inner: Box::new(reference.referent_type().ok()?),
         }),
         Value::Function(function) => Some(function_type(function)),
         Value::BytecodeFunction(_) => Some(Type::opaque_function()),

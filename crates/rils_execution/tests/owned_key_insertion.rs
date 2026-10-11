@@ -414,11 +414,15 @@ fn borrowed_iterator_identity_cache_does_not_retain_non_clone_key_payloads() {
         assert!(into_iterator(source.clone()).is_err());
         let projected = next_builtin(&mut iterator).unwrap().unwrap().unwrap();
         let (key, value) = if kind.ends_with("Map") {
-            let Value::Tuple(pair) = projected else {
-                panic!("map pair")
+            let Value::Dynamic(pair) = projected else {
+                panic!("native map pair")
             };
-            let mut fields = pair.elements.borrow_mut();
-            (fields[0].value.take().unwrap(), fields[1].value.take())
+            let mut pair = pair.into_value().map_err(|failure| failure.1).unwrap();
+            let codec = NativeRecordCodec::new();
+            (
+                codec.from_native(pair.take_field(0).unwrap()).unwrap(),
+                Some(codec.from_native(pair.take_field(1).unwrap()).unwrap()),
+            )
         } else {
             (projected, None)
         };

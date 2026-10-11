@@ -4,6 +4,23 @@ use super::super::borrowed::{Read, with_read};
 use super::{ReferenceTarget, ReferenceValue};
 
 impl ReferenceValue {
+    pub(crate) fn referent_type(&self) -> Result<crate::Type, String> {
+        self.with_borrowed_target(|value| match value {
+            Read::View(view) => Ok(view.layout()?.rils_type().clone()),
+            Read::Leaf(leaf) => Ok(leaf.rils_type().clone()),
+            Read::Legacy(value) => crate::Type::of_value(value)
+                .ok_or_else(|| "reference target has no runtime type".into()),
+        })?
+    }
+
+    pub(crate) fn accepts_referent(&self, expected: &crate::Type) -> Result<bool, String> {
+        self.with_borrowed_target(|value| match value {
+            Read::View(view) => super::super::runtime_layouts::accepts_view(view, expected),
+            Read::Leaf(leaf) => Ok(crate::types::merge_types(expected, leaf.rils_type()).is_some()),
+            Read::Legacy(value) => Ok(expected.accepts(value)),
+        })?
+    }
+
     /// Inspect one reference target, preserving any reference stored inside it.
     pub(crate) fn with_borrowed_target<R>(
         &self,

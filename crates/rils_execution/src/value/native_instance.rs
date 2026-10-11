@@ -31,7 +31,14 @@ pub(super) fn with_descriptor(
                 .nominal_definition(descriptor.layout().rils_type())
                 .is_some()
         });
-    if nominal {
+    // Standalone indexed aggregates expose independently mutable fields just
+    // like user records. Keep their owner stable across place lookups and Copy
+    // handles; copying the value still creates an independent payload.
+    let indexed = matches!(
+        descriptor.layout().rils_type(),
+        crate::Type::Tuple(_) | crate::Type::Array { .. }
+    );
+    if nominal || indexed {
         DynamicObject::new_shared(descriptor, value)
     } else {
         DynamicObject::new(descriptor, value)

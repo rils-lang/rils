@@ -72,6 +72,9 @@ impl VirtualMachine<'_> {
                 if matches!(
                     rils_execution::value::native_instance::definition(&object),
                     Some(Value::StructType(_) | Value::EnumType(_))
+                ) || matches!(
+                    object.descriptor().layout().rils_type(),
+                    Type::Tuple(_) | Type::Array { .. }
                 ) =>
             {
                 rils_execution::value::native_instance::NativeInstancePlace::new(object)
