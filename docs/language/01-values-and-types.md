@@ -1,5 +1,7 @@
 # 值与类型
 
+Rust 宿主读取兼容 HashMap/BTreeMap 的拥有型迭代条目时，也会得到原生 tuple（`Value::Dynamic`）。字段通过布局视图或 `NativeInstancePlace` 访问；自定义原生负载移出后保留注册方法和子值访问能力，Copy 仍须显式声明，未知条目类型在消费前报错。
+
 [← 返回语言手册目录](README.md)
 
 ## 值和类型

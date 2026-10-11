@@ -42,6 +42,9 @@ pub struct HashKey {
 }
 
 impl HashKey {
+    pub(crate) fn stored_value(&self) -> &Value {
+        &self.value
+    }
     pub fn from_value(value: &Value) -> Result<Self, String> {
         Self::snapshot(value, false)
     }

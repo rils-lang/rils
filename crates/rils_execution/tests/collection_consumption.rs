@@ -86,11 +86,15 @@ fn next(iterator: &mut Value) -> Option<Value> {
 }
 fn split_entry(kind: Kind, item: Value) -> (Value, Option<Value>) {
     if matches!(kind, Kind::HashMap | Kind::BTreeMap) {
-        let Value::Tuple(entry) = item else {
-            panic!("expected map entry")
+        let Value::Dynamic(entry) = item else {
+            panic!("expected native map entry")
         };
-        let mut fields = entry.elements.borrow_mut();
-        (fields[0].value.take().unwrap(), fields[1].value.take())
+        let place =
+            rils_execution::value::native_instance::NativeInstancePlace::new(entry).unwrap();
+        (
+            place.field("0").unwrap().take().unwrap(),
+            Some(place.field("1").unwrap().take().unwrap()),
+        )
     } else {
         (item, None)
     }

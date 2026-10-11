@@ -8,7 +8,7 @@ use rils_syntax::Type;
 /// This view neither owns nor copies the payload and does not expose its pointer.
 pub struct NativeLeafRef<'a> {
     pointer: NonNull<u8>,
-    rust_type: TypeId,
+    pub(super) rust_type: TypeId,
     rils_type: Type,
     _borrow: PhantomData<&'a ()>,
 }

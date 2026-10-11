@@ -63,6 +63,9 @@ pub fn value_definition(value: &Value) -> Result<Option<Value>, String> {
 }
 
 fn expose(value: DynamicValue, codec: Rc<NativeRecordCodec>) -> Result<Value, String> {
+    if value.descriptor().is_rust_value() {
+        return codec.from_native(value);
+    }
     if matches!(
         codec.nominal_definition(value.descriptor().rils_type()),
         Some(Value::StructType(_) | Value::EnumType(_))
@@ -143,6 +146,7 @@ impl NativeInstancePlace {
     }
 
     pub fn take(&self) -> Result<Value, String> {
+        self.check_registered_children()?;
         let layout = self.with_view(|view| {
             if view.is_partially_moved()? {
                 return Err("cannot move a partially moved native value".into());
@@ -174,6 +178,24 @@ impl NativeInstancePlace {
     }
 
     pub fn assign(&self, value: Value) -> Result<(), String> {
+        // Replacing a parent cannot invalidate references inside a registered leaf.
+        let live = if matches!(self.path.last(), Some(DynamicPathStep::Field(_))) {
+            self.object
+                .with(|payload| payload.path_field_is_live(&self.path))??
+        } else {
+            true
+        };
+        if live
+            && self.with_view(|view| {
+                self.codec.any_native_child(
+                    view,
+                    &mut Value::has_active_references,
+                    super::record_codec::native::NativeChildState::References,
+                )
+            })??
+        {
+            return Err("cannot replace a referenced native child".into());
+        }
         let layout = self.field_layout()?;
         let value = self
             .codec
@@ -210,5 +232,27 @@ impl NativeInstancePlace {
             guard,
             self.codec.clone(),
         )
+    }
+
+    fn check_registered_children(&self) -> Result<(), String> {
+        use super::record_codec::native::NativeChildState;
+        for (state, predicate) in [
+            (
+                NativeChildState::Partial,
+                Value::is_partially_moved as fn(&Value) -> bool,
+            ),
+            (
+                NativeChildState::References,
+                Value::has_active_references as fn(&Value) -> bool,
+            ),
+        ] {
+            if self.with_view(|view| {
+                self.codec
+                    .any_native_child(view, &mut |value| predicate(value), state)
+            })?? {
+                return Err("cannot move a referenced or partially moved native child".into());
+            }
+        }
+        Ok(())
     }
 }

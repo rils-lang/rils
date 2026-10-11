@@ -12,9 +12,7 @@ impl NativeRecordCodec {
         ty: &Type,
         hosts: &[Rc<super::super::HostType>],
     ) -> Result<Rc<DynamicLayout>, String> {
-        let structs = self.structs.values().cloned().collect::<Vec<_>>();
-        let enums = self.enums.values().cloned().collect::<Vec<_>>();
-        crate::runtime_builtins::resolve_layout(ty, &structs, &enums, hosts)
+        self.resolve_registered_layout(ty, hosts)
     }
 
     pub(crate) fn retain_layout_declarations(
@@ -22,6 +20,9 @@ impl NativeRecordCodec {
         source: &Self,
         layout: &DynamicLayout,
     ) -> Result<(), String> {
+        if let Some(descriptor) = source.native_types.get(layout.rils_type()) {
+            self.register_native_type(descriptor.clone())?;
+        }
         // Zero-sized arrays and phantom arguments have types without physical fields.
         self.retain_type_declarations(source, layout.rils_type())?;
         if let Some(fields) = layout.record_fields() {
@@ -43,6 +44,9 @@ impl NativeRecordCodec {
         let mut pending = vec![ty.clone()];
         let mut visited = std::collections::HashSet::new();
         while let Some(ty) = pending.pop() {
+            if let Some(descriptor) = source.native_types.get(&ty) {
+                self.register_native_type(descriptor.clone())?;
+            }
             match ty {
                 Type::Named { name, arguments } => {
                     pending.extend(arguments);

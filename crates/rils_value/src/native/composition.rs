@@ -37,6 +37,59 @@ impl<V: 'static> NativeComposition<V> {
 }
 
 impl<V: 'static> NativeType<V> {
+    /// Whether both descriptors carry the same identity and registrations.
+    /// Empty operation tables can be recreated independently. Registered
+    /// closures must retain their Rc identity; equal names alone are not enough.
+    pub fn same_registration(&self, other: &Self) -> bool {
+        self.rils_type == other.rils_type
+            && self.rust_type == other.rust_type
+            && self.copy == other.copy
+            && self.visit_payload.is_some() == other.visit_payload.is_some()
+            && self.methods.len() == other.methods.len()
+            && self.methods.iter().all(|(name, method)| {
+                other
+                    .methods
+                    .get(name)
+                    .is_some_and(|other| Rc::ptr_eq(method, other))
+            })
+    }
+
+    pub fn has_children(&self) -> bool {
+        self.visit_payload.is_some()
+    }
+
+    /// Visit registered children directly in a borrowed composed Rust leaf.
+    pub fn visit_leaf_children(
+        &self,
+        leaf: &super::NativeLeafRef<'_>,
+        visit: &mut dyn FnMut(&V),
+    ) -> Result<(), String> {
+        self.check_leaf(leaf)?;
+        self.visit_payload
+            .map_or(Ok(()), |visitor| visitor(leaf, visit))
+    }
+
+    pub fn leaf_has_active_references(
+        &self,
+        leaf: &super::NativeLeafRef<'_>,
+    ) -> Result<bool, String> {
+        self.check_leaf(leaf)?;
+        self.active_references
+            .map_or(Ok(false), |state| state(leaf))
+    }
+
+    pub fn leaf_is_partially_moved(&self, leaf: &super::NativeLeafRef<'_>) -> Result<bool, String> {
+        self.check_leaf(leaf)?;
+        self.partially_moved.map_or(Ok(false), |state| state(leaf))
+    }
+
+    fn check_leaf(&self, leaf: &super::NativeLeafRef<'_>) -> Result<(), String> {
+        if leaf.rils_type() != &self.rils_type || leaf.rust_type != self.rust_type {
+            return Err("native leaf does not match its registered descriptor".into());
+        }
+        Ok(())
+    }
+
     /// Physical layout registered by `new::<T>`, including the explicit Copy
     /// policy. This stores T itself, without a NativeObject or V wrapper.
     /// Operation and child visitor registrations remain on this NativeType;

@@ -103,10 +103,15 @@ fn next_key(kind: &str, source: Value) -> Value {
     };
     let item = next_builtin(&mut iterator).unwrap().unwrap().unwrap();
     if kind.ends_with("Map") {
-        let Value::Tuple(fields) = item else {
-            panic!("map pair")
+        let Value::Dynamic(object) = item else {
+            panic!("native map pair")
         };
-        fields.elements.borrow_mut()[0].value.take().unwrap()
+        rils_execution::value::native_instance::NativeInstancePlace::new(object)
+            .unwrap()
+            .field("0")
+            .unwrap()
+            .take()
+            .unwrap()
     } else {
         item
     }

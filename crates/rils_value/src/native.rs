@@ -11,8 +11,8 @@ mod leaf;
 pub use leaf::NativeLeafRef;
 
 type NativeMethod<V> = Rc<dyn for<'a> Fn(&NativeCallContext<'a, V>) -> Result<V, String>>;
-type VisitPayload<V> = fn(&NativeObject<V>, &mut dyn FnMut(&V)) -> Result<(), String>;
-type StatePayload<V> = fn(&NativeObject<V>) -> Result<bool, String>;
+type VisitPayload<V> = fn(&NativeLeafRef<'_>, &mut dyn FnMut(&V)) -> Result<(), String>;
+type StatePayload = fn(&NativeLeafRef<'_>) -> Result<bool, String>;
 
 /// Implement this for native containers that retain Rils values or places.
 pub trait NativeChildren<V>: 'static {
@@ -36,8 +36,8 @@ pub struct NativeType<V> {
     copy: bool,
     methods: HashMap<String, NativeMethod<V>>,
     visit_payload: Option<VisitPayload<V>>,
-    active_references: Option<StatePayload<V>>,
-    partially_moved: Option<StatePayload<V>>,
+    active_references: Option<StatePayload>,
+    partially_moved: Option<StatePayload>,
 }
 
 impl<V: 'static> NativeType<V> {
@@ -79,11 +79,11 @@ impl<V: 'static> NativeType<V> {
     pub fn with_children<T: NativeChildren<V>>(mut self) -> Self {
         assert_eq!(self.rust_type, TypeId::of::<T>());
         self.visit_payload =
-            Some(|object, visit| object.with::<T, _>(|payload| payload.visit_values(visit)));
+            Some(|leaf, visit| leaf.with_rust::<T, _>(|payload| payload.visit_values(visit)));
         self.active_references =
-            Some(|object| object.with::<T, _>(NativeChildren::has_active_references));
+            Some(|leaf| leaf.with_rust::<T, _>(NativeChildren::has_active_references));
         self.partially_moved =
-            Some(|object| object.with::<T, _>(NativeChildren::is_partially_moved));
+            Some(|leaf| leaf.with_rust::<T, _>(NativeChildren::is_partially_moved));
         self
     }
 
@@ -302,7 +302,11 @@ impl<V: 'static> NativeObject<V> {
             return false;
         };
         let mut found = false;
-        if visit(self, &mut |value| found |= predicate(value)).is_err() {
+        if self
+            .with_leaf(|leaf| visit(&leaf, &mut |value| found |= predicate(value)))
+            .and_then(|result| result)
+            .is_err()
+        {
             return true;
         }
         found
@@ -316,8 +320,12 @@ impl<V: 'static> NativeObject<V> {
         self.state_or_conservative(self.descriptor.partially_moved)
     }
 
-    fn state_or_conservative(&self, state: Option<StatePayload<V>>) -> bool {
-        state.is_some_and(|state| state(self).unwrap_or(true))
+    fn state_or_conservative(&self, state: Option<StatePayload>) -> bool {
+        state.is_some_and(|state| {
+            self.with_leaf(|leaf| state(&leaf))
+                .and_then(|result| result)
+                .unwrap_or(true)
+        })
     }
 
     fn check_type<T: 'static>(&self) -> Result<(), String> {

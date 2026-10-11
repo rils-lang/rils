@@ -7,7 +7,7 @@ use crate::value::borrowed::with_legacy;
 
 use crate::{
     types::Type,
-    value::{BTreeMapValue, FieldSlot, IndexedStorage, KeyIdentity, Value},
+    value::{BTreeMapValue, KeyIdentity, Value},
 };
 
 pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
@@ -126,7 +126,10 @@ pub(super) fn call(method: &str, arguments: &[Value]) -> Result<Value, String> {
     })
 }
 
-pub(crate) fn into_iter(map: Rc<BTreeMapValue>) -> Result<Value, String> {
+pub(crate) fn into_iter(
+    map: Rc<BTreeMapValue>,
+    context: &crate::runtime_builtins::NativeOwnedContext,
+) -> Result<Value, String> {
     reject_referenced(&map)?;
     let key_type = map
         .key_type
@@ -148,13 +151,32 @@ pub(crate) fn into_iter(map: Rc<BTreeMapValue>) -> Result<Value, String> {
     for key in entries.keys() {
         key.check_move()?;
     }
+    let item_type = Type::Tuple(vec![key_type.clone(), value_type.clone()]);
+    if !item_type.is_concrete_type() {
+        return Err(format!("cannot infer complete map entry type: {item_type}"));
+    }
+    let prepared = entries
+        .iter()
+        .map(|(key, slot)| {
+            context.storage().prepare_tuple(
+                &item_type,
+                &[
+                    key.stored_value(),
+                    slot.value.as_ref().expect("entries checked"),
+                ],
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let entries = std::mem::take(&mut *entries);
-    let values = entries.into_iter().map(|(key, slot)| {
-        Ok(tuple(vec![
-            key.into_value()?,
-            slot.value.expect("unreferenced BTreeMap entry is present"),
-        ]))
-    });
+    let values = entries
+        .into_iter()
+        .zip(prepared)
+        .map(|((key, slot), tuple)| {
+            tuple.construct(vec![
+                key.into_value()?,
+                slot.value.expect("entries checked"),
+            ])
+        });
     let collection_type = Type::Named {
         name: "BTreeMap".into(),
         arguments: vec![key_type.clone(), value_type.clone()],
@@ -212,19 +234,6 @@ fn option(value: Option<Value>, element_type: Type) -> Result<Value, String> {
         value: value.map(Rc::new),
         element_type: Some(element_type),
     })
-}
-
-fn tuple(values: Vec<Value>) -> Value {
-    Value::Tuple(Rc::new(IndexedStorage {
-        active_iterators: std::cell::Cell::new(0),
-        elements: RefCell::new(
-            values
-                .into_iter()
-                .map(|value| FieldSlot::new(Type::of_value(&value).unwrap_or(Type::Unknown), value))
-                .collect(),
-        ),
-        element_type: RefCell::new(None),
-    }))
 }
 
 fn query(arguments: &[Value], expected: &Type) -> Result<KeyIdentity, String> {

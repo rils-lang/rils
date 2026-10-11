@@ -1,10 +1,41 @@
 //! Construct indexed aggregates directly from owned children.
 use super::{NativeRecordCodec, TypedStorageContext, Value};
 use crate::Type;
-use rils_value::DynamicValue;
+use rils_value::{DynamicLayout, DynamicValue};
 use std::rc::Rc;
 
 impl TypedStorageContext<'_> {
+    /// Validate and retain a tuple's child declarations before consuming a source.
+    pub(crate) fn prepare_tuple(
+        &self,
+        ty: &Type,
+        fields: &[&Value],
+    ) -> Result<PreparedTuple, String> {
+        let Type::Tuple(types) = ty else {
+            return Err("expected tuple type".into());
+        };
+        if !ty.is_concrete_type() || types.len() != fields.len() {
+            return Err(format!(
+                "tuple requires a complete type and matching field count: {ty}"
+            ));
+        }
+        let mut codec =
+            NativeRecordCodec::with_definitions(self.structs, self.enums).with_owned_conversion();
+        let layouts = fields
+            .iter()
+            .zip(types)
+            .enumerate()
+            .map(|(index, (value, ty))| {
+                codec
+                    .layout_for_value(value, ty, self.hosts)
+                    .map(|layout| (index.to_string(), layout))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(PreparedTuple {
+            layout: DynamicLayout::aggregate(ty.clone(), layouts)?,
+            codec,
+        })
+    }
     pub fn construct_tuple(&self, ty: &Type, fields: Vec<Value>) -> Result<Value, String> {
         let Type::Tuple(types) = ty else {
             return Err("tuple construction requires a tuple type".into());
@@ -19,7 +50,8 @@ impl TypedStorageContext<'_> {
                 fields.len()
             ));
         }
-        self.construct_aggregate(ty, fields)
+        self.prepare_tuple(ty, &fields.iter().collect::<Vec<_>>())?
+            .construct(fields)
     }
 
     pub fn construct_array(&self, ty: &Type, elements: Vec<Value>) -> Result<Value, String> {
@@ -70,5 +102,26 @@ impl TypedStorageContext<'_> {
             .collect::<Result<Vec<_>, _>>()?;
         let payload = DynamicValue::record(layout, fields)?;
         super::super::native_instance::from_native(payload, Rc::new(codec))
+    }
+}
+
+pub(crate) struct PreparedTuple {
+    layout: Rc<DynamicLayout>,
+    codec: NativeRecordCodec,
+}
+
+impl PreparedTuple {
+    pub(crate) fn construct(mut self, fields: Vec<Value>) -> Result<Value, String> {
+        let layouts = self.layout.record_fields().ok_or("tuple has no fields")?;
+        if fields.len() != layouts.len() {
+            return Err("tuple field count changed after validation".into());
+        }
+        let fields = fields
+            .into_iter()
+            .zip(layouts)
+            .map(|(value, field)| self.codec.into_native(value, field.layout_handle()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let value = DynamicValue::record(self.layout, fields)?;
+        super::super::native_instance::from_native(value, Rc::new(self.codec))
     }
 }

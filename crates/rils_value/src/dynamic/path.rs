@@ -275,6 +275,15 @@ impl DynamicValue {
         self.field_parent(path).map(|(_, _, _, layout)| layout)
     }
 
+    /// Inspect the final field's initialization tag without reading its payload.
+    /// All parent steps and the final field index must still be valid.
+    pub fn path_field_is_live(&self, path: &[DynamicPathStep]) -> Result<bool, String> {
+        let (parent, index, _, _) = self.field_parent(path)?;
+        // SAFETY: field_parent resolved initialized parents and checked index
+        // against the final record's field-tag prefix.
+        Ok(unsafe { ptr::read(parent.add(index)) == 1 })
+    }
+
     /// Move a record field through any live option, variant or sequence parent.
     /// Only the final field becomes empty; all ancestors stay initialized.
     pub fn take_path_field(&mut self, path: &[DynamicPathStep]) -> Result<Self, String> {

@@ -1,5 +1,6 @@
 //! Ownership, lexical references, and explicit cloning of execution values.
 
+use super::record_codec::native::{NativeChildState, any_native_child};
 use super::*;
 
 impl Value {
@@ -72,10 +73,13 @@ impl Value {
 
     pub fn contains_reference(&self) -> bool {
         match self {
-            Self::Dynamic(object) => object
-                .with(|value| runtime_layouts::contains_reference(value.view()))
-                .and_then(|result| result)
-                .unwrap_or(true),
+            Self::Dynamic(object) => {
+                any_native_child(object, Value::contains_reference, NativeChildState::None)
+                    || object
+                        .with(|value| runtime_layouts::contains_reference(value.view()))
+                        .and_then(|result| result)
+                        .unwrap_or(true)
+            }
             Self::BinaryHeap(heap) => heap.elements.borrow().iter().any(Value::contains_reference),
             Self::VecDeque(queue) => queue
                 .elements
@@ -138,10 +142,18 @@ impl Value {
 
     pub fn contains_local_reference(&self, environment: &EnvironmentRef) -> bool {
         match self {
-            Self::Dynamic(object) => object
-                .with(|value| runtime_layouts::contains_local_reference(value.view(), environment))
-                .and_then(|result| result)
-                .unwrap_or(true),
+            Self::Dynamic(object) => {
+                any_native_child(
+                    object,
+                    |value| value.contains_local_reference(environment),
+                    NativeChildState::None,
+                ) || object
+                    .with(|value| {
+                        runtime_layouts::contains_local_reference(value.view(), environment)
+                    })
+                    .and_then(|result| result)
+                    .unwrap_or(true)
+            }
             Self::BTreeMap(map) => map
                 .entries
                 .borrow()
@@ -200,14 +212,20 @@ impl Value {
 
     pub fn has_active_references(&self) -> bool {
         match self {
-            Self::Dynamic(object) => object
-                .with(|payload| {
-                    payload.has_path_references()
-                        || payload
-                            .sequence_borrows()
-                            .is_ok_and(|ledger| ledger.has_active())
-                })
-                .unwrap_or(true),
+            Self::Dynamic(object) => {
+                any_native_child(
+                    object,
+                    Value::has_active_references,
+                    NativeChildState::References,
+                ) || object
+                    .with(|payload| {
+                        payload.has_path_references()
+                            || payload
+                                .sequence_borrows()
+                                .is_ok_and(|ledger| ledger.has_active())
+                    })
+                    .unwrap_or(true)
+            }
             Self::Native(object) => {
                 object.has_active_references() || object.any_child(Value::has_active_references)
             }
@@ -260,10 +278,13 @@ impl Value {
 
     pub fn is_partially_moved(&self) -> bool {
         match self {
-            Self::Dynamic(object) => object
-                .with(|value| value.view().is_partially_moved())
-                .and_then(|result| result)
-                .unwrap_or(true),
+            Self::Dynamic(object) => {
+                any_native_child(object, Value::is_partially_moved, NativeChildState::Partial)
+                    || object
+                        .with(|value| value.view().is_partially_moved())
+                        .and_then(|result| result)
+                        .unwrap_or(true)
+            }
             Self::Native(object) => {
                 object.is_partially_moved() || object.any_child(Value::is_partially_moved)
             }

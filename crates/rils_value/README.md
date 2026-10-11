@@ -10,7 +10,7 @@
 
 `NativeType::new::<T>()` 同时登记可组合的 Rust 叶子布局与双向拥有型转换，无需为每种 T 单独写适配器。`layout_handle()` 可用于组成 tuple、Option 等布局；`NativeObject::into_dynamic()` 移动实际 T，`descriptor.from_dynamic(value)` 将取出的叶子恢复为原生对象。组合 bytes 中保存 T 本身，不保存 `NativeObject` 或上层 `Value`。Copy 只由显式 `with_copy::<T>()` 开启，共享非 Copy、活动子引用和部分 move 会拒绝转换并返回原对象；反向转换检查 Rils 类型、Rust TypeId 和 Copy 策略，不把相同名称下的不同物理布局强制互转。
 
-布局只描述存储。组合调用方必须通过 `descriptor_handle()` 保留原 `NativeType`，并在上层声明上下文中传递方法与子值访问注册；不能只凭类型名称重建操作表。恢复对象后仍使用同一注册。此底层桥已覆盖非 Clone、自定义析构、高对齐、零尺寸及显式 Copy 负载；兼容 Map 的条目构造尚待接入执行层描述符上下文，当前仍使用旧 tuple 返回路径。
+布局只描述存储。组合调用方必须通过 `descriptor_handle()` 保留原 `NativeType`，并在上层声明上下文中传递方法与子值访问注册；不能只凭类型名称重建操作表。同一 Rust/Rils 类型、Copy 策略和子值访问注册下，没有操作的重复描述符可以复用；操作闭包不同的注册不能静默合并。恢复对象后仍使用同一注册。此底层桥已覆盖非 Clone、自定义析构、高对齐、零尺寸及显式 Copy 负载；执行层的 NativeRecordCodec 已保留这套描述符上下文，兼容 HashMap/BTreeMap 的拥有型条目直接构造原生 tuple。通过 visit_leaf_children、leaf_has_active_references 和 leaf_is_partially_moved，可以在组合存储的借用叶子上继续执行注册的子值检查，无需重建 NativeObject。
 
 `NativeObject::with_leaf()` 与 `DynamicValueRef::leaf()` 提供同一 `NativeLeafRef` 借用接口。访问前检查实际 Rust TypeId，`with_rust()` 仅在原所有者的访问 guard 存活时传入 `&T`；视图不复制负载、不暴露裸指针，也不能从作用域回调中逃逸。类型的格式化和比较操作由上层声明注册，底层存储不预设这些能力。
 

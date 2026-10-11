@@ -15,11 +15,14 @@ use super::{EnumType, FieldSlot, HashKey, StructType, Value, native_layouts, nat
 
 #[path = "record_codec/declarations.rs"]
 mod declarations;
+#[path = "record_codec/native.rs"]
+pub(crate) mod native;
 #[path = "record_codec/sum.rs"]
 mod sum;
 
 #[derive(Clone, Default)]
 pub struct NativeRecordCodec {
+    native_types: HashMap<Type, Rc<super::NativeType>>,
     structs: HashMap<String, Rc<StructType>>,
     enums: HashMap<String, Rc<EnumType>>,
     require_owned: bool,
@@ -32,6 +35,7 @@ impl NativeRecordCodec {
 
     pub fn with_definitions(structs: &[Rc<StructType>], enums: &[Rc<EnumType>]) -> Self {
         Self {
+            native_types: HashMap::new(),
             structs: structs
                 .iter()
                 .map(|definition| (definition.name.clone(), definition.clone()))
@@ -131,6 +135,16 @@ impl NativeRecordCodec {
             return Err("cannot move a partially moved value into native storage".into());
         }
         let ty = layout.rils_type().clone();
+        if let Value::Native(object) = &value
+            && object.descriptor().layout_handle().compatible_with(&layout)
+            && (self.require_owned || self.native_types.contains_key(&ty))
+        {
+            self.register_native_type(object.descriptor_handle())?;
+            let Value::Native(object) = value else {
+                unreachable!()
+            };
+            return object.into_dynamic().map_err(|failure| failure.1);
+        }
         if let Value::Dynamic(object) = &value
             && matches!(ty, Type::Option(_) | Type::Result(_, _))
             && object.descriptor().layout().rils_type() != &ty
@@ -405,6 +419,12 @@ impl NativeRecordCodec {
     }
 
     fn decode(&self, value: DynamicValue) -> Result<Value, String> {
+        if let Some(descriptor) = self.native_types.get(value.descriptor().rils_type()) {
+            return descriptor
+                .from_dynamic(value)
+                .map(Value::Native)
+                .map_err(|failure| failure.1);
+        }
         if super::runtime_layouts::is_execution_leaf(value.descriptor()) {
             return super::runtime_layouts::decode(value);
         }

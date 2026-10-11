@@ -80,9 +80,11 @@ pub(super) fn call_owned_symbol(
                     crate::iteration::native_sequence_into_iterator(object, context)
                 }
                 Value::HashMap(map) if kind == MapKind::Hash => {
-                    crate::hash_collections::into_iter_map(map)
+                    crate::hash_collections::into_iter_map(map, context)
                 }
-                Value::BTreeMap(map) if kind == MapKind::BTree => super::btree_map::into_iter(map),
+                Value::BTreeMap(map) if kind == MapKind::BTree => {
+                    super::btree_map::into_iter(map, context)
+                }
                 _ => Err(format!(
                     "{}::into_iter received the wrong collection",
                     kind.name()

@@ -5,7 +5,9 @@
 
 ## Unreleased
 
-- `rils_value` 新增注册原生负载与动态组合布局之间的拥有型转换：`NativeType::layout_handle()`、`NativeObject::into_dynamic()`、`NativeType::from_dynamic()`，以及用于保留操作注册的 `descriptor_handle()`。`NativeType::new::<T>()` 自动注册 T 的布局和转换，非 Clone 负载可以移入组合存储再取回；Copy 仍须显式注册，失败返回原所有者。组合调用方须保留并传递描述符上下文；兼容 Map 的条目迁移尚待接入这套桥。现有语言语义、C ABI、v8 编码及版本号不变。
+- 兼容 HashMap/BTreeMap 的拥有型迭代条目直接移入原生 tuple，不再创建旧字段槽位；条目声明和布局在清空来源前验证，迭代仍按需移动，提前结束正确析构。自定义 Native 负载保留原描述符、方法和子值访问注册，组合后的引用来源、活动引用及部分 move 检查继续生效，Copy 仍须显式注册。**Rust API 迁移：** 拥有型 Map 迭代条目现返回 `Value::Dynamic`，使用布局视图或 `NativeInstancePlace` 访问字段，不能仅匹配 `Value::Tuple`。集合自身的兼容存储及部分 Option 返回路径仍在迁移；C ABI、v8 编码与版本号不变。
+
+- `rils_value` 新增注册原生负载与动态组合布局之间的拥有型转换：`NativeType::layout_handle()`、`NativeObject::into_dynamic()`、`NativeType::from_dynamic()`，以及用于保留操作注册的 `descriptor_handle()`。`NativeType::new::<T>()` 自动注册 T 的布局和转换，非 Clone 负载可以移入组合存储再取回；Copy 仍须显式注册，失败返回原所有者。组合调用方须保留并传递描述符上下文；兼容 Map 的条目现已接入这套桥。现有语言语义、C ABI、v8 编码及版本号不变。
 
 - 整数方法的复合返回值统一通过类型化原生构造器生成：`overflowing_*` 不再重建旧 tuple 字段槽位，`try_from` 不再创建旧 `Value::Result`，checked 方法的 Option 也复用相同构造入口。覆盖全部 12 种整数类型；tuple 的 Copy 副本独立，`Result<T, string>` 的 Copy 判定包含非活动的 string 分支。**Rust API 迁移：** 直接调用整数 intrinsic 得到的 tuple/Result 现为 `Value::Dynamic`，应通过布局视图、`NativeInstancePlace` 或 `dynamic_result::take_owned()` 读取，不能仅匹配旧枚举变体。C ABI、v8 编码及版本号不变。
 
