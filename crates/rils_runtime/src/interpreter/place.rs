@@ -46,7 +46,12 @@ impl Place {
     ) -> Result<Option<rils_execution::value::native_instance::NativeInstancePlace>, RuntimeError>
     {
         if let Self::NativeField { place, .. } = self {
-            return Ok(Some(place.clone()));
+            let layout = place
+                .field_layout()
+                .map_err(|message| RuntimeError::new(message, span))?;
+            return Ok(
+                (!matches!(layout.rils_type(), Type::Reference { .. })).then(|| place.clone())
+            );
         }
         let value = match self {
             Self::Storage { slot, .. } => slot.borrow().read().ok(),
@@ -62,7 +67,8 @@ impl Place {
         };
         match value {
             Some(Value::Dynamic(object))
-                if rils_execution::value::native_instance::definition(&object).is_some() =>
+                if rils_execution::value::native_instance::definition(&object).is_some()
+                    || matches!(object.descriptor().layout().rils_type(), Type::Tuple(_)) =>
             {
                 rils_execution::value::native_instance::NativeInstancePlace::new(object)
                     .map(Some)
@@ -376,16 +382,24 @@ impl Place {
                 mutable,
                 source,
                 ..
-            } => Ok(Some(Rc::new(
-                place
-                    .borrow(
-                        *mutable,
-                        source
-                            .clone()
-                            .map(|slot| Rc::new(ReferenceValue::new_storage(slot, *mutable))),
-                    )
-                    .map_err(|message| RuntimeError::new(message, span))?,
-            ))),
+            } => {
+                if let Some(reference) = place
+                    .stored_reference()
+                    .map_err(|message| RuntimeError::new(message, span))?
+                {
+                    return Ok(Some(reference));
+                }
+                Ok(Some(Rc::new(
+                    place
+                        .borrow(
+                            *mutable,
+                            source
+                                .clone()
+                                .map(|slot| Rc::new(ReferenceValue::new_storage(slot, *mutable))),
+                        )
+                        .map_err(|message| RuntimeError::new(message, span))?,
+                )))
+            }
             Self::Storage { slot, name } => match slot.borrow().read().map_err(|_| {
                 RuntimeError::new(format!("cannot access moved value `{name}`"), span)
             })? {

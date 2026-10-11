@@ -435,16 +435,8 @@ impl NativeRecordCodec {
                     descriptor, value,
                 )?))
             }
-            Type::Option(_) | Type::Result(_, _) => {
+            Type::Option(_) | Type::Result(_, _) | Type::Tuple(_) => {
                 super::native_instance::from_native(value, Rc::new(self.clone()))
-            }
-            Type::Tuple(elements) => {
-                let slots = self.take_indexed_fields(&mut value, &elements)?;
-                Ok(Value::Tuple(Rc::new(IndexedStorage {
-                    elements: RefCell::new(slots),
-                    element_type: RefCell::new(None),
-                    active_iterators: Default::default(),
-                })))
             }
             Type::Array { element, length } => {
                 let types = vec![(*element).clone(); length];

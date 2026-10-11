@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- 原生 tuple 从 Option/Result 解包、序列取出或字段移出后保留布局、声明身份及原生负载，不再拆回旧字段槽位；解释器的嵌套 tuple 字段投影复用原生所有权 place，支持部分 move、恢复和引用写回；中间字段为引用时保留来源句柄并继续访问原对象。Copy 副本独立，用户类型仍须显式实现 Copy。**Rust API 迁移：** `NativeRecordCodec::from_native()` 及原生字段消费返回的 tuple 现为 `Value::Dynamic`，应使用布局视图或 `NativeInstancePlace` 读取，不能仅匹配 `Value::Tuple`。旧 tuple 构造、数组解码与兼容集合返回路径继续迁移；C ABI、v8 编码和版本号不变。
+
 - 借用迭代器的 `next()` 返回值直接构造原生 `Option`，原生与兼容 Map 的借用条目直接构造原生引用 tuple；`Some`/`None` 保留完整引用类型，未知类型在推进迭代器前报错。返回值复制仅复制引用句柄，原集合租约持续到最后一个引用释放。引用的运行时类型读取与匹配改为检查借用视图，不再要求被引用值支持 Clone。**Rust API 迁移：** 借用 Map 迭代条目及借用迭代器的 `next` 标准库调用结果现为 `Value::Dynamic`，宿主应按布局读取，不再匹配 `Value::Tuple` / `Value::Option`；新增 `TypedStorageContext::construct_tuple` 直接构造原生 tuple。 独立原生 tuple/array 保留稳定所有者，VM 字段访问复用原生所有权 place，Copy 后字段修改互不影响。拥有型集合返回值及旧快照解码接口仍在迁移，C ABI、v8 编码和版本号不变。
 
 - 旧 Map/Set 方法及借用迭代器创建改为在原始 receiver guard 内执行，不再通过 `ReferenceValue::read()` / `import_receiver()` 构造 receiver 快照；集合运算同时保护两个输入来源，嵌套索引与 Map value receiver 保留来源访问约束。条目和类型元数据访问冲突返回错误；Map 删除在修改前检查返回类型元数据。旧 HashMap/HashSet 的修改入口补齐 `&mut self` 校验，宿主直接调用这些入口需传入可变引用。旧集合存储与显式 Clone 接口仍保留，C ABI、v8 编码及版本号不变。

@@ -287,6 +287,20 @@ impl VirtualMachine<'_> {
         }
     }
 
+    fn native_place_container(
+        &self,
+        owner: rils_execution::value::native_instance::NativeInstancePlace,
+        span: Span,
+    ) -> Result<PlaceContainer, BytecodeError> {
+        match owner
+            .stored_reference()
+            .map_err(|message| BytecodeError::new(message, span))?
+        {
+            Some(reference) => self.place_container(Value::Reference(reference), span),
+            None => Ok(PlaceContainer::NativeOwner(owner)),
+        }
+    }
+
     fn place_parent<'p>(
         &self,
         place: &'p ResolvedPlace,
@@ -300,9 +314,10 @@ impl VirtualMachine<'_> {
         let mutable = self.place_is_mutable(place.local, span)?;
         for projection in parents {
             if let PlaceContainer::NativeOwner(owner) = container {
-                container = PlaceContainer::NativeOwner(
+                container = self.native_place_container(
                     self.native_owner_projection(&owner, projection, span)?,
-                );
+                    span,
+                )?;
                 continue;
             }
             let value = self.projected_value(&container, projection, mutable, span)?;
@@ -432,7 +447,7 @@ impl VirtualMachine<'_> {
                         .borrow(mutable, guard)
                         .map_err(|message| BytecodeError::new(message, span));
                 }
-                container = PlaceContainer::NativeOwner(projected);
+                container = self.native_place_container(projected, span)?;
                 continue;
             }
             let reference = match (&container, projection) {

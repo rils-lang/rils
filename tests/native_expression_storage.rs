@@ -2,11 +2,27 @@ use rils::{BytecodeModule, Type, Value, compile, eval_value};
 
 fn native_sum_types(value: &Value) -> Vec<String> {
     match value {
-        Value::Dynamic(object) => {
-            let ty = object.descriptor().layout().rils_type();
-            assert!(matches!(ty, Type::Option(_) | Type::Result(_, _)));
-            vec![ty.to_string()]
-        }
+        Value::Dynamic(object) => object
+            .with(|payload| {
+                let mut pending = vec![payload.view()];
+                let mut types = vec![];
+                while let Some(view) = pending.pop() {
+                    let layout = view.layout().unwrap();
+                    match layout.rils_type() {
+                        Type::Tuple(_) | Type::Array { .. } => {
+                            for index in (0..layout.record_fields().unwrap().len()).rev() {
+                                pending.push(view.field(index).unwrap());
+                            }
+                        }
+                        Type::Option(_) | Type::Result(_, _) => {
+                            types.push(layout.rils_type().to_string())
+                        }
+                        ty => panic!("expected native sum, found {ty}"),
+                    }
+                }
+                types
+            })
+            .unwrap(),
         Value::Tuple(sequence) | Value::Array(sequence) => sequence
             .elements
             .borrow()

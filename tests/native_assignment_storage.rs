@@ -3,10 +3,23 @@ use rils::{BytecodeModule, Value, compile, eval_value};
 fn assert_native_sum(value: &Value) {
     match value {
         Value::Dynamic(object) => {
-            assert!(matches!(
-                object.descriptor().layout().rils_type(),
-                rils::Type::Option(_) | rils::Type::Result(_, _)
-            ));
+            object
+                .with(|payload| {
+                    let mut pending = vec![payload.view()];
+                    while let Some(view) = pending.pop() {
+                        let layout = view.layout().unwrap();
+                        match layout.rils_type() {
+                            rils::Type::Tuple(_) | rils::Type::Array { .. } => {
+                                for index in 0..layout.record_fields().unwrap().len() {
+                                    pending.push(view.field(index).unwrap());
+                                }
+                            }
+                            rils::Type::Option(_) | rils::Type::Result(_, _) => {}
+                            ty => panic!("expected native sum, found {ty}"),
+                        }
+                    }
+                })
+                .unwrap();
         }
         Value::Tuple(sequence) | Value::Array(sequence) => {
             for slot in sequence.elements.borrow().iter() {

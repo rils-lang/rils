@@ -624,3 +624,39 @@ fn nominal_codec_rejects_a_layout_with_swapped_field_names() {
         .unwrap();
     assert!(error.contains("different native layout"));
 }
+
+#[test]
+fn decoded_tuple_preserves_nominal_identity_and_explicit_copy_policy() {
+    let item = definition("Item", vec![("number", Type::I32)]);
+    let declarations = [item.clone()];
+    let context = TypedStorageContext::new(&declarations, &[]);
+    let ty = Type::Tuple(vec![Type::named("Item")]);
+    let tuple = context
+        .construct_tuple(&ty, vec![instance(item.clone(), vec![Value::from_i32(7)])])
+        .unwrap();
+    let optional = context
+        .construct_option(&Type::Option(Box::new(ty)), Some(tuple))
+        .unwrap();
+    let tuple = rils_execution::value::dynamic_option::take_owned(optional)
+        .unwrap()
+        .unwrap();
+    assert!(!tuple.is_copy()); // All fields are Copy, but Item did not implement Copy.
+    let Value::Dynamic(object) = tuple else {
+        panic!("native tuple")
+    };
+    let child = rils_execution::value::native_instance::NativeInstancePlace::new(object)
+        .unwrap()
+        .field("0")
+        .unwrap()
+        .take()
+        .unwrap();
+    let Value::Dynamic(child) = child else {
+        panic!("native record")
+    };
+    let Some(Value::StructType(restored)) =
+        rils_execution::value::native_instance::definition(&child)
+    else {
+        panic!("retained declaration")
+    };
+    assert!(Rc::ptr_eq(&restored, &item));
+}

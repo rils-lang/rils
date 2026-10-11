@@ -68,12 +68,9 @@ fn expose(value: DynamicValue, codec: Rc<NativeRecordCodec>) -> Result<Value, St
         Some(Value::StructType(_) | Value::EnumType(_))
     ) || matches!(
         value.descriptor().rils_type(),
-        crate::Type::Option(_) | crate::Type::Result(_, _)
+        crate::Type::Option(_) | crate::Type::Result(_, _) | crate::Type::Tuple(_)
     ) {
         from_native(value, codec)
-    } else if let crate::Type::Tuple(types) = value.descriptor().rils_type() {
-        let types = types.clone();
-        expose_indexed(value, &types, None, codec).map(|sequence| Value::Tuple(Rc::new(sequence)))
     } else if let crate::Type::Array { element, length } = value.descriptor().rils_type() {
         let element = element.as_ref().clone();
         let types = vec![element.clone(); *length];
@@ -184,6 +181,21 @@ impl NativeInstancePlace {
                 .with_mut(|value| value.take_path_field(&self.path))??
         };
         expose(payload, self.codec.clone())
+    }
+
+    /// Copy a stored lexical reference when continuing a place projection.
+    /// This preserves its source lease and never reads the referenced payload.
+    pub fn stored_reference(&self) -> Result<Option<Rc<ReferenceValue>>, String> {
+        if !matches!(
+            self.field_layout()?.rils_type(),
+            crate::Type::Reference { .. }
+        ) {
+            return Ok(None);
+        }
+        match self.take()? {
+            Value::Reference(reference) => Ok(Some(reference)),
+            _ => Err("native reference field did not decode to a reference".into()),
+        }
     }
 
     pub fn assign(&self, value: Value) -> Result<(), String> {

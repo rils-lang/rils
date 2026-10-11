@@ -1,0 +1,52 @@
+struct Item { value: string }
+struct Referenced<T> { value: T }
+struct Holder { pair: ((Item, i32), string) }
+fn check() -> bool {
+    let optional: Option<(i32, i32)> = Some((3, 4));
+    let original = optional.unwrap();
+    let mut copied = original;
+    copied.0 = 8;
+    if original.0 != 3 || copied.0 != 8 { return false; }
+    let mut values: Vec<(string, i32)> = Vec::new();
+    values.push(("value", 6));
+    let mut pair = values.pop().unwrap();
+    let first = pair.0;
+    pair.0 = "replacement";
+    let reader = &pair.1;
+    let writer = &mut pair.1;
+    *writer = 9;
+    if *reader != 9 || first.len() != 5usize || pair.0.len() != 11usize { return false; }
+    let result: Result<(Item, i32), string> = Ok((Item { value: "item" }, 12));
+    let result_pair = result.unwrap();
+    let item = result_pair.0;
+    if item.value.len() != 4usize || result_pair.1 != 12 { return false; }
+    let holder = Holder { pair: ((Item { value: "nested" }, 10), "tail") };
+    let mut outer = holder.pair;
+    let nested = outer.0;
+    outer.0 = (Item { value: "restored" }, 11);
+    if nested.0.value.len() != 6usize || (outer.0).1 != 11 || outer.1.len() != 4usize { return false; }
+    let mut map: HashMap<i32, string> = HashMap::new();
+    map.insert(2, "two");
+    let mut total = 0;
+    for entry in map {
+        if entry.1.len() != 3usize { return false; }
+        total = total + entry.0;
+    }
+    let mut tree: BTreeMap<i32, string> = BTreeMap::new();
+    tree.insert(4, "four");
+    for entry in tree {
+        if entry.1.len() != 4usize { return false; }
+        total = total + entry.0;
+    }
+    let mut target = Item { value: "before" };
+    let borrowed_optional: Option<(&mut Item, i32)> = Some((&mut target, 1));
+    let mut refs = borrowed_optional.unwrap();
+    let child = &mut refs.0.value;
+    *child = "updated";
+    if refs.0.value.len() != 7usize { return false; }
+    refs.0.value = "again";
+    let nested_ref = Referenced { value: &mut refs.0.value };
+    *nested_ref.value = "after";
+    total == 6 && target.value.len() == 5usize
+}
+check()
