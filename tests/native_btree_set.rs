@@ -54,11 +54,11 @@ fn native_btree_set_operations_preserve_order_and_borrows() {
             sum + 36
         } else { 0 }
         "#,
-        Value::from_i32(42),
+        Value::from(rils::value::native_i32(42)),
     );
     assert_both(
         "let mut values: BTreeSet<char> = BTreeSet::new(); values.insert('b'); values.insert('a'); values.first_cloned().unwrap()",
-        Value::from_char('a'),
+        Value::from(rils::value::native_char('a')),
     );
 }
 
@@ -87,6 +87,6 @@ fn btree_set_native_symbols_cover_algebra_and_mutation() {
         left.clear();
         valid && left.is_empty()
         "#,
-        Value::Bool(true),
+        Value::from(rils::value::native_bool(true)),
     );
 }

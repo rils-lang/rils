@@ -21,13 +21,17 @@ pub(in crate::interpreter) fn expand_type_aliases(
     environment: &EnvironmentRef,
     span: Span,
 ) -> Result<Type, RuntimeError> {
-    fn resolve_type_path(environment: &EnvironmentRef, name: &str, span: Span) -> Option<Value> {
+    fn resolve_type_path(
+        environment: &EnvironmentRef,
+        name: &str,
+        span: Span,
+    ) -> Option<crate::value::Declaration> {
         if let Some(
-            value @ (Value::StructType(_)
-            | Value::EnumType(_)
-            | Value::TraitType(_)
-            | Value::TypeAlias(_)),
-        ) = environment.borrow().get(name)
+            value @ (crate::value::Declaration::StructType(_)
+            | crate::value::Declaration::EnumType(_)
+            | crate::value::Declaration::TraitType(_)
+            | crate::value::Declaration::TypeAlias(_)),
+        ) = environment.borrow().get_declaration(name)
         {
             return Some(value);
         }
@@ -35,15 +39,15 @@ pub(in crate::interpreter) fn expand_type_aliases(
         let (environment, path) =
             super::super::execution::anchored_environment(&path, environment, span).ok()?;
         let (first, segments) = path.split_first()?;
-        let mut value = environment.borrow().get(first)?;
+        let mut value = environment.borrow().get_declaration(first)?;
         for segment in segments {
-            let Value::Module(module) = value else {
+            let crate::value::Declaration::Module(module) = value else {
                 return None;
             };
             if !module.public.borrow().contains(segment) {
                 return None;
             }
-            value = module.members.borrow().get(segment)?;
+            value = module.members.borrow().get_declaration(segment)?;
         }
         Some(value)
     }
@@ -146,8 +150,8 @@ pub(in crate::interpreter) fn expand_type_aliases(
                 {
                     return Ok(item);
                 }
-                let definitions = match environment.borrow().get(target_name) {
-                    Some(Value::StructType(definition)) => definition
+                let definitions = match environment.borrow().get_declaration(target_name) {
+                    Some(crate::value::Declaration::StructType(definition)) => definition
                         .associated_types
                         .borrow()
                         .iter()
@@ -157,7 +161,7 @@ pub(in crate::interpreter) fn expand_type_aliases(
                         })
                         .filter_map(|(_, items)| items.get(name).cloned())
                         .collect::<Vec<_>>(),
-                    Some(Value::EnumType(definition)) => definition
+                    Some(crate::value::Declaration::EnumType(definition)) => definition
                         .associated_types
                         .borrow()
                         .iter()
@@ -223,19 +227,19 @@ pub(in crate::interpreter) fn expand_type_aliases(
                     .collect::<Result<Vec<_>, _>>()?;
                 let resolved = resolve_type_path(environment, name, span);
                 match resolved {
-                    Some(Value::StructType(definition)) => {
+                    Some(crate::value::Declaration::StructType(definition)) => {
                         return Ok(Type::Named {
                             name: definition.name.clone(),
                             arguments,
                         });
                     }
-                    Some(Value::EnumType(definition)) => {
+                    Some(crate::value::Declaration::EnumType(definition)) => {
                         return Ok(Type::Named {
                             name: definition.name.clone(),
                             arguments,
                         });
                     }
-                    Some(Value::HostType(definition)) => {
+                    Some(crate::value::Declaration::HostType(definition)) => {
                         return Ok(Type::Named {
                             name: definition.name.clone(),
                             arguments,
@@ -243,7 +247,7 @@ pub(in crate::interpreter) fn expand_type_aliases(
                     }
                     _ => {}
                 }
-                let Some(Value::TypeAlias(alias)) = resolved else {
+                let Some(crate::value::Declaration::TypeAlias(alias)) = resolved else {
                     if environment.borrow().is_declared_type(name) {
                         return Ok(Type::Named {
                             name: name.clone(),

@@ -105,6 +105,9 @@ mod native {
 pub use native::{Cell, RefCell};
 
 #[doc(hidden)]
+pub mod native_storage;
+
+#[doc(hidden)]
 pub struct ErasedCell(pub std::cell::RefCell<rils_value::DynamicValue>);
 
 #[doc(hidden)]

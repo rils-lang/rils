@@ -30,11 +30,7 @@ pub(crate) fn type_tokens(ty: &Type) -> syn::Result<proc_macro2::TokenStream> {
             quote!(TypePattern::Generic(#name))
         }
         Type::Named { name, arguments } => {
-            let path = if name == "Iterator" {
-                "OwnedIterator"
-            } else {
-                name
-            };
+            let path = if name == "Iterator" { "Iter" } else { name };
             let path = LitStr::new(path, proc_macro2::Span::call_site());
             let arguments = arguments
                 .iter()

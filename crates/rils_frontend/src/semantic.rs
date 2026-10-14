@@ -505,10 +505,10 @@ fn resolve_callee(
         }
         Expr::Member { object, name, .. } => {
             let receiver = results.expression_type(expression_ids.get(object)?)?;
-            let receiver = match receiver {
-                Type::Reference { inner, .. } => inner.as_ref(),
-                receiver => receiver,
-            };
+            let mut receiver = receiver;
+            while let Type::Reference { inner, .. } = receiver {
+                receiver = inner;
+            }
             let intrinsic = match receiver {
                 Type::Integer(_) | Type::IntegerVariable(_) => crate::integer_method(name),
                 Type::Float(_) | Type::FloatVariable(_) => crate::float_method(name),

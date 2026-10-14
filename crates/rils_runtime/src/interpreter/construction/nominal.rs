@@ -47,7 +47,7 @@ impl Interpreter {
         expression: &Expr,
         environment: &EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
-        let Value::VariantConstructor(constructor) = &value else {
+        let Some(constructor) = value.as_callable::<crate::value::VariantConstructor>() else {
             return Ok(value);
         };
         if !constructor.type_definition.variants.iter().any(|variant| matches!(variant, EnumVariant::Unit { name, .. } if name == &constructor.variant)) {

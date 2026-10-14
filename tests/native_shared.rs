@@ -1,6 +1,17 @@
 use rils::{Value, compile, eval_value};
 
 #[test]
+fn native_shared_counts_and_expiry_match_loaded_bytecode() {
+    let source = include_str!("fixtures/native_shared_handles.rils");
+    let expected = Value::from(rils::value::native_bool(true));
+    assert_eq!(eval_value(source).unwrap(), expected);
+    let module = compile(source).unwrap();
+    assert_eq!(module.execute_value().unwrap(), expected);
+    let loaded = rils::BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute_value().unwrap(), expected);
+}
+
+#[test]
 fn shared_handles_match_in_interpreter_and_vm() {
     let source = r#"
         let owner: core::rc::Rc<i32> = core::rc::Rc::new(40);
@@ -12,10 +23,13 @@ fn shared_handles_match_in_interpreter_and_vm() {
             && weak.upgrade().is_some()
         { 42 } else { 0 }
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(42))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(42)
+        Value::from(rils::value::native_i32(42))
     );
 }
 
@@ -43,10 +57,13 @@ fn shared_handle_can_be_held_by_an_option() {
         let holder: Option<core::rc::Rc<i32>> = Some(owner);
         holder.is_some()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Bool(true)
+        Value::from(rils::value::native_bool(true))
     );
 }
 
@@ -100,9 +117,12 @@ fn private_box_storage_cannot_be_read_as_a_field() {
 #[test]
 fn user_unit_struct_remains_constructible() {
     let source = "struct Handle; let item = (Handle {}); 42";
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(42))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(42)
+        Value::from(rils::value::native_i32(42))
     );
 }

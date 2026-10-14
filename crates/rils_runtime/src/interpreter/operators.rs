@@ -8,7 +8,9 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         match (operator, value) {
-            (UnaryOp::Not, value) => Ok(Value::Bool(!self.condition_value(&value, span)?)),
+            (UnaryOp::Not, value) => Ok(Value::from(rils_execution::value::native_bool(
+                !self.condition_value(&value, span)?,
+            ))),
             (UnaryOp::Negate, value) => {
                 crate::numeric::negate(value).map_err(|message| RuntimeError::new(message, span))
             }
@@ -29,15 +31,20 @@ impl Interpreter {
             let equal = left
                 .try_equal(&right)
                 .map_err(|message| RuntimeError::new(message, span))?;
-            return Ok(Value::Bool(if operator == Equal { equal } else { !equal }));
+            return Ok(Value::from(rils_execution::value::native_bool(
+                if operator == Equal { equal } else { !equal },
+            )));
         }
 
         if operator == Add
-            && let (Some(left), Some(right)) = (left.as_string(), right.as_string())
+            && let (Some(left), Some(right)) = (
+                left.get_cloned::<String>().ok(),
+                right.get_cloned::<String>().ok(),
+            )
         {
-            return Ok(rils_execution::value::native_string(format!(
+            return Ok(Value::from(rils_execution::value::native_string(format!(
                 "{left}{right}"
-            )));
+            ))));
         }
 
         crate::numeric::binary(left, operator, right)

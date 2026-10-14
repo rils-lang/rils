@@ -90,7 +90,11 @@ pub fn host_enum_value(
     let enums = [enum_definition(type_name, definition)];
     let storage = TypedStorageContext::new(&[], &enums);
     if variant == HOST_FLAGS_RAW_VARIANT {
-        storage.construct_tuple_variant(&ty, &variant, vec![Value::from_u128(raw)])
+        storage.construct_tuple_variant(
+            &ty,
+            &variant,
+            vec![Value::from(rils_execution::value::native_u128(raw))],
+        )
     } else {
         storage.construct_unit_variant(&ty, &variant)
     }

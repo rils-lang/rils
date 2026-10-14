@@ -2,11 +2,9 @@
 
 use std::rc::Rc;
 
-use rils_value::DynamicValue;
-
 use crate::Type;
 
-use super::{EnumType, StructType, Value, record_codec::NativeRecordCodec};
+use super::{EnumType, StructType, Value};
 
 /// Consume a Result and transfer its active branch without cloning its payload.
 pub fn take_owned(value: Value) -> Result<Result<Value, Value>, String> {
@@ -32,50 +30,6 @@ pub fn take_owned_with_definitions(
                 _ => Err("Result has an invalid variant tag".into()),
             }
         }
-        Value::Result { value, .. } => match value {
-            Ok(value) => {
-                let value =
-                    Rc::try_unwrap(value).map_err(|_| "Result payload is shared".to_owned())?;
-                super::record_codec::restore_owned_nominal(value, structs, enums).map(Ok)
-            }
-            Err(value) => {
-                let value =
-                    Rc::try_unwrap(value).map_err(|_| "Result payload is shared".to_owned())?;
-                super::record_codec::restore_owned_nominal(value, structs, enums).map(Err)
-            }
-        },
         value => Err(format!("expected Result, found {}", value.type_name())),
     }
-}
-
-fn read_item(payload: &DynamicValue, codec: &NativeRecordCodec) -> Result<Value, String> {
-    let item =
-        crate::value::runtime_layouts::clone_borrowed_view(payload.view().variant_payload()?)?;
-    codec.from_native(item)
-}
-
-type ResultView = (Result<Value, Value>, Type, Type);
-
-pub fn view(value: &Value) -> Option<Result<ResultView, String>> {
-    let Value::Dynamic(object) = value else {
-        return None;
-    };
-    let Type::Result(ok_type, error_type) = object.descriptor().layout().rils_type() else {
-        return None;
-    };
-    let ok_type = (**ok_type).clone();
-    let error_type = (**error_type).clone();
-    Some(super::sum::codec(object, &[], &[]).and_then(|codec| {
-        object
-            .with(|payload| {
-                let index = payload.variant_index()?;
-                let item = read_item(payload, &codec)?;
-                Ok((
-                    if index == 0 { Ok(item) } else { Err(item) },
-                    ok_type,
-                    error_type,
-                ))
-            })
-            .and_then(|result| result)
-    }))
 }

@@ -2,14 +2,20 @@
 
 use rils_value::{DynamicValueRef, NativeLeafRef};
 
-use super::{Type, Value};
+use super::Value;
 
 pub(crate) fn native_codec(
     value: &Value,
 ) -> Result<Option<std::rc::Rc<super::record_codec::NativeRecordCodec>>, String> {
     match value {
+        __reference_value if __reference_value.as_reference().is_some() => {
+            let reference = __reference_value
+                .as_reference()
+                .expect("checked reference handle");
+            reference.native_codec()
+        }
         Value::Dynamic(object) => Ok(object.descriptor().metadata()),
-        Value::Reference(reference) => reference.native_codec(),
+
         _ => Ok(None),
     }
 }
@@ -17,7 +23,7 @@ pub(crate) fn native_codec(
 pub(crate) enum Read<'a> {
     View(DynamicValueRef<'a>),
     Leaf(NativeLeafRef<'a>),
-    Legacy(&'a Value),
+    Host(&'a std::rc::Rc<super::HostObject>),
 }
 
 pub(crate) fn with_read<R>(
@@ -25,48 +31,54 @@ pub(crate) fn with_read<R>(
     dereference: bool,
     callback: impl for<'a> FnOnce(Read<'a>) -> R,
 ) -> Result<R, String> {
-    if dereference && let Value::Reference(reference) = value {
+    if dereference && let Some(reference) = value.as_reference() {
         return reference.with_borrowed_target(callback);
     }
-    macro_rules! scalar {
-        ($item:expr) => {
-            Ok(callback(Read::Leaf(NativeLeafRef::from_rust(
-                $item,
-                Type::of_value(value).expect("scalar has a type"),
-            ))))
-        };
-    }
+    with_raw_read(value, callback)
+}
+
+/// Follow receiver references while retaining every original storage guard.
+/// Element comparisons use `with_read` instead to preserve reference identity.
+pub(crate) fn with_referent<R>(
+    value: &Value,
+    callback: impl for<'a> FnOnce(Read<'a>) -> R,
+) -> Result<R, String> {
+    let mut callback = Some(callback);
+    let mut output = None;
+    with_raw_read(value, |target| {
+        dereference_read(target, &mut |target| {
+            output = Some(callback.take().expect("called once")(target));
+        })
+    })??;
+    Ok(output.expect("borrow reader was called"))
+}
+
+pub(crate) fn with_raw_read<R>(
+    value: &Value,
+    callback: impl for<'a> FnOnce(Read<'a>) -> R,
+) -> Result<R, String> {
     match value {
         Value::Dynamic(object) => object.with(|value| callback(Read::View(value.view()))),
         Value::Native(object) => object.with_leaf(|leaf| callback(Read::Leaf(leaf))),
-        Value::Unit => scalar!(&()),
-        Value::Bool(item) => scalar!(item),
-        Value::I16(item) => scalar!(item),
-        Value::I64(item) => scalar!(item),
-        Value::I128(item) => scalar!(item),
-        Value::Isize(item) => scalar!(item),
-        Value::U8(item) => scalar!(item),
-        Value::U16(item) => scalar!(item),
-        Value::U32(item) => scalar!(item),
-        Value::U64(item) => scalar!(item),
-        Value::U128(item) => scalar!(item),
-        Value::Usize(item) => scalar!(item),
-        Value::F32(item) => scalar!(item),
-        Value::F64(item) => scalar!(item),
-        Value::Char(item) => scalar!(item),
-        value => Ok(callback(Read::Legacy(value))),
+        Value::HostObject(object) => Ok(callback(Read::Host(object))),
     }
 }
 
-/// Run a compatibility receiver operation under its original storage guards.
-/// Nested references are followed without constructing an owned Value snapshot.
-pub(crate) fn with_legacy<R>(
-    value: &Value,
-    callback: impl FnOnce(&Value) -> Result<R, String>,
-) -> Result<R, String> {
-    with_read(value, true, |read| match read {
-        Read::Legacy(value @ Value::Reference(_)) => with_legacy(value, callback),
-        Read::Legacy(value) => callback(value),
-        _ => Err("expected a compatibility receiver".into()),
-    })?
+fn dereference_read(value: Read<'_>, callback: &mut dyn FnMut(Read<'_>)) -> Result<(), String> {
+    use super::ReferenceValue;
+    use std::rc::Rc;
+    match value {
+        Read::View(view) if view.layout()?.is_rust_type::<Rc<ReferenceValue>>() => {
+            view.with_rust::<Rc<ReferenceValue>, _>(|reference| {
+                reference.with_borrowed_target(|target| dereference_read(target, callback))
+            })???;
+        }
+        Read::Leaf(leaf) if leaf.is_rust_type::<Rc<ReferenceValue>>() => {
+            leaf.with_rust::<Rc<ReferenceValue>, _>(|reference| {
+                reference.with_borrowed_target(|target| dereference_read(target, callback))
+            })???;
+        }
+        value => callback(value),
+    }
+    Ok(())
 }

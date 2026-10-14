@@ -8,7 +8,7 @@ use rils_execution::{
     RilsValue, Type, Value,
     environment::{AccessError, StorageSlot},
     value::{
-        EnumType, FieldSlot, HostObject, HostType, IndexedStorage, ReferenceValue, StructType,
+        EnumType, HostObject, HostType, ReferenceValue, StructType,
         native_instance::{NativeInstancePlace, definition},
         record_codec::NativeRecordCodec,
         storage::TypedStorageContext,
@@ -125,8 +125,11 @@ impl Declarations {
             "Owned",
             vec![],
             vec![
-                ("text", Value::from_string(text)),
-                ("number", Value::from_i32(42)),
+                (
+                    "text",
+                    Value::from(rils_execution::value::native_string(text)),
+                ),
+                ("number", Value::from(rils_execution::value::native_i32(42))),
             ],
         )
     }
@@ -187,7 +190,8 @@ fn nested_native_sums_preserve_nominal_declarations_during_owned_extraction() {
             .unwrap()
             .take()
             .unwrap()
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .as_deref(),
         Some("nested")
     );
@@ -226,7 +230,9 @@ fn native_sum_probes_and_bindings_use_original_non_clone_payloads() {
                 symbol,
                 std::slice::from_ref(&value)
             ),
-            Some(Ok(Value::Bool(expected)))
+            Some(Ok(Value::from(rils_execution::value::native_bool(
+                expected
+            ))))
         );
         let probe = sum::borrow_payload(&value, branch).unwrap();
         assert!(Rc::ptr_eq(
@@ -249,7 +255,8 @@ fn native_sum_probes_and_bindings_use_original_non_clone_payloads() {
                 .unwrap()
                 .take()
                 .unwrap()
-                .as_string()
+                .get_cloned::<String>()
+                .ok()
                 .as_deref(),
             Some("original")
         );
@@ -299,7 +306,8 @@ fn only_error_propagation_may_change_an_inactive_result_type() {
             .unwrap()
             .take()
             .unwrap()
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .as_deref(),
         Some("propagated")
     );
@@ -324,7 +332,7 @@ fn owner_moves_refills_and_preserves_nested_native_instances() {
     let inner = root.field("inner").unwrap();
     let text = inner.field("text").unwrap();
     assert_eq!(
-        text.take().unwrap().as_string().as_deref(),
+        text.take().unwrap().get_cloned::<String>().ok().as_deref(),
         Some("original")
     );
     assert!(text.take().is_err());
@@ -333,12 +341,24 @@ fn owner_moves_refills_and_preserves_nested_native_instances() {
     assert!(root.borrow(false, None).is_err());
     assert!(inner.take().is_err());
     assert_eq!(
-        inner.field("number").unwrap().take().unwrap().as_i32(),
+        inner
+            .field("number")
+            .unwrap()
+            .take()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
         Some(42)
     );
-    assert!(text.assign(Value::from_i32(1)).is_err());
+    assert!(
+        text.assign(Value::from(rils_execution::value::native_i32(1)))
+            .is_err()
+    );
     assert!(value.is_partially_moved());
-    text.assign(Value::from_string("refilled")).unwrap();
+    text.assign(Value::from(rils_execution::value::native_string(
+        "refilled",
+    )))
+    .unwrap();
     assert!(!value.is_partially_moved());
     let moved = inner.take().unwrap();
     assert!(
@@ -355,7 +375,8 @@ fn owner_moves_refills_and_preserves_nested_native_instances() {
             .unwrap()
             .take()
             .unwrap()
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .as_deref(),
         Some("refilled")
     );
@@ -372,7 +393,9 @@ fn storage_take_rejects_partial_moves_and_reassignment_keeps_the_descriptor() {
     assert!(matches!(storage.take(), Err(AccessError::PartiallyMoved)));
     root.field("text")
         .unwrap()
-        .assign(Value::from_string("restored"))
+        .assign(Value::from(rils_execution::value::native_string(
+            "restored",
+        )))
         .unwrap();
     drop(root);
     drop(storage.take().unwrap());
@@ -381,7 +404,8 @@ fn storage_take_rejects_partial_moves_and_reassignment_keeps_the_descriptor() {
     let Value::Dynamic(object) = &value else {
         panic!("reassignment lost native declaration")
     };
-    let Some(Value::StructType(actual)) = definition(object) else {
+    let Some(rils_execution::declaration::Declaration::StructType(actual)) = definition(object)
+    else {
         panic!("struct identity")
     };
     assert!(Rc::ptr_eq(&actual, &declarations.structs[1]));
@@ -391,7 +415,8 @@ fn storage_take_rejects_partial_moves_and_reassignment_keeps_the_descriptor() {
             .unwrap()
             .take()
             .unwrap()
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .as_deref(),
         Some("second")
     );
@@ -403,19 +428,48 @@ fn copy_owners_are_independent_and_mutable_references_share_one_place() {
     let value = declarations.record(
         "Point",
         vec![],
-        vec![("x", Value::from_i32(1)), ("y", Value::from_i32(2))],
+        vec![
+            ("x", Value::from(rils_execution::value::native_i32(1))),
+            ("y", Value::from(rils_execution::value::native_i32(2))),
+        ],
     );
     assert!(value.is_copy());
     let copied = value.clone_owned().unwrap();
     let root = place(&value);
     let first = root.field("x").unwrap().borrow(true, None).unwrap();
     let second = root.field("x").unwrap().borrow(true, None).unwrap();
-    first.write(Value::from_i32(41)).unwrap();
-    assert_eq!(second.copy_native().unwrap().unwrap().as_i32(), Some(41));
-    second.write(Value::from_i32(42)).unwrap();
-    assert_eq!(root.field("x").unwrap().take().unwrap().as_i32(), Some(42));
+    first
+        .write(Value::from(rils_execution::value::native_i32(41)))
+        .unwrap();
     assert_eq!(
-        place(&copied).field("x").unwrap().take().unwrap().as_i32(),
+        second
+            .copy_native()
+            .unwrap()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
+        Some(41)
+    );
+    second
+        .write(Value::from(rils_execution::value::native_i32(42)))
+        .unwrap();
+    assert_eq!(
+        root.field("x")
+            .unwrap()
+            .take()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
+        Some(42)
+    );
+    assert_eq!(
+        place(&copied)
+            .field("x")
+            .unwrap()
+            .take()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
         Some(1)
     );
     let Value::Dynamic(original) = &value else {
@@ -435,15 +489,18 @@ fn leases_block_moves_and_parent_replacement_but_allow_other_fields() {
     let text = inner.field("text").unwrap();
     let reference = Rc::new(text.borrow(false, None).unwrap());
     assert!(text.take().unwrap_err().contains("referenced"));
-    assert!(text.assign(Value::from_string("blocked")).is_err());
+    assert!(
+        text.assign(Value::from(rils_execution::value::native_string("blocked")))
+            .is_err()
+    );
     assert!(inner.assign(declarations.owned("blocked")).is_err());
     inner
         .field("number")
         .unwrap()
-        .assign(Value::from_i32(7))
+        .assign(Value::from(rils_execution::value::native_i32(7)))
         .unwrap();
     assert_eq!(
-        RilsValue::new(Value::Reference(reference.clone()))
+        RilsValue::new(Value::from_reference(reference.clone()))
             .get_cloned::<String>()
             .unwrap(),
         "live"
@@ -481,7 +538,7 @@ fn host_field_handles_keep_the_original_bytes_owner_without_snapshots() {
         .unwrap()
         .borrow(true, None)
         .unwrap()
-        .write(Value::from_i32(9))
+        .write(Value::from(rils_execution::value::native_i32(9)))
         .unwrap();
     assert_eq!(number.get_cloned::<i32>().unwrap(), 9);
     assert!(root.field("inner").unwrap().take().is_err());
@@ -545,17 +602,20 @@ fn generic_enum_variants_and_nested_sum_sequence_paths_track_partial_moves() {
         vec![],
         vec![(
             "item",
-            Value::Option {
-                value: Some(Rc::new(declarations.choice(
-                    "Record",
-                    ChoiceFields::Record(HashMap::from([(
-                        "item".into(),
-                        declarations.owned("wrapped"),
-                    )])),
-                    item_type.clone(),
-                ))),
-                element_type: Some(choice_type),
-            },
+            declarations
+                .context()
+                .construct_option(
+                    &Type::Option(Box::new(choice_type)),
+                    Some(declarations.choice(
+                        "Record",
+                        ChoiceFields::Record(HashMap::from([(
+                            "item".into(),
+                            declarations.owned("wrapped"),
+                        )])),
+                        item_type.clone(),
+                    )),
+                )
+                .unwrap(),
         )],
     );
     let nested = place(&wrapped)
@@ -577,17 +637,33 @@ fn generic_enum_variants_and_nested_sum_sequence_paths_track_partial_moves() {
     let listed = declarations.record(
         "Listed",
         vec![],
-        vec![(
-            "items",
-            Value::Vec(Rc::new(IndexedStorage {
-                active_iterators: Cell::new(0),
-                element_type: RefCell::new(Some(item_type.clone())),
-                elements: RefCell::new(vec![FieldSlot::new(
-                    item_type,
-                    declarations.owned("listed"),
-                )]),
-            })),
-        )],
+        vec![("items", {
+            let array = declarations
+                .context()
+                .construct_array(
+                    &Type::Array {
+                        element: Box::new(item_type.clone()),
+                        length: 1,
+                    },
+                    vec![declarations.owned("listed")],
+                )
+                .unwrap();
+            let context = rils_execution::runtime_builtins::NativeOwnedContext {
+                structs: declarations.structs.clone(),
+                enums: declarations.enums.clone(),
+                ..Default::default()
+            };
+            rils_execution::runtime_builtins::call_native_owned_symbol(
+                rils_builtins::builtin_member("Vec", "from")
+                    .unwrap()
+                    .native_symbol
+                    .unwrap(),
+                vec![array],
+                &context,
+            )
+            .unwrap()
+            .unwrap()
+        })],
     );
     let nested = place(&listed)
         .field("items")
@@ -661,16 +737,19 @@ fn root_references_keep_declarations_and_local_origins() {
     environment.borrow_mut().define("record", value, true, None);
     let storage = environment.borrow().slot("record").unwrap();
     let reference = Rc::new(ReferenceValue::new_storage(storage.clone(), true));
-    let Some(Value::StructType(definition)) = reference.native_type_definition().unwrap() else {
+    let Some(rils_execution::declaration::Declaration::StructType(definition)) =
+        reference.native_type_definition().unwrap()
+    else {
         panic!("native definition")
     };
     assert!(Rc::ptr_eq(&definition, &declarations.structs[1]));
     let text = Rc::new(reference.project_native_field("text").unwrap().unwrap());
     assert!(text.is_local_to(&environment));
     assert!(storage.borrow_mut().take().is_err());
-    text.write(Value::from_string("changed")).unwrap();
+    text.write(Value::from(rils_execution::value::native_string("changed")))
+        .unwrap();
     assert_eq!(
-        RilsValue::new(Value::Reference(text.clone()))
+        RilsValue::new(Value::from_reference(text.clone()))
             .get_cloned::<String>()
             .unwrap(),
         "changed"
@@ -683,22 +762,28 @@ fn root_references_keep_declarations_and_local_origins() {
 #[test]
 fn owned_conversion_rejects_shared_non_copy_payloads_instead_of_cloning() {
     let declarations = Declarations::fixture();
-    let source = Value::from_string("shared");
+    let source = Value::from(rils_execution::value::native_string("shared"));
     assert!(
         declarations
             .try_record(
                 "Owned",
                 vec![],
-                vec![("text", source.clone()), ("number", Value::from_i32(42))],
+                vec![
+                    ("text", source.clone()),
+                    ("number", Value::from(rils_execution::value::native_i32(42)))
+                ],
             )
             .is_err()
     );
-    assert_eq!(source.as_string().as_deref(), Some("shared"));
+    assert_eq!(
+        source.get_cloned::<String>().ok().as_deref(),
+        Some("shared")
+    );
     let value = declarations.owned("original");
     let text = place(&value).field("text").unwrap();
     assert!(text.assign(source.clone()).is_err());
     assert_eq!(
-        text.take().unwrap().as_string().as_deref(),
+        text.take().unwrap().get_cloned::<String>().ok().as_deref(),
         Some("original")
     );
 
@@ -721,7 +806,8 @@ fn owned_conversion_rejects_shared_non_copy_payloads_instead_of_cloning() {
             .unwrap()
             .take()
             .unwrap()
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .as_deref(),
         Some("native shared")
     );
@@ -733,7 +819,8 @@ fn owned_conversion_rejects_shared_non_copy_payloads_instead_of_cloning() {
             .unwrap()
             .take()
             .unwrap()
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .as_deref(),
         Some("untouched")
     );
@@ -749,12 +836,16 @@ fn generic_instance_fields_keep_reference_and_callback_identities() {
         min_arity: 1,
         max_arity: 1,
         signature: Some(FunctionSignature::fixed(vec![Type::I32], Type::I32)),
-        function: Rc::new(|arguments| Ok(Value::from_i32(arguments[0].as_i32().unwrap() + 1))),
+        function: Rc::new(|arguments| {
+            Ok(Value::from(rils_execution::value::native_i32(
+                arguments[0].get_cloned::<i32>().unwrap() + 1,
+            )))
+        }),
     });
     let value = declarations.record(
         "Holder",
         vec![callback_type.clone()],
-        vec![("item", Value::HostFunction(callback.clone()))],
+        vec![("item", Value::from_callable(callback.clone()))],
     );
     assert_eq!(
         Type::of_value(&value),
@@ -767,22 +858,27 @@ fn generic_instance_fields_keep_reference_and_callback_identities() {
         !value.is_copy(),
         "the callback field is Copy, but Holder has no Copy impl"
     );
-    let Value::HostFunction(extracted) = place(&value).field("item").unwrap().take().unwrap()
+    let Some(extracted) = (place(&value).field("item").unwrap().take().unwrap())
+        .as_callable::<rils_execution::value::HostFunction>()
     else {
         panic!("callback")
     };
     assert!(Rc::ptr_eq(&extracted, &callback));
     assert_eq!(
-        (extracted.function)(&[Value::from_i32(41)])
+        (extracted.function)(&[Value::from(rils_execution::value::native_i32(41))])
             .unwrap()
-            .as_i32(),
+            .get_cloned::<i32>()
+            .ok(),
         Some(42)
     );
 
     let environment = rils_execution::environment::Environment::global();
-    environment
-        .borrow_mut()
-        .define("number", Value::from_i32(1), true, Some(Type::I32));
+    environment.borrow_mut().define(
+        "number",
+        Value::from(rils_execution::value::native_i32(1)),
+        true,
+        Some(Type::I32),
+    );
     let storage = environment.borrow().slot("number").unwrap();
     let reference = Rc::new(ReferenceValue::new_storage(storage.clone(), true));
     let reference_type = Type::Reference {
@@ -792,17 +888,23 @@ fn generic_instance_fields_keep_reference_and_callback_identities() {
     let value = declarations.record(
         "Holder",
         vec![reference_type],
-        vec![("item", Value::Reference(reference.clone()))],
+        vec![("item", Value::from_reference(reference.clone()))],
     );
     assert!(value.contains_local_reference(&environment));
     let copied = value.clone_owned().unwrap();
     drop(value);
-    let Value::Reference(extracted) = place(&copied).field("item").unwrap().take().unwrap() else {
+    let Some(extracted) = (place(&copied).field("item").unwrap().take().unwrap()).as_reference()
+    else {
         panic!("reference")
     };
     assert!(Rc::ptr_eq(&extracted, &reference));
-    extracted.write(Value::from_i32(42)).unwrap();
-    assert_eq!(storage.borrow().read().unwrap().as_i32(), Some(42));
+    extracted
+        .write(Value::from(rils_execution::value::native_i32(42)))
+        .unwrap();
+    assert_eq!(
+        storage.borrow().read().unwrap().get_cloned::<i32>().ok(),
+        Some(42)
+    );
 }
 
 #[test]
@@ -824,7 +926,7 @@ fn enum_copy_requires_an_explicit_declaration_and_copy_fields_in_every_variant()
                 };
                 let item = || {
                     if eligible {
-                        Value::from_i32(42)
+                        Value::from(rils_execution::value::native_i32(42))
                     } else {
                         declarations.owned("non Copy")
                     }
@@ -874,8 +976,13 @@ fn native_codec_moves_retain_exact_declarations_and_explicit_copy_policy() {
         for variant in ["Empty", "Tuple", "Record"] {
             let fields = match variant {
                 "Empty" => ChoiceFields::Unit,
-                "Tuple" => ChoiceFields::Tuple(vec![Value::from_i32(42)]),
-                _ => ChoiceFields::Record(HashMap::from([("item".into(), Value::from_i32(42))])),
+                "Tuple" => {
+                    ChoiceFields::Tuple(vec![Value::from(rils_execution::value::native_i32(42))])
+                }
+                _ => ChoiceFields::Record(HashMap::from([(
+                    "item".into(),
+                    Value::from(rils_execution::value::native_i32(42)),
+                )])),
             };
             let value = declarations.choice(variant, fields, Type::I32);
             let ty = Type::of_value(&value).unwrap();
@@ -887,7 +994,9 @@ fn native_codec_moves_retain_exact_declarations_and_explicit_copy_policy() {
             let Value::Dynamic(object) = &value else {
                 panic!("native instance");
             };
-            let Some(Value::EnumType(definition)) = definition(object) else {
+            let Some(rils_execution::declaration::Declaration::EnumType(definition)) =
+                definition(object)
+            else {
                 panic!("retained enum declaration");
             };
             assert!(Rc::ptr_eq(&definition, &declarations.enums[0]));
@@ -908,7 +1017,10 @@ fn native_codec_rejects_conflicting_declaration_identities() {
     let value = source.record(
         "Point",
         vec![],
-        vec![("x", Value::from_i32(1)), ("y", Value::from_i32(2))],
+        vec![
+            ("x", Value::from(rils_execution::value::native_i32(1))),
+            ("y", Value::from(rils_execution::value::native_i32(2))),
+        ],
     );
     let mut codec = NativeRecordCodec::with_definitions(&other.structs, &other.enums);
     let error = codec
@@ -950,7 +1062,7 @@ fn enum_projections_keep_native_metadata_original_bytes_and_lexical_leases() {
             .unwrap()
             .borrow(true, None)
             .unwrap()
-            .write(Value::from_i32(43))
+            .write(Value::from(rils_execution::value::native_i32(43)))
             .unwrap();
         assert_eq!(RilsValue::new(number).get_cloned::<i32>().unwrap(), 43);
         assert!(
@@ -968,7 +1080,8 @@ fn enum_projections_keep_native_metadata_original_bytes_and_lexical_leases() {
         assert!(!value.is_partially_moved());
         let slot = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
         slot.borrow_mut().initialize(value);
-        let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true)));
+        let reference =
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true)));
         let field = borrow_variant_field(&reference, index, name).unwrap();
         drop(reference);
         assert!(

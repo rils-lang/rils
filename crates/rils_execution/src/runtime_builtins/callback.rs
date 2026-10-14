@@ -64,5 +64,5 @@ impl Types {
 pub(super) fn shared_argument(value: &Value) -> Value {
     let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(false)));
     storage.borrow_mut().initialize(value.clone());
-    Value::Reference(Rc::new(ReferenceValue::new_storage(storage, false)))
+    Value::from_reference(Rc::new(ReferenceValue::new_storage(storage, false)))
 }

@@ -1,4 +1,4 @@
-//! Owned conversion between legacy execution values and composed native bytes.
+//! Owned conversion between execution handles and composed native bytes.
 //!
 //! The codec moves structural values into native fields and restores runtime
 //! wrappers at the execution boundary. Nominal declarations are retained in
@@ -11,8 +11,10 @@ use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
 
 use crate::Type;
 
-use super::{EnumType, FieldSlot, HashKey, StructType, Value, native_layouts, native_string};
+use super::{EnumType, StructType, Value, native_layouts, native_string};
 
+#[path = "record_codec/cloning.rs"]
+mod cloning;
 #[path = "record_codec/declarations.rs"]
 mod declarations;
 #[path = "record_codec/native.rs"]
@@ -53,15 +55,20 @@ impl NativeRecordCodec {
         self
     }
 
-    pub(crate) fn nominal_definition(&self, ty: &Type) -> Option<Value> {
+    pub(crate) fn nominal_definition(&self, ty: &Type) -> Option<crate::value::Declaration> {
         let Type::Named { name, .. } = ty else {
             return None;
         };
         self.structs
             .get(name)
             .cloned()
-            .map(Value::StructType)
-            .or_else(|| self.enums.get(name).cloned().map(Value::EnumType))
+            .map(crate::value::Declaration::StructType)
+            .or_else(|| {
+                self.enums
+                    .get(name)
+                    .cloned()
+                    .map(crate::value::Declaration::EnumType)
+            })
     }
 
     pub fn into_native(
@@ -99,36 +106,6 @@ pub fn from_native(value: DynamicValue) -> Result<Value, String> {
     NativeRecordCodec::new().from_native(value)
 }
 
-/// Restore a user nominal value that was exposed through a legacy sum wrapper.
-/// Registered standard-library payloads retain their native handle.
-pub fn restore_owned_nominal(
-    value: Value,
-    structs: &[Rc<StructType>],
-    enums: &[Rc<EnumType>],
-) -> Result<Value, String> {
-    let Value::Dynamic(object) = value else {
-        return Ok(value);
-    };
-    let Type::Named { name, .. } = object.descriptor().layout().rils_type() else {
-        return Ok(Value::Dynamic(object));
-    };
-    let candidates = structs
-        .iter()
-        .filter(|definition| definition.name == *name)
-        .count()
-        + enums
-            .iter()
-            .filter(|definition| definition.name == *name)
-            .count();
-    match candidates {
-        0 => return Ok(Value::Dynamic(object)),
-        1 => {}
-        _ => return Err(format!("ambiguous nominal declaration for {name}")),
-    }
-    let payload = object.into_value().map_err(|failure| failure.1)?;
-    NativeRecordCodec::with_definitions(structs, enums).from_native(payload)
-}
-
 impl NativeRecordCodec {
     fn encode(&mut self, value: Value, layout: Rc<DynamicLayout>) -> Result<DynamicValue, String> {
         if self.require_owned && value.is_partially_moved() {
@@ -153,8 +130,13 @@ impl NativeRecordCodec {
             return self.recompose_sum(value, layout);
         }
         match (ty, value) {
-            (Type::Reference { .. }, Value::Reference(value)) => {
-                super::runtime_layouts::encode_reference(value, layout)
+            (Type::Unit, value) if value.is_unit() => DynamicValue::from_rust(layout, ()),
+            (Type::Bool, value) => DynamicValue::from_rust(
+                layout,
+                value.get_cloned::<bool>().ok().ok_or("expected bool")?,
+            ),
+            (Type::Reference { .. }, value) if value.as_reference().is_some() => {
+                super::runtime_layouts::encode_reference(value.as_reference().unwrap(), layout)
             }
             (Type::Function { .. }, value) => {
                 super::runtime_layouts::encode_callable(value, layout)
@@ -162,8 +144,6 @@ impl NativeRecordCodec {
             (Type::Named { .. }, Value::HostObject(value)) => {
                 super::runtime_layouts::encode_host(value, layout)
             }
-            (Type::Unit, Value::Unit) => DynamicValue::from_rust(layout, ()),
-            (Type::Bool, Value::Bool(value)) => DynamicValue::from_rust(layout, value),
             (Type::Char, value) if super::char_payload(&value).is_some() => {
                 DynamicValue::from_rust(layout, super::char_payload(&value).expect("checked char"))
             }
@@ -208,149 +188,6 @@ impl NativeRecordCodec {
                 }
                 Ok(value)
             }
-            (Type::Option(_), Value::Option { value: None, .. }) => DynamicValue::none(layout),
-            (
-                Type::Option(_),
-                Value::Option {
-                    value: Some(value), ..
-                },
-            ) => {
-                let item = layout
-                    .option_item()
-                    .ok_or_else(|| "expected an optional native layout".to_owned())?;
-                let value = Rc::try_unwrap(value)
-                    .map_err(|_| "cannot move a shared optional item".to_owned())?;
-                let item = self.encode(value, item.clone())?;
-                DynamicValue::some(layout, item)
-            }
-            (Type::Result(_, _), Value::Result { value, .. }) => {
-                let alternatives = layout
-                    .variant_alternatives()
-                    .ok_or_else(|| "expected a result native layout".to_owned())?;
-                let (index, item) = match value {
-                    Ok(value) => (0, value),
-                    Err(value) => (1, value),
-                };
-                let item = Rc::try_unwrap(item)
-                    .map_err(|_| "cannot move a shared result item".to_owned())?;
-                let item = self.encode(item, alternatives[index].clone())?;
-                DynamicValue::variant(layout, index, item)
-            }
-            (Type::Tuple(_), Value::Tuple(sequence))
-            | (Type::Array { .. }, Value::Array(sequence)) => {
-                let sequence = Rc::try_unwrap(sequence)
-                    .map_err(|_| "cannot move a shared tuple or array".to_owned())?;
-                if sequence.active_iterators.get() != 0 {
-                    return Err("cannot move an indexed value with active iterators".into());
-                }
-                let fields = layout
-                    .record_fields()
-                    .ok_or_else(|| "expected a tuple or array native layout".to_owned())?;
-                let slots = sequence.elements.into_inner();
-                if slots.len() != fields.len() {
-                    return Err("tuple or array length does not match its layout".into());
-                }
-                let values = slots
-                    .into_iter()
-                    .zip(fields)
-                    .map(|(slot, field)| {
-                        if slot.references != 0 {
-                            return Err("cannot move a referenced tuple or array element".into());
-                        }
-                        let value = slot.value.ok_or_else(|| {
-                            "cannot move a partially moved tuple or array".to_owned()
-                        })?;
-                        self.encode(value, field.layout_handle())
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                DynamicValue::record(layout, values)
-            }
-            (ty, Value::Vec(sequence)) if native_layouts::vec::matches(&ty) => {
-                let sequence =
-                    Rc::try_unwrap(sequence).map_err(|_| "cannot move a shared Vec".to_owned())?;
-                if sequence.active_iterators.get() != 0 {
-                    return Err("cannot move Vec with active iterators".into());
-                }
-                let item = layout
-                    .sequence_item()
-                    .ok_or_else(|| "expected a native sequence layout for Vec".to_owned())?;
-                let values = sequence
-                    .elements
-                    .into_inner()
-                    .into_iter()
-                    .map(|slot| {
-                        if slot.references != 0 {
-                            return Err("cannot move a referenced Vec element".into());
-                        }
-                        let value = slot
-                            .value
-                            .ok_or_else(|| "cannot move a partially moved Vec".to_owned())?;
-                        self.encode(value, item.clone())
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                DynamicValue::sequence(layout, values)
-            }
-            (ty, Value::VecDeque(queue)) if native_layouts::vec_deque::matches(&ty) => {
-                let queue = Rc::try_unwrap(queue)
-                    .map_err(|_| "cannot move a shared VecDeque".to_owned())?;
-                let item = layout
-                    .sequence_item()
-                    .ok_or_else(|| "expected a native sequence layout for VecDeque".to_owned())?;
-                let values = queue
-                    .elements
-                    .into_inner()
-                    .into_iter()
-                    .map(|value| self.encode(value, item.clone()))
-                    .collect::<Result<Vec<_>, _>>()?;
-                DynamicValue::sequence(layout, values)
-            }
-            (ty, Value::BinaryHeap(heap)) if native_layouts::binary_heap::matches(&ty) => {
-                let heap = Rc::try_unwrap(heap)
-                    .map_err(|_| "cannot move a shared BinaryHeap".to_owned())?;
-                let item = layout
-                    .sequence_item()
-                    .ok_or_else(|| "expected a native sequence layout for BinaryHeap".to_owned())?;
-                let values = heap
-                    .elements
-                    .into_inner()
-                    .into_iter()
-                    .map(|value| self.encode(value, item.clone()))
-                    .collect::<Result<Vec<_>, _>>()?;
-                DynamicValue::sequence(layout, values)
-            }
-            (ty, Value::HashSet(set)) if native_layouts::hash_set::matches(&ty) => {
-                let set =
-                    Rc::try_unwrap(set).map_err(|_| "cannot move a shared HashSet".to_owned())?;
-                if set.borrowed.get() != 0 {
-                    return Err("cannot move a borrowed HashSet".into());
-                }
-                self.encode_set(layout, set.entries.into_inner())
-            }
-            (ty, Value::BTreeSet(set)) if native_layouts::btree_set::matches(&ty) => {
-                let set =
-                    Rc::try_unwrap(set).map_err(|_| "cannot move a shared BTreeSet".to_owned())?;
-                if set.borrowed.get() != 0 {
-                    return Err("cannot move a borrowed BTreeSet".into());
-                }
-                self.encode_set(layout, set.entries.into_inner())
-            }
-            (ty, Value::HashMap(map)) if native_layouts::hash_map::matches(&ty) => {
-                let map =
-                    Rc::try_unwrap(map).map_err(|_| "cannot move a shared HashMap".to_owned())?;
-                if map.borrowed.get() != 0 {
-                    return Err("cannot move a borrowed HashMap".into());
-                }
-                self.encode_map(layout, map.entries.into_inner())
-            }
-            (ty, Value::BTreeMap(map)) if native_layouts::btree_map::matches(&ty) => {
-                let map =
-                    Rc::try_unwrap(map).map_err(|_| "cannot move a shared BTreeMap".to_owned())?;
-                if map.borrowed.get() != 0 {
-                    return Err("cannot move a borrowed BTreeMap".into());
-                }
-                self.encode_map(layout, map.entries.into_inner())
-            }
-
             (ty, value) if native_layouts::integer::layout(&ty).is_some() => {
                 native_layouts::integer::option_item(&value, &ty, layout)
                     .ok_or_else(|| format!("no integer codec for {ty}"))?
@@ -364,58 +201,6 @@ impl NativeRecordCodec {
                 value.type_name()
             )),
         }
-    }
-
-    fn encode_set(
-        &mut self,
-        layout: Rc<DynamicLayout>,
-        entries: impl IntoIterator<Item = HashKey>,
-    ) -> Result<DynamicValue, String> {
-        let item = layout
-            .sequence_item()
-            .ok_or_else(|| "expected a native set sequence layout".to_owned())?;
-        let values = entries
-            .into_iter()
-            .map(|key| self.encode(key.into_value()?, item.clone()))
-            .collect::<Result<Vec<_>, _>>()?;
-        DynamicValue::sequence(layout, values)
-    }
-
-    fn encode_map(
-        &mut self,
-        layout: Rc<DynamicLayout>,
-        entries: impl IntoIterator<Item = (HashKey, FieldSlot)>,
-    ) -> Result<DynamicValue, String> {
-        let pair = layout
-            .sequence_item()
-            .ok_or_else(|| "expected a native map sequence layout".to_owned())?;
-        let fields = pair
-            .record_fields()
-            .ok_or_else(|| "expected a native key-value aggregate layout".to_owned())?;
-        if fields.len() != 2 {
-            return Err("native map entry must have two fields".into());
-        }
-        let key_layout = fields[0].layout_handle();
-        let value_layout = fields[1].layout_handle();
-        let values = entries
-            .into_iter()
-            .map(|(key, slot)| {
-                if slot.references != 0 {
-                    return Err("cannot move a referenced map value".into());
-                }
-                let value = slot
-                    .value
-                    .ok_or_else(|| "cannot move a partially moved map value".to_owned())?;
-                DynamicValue::record(
-                    pair.clone(),
-                    vec![
-                        self.encode(key.into_value()?, key_layout.clone())?,
-                        self.encode(value, value_layout.clone())?,
-                    ],
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        DynamicValue::sequence(layout, values)
     }
 
     fn decode(&self, value: DynamicValue) -> Result<Value, String> {
@@ -432,19 +217,19 @@ impl NativeRecordCodec {
         match ty {
             Type::Unit => value
                 .into_rust::<()>()
-                .map(|_| Value::Unit)
+                .map(|_| Value::from(crate::value::native_unit()))
                 .map_err(|error| error.1),
             Type::Bool => value
                 .into_rust::<bool>()
-                .map(Value::Bool)
+                .map(|value| Value::from(crate::value::native_bool(value)))
                 .map_err(|error| error.1),
             Type::Char => value
                 .into_rust::<char>()
-                .map(super::native_char)
+                .map(|value| Value::from(super::native_char(value)))
                 .map_err(|error| error.1),
             Type::String => value
                 .into_rust::<NativeString>()
-                .map(|text| native_string(std::string::String::from(text)))
+                .map(|text| Value::from(native_string(std::string::String::from(text))))
                 .map_err(|error| error.1),
             Type::Named { .. } if value.descriptor().is_rust_value() => {
                 let layout = value.layout_handle();
@@ -457,11 +242,7 @@ impl NativeRecordCodec {
                 super::native_instance::from_native(value, Rc::new(self.clone()))
             }
             _ if value.descriptor().sequence_item().is_some() => {
-                let layout = value.layout_handle();
-                Ok(Value::Dynamic(super::DynamicObject::new(
-                    Rc::new(rils_value::DynamicType::new(layout)),
-                    value,
-                )?))
+                super::native_instance::from_native(value, Rc::new(self.clone()))
             }
             Type::Named { name, arguments } if self.structs.contains_key(&name) => {
                 let definition = self.structs[&name].clone();

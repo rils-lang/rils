@@ -57,7 +57,7 @@ fn option_decode_and_nested_field_move_keep_tuple_storage_and_independent_copy()
     let context = TypedStorageContext::new(&[], &[]);
     let ty = Type::Tuple(vec![Type::I32]);
     let tuple = context
-        .construct_tuple(&ty, vec![Value::from_i32(7)])
+        .construct_tuple(&ty, vec![Value::from(rils_execution::value::native_i32(7))])
         .unwrap();
     let optional = context
         .construct_option(&Type::Option(Box::new(ty.clone())), Some(tuple))
@@ -68,17 +68,23 @@ fn option_decode_and_nested_field_move_keep_tuple_storage_and_independent_copy()
     original
         .field("0")
         .unwrap()
-        .assign(Value::from_i32(8))
+        .assign(Value::from(rils_execution::value::native_i32(8)))
         .unwrap();
-    assert_eq!(copy.field("0").unwrap().take().unwrap(), Value::from_i32(7));
+    assert_eq!(
+        copy.field("0").unwrap().take().unwrap(),
+        Value::from(rils_execution::value::native_i32(7))
+    );
     assert_eq!(
         original.field("0").unwrap().take().unwrap(),
-        Value::from_i32(8)
+        Value::from(rils_execution::value::native_i32(8))
     );
 
     let inner_type = Type::Tuple(vec![Type::String]);
     let inner = context
-        .construct_tuple(&inner_type, vec![Value::from_string("owned")])
+        .construct_tuple(
+            &inner_type,
+            vec![Value::from(rils_execution::value::native_string("owned"))],
+        )
         .unwrap();
     let outer = context
         .construct_tuple(
@@ -86,7 +92,7 @@ fn option_decode_and_nested_field_move_keep_tuple_storage_and_independent_copy()
             vec![
                 inner,
                 context
-                    .construct_tuple(&ty, vec![Value::from_i32(9)])
+                    .construct_tuple(&ty, vec![Value::from(rils_execution::value::native_i32(9))])
                     .unwrap(),
             ],
         )
@@ -98,7 +104,7 @@ fn option_decode_and_nested_field_move_keep_tuple_storage_and_independent_copy()
     let inner = place(inner);
     assert_eq!(
         inner.field("0").unwrap().take().unwrap(),
-        Value::from_string("owned")
+        Value::from(rils_execution::value::native_string("owned"))
     );
     assert_eq!(
         place(outer.field("1").unwrap().take().unwrap())
@@ -106,6 +112,6 @@ fn option_decode_and_nested_field_move_keep_tuple_storage_and_independent_copy()
             .unwrap()
             .take()
             .unwrap(),
-        Value::from_i32(9)
+        Value::from(rils_execution::value::native_i32(9))
     );
 }

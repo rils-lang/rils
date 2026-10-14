@@ -21,19 +21,80 @@ fn declaration(name: &str, copy: bool) -> Rc<HostType> {
 }
 
 #[test]
-fn host_declarations_preserve_module_identity_aliases_and_weak_ownership() {
+fn host_declaration_lookup_preserves_identity_through_nested_references_and_fields() {
+    use rils_execution::{
+        environment::StorageSlot,
+        value::{
+            ReferenceValue, native_instance::NativeInstancePlace, storage::TypedStorageContext,
+        },
+    };
+    let definition = declaration("Item", false);
+    let owner = Rc::new(HostObject {
+        type_definition: definition.clone(),
+        payload: Rc::new(()),
+    });
+    let hosts = [definition.clone()];
+    let tuple = TypedStorageContext::with_hosts(&[], &[], &hosts)
+        .construct_tuple(
+            &Type::Tuple(vec![Type::named("Item")]),
+            vec![Value::HostObject(owner.clone())],
+        )
+        .unwrap();
+    let Value::Dynamic(tuple) = tuple else {
+        panic!("native tuple")
+    };
+    let projected = Value::from_reference(Rc::new(
+        NativeInstancePlace::new(tuple)
+            .unwrap()
+            .field("0")
+            .unwrap()
+            .borrow(false, None)
+            .unwrap(),
+    ));
+    for value in [Value::HostObject(owner.clone()), projected] {
+        assert!(Rc::ptr_eq(
+            &value.host_type_definition().unwrap().unwrap(),
+            &definition
+        ));
+        let slot = Rc::new(RefCell::new(StorageSlot::uninitialized(false)));
+        slot.borrow_mut().initialize(value);
+        let reference =
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(slot.clone(), false)));
+        assert!(Rc::ptr_eq(
+            &reference.host_type_definition().unwrap().unwrap(),
+            &definition
+        ));
+        {
+            let _writing = slot.borrow_mut();
+            assert!(reference.host_type_definition().is_err());
+        }
+        slot.borrow_mut().clear();
+        assert!(reference.host_type_definition().is_err());
+    }
+}
+
+#[test]
+fn host_declarations_preserve_module_identity_aliases_and_registry_ownership() {
     let root = Environment::global();
     let left = Environment::named_module_child(root.clone(), "left");
     let right = Environment::named_module_child(root.clone(), "right");
     let first = declaration("left::Item", false);
     let weak = Rc::downgrade(&first);
-    left.borrow_mut()
-        .define("Item", Value::HostType(first.clone()), false, None);
-    left.borrow_mut()
-        .define("Alias", Value::HostType(first), false, None);
+    left.borrow_mut().define(
+        "Item",
+        rils_execution::declaration::Declaration::HostType(first.clone()),
+        false,
+        None,
+    );
+    left.borrow_mut().define(
+        "Alias",
+        rils_execution::declaration::Declaration::HostType(first),
+        false,
+        None,
+    );
     right.borrow_mut().define(
         "Item",
-        Value::HostType(declaration("right::Item", true)),
+        rils_execution::declaration::Declaration::HostType(declaration("right::Item", true)),
         false,
         None,
     );
@@ -59,8 +120,11 @@ fn host_declarations_preserve_module_identity_aliases_and_weak_ownership() {
     );
     drop(context);
     drop(left);
+    assert!(weak.upgrade().is_some());
+    assert_eq!(root.borrow().visible_host_definitions().len(), 2);
+    drop(right);
+    drop(root);
     assert!(weak.upgrade().is_none());
-    assert_eq!(root.borrow().visible_host_definitions().len(), 1);
 }
 
 #[test]
@@ -73,8 +137,12 @@ fn non_copy_host_borrowed_reads_keep_identity_and_drop_once() {
     }
     let root = Environment::global();
     let definition = declaration("Item", false);
-    root.borrow_mut()
-        .define("Item", Value::HostType(definition.clone()), false, None);
+    root.borrow_mut().define(
+        "Item",
+        rils_execution::declaration::Declaration::HostType(definition.clone()),
+        false,
+        None,
+    );
     let drops = Rc::new(Cell::new(0));
     let owner = Rc::new(HostObject {
         type_definition: definition,
@@ -85,10 +153,13 @@ fn non_copy_host_borrowed_reads_keep_identity_and_drop_once() {
     let original = context
         .storage()
         .apply_declared(
-            Value::Option {
-                value: Some(Rc::new(Value::HostObject(owner.clone()))),
-                element_type: Some(Type::named("Item")),
-            },
+            context
+                .storage()
+                .construct_option(
+                    &Type::Option(Box::new(Type::named("Item"))),
+                    Some(Value::HostObject(owner.clone())),
+                )
+                .unwrap(),
             &expected,
         )
         .unwrap();
@@ -143,16 +214,24 @@ fn ref_cell_host_reads_and_writes_retain_the_registered_receiver() {
         let Value::Dynamic(object) = value else {
             panic!("native RefCell")
         };
-        let reference =
-            ReferenceValue::new_dynamic_cell(object, true, None, vec![], vec![]).unwrap();
-        let snapshot = reference.read().unwrap();
-        let Value::HostObject(snapshot_owner) = &snapshot else {
-            panic!("registered host receiver")
-        };
-        assert!(Rc::ptr_eq(snapshot_owner, &owner));
-        snapshot.host_payload::<Cell<i32>>().unwrap().set(42);
+        let reference = ReferenceValue::new_dynamic_cell(&Value::Dynamic(object), true).unwrap();
+        assert_eq!(reference.read().is_ok(), copy);
+        let reference = Rc::new(reference);
+        let borrowed = Value::from_reference(reference.clone());
+        borrowed
+            .with_native_view(|view| {
+                view.with_rust::<Rc<HostObject>, _>(|observed| {
+                    assert!(Rc::ptr_eq(observed, &owner));
+                    observed
+                        .payload
+                        .downcast_ref::<Cell<i32>>()
+                        .unwrap()
+                        .set(42);
+                })
+            })
+            .unwrap()
+            .unwrap();
         assert_eq!(owner.payload.downcast_ref::<Cell<i32>>().unwrap().get(), 42);
-        assert_eq!(snapshot.is_copy(), copy);
         let replacement = Rc::new(HostObject {
             type_definition: definition,
             payload: Rc::new(Cell::new(43i32)),
@@ -160,13 +239,18 @@ fn ref_cell_host_reads_and_writes_retain_the_registered_receiver() {
         reference
             .write(Value::HostObject(replacement.clone()))
             .unwrap();
-        let Value::HostObject(restored) = reference.read().unwrap() else {
-            panic!("replacement receiver")
-        };
-        assert!(Rc::ptr_eq(&restored, &replacement));
-        assert_eq!(
-            restored.payload.downcast_ref::<Cell<i32>>().unwrap().get(),
-            43
-        );
+        assert_eq!(reference.read().is_ok(), copy);
+        borrowed
+            .with_native_view(|view| {
+                view.with_rust::<Rc<HostObject>, _>(|restored| {
+                    assert!(Rc::ptr_eq(restored, &replacement));
+                    assert_eq!(
+                        restored.payload.downcast_ref::<Cell<i32>>().unwrap().get(),
+                        43
+                    );
+                })
+            })
+            .unwrap()
+            .unwrap();
     }
 }

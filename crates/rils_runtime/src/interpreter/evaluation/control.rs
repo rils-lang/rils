@@ -78,7 +78,7 @@ impl Interpreter {
                 }
             }
         }
-        if let Value::VariantConstructor(constructor) = callee_value {
+        if let Some(constructor) = callee_value.as_callable::<crate::value::VariantConstructor>() {
             let expected = self.constructor_type(expression, &environment)?;
             return self.construct_tuple_variant(constructor, arguments, span, expected.as_ref());
         }
@@ -106,7 +106,7 @@ impl Interpreter {
         } else if let Some(else_branch) = else_branch {
             self.evaluate(else_branch, environment)
         } else {
-            Ok(Value::Unit)
+            Ok(Value::from(rils_execution::value::native_unit()))
         }
     }
 

@@ -3,11 +3,20 @@ use rils::{BytecodeModule, Value, compile, eval_value};
 #[test]
 fn native_aggregate_literals_and_defaults_preserve_ownership_and_inference() {
     let source = include_str!("fixtures/native_aggregate_construct.rils");
-    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
     let module = compile(source).unwrap();
-    assert_eq!(module.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
 }
 
 #[test]

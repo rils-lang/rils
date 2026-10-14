@@ -15,6 +15,37 @@ impl Inferencer<'_> {
             self.apply_expected_call(expression, callee, arguments, &expected);
         }
         match (expression, &expected) {
+            (Expr::Variable { name, .. }, _) if name != "None" => {
+                let Some(index) = self
+                    .scopes
+                    .iter()
+                    .rposition(|scope| scope.contains_key(name))
+                else {
+                    return;
+                };
+                let actual = self.scopes[index][name].ty.clone();
+                let Some(ty) = self.merge_inferred_types(&actual, &expected) else {
+                    return;
+                };
+                self.scopes[index]
+                    .get_mut(name)
+                    .expect("resolved binding")
+                    .ty = ty.clone();
+                self.record_compatible_type(expression, &ty);
+                if let Some((span, initializer)) =
+                    self.binding_initializers[index].get(name).copied()
+                {
+                    self.result.binding_types.insert(span, ty.clone());
+                    self.result
+                        .expression_types_by_id
+                        .insert(initializer, ty.clone());
+                    for hint in &mut self.result.hints {
+                        if hint.span == span {
+                            hint.ty = ty.clone();
+                        }
+                    }
+                }
+            }
             (Expr::Try { operand, .. }, _) => {
                 let id = self.expression_ids.id(operand);
                 if let Some(Type::Result(_, error)) =
@@ -125,7 +156,8 @@ impl Inferencer<'_> {
                 && matches!(callee.as_ref(),
                     Expr::Path { segments, .. } | Expr::GenericPath { segments, .. }
                         if segments.len() >= 2
-                            && segments[segments.len() - 2] == *name
+                            && crate::standard_library::builtin_type_name(&segments[..segments.len() - 1].join("::"))
+                                == crate::standard_library::builtin_type_name(name)
                             && segments.last().is_some_and(|member| member == "new")
                             && crate::standard_library::empty_native_constructor_symbol(name)
                                 .is_some()) =>

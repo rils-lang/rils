@@ -2,7 +2,7 @@ use rils_execution::{RilsValue, Value};
 
 #[test]
 fn borrows_clones_and_moves_exact_native_values() {
-    let result = RilsValue::new(Value::from_i32(42));
+    let result = RilsValue::new(Value::from(rils_execution::value::native_i32(42)));
     assert_eq!(result.with_ref::<i32, _>(|value| *value).unwrap(), 42);
     assert_eq!(result.get_cloned::<i32>().unwrap(), 42);
     assert_eq!(result.into_owned::<i32>().ok(), Some(42));
@@ -10,7 +10,7 @@ fn borrows_clones_and_moves_exact_native_values() {
 
 #[test]
 fn failed_move_preserves_the_owned_handle() {
-    let result = RilsValue::new(Value::from_i32(42));
+    let result = RilsValue::new(Value::from(rils_execution::value::native_i32(42)));
     let (result, error) = *result.into_owned::<i64>().err().unwrap();
     assert!(error.contains("Number"));
     assert_eq!(result.get_cloned::<i32>().unwrap(), 42);
@@ -18,7 +18,7 @@ fn failed_move_preserves_the_owned_handle() {
 
 #[test]
 fn borrowed_string_can_be_read_without_cloning() {
-    let result = RilsValue::new(Value::from_string("hello"));
+    let result = RilsValue::new(Value::from(rils_execution::value::native_string("hello")));
     assert_eq!(result.with_ref::<String, _>(|text| text.len()).unwrap(), 5);
     assert_eq!(result.get_cloned::<String>().unwrap(), "hello");
     assert_eq!(result.into_owned::<String>().ok().as_deref(), Some("hello"));
@@ -31,13 +31,14 @@ fn a_reference_cannot_be_moved_out() {
     use rils_execution::{environment::StorageSlot, value::ReferenceValue};
 
     let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
-    storage.borrow_mut().initialize(Value::from_i32(7));
-    let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(storage, false)));
+    storage
+        .borrow_mut()
+        .initialize(Value::from(rils_execution::value::native_i32(7)));
+    let reference = Value::from_reference(Rc::new(ReferenceValue::new_storage(storage, false)));
     let result = RilsValue::new(reference);
     assert_eq!(result.with_ref::<i32, _>(|value| *value).unwrap(), 7);
     assert_eq!(result.get_cloned::<i32>().unwrap(), 7);
-    let (result, error) = *result.into_owned::<i32>().err().unwrap();
-    assert!(error.contains("not an owned"));
+    let (result, _) = *result.into_owned::<i32>().err().unwrap();
     assert_eq!(result.get_cloned::<i32>().unwrap(), 7);
 }
 

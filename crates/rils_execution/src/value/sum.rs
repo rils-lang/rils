@@ -27,10 +27,10 @@ pub(crate) fn codec(
 
 /// Read only the discriminant; no child is copied or cloned.
 pub fn branch(value: &Value) -> Result<Option<Branch>, String> {
-    if let Value::Dynamic(object) = value {
-        return object.with(|payload| branch_view(payload.view()))?;
-    }
-    borrowed_sum::branch(value)
+    super::borrowed::with_referent(value, |value| match value {
+        super::borrowed::Read::View(view) => branch_view(view),
+        _ => Ok(None),
+    })?
 }
 
 fn branch_view(view: DynamicValueRef<'_>) -> Result<Option<Branch>, String> {
@@ -71,18 +71,24 @@ pub fn borrow_payload(value: &Value, expected: Branch) -> Result<Value, String> 
         return Err("sum payload does not match its branch".into());
     }
     match value {
-        Value::Dynamic(object) => Ok(Value::Reference(Rc::new(
+        __reference_value if __reference_value.as_reference().is_some() => {
+            borrowed_sum::payload(value, expected)
+        }
+        Value::Dynamic(object) => Ok(Value::from_reference(Rc::new(
             owner(object)?
                 .project(step(expected)?)?
                 .borrow(false, None)?,
         ))),
-        Value::Reference(_) => borrowed_sum::payload(value, expected),
+
         _ => Err("sum payload has no native storage".into()),
     }
 }
 
 /// Move a bound payload from an owned sum. Borrowed sums retain their source.
 pub fn bind_payload(value: &Value, expected: Branch) -> Result<Value, String> {
+    if value.as_reference().is_some() {
+        return borrow_payload(value, expected);
+    }
     if branch(value)? != Some(expected) {
         return Err("sum payload does not match its branch".into());
     }
@@ -110,19 +116,15 @@ pub fn try_result(
     structs: &[Rc<StructType>],
     enums: &[Rc<EnumType>],
 ) -> Result<Result<Value, Value>, String> {
-    match &value {
-        Value::Result { value: Err(_), .. } => return Ok(Err(value)),
-        Value::Result { value: Ok(_), .. } => {}
-        _ => match branch(&value)? {
-            Some(Branch::Err) => return Ok(Err(value)),
-            Some(Branch::Ok) => {}
-            _ => {
-                return Err(format!(
-                    "the `?` operator requires Result, found {}",
-                    value.type_name()
-                ));
-            }
-        },
+    match branch(&value)? {
+        Some(Branch::Err) => return Ok(Err(value)),
+        Some(Branch::Ok) => {}
+        _ => {
+            return Err(format!(
+                "the `?` operator requires Result, found {}",
+                value.type_name()
+            ));
+        }
     }
     super::dynamic_result::take_owned_with_definitions(value, structs, enums)
 }

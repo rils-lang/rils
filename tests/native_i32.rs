@@ -1,7 +1,7 @@
 use rils::{BytecodeModule, Value, compile, eval_value};
 
 fn assert_native_i32(value: Value, expected: i32) {
-    assert_eq!(value.as_i32(), Some(expected));
+    assert_eq!(value.get_cloned::<i32>().ok(), Some(expected));
     let Value::Native(object) = value else {
         panic!("i32 result must retain native storage");
     };

@@ -107,7 +107,12 @@ pub(super) fn call(item: &ItemEnum, method: &ImplItemFn) -> syn::Result<Tokens> 
             Some(Conversion::Receiver) => quote!(bridge.#import(value)?),
             Some(Conversion::String) => quote!(super::super::sum_native::string_argument(value)?),
             Some(Conversion::Bool) => {
-                quote!(value.as_bool().ok_or("native argument expects bool")?)
+                quote!(
+                    value
+                        .get_cloned::<bool>()
+                        .ok()
+                        .ok_or("native argument expects bool")?
+                )
             }
             _ => return Err(Error::new_spanned(&input.ty, "unsupported sum argument")),
         };
@@ -133,7 +138,7 @@ pub(super) fn call(item: &ItemEnum, method: &ImplItemFn) -> syn::Result<Tokens> 
         .is_some();
     let check_receiver = if mutable {
         quote! {
-            if !matches!(&receiver, crate::Value::Reference(_)) {
+            if receiver.as_reference().is_none() {
                 return Err("native method requires a mutable binding".into());
             }
         }
@@ -150,7 +155,7 @@ pub(super) fn call(item: &ItemEnum, method: &ImplItemFn) -> syn::Result<Tokens> 
             Conversion::Item(index) => quote!(bridge.item_argument(result, #index, "return value")),
             Conversion::Receiver => quote!(bridge.export_option(result, None)),
             Conversion::Option(index) => quote!(bridge.export_option(result, Some(#index))),
-            Conversion::Bool => quote!(Ok(crate::Value::Bool(result))),
+            Conversion::Bool => quote!(Ok(crate::Value::from(crate::value::native_bool(result)))),
             _ => return Err(Error::new_spanned(output, "unsupported sum return type")),
         };
         quote! {

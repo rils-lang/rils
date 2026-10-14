@@ -44,7 +44,7 @@ fn native_reference_and_callable_fields_work_in_all_backends() {
     ] {
         assert_eq!(
             eval_value(source).unwrap_or_else(|error| panic!("{name}: {error}")),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
             "interpreter: {name}"
         );
         let module = compile(source).unwrap_or_else(|error| panic!("{name}: {error}"));
@@ -52,7 +52,7 @@ fn native_reference_and_callable_fields_work_in_all_backends() {
             module
                 .execute_value()
                 .unwrap_or_else(|error| panic!("{name}: {error}")),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
             "VM: {name}"
         );
         let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
@@ -60,7 +60,7 @@ fn native_reference_and_callable_fields_work_in_all_backends() {
             loaded
                 .execute_value()
                 .unwrap_or_else(|error| panic!("{name}: {error}")),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
             "loaded VM: {name}"
         );
     }

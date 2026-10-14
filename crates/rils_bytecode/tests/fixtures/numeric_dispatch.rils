@@ -1,0 +1,21 @@
+assert!(19i8 + 23i8 == 42i8);
+assert!(19i16 + 23i16 == 42i16);
+assert!(19i32 + 23i32 == 42i32);
+assert!(19i64 + 23i64 == 42i64);
+assert!(19i128 + 23i128 == 42i128);
+assert!(19isize + 23isize == 42isize);
+assert!(19u8 + 23u8 == 42u8);
+assert!(19u16 + 23u16 == 42u16);
+assert!(19u32 + 23u32 == 42u32);
+assert!(19u64 + 23u64 == 42u64);
+assert!(19u128 + 23u128 == 42u128);
+assert!(19usize + 23usize == 42usize);
+assert!(19.0f32 + 23.0f32 == 42.0f32);
+assert!(19.0f64 + 23.0f64 == 42.0f64);
+let lowest = -127i8 - 1i8;
+assert!((lowest as i128) == -128i128);
+assert!((18446744073709551615u64 as i128) == 18446744073709551615i128);
+assert!(i8::try_from(127i128).unwrap() == 127i8);
+assert!(i8::try_from(128i128).is_err());
+assert!(u128::try_from(-1i8).is_err());
+42

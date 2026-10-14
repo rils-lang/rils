@@ -52,11 +52,6 @@ impl NativePath {
             .with(|value| Ok(callback(value.view_path(&self.path)?)))?
     }
 
-    pub(super) fn read(&self) -> Result<Value, String> {
-        let value = self.with_view(crate::value::runtime_layouts::clone_borrowed_view)??;
-        self.codec.from_native(value)
-    }
-
     pub(super) fn copy(&self) -> Result<Value, String> {
         let value = self.with_view(|view| view.copy_owned())??;
         let value = self.codec.from_native(value)?;
@@ -105,21 +100,13 @@ impl ReferenceValue {
                 }
                 NativePath::new(sequence.clone(), path, codec.clone().unwrap_or_default())?
             }
-            ReferenceTarget::DynamicCell {
-                cell,
-                structs,
-                enums,
-            } => {
+            ReferenceTarget::DynamicCell { cell, codec } => {
                 let object = cell.with(|payload| {
-                    payload.with::<rils_stdlib::stdlib::cell::ErasedRefCell, _>(|value| {
+                    payload.with_rust::<rils_stdlib::stdlib::cell::ErasedRefCell, _>(|value| {
                         value.value.rebind_shared::<Value>()
                     })
                 })???;
-                NativePath::new(
-                    object.into_compact(),
-                    vec![],
-                    Rc::new(NativeRecordCodec::with_definitions(structs, enums)),
-                )?
+                NativePath::new(object.into_compact(), vec![], codec.clone())?
             }
             _ => {
                 return match &self.target {
@@ -127,13 +114,6 @@ impl ReferenceValue {
                         target.borrow_mut().with_value_mut(Self::retain_native_root)
                     }
 
-                    ReferenceTarget::IndexedElement { sequence, index } => sequence
-                        .elements
-                        .borrow_mut()
-                        .get_mut(*index)
-                        .and_then(|slot| slot.value.as_mut())
-                        .ok_or_else(|| "native projection target was moved".to_owned())
-                        .and_then(Self::retain_native_root),
                     _ => Ok(None),
                 };
             }
@@ -142,14 +122,16 @@ impl ReferenceValue {
     }
 
     fn retain_native_root(value: &mut Value) -> Result<Option<NativePath>, String> {
-        if let Value::Reference(reference) = value {
+        if let Some(reference) = value.as_reference() {
             return reference.native_path();
         }
         let Value::Dynamic(object) = value else {
             return Ok(None);
         };
         if object.is_inline() {
-            let Value::Dynamic(object) = std::mem::replace(value, Value::Unit) else {
+            let Value::Dynamic(object) =
+                std::mem::replace(value, Value::from(crate::value::native_unit()))
+            else {
                 unreachable!()
             };
             *value = Value::Dynamic(object.into_shared());
@@ -179,33 +161,11 @@ impl ReferenceValue {
     }
 
     pub fn native_layout(&self) -> Result<Option<Rc<DynamicLayout>>, String> {
-        match &self.target {
-            ReferenceTarget::MapKey { .. }
-            | ReferenceTarget::MapValue { .. }
-            | ReferenceTarget::SetItem { .. } => {
-                return self.with_borrowed_target(|value| match value {
-                    super::super::borrowed::Read::View(view) => view.layout().map(Some),
-                    _ => Ok(None),
-                })?;
-            }
-            ReferenceTarget::Storage(target) => {
-                return target
-                    .try_borrow()
-                    .map_err(|_| "reference target is already mutably accessed".to_owned())?
-                    .with_value(Self::native_root_layout);
-            }
-
-            ReferenceTarget::IndexedElement { sequence, index } => {
-                return sequence
-                    .elements
-                    .try_borrow()
-                    .map_err(|_| "referenced sequence is already mutably accessed".to_owned())?
-                    .get(*index)
-                    .and_then(|slot| slot.value.as_ref())
-                    .ok_or_else(|| "native projection target was moved".to_owned())
-                    .and_then(Self::native_root_layout);
-            }
-            _ => {}
+        if let ReferenceTarget::Storage(target) = &self.target {
+            return target
+                .try_borrow()
+                .map_err(|_| "reference target is already mutably accessed".to_owned())?
+                .with_value(Self::native_root_layout);
         }
         self.native_path()?
             .map(|path| path.with_view(|view| view.layout())?)
@@ -217,49 +177,29 @@ impl ReferenceValue {
         match &self.target {
             ReferenceTarget::DynamicField(path) => Ok(Some(path.codec.clone())),
             ReferenceTarget::DynamicIndexedElement { codec, .. } => Ok(codec.clone()),
-            ReferenceTarget::DynamicCell { structs, enums, .. } => Ok(Some(Rc::new(
-                NativeRecordCodec::with_definitions(structs, enums),
-            ))),
+            ReferenceTarget::DynamicCell { codec, .. } => Ok(Some(codec.clone())),
             ReferenceTarget::Storage(target) => target
                 .try_borrow()
                 .map_err(|_| "reference target is already mutably accessed".to_owned())?
                 .with_value(super::super::borrowed::native_codec),
-            ReferenceTarget::IndexedElement { sequence, index } => {
-                let elements = sequence
-                    .elements
-                    .try_borrow()
-                    .map_err(|_| "referenced sequence is already mutably accessed".to_owned())?;
-                let value = elements
-                    .get(*index)
-                    .and_then(|slot| slot.value.as_ref())
-                    .ok_or("native projection target was moved")?;
-                super::super::borrowed::native_codec(value)
-            }
-            ReferenceTarget::MapKey { map, key } => {
-                map.with_entry(key, |key, _| key.native_codec())?
-            }
-            ReferenceTarget::MapValue { map, key } => map.with_entry(key, |_, slot| {
-                super::super::borrowed::native_codec(
-                    slot.value
-                        .as_ref()
-                        .ok_or("referenced map value was moved")?,
-                )
-            })?,
-            ReferenceTarget::SetItem { set, key } => {
-                set.with_item(key, |key| key.native_codec())?
-            }
         }
     }
 
     fn native_root_layout(value: &Value) -> Result<Option<Rc<DynamicLayout>>, String> {
         match value {
+            __reference_value if __reference_value.as_reference().is_some() => {
+                let reference = __reference_value
+                    .as_reference()
+                    .expect("checked reference handle");
+                reference.native_layout()
+            }
             Value::Dynamic(object) => Ok(Some(object.descriptor().layout_handle())),
-            Value::Reference(reference) => reference.native_layout(),
+
             _ => Ok(None),
         }
     }
 
-    pub fn native_type_definition(&self) -> Result<Option<Value>, String> {
+    pub fn native_type_definition(&self) -> Result<Option<crate::value::Declaration>, String> {
         let Some(path) = self.native_path()? else {
             return Ok(None);
         };

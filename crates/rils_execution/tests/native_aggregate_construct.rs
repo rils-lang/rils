@@ -24,7 +24,10 @@ fn direct_aggregate_construction_moves_strings_and_validates_shape() {
         };
         let text = "original owned buffer".to_owned();
         let address = text.as_ptr() as usize;
-        let value = build(vec![rils_execution::value::native_string(text)]).unwrap();
+        let value = build(vec![Value::from(rils_execution::value::native_string(
+            text,
+        ))])
+        .unwrap();
         assert!(!value.is_copy());
         assert_eq!(Type::of_value(&value), Some(ty.clone()));
         let Value::Dynamic(object) = value else {
@@ -43,7 +46,7 @@ fn direct_aggregate_construction_moves_strings_and_validates_shape() {
             address
         );
         assert!(build(vec![]).is_err());
-        assert!(build(vec![Value::from_i32(1)]).is_err());
+        assert!(build(vec![Value::from(rils_execution::value::native_i32(1))]).is_err());
     }
     assert!(
         context
@@ -78,11 +81,15 @@ fn repeat_array_validates_count_before_allocating_elements() {
     };
     assert!(
         context
-            .construct_repeat_array(&ty, Value::from_i32(1), usize::MAX)
+            .construct_repeat_array(
+                &ty,
+                Value::from(rils_execution::value::native_i32(1)),
+                usize::MAX
+            )
             .is_err()
     );
     let value = context
-        .construct_repeat_array(&ty, Value::from_i32(1), 2)
+        .construct_repeat_array(&ty, Value::from(rils_execution::value::native_i32(1)), 2)
         .unwrap();
     assert!(matches!(value, Value::Dynamic(_)));
     assert_eq!(Type::of_value(&value), Some(ty));
@@ -92,7 +99,11 @@ fn repeat_array_validates_count_before_allocating_elements() {
     };
     assert!(
         context
-            .construct_repeat_array(&ty, rils_execution::value::native_string("owned"), 0)
+            .construct_repeat_array(
+                &ty,
+                Value::from(rils_execution::value::native_string("owned")),
+                0
+            )
             .is_err()
     );
 }

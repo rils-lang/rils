@@ -4,33 +4,22 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use crate::{types::Type, value::Value};
 
 #[cfg(test)]
-use crate::value::{IndexedStorage, OwnedIteratorValue};
+use crate::value::OwnedIteratorValue;
 
-mod binary_heap;
 mod boxed;
-pub(crate) mod btree_map;
-pub(crate) mod btree_set;
 mod callback;
-mod cell_native;
 mod collection_constructor;
-mod collection_iter;
-mod compatibility_insert;
 mod context;
 pub use context::NativeOwnedContext;
 pub(crate) use context::resolve_layout;
 mod indexed_iter;
+mod keyed_collection;
 mod native;
-mod native_map;
-mod native_set;
-pub(crate) use native::{StringOutput, string_input, usize_input as string_usize_input};
+pub(crate) mod native_output;
 pub mod native_value;
 mod range;
-mod rc_native;
-mod sequence_receiver;
+mod sequence_query;
 mod sum_native;
-mod vec_deque;
-mod vector;
-pub(crate) mod vector_dynamic;
 
 pub type NativeCallback<'a, E> = dyn FnMut(&Value, Vec<Value>) -> Result<Value, E> + 'a;
 
@@ -67,8 +56,8 @@ pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Va
             .is_some_and(|member| member.native_symbol == Some(symbol))
         {
             return Some(match arguments {
-                [Value::Reference(reference)] => {
-                    reference.read().and_then(|value| value.clone_owned())
+                [value] if value.as_reference().is_some() => {
+                    value.as_reference().unwrap().clone_referent()
                 }
                 [value] => value.clone_owned(),
                 _ => Err(format!(
@@ -167,14 +156,9 @@ pub fn call_native_symbol_with_callback<E>(
 
 #[cfg(test)]
 fn owned_iterator_value(items: VecDeque<Value>, element_type: Type) -> Value {
-    Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(items, element_type)))
-}
-
-fn import_receiver(value: &Value) -> Result<Value, String> {
-    match value {
-        Value::Reference(reference) => import_receiver(&reference.read()?),
-        value => Ok(value.clone()),
-    }
+    Value::from_owned_iterator(
+        OwnedIteratorValue::from_generator(items.into_iter().map(Ok), element_type).unwrap(),
+    )
 }
 
 #[cfg(test)]
@@ -185,33 +169,46 @@ mod tests {
     fn mutable_receiver(value: Value) -> Value {
         let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
         storage.borrow_mut().initialize(value);
-        Value::Reference(Rc::new(ReferenceValue::new_storage(storage, true)))
+        Value::from_reference(Rc::new(ReferenceValue::new_storage(storage, true)))
     }
 
     #[test]
     fn option_and_result_state_members_use_native_symbols() {
-        let option = Value::Option {
-            value: Some(Rc::new(Value::from_i32(7))),
-            element_type: Some(Type::I32),
-        };
-        let result = Value::Result {
-            value: Err(Rc::new(Value::from_string("failed"))),
-            ok_type: Some(Type::I32),
-            error_type: Some(Type::String),
-        };
+        let option = NativeOwnedContext::default()
+            .storage()
+            .construct_option(
+                &Type::Option(Box::new(Type::I32)),
+                Some(Value::from(crate::value::native_i32(7))),
+            )
+            .unwrap();
+        let result = NativeOwnedContext::default()
+            .storage()
+            .construct_result(
+                &Type::Result(Box::new(Type::I32), Box::new(Type::String)),
+                Err(Value::from(crate::value::native_string("failed"))),
+            )
+            .unwrap();
         let cases = [
             (
                 "core::option::option::is_some",
                 option.clone(),
-                Value::Bool(true),
+                Value::from(crate::value::native_bool(true)),
             ),
-            ("core::option::option::is_none", option, Value::Bool(false)),
+            (
+                "core::option::option::is_none",
+                option,
+                Value::from(crate::value::native_bool(false)),
+            ),
             (
                 "core::result::result::is_ok",
                 result.clone(),
-                Value::Bool(false),
+                Value::from(crate::value::native_bool(false)),
             ),
-            ("core::result::result::is_err", result, Value::Bool(true)),
+            (
+                "core::result::result::is_err",
+                result,
+                Value::from(crate::value::native_bool(true)),
+            ),
         ];
 
         for (symbol, receiver, expected) in cases {
@@ -230,21 +227,21 @@ mod tests {
             enums: Vec::new(),
             ..Default::default()
         };
-        let option = Value::Option {
-            value: Some(Rc::new(Value::from_i32(7))),
-            element_type: Some(Type::I32),
-        };
+        let option = NativeOwnedContext::default()
+            .storage()
+            .construct_option(
+                &Type::Option(Box::new(Type::I32)),
+                Some(Value::from(crate::value::native_i32(7))),
+            )
+            .unwrap();
         assert_eq!(
             call_native_owned_symbol(symbol, vec![option], &context)
                 .unwrap()
                 .unwrap(),
-            Value::from_i32(7)
+            Value::from(crate::value::native_i32(7))
         );
 
-        let missing = Value::Option {
-            value: None,
-            element_type: Some(Type::I32),
-        };
+        let missing = context.none(&Type::I32).unwrap();
         assert!(
             call_native_owned_symbol(symbol, vec![missing], &context)
                 .unwrap()
@@ -255,36 +252,51 @@ mod tests {
 
     #[test]
     fn mutable_members_update_their_receivers() {
-        let vector = mutable_receiver(Value::Vec(Rc::new(IndexedStorage {
-            active_iterators: std::cell::Cell::new(0),
-            elements: RefCell::new(Vec::new()),
-            element_type: RefCell::new(Some(Type::I32)),
-        })));
+        let vector = mutable_receiver(
+            NativeOwnedContext::default()
+                .empty_collection(&Type::Named {
+                    name: "Vec".into(),
+                    arguments: vec![Type::I32],
+                })
+                .unwrap(),
+        );
         assert_eq!(
-            call_native_symbol(
+            call_native_owned_symbol(
                 rils_builtins::builtin_member("Vec", "push")
                     .unwrap()
                     .native_symbol
                     .unwrap(),
-                &[vector.clone(), Value::from_i32(7)],
+                vec![vector.clone(), Value::from(crate::value::native_i32(7))],
+                &NativeOwnedContext::default()
             )
             .unwrap()
             .unwrap(),
-            Value::Unit
+            Value::from(crate::value::native_unit())
         );
-        let Value::Reference(vector) = &vector else {
+        let Some(vector) = &vector.as_reference() else {
             unreachable!();
         };
-        let Value::Vec(vector) = vector.read().unwrap() else {
-            unreachable!();
-        };
-        assert_eq!(vector.elements.borrow()[0].value, Some(Value::from_i32(7)));
 
+        vector
+            .with_native_view(|view| {
+                assert_eq!(view.sequence_len().unwrap(), 1);
+                assert_eq!(
+                    view.sequence_item(0)
+                        .unwrap()
+                        .with_rust::<i32, _>(|value| *value)
+                        .unwrap(),
+                    7
+                );
+            })
+            .unwrap();
         let context = NativeOwnedContext::default();
         let option = mutable_receiver(
             context
                 .storage()
-                .construct_option(&Type::Option(Box::new(Type::I32)), Some(Value::from_i32(3)))
+                .construct_option(
+                    &Type::Option(Box::new(Type::I32)),
+                    Some(Value::from(crate::value::native_i32(3))),
+                )
                 .unwrap(),
         );
         assert_eq!(
@@ -298,20 +310,31 @@ mod tests {
             )
             .unwrap()
             .unwrap(),
-            Value::Option {
-                value: Some(Rc::new(Value::from_i32(3))),
-                element_type: Some(Type::I32),
-            }
+            NativeOwnedContext::default()
+                .storage()
+                .construct_option(
+                    &Type::Option(Box::new(Type::I32)),
+                    Some(Value::from(crate::value::native_i32(3)))
+                )
+                .unwrap()
         );
-        let Value::Reference(option) = &option else {
+        let Some(option) = &option.as_reference() else {
             unreachable!();
         };
-        let (item, item_type) = option.read().unwrap().as_option().unwrap();
-        assert!(item.is_none());
-        assert_eq!(item_type, Type::I32);
+        let value = option.read().unwrap();
+        assert!(
+            !value
+                .with_native_view(|view| view.option_is_some())
+                .unwrap()
+                .unwrap()
+        );
+        assert_eq!(
+            Type::of_value(&value),
+            Some(Type::Option(Box::new(Type::I32)))
+        );
 
         let iterator = mutable_receiver(owned_iterator_value(
-            VecDeque::from([Value::from_i32(11)]),
+            VecDeque::from([Value::from(crate::value::native_i32(11))]),
             Type::I32,
         ));
         let next_symbol = rils_builtins::builtin_member("Iterator", "next")
@@ -322,20 +345,29 @@ mod tests {
             call_native_symbol(next_symbol, std::slice::from_ref(&iterator))
                 .unwrap()
                 .unwrap(),
-            Value::Option {
-                value: Some(Rc::new(Value::from_i32(11))),
-                element_type: Some(Type::I32),
-            }
+            NativeOwnedContext::default()
+                .storage()
+                .construct_option(
+                    &Type::Option(Box::new(Type::I32)),
+                    Some(Value::from(crate::value::native_i32(11)))
+                )
+                .unwrap()
         );
-        assert!(matches!(
+        assert!(
             call_native_symbol(next_symbol, &[iterator])
                 .unwrap()
-                .unwrap(),
-            Value::Option { value: None, .. }
-        ));
+                .unwrap()
+                .with_native_view(|view| view.option_is_some())
+                .unwrap()
+                .is_ok_and(|present| !present)
+        );
 
         let range = mutable_receiver(
-            crate::value::native_range(Value::from_i32(2), Value::from_i32(3)).unwrap(),
+            crate::value::native_range(
+                Value::from(crate::value::native_i32(2)),
+                Value::from(crate::value::native_i32(3)),
+            )
+            .unwrap(),
         );
         assert_eq!(
             call_native_symbol(
@@ -347,26 +379,33 @@ mod tests {
             )
             .unwrap()
             .unwrap(),
-            Value::Option {
-                value: Some(Rc::new(Value::from_i32(2))),
-                element_type: Some(Type::I32),
-            }
+            NativeOwnedContext::default()
+                .storage()
+                .construct_option(
+                    &Type::Option(Box::new(Type::I32)),
+                    Some(Value::from(crate::value::native_i32(2)))
+                )
+                .unwrap()
         );
     }
 
     #[test]
     fn mutable_members_reject_non_reference_receivers() {
         assert!(
-            call_native_symbol(
+            call_native_owned_symbol(
                 rils_builtins::builtin_member("Vec", "push")
                     .unwrap()
                     .native_symbol
                     .unwrap(),
-                &[Value::Unit, Value::from_i32(1)],
+                vec![
+                    Value::from(crate::value::native_unit()),
+                    Value::from(crate::value::native_i32(1))
+                ],
+                &NativeOwnedContext::default()
             )
             .unwrap()
             .unwrap_err()
-            .contains("&mut self")
+            .contains("mutable reference")
         );
         assert!(
             call_native_owned_symbol(
@@ -374,7 +413,7 @@ mod tests {
                     .unwrap()
                     .native_symbol
                     .unwrap(),
-                vec![Value::Unit],
+                vec![Value::from(crate::value::native_unit())],
                 &NativeOwnedContext::default(),
             )
             .unwrap()

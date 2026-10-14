@@ -1,15 +1,31 @@
 use rils::{BytecodeModule, Value, compile, eval_value};
 
 #[test]
+fn projected_native_iterator_calls_match_interpreter_vm_and_loaded_vm() {
+    for source in [
+        include_str!("fixtures/projected_native_iterator.rils"),
+        include_str!("fixtures/composed_native_clone.rils"),
+        include_str!("fixtures/projected_iterator_defaults.rils"),
+    ] {
+        let expected = Value::from(rils::value::native_bool(true));
+        assert_eq!(eval_value(source).unwrap(), expected);
+        let compiled = compile(source).unwrap();
+        assert_eq!(compiled.execute_value().unwrap(), expected);
+        let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.execute_value().unwrap(), expected);
+    }
+}
+
+#[test]
 fn native_range_steps_match_in_interpreter_and_vm() {
     for (source, expected) in [
         (
             "let mut total = 39; for value in 1..3 { total = total + value; } total",
-            Value::from_i32(42),
+            Value::from(rils::value::native_i32(42)),
         ),
         (
             "let mut total = 0u32; for value in 254u32..255u32 { total = total + value; } total - 212u32",
-            Value::U32(42),
+            Value::from(rils::value::native_u32(42)),
         ),
     ] {
         assert_eq!(eval_value(source).unwrap(), expected);
@@ -23,22 +39,40 @@ fn native_range_steps_match_in_interpreter_and_vm() {
         "let mut range = 1i8..3i8; if range.next() == Some(1i8) && range.next() == Some(2i8) && range.next() == None { 42 } else { 0 }",
         "let mut range = 254u8..255u8; if range.next() == Some(254u8) && range.next() == None { 42 } else { 0 }",
     ] {
-        assert_eq!(eval_value(direct).unwrap(), Value::from_i32(42));
+        assert_eq!(
+            eval_value(direct).unwrap(),
+            Value::from(rils::value::native_i32(42))
+        );
         let compiled = compile(direct).unwrap();
-        assert_eq!(compiled.execute_value().unwrap(), Value::from_i32(42));
+        assert_eq!(
+            compiled.execute_value().unwrap(),
+            Value::from(rils::value::native_i32(42))
+        );
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-        assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(42));
+        assert_eq!(
+            loaded.execute_value().unwrap(),
+            Value::from(rils::value::native_i32(42))
+        );
     }
 }
 
 #[test]
 fn trait_qualified_range_next_uses_the_native_symbol_in_both_backends() {
     let source = include_str!("fixtures/trait_path_range.rils");
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(42))
+    );
     let compiled = compile(source).unwrap();
-    assert_eq!(compiled.execute_value().unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compiled.execute_value().unwrap(),
+        Value::from(rils::value::native_i32(42))
+    );
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(42));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils::value::native_i32(42))
+    );
 }
 
 #[test]
@@ -47,11 +81,20 @@ fn range_into_iter_uses_the_iterator_blanket_impl() {
         "let mut values = (1..3).into_iter(); values.next() == Some(1) && values.next() == Some(2) && values.next() == None",
         "let mut values = <Range<i32> as IntoIterator>::into_iter(1..3); values.next() == Some(1) && values.next() == Some(2) && values.next() == None",
     ] {
-        assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+        assert_eq!(
+            eval_value(source).unwrap(),
+            Value::from(rils::value::native_bool(true))
+        );
         let compiled = compile(source).unwrap();
-        assert_eq!(compiled.execute_value().unwrap(), Value::Bool(true));
+        assert_eq!(
+            compiled.execute_value().unwrap(),
+            Value::from(rils::value::native_bool(true))
+        );
         let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-        assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+        assert_eq!(
+            loaded.execute_value().unwrap(),
+            Value::from(rils::value::native_bool(true))
+        );
     }
 }
 
@@ -97,12 +140,12 @@ fn every_integer_range_uses_the_same_native_iterator_bridge() {
         );
         assert_eq!(
             eval_value(&source).unwrap(),
-            Value::from_i32(42),
+            Value::from(rils::value::native_i32(42)),
             "{suffix} interpreter"
         );
         assert_eq!(
             compile(&source).unwrap().execute_value().unwrap(),
-            Value::from_i32(42),
+            Value::from(rils::value::native_i32(42)),
             "{suffix} VM"
         );
     }

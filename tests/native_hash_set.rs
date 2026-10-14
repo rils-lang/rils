@@ -50,11 +50,11 @@ fn native_hash_set_handles_composite_keys_and_set_algebra() {
         let absent: Option<i32> = None;
         if left.contains(&absent) && shared.len() == 1usize && union.len() == 3usize { 42 } else { 0 }
         "#,
-        Value::from_i32(42),
+        Value::from(rils::value::native_i32(42)),
     );
     assert_both(
         "let mut values: HashSet<i32> = HashSet::new(); values.insert(40); values.insert(2); let mut total = 0; for value in values { total = total + value; } total",
-        Value::from_i32(42),
+        Value::from(rils::value::native_i32(42)),
     );
 }
 
@@ -82,6 +82,6 @@ fn hash_set_native_symbols_cover_algebra_and_mutation() {
         left.clear();
         valid && left.is_empty()
         "#,
-        Value::Bool(true),
+        Value::from(rils::value::native_bool(true)),
     );
 }

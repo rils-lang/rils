@@ -89,6 +89,7 @@ pub(crate) fn infer_with_host_functions_and_host_types(
 
 struct Inferencer<'a> {
     scopes: Vec<HashMap<String, Binding>>,
+    binding_initializers: Vec<HashMap<String, (Span, ExprId)>>,
     types: HashMap<String, TypeDefinition>,
     variant_owners: HashMap<String, String>,
     result: InferenceResult,
@@ -179,6 +180,7 @@ impl<'a> Inferencer<'a> {
         let expression_ids = crate::semantic::ExpressionIdentityMap::allocate(program, source);
         let mut inferencer = Self {
             scopes: vec![globals],
+            binding_initializers: vec![HashMap::new()],
             types: HashMap::new(),
             variant_owners: HashMap::new(),
             result: InferenceResult {
@@ -534,11 +536,12 @@ impl<'a> Inferencer<'a> {
             return Type::function(Vec::new(), object_type.clone());
         }
         if field == "clone"
-            && crate::standard_library::builtin_owner_name(object_type)
-                .is_some_and(|owner| rils_builtins::native_implements(owner, "Clone"))
+            && crate::standard_library::builtin_owner_name(object_type).is_some()
             && let Some(member) =
                 crate::standard_library::builtin_trait_member_type("Clone", object_type, field)
         {
+            // Infer Self from the receiver. Whether its concrete type satisfies
+            // Clone is a trait constraint, not a reason to erase the result type.
             return member;
         }
         if let Type::Named { name, arguments } = object_type
@@ -625,8 +628,9 @@ impl<'a> Inferencer<'a> {
             Type::Reference { inner, .. } => self.iterable_item_type_inner(inner, depth + 1),
             Type::Array { element, .. } => (**element).clone(),
             Type::Named { name, arguments } => match name.as_str() {
-                "Vec" | "VecDeque" | "BinaryHeap" | "HashSet" | "BTreeSet" | "OwnedIterator"
-                | "Iter" | "Range" => arguments.first().cloned().unwrap_or(Type::Unknown),
+                "Vec" | "VecDeque" | "BinaryHeap" | "HashSet" | "BTreeSet" | "Iter" | "Range" => {
+                    arguments.first().cloned().unwrap_or(Type::Unknown)
+                }
                 "HashMap" | "BTreeMap" if arguments.len() == 2 => Type::Tuple(arguments.clone()),
                 _ => {
                     let Some(definition) = self.types.get(name) else {
@@ -664,6 +668,10 @@ impl<'a> Inferencer<'a> {
     }
 
     fn define_binding(&mut self, name: &str, span: Span, binding: Binding) {
+        self.binding_initializers
+            .last_mut()
+            .expect("scope exists")
+            .remove(name);
         self.result.binding_types.insert(span, binding.ty.clone());
         self.scopes
             .last_mut()
@@ -688,8 +696,10 @@ impl<'a> Inferencer<'a> {
 
     fn with_scope_value<T>(&mut self, action: impl FnOnce(&mut Self) -> T) -> T {
         self.scopes.push(HashMap::new());
+        self.binding_initializers.push(HashMap::new());
         let result = action(self);
         self.scopes.pop();
+        self.binding_initializers.pop();
         result
     }
 }

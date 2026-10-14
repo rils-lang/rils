@@ -119,7 +119,7 @@ fn enum_patterns_receivers_and_containers_agree_across_backends() {
         ),
     ] {
         for value in run_all(source) {
-            assert_eq!(value.as_i32(), Some(42), "{name}: {source}");
+            assert_eq!(value.get_cloned::<i32>().ok(), Some(42), "{name}: {source}");
         }
     }
 }
@@ -144,12 +144,19 @@ fn derived_debug_reads_each_native_variant_shape() {
     let mut host = rils_bytecode::BytecodeHost::standard();
     host.set_output_handler(handler).unwrap();
     let expected = "Choice::Empty\nChoice::Tuple(\"owned\", 42)\nChoice::Record { text: \"owned\", value: 42 }\n";
-    assert_eq!(engine.eval_value(source).unwrap().as_i32(), Some(42));
+    assert_eq!(
+        engine.eval_value(source).unwrap().get_cloned::<i32>().ok(),
+        Some(42)
+    );
     assert_eq!(*output.borrow(), expected);
     for module in [module, loaded] {
         output.borrow_mut().clear();
         assert_eq!(
-            module.execute_value_with_host(&host).unwrap().as_i32(),
+            module
+                .execute_value_with_host(&host)
+                .unwrap()
+                .get_cloned::<i32>()
+                .ok(),
             Some(42)
         );
         assert_eq!(*output.borrow(), expected);

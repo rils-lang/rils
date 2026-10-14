@@ -18,9 +18,12 @@ use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 #[test]
 fn native_reference_fields_retain_the_lease_aliases_and_lexical_origin() {
     let environment = Environment::global();
-    environment
-        .borrow_mut()
-        .define("number", Value::from_i32(1), true, Some(Type::I32));
+    environment.borrow_mut().define(
+        "number",
+        Value::from(rils_execution::value::native_i32(1)),
+        true,
+        Some(Type::I32),
+    );
     let storage = environment.borrow().slot("number").unwrap();
     let reference = Rc::new(ReferenceValue::new_storage(storage.clone(), true));
     let reference_type = Type::Reference {
@@ -28,10 +31,12 @@ fn native_reference_fields_retain_the_lease_aliases_and_lexical_origin() {
         inner: Box::new(Type::I32),
     };
     let expected = Type::Option(Box::new(reference_type.clone()));
-    let value = Value::Option {
-        value: Some(Rc::new(Value::Reference(reference.clone()))),
-        element_type: Some(reference_type),
-    };
+    let value = rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+        .construct_option(
+            &Type::Option(Box::new(reference_type)),
+            Some(Value::from_reference(reference.clone())),
+        )
+        .unwrap();
     let value = TypedStorageContext::new(&[], &[])
         .apply_declared(value, &expected)
         .unwrap();
@@ -48,13 +53,21 @@ fn native_reference_fields_retain_the_lease_aliases_and_lexical_origin() {
     };
     let payload = object.into_value().map_err(|error| error.1).unwrap();
     let child = payload.take_option().unwrap().unwrap();
-    let Value::Reference(reference) = record_codec::from_native(child).unwrap() else {
+    let Some(reference) = (record_codec::from_native(child).unwrap()).as_reference() else {
         panic!("reference leaf")
     };
-    reference.write(Value::from_i32(42)).unwrap();
-    assert_eq!(storage.borrow().read().unwrap(), Value::from_i32(42));
+    reference
+        .write(Value::from(rils_execution::value::native_i32(42)))
+        .unwrap();
+    assert_eq!(
+        storage.borrow().read().unwrap(),
+        Value::from(rils_execution::value::native_i32(42))
+    );
     drop(reference);
-    assert_eq!(storage.borrow_mut().take().unwrap(), Value::from_i32(42));
+    assert_eq!(
+        storage.borrow_mut().take().unwrap(),
+        Value::from(rils_execution::value::native_i32(42))
+    );
 }
 
 #[test]
@@ -68,31 +81,38 @@ fn callable_fields_preserve_signature_handler_identity_and_owned_conversion() {
             vec![Type::I32],
             Type::I32,
         )),
-        function: Rc::new(|arguments| Ok(Value::from_i32(arguments[0].as_i32().unwrap() + 1))),
+        function: Rc::new(|arguments| {
+            Ok(Value::from(rils_execution::value::native_i32(
+                arguments[0].get_cloned::<i32>().unwrap() + 1,
+            )))
+        }),
     });
     let layout = RecordLayoutResolver::new(&[])
         .resolve(&callback_type)
         .unwrap();
     assert!(layout.is_copy());
-    let payload = record_codec::into_native(Value::HostFunction(callback.clone()), layout).unwrap();
+    let payload =
+        record_codec::into_native(Value::from_callable(callback.clone()), layout).unwrap();
     assert!(
         payload.is_inline(),
         "Copy call targets should fit the inline layout"
     );
     let copied = payload.copy_owned().unwrap();
     drop(payload);
-    let Value::HostFunction(restored) = record_codec::from_native(copied).unwrap() else {
+    let Some(restored) = (record_codec::from_native(copied).unwrap())
+        .as_callable::<rils_execution::value::HostFunction>()
+    else {
         panic!("call target")
     };
     assert!(Rc::ptr_eq(&restored, &callback));
     assert_eq!(
-        (restored.function)(&[Value::from_i32(41)]).unwrap(),
-        Value::from_i32(42)
+        (restored.function)(&[Value::from(rils_execution::value::native_i32(41))]).unwrap(),
+        Value::from(rils_execution::value::native_i32(42))
     );
     let wrong = RecordLayoutResolver::new(&[])
         .resolve(&Type::function(vec![Type::String], Type::I32))
         .unwrap();
-    assert!(record_codec::into_native(Value::HostFunction(callback), wrong).is_err());
+    assert!(record_codec::into_native(Value::from_callable(callback), wrong).is_err());
 }
 
 #[test]
@@ -121,10 +141,13 @@ fn host_fields_use_registered_copy_policy_and_drop_the_payload_once() {
             type_definition: definition,
             payload: Rc::new(Probe(drops.clone())),
         });
-        let value = Value::Option {
-            value: Some(Rc::new(Value::HostObject(host.clone()))),
-            element_type: Some(Type::named("Host")),
-        };
+        let value =
+            rils_execution::value::storage::TypedStorageContext::with_hosts(&[], &[], &definitions)
+                .construct_option(
+                    &Type::Option(Box::new(Type::named("Host"))),
+                    Some(Value::HostObject(host.clone())),
+                )
+                .unwrap();
         let payload = record_codec::into_native(value, layout).unwrap();
         let copied = payload.copy_owned();
         assert_eq!(copied.is_ok(), copy);
@@ -182,17 +205,21 @@ fn reference_codec_rejects_mutability_or_referent_type_mismatch() {
         },
     ] {
         let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
-        storage.borrow_mut().initialize(Value::from_i32(1));
+        storage
+            .borrow_mut()
+            .initialize(Value::from(rils_execution::value::native_i32(1)));
         let reference = Rc::new(ReferenceValue::new_storage(storage, false));
         let layout = RecordLayoutResolver::new(&[]).resolve(&expected).unwrap();
-        assert!(record_codec::into_native(Value::Reference(reference), layout).is_err());
+        assert!(record_codec::into_native(Value::from_reference(reference), layout).is_err());
     }
 }
 
 #[test]
 fn raw_native_record_inspects_reference_fields_without_materializing_values() {
     let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
-    storage.borrow_mut().initialize(Value::from_string("owned"));
+    storage
+        .borrow_mut()
+        .initialize(Value::from(rils_execution::value::native_string("owned")));
     let reference_type = Type::Reference {
         mutable: false,
         inner: Box::new(Type::String),
@@ -206,7 +233,7 @@ fn raw_native_record_inspects_reference_fields_without_materializing_values() {
     )
     .unwrap();
     let reference = Rc::new(ReferenceValue::new_storage(storage.clone(), false));
-    let child = record_codec::into_native(Value::Reference(reference), layout).unwrap();
+    let child = record_codec::into_native(Value::from_reference(reference), layout).unwrap();
     let payload = DynamicValue::record(record.clone(), vec![child]).unwrap();
     let object = DynamicObject::new(Rc::new(DynamicType::new(record)), payload).unwrap();
     let value = Value::Dynamic(object);
@@ -222,13 +249,13 @@ fn native_callable_fields_keep_reference_origins_in_captures_and_bound_arguments
         let environment = Environment::global();
         environment.borrow_mut().define(
             "source",
-            Value::from_string("owned"),
+            Value::from(rils_execution::value::native_string("owned")),
             true,
             Some(Type::String),
         );
         let source = environment.borrow().slot("source").unwrap();
         let reference =
-            Value::Reference(Rc::new(ReferenceValue::new_storage(source.clone(), false)));
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(source.clone(), false)));
         let (captures, bound_arguments) = if captured {
             let mut slot = StorageSlot::uninitialized(false);
             slot.initialize(reference);
@@ -236,19 +263,19 @@ fn native_callable_fields_keep_reference_origins_in_captures_and_bound_arguments
         } else {
             (vec![], vec![reference])
         };
-        let target = Value::BytecodeFunction(Rc::new(BytecodeFunctionValue {
+        let target = Value::from_callable(Rc::new(BytecodeFunctionValue {
             function: 0,
             name: "callback".into(),
             parameter_count: 0,
+            signature: Type::function(vec![], Type::I32),
             captures,
             bound_arguments,
             type_bindings: Default::default(),
         }));
         let callback_type = Type::function(vec![], Type::I32);
-        let value = Value::Option {
-            value: Some(Rc::new(target)),
-            element_type: Some(callback_type.clone()),
-        };
+        let value = rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+            .construct_option(&Type::Option(Box::new(callback_type.clone())), Some(target))
+            .unwrap();
         let expected = Type::Option(Box::new(callback_type));
         let value = TypedStorageContext::new(&[], &[])
             .apply_declared(value, &expected)

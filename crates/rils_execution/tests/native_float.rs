@@ -7,8 +7,16 @@ use rils_execution::{
 #[test]
 fn float_family_uses_rust_methods_for_both_widths() {
     for (value, expected, target) in [
-        (Value::from_f32(-3.5), Value::from_f32(3.5), FloatType::F32),
-        (Value::from_f64(-3.5), Value::from_f64(3.5), FloatType::F64),
+        (
+            Value::from(rils_execution::value::native_f32(-3.5)),
+            Value::from(rils_execution::value::native_f32(3.5)),
+            FloatType::F32,
+        ),
+        (
+            Value::from(rils_execution::value::native_f64(-3.5)),
+            Value::from(rils_execution::value::native_f64(3.5)),
+            FloatType::F64,
+        ),
     ] {
         assert_eq!(
             execute_intrinsic("core::float::abs", None, &[value]),
@@ -16,13 +24,20 @@ fn float_family_uses_rust_methods_for_both_widths() {
         );
         let nan = float_constant(target, FloatConstantId::Nan);
         assert!(matches!(&nan, Value::Native(_)));
-        assert!(nan.as_f32().is_some_and(f32::is_nan) || nan.as_f64().is_some_and(f64::is_nan));
+        assert!(
+            nan.get_cloned::<f32>().ok().is_some_and(f32::is_nan)
+                || nan.get_cloned::<f64>().ok().is_some_and(f64::is_nan)
+        );
     }
     assert_eq!(
         execute_intrinsic(
             "core::float::clamp",
             None,
-            &[Value::F32(1.0), Value::F32(f32::NAN), Value::F32(2.0)]
+            &[
+                Value::from(rils_execution::value::native_f32(1.0)),
+                Value::from(rils_execution::value::native_f32(f32::NAN)),
+                Value::from(rils_execution::value::native_f32(2.0))
+            ]
         ),
         Err("float clamp requires non-NaN bounds with min <= max".into()),
     );
@@ -31,7 +46,10 @@ fn float_family_uses_rust_methods_for_both_widths() {
 #[test]
 fn every_float_method_and_constant_has_a_native_binding() {
     for method in rils_builtins::FLOAT_INTRINSICS {
-        for receiver in [Value::from_f32(1.5), Value::from_f64(1.5)] {
+        for receiver in [
+            Value::from(rils_execution::value::native_f32(1.5)),
+            Value::from(rils_execution::value::native_f64(1.5)),
+        ] {
             let arguments =
                 std::iter::repeat_n(receiver.clone(), method.signature.parameters.len() + 1)
                     .collect::<Vec<_>>();
@@ -44,8 +62,8 @@ fn every_float_method_and_constant_has_a_native_binding() {
             let value = float_constant(target, constant.id);
             assert!(matches!(&value, Value::Native(_)));
             assert!(match target {
-                FloatType::F32 => value.as_f32().is_some(),
-                FloatType::F64 => value.as_f64().is_some(),
+                FloatType::F32 => value.get_cloned::<f32>().ok().is_some(),
+                FloatType::F64 => value.get_cloned::<f64>().ok().is_some(),
             });
         }
     }
@@ -53,33 +71,44 @@ fn every_float_method_and_constant_has_a_native_binding() {
         execute_intrinsic(
             "core::float::copysign",
             None,
-            &[Value::F32(1.0), Value::F64(2.0)]
+            &[
+                Value::from(rils_execution::value::native_f32(1.0)),
+                Value::from(rils_execution::value::native_f64(2.0))
+            ]
         )
         .is_err()
     );
 }
 
 #[test]
-fn native_float_values_preserve_bits_and_accept_legacy_inputs() {
-    let negative_zero = Value::from_f32(-0.0);
+fn native_float_values_preserve_bits_and_support_intrinsics() {
+    let negative_zero = Value::from(rils_execution::value::native_f32(-0.0));
     assert!(matches!(negative_zero, Value::Native(_)));
     assert_eq!(
-        negative_zero.as_f32().unwrap().to_bits(),
+        negative_zero.get_cloned::<f32>().unwrap().to_bits(),
         (-0.0f32).to_bits()
     );
-    let negative_zero = Value::from_f64(-0.0);
+    let negative_zero = Value::from(rils_execution::value::native_f64(-0.0));
     assert!(matches!(negative_zero, Value::Native(_)));
     assert_eq!(
-        negative_zero.as_f64().unwrap().to_bits(),
+        negative_zero.get_cloned::<f64>().unwrap().to_bits(),
         (-0.0f64).to_bits()
     );
 
     assert_eq!(
-        execute_intrinsic("core::float::abs", None, &[Value::F32(-3.5)]),
-        Ok(Value::from_f32(3.5))
+        execute_intrinsic(
+            "core::float::abs",
+            None,
+            &[Value::from(rils_execution::value::native_f32(-3.5))]
+        ),
+        Ok(Value::from(rils_execution::value::native_f32(3.5)))
     );
     assert_eq!(
-        execute_intrinsic("core::float::abs", None, &[Value::F64(-3.5)]),
-        Ok(Value::from_f64(3.5))
+        execute_intrinsic(
+            "core::float::abs",
+            None,
+            &[Value::from(rils_execution::value::native_f64(-3.5))]
+        ),
+        Ok(Value::from(rils_execution::value::native_f64(3.5)))
     );
 }

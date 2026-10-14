@@ -119,6 +119,14 @@ impl Server {
                         rils_builtins::builtin(owner)
                             .into_iter()
                             .flat_map(|declaration| declaration.members)
+                            .chain(
+                                rils_builtins::builtin("Iterator")
+                                    .filter(|_| owner != "Iterator"
+                                        && rils_frontend::standard_library::builtin_iterator_item_type(receiver_type).is_some())
+                                    .into_iter()
+                                    .flat_map(|declaration| declaration.members)
+                                    .filter(|member| rils_builtins::is_iterator_default_method(member.name)),
+                            )
                             .filter(|member| {
                                 member.kind == rils_builtins::BuiltinMemberKind::Method
                                     && member.name.starts_with(&member_prefix)

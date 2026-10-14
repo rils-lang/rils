@@ -1,0 +1,7 @@
+struct Item { text: string }
+impl Item {
+    fn finish(self) -> string { self.text }
+}
+let item = Item { text: "moved" };
+let finish = item.finish;
+finish()

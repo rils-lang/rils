@@ -1,23 +1,16 @@
-#![allow(clippy::mutable_key_type)]
 use rils_execution::{
     RilsValue, Type, Value,
     environment::StorageSlot,
     runtime_builtins::{NativeOwnedContext, call_native_owned_symbol, call_native_symbol},
-    value::{
-        BTreeMapValue, BTreeSetValue, FieldSlot, HashKey, HashMapValue, HashSetValue,
-        ReferenceValue,
-    },
+    value::ReferenceValue,
 };
 use rils_value::{NativeObject, NativeType};
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 const KINDS: [&str; 4] = ["HashMap", "BTreeMap", "HashSet", "BTreeSet"];
 fn reference(value: Value) -> Value {
     let mut slot = StorageSlot::uninitialized(true);
     slot.initialize(value);
-    Value::Reference(Rc::new(ReferenceValue::new_storage(
+    Value::from_reference(Rc::new(ReferenceValue::new_storage(
         Rc::new(RefCell::new(slot)),
         true,
     )))
@@ -49,7 +42,7 @@ fn address(value: &Value) -> usize {
         .with_ref::<String, _>(|value| value.as_ptr() as usize)
         .unwrap()
 }
-fn collection(kind: &str, native: bool) -> (Value, Vec<usize>) {
+fn collection(kind: &str) -> (Value, Vec<usize>) {
     let key = text("key 🦀");
     let value = text("value 🦀");
     let addresses = if kind.ends_with("Map") {
@@ -57,54 +50,22 @@ fn collection(kind: &str, native: bool) -> (Value, Vec<usize>) {
     } else {
         vec![address(&key)]
     };
-    if native {
-        let ty = Type::Named {
-            name: kind.into(),
-            arguments: if kind.ends_with("Map") {
-                vec![Type::String, Type::String]
-            } else {
-                vec![Type::String]
-            },
-        };
-        let source = NativeOwnedContext::default().empty_collection(&ty).unwrap();
-        let receiver = reference(source.clone());
-        let mut args = vec![receiver, key];
-        if kind.ends_with("Map") {
-            args.push(value);
-        }
-        owned(kind, "insert", args).unwrap();
-        return (source, addresses);
-    }
-    let key = HashKey::from_owned_value(key, None, kind.starts_with("BTree")).unwrap();
-    let source = match kind {
-        "HashMap" => Value::HashMap(Rc::new(HashMapValue {
-            option_storage: Default::default(),
-            borrowed: Cell::new(0),
-            key_type: RefCell::new(Type::String),
-            value_type: RefCell::new(Type::String),
-            entries: RefCell::new([(key, FieldSlot::new(Type::String, value))].into()),
-        })),
-        "BTreeMap" => Value::BTreeMap(Rc::new(BTreeMapValue {
-            option_storage: Default::default(),
-            borrowed: Cell::new(0),
-            key_type: RefCell::new(Type::String),
-            value_type: RefCell::new(Type::String),
-            entries: RefCell::new([(key, FieldSlot::new(Type::String, value))].into()),
-        })),
-        "HashSet" => Value::HashSet(Rc::new(HashSetValue {
-            option_storage: Default::default(),
-            borrowed: Cell::new(0),
-            element_type: RefCell::new(Type::String),
-            entries: RefCell::new([key].into()),
-        })),
-        "BTreeSet" => Value::BTreeSet(Rc::new(BTreeSetValue {
-            option_storage: Default::default(),
-            borrowed: Cell::new(0),
-            element_type: RefCell::new(Type::String),
-            entries: RefCell::new([key].into()),
-        })),
-        _ => unreachable!(),
+
+    let ty = Type::Named {
+        name: kind.into(),
+        arguments: if kind.ends_with("Map") {
+            vec![Type::String, Type::String]
+        } else {
+            vec![Type::String]
+        },
     };
+    let source = NativeOwnedContext::default().empty_collection(&ty).unwrap();
+    let receiver = reference(source.clone());
+    let mut args = vec![receiver, key];
+    if kind.ends_with("Map") {
+        args.push(value);
+    }
+    owned(kind, "insert", args).unwrap();
     (source, addresses)
 }
 fn insert_extra(kind: &str, receiver: &Value) -> Result<Value, String> {
@@ -116,10 +77,10 @@ fn insert_extra(kind: &str, receiver: &Value) -> Result<Value, String> {
 }
 
 #[test]
-fn native_and_compatibility_borrowed_outputs_keep_native_layouts_addresses_and_leases() {
+fn native_borrowed_outputs_keep_native_layouts_addresses_and_leases() {
     for kind in KINDS {
-        for native in [false, true] {
-            let (source, addresses) = collection(kind, native);
+        {
+            let (source, addresses) = collection(kind);
             let receiver = reference(source);
             let iterator = reference(owned(kind, "iter", vec![receiver.clone()]).unwrap());
             let result = next(&iterator).unwrap();
@@ -148,7 +109,7 @@ fn native_and_compatibility_borrowed_outputs_keep_native_layouts_addresses_and_l
                             item
                         };
                         view.with_rust::<Rc<ReferenceValue>, _>(|reference| {
-                            let reference = Value::Reference(reference.clone());
+                            let reference = Value::from_reference(reference.clone());
                             assert_eq!(Type::of_value(&reference), Some(reference_type.clone()));
                             assert!(reference_type.accepts(&reference));
                             assert_eq!(address(&reference), *expected);
@@ -179,44 +140,6 @@ fn native_and_compatibility_borrowed_outputs_keep_native_layouts_addresses_and_l
 }
 
 #[test]
-fn missing_item_witness_fails_before_advancing_or_returning_none() {
-    for kind in KINDS {
-        let (source, _) = collection(kind, false);
-        let receiver = reference(source);
-        let mut iterator = owned(kind, "iter", vec![receiver]).unwrap();
-        match &mut iterator {
-            Value::BorrowedMapIterator(iter) => Rc::get_mut(iter).unwrap().key_type = Type::Unknown,
-            Value::BorrowedSetIterator(iter) => {
-                Rc::get_mut(iter).unwrap().element_type = Type::Unknown
-            }
-            _ => unreachable!(),
-        }
-        let observer = iterator.clone();
-        let iterator = reference(iterator);
-        for _ in 0..2 {
-            assert!(
-                next(&iterator)
-                    .unwrap_err()
-                    .contains("complete borrowed iterator item type")
-            );
-        }
-        let index = match &observer {
-            Value::BorrowedMapIterator(iter) => &iter.index,
-            Value::BorrowedSetIterator(iter) => &iter.index,
-            _ => unreachable!(),
-        };
-        assert_eq!(index.get(), 0);
-        index.set(1); // Even an exhausted iterator needs a complete None witness.
-        assert!(
-            next(&iterator)
-                .unwrap_err()
-                .contains("complete borrowed iterator item type")
-        );
-        assert_eq!(index.get(), 1);
-    }
-}
-
-#[test]
 fn native_tuple_constructor_keeps_small_field_places_stable_and_moves_owned_fields() {
     use rils_execution::value::{
         native_instance::NativeInstancePlace, storage::TypedStorageContext,
@@ -224,7 +147,10 @@ fn native_tuple_constructor_keeps_small_field_places_stable_and_moves_owned_fiel
     let context = TypedStorageContext::new(&[], &[]);
     let small_type = Type::Tuple(vec![Type::I32]);
     let small = context
-        .construct_tuple(&small_type, vec![Value::from_i32(1)])
+        .construct_tuple(
+            &small_type,
+            vec![Value::from(rils_execution::value::native_i32(1))],
+        )
         .unwrap();
     let independent = small.clone_owned().unwrap();
     let Value::Dynamic(small) = small else {
@@ -234,8 +160,13 @@ fn native_tuple_constructor_keeps_small_field_places_stable_and_moves_owned_fiel
         .unwrap()
         .field("0")
         .unwrap();
-    place.assign(Value::from_i32(2)).unwrap();
-    assert_eq!(place.take().unwrap(), Value::from_i32(2));
+    place
+        .assign(Value::from(rils_execution::value::native_i32(2)))
+        .unwrap();
+    assert_eq!(
+        place.take().unwrap(),
+        Value::from(rils_execution::value::native_i32(2))
+    );
     let Value::Dynamic(independent) = independent else {
         panic!("native tuple copy")
     };
@@ -246,7 +177,7 @@ fn native_tuple_constructor_keeps_small_field_places_stable_and_moves_owned_fiel
             .unwrap()
             .take()
             .unwrap(),
-        Value::from_i32(1)
+        Value::from(rils_execution::value::native_i32(1))
     );
     let item = text("moved without Clone");
     let original = address(&item);
@@ -263,7 +194,10 @@ fn native_tuple_constructor_keeps_small_field_places_stable_and_moves_owned_fiel
     assert!(context.construct_tuple(&small_type, vec![]).is_err());
     assert!(
         context
-            .construct_tuple(&Type::Tuple(vec![Type::Unknown]), vec![Value::Unit])
+            .construct_tuple(
+                &Type::Tuple(vec![Type::Unknown]),
+                vec![Value::from(rils_execution::value::native_unit())]
+            )
             .is_err()
     );
 }

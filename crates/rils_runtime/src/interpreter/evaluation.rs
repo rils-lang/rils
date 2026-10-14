@@ -87,33 +87,35 @@ impl Interpreter {
                     rils_frontend::concretize_numeric_literal(value, inferred, expression.span())
                         .map_err(|error| RuntimeError::new(error.message, error.span))?;
                 Ok(match &value {
-                    Literal::Unit => Value::Unit,
-                    Literal::Bool(value) => Value::Bool(*value),
-                    Literal::I8(value) => crate::numeric::native_i8(*value),
-                    Literal::I16(value) => crate::numeric::native_i16(*value),
-                    Literal::I32(value) => crate::numeric::native_i32(*value),
-                    Literal::I64(value) => crate::numeric::native_i64(*value),
-                    Literal::I128(value) => crate::numeric::native_i128(*value),
-                    Literal::Isize(value) => crate::numeric::native_isize(*value),
-                    Literal::U8(value) => crate::numeric::native_u8(*value),
-                    Literal::U16(value) => crate::numeric::native_u16(*value),
-                    Literal::U32(value) => crate::numeric::native_u32(*value),
-                    Literal::U64(value) => crate::numeric::native_u64(*value),
-                    Literal::U128(value) => crate::numeric::native_u128(*value),
-                    Literal::Usize(value) => crate::numeric::native_usize(*value),
-                    Literal::F32(value) => Value::from_f32(*value),
-                    Literal::F64(value) => Value::from_f64(*value),
-                    Literal::Char(value) => rils_execution::value::native_char(*value),
-                    Literal::Integer(value) => {
-                        crate::numeric::native_i32(i32::try_from(*value).map_err(|_| {
+                    Literal::Unit => Value::from(rils_execution::value::native_unit()),
+                    Literal::Bool(value) => Value::from(rils_execution::value::native_bool(*value)),
+                    Literal::I8(value) => Value::from(crate::numeric::native_i8(*value)),
+                    Literal::I16(value) => Value::from(crate::numeric::native_i16(*value)),
+                    Literal::I32(value) => Value::from(crate::numeric::native_i32(*value)),
+                    Literal::I64(value) => Value::from(crate::numeric::native_i64(*value)),
+                    Literal::I128(value) => Value::from(crate::numeric::native_i128(*value)),
+                    Literal::Isize(value) => Value::from(crate::numeric::native_isize(*value)),
+                    Literal::U8(value) => Value::from(crate::numeric::native_u8(*value)),
+                    Literal::U16(value) => Value::from(crate::numeric::native_u16(*value)),
+                    Literal::U32(value) => Value::from(crate::numeric::native_u32(*value)),
+                    Literal::U64(value) => Value::from(crate::numeric::native_u64(*value)),
+                    Literal::U128(value) => Value::from(crate::numeric::native_u128(*value)),
+                    Literal::Usize(value) => Value::from(crate::numeric::native_usize(*value)),
+                    Literal::F32(value) => Value::from(rils_execution::value::native_f32(*value)),
+                    Literal::F64(value) => Value::from(rils_execution::value::native_f64(*value)),
+                    Literal::Char(value) => Value::from(rils_execution::value::native_char(*value)),
+                    Literal::Integer(value) => Value::from(crate::numeric::native_i32(
+                        i32::try_from(*value).map_err(|_| {
                             RuntimeError::new(
                                 "integer literal is outside the inferred i32 range",
                                 expression.span(),
                             )
-                        })?)
+                        })?,
+                    )),
+                    Literal::Float(value) => Value::from(rils_execution::value::native_f64(*value)),
+                    Literal::String(value) => {
+                        Value::from(rils_execution::value::native_string(value.clone()))
                     }
-                    Literal::Float(value) => Value::from_f64(*value),
-                    Literal::String(value) => rils_execution::value::native_string(value.clone()),
                 })
             }
             Expr::Tuple { .. } | Expr::Array { .. } => {
@@ -180,7 +182,7 @@ impl Interpreter {
                 let value = self.evaluate(value, environment.clone())?;
                 let place = self.resolve_place(target, &environment, *span)?;
                 place.assign(value, *span)?;
-                Ok(Value::Unit)
+                Ok(Value::from(rils_execution::value::native_unit()))
             }
             Expr::Borrow {
                 mutable,
@@ -196,23 +198,14 @@ impl Interpreter {
             } => {
                 let value = self.evaluate(operand, environment)?;
                 if *operator == UnaryOp::Dereference {
-                    let Value::Reference(reference) = value else {
+                    let Some(reference) = value.as_reference() else {
                         return Err(RuntimeError::new(
                             "cannot dereference a non-reference value",
                             *span,
                         ));
                     };
-                    let value = reference
+                    return reference
                         .read()
-                        .map_err(|message| RuntimeError::new(message, *span))?;
-                    if !value.is_copy() {
-                        return Err(RuntimeError::new(
-                            "cannot move a non-Copy value out of a reference",
-                            *span,
-                        ));
-                    }
-                    return value
-                        .clone_owned()
                         .map_err(|message| RuntimeError::new(message, *span));
                 }
                 self.unary(*operator, value, *span)
@@ -280,7 +273,7 @@ impl Interpreter {
             }
             Flow::Continue => {
                 self.pending_loop_flow = Some(Flow::Continue);
-                Value::Unit
+                Value::from(rils_execution::value::native_unit())
             }
         }
     }
@@ -298,10 +291,12 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new(format!("undefined variable `{name}`"), span))?;
         {
             let storage = slot.borrow();
-            let current = storage.read().map_err(|_| {
-                RuntimeError::new(format!("cannot reference moved value `{name}`"), span)
-            })?;
-            if current.is_partially_moved() {
+            let partially_moved = storage
+                .with_value(|value| Ok(value.is_partially_moved()))
+                .map_err(|_| {
+                    RuntimeError::new(format!("cannot reference moved value `{name}`"), span)
+                })?;
+            if partially_moved {
                 return Err(RuntimeError::new(
                     format!("cannot reference partially moved value `{name}`"),
                     span,
@@ -314,7 +309,7 @@ impl Interpreter {
                 ));
             }
         }
-        Ok(Value::Reference(Rc::new(ReferenceValue::new_storage(
+        Ok(Value::from_reference(Rc::new(ReferenceValue::new_storage(
             slot, mutable,
         ))))
     }

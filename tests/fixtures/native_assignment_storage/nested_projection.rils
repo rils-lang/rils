@@ -1,0 +1,19 @@
+struct Item { text: string }
+struct Group { items: Vec<Item> }
+
+fn check() -> bool {
+    let mut group = Group { items: Vec::new() };
+    group.items.push(Item { text: "before" });
+    group.items[0].text = "direct";
+    {
+        let reference = &mut group;
+        reference.items[0].text = "borrowed";
+        let field = &mut reference.items[0].text;
+        *field = "after";
+    };
+    let cloned = group.items[0].text.clone();
+    group.items[0].text = "changed";
+    let text = &group.items[0].text;
+    cloned == "after" && text.len() == 7usize
+}
+check()

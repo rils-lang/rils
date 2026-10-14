@@ -20,7 +20,7 @@ fn generated_sum_methods_move_non_clone_items_in_every_backend() {
     ] {
         assert_eq!(
             eval_value(source).unwrap_or_else(|error| panic!("{name}, interpreter: {error}")),
-            Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         );
         let module = compile(source).unwrap_or_else(|error| panic!("{name}, compile: {error}"));
         let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
@@ -29,7 +29,7 @@ fn generated_sum_methods_move_non_clone_items_in_every_backend() {
                 module
                     .execute_value()
                     .unwrap_or_else(|error| panic!("{name}, VM: {error}")),
-                Value::from_i32(42)
+                Value::from(rils_execution::value::native_i32(42))
             );
         }
     }

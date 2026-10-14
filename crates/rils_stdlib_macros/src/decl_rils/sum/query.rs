@@ -33,6 +33,6 @@ pub(super) fn call(item: &ItemEnum, method: &ImplItemFn) -> Tokens {
             format!("native query expects {}: {}", #owner, message)
         })?;
         #conversion
-        Ok(crate::Value::Bool(native_self.#name()))
+        Ok(crate::Value::from(crate::value::native_bool(native_self.#name())))
     }
 }

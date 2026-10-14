@@ -19,19 +19,27 @@ impl Environment {
                     format!("{prefix}::{name}")
                 };
                 match slot.value.as_ref() {
-                    Some(Value::HostFunction(function)) => {
+                    Some(value) if value.as_callable::<crate::value::HostFunction>().is_some() => {
+                        let function = value.as_callable::<crate::value::HostFunction>().unwrap();
                         if let Some(signature) = &function.signature {
                             signatures.insert(path, signature.clone());
                         }
                     }
-                    Some(Value::Module(module)) => {
-                        let identity = Rc::as_ptr(module) as usize;
-                        if active.insert(identity) {
-                            collect(&module.members.borrow(), &path, active, signatures);
-                            active.remove(&identity);
-                        }
-                    }
                     _ => {}
+                }
+            }
+            for (name, declaration) in &environment.names {
+                if let Declaration::Module(module) = declaration {
+                    let identity = Rc::as_ptr(module) as usize;
+                    if active.insert(identity) {
+                        let path = if prefix.is_empty() {
+                            name.clone()
+                        } else {
+                            format!("{prefix}::{name}")
+                        };
+                        collect(&module.members.borrow(), &path, active, signatures);
+                        active.remove(&identity);
+                    }
                 }
             }
         }

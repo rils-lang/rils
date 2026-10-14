@@ -13,8 +13,8 @@ pub(super) fn empty_call(work: usize) -> Result<Benchmark, String> {
         "vm_empty_call.rils",
         "echo",
         work,
-        Value::from_i32(value),
-        Value::from_i32(value),
+        Value::from(rils_runtime::value::native_i32(value)),
+        Value::from(rils_runtime::value::native_i32(value)),
         "vm-empty-call",
         Some("i32"),
     )
@@ -43,8 +43,8 @@ pub(super) fn integer_loop(work: usize) -> Result<Benchmark, String> {
         "vm_integer_loop.rils",
         "sum_to",
         usize::try_from(work).unwrap_or(usize::MAX),
-        Value::I64(work),
-        Value::I64(expected),
+        Value::from(rils_runtime::value::native_i64(work)),
+        Value::from(rils_runtime::value::native_i64(expected)),
         "vm-integer-loop",
         Some("i64"),
     )
@@ -134,11 +134,19 @@ fn counter_case_name(integer_type: IntegerType) -> &'static str {
 
 fn expected_value(work: usize, integer_type: IntegerType) -> Result<Value, String> {
     match integer_type {
-        IntegerType::I32 => i32::try_from(work).map(Value::from_i32),
-        IntegerType::U32 => u32::try_from(work).map(Value::U32),
-        IntegerType::I64 => i64::try_from(work).map(Value::I64),
-        IntegerType::U64 => u64::try_from(work).map(Value::U64),
-        IntegerType::Usize => Ok(Value::Usize(work)),
+        IntegerType::I32 => {
+            i32::try_from(work).map(|value| Value::from(rils_runtime::value::native_i32(value)))
+        }
+        IntegerType::U32 => {
+            u32::try_from(work).map(|value| Value::from(rils_runtime::value::native_u32(value)))
+        }
+        IntegerType::I64 => {
+            i64::try_from(work).map(|value| Value::from(rils_runtime::value::native_i64(value)))
+        }
+        IntegerType::U64 => {
+            u64::try_from(work).map(|value| Value::from(rils_runtime::value::native_u64(value)))
+        }
+        IntegerType::Usize => Ok(Value::from(rils_runtime::value::native_usize(work))),
     }
     .map_err(|_| format!("work {work} does not fit in {}", integer_type.name()))
 }

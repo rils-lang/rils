@@ -15,19 +15,7 @@ impl Checker<'_> {
                 ) =>
             {
                 match self.receiver_mode(self.expression_types.get(object), name) {
-                    Some(ReceiverMode::Owned) => {
-                        if self
-                            .expression_types
-                            .get(object)
-                            .is_some_and(|ty| !self.is_copy(ty))
-                        {
-                            self.diagnostic(
-                                "bound method values with an owned receiver require Copy",
-                                *span,
-                            );
-                        }
-                        self.expression(object)
-                    }
+                    Some(ReceiverMode::Owned) => self.expression(object),
                     Some(ReceiverMode::Borrowed { .. }) => {
                         self.diagnostic(
                             "bound method values cannot capture a local reference",

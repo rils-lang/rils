@@ -14,26 +14,23 @@ thread_local! {
                     return Err("char equality expects one argument".into());
                 };
                 let other = char_payload(other).ok_or("char equality expects char")?;
-                Ok(Value::Bool(context.receiver::<char, _>(|value| *value == other)?))
+                Ok(Value::from(crate::value::native_bool(context.receiver::<char, _>(|value| *value == other)?)))
             })
             .register_method(native_ops::DISPLAY, |context| {
-                Ok(super::native_string(
+                Ok(Value::from(super::native_string(
                     context.receiver::<char, _>(|value| value.to_string())?,
-                ))
+                )))
             }),
     );
 }
 
-pub fn native_char(value: char) -> Value {
-    Value::Native(
-        NativeObject::new(DESCRIPTOR.with(Rc::clone), value)
-            .expect("character descriptor matches its Rust payload"),
-    )
+pub fn native_char(value: char) -> NativeObject {
+    NativeObject::new(DESCRIPTOR.with(Rc::clone), value)
+        .expect("character descriptor matches its Rust payload")
 }
 
 pub fn char_payload(value: &Value) -> Option<char> {
     match value {
-        Value::Char(value) => Some(*value),
         Value::Native(object) if object.descriptor().rils_type() == &Type::Char => {
             object.with::<char, _>(|value| *value).ok()
         }

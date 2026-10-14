@@ -12,6 +12,9 @@ use syn::{
 };
 
 use crate::type_patterns;
+mod arithmetic;
+mod conversion;
+mod storage;
 
 struct Mapping {
     primitive: Ident,
@@ -288,6 +291,8 @@ pub(super) fn expand_definition(path: Path, module: ItemMod) -> TokenStream {
         ));
         for mapping in &definition.family {
             let primitive = &mapping.primitive;
+            items.push(storage::host_mapping(primitive));
+            items.push(arithmetic::implementation(primitive, definition.float));
             let mut cloned = template.clone();
             cloned.generics.params.clear();
             *cloned.self_ty = syn::parse_quote!(Number<#primitive>);
@@ -629,6 +634,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         let name = format_ident!("descriptor_{}", primitive);
         let numeric_module = if float { format_ident!("float") } else { format_ident!("integer") };
         let rust_type = quote!(rils_stdlib::stdlib::#numeric_module::Number<#primitive>);
+        let storage_bridge = storage::execution_bridge(primitive, &numeric_module);
         let type_token = if float {
             quote!(crate::Type::Float(crate::FloatType::#variant))
         } else {
@@ -705,6 +711,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
             Err(error) => return error.into_compile_error(),
         };
         quote! {
+            #storage_bridge
             pub fn #name() -> std::rc::Rc<crate::value::NativeType> {
                 std::thread_local! {
                     static DESCRIPTOR: std::rc::Rc<crate::value::NativeType> = std::rc::Rc::new(
@@ -714,12 +721,12 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
                                 let [crate::Value::Native(other)] = context.arguments() else {
                                     return Err("numeric equality expects a native argument".into());
                                 };
-                                Ok(crate::Value::Bool(context.receiver::<#rust_type, _>(|left| {
+                                Ok(crate::Value::from(crate::value::native_bool(context.receiver::<#rust_type, _>(|left| {
                                     other.with::<#rust_type, _>(|right| left.0 == right.0)
-                                })??))
+                                })??)))
                             })
                             .register_method(crate::value::native_ops::DISPLAY, |context| {
-                                Ok(crate::value::native_string(context.receiver::<#rust_type, _>(|value| value.0.to_string())?))
+                                Ok(crate::Value::from(crate::value::native_string(context.receiver::<#rust_type, _>(|value| value.0.to_string())?)))
                             })
                             #(#methods)*
                     );
@@ -753,12 +760,14 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         };
         quote!(#target_type::#wrapper => #constant_name(id),)
     });
+    let arithmetic = arithmetic::dispatch(&definition);
     if float {
         return quote! {
             #(#bindings)*
             #(#descriptors)*
+            #arithmetic
             pub fn call(symbol: &str, arguments: &[crate::Value]) -> Option<Result<crate::Value, String>> {
-                match arguments.first().and_then(crate::Type::of_value) { #(#receiver_dispatch)* _ => None }
+                match arguments.first().and_then(crate::runtime_type::receiver_type) { #(#receiver_dispatch)* _ => None }
             }
             pub fn constant(target: crate::FloatType, id: rils_builtins::FloatConstantId) -> Option<Result<crate::Value, String>> {
                 match target { #(#constant_dispatch)* }
@@ -768,6 +777,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     quote! {
         #(#bindings)*
         #(#descriptors)*
+        #arithmetic
         pub fn call(
             symbol: &str,
             target: Option<rils_builtins::IntegerType>,
@@ -776,7 +786,7 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
             if symbol == "core::integer::try_from" {
                 match target { #(#target_dispatch)* _ => None }
             } else {
-                match arguments.first().and_then(crate::Type::of_value) { #(#receiver_dispatch)* _ => None }
+                match arguments.first().and_then(crate::runtime_type::receiver_type) { #(#receiver_dispatch)* _ => None }
             }
         }
         pub fn constant(
@@ -825,16 +835,6 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
                 ),
             },
             quote! {
-                #type_token => Some(object.with(|stored| {
-                    let item = stored.with_option::<#primitive, _>(|item| item.copied())?;
-                    item.map(|item| {
-                        <#wrapper<#primitive> as crate::numeric::native::NativeOutput>::into_value(
-                            #wrapper(item)
-                        )
-                    }).transpose()
-                }).and_then(|item| item)),
-            },
-            quote! {
                 #type_token => Some(
                     value.into_rust::<#primitive>()
                         .map_err(|(_, message)| message)
@@ -849,8 +849,7 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
     }).collect::<Vec<_>>();
     let layout_variants = family.iter().map(|variants| &variants.0);
     let item_variants = family.iter().map(|variants| &variants.1);
-    let view_variants = family.iter().map(|variants| &variants.2);
-    let field_value_variants = family.iter().map(|variants| &variants.3);
+    let field_value_variants = family.iter().map(|variants| &variants.2);
     quote! {
         pub fn layout(ty: &crate::Type) -> Option<std::rc::Rc<rils_value::DynamicLayout>> {
             match ty { #(#layout_variants)* _ => None }
@@ -862,13 +861,6 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
             layout: std::rc::Rc<rils_value::DynamicLayout>,
         ) -> Option<Result<rils_value::DynamicValue, String>> {
             match ty { #(#item_variants)* _ => None }
-        }
-
-        pub fn option_view(
-            object: &crate::value::DynamicObject,
-            ty: &crate::Type,
-        ) -> Option<Result<Option<crate::Value>, String>> {
-            match ty { #(#view_variants)* _ => None }
         }
 
         pub fn field_value(

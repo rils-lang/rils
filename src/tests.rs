@@ -3,7 +3,8 @@ use super::*;
 fn integer(source: &str) -> i32 {
     let value = eval_value(source).unwrap();
     value
-        .as_i32()
+        .get_cloned::<i32>()
+        .ok()
         .unwrap_or_else(|| panic!("expected integer, found {value:?}"))
 }
 
@@ -12,10 +13,16 @@ fn native_integer_method_matches_in_interpreter_and_vm() {
     for (source, expected) in [
         (
             "2147483647i32.wrapping_add(1i32)",
-            Value::from_i32(i32::MIN),
+            Value::from(crate::value::native_i32(i32::MIN)),
         ),
-        ("255u8.wrapping_add(1u8)", Value::U8(0)),
-        ("1usize.saturating_sub(2usize)", Value::Usize(0)),
+        (
+            "255u8.wrapping_add(1u8)",
+            Value::from(crate::value::native_u8(0)),
+        ),
+        (
+            "1usize.saturating_sub(2usize)",
+            Value::from(crate::value::native_usize(0)),
+        ),
     ] {
         assert_eq!(eval_value(source).unwrap(), expected);
         assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
@@ -43,10 +50,13 @@ fn derives_default_from_field_defaults() {
         assert!(settings.selected == None);
         <i64 as Default>::default()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::I64(0));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i64(0))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::I64(0)
+        Value::from(crate::value::native_i64(0))
     );
 }
 
@@ -62,20 +72,26 @@ fn derives_default_for_unit_structs() {
         let marker = <Marker as Default>::default();
         type_of(marker)
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_string("Marker"));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_string("Marker"))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_string("Marker")
+        Value::from(crate::value::native_string("Marker"))
     );
 }
 
 #[test]
 fn empty_record_constructors_work_in_interpreter_and_bytecode() {
     let source = "struct Marker; let marker = (Marker {}); type_of(marker)";
-    assert_eq!(eval_value(source).unwrap(), Value::from_string("Marker"));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_string("Marker"))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_string("Marker")
+        Value::from(crate::value::native_string("Marker"))
     );
 }
 
@@ -90,13 +106,16 @@ fn derives_debug_for_structs_and_enums() {
         println!("point = {:#?}", &point);
         point.x
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(1));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(1))
+    );
     let module = crate::compile(source).expect("Debug derives should compile to bytecode");
     let mut host = crate::BytecodeHost::standard();
     host.enable_standard_io().unwrap();
     assert_eq!(
         module.execute_value_with_host(&host).unwrap(),
-        Value::from_i32(1)
+        Value::from(crate::value::native_i32(1))
     );
 }
 
@@ -121,7 +140,10 @@ fn bytecode_formatting_calls_custom_traits_and_nested_debug() {
         let wrapper = Wrapper { label: Label { value: 2 } };
         println!("{:?}", wrapper);
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Unit);
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_unit())
+    );
     let module = compile(source).unwrap();
     let captured = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let output = captured.clone();
@@ -132,11 +154,11 @@ fn bytecode_formatting_calls_custom_traits_and_nested_debug() {
         FunctionSignature::variadic(Type::Unit),
         "std::io",
         move |arguments| {
-            let Some(value) = arguments[1].as_string() else {
+            let Ok(value) = arguments[1].get_cloned::<String>() else {
                 return Err("expected formatted output".into());
             };
             output.borrow_mut().push(value);
-            Ok(Value::Unit)
+            Ok(Value::from(crate::value::native_unit()))
         },
     )
     .unwrap();
@@ -158,10 +180,13 @@ fn self_paths_resolve_to_the_current_impl_type() {
         let counter = Counter::answer();
         counter.value
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(42))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(42)
+        Value::from(crate::value::native_i32(42))
     );
 }
 
@@ -178,10 +203,13 @@ fn default_is_available_for_builtin_composite_types() {
         let _items = items;
         pair.0
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Bool(false));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_bool(false))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Bool(false)
+        Value::from(crate::value::native_bool(false))
     );
 }
 
@@ -200,7 +228,7 @@ fn supports_explicit_default_impls_in_derived_fields() {
     assert_eq!(integer(source), 8080);
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(8080)
+        Value::from(crate::value::native_i32(8080))
     );
 }
 
@@ -213,10 +241,13 @@ fn trait_supertraits_are_required_by_interpreter_and_compiler() {
         impl Behaviour for State {}
         <State as Default>::default();
     "#;
-    assert_eq!(eval_value(valid).unwrap(), Value::Unit);
+    assert_eq!(
+        eval_value(valid).unwrap(),
+        Value::from(crate::value::native_unit())
+    );
     assert_eq!(
         compile(valid).unwrap().execute_value().unwrap(),
-        Value::Unit
+        Value::from(crate::value::native_unit())
     );
 
     let missing = "trait Behaviour: Default {} struct State; impl Behaviour for State {}";
@@ -253,10 +284,13 @@ fn supports_concrete_numeric_types_char_and_contextual_usize_inference() {
         assert!(type_of(index) == "usize");
         values[index]
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(22));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(22))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(22)
+        Value::from(crate::value::native_i32(22))
     );
 }
 
@@ -267,10 +301,13 @@ fn casts_integers_without_silent_information_loss() {
         let index = 1_i32;
         values[index as usize]
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(22));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(22))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(22)
+        Value::from(crate::value::native_i32(22))
     );
 
     let narrowing = match compile("let value = 1usize; value as i32") {
@@ -308,10 +345,13 @@ fn integer_intrinsics_cover_fallible_conversion_and_overflow_modes() {
         assert!(type_of(42i32.to_f32()) == "f32");
         42i32.to_f64()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::F64(42.0));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_f64(42.0))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::F64(42.0)
+        Value::from(crate::value::native_f64(42.0))
     );
 }
 
@@ -422,10 +462,13 @@ fn float_intrinsics_cover_classification_rounding_and_bounds() {
         assert!(f32::MIN_POSITIVE.is_normal());
         42
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(42))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(42)
+        Value::from(crate::value::native_i32(42))
     );
 
     let error = eval_value("1f64.clamp(2f64, 0f64)").unwrap_err();
@@ -441,10 +484,13 @@ fn integer_ranges_preserve_their_concrete_type() {
         }
         total
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::U16(6));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_u16(6))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::U16(6)
+        Value::from(crate::value::native_u16(6))
     );
 }
 
@@ -513,7 +559,7 @@ fn result_supports_error_side_extraction() {
             "#
         )
         .unwrap(),
-        Value::from_string("invalid")
+        Value::from(crate::value::native_string("invalid"))
     );
     let error = eval_value("let value: Result<i32, string> = Ok(42); value.unwrap_err();")
         .expect_err("unwrap_err on Ok must fail");
@@ -572,7 +618,7 @@ fn standard_fs_uses_result_and_structured_io_errors() {
     if directory.exists() {
         std::fs::remove_dir_all(&directory).unwrap();
     }
-    assert_eq!(result.unwrap(), Value::from_i32(42));
+    assert_eq!(result.unwrap(), Value::from(crate::value::native_i32(42)));
 }
 
 #[test]
@@ -1264,7 +1310,10 @@ fn builtin_clone_trait_provides_clone_method_for_owned_values() {
         "#,
     )
     .unwrap();
-    assert_eq!(value, Value::from_string("RilsRilsRilsRilsRils"));
+    assert_eq!(
+        value,
+        Value::from(crate::value::native_string("RilsRilsRilsRilsRils"))
+    );
 
     assert_eq!(
         integer(
@@ -1368,7 +1417,10 @@ fn function_types_preserve_higher_order_signatures() {
             assert!(getter() == 42);
             apply(double, 21)
         "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(42))
+    );
 
     let mismatch = eval_value(
         r#"
@@ -1451,7 +1503,10 @@ fn clone_explicitly_duplicates_owned_values() {
         "#,
     )
     .unwrap();
-    assert_eq!(value, Value::from_string("hellohello"));
+    assert_eq!(
+        value,
+        Value::from(crate::value::native_string("hellohello"))
+    );
 }
 
 #[test]
@@ -1690,12 +1745,18 @@ fn references_cannot_escape_or_enter_owned_types() {
 fn engine_keeps_globals_between_evaluations() {
     let mut engine = Engine::new();
     engine.eval_value("let answer = 42;").unwrap();
-    assert_eq!(engine.eval_value("answer").unwrap(), Value::from_i32(42));
+    assert_eq!(
+        engine.eval_value("answer").unwrap(),
+        Value::from(crate::value::native_i32(42))
+    );
 }
 
 #[test]
 fn unit_is_distinct_and_is_the_default_function_result() {
-    assert_eq!(eval_value("()").unwrap(), Value::Unit);
+    assert_eq!(
+        eval_value("()").unwrap(),
+        Value::from(crate::value::native_unit())
+    );
     assert_eq!(
         eval_value(
             r#"
@@ -1704,7 +1765,7 @@ fn unit_is_distinct_and_is_the_default_function_result() {
                 "#
         )
         .unwrap(),
-        Value::Unit
+        Value::from(crate::value::native_unit())
     );
 }
 
@@ -1999,10 +2060,13 @@ fn empty_struct_declarations_work_in_interpreter_and_bytecode() {
 
         Unit::answer() + Empty::answer()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(42))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(42)
+        Value::from(crate::value::native_i32(42))
     );
 }
 
@@ -2265,7 +2329,7 @@ fn traits_define_and_dispatch_required_methods() {
             "#,
     )
     .unwrap();
-    assert_eq!(value, Value::from_string("point"));
+    assert_eq!(value, Value::from(crate::value::native_string("point")));
 }
 
 #[test]
@@ -2291,7 +2355,7 @@ fn generic_trait_bounds_are_enforced() {
     engine.eval_value(source).unwrap();
     assert_eq!(
         engine.eval_value("describe(Point { value: 1 })").unwrap(),
-        Value::from_string("point")
+        Value::from(crate::value::native_string("point"))
     );
     let error = engine
         .eval_value("describe(Hidden { value: 1 })")
@@ -2353,7 +2417,7 @@ fn generic_types_can_implement_traits_for_all_arguments() {
             "#,
     )
     .unwrap();
-    assert_eq!(value, Value::from_string("wrapper"));
+    assert_eq!(value, Value::from(crate::value::native_string("wrapper")));
 }
 
 #[test]
@@ -2488,7 +2552,7 @@ fn nominal_types_can_implement_builtin_clone_and_copy() {
         "#,
     )
     .unwrap();
-    assert_eq!(cloned, Value::from_string("RilsRils"));
+    assert_eq!(cloned, Value::from(crate::value::native_string("RilsRils")));
 
     assert_eq!(
         integer(
@@ -2584,17 +2648,20 @@ fn rust_helper_forwards_native_functions_as_rils_macros() {
     fn host_sum(arguments: &[Value]) -> Result<Value, String> {
         let mut total = 0_i32;
         for value in arguments {
-            let value = value.as_i32().ok_or("host_sum expects integers")?;
+            let value = value
+                .get_cloned::<i32>()
+                .ok()
+                .ok_or("host_sum expects integers")?;
             total += value;
         }
-        Ok(Value::from_i32(total))
+        Ok(Value::from(crate::value::native_i32(total)))
     }
 
     let mut engine = Engine::new();
     rils_forward_macro!(engine, host_sum, 1, usize::MAX, host_sum).unwrap();
     assert_eq!(
         engine.eval_value("host_sum!(20, 22)").unwrap(),
-        Value::from_i32(42)
+        Value::from(crate::value::native_i32(42))
     );
     let error = engine.eval_value("host_sum!()").unwrap_err();
     assert!(error.to_string().contains("expects at least 1 argument"));
@@ -2630,7 +2697,10 @@ fn engine_output_handler_receives_formatted_print_boundaries() {
 
 #[test]
 fn standard_native_assert_macro_executes() {
-    assert_eq!(eval_value("assert!(true)").unwrap(), Value::Unit);
+    assert_eq!(
+        eval_value("assert!(true)").unwrap(),
+        Value::from(crate::value::native_unit())
+    );
     let error = eval_value("macro println($value) { $value }").unwrap_err();
     assert!(error.to_string().contains("duplicate macro `println`"));
 }
@@ -2791,7 +2861,7 @@ fn collections_support_search_and_owned_vec_mutation() {
             "#
         )
         .unwrap(),
-        Value::Usize(5)
+        Value::from(crate::value::native_usize(5))
     );
 
     let error = eval_value("let mut values = Vec::from([1, 2]); values.insert(3usize, 4);")
@@ -2859,10 +2929,13 @@ fn strings_expose_unicode_and_owned_iterator_workflows() {
         }
         lines
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Usize(2));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_usize(2))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Usize(2)
+        Value::from(crate::value::native_usize(2))
     );
 }
 
@@ -2920,10 +2993,13 @@ fn iterator_default_methods_cover_transform_query_and_fold_workflows() {
         [1, 2, 3].into_iter().for_each(validate_positive);
         6
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(6));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(6))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(6)
+        Value::from(crate::value::native_i32(6))
     );
 }
 
@@ -2958,10 +3034,13 @@ fn custom_iterators_inherit_iterator_default_methods() {
         assert!(collected.len() == 4usize);
         Counter { current: 1, end: 5 }.map(square).fold(0, add)
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(30));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(30))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(30)
+        Value::from(crate::value::native_i32(30))
     );
 }
 
@@ -2988,10 +3067,13 @@ fn iterator_predicates_short_circuit_and_filter_owned_values_by_reference() {
         }
         run()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(2));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(crate::value::native_i32(2))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(2)
+        Value::from(crate::value::native_i32(2))
     );
 }
 
@@ -3105,7 +3187,7 @@ fn eval_file_loads_external_modules() {
     std::fs::write(&module, "pub fn answer() -> i32 { 42 }").unwrap();
 
     let value = Engine::new().eval_file_value(&root).unwrap();
-    assert_eq!(value, Value::from_i32(42));
+    assert_eq!(value, Value::from(crate::value::native_i32(42)));
 
     std::fs::remove_file(root).unwrap();
     std::fs::remove_file(module).unwrap();
@@ -3122,17 +3204,17 @@ fn host_modules_accept_stateful_function_closures() {
         .register_module_function("host::counter", "next", 0, 0, move |_| {
             let next = captured.get() + 1;
             captured.set(next);
-            Ok(Value::from_i32(next))
+            Ok(Value::from(crate::value::native_i32(next)))
         })
         .unwrap();
 
     assert_eq!(
         engine.eval_value("host::counter::next()").unwrap(),
-        Value::from_i32(41)
+        Value::from(crate::value::native_i32(41))
     );
     assert_eq!(
         engine.eval_value("host::counter::next()").unwrap(),
-        Value::from_i32(42)
+        Value::from(crate::value::native_i32(42))
     );
 }
 
@@ -3150,7 +3232,7 @@ fn typed_host_functions_validate_arguments_and_returns() {
         .unwrap();
     assert_eq!(
         engine.eval_value("host::math::identity(42)").unwrap(),
-        Value::from_i32(42)
+        Value::from(crate::value::native_i32(42))
     );
     let argument_error = engine
         .eval_value("host::math::identity(\"wrong\")")
@@ -3165,7 +3247,7 @@ fn typed_host_functions_validate_arguments_and_returns() {
     let mut engine = Engine::new();
     engine
         .register_module_typed_function("host", "wrong_return", Vec::new(), Type::I32, |_| {
-            Ok(Value::from_string("wrong"))
+            Ok(Value::from(crate::value::native_string("wrong")))
         })
         .unwrap();
     let return_error = engine.eval_value("host::wrong_return()").unwrap_err();
@@ -3191,13 +3273,16 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
                 .ok_or_else(|| "invalid Counter receiver".to_string())?;
             let next = counter.get() + 1;
             counter.set(next);
-            Ok(Value::from_i32(next))
+            Ok(Value::from(crate::value::native_i32(next)))
         })
         .unwrap();
     let constructor_type = counter_type.clone();
     engine
         .register_module_function("host", "counter", 1, 1, move |arguments| {
-            let initial = arguments[0].as_i32().ok_or("counter expects i32")?;
+            let initial = arguments[0]
+                .get_cloned::<i32>()
+                .ok()
+                .ok_or("counter expects i32")?;
             Ok(constructor_type.value(std::cell::Cell::new(initial)))
         })
         .unwrap();
@@ -3213,21 +3298,36 @@ fn native_type_handles_create_payloads_and_dispatch_methods() {
                 "#,
             )
             .unwrap(),
-        Value::from_i32(42)
+        Value::from(crate::value::native_i32(42))
     );
 }
 
 fn bundled_example_expectations() -> Vec<(&'static str, Value)> {
     vec![
-        ("collections_and_closures.rils", Value::from_i32(42)),
-        ("domain_model.rils", Value::from_i32(42)),
-        ("fallible_pipeline.rils", Value::from_i32(42)),
-        ("hello.rils", Value::from_i32(720)),
-        ("iterators.rils", Value::from_i32(20)),
-        ("macros.rils", Value::from_i32(42)),
-        ("references.rils", Value::from_i32(7)),
-        ("task_board/src/main.rils", Value::from_i32(1222)),
-        ("telemetry_pipeline/src/main.rils", Value::from_i32(7703)),
+        (
+            "collections_and_closures.rils",
+            Value::from(crate::value::native_i32(42)),
+        ),
+        (
+            "domain_model.rils",
+            Value::from(crate::value::native_i32(42)),
+        ),
+        (
+            "fallible_pipeline.rils",
+            Value::from(crate::value::native_i32(42)),
+        ),
+        ("hello.rils", Value::from(crate::value::native_i32(720))),
+        ("iterators.rils", Value::from(crate::value::native_i32(20))),
+        ("macros.rils", Value::from(crate::value::native_i32(42))),
+        ("references.rils", Value::from(crate::value::native_i32(7))),
+        (
+            "task_board/src/main.rils",
+            Value::from(crate::value::native_i32(1222)),
+        ),
+        (
+            "telemetry_pipeline/src/main.rils",
+            Value::from(crate::value::native_i32(7703)),
+        ),
     ]
 }
 
@@ -3368,7 +3468,7 @@ fn project_files_are_modules_and_entry_main_uses_anchored_paths() {
 
     let interpreted = Engine::new().eval_file_value(&entry).unwrap();
     let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
-    assert_eq!(interpreted, Value::from_i32(42));
+    assert_eq!(interpreted, Value::from(crate::value::native_i32(42)));
     assert_eq!(compiled, interpreted);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -3381,7 +3481,7 @@ fn project_module_initialization_and_enum_identity_match_between_backends() {
     let interpreted = Engine::new().eval_file_value(&entry).unwrap();
     let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
 
-    assert_eq!(interpreted, Value::from_i32(42));
+    assert_eq!(interpreted, Value::from(crate::value::native_i32(42)));
     assert_eq!(compiled, interpreted);
 }
 
@@ -3508,7 +3608,7 @@ fn project_trait_coherence_distinguishes_same_named_local_definitions() {
     let interpreted = Engine::new().eval_file_value(&entry).unwrap();
     let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
 
-    assert_eq!(interpreted, Value::from_i32(42));
+    assert_eq!(interpreted, Value::from(crate::value::native_i32(42)));
     assert_eq!(compiled, interpreted);
 }
 
@@ -3589,7 +3689,7 @@ fn project_entries_support_grouped_and_glob_imports() {
 
     let interpreted = Engine::new().eval_file_value(&entry).unwrap();
     let compiled = compile_file(&entry).unwrap().execute_value().unwrap();
-    assert_eq!(interpreted, Value::from_i32(42));
+    assert_eq!(interpreted, Value::from(crate::value::native_i32(42)));
     assert_eq!(compiled, interpreted);
 
     std::fs::remove_dir_all(root).unwrap();

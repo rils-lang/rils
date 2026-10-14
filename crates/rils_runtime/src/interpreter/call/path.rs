@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn resolve_associated_path(
-    base: Value,
+    base: crate::value::Declaration,
     root: &str,
     member: &str,
     environment: EnvironmentRef,
@@ -9,14 +9,16 @@ pub(super) fn resolve_associated_path(
     span: Span,
 ) -> Result<Value, RuntimeError> {
     match base {
-        Value::BuiltinType(BuiltinType::Vec) => native_collection_member("Vec", member, span),
-        Value::BuiltinType(BuiltinType::HashMap) => {
+        crate::value::Declaration::BuiltinType(BuiltinType::Vec) => {
+            native_collection_member("Vec", member, span)
+        }
+        crate::value::Declaration::BuiltinType(BuiltinType::HashMap) => {
             native_collection_member("HashMap", member, span)
         }
-        Value::BuiltinType(BuiltinType::HashSet) => {
+        crate::value::Declaration::BuiltinType(BuiltinType::HashSet) => {
             native_collection_member("HashSet", member, span)
         }
-        Value::BuiltinType(BuiltinType::Integer(target)) => {
+        crate::value::Declaration::BuiltinType(BuiltinType::Integer(target)) => {
             if let Some(constant) = rils_builtins::integer_constant(member) {
                 return Ok(crate::numeric::integer_constant(target, constant.id));
             }
@@ -27,12 +29,14 @@ pub(super) fn resolve_associated_path(
                         span,
                     )
                 })?;
-            Ok(Value::BuiltinFunction(BuiltinFunction::IntegerIntrinsic {
-                symbol: intrinsic.symbol,
-                target,
-            }))
+            Ok(Value::from_callable(Rc::new(
+                BuiltinFunction::IntegerIntrinsic {
+                    symbol: intrinsic.symbol,
+                    target,
+                },
+            )))
         }
-        Value::BuiltinType(BuiltinType::Float(target)) => {
+        crate::value::Declaration::BuiltinType(BuiltinType::Float(target)) => {
             let constant = rils_builtins::float_constant(member).ok_or_else(|| {
                 RuntimeError::new(
                     format!("{target} has no associated constant `{member}`"),
@@ -41,7 +45,7 @@ pub(super) fn resolve_associated_path(
             })?;
             Ok(crate::numeric::float_constant(target, constant.id))
         }
-        Value::StructType(definition) => {
+        crate::value::Declaration::StructType(definition) => {
             if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
                 && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
                 && let Some(symbol) = builtin.native_symbol
@@ -50,14 +54,14 @@ pub(super) fn resolve_associated_path(
                     rils_frontend::standard_library::erased_builtin_member_signature(builtin)
             {
                 let arity = signature.parameters.as_ref().map_or(0, Vec::len);
-                return Ok(Value::NativeFunction(NativeFunction {
+                return Ok(Value::from_callable(Rc::new(NativeFunction {
                     binding_name: symbol,
                     name: symbol,
                     min_arity: arity,
                     max_arity: arity,
                     signature: Some(signature),
                     body: NativeFunctionBody::Symbol(symbol),
-                }));
+                })));
             }
             if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
                 && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
@@ -66,14 +70,14 @@ pub(super) fn resolve_associated_path(
                     rils_frontend::standard_library::erased_builtin_member_signature(builtin)
             {
                 let arity = signature.parameters.as_ref().map_or(0, Vec::len);
-                return Ok(Value::NativeFunction(NativeFunction {
+                return Ok(Value::from_callable(Rc::new(NativeFunction {
                     binding_name: symbol,
                     name: symbol,
                     min_arity: arity,
                     max_arity: arity,
                     signature: Some(signature),
                     body: NativeFunctionBody::Symbol(symbol),
-                }));
+                })));
             }
             let method = select_method(&definition.methods, &definition.trait_methods, member)
                 .map_err(|traits| {
@@ -85,14 +89,14 @@ pub(super) fn resolve_associated_path(
                         span,
                     )
                 })?;
-            method.map(Value::Function).ok_or_else(|| {
+            method.map(Value::from_callable).ok_or_else(|| {
                 RuntimeError::new(
                     format!("struct `{root}` has no associated function `{member}`"),
                     span,
                 )
             })
         }
-        Value::EnumType(definition) => {
+        crate::value::Declaration::EnumType(definition) => {
             if let Some(method) =
                 select_method(&definition.methods, &definition.trait_methods, member).map_err(
                     |traits| {
@@ -106,7 +110,7 @@ pub(super) fn resolve_associated_path(
                     },
                 )?
             {
-                return Ok(Value::Function(method));
+                return Ok(Value::from_callable(method));
             }
             let variant = definition
                 .variants
@@ -119,7 +123,7 @@ pub(super) fn resolve_associated_path(
                 EnumVariant::Unit { .. }
                 | EnumVariant::Tuple { .. }
                 | EnumVariant::Record { .. } => {
-                    Ok(Value::VariantConstructor(Rc::new(VariantConstructor {
+                    Ok(Value::from_callable(Rc::new(VariantConstructor {
                         type_definition: definition,
                         variant: member.into(),
                         environment: owner_environment,
@@ -127,7 +131,7 @@ pub(super) fn resolve_associated_path(
                 }
             }
         }
-        Value::TraitType(definition) => {
+        crate::value::Declaration::TraitType(definition) => {
             if !definition
                 .methods
                 .iter()
@@ -138,7 +142,7 @@ pub(super) fn resolve_associated_path(
                     span,
                 ));
             }
-            Ok(Value::TraitMethodSelector(Rc::new(TraitMethodSelector {
+            Ok(Value::from_callable(Rc::new(TraitMethodSelector {
                 target: None,
                 trait_name: definition.name.clone(),
                 method_name: member.into(),
@@ -163,14 +167,14 @@ fn native_collection_member(owner: &str, member: &str, span: Span) -> Result<Val
         RuntimeError::new(format!("{owner}::{member} has no signature"), span)
     })?;
     let arity = signature.parameters.as_ref().map_or(0, Vec::len);
-    Ok(Value::NativeFunction(NativeFunction {
+    Ok(Value::from_callable(Rc::new(NativeFunction {
         binding_name: symbol,
         name: symbol,
         min_arity: arity,
         max_arity: arity,
         signature: Some(signature),
         body: NativeFunctionBody::Symbol(symbol),
-    }))
+    })))
 }
 
 pub(super) fn resolve_qualified_path(
@@ -182,9 +186,9 @@ pub(super) fn resolve_qualified_path(
 ) -> Result<Value, RuntimeError> {
     let trait_value = environment
         .borrow()
-        .get(trait_name)
+        .get_declaration(trait_name)
         .ok_or_else(|| RuntimeError::new(format!("unknown trait `{trait_name}`"), span))?;
-    let Value::TraitType(definition) = trait_value else {
+    let crate::value::Declaration::TraitType(definition) = trait_value else {
         return Err(RuntimeError::new(
             format!("`{trait_name}` is not a trait"),
             span,
@@ -200,7 +204,7 @@ pub(super) fn resolve_qualified_path(
             span,
         ));
     }
-    Ok(Value::TraitMethodSelector(Rc::new(TraitMethodSelector {
+    Ok(Value::from_callable(Rc::new(TraitMethodSelector {
         target: Some(expand_type_aliases(target, environment, span)?),
         trait_name: definition.name.clone(),
         method_name: member.into(),

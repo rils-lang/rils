@@ -1,0 +1,10 @@
+let original = ((1..3,),);
+let cloned: ((Range<i32>,),) = original.clone();
+let mut first: Range<i32> = (original.0).0;
+let mut second: Range<i32> = (cloned.0).0;
+first.next() == Some(1)
+    && first.next() == Some(2)
+    && second.next() == Some(1)
+    && second.next() == Some(2)
+    && first.next() == None
+    && second.next() == None

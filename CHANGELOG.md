@@ -1,9 +1,57 @@
-﻿# Changelog
+# Changelog
 
 本文档记录 Rils 的用户可见变化和升级注意事项。尚未正式发布的内容始终放在最上方的
 `Unreleased`；正式版本按 SemVer 从新到旧排列。
 
 ## Unreleased
+
+- 修复嵌套数值引用的方法解析，以及未标注 Range Clone、完整路径 `Rc::new` 的类型推导；三类调用不再需要额外类型标注来绕过字节码编译失败。
+
+- 消费式绑定方法可保存到局部变量或 tuple 后调用；持有非 Copy receiver 的 callable 不再隐式 Copy，也不能通过 Clone 共享该 receiver，VM 调用时移交绑定参数。带负载 enum 的 tuple 变体可作为构造函数值保存、调用，并支持字节码导出后加载执行。
+
+- Rust 执行层 `ReferenceValue::read()` 现在只复制 Copy 值；非 Copy 值返回错误，不再隐式克隆字符串、集合元素或从 RefCell 取出共享负载。原先用于观察的调用请迁移到 `Value::with_ref` / `with_native_view`，需要副本时显式调用 Clone，需要修改字段时使用引用投影写回。删除未使用的 `dynamic_sequence::borrowed_item` / `borrowed_item_with_codec` 与执行层 `runtime_layouts::clone_borrowed_element` 快照辅助函数。
+
+- 修复深层集合字段调用 `.clone()` 时误读非 Copy receiver 的问题；Clone 按标准库声明借用原 place，保留用户自定义 Clone 的分派，并与 VM 及加载后的字节码行为一致。
+
+- 借用值的字面量模式匹配、Display/Debug 和 Formatter 缓冲区读取直接访问原生存储，移除临时 Value 快照与临时绑定槽位。格式化保留原槽位访问保护，不调用 receiver 的 Clone；嵌套引用和字段中保存的引用支持原生方法查找。两后端的格式化 trait 调用沿引用链取得目标引用，修复 `&&T` 的派生 Debug 调用报类型不匹配。
+
+- 修复空集合初始化的类型回传、完整路径集合构造、Iterator 默认方法泛型推导及字节码回调签名保留；文件系统字符串列表使用注册负载，嵌套引用的 Option 查询保留原存储。
+- 迭代器声明、默认方法和原生返回值统一使用 `Iter<T>`，Analyzer 同步显示默认方法及具体返回类型。迁移期间显式使用内部 `OwnedIterator<T>` 的 Rust 类型描述应改为 `Iter<T>`，已有字节码请从源码重新编译；`BytecodeFunctionValue` 构造现在需要提供 `signature: Type`。
+
+- 解释器对引用 receiver 的内建、数值和宿主方法查找不再先复制原值；整数方法桥接可读取原生组合叶子及嵌套引用，宿主方法保留实际宿主声明身份。
+
+- 原生迭代器字段支持直接调用 `nth`、`count` 等 Iterator 默认方法；方法查找不再复制 receiver，借用调用更新原迭代状态，消费式调用移走对应字段。
+
+- 组合值显式 Clone 支持嵌套的自定义原生叶子，使用容器保留的原始方法注册；拒绝返回错误类型或不同注册身份的 Clone 结果，失败时释放已生成的克隆负载。解释器默认 Clone 以共享引用调用，避免因组合类型能力判断不完整而先移动原变量。
+
+- 原生 Iterator 存入聚合字段后，`next` 可通过可变投影直接推进原迭代器；投影叶子的显式 Clone 调用原注册方法并保留原生类型描述符。
+
+- 修复字符串生成迭代器的运行时类型与标准库声明不一致的问题：返回值保留 `Iter<T>`，不再标记为内部 `OwnedIterator<T>`。
+
+- **破坏性 Rust API 调整：** `ReferenceValue::new_dynamic_cell` 改为接收 `(&Value, mutable)`，不再接收独立对象、guard 和 struct/enum 列表；来源与声明信息由原始 receiver 保留。RefCell 非 Copy 读取保留用户类型声明，RefCell 借用及集合借用迭代器创建不再依赖调用上下文。
+
+- 修复原生 BinaryHeap 在结构借用未释放时执行 `pop` 可能先交换元素再报错的问题；现在在修改前拒绝，失败调用保留原堆内容和顺序。
+
+- **破坏性 Rust API 调整：** 删除 `Value::as_vec/as_option/as_result`、`dynamic_sequence::view_vec/copy_items`、`dynamic_option::view` 和 `dynamic_result::view`。迁移到 `Value::with_native_view`，通过序列索引、Option 标签/子布局、变体标签/负载借用观察，不隐式 Clone；需要转移负载时使用消费式接口。删除整数、浮点及字符串专用的 Option 快照桥接，借用与拥有型 sum 共用标签检查，C ABI 和字节码编码不变。
+
+- **破坏性 Rust API 调整：** 删除 Value 的标量 `as_bool/as_char/as_string/as_i*/as_u*/as_f*`；改用 `with_ref::<T, _>(callback)` 借用或 `get_cloned::<T>() -> Result<T, String>` 显式复制。通用读取遵循标准库宿主映射，可访问独立 Native、组合 Dynamic 叶子及词法引用；类型不匹配返回错误。整数/浮点的宿主映射、原生构造和回调转换由同一类型族声明生成，删除执行层重复维护的表。`RilsHostType` 原导出路径保留，协议定义归标准库所有。
+
+- **破坏性 Rust API 调整：** 删除 `Value::from_char/from_string/from_bool/from_i*/from_u*/from_f*` 和 `Value::unit()`。标量构造函数 `rils::value::native_*` 直接返回 `NativeObject`；使用 `Value::from(native_char('界'))` 或 `.into()` 接入统一运行时值。`Value` 实现 `From<NativeObject>`、`From<DynamicObject>`、`From<Rc<HostObject>>`，保留三类存储外壳和读取接口。原有 `native_*` 调用方若需要 Value，也须显式转换；C ABI 和字节码编码不变。
+
+- **破坏性 Rust API 调整（Value 迁移中间态）：** 删除七种类型和模块声明的 `Value` 分支，声明改由 `Declaration` 与共享声明表持有；`Value` 仅保留 Native/Dynamic/HostObject。**迁移：** 类型查询使用 `Environment::get_declaration`，模块导入和名称解析使用 `binding`，`get`/`slot` 仅访问运行时值；声明不能作为值存入变量或容器。函数及构造器继续使用 callable。C ABI 和字节码编码不变。
+
+- **破坏性 Rust API 调整（Value 迁移中间态）：** 删除 `Value::Function/BytecodeFunction/NativeFunction/HostFunction/HostBoundMethod/BuiltinFunction/VariantConstructor/BoundMethod/BuiltinBoundMethod/TraitMethodSelector`。函数和绑定目标统一存入原生 callable 句柄，独立值及容器共用表示，保留目标身份、具体上下文签名和捕获引用来源；解释器与 VM 保留各自执行路径。**迁移：** 使用 `Value::from_callable(Rc<T>)`，以 `as_callable::<T>()` 读取目标，消费式分发使用 `into_callable::<T>()`；失败的消费式类型检查返回原值。NativeFunction 和 BuiltinFunction 也由 Rc 持有。C ABI、字节码编码与语言调用规则不变。
+
+- **破坏性 Rust API 调整（Value 迁移中间态）：** 删除 `Value::Reference`，引用句柄在独立值与组合容器中共用 Dynamic 原生叶子布局。**迁移：** 构造使用 `Value::from_reference(Rc<ReferenceValue>)`，读取句柄使用 `as_reference()`；不能再匹配旧枚举分支。解释器/VM 的解引用、方法 receiver、字段投影、借用模式与宿主视图同步切换。Copy 复制租约而非被引用负载，保留别名写入、局部引用逃逸检查和最后一个租约释放后的移动行为。C ABI、字节码编码和语言引用规则不变。
+
+- **破坏性 Rust API 调整（Value 迁移中间态）：** 删除 `Value::OwnedIterator/BorrowedIndexedIterator/BytecodeIterator`，迭代器统一使用 Native 注册。删除 `OwnedIteratorValue::from_items` 与 Value 元素缓存；Rust 调用方改用 `OwnedIteratorValue::from_native(elements, item_layout, codec)?`，再经 `Value::from_owned_iterator` 构造，通过原生 `Iterator::next` 操作推进。完整元素布局在创建时提供，空及耗尽后的 Option 保留类型和 Native 描述符；非 Copy 元素直接移动，提前结束析构剩余元素，组合存储保留引用来源。VM 脚本迭代器仍执行对应字节码函数；C ABI 和字节码编码不变。
+
+- 删除旧 `Value::VecDeque/BinaryHeap/HashMap/BTreeMap/HashSet/BTreeSet` 及旧 Map/Set 借用迭代器；六种集合的构造、修改、查询、引用和迭代统一使用原生布局。集合字段移出、Option 返回值、克隆查询迭代器及集合运算保留用户声明，不依赖原调用环境。**Rust API 迁移：** 删除 `FieldSlot`、`HashKey/KeyIdentity`、旧集合结构与空容器提升接口；使用 `NativeOwnedContext::empty_collection` 提供完整类型，通过布局视图和原生引用访问元素。未带类型的原始 `new` 调用明确报错；C ABI 和字节码编码不变。
+- 修复 VM 中 `for` 循环体的局部引用未在作用域结束时释放，导致循环后无法移动原生集合的问题；正常结束及 break/continue 复用块清理。
+
+- **破坏性 Rust API 调整（Value 迁移中间态）：** 删除 `Value::Tuple/Array/Vec`、`IndexedStorage` 及对应的旧构造、字段/索引引用、迭代、赋值、比较、键和编解码分支。tuple/数组/Vec 只使用原生布局；标准库字符串 Vec 输出也直接写入原生序列。空集合构造从调用处取得完整类型，覆盖嵌套参数、字段、引用/函数值元素和泛型调用帧；布局错误直接返回，不再回退。Vec 查询由过程宏调用标准库 Rust 方法体，借用原序列分配，不复制元素。**迁移：** tuple/数组使用 `TypedStorageContext::construct_tuple/construct_array`；空 Vec 使用 `NativeOwnedContext::empty_collection` 并提供完整 `Vec<T>`；字段和数组投影使用 `NativeInstancePlace`，Vec 元素引用使用原生索引接口，不能继续构造或匹配旧变体。剩余旧 Rust 测试仍在迁移，C ABI、v8 编码和版本号不变。
+
+- **破坏性 Rust API 调整（Value 迁移中间态）：** 删除旧 `Value` 的 17 个数据变体：Unit、Bool、Char、剩余整数/浮点变体及 Option/Result。标量统一使用 Native，sum 统一使用 Dynamic；数值运算、范围、格式化、堆比较、类型检查、宿主读取和两种执行后端不再经旧标量升降转换。Vec/VecDeque/BinaryHeap、拥有型迭代器与 Formatter 的 sum 返回路径改用原生布局；原生序列输出直接移动子布局并保留声明上下文。删除旧 sum 约束、比较、键、模式和名义类型恢复路径，以及 `dynamic_option::Construction/construct/supports/view_any`。**迁移：** 用 `native_unit()`、`native_bool()`、`native_*()` 返回 NativeObject，再用 `Value::from(...)` 构造标量，以 `is_unit()`、`as_bool()`、`as_*()` 读取，不能继续匹配旧变体；Option/Result 使用 `TypedStorageContext::construct_option/construct_result` 和原生视图/消费式读取。尚未迁移的旧 Rust 测试会编译失败，当前分支不是全量验证完成的发布状态；剩余旧集合和执行值分类继续迁移。C ABI、v8 编码及版本号不变。
 
 - 兼容 HashMap/BTreeMap 的 `insert/get_cloned/remove`、BTreeMap 的首尾键查询和 BTreeSet 的首尾查询直接返回原生 Option。集合保留输出布局及声明，删除至空、清空和显式克隆后仍保留完整类型；非 Clone 负载可通过替换/删除移动，Clone 接口仍要求显式能力。布局或声明冲突在修改条目前报错。修复生成的 `len/is_empty/clear` 入口遗漏兼容集合转发的问题。**Rust API 迁移：** 这些返回值改为 `Value::Dynamic`，使用布局视图或 `dynamic_option::take_owned()`；手工构造兼容 Map/Set 时增加 `option_storage: Default::default()`。`TypedStorageContext::construct_option()` 可从负载保留自定义 Native 描述符。旧集合存储、其他容器返回值及旧 Value 变体继续迁移；C ABI、v8 编码和版本号不变。
 

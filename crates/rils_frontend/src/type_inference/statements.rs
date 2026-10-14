@@ -136,6 +136,13 @@ impl Inferencer<'_> {
                     },
                 );
                 if type_annotation.is_none() {
+                    self.binding_initializers
+                        .last_mut()
+                        .expect("scope exists")
+                        .insert(
+                            name.clone(),
+                            (*name_span, self.expression_ids.id(initializer)),
+                        );
                     self.type_hint(*name_span, ty, ": ");
                 }
                 Type::Unit

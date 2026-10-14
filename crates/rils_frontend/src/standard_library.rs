@@ -5,7 +5,7 @@ use crate::types::{FunctionSignature, Type};
 /// A declared zero-argument native `new` method whose result needs its owner
 /// type supplied by the call site.
 pub fn empty_native_constructor_symbol(owner: &str) -> Option<&'static str> {
-    let declaration = rils_builtins::builtin(owner)?;
+    let declaration = builtin_named_declaration(owner)?;
     let member = declaration.member("new")?;
     (declaration.kind == rils_builtins::BuiltinKind::Struct
         && member.receiver.is_none()
@@ -14,36 +14,6 @@ pub fn empty_native_constructor_symbol(owner: &str) -> Option<&'static str> {
             .is_some_and(|signature| signature.parameters.is_empty()))
     .then_some(member.native_symbol)
     .flatten()
-}
-
-/// Whether a type has no unresolved generic, associated, or inferred part.
-pub fn is_concrete_native_type(ty: &Type) -> bool {
-    match ty {
-        Type::Unit
-        | Type::Bool
-        | Type::Integer(_)
-        | Type::Float(_)
-        | Type::Char
-        | Type::String
-        | Type::ConstUsize(_) => true,
-        Type::Named { arguments, .. } | Type::Tuple(arguments) => {
-            arguments.iter().all(is_concrete_native_type)
-        }
-        Type::Array { element, .. } | Type::Option(element) => is_concrete_native_type(element),
-        Type::Result(ok, error) => is_concrete_native_type(ok) && is_concrete_native_type(error),
-        Type::IntegerVariable(_)
-        | Type::FloatVariable(_)
-        | Type::IntegerInference(_)
-        | Type::FloatInference(_)
-        | Type::ArrayParameter { .. }
-        | Type::Slice(_)
-        | Type::Reference { .. }
-        | Type::Function { .. }
-        | Type::Associated { .. }
-        | Type::Variable(_)
-        | Type::BoundVariable { .. }
-        | Type::Unknown => false,
-    }
 }
 
 pub fn standard_function_signature(name: &str) -> Option<FunctionSignature> {
@@ -119,7 +89,18 @@ fn erase_type_variables(ty: Type) -> Type {
 
 pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
     let (_, self_type, mut generics) = builtin_owner(object)?;
-    let member = builtin_member_for_type(object, name)?;
+    let Some(member) = builtin_member_for_type(object, name) else {
+        return if rils_builtins::is_iterator_default_method(name) {
+            builtin_trait_member_type_with_iterator_item(
+                "Iterator",
+                object,
+                name,
+                Some(builtin_iterator_item_type(object)?),
+            )
+        } else {
+            None
+        };
+    };
     let signature = member.signature?;
     for parameter in member.type_parameters {
         generics.insert(parameter, Type::Variable((*parameter).into()));
@@ -153,14 +134,14 @@ pub fn builtin_into_iterator_item_type(object: &Type) -> Option<Type> {
 }
 
 pub fn builtin_associated_function_signature(owner: &str, name: &str) -> Option<FunctionSignature> {
-    let declaration = rils_builtins::builtin(owner)?;
+    let declaration = builtin_named_declaration(owner)?;
     let member = declaration.member(name)?;
     if member.kind != rils_builtins::BuiltinMemberKind::AssociatedFunction {
         return None;
     }
     let signature = member.signature?;
     let self_type = Type::Named {
-        name: owner.into(),
+        name: declaration.path.into(),
         arguments: declaration
             .type_parameters
             .iter()
@@ -401,10 +382,6 @@ fn builtin_owner(object: &Type) -> Option<(&'static str, Type, HashMap<&'static 
             generics.insert("E", (**error).clone());
             Some(("Result", object.clone(), generics))
         }
-        Type::Named { name, arguments } if name == "OwnedIterator" => {
-            generics.insert("T", arguments.first().cloned().unwrap_or(Type::Unknown));
-            Some(("Iterator", object.clone(), generics))
-        }
         Type::Named { name, arguments } => {
             let declaration = builtin_named_declaration(name)?;
             if !matches!(
@@ -493,7 +470,7 @@ fn resolve_member_pattern(
                     name: owner,
                     arguments: items,
                 } = &base
-                && matches!(owner.as_str(), "OwnedIterator" | "Iter" | "Range")
+                && matches!(owner.as_str(), "Iter" | "Range")
             {
                 return items.first().cloned().unwrap_or(Type::Unknown);
             }

@@ -23,11 +23,12 @@ impl VirtualMachine<'_> {
                 };
                 let buffer = crate::formatting::buffer_from_value(buffer)
                     .map_err(|message| BytecodeError::new(message, span))?;
-                let value = value.as_string().ok_or_else(|| {
+                let value = value.get_cloned::<String>().ok().ok_or_else(|| {
                     BytecodeError::new("Formatter::write_str expects string", span)
                 })?;
                 buffer.write_str(&value);
-                return Ok(super::super::formatting::format_ok());
+                return crate::formatting::format_ok()
+                    .map_err(|message| BytecodeError::new(message, span));
             }
             Some("write_derived_debug") => {
                 let [buffer, value] = arguments else {
@@ -79,7 +80,7 @@ impl VirtualMachine<'_> {
         arguments: Vec<Value>,
         span: Span,
     ) -> Result<Value, BytecodeError> {
-        let Value::BytecodeFunction(function) = function else {
+        let Some(function) = function.as_callable::<crate::value::BytecodeFunctionValue>() else {
             return Err(BytecodeError::new(
                 format!("{} is not callable", function.type_name()),
                 span,
@@ -173,10 +174,10 @@ impl VirtualMachine<'_> {
         })?;
         let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
         storage.borrow_mut().initialize(value);
-        Ok(Value::BytecodeIterator(Rc::new(BytecodeIteratorValue {
+        Ok(Value::from_bytecode_iterator(BytecodeIteratorValue {
             storage,
             next_function,
-        })))
+        }))
     }
 
     pub(super) fn push_script_call(

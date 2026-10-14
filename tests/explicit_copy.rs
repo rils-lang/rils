@@ -16,19 +16,19 @@ fn explicit_copy_survives_compilation_and_image_loading() {
     ] {
         assert_eq!(
             eval_value(source).unwrap(),
-            Value::from_i32(42),
+            Value::from(rils::value::native_i32(42)),
             "{name}: interpreter"
         );
         let module = compile(source).unwrap();
         assert_eq!(
             module.execute_value().unwrap(),
-            Value::from_i32(42),
+            Value::from(rils::value::native_i32(42)),
             "{name}: VM"
         );
         let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
         assert_eq!(
             loaded.execute_value().unwrap(),
-            Value::from_i32(42),
+            Value::from(rils::value::native_i32(42)),
             "{name}: loaded VM"
         );
     }

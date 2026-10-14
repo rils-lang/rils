@@ -3,7 +3,7 @@ use rils_stdlib::stdlib::string::String as NativeString;
 
 #[test]
 fn exact_native_string_constraint_transfers_the_unique_payload() {
-    let value = Value::from_string("owned");
+    let value = Value::from(rils_execution::value::native_string("owned"));
     let constrained = value.constrain_owned(&Type::String).unwrap();
     let Value::Native(object) = constrained else {
         panic!("string should keep its native representation");

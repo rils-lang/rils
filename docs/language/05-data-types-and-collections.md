@@ -1,11 +1,17 @@
 # Struct、Enum 与集合
 
+空集合可从后续方法实参推导元素类型，例如 `let mut values = Vec::new(); values.push(42i32);`。内层同名变量独立推导；冲突的元素类型会报错。完整路径构造（如 `std::collections::BinaryHeap::new()`）同样接受绑定的类型标注。
+
+通用拥有型迭代器使用 `Iter<T>`，通过 `Iterator` trait 提供 `map`、`filter`、`rev`、`collect_vec` 等默认方法。字节码中的普通函数、绑定方法和捕获函数保留回调签名，泛型返回类型可由回调确定。
+
 原生 `Option<T>` / `Result<T, E>` 的嵌套字段和模式绑定保留具体类型及原生存储。
 拥有型模式先确认整条分支匹配成功，再移动绑定的非 Copy 负载；借用模式保持原对象的引用。
 `?` 只传播错误分支，按当前函数返回声明建立目标 Result，例如
 `Result<i32, Error>` 的 Err 可以传播到返回 `Result<string, Error>` 的函数。
 `is_some/is_none/is_ok/is_err` 只读取标签，不要求负载实现 Clone。
 用户 struct/enum 的 Copy 仍须显式实现，字段均为 Copy 不会自动赋予该能力。
+
+通过引用取出值（包括 `*reference`）只允许 Copy 类型。字符串、集合和 RefCell 内的非 Copy 负载不会因为被借用而隐式克隆；观察时使用借用方法，需要独立副本时显式调用 `.clone()`，修改字段时通过可变引用写回。
 
 `Some` 和 `None` 必须能确定完整的元素类型，构造失败不会回退为无类型的值。
 类型标注、数组其他元素、比较另一侧、if 分支或方法实参可提供上下文，例如

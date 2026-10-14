@@ -1,0 +1,11 @@
+let mut values = Vec::new();
+values.push(41i32);
+{
+    let mut values = Vec::new();
+    values.push("inner");
+    assert!(values.pop().unwrap() == "inner");
+}
+values.push(1i32);
+let mut heap: std::collections::BinaryHeap<i32> = std::collections::BinaryHeap::new();
+heap.push(values.pop().unwrap());
+assert!(heap.pop().unwrap() + values.pop().unwrap() == 42i32);

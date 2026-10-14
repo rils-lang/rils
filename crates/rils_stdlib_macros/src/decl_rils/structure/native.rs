@@ -11,11 +11,23 @@ pub(super) fn expand(path: Path, module: ItemMod) -> TokenStream {
 }
 
 fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
+    if let Some(tokens) = super::vector::tokens(definition) {
+        return Ok(tokens);
+    }
     if matches!(&definition.item.fields, syn::Fields::Unnamed(fields)
         if fields.unnamed.len() == 1
             && fields.unnamed[0].ty.to_token_stream().to_string().replace(' ', "") == "std::boxed::Box<T>")
     {
         return boxed_tokens(definition);
+    }
+    if let Some(tokens) = super::keyed::tokens(definition) {
+        return Ok(tokens);
+    }
+    if let Some(tokens) = super::shared::tokens(definition) {
+        return Ok(tokens);
+    }
+    if let Some(tokens) = super::cell::tokens(definition) {
+        return Ok(tokens);
     }
     let module = &definition.path;
     let arms = definition
@@ -26,50 +38,7 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
             let name = &method.sig.ident;
             let symbol = format!("{}::{name}", quote!(#module).to_string().replace(' ', ""));
             let arity = method.sig.inputs.len();
-            if method.sig.receiver().is_none()
-                && name == "new"
-                && arity == 0
-                && matches!(definition.item.ident.to_string().as_str(), "Vec" | "HashSet" | "HashMap")
-            {
-                let owner = definition.item.ident.to_string();
-                return Ok(quote! {
-                    #symbol => Some(if arguments.is_empty() {
-                        super::super::collection_constructor::empty(#owner)
-                    } else {
-                        Err(format!("native method `{}` expects no arguments, found {}", #symbol, arguments.len()))
-                    }),
-                });
-            }
-            if definition.item.ident == "Vec" && method.sig.receiver().is_none() && name == "from" {
-                return Ok(quote! {
-                    #symbol => Some(Err("Vec::from requires an owned argument frame".into())),
-                });
-            }
             let call = match definition.item.ident.to_string().as_str() {
-                "HashSet" => quote!(super::super::native_set::call_symbol(symbol, arguments)),
-                "HashMap" => quote!(super::super::native_map::call_symbol(symbol, arguments)),
-                "VecDeque" => quote!(super::super::vec_deque::call_symbol(symbol, arguments)),
-                "BinaryHeap" => quote!(super::super::binary_heap::call_symbol(symbol, arguments)),
-                "BTreeSet" => quote!(
-                    super::super::native_set::call_symbol(symbol, arguments)
-                        .or_else(|| super::super::btree_set::call_symbol(symbol, arguments))
-                ),
-                "BTreeMap" => quote!(
-                    super::super::native_map::call_symbol(symbol, arguments)
-                        .or_else(|| super::super::btree_map::call_symbol(symbol, arguments))
-                ),
-                "Rc" | "Weak" => quote!(super::super::rc_native::call_symbol(symbol, arguments)),
-                "Cell" | "RefCell" => quote!(super::super::cell_native::call_symbol(symbol, arguments)),
-                "Vec" if shared_scalar_query(method) => {
-                    quote!(Some(super::super::vector::with_shared(arguments, |receiver| receiver.#name())))
-                }
-                // These receiver adapters also enforce per-operation reference and move rules.
-                // Rust resolves the adapter and checks its existence; no method-name list lives here.
-                "Vec" if method.sig.receiver().is_some_and(|receiver| receiver.reference.is_some() && receiver.mutability.is_none()) => quote!(Some(super::super::vector::#name(arguments))),
-                "Vec" => {
-                    let inputs = (1..arity).map(|index| quote::format_ident!("input_{index}")).collect::<Vec<_>>();
-                    quote!(Some(super::super::vector::#name(arguments, |receiver, #(#inputs),*| receiver.#name(#(#inputs),*))))
-                },
                 "Range" => quote!(Some(super::super::range::#name(arguments))),
                 "Iter" => quote!(Some(super::super::indexed_iter::#name(arguments))),
                 _ => return Err(Error::new_spanned(
@@ -77,20 +46,6 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
                     "exported native receiver has no value adapter; implement its conversion",
                 )),
             };
-            if definition.item.ident != "Vec" && shared_sequence_query(method) {
-                let owner = definition.item.ident.to_string();
-                return Ok(quote! {
-                    #symbol => super::super::sequence_receiver::query(#owner, stringify!(#name), arguments)
-                        .or_else(|| #call),
-                });
-            }
-            if definition.item.ident != "Vec" && mutable_sequence_clear(method) {
-                let owner = definition.item.ident.to_string();
-                return Ok(quote! {
-                    #symbol => super::super::sequence_receiver::clear(#owner, arguments)
-                        .or_else(|| #call),
-                });
-            }
             Ok(quote! {
                 #symbol => if arguments.len() == #arity {
                     #call
@@ -148,30 +103,4 @@ fn boxed_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream
             matches!(symbol, #(#owned_symbols)|*)
         }
     })
-}
-
-fn shared_scalar_query(method: &ImplItemFn) -> bool {
-    method.sig.inputs.len() == 1
-        && method
-            .sig
-            .receiver()
-            .is_some_and(|receiver| receiver.reference.is_some() && receiver.mutability.is_none())
-        && matches!(&method.sig.output, ReturnType::Type(_, ty)
-            if matches!(ty.as_ref(), Type::Path(path)
-                if path.path.is_ident("bool") || path.path.is_ident("usize")))
-}
-
-fn shared_sequence_query(method: &ImplItemFn) -> bool {
-    shared_scalar_query(method)
-        && matches!(method.sig.ident.to_string().as_str(), "len" | "is_empty")
-}
-
-fn mutable_sequence_clear(method: &ImplItemFn) -> bool {
-    method.sig.ident == "clear"
-        && method.sig.inputs.len() == 1
-        && method
-            .sig
-            .receiver()
-            .is_some_and(|receiver| receiver.reference.is_some() && receiver.mutability.is_some())
-        && matches!(method.sig.output, ReturnType::Default)
 }

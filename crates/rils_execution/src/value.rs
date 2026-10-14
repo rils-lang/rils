@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     cell::RefCell,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     rc::Rc,
 };
 
@@ -16,32 +16,23 @@ use crate::{
 #[path = "value/display.rs"]
 mod display;
 
-#[path = "value/hash.rs"]
-mod hash;
-use hash::clone_hash_map;
-pub use hash::{
-    BTreeMapValue, BTreeSetValue, CollectionOptionStorage, HashKey, HashMapValue, HashSetValue,
-    KeyIdentity, MapCollection, SetCollection,
-};
-
 #[path = "value/range.rs"]
 mod range;
 pub use range::native_range;
 
+pub use crate::declaration::{Binding, Declaration};
 pub use rils_value::NativeChildren;
 pub type NativeObject = rils_value::NativeObject<Value>;
 pub type NativeType = rils_value::NativeType<Value>;
 pub type DynamicObject = rils_value::DynamicObject<Value>;
+pub mod borrowed_sum;
+pub mod callable;
 #[path = "value/dynamic_option.rs"]
 pub mod dynamic_option;
 pub mod dynamic_result;
 pub mod dynamic_sequence;
-pub(crate) mod native_array;
-mod slot;
-pub mod sum;
-pub use slot::FieldSlot;
-pub mod borrowed_sum;
 pub mod host_declarations;
+pub(crate) mod native_array;
 pub mod native_instance;
 #[path = "value/native_layouts.rs"]
 pub mod native_layouts;
@@ -54,16 +45,24 @@ pub mod record_layout;
 pub mod runtime_layouts;
 #[path = "value/string.rs"]
 mod string;
+pub mod sum;
 pub use string::{native_string, string_payload};
 #[path = "value/character.rs"]
 mod character;
 pub use character::{char_payload, native_char};
+mod access;
 pub(crate) mod borrowed;
+mod conversion;
 pub mod equality;
 pub(crate) mod native_key;
 mod ownership;
-#[path = "value/scalar.rs"]
-mod scalar;
+mod primitive;
+pub use crate::numeric::{
+    native_f32, native_f64, native_i8, native_i16, native_i32, native_i64, native_i128,
+    native_isize, native_u8, native_u16, native_u32, native_u64, native_u128, native_usize,
+};
+pub use primitive::{native_bool, native_unit};
+
 pub mod storage;
 
 #[path = "value/reference.rs"]
@@ -72,10 +71,7 @@ pub use reference::ReferenceValue;
 
 #[path = "value/iterator.rs"]
 mod iterator;
-pub use iterator::{
-    BorrowedIndexedIteratorValue, BorrowedMapIteratorValue, BorrowedSetIteratorValue,
-    IndexedIteratorStorage, OwnedIteratorValue,
-};
+pub use iterator::{BorrowedIndexedIteratorValue, IndexedIteratorStorage, OwnedIteratorValue};
 
 pub type HostFunctionHandler = dyn Fn(&[Value]) -> Result<Value, String>;
 
@@ -96,6 +92,7 @@ pub struct BytecodeFunctionValue {
     pub function: usize,
     pub name: String,
     pub parameter_count: usize,
+    pub signature: Type,
     pub captures: Vec<StorageRef>,
     pub bound_arguments: Vec<Value>,
     /// Concrete lexical type parameters retained by a returned closure.
@@ -223,25 +220,6 @@ pub struct TypeAliasType {
 }
 
 #[derive(Clone)]
-pub struct IndexedStorage {
-    pub elements: RefCell<Vec<FieldSlot>>,
-    pub element_type: RefCell<Option<Type>>,
-    pub active_iterators: std::cell::Cell<usize>,
-}
-
-#[derive(Clone)]
-pub struct VecDequeValue {
-    pub elements: RefCell<VecDeque<Value>>,
-    pub element_type: RefCell<Option<Type>>,
-}
-
-#[derive(Clone)]
-pub struct BinaryHeapValue {
-    pub elements: RefCell<Vec<Value>>,
-    pub element_type: RefCell<Option<Type>>,
-}
-
-#[derive(Clone)]
 pub struct VariantConstructor {
     pub type_definition: Rc<EnumType>,
     pub variant: String,
@@ -293,219 +271,39 @@ pub struct TraitMethodSelector {
 
 #[derive(Clone)]
 pub enum Value {
-    Unit,
-    Bool(bool),
-    I16(i16),
-    I64(i64),
-    I128(i128),
-    Isize(isize),
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
-    U128(u128),
-    Usize(usize),
-    F32(f32),
-    F64(f64),
-    Char(char),
-    Tuple(Rc<IndexedStorage>),
-    Array(Rc<IndexedStorage>),
-    Vec(Rc<IndexedStorage>),
-    HashMap(Rc<HashMapValue>),
-    BTreeMap(Rc<BTreeMapValue>),
-    BTreeSet(Rc<BTreeSetValue>),
-    HashSet(Rc<HashSetValue>),
-    VecDeque(Rc<VecDequeValue>),
-    BinaryHeap(Rc<BinaryHeapValue>),
-    OwnedIterator(Rc<OwnedIteratorValue>),
-    BorrowedIndexedIterator(Rc<BorrowedIndexedIteratorValue>),
-    BorrowedMapIterator(Rc<BorrowedMapIteratorValue>),
-    BorrowedSetIterator(Rc<BorrowedSetIteratorValue>),
-    BytecodeIterator(Rc<BytecodeIteratorValue>),
-    Reference(Rc<ReferenceValue>),
-    Option {
-        value: Option<Rc<Value>>,
-        element_type: Option<Type>,
-    },
-    Result {
-        value: Result<Rc<Value>, Rc<Value>>,
-        ok_type: Option<Type>,
-        error_type: Option<Type>,
-    },
-    Function(Rc<UserFunction>),
-    BytecodeFunction(Rc<BytecodeFunctionValue>),
-    NativeFunction(NativeFunction),
-    HostFunction(Rc<HostFunction>),
-    HostType(Rc<HostType>),
     HostObject(Rc<HostObject>),
     Native(NativeObject),
     Dynamic(DynamicObject),
-    HostBoundMethod(Rc<HostBoundMethod>),
-    BuiltinType(BuiltinType),
-    BuiltinFunction(BuiltinFunction),
-    Module(Rc<ModuleValue>),
-    StructType(Rc<StructType>),
-    EnumType(Rc<EnumType>),
-    TraitType(Rc<TraitType>),
-    TypeAlias(Rc<TypeAliasType>),
-    VariantConstructor(Rc<VariantConstructor>),
-    BoundMethod(Rc<BoundMethod>),
-    BuiltinBoundMethod(Rc<BuiltinBoundMethod>),
-    TraitMethodSelector(Rc<TraitMethodSelector>),
 }
 
 impl Value {
-    /// Construct a character in native storage.
-    pub fn from_char(value: char) -> Self {
-        native_char(value)
-    }
-
-    /// Read a character from native or legacy storage.
-    pub fn as_char(&self) -> Option<char> {
-        char_payload(self)
-    }
-
-    /// Construct a Rils string in native storage.
-    pub fn from_string(value: impl Into<std::string::String>) -> Self {
-        native_string(value)
-    }
-
-    /// Read owned string text from native or legacy storage.
-    pub fn as_string(&self) -> Option<std::string::String> {
-        string_payload(self)
-    }
-
-    /// Read a Vec snapshot regardless of whether it uses dynamic or legacy storage.
-    pub fn as_vec(&self) -> Option<Vec<Value>> {
-        dynamic_sequence::view_vec(self)?.ok()
-    }
-
-    /// Read an option regardless of whether it uses dynamic or legacy storage.
-    pub fn as_option(&self) -> Option<(Option<Value>, Type)> {
-        dynamic_option::view_any(self)?.ok()
-    }
-
-    /// Read a result regardless of whether it uses dynamic or legacy storage.
-    pub fn as_result(&self) -> Option<(Result<Value, Value>, Type, Type)> {
-        match self {
-            Self::Result {
-                value,
-                ok_type,
-                error_type,
-            } => Some((
-                value
-                    .clone()
-                    .map(|item| item.as_ref().clone())
-                    .map_err(|item| item.as_ref().clone()),
-                ok_type.clone().unwrap_or(Type::Unknown),
-                error_type.clone().unwrap_or(Type::Unknown),
-            )),
-            Self::Dynamic(_) => dynamic_result::view(self)?.ok(),
-            _ => None,
-        }
-    }
-
     pub fn type_name(&self) -> String {
         match self {
-            Self::Unit => "()".into(),
-            Self::Bool(_) => "bool".into(),
-            Self::I16(_) => "i16".into(),
-            Self::I64(_) => "i64".into(),
-            Self::I128(_) => "i128".into(),
-            Self::Isize(_) => "isize".into(),
-            Self::U8(_) => "u8".into(),
-            Self::U16(_) => "u16".into(),
-            Self::U32(_) => "u32".into(),
-            Self::U64(_) => "u64".into(),
-            Self::U128(_) => "u128".into(),
-            Self::Usize(_) => "usize".into(),
-            Self::F32(_) => "f32".into(),
-            Self::F64(_) => "f64".into(),
-            Self::Char(_) => "char".into(),
-            Self::Tuple(_) => {
-                Type::of_value(self).map_or_else(|| "tuple".into(), |ty| ty.to_string())
-            }
-            Self::Array(_) => {
-                Type::of_value(self).map_or_else(|| "array".into(), |ty| ty.to_string())
-            }
-            Self::Vec(_) => Type::of_value(self).map_or_else(|| "Vec".into(), |ty| ty.to_string()),
-            Self::HashMap(_) => {
-                Type::of_value(self).map_or_else(|| "HashMap".into(), |ty| ty.to_string())
-            }
-            Self::BTreeMap(_) => {
-                Type::of_value(self).map_or_else(|| "BTreeMap".into(), |ty| ty.to_string())
-            }
-            Self::BTreeSet(_) => {
-                Type::of_value(self).map_or_else(|| "BTreeSet".into(), |ty| ty.to_string())
-            }
-            Self::HashSet(_) => {
-                Type::of_value(self).map_or_else(|| "HashSet".into(), |ty| ty.to_string())
-            }
-            Self::VecDeque(_) => {
-                Type::of_value(self).map_or_else(|| "VecDeque".into(), |ty| ty.to_string())
-            }
-            Self::BinaryHeap(_) => {
-                Type::of_value(self).map_or_else(|| "BinaryHeap".into(), |ty| ty.to_string())
-            }
-            Self::OwnedIterator(_) => {
-                Type::of_value(self).map_or_else(|| "OwnedIterator".into(), |ty| ty.to_string())
-            }
-            Self::BorrowedIndexedIterator(_) => {
-                Type::of_value(self).map_or_else(|| "Iter".into(), |ty| ty.to_string())
-            }
-            Self::BorrowedMapIterator(_) | Self::BorrowedSetIterator(_) => {
-                Type::of_value(self).map_or_else(|| "Iter".into(), |ty| ty.to_string())
-            }
-            Self::BytecodeIterator(_) => "iterator".into(),
-            Self::Reference(reference) => {
-                let name = match reference.native_layout() {
-                    Ok(Some(layout)) => layout.rils_type().to_string(),
-                    _ => match reference.read() {
-                        Ok(value) => value.type_name(),
+            __reference_value if __reference_value.as_reference().is_some() => {
+                let reference = __reference_value
+                    .as_reference()
+                    .expect("checked reference handle");
+                {
+                    let name = match reference.referent_type() {
+                        Ok(ty) => ty.to_string(),
                         Err(_) => return "invalid reference".into(),
-                    },
-                };
-                if reference.mutable {
-                    format!("&mut {name}")
-                } else {
-                    format!("&{name}")
+                    };
+                    if reference.mutable {
+                        format!("&mut {name}")
+                    } else {
+                        format!("&{name}")
+                    }
                 }
             }
-            Self::Option { .. } => "option".into(),
-            Self::Result { .. } => {
-                Type::of_value(self).map_or_else(|| "Result".into(), |ty| ty.to_string())
-            }
-            value @ (Self::Function(_)
-            | Self::BytecodeFunction(_)
-            | Self::NativeFunction(_)
-            | Self::HostFunction(_)
-            | Self::HostBoundMethod(_)
-            | Self::BuiltinFunction(_)
-            | Self::VariantConstructor(_)
-            | Self::BoundMethod(_)
-            | Self::BuiltinBoundMethod(_)
-            | Self::TraitMethodSelector(_)) => {
-                Type::of_value(value).map_or_else(|| "function".into(), |ty| ty.to_string())
-            }
-            Self::StructType(definition) => format!("type {}", definition.name),
-            Self::BuiltinType(BuiltinType::Vec) => "type Vec".into(),
-            Self::BuiltinType(BuiltinType::HashMap) => "type HashMap".into(),
-            Self::BuiltinType(BuiltinType::HashSet) => "type HashSet".into(),
-            Self::BuiltinType(BuiltinType::Integer(kind)) => format!("type {kind}"),
-            Self::BuiltinType(BuiltinType::Float(kind)) => format!("type {kind}"),
-            Self::HostType(definition) => format!("type {}", definition.name),
+
             Self::HostObject(object) => object.type_definition.name.clone(),
             Self::Native(object) => object.descriptor().rils_type().to_string(),
             Self::Dynamic(object) => object.descriptor().layout().rils_type().to_string(),
-            Self::Module(module) => format!("module {}", module.name),
-            Self::EnumType(definition) => format!("type {}", definition.name),
-            Self::TraitType(definition) => format!("trait {}", definition.name),
-            Self::TypeAlias(definition) => format!("type alias {}", definition.name),
         }
     }
 
     pub fn is_truthy(&self) -> bool {
-        !matches!(self, Self::Unit | Self::Bool(false))
+        !self.is_unit() && self.get_cloned::<bool>().ok() != Some(false)
     }
 
     pub fn host_payload<T: 'static>(&self) -> Option<&T> {
@@ -522,27 +320,4 @@ pub fn enum_variant_name(variant: &EnumVariant) -> &str {
         | EnumVariant::Tuple { name, .. }
         | EnumVariant::Record { name, .. } => name,
     }
-}
-
-fn clone_sequence(sequence: &IndexedStorage) -> Result<IndexedStorage, String> {
-    let elements = sequence
-        .elements
-        .borrow()
-        .iter()
-        .map(|slot| {
-            let value = slot
-                .value
-                .as_ref()
-                .ok_or_else(|| "cannot clone a partially moved collection".to_string())?;
-            Ok(FieldSlot::new(
-                slot.type_annotation.clone(),
-                value.clone_owned()?,
-            ))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(IndexedStorage {
-        active_iterators: std::cell::Cell::new(0),
-        elements: RefCell::new(elements),
-        element_type: RefCell::new(sequence.element_type.borrow().clone()),
-    })
 }

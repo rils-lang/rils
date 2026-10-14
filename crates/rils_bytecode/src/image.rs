@@ -12,8 +12,8 @@ use crate::{
     source::{SourceFile, SourceId, Span},
     types::{FunctionSignature, IntegerType, Type},
     value::{
-        BytecodeFunctionValue, BytecodeIteratorValue, EnumType, FieldSlot, IndexedStorage,
-        ReferenceValue, StructType, Value, native_range,
+        BytecodeFunctionValue, BytecodeIteratorValue, EnumType, ReferenceValue, StructType, Value,
+        native_range,
     },
 };
 
@@ -251,7 +251,7 @@ impl BytecodeModule {
         storage.borrow_mut().initialize(receiver.clone());
         arguments.insert(
             0,
-            Value::Reference(Rc::new(ReferenceValue::new_storage(storage.clone(), true))),
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(storage.clone(), true))),
         );
         let result = self.call_function_with_host_and_limit(function, arguments, host, max_steps);
         *receiver = storage.borrow().read().map_err(|_| {
@@ -618,48 +618,6 @@ fn new_local_storage(function: &BytecodeFunction) -> Vec<StorageRef> {
         .collect()
 }
 
-fn take_field_slot(
-    slot: Option<&mut FieldSlot>,
-    label: &str,
-    span: Span,
-) -> Result<Value, BytecodeError> {
-    let slot = slot.ok_or_else(|| BytecodeError::new(format!("unknown {label}"), span))?;
-    let value = slot
-        .value
-        .as_ref()
-        .ok_or_else(|| BytecodeError::new(format!("{label} has been moved"), span))?;
-    if value.is_copy() {
-        value
-            .clone_owned()
-            .map_err(|message| BytecodeError::new(message, span))
-    } else if slot.references > 0 {
-        Err(BytecodeError::new(
-            format!("cannot move {label} while it is referenced"),
-            span,
-        ))
-    } else {
-        Ok(slot.value.take().expect("slot value was checked"))
-    }
-}
-
-fn store_field_slot(
-    slot: Option<&mut FieldSlot>,
-    label: &str,
-    value: Value,
-    span: Span,
-) -> Result<(), BytecodeError> {
-    let slot = slot.ok_or_else(|| BytecodeError::new(format!("unknown {label}"), span))?;
-    if slot.references > 0 {
-        return Err(BytecodeError::new(
-            format!("cannot replace {label} while it is referenced"),
-            span,
-        ));
-    }
-    slot.assign(value)
-        .map_err(|_| BytecodeError::new(format!("value is incompatible with {label}"), span))?;
-    Ok(())
-}
-
 fn access_error(error: AccessError, span: Span) -> BytecodeError {
     let message = match error {
         AccessError::Undefined | AccessError::Moved => "use of moved or uninitialized local",
@@ -714,24 +672,24 @@ enum Constant {
 impl Constant {
     fn value(&self) -> Value {
         match self {
-            Self::Unit => Value::Unit,
-            Self::Bool(value) => Value::Bool(*value),
-            Self::I8(value) => crate::numeric::native_i8(*value),
-            Self::I16(value) => crate::numeric::native_i16(*value),
-            Self::I32(value) => crate::numeric::native_i32(*value),
-            Self::I64(value) => crate::numeric::native_i64(*value),
-            Self::I128(value) => crate::numeric::native_i128(*value),
-            Self::Isize(value) => crate::numeric::native_isize(*value),
-            Self::U8(value) => crate::numeric::native_u8(*value),
-            Self::U16(value) => crate::numeric::native_u16(*value),
-            Self::U32(value) => crate::numeric::native_u32(*value),
-            Self::U64(value) => crate::numeric::native_u64(*value),
-            Self::U128(value) => crate::numeric::native_u128(*value),
-            Self::Usize(value) => crate::numeric::native_usize(*value),
-            Self::F32(value) => Value::from_f32(*value),
-            Self::F64(value) => Value::from_f64(*value),
-            Self::Char(value) => rils_execution::value::native_char(*value),
-            Self::String(value) => rils_execution::value::native_string(value.clone()),
+            Self::Unit => Value::from(rils_execution::value::native_unit()),
+            Self::Bool(value) => Value::from(rils_execution::value::native_bool(*value)),
+            Self::I8(value) => Value::from(crate::numeric::native_i8(*value)),
+            Self::I16(value) => Value::from(crate::numeric::native_i16(*value)),
+            Self::I32(value) => Value::from(crate::numeric::native_i32(*value)),
+            Self::I64(value) => Value::from(crate::numeric::native_i64(*value)),
+            Self::I128(value) => Value::from(crate::numeric::native_i128(*value)),
+            Self::Isize(value) => Value::from(crate::numeric::native_isize(*value)),
+            Self::U8(value) => Value::from(crate::numeric::native_u8(*value)),
+            Self::U16(value) => Value::from(crate::numeric::native_u16(*value)),
+            Self::U32(value) => Value::from(crate::numeric::native_u32(*value)),
+            Self::U64(value) => Value::from(crate::numeric::native_u64(*value)),
+            Self::U128(value) => Value::from(crate::numeric::native_u128(*value)),
+            Self::Usize(value) => Value::from(crate::numeric::native_usize(*value)),
+            Self::F32(value) => Value::from(rils_execution::value::native_f32(*value)),
+            Self::F64(value) => Value::from(rils_execution::value::native_f64(*value)),
+            Self::Char(value) => Value::from(rils_execution::value::native_char(*value)),
+            Self::String(value) => Value::from(rils_execution::value::native_string(value.clone())),
         }
     }
 }

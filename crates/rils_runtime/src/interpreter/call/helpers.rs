@@ -12,24 +12,52 @@ pub(super) fn builtin_default_value(
         context: &crate::runtime_builtins::NativeOwnedContext,
     ) -> Result<Option<Value>, String> {
         Ok(Some(match plan {
-            DefaultPlan::Unit => Value::Unit,
-            DefaultPlan::Bool => Value::Bool(false),
-            DefaultPlan::Integer(crate::IntegerType::I8) => crate::numeric::native_i8(0),
-            DefaultPlan::Integer(crate::IntegerType::I16) => crate::numeric::native_i16(0),
-            DefaultPlan::Integer(crate::IntegerType::I32) => crate::numeric::native_i32(0),
-            DefaultPlan::Integer(crate::IntegerType::I64) => crate::numeric::native_i64(0),
-            DefaultPlan::Integer(crate::IntegerType::I128) => crate::numeric::native_i128(0),
-            DefaultPlan::Integer(crate::IntegerType::Isize) => crate::numeric::native_isize(0),
-            DefaultPlan::Integer(crate::IntegerType::U8) => crate::numeric::native_u8(0),
-            DefaultPlan::Integer(crate::IntegerType::U16) => crate::numeric::native_u16(0),
-            DefaultPlan::Integer(crate::IntegerType::U32) => crate::numeric::native_u32(0),
-            DefaultPlan::Integer(crate::IntegerType::U64) => crate::numeric::native_u64(0),
-            DefaultPlan::Integer(crate::IntegerType::U128) => crate::numeric::native_u128(0),
-            DefaultPlan::Integer(crate::IntegerType::Usize) => crate::numeric::native_usize(0),
-            DefaultPlan::Float(crate::FloatType::F32) => Value::from_f32(0.0),
-            DefaultPlan::Float(crate::FloatType::F64) => Value::from_f64(0.0),
-            DefaultPlan::Char => rils_execution::value::native_char('\0'),
-            DefaultPlan::String => rils_execution::value::native_string(""),
+            DefaultPlan::Unit => Value::from(rils_execution::value::native_unit()),
+            DefaultPlan::Bool => Value::from(rils_execution::value::native_bool(false)),
+            DefaultPlan::Integer(crate::IntegerType::I8) => {
+                Value::from(crate::numeric::native_i8(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::I16) => {
+                Value::from(crate::numeric::native_i16(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::I32) => {
+                Value::from(crate::numeric::native_i32(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::I64) => {
+                Value::from(crate::numeric::native_i64(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::I128) => {
+                Value::from(crate::numeric::native_i128(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::Isize) => {
+                Value::from(crate::numeric::native_isize(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::U8) => {
+                Value::from(crate::numeric::native_u8(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::U16) => {
+                Value::from(crate::numeric::native_u16(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::U32) => {
+                Value::from(crate::numeric::native_u32(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::U64) => {
+                Value::from(crate::numeric::native_u64(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::U128) => {
+                Value::from(crate::numeric::native_u128(0))
+            }
+            DefaultPlan::Integer(crate::IntegerType::Usize) => {
+                Value::from(crate::numeric::native_usize(0))
+            }
+            DefaultPlan::Float(crate::FloatType::F32) => {
+                Value::from(rils_execution::value::native_f32(0.0))
+            }
+            DefaultPlan::Float(crate::FloatType::F64) => {
+                Value::from(rils_execution::value::native_f64(0.0))
+            }
+            DefaultPlan::Char => Value::from(rils_execution::value::native_char('\0')),
+            DefaultPlan::String => Value::from(rils_execution::value::native_string("")),
             DefaultPlan::Tuple(elements) => {
                 let mut values = Vec::with_capacity(elements.len());
                 let Type::Tuple(types) = ty else {
@@ -85,67 +113,31 @@ pub(crate) fn builtin_runtime_member(
     {
         return None;
     }
-    let reference_layout = match value {
-        Value::Reference(reference) => reference.native_layout().ok().flatten(),
-        _ => None,
-    };
-    let owner = match value {
-        Value::Array(_) => "Vec",
-        Value::Vec(_) => "Vec",
-        Value::HashMap(_) => "HashMap",
-        Value::BTreeMap(_) => "BTreeMap",
-        Value::BTreeSet(_) => "BTreeSet",
-        Value::HashSet(_) => "HashSet",
-        Value::VecDeque(_) => "VecDeque",
-        Value::BinaryHeap(_) => "BinaryHeap",
-        Value::Native(object) => match object.descriptor().rils_type() {
-            Type::String => "string",
-            Type::Named { name, .. } => name.as_str(),
-            _ => return None,
-        },
-        Value::Reference(_) => match reference_layout.as_ref()?.rils_type() {
+    let ty = receiver_type(value)?;
+    if let Some(host) = value.host_type_definition().ok()? {
+        if host.name != "Formatter" {
+            return None;
+        }
+    }
+    let owner = if crate::value::native_ops::is_iterator(value) {
+        "Iterator"
+    } else {
+        match &ty {
             Type::Array { .. } => "Vec",
             Type::Option(_) => "Option",
             Type::Result(_, _) => "Result",
             Type::String => "string",
             Type::Named { name, .. } => name.as_str(),
             _ => return None,
-        },
-        Value::Option { .. } => "Option",
-        Value::Dynamic(object)
-            if matches!(object.descriptor().layout().rils_type(), Type::Option(_)) =>
-        {
-            "Option"
         }
-        Value::Dynamic(object)
-            if matches!(object.descriptor().layout().rils_type(), Type::Result(_, _)) =>
-        {
-            "Result"
-        }
-        Value::Dynamic(object) => match object.descriptor().layout().rils_type() {
-            Type::Array { .. } => "Vec",
-            Type::Named { name, .. } => name.as_str(),
-            _ => return None,
-        },
-        Value::Result { .. } => "Result",
-        Value::OwnedIterator(_) => "Iterator",
-        Value::BorrowedIndexedIterator(_) => "Iter",
-        Value::BorrowedMapIterator(_) | Value::BorrowedSetIterator(_) => "Iter",
-        Value::HostObject(object) if object.type_definition.name == "Formatter" => "Formatter",
-        _ => return None,
     };
     let member = rils_builtins::builtin_member(owner, name).or_else(|| {
         (owner == "Iter" && rils_builtins::is_iterator_default_method(name))
             .then(|| rils_builtins::builtin_member("Iterator", name))
             .flatten()
     })?;
-    let array = match Type::of_value(value) {
-        Some(Type::Array { .. }) => true,
-        Some(Type::Reference { inner, .. }) => matches!(*inner, Type::Array { .. }),
-        _ => false,
-    };
-    if array && !rils_builtins::sequence_view_member(member, !matches!(value, Value::Reference(_)))
-    {
+    let array = matches!(ty, Type::Array { .. });
+    if array && !rils_builtins::sequence_view_member(member, value.as_reference().is_none()) {
         return None;
     }
     let method = BuiltinMethod::Native(member.native_symbol?);
@@ -241,3 +233,5 @@ pub(crate) fn select_method(
         }
     }
 }
+
+pub(super) use rils_execution::runtime_type::receiver_type;

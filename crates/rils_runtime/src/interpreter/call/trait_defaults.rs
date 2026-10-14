@@ -38,14 +38,7 @@ pub(in crate::interpreter) fn builtin_iterator_default_receiver(
     value: &Value,
     name: &str,
 ) -> Option<rils_builtins::ReceiverMode> {
-    if !matches!(
-        value,
-        Value::OwnedIterator(_)
-            | Value::BorrowedIndexedIterator(_)
-            | Value::BorrowedMapIterator(_)
-            | Value::BorrowedSetIterator(_)
-    ) && !crate::value::native_ops::is_iterator(value)
-    {
+    if !crate::value::native_ops::is_iterator(value) {
         return None;
     }
     let member = rils_builtins::builtin_member("Iterator", name)?;
@@ -58,38 +51,28 @@ impl Interpreter {
         object: &Value,
         name: &str,
     ) -> Option<Value> {
-        if !rils_builtins::is_iterator_default_method(name)
-            || matches!(
-                rils_execution::value::native_instance::value_definition(object)
-                    .ok()
-                    .flatten(),
-                Some(Value::StructType(_) | Value::EnumType(_))
-            )
-        {
+        if !rils_builtins::is_iterator_default_method(name) {
             return None;
         }
-        let borrowed = match object {
-            Value::Reference(reference) => Some(reference.read().ok()?),
-            _ => None,
-        };
-        let lookup = borrowed.as_ref().unwrap_or(object);
-        let receiver_mode = builtin_iterator_default_receiver(lookup, name)?;
+        let receiver_mode = builtin_iterator_default_receiver(object, name)?;
         if matches!(receiver_mode, rils_builtins::ReceiverMode::Mutable)
-            && matches!(object, Value::Reference(reference) if !reference.mutable)
+            && object
+                .as_reference()
+                .is_some_and(|reference| !reference.mutable)
         {
             return None;
         }
         let receiver = match receiver_mode {
             rils_builtins::ReceiverMode::Owned => object.clone(),
             rils_builtins::ReceiverMode::Shared | rils_builtins::ReceiverMode::Mutable
-                if !matches!(object, Value::Reference(_)) =>
+                if object.as_reference().is_none() =>
             {
                 let mutable = matches!(receiver_mode, rils_builtins::ReceiverMode::Mutable);
                 let storage = Rc::new(RefCell::new(
                     crate::environment::StorageSlot::uninitialized(mutable),
                 ));
                 storage.borrow_mut().initialize(object.clone());
-                Value::Reference(Rc::new(ReferenceValue::new_storage(storage, mutable)))
+                Value::from_reference(Rc::new(ReferenceValue::new_storage(storage, mutable)))
             }
             _ => object.clone(),
         };
@@ -109,7 +92,7 @@ impl Interpreter {
         };
         let key = (object_type.to_string(), name.to_owned());
         if let Some(function) = self.builtin_default_functions.borrow().get(&key).cloned() {
-            return Some(Value::BoundMethod(Rc::new(BoundMethod {
+            return Some(Value::from_callable(Rc::new(BoundMethod {
                 receiver: Rc::new(object.clone()),
                 function,
             })));
@@ -182,7 +165,7 @@ impl Interpreter {
         self.builtin_default_functions
             .borrow_mut()
             .insert(key, function.clone());
-        Some(Value::BoundMethod(Rc::new(BoundMethod {
+        Some(Value::from_callable(Rc::new(BoundMethod {
             receiver: Rc::new(object.clone()),
             function,
         })))

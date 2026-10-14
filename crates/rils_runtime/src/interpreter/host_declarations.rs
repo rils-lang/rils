@@ -25,13 +25,18 @@ impl Interpreter {
         let declarations = context
             .hosts
             .into_iter()
-            .map(Value::HostType)
-            .chain(context.enums.into_iter().map(Value::EnumType));
+            .map(crate::value::Declaration::HostType)
+            .chain(
+                context
+                    .enums
+                    .into_iter()
+                    .map(crate::value::Declaration::EnumType),
+            );
         let mut prepared = Vec::new();
         for declaration in declarations {
             let qualified = match &declaration {
-                Value::HostType(definition) => &definition.name,
-                Value::EnumType(definition) => &definition.name,
+                crate::value::Declaration::HostType(definition) => &definition.name,
+                crate::value::Declaration::EnumType(definition) => &definition.name,
                 _ => unreachable!("host contract declaration"),
             };
             let mut path = qualified.split("::").map(str::to_owned).collect::<Vec<_>>();

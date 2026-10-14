@@ -29,6 +29,14 @@ impl DynamicValue {
 }
 
 impl DynamicValueMut<'_> {
+    /// Borrow the projected Rust leaf without moving or copying its bytes.
+    pub fn with_rust_mut<T: 'static, R>(
+        &mut self,
+        callback: impl FnOnce(&mut T) -> R,
+    ) -> Result<R, String> {
+        self.root.with_path_mut(&self.path, callback)
+    }
+
     /// Replace this projection with the same layout, transferring the previous
     /// payload. Root references retain their borrow ledger across replacement.
     pub fn replace_value(&mut self, value: DynamicValue) -> Result<DynamicValue, String> {

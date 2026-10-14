@@ -40,7 +40,20 @@ impl NativeOwnedContext {
     }
 
     pub fn empty_collection(&self, ty: &Type) -> Result<Value, String> {
-        crate::value::dynamic_sequence::empty_with_layout(self.layout(ty)?)
+        if !ty.is_concrete_type() {
+            return Err(format!("cannot infer the complete collection type: {ty}"));
+        }
+        let layout = self.layout(ty)?;
+        let payload = rils_value::DynamicValue::sequence(layout, Vec::new())?;
+        crate::value::native_instance::from_native(
+            payload,
+            Rc::new(
+                crate::value::record_codec::NativeRecordCodec::with_definitions(
+                    &self.structs,
+                    &self.enums,
+                ),
+            ),
+        )
     }
 
     pub fn none(&self, item: &Type) -> Result<Value, String> {

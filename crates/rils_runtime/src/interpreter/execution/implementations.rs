@@ -30,9 +30,12 @@ impl Interpreter {
                 else {
                     unreachable!("parser validates impl targets");
                 };
-                let target_value = environment.borrow().get(target_name).ok_or_else(|| {
-                    RuntimeError::new(format!("unknown impl target `{target_name}`"), *span)
-                })?;
+                let target_value = environment
+                    .borrow()
+                    .get_declaration(target_name)
+                    .ok_or_else(|| {
+                        RuntimeError::new(format!("unknown impl target `{target_name}`"), *span)
+                    })?;
                 let trait_definition = trait_name
                     .as_ref()
                     .map(|trait_name| {
@@ -40,9 +43,9 @@ impl Interpreter {
                             .split("::")
                             .map(str::to_owned)
                             .collect::<Vec<_>>();
-                        resolve_visible_path(&path, &environment, *span).and_then(|value| {
+                        resolve_visible_declaration(&path, &environment, *span).and_then(|value| {
                             match value {
-                                Value::TraitType(definition) => Ok(definition),
+                                crate::value::Declaration::TraitType(definition) => Ok(definition),
                                 _ => Err(RuntimeError::new(
                                     format!("`{trait_name}` is not a trait"),
                                     *span,
@@ -260,8 +263,8 @@ impl Interpreter {
                         RuntimeError::new(format!("`{target_name}` is not a struct or enum"), *span)
                     })?;
                     let target_type_name = match &target_value {
-                        Value::StructType(definition) => &definition.name,
-                        Value::EnumType(definition) => &definition.name,
+                        crate::value::Declaration::StructType(definition) => &definition.name,
+                        crate::value::Declaration::EnumType(definition) => &definition.name,
                         _ => unreachable!("implementation target was validated"),
                     };
                     let pending = self
@@ -360,7 +363,7 @@ impl Interpreter {
                         typeck_results: self.typeck_results.clone(),
                     });
                     let (inherent_methods, trait_methods) = match &target_value {
-                        Value::StructType(definition) => {
+                        crate::value::Declaration::StructType(definition) => {
                             if trait_definition.is_none()
                                 && definition
                                     .fields
@@ -377,7 +380,7 @@ impl Interpreter {
                             }
                             (&definition.methods, &definition.trait_methods)
                         }
-                        Value::EnumType(definition) => {
+                        crate::value::Declaration::EnumType(definition) => {
                             if trait_definition.is_none()
                                 && definition
                                     .variants
@@ -430,13 +433,13 @@ impl Interpreter {
                 }
                 if let Some(definition) = trait_definition {
                     match &target_value {
-                        Value::StructType(target_definition) => {
+                        crate::value::Declaration::StructType(target_definition) => {
                             target_definition
                                 .associated_types
                                 .borrow_mut()
                                 .insert(definition.name.clone(), associated_type_values.clone());
                         }
-                        Value::EnumType(target_definition) => {
+                        crate::value::Declaration::EnumType(target_definition) => {
                             target_definition
                                 .associated_types
                                 .borrow_mut()
@@ -449,7 +452,9 @@ impl Interpreter {
                         .borrow_mut()
                         .insert(definition.name.clone());
                 }
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             _ => unreachable!("implementation handler requires an impl statement"),
         }

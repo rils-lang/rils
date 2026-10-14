@@ -7,6 +7,15 @@
 struct、enum、trait、impl、类型别名、模块和 use 是模块级声明；函数是唯一允许出现在函数体或
 普通块中的声明，作为词法闭包使用。
 
+消费式方法（`self` receiver）可绑定为函数值，例如 `let finish = item.finish; finish()`。
+绑定时移入 receiver；若 receiver 不是 Copy，该函数值也不是 Copy，不能通过 Clone 共享其所有权。
+它可以先存入 tuple，再移动取出调用。捕获局部引用的借用方法值仍受引用捕获限制。
+
+enum 的 tuple 变体可以作为构造函数值使用，例如 `let make = Message::Text; make("hello")`。
+调用会移入负载，unit 变体仍直接表示一个 enum 值。
+
+内建数值方法查找会沿嵌套引用解析目标类型。标准库方法返回的 `Self` 保留 receiver 类型，关联构造函数则从实参推导泛型参数；例如 `let mut next = range.clone()` 和 `let owner = core::rc::Rc::new(value)` 通常无需额外类型标注。
+
 函数体最后一个无分号表达式是隐式返回值，也可以使用 `return`：
 
 ```rust

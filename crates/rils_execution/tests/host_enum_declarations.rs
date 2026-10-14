@@ -40,7 +40,11 @@ fn equivalent_host_enum_contracts_keep_the_installed_declaration_and_local_trait
         let storage = TypedStorageContext::new(&[], &source_declarations);
         let ty = Type::named("host::State");
         let value = if variant == HOST_FLAGS_RAW_VARIANT {
-            storage.construct_tuple_variant(&ty, variant, vec![Value::from_u128(7)])
+            storage.construct_tuple_variant(
+                &ty,
+                variant,
+                vec![Value::from(rils_execution::value::native_u128(7))],
+            )
         } else {
             storage.construct_unit_variant(&ty, variant)
         }
@@ -52,7 +56,9 @@ fn equivalent_host_enum_contracts_keep_the_installed_declaration_and_local_trait
         let Value::Dynamic(object) = codec.from_native(bytes).unwrap() else {
             panic!("native host enum");
         };
-        let Some(Value::EnumType(restored)) = definition(&object) else {
+        let Some(rils_execution::declaration::Declaration::EnumType(restored)) =
+            definition(&object)
+        else {
             panic!("host declaration");
         };
         assert!(Rc::ptr_eq(&installed, &restored));

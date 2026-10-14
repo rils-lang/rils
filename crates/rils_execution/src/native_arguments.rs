@@ -15,7 +15,7 @@ pub fn prepare<E>(
     arguments.iter().enumerate().map(|(index, value)| {
         let Some(Type::BoundVariable { bounds, .. }) = parameters.get(index) else { return Ok(value.clone()); };
         if bounds.iter().any(|bound| matches!(bound, Type::Named { name, .. } if name == "core::fmt::Display" || name == "Display")) {
-            render(value, &FormatSpec::default()).map(crate::value::native_string)
+            render(value, &FormatSpec::default()).map(|text| crate::value::native_string(text).into())
         } else { Ok(value.clone()) }
     }).collect()
 }

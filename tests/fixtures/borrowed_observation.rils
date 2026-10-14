@@ -1,0 +1,23 @@
+#[derive(Debug)]
+struct Label { text: string }
+
+fn check() -> bool {
+    let label = Label { text: "kept" };
+    {
+        let reference = &label;
+        let nested = &reference;
+        println!("{:?}", nested);
+    };
+    let values = ("hello", 42i32, 1.25f64);
+    let matched = {
+        let text = &values.0;
+        let number = &values.1;
+        let floating = &values.2;
+        let text_matches = match text { "hello" => true, _ => false };
+        let number_matches = match number { 42i32 => true, _ => false };
+        println!("{:.3} {:?} {:+.2}", text, text, floating);
+        text_matches && number_matches
+    };
+    matched && values.0 == "hello" && label.text == "kept"
+}
+check()

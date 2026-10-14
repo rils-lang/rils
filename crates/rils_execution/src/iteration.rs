@@ -1,10 +1,8 @@
 //! Shared dispatch for built-in iterable values and iterators.
 
-use std::rc::Rc;
-
 use crate::{
-    Type, hash_collections, runtime_builtins,
-    value::{DynamicObject, IndexedStorage, OwnedIteratorValue, Value, native_ops},
+    Type, runtime_builtins,
+    value::{DynamicObject, OwnedIteratorValue, Value, native_ops},
 };
 
 pub enum IntoIteratorResult {
@@ -29,35 +27,17 @@ pub fn into_iterator_with_context(
 ) -> Result<IntoIteratorResult, String> {
     let iterator = match value {
         value @ Value::Native(_) if native_ops::is_iterator(&value) => value,
-        value @ (Value::OwnedIterator(_)
-        | Value::BorrowedIndexedIterator(_)
-        | Value::BorrowedMapIterator(_)
-        | Value::BorrowedSetIterator(_)) => value,
         Value::Dynamic(object)
             if matches!(object.descriptor().layout().rils_type(), Type::Array { .. }) =>
         {
             crate::value::native_array::into_iterator(object, context)?
-        }
-        Value::Array(storage) | Value::Vec(storage) => owned_indexed_iterator(storage)?,
-        Value::VecDeque(queue) => {
-            let element_type = queue.element_type.borrow().clone().unwrap_or(Type::Unknown);
-            let items = std::mem::take(&mut *queue.elements.borrow_mut());
-            Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(items, element_type)))
-        }
-        Value::BinaryHeap(heap) => {
-            let element_type = heap.element_type.borrow().clone().unwrap_or(Type::Unknown);
-            let items = std::mem::take(&mut *heap.elements.borrow_mut());
-            Value::OwnedIterator(Rc::new(OwnedIteratorValue::from_items(
-                items.into(),
-                element_type,
-            )))
         }
         Value::Dynamic(object)
             if crate::value::native_layouts::vec::matches(
                 object.descriptor().layout().rils_type(),
             ) =>
         {
-            runtime_builtins::vector_dynamic::into_iterator_with_context(object, context)?
+            native_sequence_into_iterator(object, context)?
         }
         Value::Dynamic(object)
             if crate::value::native_layouts::btree_set::matches(
@@ -96,10 +76,6 @@ pub fn into_iterator_with_context(
         {
             native_sequence_into_iterator(object, context)?
         }
-        Value::HashMap(map) => hash_collections::into_iter_map(map, context)?,
-        Value::BTreeMap(map) => runtime_builtins::btree_map::into_iter(map, context)?,
-        Value::BTreeSet(set) => runtime_builtins::btree_set::into_iter(set)?,
-        Value::HashSet(set) => hash_collections::into_iter_set(set)?,
         value => return Ok(IntoIteratorResult::UserDefined(value)),
     };
     Ok(IntoIteratorResult::Ready(iterator))
@@ -115,15 +91,14 @@ pub(crate) fn native_sequence_into_iterator(
         .layout()
         .sequence_item()
         .ok_or("native collection has no item layout")?
-        .rils_type()
         .clone();
     let codec = crate::value::sum::codec(&object, &context.structs, &context.enums)?;
     let items = object.with_mut(|payload| payload.take_all_sequence_items())??;
-    let mut iterator = OwnedIteratorValue::from_native(items, item_type, codec);
+    let mut iterator = OwnedIteratorValue::from_native(items, item_type, codec)?;
     if let Some(iterator_type) = iterator_type {
         iterator = iterator.with_iterator_type(iterator_type);
     }
-    Ok(Value::OwnedIterator(Rc::new(iterator)))
+    Ok(Value::from_owned_iterator(iterator))
 }
 
 pub(crate) fn declared_iterator_type(collection_type: &Type) -> Option<Type> {
@@ -135,54 +110,10 @@ pub(crate) fn declared_iterator_type(collection_type: &Type) -> Option<Type> {
     }
 }
 
-pub(crate) fn generated_collection_iterator(
-    items: impl Iterator<Item = Result<Value, String>> + 'static,
-    item_type: Type,
-    collection_type: &Type,
-) -> Value {
-    let mut iterator = OwnedIteratorValue::from_fallible_generator(items, item_type);
-    if let Some(iterator_type) = declared_iterator_type(collection_type) {
-        iterator = iterator.with_iterator_type(iterator_type);
-    }
-    Value::OwnedIterator(Rc::new(iterator))
-}
-
-fn owned_indexed_iterator(storage: Rc<IndexedStorage>) -> Result<Value, String> {
-    if storage.active_iterators.get() > 0
-        || storage
-            .elements
-            .borrow()
-            .iter()
-            .any(|slot| slot.references > 0)
-    {
-        return Err("cannot iterate a collection while an element is referenced".into());
-    }
-    if storage
-        .elements
-        .borrow()
-        .iter()
-        .any(|slot| slot.value.is_none())
-    {
-        return Err("cannot iterate a partially moved collection".into());
-    }
-    let element_type = storage
-        .element_type
-        .borrow()
-        .clone()
-        .unwrap_or(Type::Unknown);
-    Ok(Value::OwnedIterator(Rc::new(
-        OwnedIteratorValue::from_indexed(storage, element_type),
-    )))
-}
-
 /// Returns `None` only when a user-defined iterator method must be dispatched.
 pub fn next_builtin(value: &mut Value) -> Option<Result<Option<Value>, String>> {
     match value {
         Value::Native(object) => native_ops::next(object),
-        Value::OwnedIterator(iterator) => Some(iterator.next()),
-        Value::BorrowedIndexedIterator(iterator) => Some(iterator.next()),
-        Value::BorrowedMapIterator(iterator) => Some(iterator.next()),
-        Value::BorrowedSetIterator(iterator) => Some(iterator.next()),
         _ => None,
     }
 }

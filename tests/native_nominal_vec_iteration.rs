@@ -35,7 +35,7 @@ fn native_vec_moves_user_enums_only_when_iterator_advances() {
         }
         sum
     "#;
-    assert_both(source, Value::from_i32(42));
+    assert_both(source, Value::from(rils::value::native_i32(42)));
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn explicit_into_iter_decodes_user_struct_on_next() {
         let item = iterator.next().unwrap();
         item.value
     "#;
-    assert_both(source, Value::from_i32(42));
+    assert_both(source, Value::from(rils::value::native_i32(42)));
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn borrowed_iter_reads_user_struct_without_moving_collection() {
         }
         run()
     "#;
-    assert_both(source, Value::from_i32(19));
+    assert_both(source, Value::from(rils::value::native_i32(19)));
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn borrowed_iter_reads_user_struct_with_owned_string_field() {
         }
         run()
     "#;
-    assert_both(source, Value::from_usize(5));
+    assert_both(source, Value::from(rils::value::native_usize(5)));
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn native_map_moves_user_values_when_iterator_advances() {
         let entry = iterator.next().unwrap();
         entry.1.value
     "#;
-    assert_both(source, Value::from_i32(42));
+    assert_both(source, Value::from(rils::value::native_i32(42)));
 
     let ordered = r#"
         struct Item { value: i32 }
@@ -105,7 +105,7 @@ fn native_map_moves_user_values_when_iterator_advances() {
         for entry in map { sum = sum + entry.1.value; }
         sum
     "#;
-    assert_both(ordered, Value::from_i32(42));
+    assert_both(ordered, Value::from(rils::value::native_i32(42)));
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn native_set_owned_iterator_keeps_elements() {
         let mut iterator = set.into_iter();
         iterator.next().unwrap() + iterator.next().unwrap()
     "#;
-    assert_both(source, Value::from_i32(7));
+    assert_both(source, Value::from(rils::value::native_i32(7)));
 
     let hashed = r#"
         let mut set: HashSet<i32> = HashSet::new();
@@ -127,7 +127,7 @@ fn native_set_owned_iterator_keeps_elements() {
         for value in set { sum = sum + value; }
         sum
     "#;
-    assert_both(hashed, Value::from_i32(7));
+    assert_both(hashed, Value::from(rils::value::native_i32(7)));
 }
 
 #[test]
@@ -146,6 +146,6 @@ fn borrowed_map_iterator_reads_user_value_fields() {
             run()
         "#
         );
-        assert_both(&source, Value::from_i32(42));
+        assert_both(&source, Value::from(rils::value::native_i32(42)));
     }
 }

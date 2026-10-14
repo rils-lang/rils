@@ -7,38 +7,16 @@ use rils_value::DynamicType;
 
 use crate::{Type, types::merge_types};
 
-use super::{
-    DynamicObject, EnumType, HostObject, HostType, NativeObject, StructType, Value,
-    dynamic_sequence, record_codec::NativeRecordCodec,
-};
+use super::{EnumType, HostType, StructType, Value, record_codec::NativeRecordCodec};
 
 mod aggregate;
 mod assignment;
 mod construction;
 mod declarations;
-mod indexed;
+pub(crate) use declarations::storage_type;
 mod sum;
 pub use assignment::{NativeDeclaration, constrain_assignment, native_declaration};
 pub(crate) use sum::PreparedOption;
-
-/// The three payload families that can represent a stored script value.
-/// References, call targets, modules and declarations remain execution values.
-pub(crate) enum StoredDataRef<'a> {
-    Native(&'a NativeObject),
-    Dynamic(&'a DynamicObject),
-    Host(&'a HostObject),
-}
-
-impl Value {
-    pub(crate) fn stored_data(&self) -> Option<StoredDataRef<'_>> {
-        match self {
-            Self::Native(value) => Some(StoredDataRef::Native(value)),
-            Self::Dynamic(value) => Some(StoredDataRef::Dynamic(value)),
-            Self::HostObject(value) => Some(StoredDataRef::Host(value)),
-            _ => None,
-        }
-    }
-}
 
 /// Applies a concrete declaration to owned storage using the declarations
 /// visible at that execution site. This is a storage operation, not a second
@@ -74,12 +52,7 @@ impl<'a> TypedStorageContext<'a> {
         let expected = declarations::storage_type(expected);
         let expected = self.concrete_expected(&value, &expected)?;
         let expected = &expected;
-        let value = self.compose_indexed(value, expected)?;
-        let value = self.attach_result_witness(value, expected)?;
-        let value = self.compose_variant(value, expected)?;
-        Ok(dynamic_sequence::promote_empty_with_context(
-            value, expected, self,
-        ))
+        self.compose_variant(value, expected)
     }
 
     fn concrete_expected(&self, value: &Value, expected: &Type) -> Result<Type, String> {
@@ -95,37 +68,6 @@ impl<'a> TypedStorageContext<'a> {
         bindings.retain(|_, ty| *ty != Type::Unknown);
         let expected = expected.substitute(&bindings);
         Ok(merge_types(&expected, &actual).unwrap_or(expected))
-    }
-
-    fn attach_result_witness(&self, value: Value, expected: &Type) -> Result<Value, String> {
-        let Type::Result(expected_ok, expected_error) = expected else {
-            return Ok(value);
-        };
-        if matches!(value, Value::Result { .. }) && !expected.accepts(&value) {
-            return Err(format!(
-                "declared {expected} does not accept {}",
-                value.type_name()
-            ));
-        }
-        let Value::Result {
-            value: branch,
-            ok_type,
-            error_type,
-        } = value
-        else {
-            return Ok(value);
-        };
-        Ok(Value::Result {
-            value: branch,
-            ok_type: Some(
-                merge_types(expected_ok, &ok_type.unwrap_or(Type::Unknown))
-                    .ok_or("Result Ok type does not match declaration")?,
-            ),
-            error_type: Some(
-                merge_types(expected_error, &error_type.unwrap_or(Type::Unknown))
-                    .ok_or("Result Err type does not match declaration")?,
-            ),
-        })
     }
 
     fn compose_variant(&self, value: Value, expected: &Type) -> Result<Value, String> {
@@ -144,25 +86,6 @@ impl<'a> TypedStorageContext<'a> {
             let payload = codec.into_native(value, layout)?;
             return super::native_instance::from_native(payload, Rc::new(codec));
         }
-        if !matches!(expected, Type::Option(_) | Type::Result(_, _))
-            || !matches!(value, Value::Option { .. } | Value::Result { .. })
-        {
-            return Ok(value);
-        }
-        if !expected.accepts(&value) {
-            return Err(format!(
-                "declared {expected} does not accept {}",
-                value.type_name()
-            ));
-        }
-        let Ok(layout) = self.layout(expected) else {
-            // Unresolved generic constructors retain their transitional form
-            // until a concrete declaration is available.
-            return Ok(value);
-        };
-        let mut codec = NativeRecordCodec::with_definitions(self.structs, self.enums);
-        let payload = codec.into_native(value, layout.clone())?;
-        let descriptor = Rc::new(DynamicType::new(layout).register_metadata(Rc::new(codec)));
-        DynamicObject::new(descriptor, payload).map(Value::Dynamic)
+        Ok(value)
     }
 }

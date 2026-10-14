@@ -76,21 +76,15 @@ impl VirtualMachine<'_> {
                 span,
             ));
         }
-        let self_reference = match value {
-            Value::Reference(reference) => Value::Reference(reference.clone()),
-            value => {
-                let slot = Rc::new(RefCell::new(StorageSlot::uninitialized(false)));
-                slot.borrow_mut().initialize(value.clone());
-                Value::Reference(Rc::new(ReferenceValue::new_storage(slot, false)))
-            }
-        };
+        let self_reference = crate::formatting::receiver_reference(value)
+            .map_err(|message| BytecodeError::new(message, span))?;
         let formatter = crate::formatting::formatter_value(buffer)
             .map_err(|message| BytecodeError::new(message, span))?;
         let formatter_slot = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
         formatter_slot.borrow_mut().initialize(formatter);
         let arguments = vec![
             self_reference,
-            Value::Reference(Rc::new(ReferenceValue::new_storage(formatter_slot, true))),
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(formatter_slot, true))),
         ];
         let result = VirtualMachine::new_call(
             self.module,
@@ -108,7 +102,7 @@ impl VirtualMachine<'_> {
         let result = crate::value::dynamic_result::take_owned(result)
             .map_err(|message| BytecodeError::new(message, span))?;
         match result {
-            Ok(Value::Unit) => Ok(()),
+            Ok(value) if value.is_unit() => Ok(()),
             Err(error) => Err(BytecodeError::new(
                 format!("formatting failed: {error}"),
                 span,
@@ -124,13 +118,9 @@ impl VirtualMachine<'_> {
     }
 
     fn format_method(&self, value: &Value, trait_name: &str) -> Option<usize> {
-        let ty = Type::of_value(value)?;
+        let ty = rils_execution::runtime_type::receiver_type(value)?;
         let target = match &ty {
             Type::Named { name, .. } => name.clone(),
-            Type::Reference { inner, .. } => match inner.as_ref() {
-                Type::Named { name, .. } => name.clone(),
-                ty => ty.to_string(),
-            },
             ty => ty.to_string(),
         };
         self.module
@@ -153,22 +143,8 @@ impl VirtualMachine<'_> {
     ) -> Result<Value, BytecodeError> {
         let buffer = crate::formatting::buffer_from_value(formatter)
             .map_err(|message| BytecodeError::new(message, span))?;
-        if matches!(
-            rils_execution::value::native_instance::value_definition(value)
-                .map_err(|message| BytecodeError::new(message, span))?,
-            Some(Value::StructType(_) | Value::EnumType(_))
-        ) {
-            self.write_structural_debug(&buffer, value, span)?;
-            return Ok(format_ok());
-        }
-        let value = match value {
-            Value::Reference(reference) => reference
-                .read()
-                .map_err(|message| BytecodeError::new(message, span))?,
-            value => value.clone(),
-        };
-        self.write_structural_debug(&buffer, &value, span)?;
-        Ok(format_ok())
+        self.write_structural_debug(&buffer, value, span)?;
+        crate::formatting::format_ok().map_err(|message| BytecodeError::new(message, span))
     }
 
     fn write_structural_debug(
@@ -277,13 +253,5 @@ impl VirtualMachine<'_> {
         }
         buffer.write_str(if tuple { ")" } else { "}" });
         Ok(())
-    }
-}
-
-pub(super) fn format_ok() -> Value {
-    Value::Result {
-        value: Ok(Rc::new(Value::Unit)),
-        ok_type: Some(Type::Unit),
-        error_type: Some(Type::named("FormatError")),
     }
 }

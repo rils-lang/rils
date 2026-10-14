@@ -35,8 +35,14 @@ fn projected_native_map_fields_keep_entry_stable() {
     let value_ref =
         ReferenceValue::new_guarded_dynamic_indexed_field(object.clone(), 0, Some(1), false, None)
             .unwrap();
-    assert_eq!(key_ref.read().unwrap(), Value::from_i32(7));
-    assert_eq!(value_ref.read().unwrap(), Value::Bool(true));
+    assert_eq!(
+        key_ref.read().unwrap(),
+        Value::from(rils_execution::value::native_i32(7))
+    );
+    assert_eq!(
+        value_ref.read().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
 
     let another = DynamicValue::record(
         pair,

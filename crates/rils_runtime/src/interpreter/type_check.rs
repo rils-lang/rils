@@ -106,60 +106,6 @@ pub(super) fn infer_type_from_value(
             let actual = Type::of_value(value).unwrap_or(Type::Unknown);
             bind_type_variable(name, actual, substitutions)
         }
-        (
-            Type::Reference {
-                mutable: expected_mutable,
-                inner,
-            },
-            Value::Reference(reference),
-        ) if !*expected_mutable || reference.mutable => {
-            let value = reference.read()?;
-            infer_type_from_value(inner, &value, substitutions)
-        }
-        (
-            Type::Option(inner),
-            Value::Option {
-                value: Some(value), ..
-            },
-        ) => infer_type_from_value(inner, value, substitutions),
-        (
-            Type::Option(inner),
-            Value::Option {
-                value: None,
-                element_type: Some(actual),
-            },
-        ) => infer_type_from_type(inner, actual, substitutions),
-        (
-            Type::Result(ok, error),
-            Value::Result {
-                value,
-                ok_type,
-                error_type,
-            },
-        ) => {
-            match value {
-                Ok(value) => infer_type_from_value(ok, value, substitutions)?,
-                Err(value) => infer_type_from_value(error, value, substitutions)?,
-            }
-            if let Some(actual) = ok_type {
-                infer_type_from_type(ok, actual, substitutions)?;
-            }
-            if let Some(actual) = error_type {
-                infer_type_from_type(error, actual, substitutions)?;
-            }
-            Ok(())
-        }
-
-        (
-            expected @ Type::Function { .. },
-            value @ (Value::Function(_)
-            | Value::NativeFunction(_)
-            | Value::VariantConstructor(_)
-            | Value::BoundMethod(_)),
-        ) => {
-            let actual = Type::of_value(value).unwrap_or(Type::opaque_function());
-            infer_type_from_type(expected, &actual, substitutions)
-        }
         (Type::Array { .. } | Type::ArrayParameter { .. } | Type::Tuple(_), value) => {
             let actual = Type::of_value(value).ok_or("cannot infer argument type")?;
             infer_type_from_type(expected, &actual, substitutions)
@@ -219,9 +165,9 @@ pub(super) fn validate_generic_bounds(
             };
             let trait_value = environment
                 .borrow()
-                .get(bound_name)
+                .get_declaration(bound_name)
                 .ok_or_else(|| RuntimeError::new(format!("unknown trait bound `{bound}`"), span))?;
-            if !matches!(trait_value, Value::TraitType(_)) {
+            if !matches!(trait_value, crate::value::Declaration::TraitType(_)) {
                 return Err(RuntimeError::new(format!("`{bound}` is not a trait"), span));
             }
             if actual == Type::Unknown {
@@ -289,8 +235,8 @@ pub(super) fn type_implements_trait(
     trait_name: &str,
     environment: &EnvironmentRef,
 ) -> bool {
-    let canonical_trait = match environment.borrow().get(trait_name) {
-        Some(Value::TraitType(definition)) => definition.name.clone(),
+    let canonical_trait = match environment.borrow().get_declaration(trait_name) {
+        Some(crate::value::Declaration::TraitType(definition)) => definition.name.clone(),
         _ => trait_name.to_owned(),
     };
     let trait_name = rils_frontend::standard_library::builtin_type_name(&canonical_trait)
@@ -308,14 +254,14 @@ pub(super) fn type_implements_trait(
             let Type::Named { name, .. } = ty else {
                 return false;
             };
-            match environment.borrow().get(name) {
-                Some(Value::StructType(definition)) => {
+            match environment.borrow().get_declaration(name) {
+                Some(crate::value::Declaration::StructType(definition)) => {
                     definition.implemented_traits.borrow().contains(required)
                 }
-                Some(Value::EnumType(definition)) => {
+                Some(crate::value::Declaration::EnumType(definition)) => {
                     definition.implemented_traits.borrow().contains(required)
                 }
-                Some(Value::HostType(_)) => true,
+                Some(crate::value::Declaration::HostType(_)) => true,
                 _ => false,
             }
         });
@@ -340,7 +286,7 @@ pub(super) fn type_implements_trait(
         "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashSet" && arguments.len() == 1) => {
             true
         }
-        "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "OwnedIterator" && arguments.len() == 1) => {
+        "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Iter" && arguments.len() == 1) => {
             true
         }
         "Iterator" if matches!(actual, Type::Named { name, arguments } if name == "Iter" && arguments.len() == 1) => {
@@ -363,11 +309,11 @@ pub(super) fn type_implements_trait(
             ) {
                 return true;
             }
-            match environment.borrow().get(name) {
-                Some(Value::StructType(definition)) => {
+            match environment.borrow().get_declaration(name) {
+                Some(crate::value::Declaration::StructType(definition)) => {
                     definition.implemented_traits.borrow().contains(trait_name)
                 }
-                Some(Value::EnumType(definition)) => {
+                Some(crate::value::Declaration::EnumType(definition)) => {
                     definition.implemented_traits.borrow().contains(trait_name)
                 }
                 _ => false,
@@ -396,11 +342,11 @@ fn type_is_structural_key_trait(
             type_is_structural_key_trait(ok, trait_name, environment)
                 && type_is_structural_key_trait(error, trait_name, environment)
         }
-        Type::Named { name, .. } => match environment.borrow().get(name) {
-            Some(Value::StructType(definition)) => {
+        Type::Named { name, .. } => match environment.borrow().get_declaration(name) {
+            Some(crate::value::Declaration::StructType(definition)) => {
                 definition.implemented_traits.borrow().contains(trait_name)
             }
-            Some(Value::EnumType(definition)) => {
+            Some(crate::value::Declaration::EnumType(definition)) => {
                 definition.implemented_traits.borrow().contains(trait_name)
             }
             _ => false,
@@ -412,11 +358,11 @@ fn type_is_structural_key_trait(
 fn type_is_default(actual: &Type, environment: &EnvironmentRef) -> bool {
     match rils_frontend::default::default_plan(actual) {
         Some(rils_frontend::default::DefaultPlan::TraitCall(Type::Named { name, .. })) => {
-            match environment.borrow().get(&name) {
-                Some(Value::StructType(definition)) => {
+            match environment.borrow().get_declaration(&name) {
+                Some(crate::value::Declaration::StructType(definition)) => {
                     definition.implemented_traits.borrow().contains("Default")
                 }
-                Some(Value::EnumType(definition)) => {
+                Some(crate::value::Declaration::EnumType(definition)) => {
                     definition.implemented_traits.borrow().contains("Default")
                 }
                 _ => false,
@@ -474,17 +420,17 @@ fn type_is_clone(actual: &Type, environment: &EnvironmentRef) -> bool {
             type_is_clone(element, environment)
         }
         Type::Named { name, .. } if name == "Vec" => true,
-        Type::Named { name, .. } => match environment.borrow().get(name) {
-            Some(Value::StructType(definition)) if definition.opaque_native => {
+        Type::Named { name, .. } => match environment.borrow().get_declaration(name) {
+            Some(crate::value::Declaration::StructType(definition)) if definition.opaque_native => {
                 rils_builtins::native_implements(
                     rils_frontend::standard_library::builtin_type_name(name).unwrap_or(name),
                     "Clone",
                 )
             }
-            Some(Value::StructType(definition)) => {
+            Some(crate::value::Declaration::StructType(definition)) => {
                 definition.implemented_traits.borrow().contains("Clone")
             }
-            Some(Value::EnumType(definition)) => {
+            Some(crate::value::Declaration::EnumType(definition)) => {
                 definition.implemented_traits.borrow().contains("Clone")
             }
             _ => false,

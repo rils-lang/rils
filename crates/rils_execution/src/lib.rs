@@ -1,8 +1,8 @@
 //! Shared dynamic values, storage, builtins, and execution services for Rils backends.
 
+pub mod declaration;
 pub mod environment;
 pub mod formatting;
-pub mod hash_collections;
 mod host_value;
 pub mod iteration;
 mod limits;

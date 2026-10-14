@@ -6,31 +6,38 @@ use super::{Block, EnvironmentRef, Expr, Stmt, Value};
 use rils_stdlib::stdlib::ops::CallableTraitKind as CallableKind;
 
 pub(super) fn callable_kind(value: &Value) -> Option<CallableKind> {
-    match value {
-        Value::Function(function) => {
-            let locals = function
-                .parameters
-                .iter()
-                .map(|parameter| parameter.name.clone())
-                .collect::<HashSet<_>>();
-            let mut kind = CallableKind::Shared;
-            inspect_block(&function.body, &locals, &function.closure, &mut kind);
-            Some(kind)
-        }
-        Value::BytecodeFunction(function) => Some(if function.captures.is_empty() {
+    use crate::value::*;
+    if let Some(function) = value.as_callable::<UserFunction>() {
+        let locals = function
+            .parameters
+            .iter()
+            .map(|parameter| parameter.name.clone())
+            .collect::<HashSet<_>>();
+        let mut kind = CallableKind::Shared;
+        inspect_block(&function.body, &locals, &function.closure, &mut kind);
+        return Some(kind);
+    }
+    if let Some(function) = value.as_callable::<BytecodeFunctionValue>() {
+        return Some(if function.captures.is_empty() {
             CallableKind::Shared
         } else {
             CallableKind::Once
-        }),
-        Value::NativeFunction(_)
-        | Value::HostFunction(_)
-        | Value::BuiltinFunction(_)
-        | Value::VariantConstructor(_) => Some(CallableKind::Shared),
-        Value::BoundMethod(_) | Value::HostBoundMethod(_) | Value::BuiltinBoundMethod(_) => {
-            Some(CallableKind::Once)
-        }
-        _ => None,
+        });
     }
+    if value.as_callable::<NativeFunction>().is_some()
+        || value.as_callable::<HostFunction>().is_some()
+        || value.as_callable::<BuiltinFunction>().is_some()
+        || value.as_callable::<VariantConstructor>().is_some()
+    {
+        return Some(CallableKind::Shared);
+    }
+    if value.as_callable::<BoundMethod>().is_some()
+        || value.as_callable::<HostBoundMethod>().is_some()
+        || value.as_callable::<BuiltinBoundMethod>().is_some()
+    {
+        return Some(CallableKind::Once);
+    }
+    None
 }
 
 fn inspect_block(

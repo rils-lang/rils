@@ -9,7 +9,11 @@ use syn::{
 
 use crate::type_patterns;
 
+mod cell;
+mod keyed;
 mod native;
+mod shared;
+mod vector;
 
 pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     native::expand(path, module)

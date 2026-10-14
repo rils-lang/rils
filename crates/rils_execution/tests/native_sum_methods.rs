@@ -22,7 +22,10 @@ fn sum_outputs_are_native_and_shared_non_copy_inputs_are_rejected() {
     for method in ["or", "xor"] {
         let left = context
             .storage()
-            .construct_option(&ty, Some(Value::from_string("owned")))
+            .construct_option(
+                &ty,
+                Some(Value::from(rils_execution::value::native_string("owned"))),
+            )
             .unwrap();
         let right = context.storage().construct_option(&ty, None).unwrap();
         let output =
@@ -32,25 +35,42 @@ fn sum_outputs_are_native_and_shared_non_copy_inputs_are_rejected() {
         assert!(matches!(&output, Value::Dynamic(_)));
         assert_eq!(
             output
-                .as_option()
+                .with_native_view(|view| {
+                    <String as rils_execution::RilsHostType>::with_composed_ref(
+                        view.option_item()?,
+                        Clone::clone,
+                    )
+                })
                 .unwrap()
-                .0
-                .unwrap()
-                .as_string()
+                .ok()
                 .as_deref(),
             Some("owned")
         );
     }
     let value = context
         .storage()
-        .construct_option(&ty, Some(Value::from_string("retained")))
+        .construct_option(
+            &ty,
+            Some(Value::from(rils_execution::value::native_string(
+                "retained",
+            ))),
+        )
         .unwrap();
     let error = call_native_owned_symbol(symbol("Option", "unwrap"), vec![value.clone()], &context)
         .unwrap()
         .unwrap_err();
     assert!(error.contains("shared"));
     assert_eq!(
-        value.as_option().unwrap().0.unwrap().as_string().as_deref(),
+        value
+            .with_native_view(
+                |view| <String as rils_execution::RilsHostType>::with_composed_ref(
+                    view.option_item()?,
+                    Clone::clone
+                )
+            )
+            .unwrap()
+            .ok()
+            .as_deref(),
         Some("retained")
     );
     assert!(
@@ -62,10 +82,26 @@ fn sum_outputs_are_native_and_shared_non_copy_inputs_are_rejected() {
 
     let result_type = Type::Result(Box::new(Type::I32), Box::new(Type::String));
     for (method, branch, present) in [
-        ("ok", Ok(Value::from_i32(42)), true),
-        ("ok", Err(Value::from_string("error")), false),
-        ("err", Ok(Value::from_i32(42)), false),
-        ("err", Err(Value::from_string("error")), true),
+        (
+            "ok",
+            Ok(Value::from(rils_execution::value::native_i32(42))),
+            true,
+        ),
+        (
+            "ok",
+            Err(Value::from(rils_execution::value::native_string("error"))),
+            false,
+        ),
+        (
+            "err",
+            Ok(Value::from(rils_execution::value::native_i32(42))),
+            false,
+        ),
+        (
+            "err",
+            Err(Value::from(rils_execution::value::native_string("error"))),
+            true,
+        ),
     ] {
         let receiver = context
             .storage()
@@ -75,7 +111,13 @@ fn sum_outputs_are_native_and_shared_non_copy_inputs_are_rejected() {
             .unwrap()
             .unwrap();
         assert!(matches!(&output, Value::Dynamic(_)));
-        assert_eq!(output.as_option().unwrap().0.is_some(), present);
+        assert_eq!(
+            output
+                .with_native_view(|view| view.option_is_some())
+                .unwrap()
+                .unwrap(),
+            present
+        );
     }
 }
 
@@ -85,19 +127,27 @@ fn invalid_replacements_preserve_the_native_target() {
     let ty = Type::Option(Box::new(Type::String));
     let value = context
         .storage()
-        .construct_option(&ty, Some(Value::from_string("retained")))
+        .construct_option(
+            &ty,
+            Some(Value::from(rils_execution::value::native_string(
+                "retained",
+            ))),
+        )
         .unwrap();
     let environment = Environment::global();
     environment
         .borrow_mut()
         .define("value", value, true, Some(ty));
-    let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(
+    let reference = Value::from_reference(Rc::new(ReferenceValue::new_storage(
         environment.borrow().slot("value").unwrap(),
         true,
     )));
     let error = call_native_owned_symbol(
         symbol("Option", "replace"),
-        vec![reference.clone(), Value::from_i32(1)],
+        vec![
+            reference.clone(),
+            Value::from(rils_execution::value::native_i32(1)),
+        ],
         &context,
     )
     .unwrap()
@@ -109,11 +159,14 @@ fn invalid_replacements_preserve_the_native_target() {
     assert!(matches!(&previous, Value::Dynamic(_)));
     assert_eq!(
         previous
-            .as_option()
+            .with_native_view(
+                |view| <String as rils_execution::RilsHostType>::with_composed_ref(
+                    view.option_item()?,
+                    Clone::clone
+                )
+            )
             .unwrap()
-            .0
-            .unwrap()
-            .as_string()
+            .ok()
             .as_deref(),
         Some("retained")
     );
@@ -149,7 +202,7 @@ fn mutable_sum_calls_reject_partial_payloads_before_replacing_the_target() {
         true,
     ));
     for method in ["take", "replace"] {
-        let mut arguments = vec![Value::Reference(reference.clone())];
+        let mut arguments = vec![Value::from_reference(reference.clone())];
         if method == "replace" {
             let item = DynamicValue::record(
                 context.layout(&item_type).unwrap(),
@@ -173,7 +226,7 @@ fn mutable_sum_calls_reject_partial_payloads_before_replacing_the_target() {
             .unwrap()
             .unwrap_err();
         assert!(error.contains("partially moved"));
-        RilsValue::new(Value::Reference(reference.clone()))
+        RilsValue::new(Value::from_reference(reference.clone()))
             .with_native_view(|view| {
                 assert!(view.option_is_some().unwrap());
                 let item = view.option_item().unwrap();

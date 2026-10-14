@@ -45,7 +45,7 @@ impl Interpreter {
                         ));
                     }
                     let count = self.evaluate(count, environment.clone())?;
-                    let Some(count) = count.as_usize() else {
+                    let Ok(count) = count.get_cloned::<usize>() else {
                         return Err(RuntimeError::new("array repeat count must be usize", *span));
                     };
                     let context = crate::runtime_builtins::NativeOwnedContext::from_environment(

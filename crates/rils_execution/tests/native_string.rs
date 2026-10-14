@@ -1,12 +1,89 @@
 use rils_builtins::{TypePattern, builtin};
-use rils_execution::{Value, runtime_builtins, value::HashKey};
+use rils_execution::{Value, runtime_builtins};
 
 fn string(value: &str) -> Value {
-    Value::from_string(value)
+    Value::from(rils_execution::value::native_string(value))
 }
 
 #[test]
-fn string_uses_native_storage_across_clone_display_and_hash_keys() {
+fn generated_string_bridge_borrows_native_and_projected_receivers() {
+    use rils_execution::{
+        Type,
+        environment::StorageSlot,
+        value::{
+            ReferenceValue, native_instance::NativeInstancePlace, storage::TypedStorageContext,
+        },
+    };
+    use std::{cell::RefCell, rc::Rc};
+    let context = TypedStorageContext::new(&[], &[]);
+    let Value::Dynamic(tuple) = context
+        .construct_tuple(
+            &Type::Tuple(vec![Type::String, Type::String]),
+            vec![string("éclair"), string("moved")],
+        )
+        .unwrap()
+    else {
+        panic!("native tuple")
+    };
+    let place = NativeInstancePlace::new(tuple.clone()).unwrap();
+    drop(place.field("1").unwrap().take().unwrap());
+    let projected = Value::from_reference(Rc::new(
+        place.field("0").unwrap().borrow(false, None).unwrap(),
+    ));
+    let native_leaf = context
+        .construct_option(
+            &Type::Option(Box::new(Type::String)),
+            Some(string("éclair")),
+        )
+        .unwrap();
+    let native_leaf = rils_execution::value::dynamic_option::take_owned(native_leaf)
+        .unwrap()
+        .unwrap();
+    for receiver in [string("éclair"), native_leaf, projected] {
+        assert_eq!(
+            call("core::string::string::len", std::slice::from_ref(&receiver))
+                .unwrap()
+                .get_cloned::<usize>()
+                .unwrap(),
+            7
+        );
+        assert!(
+            call(
+                "core::string::string::contains",
+                &[receiver.clone(), string("é")]
+            )
+            .unwrap()
+            .get_cloned::<bool>()
+            .unwrap()
+        );
+        let slot = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+        slot.borrow_mut().initialize(receiver);
+        let reference =
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(slot.clone(), false)));
+        assert_eq!(
+            call(
+                "core::string::string::len",
+                std::slice::from_ref(&reference)
+            )
+            .unwrap()
+            .get_cloned::<usize>()
+            .unwrap(),
+            7
+        );
+        assert_eq!(reference.get_cloned::<String>().unwrap(), "éclair");
+        let _writing = slot.borrow_mut();
+        let error = call(
+            "core::string::string::len",
+            std::slice::from_ref(&reference),
+        )
+        .unwrap_err();
+        assert!(error.contains("mutably accessed"), "{error}");
+    }
+    assert!(Value::Dynamic(tuple).is_partially_moved());
+}
+
+#[test]
+fn string_uses_native_storage_across_clone_and_display() {
     let value = string("héllo");
     let Value::Native(object) = &value else {
         panic!("string must use native storage");
@@ -14,18 +91,10 @@ fn string_uses_native_storage_across_clone_display_and_hash_keys() {
     assert!(!object.is_inline());
     assert!(!value.is_copy());
     assert_eq!(object.descriptor().rils_type().to_string(), "string");
-    assert_eq!(value.as_string().as_deref(), Some("héllo"));
+    assert_eq!(value.get_cloned::<String>().ok().as_deref(), Some("héllo"));
     assert_eq!(value.to_string(), "héllo");
     assert_eq!(format!("{value:?}"), "\"héllo\"");
     assert_eq!(value.clone_owned().unwrap(), value);
-    assert_eq!(
-        HashKey::from_value(&value).unwrap(),
-        HashKey::from_value(&Value::from_string("héllo")).unwrap()
-    );
-    assert!(matches!(
-        HashKey::from_value(&value).unwrap().to_value().unwrap(),
-        Value::Native(_)
-    ));
 }
 
 fn call(symbol: &str, arguments: &[Value]) -> Result<Value, String> {
@@ -45,7 +114,7 @@ fn all_string_members_have_native_bindings() {
         let mut arguments = vec![string(" abc abc ")];
         for parameter in signature.parameters {
             arguments.push(match parameter {
-                TypePattern::Usize => Value::Usize(2),
+                TypePattern::Usize => Value::from(rils_execution::value::native_usize(2)),
                 _ => string("abc"),
             });
         }
@@ -58,7 +127,7 @@ fn all_string_members_have_native_bindings() {
 fn string_native_methods_preserve_unicode_and_optional_results() {
     assert_eq!(
         call("core::string::string::len", &[string("é")]),
-        Ok(Value::Usize(2))
+        Ok(Value::from(rils_execution::value::native_usize(2)))
     );
     assert_eq!(
         call("core::string::string::to_uppercase", &[string("é")]),
@@ -82,7 +151,10 @@ fn string_native_methods_preserve_unicode_and_optional_results() {
         &rils_execution::Type::Option(Box::new(rils_execution::Type::USIZE))
     );
     assert_eq!(
-        found.as_option(),
-        Some((Some(Value::Usize(0)), rils_execution::Type::USIZE))
+        found
+            .with_native_view(|view| view.option_item()?.with_rust::<usize, _>(|value| *value))
+            .unwrap()
+            .unwrap(),
+        0
     );
 }

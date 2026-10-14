@@ -1,0 +1,28 @@
+mod model {
+    pub struct Item { number: i32 }
+    pub enum Choice { Item(Item), Empty }
+    pub type Number = i32;
+    pub trait Read { fn read(&self) -> i32; }
+    impl Read for Item {
+        fn read(&self) -> i32 { self.number }
+    }
+    pub fn make(number: Number) -> Item { Item { number: number } }
+}
+mod other {
+    pub struct Item { number: i32 }
+}
+use model::{Item as Record, Choice, Number, Read, make};
+use other::Item as Other;
+fn main() -> i32 {
+    let number: Number = 40;
+    let item: Record = { let build = make; build(number) };
+    let read = item.read;
+    let answer = read();
+    let choice = Choice::Item(Record { number: answer });
+    let other = Other { number: 2 };
+    match choice {
+        Choice::Item(value) => value.number + other.number,
+        Choice::Empty => 0,
+    }
+}
+main()

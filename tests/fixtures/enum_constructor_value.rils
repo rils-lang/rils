@@ -1,0 +1,10 @@
+enum Message { Text(string), Pair(i32, string), Empty }
+let make_text = Message::Text;
+let text = make_text("owned");
+let make_pair = Message::Pair;
+let pair = make_pair(42, "pair");
+let empty = Message::Empty;
+let text_ok = match text { Message::Text(value) => value == "owned", _ => false };
+let pair_ok = match pair { Message::Pair(number, label) => number == 42 && label == "pair", _ => false };
+let empty_ok = match empty { Message::Empty => true, _ => false };
+text_ok && pair_ok && empty_ok

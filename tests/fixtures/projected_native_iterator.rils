@@ -1,0 +1,10 @@
+let mut values = (1..4, "moved");
+let moved = values.1;
+let first = values.0.next();
+let second = values.0.next();
+let mut cloned: Range<i32> = values.0.clone();
+first == Some(1)
+    && second == Some(2)
+    && cloned.next() == Some(3)
+    && values.0.next() == Some(3)
+    && values.0.next() == None

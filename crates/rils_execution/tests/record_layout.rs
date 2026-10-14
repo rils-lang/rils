@@ -346,8 +346,14 @@ fn native_record_fields_follow_declaration_order_and_reject_missing_fields() {
         vec![("first", Type::I32), ("second", Type::I32)],
     );
     let fields = HashMap::from([
-        ("second".into(), Value::from_i32(2)),
-        ("first".into(), Value::from_i32(1)),
+        (
+            "second".into(),
+            Value::from(rils_execution::value::native_i32(2)),
+        ),
+        (
+            "first".into(),
+            Value::from(rils_execution::value::native_i32(1)),
+        ),
     ]);
     let declarations = [definition.clone()];
     let context = TypedStorageContext::new(&declarations, &[]);
@@ -364,11 +370,23 @@ fn native_record_fields_follow_declaration_order_and_reject_missing_fields() {
     assert_eq!(layout.record_field_index("second"), Some(1));
     let place = NativeInstancePlace::new(value).unwrap();
     assert_eq!(
-        place.field("first").unwrap().take().unwrap().as_i32(),
+        place
+            .field("first")
+            .unwrap()
+            .take()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
         Some(1)
     );
     assert_eq!(
-        place.field("second").unwrap().take().unwrap().as_i32(),
+        place
+            .field("second")
+            .unwrap()
+            .take()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
         Some(2)
     );
     assert!(place.field("missing").is_err());

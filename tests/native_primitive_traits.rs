@@ -20,10 +20,14 @@ fn numeric_and_string_defaults_match_native_trait_registrations() {
         ("string", "\"\""),
     ] {
         let source = format!("<{} as Default>::default() == {zero}", ty);
-        assert_eq!(eval_value(&source).unwrap(), Value::Bool(true), "{source}");
+        assert_eq!(
+            eval_value(&source).unwrap(),
+            Value::from(rils::value::native_bool(true)),
+            "{source}"
+        );
         assert_eq!(
             compile(&source).unwrap().execute_value().unwrap(),
-            Value::Bool(true),
+            Value::from(rils::value::native_bool(true)),
             "{source}"
         );
     }
@@ -40,10 +44,13 @@ fn integer_and_string_keys_work_and_float_keys_are_rejected() {
         let text = "answer";
         integers.contains(&integer) && strings.contains(&text)
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Bool(true)
+        Value::from(rils::value::native_bool(true))
     );
 
     for ty in ["f32", "f64"] {
@@ -55,9 +62,12 @@ fn integer_and_string_keys_work_and_float_keys_are_rejected() {
 #[test]
 fn clone_trait_path_call_matches_interpreter_and_vm() {
     let source = include_str!("fixtures/trait_path_clone.rils");
-    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Bool(true)
+        Value::from(rils::value::native_bool(true))
     );
 }

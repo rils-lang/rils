@@ -1,7 +1,7 @@
 use rils::{BytecodeModule, Value, compile, eval_value};
 
 fn assert_native_string(value: Value, expected: &str) {
-    assert_eq!(value.as_string().as_deref(), Some(expected));
+    assert_eq!(value.get_cloned::<String>().ok().as_deref(), Some(expected));
     let Value::Native(object) = value else {
         panic!("string result must retain native storage");
     };

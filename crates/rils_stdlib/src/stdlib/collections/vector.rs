@@ -8,6 +8,7 @@ mod native {
 
     /// A growable owned sequence.
     #[rils_struct]
+    #[repr(transparent)]
     pub struct Vec<T>(std::vec::Vec<T>);
 
     impl<T> std::ops::Deref for Vec<T> {
@@ -52,6 +53,13 @@ mod native {
     }
 
     impl<T> Vec<T> {
+        /// Borrow existing Rust storage without moving or copying its elements.
+        pub fn from_storage(values: &std::vec::Vec<T>) -> &Self {
+            // SAFETY: Vec<T> is a transparent wrapper around precisely this
+            // Rust Vec<T>. The shared borrow cannot mutate or take ownership.
+            unsafe { &*(values as *const std::vec::Vec<T>).cast::<Self>() }
+        }
+
         /// Creates a Vec from an owned array.
         #[export_rils]
         pub fn from<const N: usize>(values: [T; N]) -> Self {

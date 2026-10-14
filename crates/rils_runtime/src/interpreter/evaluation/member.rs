@@ -14,16 +14,13 @@ impl Interpreter {
         } = object
             && let Some(value) = environment.borrow().get(variable_name)
         {
-            if matches!(value, Value::Reference(_)) {
+            if value.as_reference().is_some() {
                 // A reference binding already carries receiver mutability and
                 // provenance. Reusing it also gives fields priority over methods.
                 return self.resolve_member(value, name, span);
             }
             if matches!(&value, Value::Dynamic(object) if object.descriptor().layout().record_field_index(name).is_some())
             {
-                return self.resolve_member(value, name, span);
-            }
-            if matches!(&value, Value::Tuple(_)) && name.parse::<usize>().is_ok() {
                 return self.resolve_member(value, name, span);
             }
             if let Value::HostObject(instance) = &value
@@ -55,11 +52,7 @@ impl Interpreter {
                     self.reference_variable(variable_name, mutable, &environment, span)?;
                 return self.resolve_member(receiver, name, span);
             }
-            if method.is_none()
-                && name == "clone"
-                && Type::of_value(&value)
-                    .is_some_and(|ty| type_implements_trait(&ty, "Clone", &environment))
-            {
+            if method.is_none() && name == "clone" {
                 let receiver = self.reference_variable(variable_name, false, &environment, span)?;
                 return self.resolve_member(receiver, name, span);
             }
@@ -111,7 +104,7 @@ impl Interpreter {
                     .map_err(|message| RuntimeError::new(message, span));
             }
             if let Some(reference) = place.projection_guard(span)? {
-                let projected = Value::Reference(reference.clone());
+                let projected = Value::from_reference(reference.clone());
                 if let Some(projected) = reference
                     .project_native_field(name)
                     .map_err(|message| RuntimeError::new(message, span))?
@@ -153,13 +146,35 @@ impl Interpreter {
                     };
                     return self.resolve_member(receiver, name, span);
                 }
+                if let Some(mode) =
+                    super::super::call::builtin_iterator_default_receiver(&projected, name)
+                {
+                    let receiver = match mode {
+                        rils_builtins::ReceiverMode::Owned => {
+                            drop(projected);
+                            drop(reference);
+                            place.read(span)?
+                        }
+                        rils_builtins::ReceiverMode::Shared => place.borrow(false, span)?,
+                        rils_builtins::ReceiverMode::Mutable => place.borrow(true, span)?,
+                    };
+                    return self.resolve_member(receiver, name, span);
+                }
             }
-            let value = place.projection_value(span)?;
-            if matches!(&value, Value::Tuple(_) if name.parse::<usize>().is_ok()) {
-                // The owner is only a projection. Transfer ownership at the final
-                // field instead of moving every intermediate non-Copy record.
-                return self.resolve_member(value, name, span);
+            if name == "clone" {
+                // Clone borrows every place, including an indexed projection.
+                // Its receiver mode belongs to the trait declaration, not the
+                // physical representation of the owner.
+                let member = rils_builtins::builtin_member("Clone", name)
+                    .expect("Clone::clone is declared by the standard library");
+                let receiver = match member.receiver.expect("Clone::clone has a receiver") {
+                    rils_builtins::ReceiverMode::Owned => place.read(span)?,
+                    rils_builtins::ReceiverMode::Shared => place.borrow(false, span)?,
+                    rils_builtins::ReceiverMode::Mutable => place.borrow(true, span)?,
+                };
+                return self.resolve_member(receiver, name, span);
             }
+            let value = place.projection_receiver(span)?;
             let builtin_borrow = super::super::call::builtin_iterator_default_receiver(
                 &value, name,
             )
@@ -194,10 +209,10 @@ fn selected_method(
     let definition = rils_execution::value::native_instance::value_definition(value)
         .map_err(|message| RuntimeError::new(message, span))?;
     match definition {
-        Some(Value::StructType(definition)) => {
+        Some(crate::value::Declaration::StructType(definition)) => {
             super::super::call::select_method(&definition.methods, &definition.trait_methods, name)
         }
-        Some(Value::EnumType(definition)) => {
+        Some(crate::value::Declaration::EnumType(definition)) => {
             super::super::call::select_method(&definition.methods, &definition.trait_methods, name)
         }
         _ => Ok(None),

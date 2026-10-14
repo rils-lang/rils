@@ -20,6 +20,18 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
     match Definition::parse(path, module) {
         Ok(definition) => match descriptor_methods(&definition) {
             Ok(methods) => quote! {
+            impl crate::runtime_builtins::native_output::NativeOutput for rils_stdlib::stdlib::string::String {
+                fn output_type() -> crate::Type { crate::Type::String }
+                fn into_value(self) -> Result<crate::Value, String> {
+                    Ok(crate::Value::Native(crate::value::NativeObject::new(descriptor(), self)?))
+                }
+            }
+            impl crate::runtime_builtins::native_output::NativeOutput for std::string::String {
+                fn output_type() -> crate::Type { crate::Type::String }
+                fn into_value(self) -> Result<crate::Value, String> {
+                    crate::runtime_builtins::native_output::NativeOutput::into_value(rils_stdlib::stdlib::string::String::from(self))
+                }
+            }
             pub fn layout() -> std::rc::Rc<rils_value::DynamicLayout> {
                 rils_value::DynamicLayout::of::<rils_stdlib::stdlib::string::String>(
                     crate::Type::String,
@@ -42,13 +54,13 @@ pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
                                 let equal = context.receiver::<NativeString, _>(|value| {
                                     other.with::<NativeString, _>(|other| value == other)
                                 })??;
-                                Ok(crate::Value::Bool(equal))
+                                Ok(crate::Value::from(crate::value::native_bool(equal)))
                             })
                             .register_method(crate::value::native_ops::DISPLAY, |context| {
                                 let text = context.receiver::<NativeString, _>(|value| {
                                     std::string::String::from(value.clone())
                                 })?;
-                                Ok(crate::value::native_string(text))
+                                Ok(crate::Value::from(crate::value::native_string(text)))
                             })
                             #(#methods)*
                     );
@@ -76,10 +88,10 @@ fn descriptor_methods(definition: &Definition) -> syn::Result<Vec<proc_macro2::T
             let binding = quote::format_ident!("argument_{index}");
             match parameter.ty.as_ref() {
                 Type::Path(path) if path.path.is_ident("String") => {
-                    Ok((binding, quote!(crate::runtime_builtins::string_input(&arguments[#index])?)))
+                    Ok((binding, quote!(crate::host_value::with_rust_value::<rils_stdlib::stdlib::string::String, _>(&arguments[#index], Clone::clone)?)))
                 }
                 Type::Path(path) if path.path.is_ident("usize") => {
-                    Ok((binding, quote!(crate::runtime_builtins::string_usize_input(&arguments[#index])?)))
+                    Ok((binding, quote!(arguments[#index].get_cloned::<usize>()?)))
                 }
                 _ => Err(Error::new_spanned(&parameter.ty, "unsupported string argument")),
             }
@@ -97,7 +109,7 @@ fn descriptor_methods(definition: &Definition) -> syn::Result<Vec<proc_macro2::T
                 let result = context.receiver::<NativeString, _>(|receiver| {
                     receiver.#name(#(#argument_names),*)
                 })?;
-                crate::runtime_builtins::StringOutput::into_value(result)
+                crate::runtime_builtins::native_output::NativeOutput::into_value(result)
             })
         })
     }).collect()
@@ -277,8 +289,8 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
         let arguments = method.sig.inputs.iter().enumerate().skip(1).map(|(index, input)| {
             let FnArg::Typed(parameter) = input else { return Err(Error::new_spanned(input, "unexpected receiver")); };
             let value = match parameter.ty.as_ref() {
-                Type::Path(path) if path.path.is_ident("String") => quote!(super::string_input(&arguments[#index])?),
-                Type::Path(path) if path.path.is_ident("usize") => quote!(super::usize_input(&arguments[#index])?),
+                Type::Path(path) if path.path.is_ident("String") => quote!(crate::host_value::with_rust_value::<rils_stdlib::stdlib::string::String, _>(&arguments[#index], Clone::clone)?),
+                Type::Path(path) if path.path.is_ident("usize") => quote!(arguments[#index].get_cloned::<usize>()?),
                 _ => return Err(Error::new_spanned(&parameter.ty, "unsupported string argument")),
             };
             Ok(value)
@@ -288,8 +300,11 @@ pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
                 if arguments.len() != #arity {
                     return Err(format!("{} expects {} arguments, found {}", stringify!(#name), #arity, arguments.len()));
                 }
-                let receiver = super::string_input(&arguments[0])?;
-                super::StringOutput::into_value(receiver.#name(#(#arguments),*))
+                crate::host_value::with_rust_value::<rils_stdlib::stdlib::string::String, _>(
+                    &arguments[0], |receiver| {
+                        crate::runtime_builtins::native_output::NativeOutput::into_value(receiver.#name(#(#arguments),*))
+                    },
+                )?
             })()),
         })
     }).collect::<syn::Result<Vec<_>>>();

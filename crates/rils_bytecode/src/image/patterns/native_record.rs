@@ -41,9 +41,11 @@ pub(super) fn collect(
                 continue;
             }
             let field = match value {
-                Value::Dynamic(object) if !borrowed => NativeInstancePlace::new(object.clone())?
-                    .field(name)?
-                    .take()?,
+                Value::Dynamic(object) if !borrowed && value.as_reference().is_none() => {
+                    NativeInstancePlace::new(object.clone())?
+                        .field(name)?
+                        .take()?
+                }
                 _ => borrow_field(value, name)?,
             };
             collect_pattern_bindings(pattern, &field, bindings)?;

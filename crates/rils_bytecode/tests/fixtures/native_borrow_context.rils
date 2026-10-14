@@ -1,0 +1,6 @@
+struct Item { value: i32 }
+struct Holder { cell: RefCell<Item>, items: Vec<Item> }
+let mut items: Vec<Item> = Vec::new();
+items.push(Item { value: 7 });
+let cell: RefCell<Item> = RefCell::new(Item { value: 3 });
+Holder { cell: cell, items: items }

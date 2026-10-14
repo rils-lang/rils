@@ -8,13 +8,22 @@ use crate::{Type, environment::EnvironmentRef};
 
 use super::{HostObject, HostType, ReferenceValue, Value, record_layout::NativeLayoutProvider};
 
-mod callable;
-use callable::Callable;
+use super::callable::Callable;
 
 /// Compatibility read of a borrowed native value. Host leaves retain their
 /// opaque identity; this does not mark a non-Copy host object as Copy.
 pub fn clone_borrowed_view(view: DynamicValueRef<'_>) -> Result<DynamicValue, String> {
+    clone_borrowed_view_with(view, &mut |_| None)
+}
+
+pub(crate) fn clone_borrowed_view_with(
+    view: DynamicValueRef<'_>,
+    registered: &mut dyn FnMut(&DynamicValueRef<'_>) -> Option<Result<DynamicValue, String>>,
+) -> Result<DynamicValue, String> {
     rils_stdlib::native::registry().clone_borrowed_view_with(view, &mut |leaf| {
+        if let Some(value) = registered(leaf) {
+            return Some(value);
+        }
         let layout = match leaf.layout() {
             Ok(layout) => layout,
             Err(error) => return Some(Err(error)),
@@ -27,10 +36,6 @@ pub fn clone_borrowed_view(view: DynamicValueRef<'_>) -> Result<DynamicValue, St
                 .and_then(|object| encode_host(object, layout)),
         )
     })
-}
-
-pub fn clone_borrowed_element(value: &DynamicValue) -> Result<DynamicValue, String> {
-    clone_borrowed_view(value.view())
 }
 
 /// Preserve host subtype checks through native sums and indexed aggregates,
@@ -170,9 +175,11 @@ pub(super) fn encode_reference(
     value: Rc<ReferenceValue>,
     layout: Rc<DynamicLayout>,
 ) -> Result<DynamicValue, String> {
-    let actual = Type::of_value(&Value::Reference(value.clone()));
-    if actual.is_none_or(|actual| crate::types::merge_types(layout.rils_type(), &actual).is_none())
-    {
+    let actual = Type::Reference {
+        mutable: value.mutable,
+        inner: Box::new(value.referent_type()?),
+    };
+    if crate::types::merge_types(layout.rils_type(), &actual).is_none() {
         return Err(format!("reference does not match {}", layout.rils_type()));
     }
     DynamicValue::from_rust(layout, value)
@@ -185,7 +192,10 @@ pub(super) fn encode_callable(
     if !layout.rils_type().accepts(&value) {
         return Err(format!("callable does not match {}", layout.rils_type()));
     }
-    DynamicValue::from_rust(layout, Callable::from_value(value)?)
+    DynamicValue::from_rust(
+        layout,
+        value.callable().ok_or("value is not a call target")?,
+    )
 }
 
 pub(super) fn encode_host(
@@ -212,16 +222,8 @@ pub(super) fn is_execution_leaf(layout: &DynamicLayout) -> bool {
 
 pub(super) fn decode(value: DynamicValue) -> Result<Value, String> {
     let layout = value.descriptor();
-    if layout.is_rust_type::<Rc<ReferenceValue>>() {
-        value
-            .into_rust::<Rc<ReferenceValue>>()
-            .map(Value::Reference)
-            .map_err(|error| error.1)
-    } else if layout.is_rust_type::<Callable>() {
-        value
-            .into_rust::<Callable>()
-            .map(Callable::into_value)
-            .map_err(|error| error.1)
+    if layout.is_rust_type::<Rc<ReferenceValue>>() || layout.is_rust_type::<Callable>() {
+        super::native_instance::from_native(value, Rc::new(Default::default()))
     } else if layout.is_rust_type::<Rc<HostObject>>() {
         value
             .into_rust::<Rc<HostObject>>()
@@ -230,6 +232,35 @@ pub(super) fn decode(value: DynamicValue) -> Result<Value, String> {
     } else {
         Err("native payload is not a registered execution handle".into())
     }
+}
+
+pub(super) fn contains_noncopy_callable(view: DynamicValueRef<'_>) -> Result<bool, String> {
+    view.any_leaf(&mut |leaf| {
+        if leaf.layout()?.is_rust_type::<Callable>() {
+            leaf.with_rust::<Callable, _>(|callable| !callable.is_copy())
+        } else {
+            Ok(false)
+        }
+    })
+}
+
+/// Inspect leases directly through all active composed fields and branches.
+pub(super) fn visit_execution_handles(
+    view: DynamicValueRef<'_>,
+    visit: &mut dyn FnMut(&Value),
+) -> Result<(), String> {
+    view.any_leaf(&mut |leaf| {
+        let layout = leaf.layout()?;
+        if layout.is_rust_type::<Rc<ReferenceValue>>() {
+            leaf.with_rust::<Rc<ReferenceValue>, _>(|reference| {
+                visit(&Value::from_reference(reference.clone()))
+            })?;
+        } else if layout.is_rust_type::<Callable>() {
+            leaf.with_rust::<Callable, _>(|callable| visit(&callable.clone().into_value()))?;
+        }
+        Ok(false)
+    })?;
+    Ok(())
 }
 
 /// Inspect leases directly through all active composed fields and branches.

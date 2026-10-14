@@ -158,11 +158,26 @@ impl<V> DynamicObject<V> {
 
     /// Share an erased payload with a runtime that supplies another method table.
     pub fn rebind_shared<U>(&self) -> Result<DynamicObject<U>, String> {
+        self.rebind_shared_with_type(Rc::new(DynamicType::new(self.descriptor.layout_handle())))
+    }
+
+    /// Share the payload while retaining the receiving runtime's type metadata.
+    pub fn rebind_shared_with_type<U>(
+        &self,
+        descriptor: Rc<DynamicType<U>>,
+    ) -> Result<DynamicObject<U>, String> {
+        if !self
+            .descriptor
+            .layout()
+            .compatible_with(descriptor.layout())
+        {
+            return Err("dynamic value layout does not match its type".into());
+        }
         let Storage::Shared(value) = &self.storage else {
             return Err("dynamic value has no shared storage".into());
         };
         Ok(DynamicObject {
-            descriptor: Rc::new(DynamicType::new(self.descriptor.layout_handle())),
+            descriptor,
             storage: Storage::Shared(value.clone()),
         })
     }

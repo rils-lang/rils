@@ -59,7 +59,11 @@ fn native_return_consumers_move_non_clone_payloads() {
             ("VM", compiled.execute_value().unwrap()),
             ("loaded VM", loaded.execute_value().unwrap()),
         ] {
-            assert_eq!(value.as_i32(), Some(31), "{stage}: {source}");
+            assert_eq!(
+                value.get_cloned::<i32>().ok(),
+                Some(31),
+                "{stage}: {source}"
+            );
         }
     }
 }
@@ -102,9 +106,17 @@ fn declared_nominal_variants_use_composed_storage_in_both_backends() {
 #[test]
 fn nominal_option_payload_moves_out_without_a_legacy_snapshot() {
     let source = "struct Item { value: i32 } let wrapped: Option<Item> = Some(Item { value: 7 }); let item = wrapped.unwrap(); item.value";
-    assert_eq!(eval_value(source).unwrap().as_i32(), Some(7));
     assert_eq!(
-        compile(source).unwrap().execute_value().unwrap().as_i32(),
+        eval_value(source).unwrap().get_cloned::<i32>().ok(),
+        Some(7)
+    );
+    assert_eq!(
+        compile(source)
+            .unwrap()
+            .execute_value()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
         Some(7)
     );
 }
@@ -121,9 +133,17 @@ fn nominal_result_payload_moves_out() {
             11,
         ),
     ] {
-        assert_eq!(eval_value(source).unwrap().as_i32(), Some(expected));
         assert_eq!(
-            compile(source).unwrap().execute_value().unwrap().as_i32(),
+            eval_value(source).unwrap().get_cloned::<i32>().ok(),
+            Some(expected)
+        );
+        assert_eq!(
+            compile(source)
+                .unwrap()
+                .execute_value()
+                .unwrap()
+                .get_cloned::<i32>()
+                .ok(),
             Some(expected)
         );
     }
@@ -159,11 +179,14 @@ fn host_borrows_nominal_option_layout_without_materializing_fields() {
 #[test]
 fn nominal_option_tag_methods_borrow_without_cloning_payload() {
     let source = "struct Item { value: i32 } let wrapped: Option<Item> = Some(Item { value: 7 }); wrapped.is_some()";
-    assert!(matches!(eval_value(source).unwrap(), Value::Bool(true)));
-    assert!(matches!(
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
+    assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Bool(true)
-    ));
+        Value::from(rils::value::native_bool(true))
+    );
 }
 
 #[test]
@@ -179,9 +202,17 @@ fn nominal_option_in_declared_record_field_keeps_its_layout() {
         assert!(matches!(value, Value::Dynamic(_)), "{stage}");
     }
     let source = "struct Item { value: i32 } struct Holder { payload: Option<Item> } let holder = Holder { payload: Some(Item { value: 13 }) }; let item = holder.payload.unwrap(); item.value";
-    assert_eq!(eval_value(source).unwrap().as_i32(), Some(13));
     assert_eq!(
-        compile(source).unwrap().execute_value().unwrap().as_i32(),
+        eval_value(source).unwrap().get_cloned::<i32>().ok(),
+        Some(13)
+    );
+    assert_eq!(
+        compile(source)
+            .unwrap()
+            .execute_value()
+            .unwrap()
+            .get_cloned::<i32>()
+            .ok(),
         Some(13)
     );
 }
@@ -192,9 +223,17 @@ fn nominal_option_in_enum_record_field_moves_out() {
         "struct Item { value: i32 } enum Holder { Wrapped { payload: Option<Item> } } let holder = Holder::Wrapped { payload: Some(Item { value: 17 }) }; match holder { Holder::Wrapped { payload } => { let item = payload.unwrap(); item.value } }",
         "struct Item { value: i32 } enum Holder<T> { Wrapped { payload: Option<T> } } let holder: Holder<Item> = Holder::Wrapped { payload: Some(Item { value: 17 }) }; match holder { Holder::Wrapped { payload } => { let item = payload.unwrap(); item.value } }",
     ] {
-        assert_eq!(eval_value(source).unwrap().as_i32(), Some(17));
         assert_eq!(
-            compile(source).unwrap().execute_value().unwrap().as_i32(),
+            eval_value(source).unwrap().get_cloned::<i32>().ok(),
+            Some(17)
+        );
+        assert_eq!(
+            compile(source)
+                .unwrap()
+                .execute_value()
+                .unwrap()
+                .get_cloned::<i32>()
+                .ok(),
             Some(17)
         );
     }
@@ -254,9 +293,17 @@ fn nominal_sum_moves_out_of_enum_tuple_pattern() {
         "struct Item { value: i32 } enum Holder { Wrapped(Result<Item, string>) } let holder = Holder::Wrapped(Ok(Item { value: 19 })); match holder { Holder::Wrapped(payload) => { let item = payload.unwrap(); item.value } }",
         "struct Item { value: i32 } enum Holder<T> { Wrapped(Result<T, string>) } let holder = Holder::Wrapped(Ok(Item { value: 19 })); match holder { Holder::Wrapped(payload) => { let item = payload.unwrap(); item.value } }",
     ] {
-        assert_eq!(eval_value(source).unwrap().as_i32(), Some(19));
         assert_eq!(
-            compile(source).unwrap().execute_value().unwrap().as_i32(),
+            eval_value(source).unwrap().get_cloned::<i32>().ok(),
+            Some(19)
+        );
+        assert_eq!(
+            compile(source)
+                .unwrap()
+                .execute_value()
+                .unwrap()
+                .get_cloned::<i32>()
+                .ok(),
             Some(19)
         );
     }

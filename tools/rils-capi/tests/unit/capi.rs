@@ -1445,7 +1445,7 @@ fn exports_compiled_bytecode_to_memory_and_file() {
             .unwrap()
             .execute()
             .unwrap(),
-        Value::from_i32(42)
+        Value::from(rils_runtime::value::native_i32(42))
     );
 
     let mut small = vec![0; size - 1];
@@ -1481,7 +1481,7 @@ fn exports_compiled_bytecode_to_memory_and_file() {
     );
     assert_eq!(
         BytecodeModule::read_file(&path).unwrap().execute().unwrap(),
-        Value::from_i32(42)
+        Value::from(rils_runtime::value::native_i32(42))
     );
     std::fs::remove_file(path).unwrap();
     assert_eq!(rils_runtime_destroy(runtime), RILS_STATUS_OK);
@@ -1490,40 +1490,46 @@ fn exports_compiled_bytecode_to_memory_and_file() {
 #[test]
 fn scalar_value_protocol_round_trips_all_payload_shapes() {
     let values = [
-        Value::from_i8(-8),
-        Value::from_i16(i16::MIN),
-        Value::from_i32(i32::MIN),
-        Value::from_i64(i64::MIN),
-        Value::from_i128(i128::MIN + 42),
-        Value::from_isize(-9),
-        Value::from_u8(u8::MAX),
-        Value::from_u16(u16::MAX),
-        Value::from_u32(u32::MAX),
-        Value::from_u64(u64::MAX),
-        Value::from_u128(u128::MAX - 42),
-        Value::from_usize(9),
-        Value::I64(i64::MIN),
-        Value::I128(i128::MIN + 42),
-        Value::Isize(-9),
-        Value::U8(8),
-        Value::U64(u64::MAX),
-        Value::U128(u128::MAX - 42),
-        Value::Usize(9),
-        Value::F32(1.25),
-        Value::F64(-2.5),
-        Value::from_f32(-0.0),
-        Value::from_f64(3.25),
-        Value::from_char('你'),
-        Value::Char('你'),
+        Value::from(rils_runtime::value::native_i8(-8)),
+        Value::from(rils_runtime::value::native_i16(i16::MIN)),
+        Value::from(rils_runtime::value::native_i32(i32::MIN)),
+        Value::from(rils_runtime::value::native_i64(i64::MIN)),
+        Value::from(rils_runtime::value::native_i128(i128::MIN + 42)),
+        Value::from(rils_runtime::value::native_isize(-9)),
+        Value::from(rils_runtime::value::native_u8(u8::MAX)),
+        Value::from(rils_runtime::value::native_u16(u16::MAX)),
+        Value::from(rils_runtime::value::native_u32(u32::MAX)),
+        Value::from(rils_runtime::value::native_u64(u64::MAX)),
+        Value::from(rils_runtime::value::native_u128(u128::MAX - 42)),
+        Value::from(rils_runtime::value::native_usize(9)),
+        Value::from(rils_runtime::value::native_i64(i64::MIN)),
+        Value::from(rils_runtime::value::native_i128(i128::MIN + 42)),
+        Value::from(rils_runtime::value::native_isize(-9)),
+        Value::from(rils_runtime::value::native_u8(8)),
+        Value::from(rils_runtime::value::native_u64(u64::MAX)),
+        Value::from(rils_runtime::value::native_u128(u128::MAX - 42)),
+        Value::from(rils_runtime::value::native_usize(9)),
+        Value::from(rils_runtime::value::native_f32(1.25)),
+        Value::from(rils_runtime::value::native_f64(-2.5)),
+        Value::from(rils_runtime::value::native_f32(-0.0)),
+        Value::from(rils_runtime::value::native_f64(3.25)),
+        Value::from(rils_runtime::value::native_char('你')),
+        Value::from(rils_runtime::value::native_char('你')),
     ];
     for expected in values {
         let encoded = to_ffi_value(expected.clone(), "").unwrap();
         let decoded = from_ffi_value(encoded, None).unwrap();
-        if let Some(value) = expected.as_f32() {
-            assert_eq!(decoded.as_f32().unwrap().to_bits(), value.to_bits());
+        if let Ok(value) = expected.get_cloned::<f32>() {
+            assert_eq!(
+                decoded.get_cloned::<f32>().unwrap().to_bits(),
+                value.to_bits()
+            );
         }
-        if let Some(value) = expected.as_f64() {
-            assert_eq!(decoded.as_f64().unwrap().to_bits(), value.to_bits());
+        if let Ok(value) = expected.get_cloned::<f64>() {
+            assert_eq!(
+                decoded.get_cloned::<f64>().unwrap().to_bits(),
+                value.to_bits()
+            );
         }
         assert_eq!(decoded, expected);
     }

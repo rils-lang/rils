@@ -28,7 +28,7 @@ fn vec_deque_iterates_owned_user_records_in_queue_order() {
         let second = iterator.next().unwrap();
         first.value - second.value
     "#;
-    assert_both(source, Value::from_i32(2));
+    assert_both(source, Value::from(rils::value::native_i32(2)));
 }
 
 #[test]
@@ -41,5 +41,5 @@ fn binary_heap_supports_owned_for_iteration() {
         for value in heap { sum = sum + value; }
         sum
     "#;
-    assert_both(source, Value::from_i32(42));
+    assert_both(source, Value::from(rils::value::native_i32(42)));
 }

@@ -66,9 +66,6 @@ impl Inferencer<'_> {
                         };
                         self.host_functions.get(&qualified).cloned()
                     })
-                    .or_else(|| {
-                        crate::standard_library::standard_function_signature(&segments.join("::"))
-                    })
                     .map(|signature| signature.as_type())
                     .or_else(|| {
                         let (member, owner) = segments.split_last()?;
@@ -77,6 +74,10 @@ impl Inferencer<'_> {
                             member,
                         )
                         .map(|signature| signature.as_type())
+                    })
+                    .or_else(|| {
+                        crate::standard_library::standard_function_signature(&segments.join("::"))
+                            .map(|signature| signature.as_type())
                     })
                     .or_else(|| {
                         let [type_name, member] = segments else {

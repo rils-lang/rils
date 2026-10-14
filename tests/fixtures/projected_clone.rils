@@ -1,0 +1,26 @@
+struct Item { text: string }
+impl Clone for Item {
+    fn clone(&self) -> Self { Item { text: "custom" } }
+}
+
+fn check() -> bool {
+    let mut items = Vec::new();
+    items.push(Item { text: "source" });
+    let item_copy = items[0].clone();
+    let text_copy = items[0].text.clone();
+    let tuple = ("tuple",);
+    let array = ["array"];
+    let tuple_copy = tuple.0.clone();
+    let array_copy = array[0].clone();
+    let referenced_copy = {
+        let reference = &items;
+        reference[0].text.clone()
+    };
+    items[0].text = "changed";
+    item_copy.text == "custom"
+        && text_copy == "source"
+        && referenced_copy == "source"
+        && tuple_copy == "tuple"
+        && array_copy == "array"
+}
+check()

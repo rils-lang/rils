@@ -9,10 +9,13 @@ struct CallbackFailure;
 #[test]
 fn callback_and_bridge_errors_keep_distinct_types() {
     let symbol = "core::option::option::map";
-    let present = native_option(Some(Value::from_i32(1)), Type::I32);
+    let present = native_option(
+        Some(Value::from(rils_execution::value::native_i32(1))),
+        Type::I32,
+    );
     let failure = call_native_symbol_with_callback(
         symbol,
-        vec![present, Value::from_i32(0)],
+        vec![present, Value::from(rils_execution::value::native_i32(0))],
         &NativeOwnedContext::default(),
         Some(&Type::Option(Box::new(Type::I32))),
         &mut |_, _| Err::<Value, _>(CallbackFailure),
@@ -26,10 +29,13 @@ fn callback_and_bridge_errors_keep_distinct_types() {
 
     let failure = call_native_symbol_with_callback(
         symbol,
-        vec![Value::from_i32(1), Value::from_i32(0)],
+        vec![
+            Value::from(rils_execution::value::native_i32(1)),
+            Value::from(rils_execution::value::native_i32(0)),
+        ],
         &NativeOwnedContext::default(),
         Some(&Type::Option(Box::new(Type::I32))),
-        &mut |_, _| Ok::<_, CallbackFailure>(Value::from_i32(2)),
+        &mut |_, _| Ok::<_, CallbackFailure>(Value::from(rils_execution::value::native_i32(2))),
     )
     .unwrap()
     .unwrap_err();
@@ -39,21 +45,27 @@ fn callback_and_bridge_errors_keep_distinct_types() {
 #[test]
 fn filter_passes_a_shared_reference_and_skips_absent_values() {
     let symbol = "core::option::option::filter";
-    let present = native_option(Some(Value::from_i32(4)), Type::I32);
+    let present = native_option(
+        Some(Value::from(rils_execution::value::native_i32(4))),
+        Type::I32,
+    );
     let mut calls = 0;
     let kept = call_native_symbol_with_callback(
         symbol,
-        vec![present, Value::from_i32(0)],
+        vec![present, Value::from(rils_execution::value::native_i32(0))],
         &NativeOwnedContext::default(),
         Some(&Type::Option(Box::new(Type::I32))),
         &mut |_, arguments| {
             calls += 1;
-            let Value::Reference(reference) = &arguments[0] else {
+            let Some(reference) = arguments[0].as_reference() else {
                 panic!("filter predicate must receive a shared reference");
             };
             assert!(!reference.mutable);
-            assert_eq!(reference.read().unwrap(), Value::from_i32(4));
-            Ok::<_, CallbackFailure>(Value::Bool(true))
+            assert_eq!(
+                reference.read().unwrap(),
+                Value::from(rils_execution::value::native_i32(4))
+            );
+            Ok::<_, CallbackFailure>(Value::from(rils_execution::value::native_bool(true)))
         },
     )
     .unwrap()
@@ -69,7 +81,7 @@ fn filter_passes_a_shared_reference_and_skips_absent_values() {
     let absent = native_option(None, Type::I32);
     let skipped = call_native_symbol_with_callback(
         symbol,
-        vec![absent, Value::from_i32(0)],
+        vec![absent, Value::from(rils_execution::value::native_i32(0))],
         &NativeOwnedContext::default(),
         Some(&Type::Option(Box::new(Type::I32))),
         &mut |_, _| -> Result<Value, CallbackFailure> {
@@ -85,13 +97,16 @@ fn filter_passes_a_shared_reference_and_skips_absent_values() {
             .is_none()
     );
 
-    let present = native_option(Some(Value::from_i32(4)), Type::I32);
+    let present = native_option(
+        Some(Value::from(rils_execution::value::native_i32(4))),
+        Type::I32,
+    );
     let failure = call_native_symbol_with_callback(
         symbol,
-        vec![present, Value::from_i32(0)],
+        vec![present, Value::from(rils_execution::value::native_i32(0))],
         &NativeOwnedContext::default(),
         Some(&Type::Option(Box::new(Type::I32))),
-        &mut |_, _| Ok::<_, CallbackFailure>(Value::from_i32(1)),
+        &mut |_, _| Ok::<_, CallbackFailure>(Value::from(rils_execution::value::native_i32(1))),
     )
     .unwrap()
     .unwrap_err();
@@ -102,22 +117,32 @@ fn filter_passes_a_shared_reference_and_skips_absent_values() {
 fn free_function_callback_symbols_are_registered() {
     let result = call_native_symbol_with_callback(
         "core::ops::apply_twice",
-        vec![Value::from_i32(1), Value::from_i32(0)],
+        vec![
+            Value::from(rils_execution::value::native_i32(1)),
+            Value::from(rils_execution::value::native_i32(0)),
+        ],
         &NativeOwnedContext::default(),
         Some(&Type::I32),
         &mut |_, values| {
-            let value = values[0].as_i32().expect("expected integer");
-            Ok::<_, CallbackFailure>(Value::from_i32(value + 1))
+            let value = values[0].get_cloned::<i32>().expect("expected integer");
+            Ok::<_, CallbackFailure>(Value::from(rils_execution::value::native_i32(value + 1)))
         },
     );
     assert!(result.is_some());
-    assert_eq!(result.unwrap().unwrap(), Value::from_i32(3));
+    assert_eq!(
+        result.unwrap().unwrap(),
+        Value::from(rils_execution::value::native_i32(3))
+    );
 }
 
 #[test]
 fn free_function_bridge_distinguishes_callback_and_arity_errors() {
     let symbol = "core::ops::chain";
-    let arguments = [Value::from_i32(0), Value::from_i32(4), Value::from_i32(1)];
+    let arguments = [
+        Value::from(rils_execution::value::native_i32(0)),
+        Value::from(rils_execution::value::native_i32(4)),
+        Value::from(rils_execution::value::native_i32(1)),
+    ];
     let callback_error = call_native_symbol_with_callback(
         symbol,
         arguments.to_vec(),
@@ -137,7 +162,7 @@ fn free_function_bridge_distinguishes_callback_and_arity_errors() {
         arguments[..2].to_vec(),
         &NativeOwnedContext::default(),
         Some(&Type::I32),
-        &mut |_, _| Ok::<_, CallbackFailure>(Value::from_i32(1)),
+        &mut |_, _| Ok::<_, CallbackFailure>(Value::from(rils_execution::value::native_i32(1))),
     )
     .unwrap()
     .unwrap_err();
@@ -157,10 +182,13 @@ fn native_option(value: Option<Value>, item: Type) -> Value {
 fn callback_transport_transfers_unique_native_owners() {
     let context = NativeOwnedContext::default();
     let expected = Type::Option(Box::new(Type::String));
-    let receiver = native_option(Some(Value::from_string("owned")), Type::String);
+    let receiver = native_option(
+        Some(Value::from(rils_execution::value::native_string("owned"))),
+        Type::String,
+    );
     let result = call_native_symbol_with_callback(
         "core::option::option::map",
-        vec![receiver, Value::Unit],
+        vec![receiver, Value::from(rils_execution::value::native_unit())],
         &context,
         Some(&expected),
         &mut |_, arguments| {
@@ -172,7 +200,9 @@ fn callback_transport_transfers_unique_native_owners() {
                 .into_rust::<rils_stdlib::stdlib::string::String>()
                 .map_err(|failure| failure.1)?;
             assert_eq!(std::string::String::from(string), "owned");
-            Ok::<_, String>(Value::from_string("returned"))
+            Ok::<_, String>(Value::from(rils_execution::value::native_string(
+                "returned",
+            )))
         },
     )
     .unwrap()
@@ -196,7 +226,10 @@ fn callback_transport_transfers_unique_native_owners() {
 
     let result = call_native_symbol_with_callback(
         "core::ops::apply_twice",
-        vec![Value::from_string("free"), Value::Unit],
+        vec![
+            Value::from(rils_execution::value::native_string("free")),
+            Value::from(rils_execution::value::native_unit()),
+        ],
         &context,
         Some(&Type::String),
         &mut |_, arguments| {
@@ -206,7 +239,9 @@ fn callback_transport_transfers_unique_native_owners() {
             let string = object
                 .into_rust::<rils_stdlib::stdlib::string::String>()
                 .map_err(|failure| failure.1)?;
-            Ok::<_, String>(Value::from_string(std::string::String::from(string)))
+            Ok::<_, String>(Value::from(rils_execution::value::native_string(
+                std::string::String::from(string),
+            )))
         },
     )
     .unwrap()
@@ -235,7 +270,10 @@ fn skipped_callbacks_require_complete_valid_output_layouts() {
     ] {
         let failure = call_native_symbol_with_callback(
             "core::option::option::map",
-            vec![native_option(None, Type::I32), Value::Unit],
+            vec![
+                native_option(None, Type::I32),
+                Value::from(rils_execution::value::native_unit()),
+            ],
             &context,
             expected.as_ref(),
             &mut |_, _| -> Result<Value, CallbackFailure> { panic!("must not invoke callback") },
@@ -247,7 +285,10 @@ fn skipped_callbacks_require_complete_valid_output_layouts() {
     let expected = Type::Option(Box::new(Type::String));
     let result = call_native_symbol_with_callback(
         "core::option::option::map",
-        vec![native_option(None, Type::I32), Value::Unit],
+        vec![
+            native_option(None, Type::I32),
+            Value::from(rils_execution::value::native_unit()),
+        ],
         &context,
         Some(&expected),
         &mut |_, _| -> Result<Value, CallbackFailure> { panic!("must not invoke callback") },
@@ -267,10 +308,18 @@ fn skipped_callbacks_require_complete_valid_output_layouts() {
 fn shared_non_copy_receivers_and_wrong_callback_results_are_rejected() {
     let context = NativeOwnedContext::default();
     let expected = Type::Option(Box::new(Type::String));
-    let retained = native_option(Some(Value::from_string("retained")), Type::String);
+    let retained = native_option(
+        Some(Value::from(rils_execution::value::native_string(
+            "retained",
+        ))),
+        Type::String,
+    );
     let error = call_native_symbol_with_callback(
         "core::option::option::map",
-        vec![retained.clone(), Value::Unit],
+        vec![
+            retained.clone(),
+            Value::from(rils_execution::value::native_unit()),
+        ],
         &context,
         Some(&expected),
         &mut |_, _| -> Result<Value, CallbackFailure> { panic!("must not invoke callback") },
@@ -280,23 +329,29 @@ fn shared_non_copy_receivers_and_wrong_callback_results_are_rejected() {
     assert!(matches!(error, NativeCallError::Bridge(message) if message.contains("shared")));
     assert_eq!(
         retained
-            .as_option()
+            .with_native_view(
+                |view| <String as rils_execution::RilsHostType>::with_composed_ref(
+                    view.option_item()?,
+                    Clone::clone
+                )
+            )
             .unwrap()
-            .0
-            .unwrap()
-            .as_string()
+            .ok()
             .as_deref(),
         Some("retained")
     );
     let error = call_native_symbol_with_callback(
         "core::option::option::map",
         vec![
-            native_option(Some(Value::from_i32(1)), Type::I32),
-            Value::Unit,
+            native_option(
+                Some(Value::from(rils_execution::value::native_i32(1))),
+                Type::I32,
+            ),
+            Value::from(rils_execution::value::native_unit()),
         ],
         &context,
         Some(&expected),
-        &mut |_, _| Ok::<_, CallbackFailure>(Value::Bool(true)),
+        &mut |_, _| Ok::<_, CallbackFailure>(Value::from(rils_execution::value::native_bool(true))),
     )
     .unwrap()
     .unwrap_err();
@@ -311,24 +366,31 @@ fn retaining_a_predicate_borrow_prevents_transfer_of_its_non_copy_owner() {
     let error = call_native_symbol_with_callback(
         "core::option::option::filter",
         vec![
-            native_option(Some(Value::from_string("borrowed")), Type::String),
-            Value::Unit,
+            native_option(
+                Some(Value::from(rils_execution::value::native_string(
+                    "borrowed",
+                ))),
+                Type::String,
+            ),
+            Value::from(rils_execution::value::native_unit()),
         ],
         &context,
         Some(&expected),
         &mut |_, arguments| {
             retained = arguments.into_iter().next();
-            Ok::<_, CallbackFailure>(Value::Bool(true))
+            Ok::<_, CallbackFailure>(Value::from(rils_execution::value::native_bool(true)))
         },
     )
     .unwrap()
     .unwrap_err();
     assert!(matches!(error, NativeCallError::Bridge(message) if message.contains("shared")));
-    let Value::Reference(reference) = retained.unwrap() else {
+    let Some(reference) = retained.unwrap().as_reference() else {
         panic!("predicate reference")
     };
-    assert_eq!(
-        reference.read().unwrap().as_string().as_deref(),
-        Some("borrowed")
+    assert!(reference.read().is_err());
+    assert!(
+        Value::from_reference(reference)
+            .with_ref::<String, _>(|text| text == "borrowed")
+            .unwrap()
     );
 }

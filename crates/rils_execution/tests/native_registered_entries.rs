@@ -1,42 +1,43 @@
-#![allow(clippy::mutable_key_type)]
 use rils_execution::{
     Type, Value,
     environment::Environment,
     iteration::{IntoIteratorResult, into_iterator, next_builtin},
-    value::{
-        BTreeMapValue, FieldSlot, HashKey, HashMapValue, ReferenceValue,
-        native_instance::NativeInstancePlace, storage::TypedStorageContext,
-    },
+    value::{ReferenceValue, native_instance::NativeInstancePlace, storage::TypedStorageContext},
 };
 use rils_value::{NativeChildren, NativeObject, NativeType};
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
+use std::{cell::Cell, rc::Rc};
 
 fn map(tree: bool, value: Value) -> Value {
     let ty = Type::of_value(&value).unwrap();
-    let entry = (
-        HashKey::from_value(&Value::from_i32(7)).unwrap(),
-        FieldSlot::new(ty.clone(), value),
+    let tuple = TypedStorageContext::new(&[], &[])
+        .construct_tuple(
+            &Type::Tuple(vec![Type::I32, ty.clone()]),
+            vec![Value::from(rils_execution::value::native_i32(7)), value],
+        )
+        .unwrap();
+    let Value::Dynamic(tuple) = tuple else {
+        panic!("native entry")
+    };
+    let codec = tuple
+        .descriptor()
+        .metadata::<rils_execution::value::record_codec::NativeRecordCodec>()
+        .unwrap();
+    let layout = rils_value::DynamicLayout::sequence(
+        Type::Named {
+            name: if tree { "BTreeMap" } else { "HashMap" }.into(),
+            arguments: vec![Type::I32, ty],
+        },
+        tuple.descriptor().layout_handle(),
     );
-    if tree {
-        Value::BTreeMap(Rc::new(BTreeMapValue {
-            option_storage: Default::default(),
-            borrowed: Cell::new(0),
-            entries: RefCell::new([entry].into()),
-            key_type: RefCell::new(Type::I32),
-            value_type: RefCell::new(ty),
-        }))
-    } else {
-        Value::HashMap(Rc::new(HashMapValue {
-            option_storage: Default::default(),
-            borrowed: Cell::new(0),
-            entries: RefCell::new([entry].into()),
-            key_type: RefCell::new(Type::I32),
-            value_type: RefCell::new(ty),
-        }))
-    }
+    rils_execution::value::native_instance::from_native(
+        rils_value::DynamicValue::sequence(
+            layout,
+            vec![tuple.into_value().map_err(|e| e.1).unwrap()],
+        )
+        .unwrap(),
+        codec,
+    )
+    .unwrap()
 }
 fn entry(source: Value) -> Value {
     let IntoIteratorResult::Ready(mut iterator) = into_iterator(source).unwrap() else {
@@ -68,7 +69,9 @@ fn custom_map_values_keep_bytes_methods_and_registration_across_nested_tuples() 
             NativeType::new::<Payload>(Type::named("Payload")).register_method(
                 "length",
                 |context| {
-                    context.receiver::<Payload, _>(|value| Value::from_usize(value.text.len()))
+                    context.receiver::<Payload, _>(|value| {
+                        Value::from(rils_execution::value::native_usize(value.text.len()))
+                    })
                 },
             ),
         );
@@ -103,7 +106,12 @@ fn custom_map_values_keep_bytes_methods_and_registration_across_nested_tuples() 
             Ok(address)
         );
         assert_eq!(
-            object.call("length", &[]).unwrap().unwrap().as_usize(),
+            object
+                .call("length", &[])
+                .unwrap()
+                .unwrap()
+                .get_cloned::<usize>()
+                .ok(),
             Some(8)
         );
         assert_eq!(drops.get(), 0);
@@ -111,6 +119,32 @@ fn custom_map_values_keep_bytes_methods_and_registration_across_nested_tuples() 
         field.assign(Value::Native(object)).unwrap();
         drop(field);
         drop(fields);
+        assert_eq!(drops.get(), 1);
+    }
+}
+
+#[test]
+fn abandoned_native_map_iterators_drop_non_clone_payloads_once() {
+    for tree in [false, true] {
+        let drops = Rc::new(Cell::new(0));
+        let descriptor = Rc::new(NativeType::new::<Payload>(Type::named("Payload")));
+        let payload = Value::from(
+            NativeObject::new(
+                descriptor,
+                Payload {
+                    text: "owned".into(),
+                    drops: drops.clone(),
+                },
+            )
+            .unwrap(),
+        );
+        let source = map(tree, payload);
+        assert_eq!(drops.get(), 0);
+        let IntoIteratorResult::Ready(iterator) = into_iterator(source).unwrap() else {
+            panic!("native map iterator")
+        };
+        assert_eq!(drops.get(), 0);
+        drop(iterator);
         assert_eq!(drops.get(), 1);
     }
 }
@@ -135,11 +169,15 @@ impl NativeChildren<Value> for Children {
 fn composed_registered_children_keep_lexical_origin_and_state_checks() {
     for tree in [false, true] {
         let environment = Environment::global();
-        environment
-            .borrow_mut()
-            .define("number", Value::from_i32(1), true, Some(Type::I32));
+        environment.borrow_mut().define(
+            "number",
+            Value::from(rils_execution::value::native_i32(1)),
+            true,
+            Some(Type::I32),
+        );
         let slot = environment.borrow().slot("number").unwrap();
-        let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true)));
+        let reference =
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true)));
         let active = Rc::new(Cell::new(false));
         let partial = Rc::new(Cell::new(false));
         let descriptor = Rc::new(
@@ -207,44 +245,15 @@ fn entry_copy_requires_explicit_native_registration() {
 }
 
 #[test]
-fn invalid_entry_types_fail_before_the_map_is_drained() {
-    for tree in [false, true] {
-        for ty in [Type::Unknown, Type::String] {
-            let source = map(tree, Value::from_i32(42));
-            match &source {
-                Value::HashMap(map) => *map.value_type.borrow_mut() = ty,
-                Value::BTreeMap(map) => *map.value_type.borrow_mut() = ty,
-                _ => unreachable!(),
-            }
-            assert!(into_iterator(source.clone()).is_err());
-            let len = match source {
-                Value::HashMap(map) => map.entries.borrow().len(),
-                Value::BTreeMap(map) => map.entries.borrow().len(),
-                _ => unreachable!(),
-            };
-            assert_eq!(len, 1);
-        }
-        let source = map(tree, Value::Unit);
-        match &source {
-            Value::HashMap(map) => map.entries.borrow_mut().clear(),
-            Value::BTreeMap(map) => map.entries.borrow_mut().clear(),
-            _ => unreachable!(),
-        }
-        let IntoIteratorResult::Ready(mut iterator) = into_iterator(source).unwrap() else {
-            panic!("iterator");
-        };
-        assert!(next_builtin(&mut iterator).unwrap().unwrap().is_none());
-    }
-}
-
-#[test]
 fn conflicting_native_registrations_are_rejected_instead_of_losing_operations() {
     let make = |result| {
         Value::Native(
             NativeObject::new(
                 Rc::new(
                     NativeType::new::<i32>(Type::named("Custom"))
-                        .register_method("method", move |_| Ok(Value::from_i32(result))),
+                        .register_method("method", move |_| {
+                            Ok(Value::from(rils_execution::value::native_i32(result)))
+                        }),
                 ),
                 1_i32,
             )

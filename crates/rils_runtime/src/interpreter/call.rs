@@ -39,24 +39,45 @@ impl Interpreter {
         environment: EnvironmentRef,
         expected: Option<&Type>,
     ) -> Result<Value, RuntimeError> {
-        let callee = match callee {
-            Value::BuiltinBoundMethod(method) if matches!(method.method, BuiltinMethod::Native(symbol) if crate::runtime_builtins::requires_owned_native_call(symbol)) =>
-            {
-                let method = Rc::try_unwrap(method)
-                    .map_err(|_| RuntimeError::new("native method receiver is shared", span))?;
-                let BuiltinMethod::Native(symbol) = method.method else {
-                    unreachable!("checked native method")
-                };
-                let receiver = Rc::try_unwrap(method.receiver)
-                    .map_err(|_| RuntimeError::new("native method receiver is shared", span))?;
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push(receiver);
-                values.extend(arguments);
-                return self.call_native_owned_symbol(symbol, values, expected, span, environment);
+        if let Some(function) = callee.as_callable::<crate::value::NativeFunction>()
+            && let NativeFunctionBody::Symbol(symbol) = function.body
+            && let Some(expected @ Type::Named { name, .. }) = expected
+            && rils_frontend::standard_library::empty_native_constructor_symbol(name)
+                == Some(symbol)
+            && arguments.is_empty()
+        {
+            if !expected.is_concrete_type() {
+                return Err(RuntimeError::new(
+                    format!(
+                        "cannot infer the type arguments of `{name}::new()`; add a type annotation or explicit type arguments"
+                    ),
+                    span,
+                ));
             }
-            other => other,
-        };
-        if let Value::NativeFunction(function) = &callee
+            let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                &environment.borrow(),
+            );
+            return context
+                .empty_collection(expected)
+                .map_err(|message| RuntimeError::new(message, span));
+        }
+        if let Some(method) = callee.as_callable::<crate::value::BuiltinBoundMethod>()
+            && matches!(method.method, BuiltinMethod::Native(symbol) if crate::runtime_builtins::requires_owned_native_call(symbol))
+        {
+            drop(callee);
+            let method = Rc::try_unwrap(method)
+                .map_err(|_| RuntimeError::new("native method receiver is shared", span))?;
+            let BuiltinMethod::Native(symbol) = method.method else {
+                unreachable!("checked native method")
+            };
+            let receiver = Rc::try_unwrap(method.receiver)
+                .map_err(|_| RuntimeError::new("native method receiver is shared", span))?;
+            let mut values = Vec::with_capacity(arguments.len() + 1);
+            values.push(receiver);
+            values.extend(arguments);
+            return self.call_native_owned_symbol(symbol, values, expected, span, environment);
+        }
+        if let Some(function) = callee.as_callable::<crate::value::NativeFunction>()
             && let NativeFunctionBody::Symbol(symbol) = function.body
             && crate::runtime_builtins::requires_owned_native_call(symbol)
         {
@@ -72,7 +93,7 @@ impl Interpreter {
                 self.call_native_owned_symbol(symbol, arguments, expected, span, environment)?;
             return validate_native_return(function.signature.as_ref(), value, span, function.name);
         }
-        if let Value::NativeFunction(function) = &callee
+        if let Some(function) = callee.as_callable::<crate::value::NativeFunction>()
             && let NativeFunctionBody::RustOwned(callback) = function.body
         {
             let native_context = crate::runtime_builtins::NativeOwnedContext::from_environment(
@@ -91,42 +112,69 @@ impl Interpreter {
             return validate_native_return(function.signature.as_ref(), value, span, function.name);
         }
         match callee {
-            Value::BoundMethod(method) => {
-                let (function, receiver) = match Rc::try_unwrap(method) {
-                    Ok(method) => {
-                        let receiver = Rc::try_unwrap(method.receiver)
-                            .or_else(|value| {
-                                if value.is_copy() {
-                                    value.clone_owned()
-                                } else {
-                                    Err("cannot consume a shared method receiver".into())
-                                }
-                            })
-                            .map_err(|message| RuntimeError::new(message, span))?;
-                        (method.function, receiver)
-                    }
-                    Err(method) if method.receiver.is_copy() => (
-                        method.function.clone(),
-                        method
-                            .receiver
-                            .clone_owned()
-                            .map_err(|message| RuntimeError::new(message, span))?,
-                    ),
-                    Err(_) => {
-                        return Err(RuntimeError::new(
-                            "cannot consume a shared method receiver",
-                            span,
-                        ));
-                    }
-                };
-                let mut values = Vec::with_capacity(arguments.len() + 1);
-                values.push(receiver);
-                values.extend(arguments);
-                return self.call_user_function(function, values, span);
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::BoundMethod>()
+                    .is_some() =>
+            {
+                let method = callable_value
+                    .into_callable::<crate::value::BoundMethod>()
+                    .expect("checked call target");
+                {
+                    let (function, receiver) = match Rc::try_unwrap(method) {
+                        Ok(method) => {
+                            let receiver = Rc::try_unwrap(method.receiver)
+                                .or_else(|value| {
+                                    if value.is_copy() {
+                                        value.clone_owned()
+                                    } else {
+                                        Err("cannot consume a shared method receiver".into())
+                                    }
+                                })
+                                .map_err(|message| RuntimeError::new(message, span))?;
+                            (method.function, receiver)
+                        }
+                        Err(method) if method.receiver.is_copy() => (
+                            method.function.clone(),
+                            method
+                                .receiver
+                                .clone_owned()
+                                .map_err(|message| RuntimeError::new(message, span))?,
+                        ),
+                        Err(_) => {
+                            return Err(RuntimeError::new(
+                                "cannot consume a shared method receiver",
+                                span,
+                            ));
+                        }
+                    };
+                    let mut values = Vec::with_capacity(arguments.len() + 1);
+                    values.push(receiver);
+                    values.extend(arguments);
+                    return self.call_user_function(function, values, span);
+                }
             }
-            Value::Function(function) => return self.call_user_function(function, arguments, span),
-            Value::VariantConstructor(constructor) => {
-                return self.construct_tuple_variant(constructor, arguments, span, None);
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::UserFunction>()
+                    .is_some() =>
+            {
+                let function = callable_value
+                    .into_callable::<crate::value::UserFunction>()
+                    .expect("checked call target");
+                return self.call_user_function(function, arguments, span);
+            }
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::VariantConstructor>()
+                    .is_some() =>
+            {
+                let constructor = callable_value
+                    .into_callable::<crate::value::VariantConstructor>()
+                    .expect("checked call target");
+                {
+                    return self.construct_tuple_variant(constructor, arguments, span, None);
+                }
             }
             _ => {}
         }
@@ -139,7 +187,7 @@ impl Interpreter {
         arguments: &[Value],
         span: Span,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Function(function) = callee {
+        if let Some(function) = callee.as_callable::<crate::value::UserFunction>() {
             return self.call_user_function(function, arguments.to_vec(), span);
         }
         self.call_non_user(callee, arguments, span)
@@ -152,328 +200,426 @@ impl Interpreter {
         span: Span,
     ) -> Result<Value, RuntimeError> {
         match callee {
-            Value::BuiltinFunction(function) => match function {
-                BuiltinFunction::IntegerIntrinsic { symbol, target } => {
-                    check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
-                    let (intrinsic, _) = rils_builtins::intrinsic_by_symbol(symbol)
-                        .expect("integer intrinsic symbol remains registered");
-                    crate::numeric::execute_integer_intrinsic(
-                        intrinsic.symbol,
-                        Some(target),
-                        arguments,
-                    )
-                    .map_err(|message| RuntimeError::new(message, span))
-                }
-            },
-            Value::NativeFunction(function) => {
-                check_arity(
-                    function.name,
-                    function.min_arity,
-                    function.max_arity,
-                    arguments.len(),
-                    span,
-                )?;
-                validate_native_arguments(function.signature.as_ref(), arguments, span)?;
-                if matches!(
-                    function.binding_name,
-                    "#rils_native_print" | "#rils_native_println"
-                ) {
-                    if arguments.is_empty() && function.binding_name == "#rils_native_println" {
-                        (self.output_handler)("", true)
-                            .map_err(|message| RuntimeError::new(message, span))?;
-                        return Ok(Value::Unit);
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::BuiltinFunction>()
+                    .is_some() =>
+            {
+                let function = callable_value
+                    .into_callable::<crate::value::BuiltinFunction>()
+                    .expect("checked call target");
+                match *function {
+                    BuiltinFunction::IntegerIntrinsic { symbol, target } => {
+                        check_arity("integer intrinsic", 1, 1, arguments.len(), span)?;
+                        let (intrinsic, _) = rils_builtins::intrinsic_by_symbol(symbol)
+                            .expect("integer intrinsic symbol remains registered");
+                        crate::numeric::execute_integer_intrinsic(
+                            intrinsic.symbol,
+                            Some(target),
+                            arguments,
+                        )
+                        .map_err(|message| RuntimeError::new(message, span))
                     }
-                    let Some(format) = arguments.first().and_then(Value::as_string) else {
-                        return Err(RuntimeError::new(
-                            format!("{}! requires a format string", function.name),
-                            span,
-                        ));
-                    };
-                    let output = self.format_arguments(&format, &arguments[1..], span)?;
-                    (self.output_handler)(&output, function.binding_name == "#rils_native_println")
+                }
+            }
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::NativeFunction>()
+                    .is_some() =>
+            {
+                let function = callable_value
+                    .into_callable::<crate::value::NativeFunction>()
+                    .expect("checked call target");
+                {
+                    check_arity(
+                        function.name,
+                        function.min_arity,
+                        function.max_arity,
+                        arguments.len(),
+                        span,
+                    )?;
+                    validate_native_arguments(function.signature.as_ref(), arguments, span)?;
+                    if matches!(
+                        function.binding_name,
+                        "#rils_native_print" | "#rils_native_println"
+                    ) {
+                        if arguments.is_empty() && function.binding_name == "#rils_native_println" {
+                            (self.output_handler)("", true)
+                                .map_err(|message| RuntimeError::new(message, span))?;
+                            return Ok(Value::from(rils_execution::value::native_unit()));
+                        }
+                        let Some(format) = arguments
+                            .first()
+                            .and_then(|value| value.get_cloned::<String>().ok())
+                        else {
+                            return Err(RuntimeError::new(
+                                format!("{}! requires a format string", function.name),
+                                span,
+                            ));
+                        };
+                        let output = self.format_arguments(&format, &arguments[1..], span)?;
+                        (self.output_handler)(
+                            &output,
+                            function.binding_name == "#rils_native_println",
+                        )
                         .map_err(|message| RuntimeError::new(message, span))?;
-                    return Ok(Value::Unit);
+                        return Ok(Value::from(rils_execution::value::native_unit()));
+                    }
+                    let value = match function.body {
+                        NativeFunctionBody::Rust(callback) => callback(arguments)
+                            .map_err(|message| RuntimeError::new(message, span))?,
+                        NativeFunctionBody::RustOwned(callback) => {
+                            let owned = arguments
+                                .iter()
+                                .map(Value::clone_owned)
+                                .collect::<Result<Vec<_>, _>>()
+                                .map_err(|message| RuntimeError::new(message, span))?;
+                            let context =
+                                crate::runtime_builtins::NativeOwnedContext::from_environment(
+                                    &self.globals.borrow(),
+                                );
+                            callback(owned, &context, None)
+                                .map_err(|message| RuntimeError::new(message, span))?
+                        }
+                        NativeFunctionBody::Symbol(symbol) => {
+                            self.call_native_symbol(symbol, arguments, span)?
+                        }
+                    };
+                    validate_native_return(function.signature.as_ref(), value, span, function.name)
                 }
-                let value = match function.body {
-                    NativeFunctionBody::Rust(callback) => {
-                        callback(arguments).map_err(|message| RuntimeError::new(message, span))?
-                    }
-                    NativeFunctionBody::RustOwned(callback) => {
-                        let owned = arguments
-                            .iter()
-                            .map(Value::clone_owned)
-                            .collect::<Result<Vec<_>, _>>()
-                            .map_err(|message| RuntimeError::new(message, span))?;
-                        let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
-                            &self.globals.borrow(),
-                        );
-                        callback(owned, &context, None)
-                            .map_err(|message| RuntimeError::new(message, span))?
-                    }
-                    NativeFunctionBody::Symbol(symbol) => {
-                        self.call_native_symbol(symbol, arguments, span)?
-                    }
-                };
-                validate_native_return(function.signature.as_ref(), value, span, function.name)
             }
-            Value::HostFunction(function) => {
-                check_arity(
-                    &function.name,
-                    function.min_arity,
-                    function.max_arity,
-                    arguments.len(),
-                    span,
-                )?;
-                validate_native_arguments(function.signature.as_ref(), arguments, span)?;
-                let arguments = rils_execution::native_arguments::prepare(
-                    function.signature.as_ref(),
-                    arguments,
-                    |value, spec| self.format_value(value, spec, span),
-                )?;
-                let value = (function.function)(&arguments)
-                    .map_err(|message| RuntimeError::new(message, span))?;
-                validate_native_return(function.signature.as_ref(), value, span, &function.name)
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::HostFunction>()
+                    .is_some() =>
+            {
+                let function = callable_value
+                    .into_callable::<crate::value::HostFunction>()
+                    .expect("checked call target");
+                {
+                    check_arity(
+                        &function.name,
+                        function.min_arity,
+                        function.max_arity,
+                        arguments.len(),
+                        span,
+                    )?;
+                    validate_native_arguments(function.signature.as_ref(), arguments, span)?;
+                    let arguments = rils_execution::native_arguments::prepare(
+                        function.signature.as_ref(),
+                        arguments,
+                        |value, spec| self.format_value(value, spec, span),
+                    )?;
+                    let value = (function.function)(&arguments)
+                        .map_err(|message| RuntimeError::new(message, span))?;
+                    validate_native_return(function.signature.as_ref(), value, span, &function.name)
+                }
             }
-            Value::HostBoundMethod(method) => {
-                check_arity(
-                    &method.function.name,
-                    method.function.min_arity,
-                    method.function.max_arity,
-                    arguments.len(),
-                    span,
-                )?;
-                let mut method_arguments = Vec::with_capacity(arguments.len() + 1);
-                method_arguments.push((*method.receiver).clone());
-                method_arguments.extend_from_slice(arguments);
-                validate_native_arguments(method.function.signature.as_ref(), arguments, span)?;
-                let value = (method.function.function)(&method_arguments)
-                    .map_err(|message| RuntimeError::new(message, span))?;
-                validate_native_return(
-                    method.function.signature.as_ref(),
-                    value,
-                    span,
-                    &method.function.name,
-                )
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::HostBoundMethod>()
+                    .is_some() =>
+            {
+                let method = callable_value
+                    .into_callable::<crate::value::HostBoundMethod>()
+                    .expect("checked call target");
+                {
+                    check_arity(
+                        &method.function.name,
+                        method.function.min_arity,
+                        method.function.max_arity,
+                        arguments.len(),
+                        span,
+                    )?;
+                    let mut method_arguments = Vec::with_capacity(arguments.len() + 1);
+                    method_arguments.push((*method.receiver).clone());
+                    method_arguments.extend_from_slice(arguments);
+                    validate_native_arguments(method.function.signature.as_ref(), arguments, span)?;
+                    let value = (method.function.function)(&method_arguments)
+                        .map_err(|message| RuntimeError::new(message, span))?;
+                    validate_native_return(
+                        method.function.signature.as_ref(),
+                        value,
+                        span,
+                        &method.function.name,
+                    )
+                }
             }
-            Value::Function(_) => unreachable!("user functions use the call fast path"),
-            Value::BoundMethod(method) => {
-                let mut method_arguments = Vec::with_capacity(arguments.len() + 1);
-                method_arguments.push((*method.receiver).clone());
-                method_arguments.extend_from_slice(arguments);
-                self.call(
-                    Value::Function(method.function.clone()),
-                    &method_arguments,
-                    span,
-                )
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::UserFunction>()
+                    .is_some() =>
+            {
+                unreachable!("user functions use the call fast path")
             }
-            Value::BuiltinBoundMethod(method) => self.call_builtin_method(&method, arguments, span),
-            Value::TraitMethodSelector(selector) => {
-                if selector.trait_name == "Default" && selector.method_name == "default" {
-                    check_arity("Default::default", 0, 0, arguments.len(), span)?;
-                    let target = selector.target.as_ref().ok_or_else(|| {
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::BoundMethod>()
+                    .is_some() =>
+            {
+                let method = callable_value
+                    .into_callable::<crate::value::BoundMethod>()
+                    .expect("checked call target");
+                {
+                    let mut method_arguments = Vec::with_capacity(arguments.len() + 1);
+                    method_arguments.push((*method.receiver).clone());
+                    method_arguments.extend_from_slice(arguments);
+                    self.call(
+                        Value::from_callable(method.function.clone()),
+                        &method_arguments,
+                        span,
+                    )
+                }
+            }
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::BuiltinBoundMethod>()
+                    .is_some() =>
+            {
+                let method = callable_value
+                    .into_callable::<crate::value::BuiltinBoundMethod>()
+                    .expect("checked call target");
+                self.call_builtin_method(&method, arguments, span)
+            }
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::TraitMethodSelector>()
+                    .is_some() =>
+            {
+                let selector = callable_value
+                    .into_callable::<crate::value::TraitMethodSelector>()
+                    .expect("checked call target");
+                {
+                    if selector.trait_name == "Default" && selector.method_name == "default" {
+                        check_arity("Default::default", 0, 0, arguments.len(), span)?;
+                        let target = selector.target.as_ref().ok_or_else(|| {
                         RuntimeError::new(
                             "`Default::default()` requires a type context; use `<Type as Default>::default()`",
                             span,
                         )
                     })?;
-                    let target = expand_type_aliases(target, &selector.environment, span)?;
-                    let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
-                        &selector.environment.borrow(),
-                    );
-                    if let Some(value) = builtin_default_value(&target, &context)
-                        .map_err(|message| RuntimeError::new(message, span))?
-                    {
-                        return Ok(value);
+                        let target = expand_type_aliases(target, &selector.environment, span)?;
+                        let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                            &selector.environment.borrow(),
+                        );
+                        if let Some(value) = builtin_default_value(&target, &context)
+                            .map_err(|message| RuntimeError::new(message, span))?
+                        {
+                            return Ok(value);
+                        }
+                        let Type::Named { name, .. } = &target else {
+                            return Err(RuntimeError::new(
+                                format!("type `{target}` does not implement Default"),
+                                span,
+                            ));
+                        };
+                        let value = selector
+                            .environment
+                            .borrow()
+                            .get_declaration(name)
+                            .ok_or_else(|| {
+                                RuntimeError::new(format!("unknown Default target `{name}`"), span)
+                            })?;
+                        let function = match value {
+                            crate::value::Declaration::StructType(definition) => definition
+                                .trait_methods
+                                .borrow()
+                                .get("Default")
+                                .and_then(|methods| methods.get("default"))
+                                .cloned(),
+                            crate::value::Declaration::EnumType(definition) => definition
+                                .trait_methods
+                                .borrow()
+                                .get("Default")
+                                .and_then(|methods| methods.get("default"))
+                                .cloned(),
+                            _ => None,
+                        }
+                        .ok_or_else(|| {
+                            RuntimeError::new(
+                                format!("type `{target}` does not implement Default"),
+                                span,
+                            )
+                        })?;
+                        return self.call(Value::from_callable(function), &[], span);
                     }
-                    let Type::Named { name, .. } = &target else {
+                    check_arity(
+                        &format!("{}::{}", selector.trait_name, selector.method_name),
+                        1,
+                        usize::MAX,
+                        arguments.len(),
+                        span,
+                    )?;
+                    let receiver = arguments.first().expect("arity checked");
+                    let actual = Type::of_value(receiver).ok_or_else(|| {
+                        RuntimeError::new("trait method receiver has no runtime type", span)
+                    })?;
+                    let actual_target = match &actual {
+                        Type::Reference { inner, .. } => inner.as_ref(),
+                        actual => actual,
+                    };
+                    if let Some(expected) = &selector.target {
+                        let expected = expand_type_aliases(expected, &selector.environment, span)?;
+                        if !matches!(expected, Type::Variable(_) | Type::Unknown)
+                            && merge_types(&expected, actual_target).is_none()
+                        {
+                            return Err(RuntimeError::new(
+                                format!(
+                                    "qualified trait method expects `{expected}`, found `{actual_target}`"
+                                ),
+                                span,
+                            ));
+                        }
+                    }
+                    let has_explicit_clone = if selector.trait_name == "Clone"
+                        && selector.method_name == "clone"
+                    {
+                        match actual_target {
+                            Type::Named { name, .. } => {
+                                match selector.environment.borrow().get_declaration(name) {
+                                    Some(crate::value::Declaration::StructType(definition)) => {
+                                        definition
+                                            .trait_methods
+                                            .borrow()
+                                            .get("Clone")
+                                            .is_some_and(|methods| methods.contains_key("clone"))
+                                    }
+                                    Some(crate::value::Declaration::EnumType(definition)) => {
+                                        definition
+                                            .trait_methods
+                                            .borrow()
+                                            .get("Clone")
+                                            .is_some_and(|methods| methods.contains_key("clone"))
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
+                    if selector.trait_name == "Clone"
+                        && selector.method_name == "clone"
+                        && !has_explicit_clone
+                        && type_implements_trait(actual_target, "Clone", &selector.environment)
+                    {
+                        return self.call(
+                            Value::from_callable(Rc::new(BuiltinBoundMethod {
+                                receiver: Rc::new(receiver.clone()),
+                                method: clone_method(),
+                            })),
+                            &arguments[1..],
+                            span,
+                        );
+                    }
+                    if selector.trait_name == "IntoIterator"
+                        && selector.method_name == "into_iter"
+                        && type_implements_trait(actual_target, "Iterator", &selector.environment)
+                    {
+                        return self.call(
+                            Value::from_callable(Rc::new(BuiltinBoundMethod {
+                                receiver: Rc::new(receiver.clone()),
+                                method: BuiltinMethod::IteratorIdentity,
+                            })),
+                            &arguments[1..],
+                            span,
+                        );
+                    }
+                    if selector.trait_name == "IntoIterator"
+                        && selector.method_name == "into_iter"
+                        && (matches!(actual_target, Type::Array { .. })
+                            || matches!(actual_target, Type::Named { name, .. } if name == "Vec"))
+                    {
+                        let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
+                            &selector.environment.borrow(),
+                        );
+                        return match rils_execution::iteration::into_iterator_with_context(
+                            receiver.clone(),
+                            &context,
+                        )
+                        .map_err(|message| RuntimeError::new(message, span))?
+                        {
+                            rils_execution::iteration::IntoIteratorResult::Ready(value) => {
+                                Ok(value)
+                            }
+                            rils_execution::iteration::IntoIteratorResult::UserDefined(_) => Err(
+                                RuntimeError::new("value does not implement IntoIterator", span),
+                            ),
+                        };
+                    }
+                    let trait_name = selector
+                        .trait_name
+                        .rsplit("::")
+                        .next()
+                        .unwrap_or(&selector.trait_name);
+                    if let Some(trait_member) = rils_builtins::builtin(trait_name)
+                        .filter(|declaration| declaration.kind == rils_builtins::BuiltinKind::Trait)
+                        .and_then(|declaration| declaration.member(&selector.method_name))
+                        && rils_frontend::standard_library::builtin_member_for_type(
+                            actual_target,
+                            &selector.method_name,
+                        )
+                        .is_some()
+                        && let Some(symbol) = trait_member.native_symbol
+                    {
+                        return self.call(
+                            Value::from_callable(Rc::new(BuiltinBoundMethod {
+                                receiver: Rc::new(receiver.clone()),
+                                method: BuiltinMethod::Native(symbol),
+                            })),
+                            &arguments[1..],
+                            span,
+                        );
+                    }
+                    let Type::Named { name, .. } = actual_target else {
                         return Err(RuntimeError::new(
-                            format!("type `{target}` does not implement Default"),
+                            format!("type `{actual_target}` cannot implement traits"),
                             span,
                         ));
                     };
-                    let value = selector.environment.borrow().get(name).ok_or_else(|| {
-                        RuntimeError::new(format!("unknown Default target `{name}`"), span)
-                    })?;
-                    let function = match value {
-                        Value::StructType(definition) => definition
+                    let target = selector
+                        .environment
+                        .borrow()
+                        .get_declaration(name)
+                        .ok_or_else(|| {
+                            RuntimeError::new(format!("unknown trait method target `{name}`"), span)
+                        })?;
+                    let function = match target {
+                        crate::value::Declaration::StructType(definition) => definition
                             .trait_methods
                             .borrow()
-                            .get("Default")
-                            .and_then(|methods| methods.get("default"))
+                            .get(&selector.trait_name)
+                            .and_then(|methods| methods.get(&selector.method_name))
                             .cloned(),
-                        Value::EnumType(definition) => definition
+                        crate::value::Declaration::EnumType(definition) => definition
                             .trait_methods
                             .borrow()
-                            .get("Default")
-                            .and_then(|methods| methods.get("default"))
+                            .get(&selector.trait_name)
+                            .and_then(|methods| methods.get(&selector.method_name))
                             .cloned(),
                         _ => None,
                     }
                     .ok_or_else(|| {
                         RuntimeError::new(
-                            format!("type `{target}` does not implement Default"),
+                            format!(
+                                "type `{name}` does not implement `{}::{}`",
+                                selector.trait_name, selector.method_name
+                            ),
                             span,
                         )
                     })?;
-                    return self.call(Value::Function(function), &[], span);
+                    self.call(Value::from_callable(function), arguments, span)
                 }
-                check_arity(
-                    &format!("{}::{}", selector.trait_name, selector.method_name),
-                    1,
-                    usize::MAX,
-                    arguments.len(),
-                    span,
-                )?;
-                let receiver = arguments.first().expect("arity checked");
-                let actual = Type::of_value(receiver).ok_or_else(|| {
-                    RuntimeError::new("trait method receiver has no runtime type", span)
-                })?;
-                let actual_target = match &actual {
-                    Type::Reference { inner, .. } => inner.as_ref(),
-                    actual => actual,
-                };
-                if let Some(expected) = &selector.target {
-                    let expected = expand_type_aliases(expected, &selector.environment, span)?;
-                    if !matches!(expected, Type::Variable(_) | Type::Unknown)
-                        && merge_types(&expected, actual_target).is_none()
-                    {
-                        return Err(RuntimeError::new(
-                            format!(
-                                "qualified trait method expects `{expected}`, found `{actual_target}`"
-                            ),
-                            span,
-                        ));
-                    }
-                }
-                let has_explicit_clone = if selector.trait_name == "Clone"
-                    && selector.method_name == "clone"
-                {
-                    match actual_target {
-                        Type::Named { name, .. } => match selector.environment.borrow().get(name) {
-                            Some(Value::StructType(definition)) => definition
-                                .trait_methods
-                                .borrow()
-                                .get("Clone")
-                                .is_some_and(|methods| methods.contains_key("clone")),
-                            Some(Value::EnumType(definition)) => definition
-                                .trait_methods
-                                .borrow()
-                                .get("Clone")
-                                .is_some_and(|methods| methods.contains_key("clone")),
-                            _ => false,
-                        },
-                        _ => false,
-                    }
-                } else {
-                    false
-                };
-                if selector.trait_name == "Clone"
-                    && selector.method_name == "clone"
-                    && !has_explicit_clone
-                    && type_implements_trait(actual_target, "Clone", &selector.environment)
-                {
-                    return self.call(
-                        Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(receiver.clone()),
-                            method: clone_method(),
-                        })),
-                        &arguments[1..],
-                        span,
-                    );
-                }
-                if selector.trait_name == "IntoIterator"
-                    && selector.method_name == "into_iter"
-                    && type_implements_trait(actual_target, "Iterator", &selector.environment)
-                {
-                    return self.call(
-                        Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(receiver.clone()),
-                            method: BuiltinMethod::IteratorIdentity,
-                        })),
-                        &arguments[1..],
-                        span,
-                    );
-                }
-                if selector.trait_name == "IntoIterator"
-                    && selector.method_name == "into_iter"
-                    && (matches!(actual_target, Type::Array { .. })
-                        || matches!(actual_target, Type::Named { name, .. } if name == "Vec"))
-                {
-                    let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
-                        &selector.environment.borrow(),
-                    );
-                    return match rils_execution::iteration::into_iterator_with_context(
-                        receiver.clone(),
-                        &context,
-                    )
-                    .map_err(|message| RuntimeError::new(message, span))?
-                    {
-                        rils_execution::iteration::IntoIteratorResult::Ready(value) => Ok(value),
-                        rils_execution::iteration::IntoIteratorResult::UserDefined(_) => Err(
-                            RuntimeError::new("value does not implement IntoIterator", span),
-                        ),
-                    };
-                }
-                let trait_name = selector
-                    .trait_name
-                    .rsplit("::")
-                    .next()
-                    .unwrap_or(&selector.trait_name);
-                if let Some(trait_member) = rils_builtins::builtin(trait_name)
-                    .filter(|declaration| declaration.kind == rils_builtins::BuiltinKind::Trait)
-                    .and_then(|declaration| declaration.member(&selector.method_name))
-                    && rils_frontend::standard_library::builtin_member_for_type(
-                        actual_target,
-                        &selector.method_name,
-                    )
-                    .is_some()
-                    && let Some(symbol) = trait_member.native_symbol
-                {
-                    return self.call(
-                        Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
-                            receiver: Rc::new(receiver.clone()),
-                            method: BuiltinMethod::Native(symbol),
-                        })),
-                        &arguments[1..],
-                        span,
-                    );
-                }
-                let Type::Named { name, .. } = actual_target else {
-                    return Err(RuntimeError::new(
-                        format!("type `{actual_target}` cannot implement traits"),
-                        span,
-                    ));
-                };
-                let target = selector.environment.borrow().get(name).ok_or_else(|| {
-                    RuntimeError::new(format!("unknown trait method target `{name}`"), span)
-                })?;
-                let function = match target {
-                    Value::StructType(definition) => definition
-                        .trait_methods
-                        .borrow()
-                        .get(&selector.trait_name)
-                        .and_then(|methods| methods.get(&selector.method_name))
-                        .cloned(),
-                    Value::EnumType(definition) => definition
-                        .trait_methods
-                        .borrow()
-                        .get(&selector.trait_name)
-                        .and_then(|methods| methods.get(&selector.method_name))
-                        .cloned(),
-                    _ => None,
-                }
-                .ok_or_else(|| {
-                    RuntimeError::new(
-                        format!(
-                            "type `{name}` does not implement `{}::{}`",
-                            selector.trait_name, selector.method_name
-                        ),
-                        span,
-                    )
-                })?;
-                self.call(Value::Function(function), arguments, span)
             }
-            Value::VariantConstructor(constructor) => {
+            callable_value
+                if callable_value
+                    .as_callable::<crate::value::VariantConstructor>()
+                    .is_some() =>
+            {
+                let constructor = callable_value
+                    .into_callable::<crate::value::VariantConstructor>()
+                    .expect("checked call target");
                 self.construct_tuple_variant(constructor, arguments.to_vec(), span, None)
             }
             value => Err(RuntimeError::new(
@@ -495,16 +641,20 @@ impl Interpreter {
         };
         let mut base = environment
             .borrow()
-            .get(first)
+            .binding(first)
             .ok_or_else(|| RuntimeError::new(format!("undefined name `{first}`"), span))?;
         let mut owner_environment = environment.clone();
         let mut index = 1;
         loop {
-            let Value::Module(module) = base.clone() else {
+            let crate::value::Binding::Declaration(crate::value::Declaration::Module(module)) =
+                base.clone()
+            else {
                 break;
             };
             if index == segments.len() {
-                return Ok(base);
+                return base
+                    .into_value()
+                    .map_err(|message| RuntimeError::new(message, span));
             }
             let segment = &segments[index];
             if !module.public.borrow().contains(segment) {
@@ -514,7 +664,7 @@ impl Interpreter {
                 ));
             }
             owner_environment = module.members.clone();
-            let next = module.members.borrow().get(segment).ok_or_else(|| {
+            let next = module.members.borrow().binding(segment).ok_or_else(|| {
                 RuntimeError::new(
                     format!("module `{}` is missing member `{segment}`", module.name),
                     span,
@@ -524,7 +674,9 @@ impl Interpreter {
             index += 1;
         }
         if index == segments.len() {
-            return Ok(base);
+            return base
+                .into_value()
+                .map_err(|message| RuntimeError::new(message, span));
         }
         if index + 1 != segments.len() {
             return Err(RuntimeError::new(
@@ -533,7 +685,8 @@ impl Interpreter {
             ));
         }
         path::resolve_associated_path(
-            base,
+            base.into_declaration()
+                .ok_or_else(|| RuntimeError::new("associated path requires a declaration", span))?,
             &segments[0],
             &segments[index],
             environment,
@@ -568,21 +721,18 @@ impl Interpreter {
         if let Some(member) = member::resolve_host_or_builtin_member(&object, name, span)? {
             return Ok(member);
         }
-        if let Some(member) = member::take_tuple_field(&object, name, span)? {
-            return Ok(member);
-        }
         if let Some(member) = member::take_struct_field(&object, name, span)? {
             return Ok(member);
         }
         if let Value::Dynamic(payload) = &object
-            && let Some(Value::StructType(definition)) =
+            && let Some(crate::value::Declaration::StructType(definition)) =
                 rils_execution::value::native_instance::definition(payload)
         {
             if name == "into_iter"
                 && definition.implemented_traits.borrow().contains("Iterator")
                 && !definition.methods.borrow().contains_key(name)
             {
-                return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                return Ok(Value::from_callable(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(object),
                     method: BuiltinMethod::IteratorIdentity,
                 })));
@@ -597,14 +747,14 @@ impl Interpreter {
             );
         }
         if let Value::Dynamic(payload) = &object
-            && let Some(Value::EnumType(definition)) =
+            && let Some(crate::value::Declaration::EnumType(definition)) =
                 rils_execution::value::native_instance::definition(payload)
         {
             if name == "into_iter"
                 && definition.implemented_traits.borrow().contains("Iterator")
                 && !definition.methods.borrow().contains_key(name)
             {
-                return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                return Ok(Value::from_callable(Rc::new(BuiltinBoundMethod {
                     receiver: Rc::new(object),
                     method: BuiltinMethod::IteratorIdentity,
                 })));
@@ -619,89 +769,77 @@ impl Interpreter {
             );
         }
         if name == "into_iter"
-            && matches!(
-                &object,
-                Value::OwnedIterator(_)
-                    | Value::BorrowedIndexedIterator(_)
-                    | Value::BorrowedMapIterator(_)
-                    | Value::BorrowedSetIterator(_)
-            )
+            && matches!(&object, Value::Native(_))
+            && crate::value::native_ops::is_iterator(&object)
         {
-            return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+            return Ok(Value::from_callable(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(object),
                 method: BuiltinMethod::IteratorIdentity,
             })));
         }
         match &object {
-            Value::Reference(reference) => {
-                if let Some(projected) = reference
-                    .project_native_field(name)
-                    .map_err(|message| RuntimeError::new(message, span))?
+            __reference_value if __reference_value.as_reference().is_some() => {
+                let reference = __reference_value
+                    .as_reference()
+                    .expect("checked reference handle");
                 {
-                    return projected
-                        .copy_native()
+                    if let Some(projected) = reference
+                        .project_native_field(name)
                         .map_err(|message| RuntimeError::new(message, span))?
-                        .ok_or_else(|| {
-                            RuntimeError::new("projected field has no native storage", span)
-                        });
-                }
-                if let Some(definition) = reference
-                    .native_type_definition()
-                    .map_err(|message| RuntimeError::new(message, span))?
-                {
-                    match definition {
-                        Value::StructType(definition) => {
-                            return member::bind_rils_method(
-                                object.clone(),
-                                &definition.methods,
-                                &definition.trait_methods,
-                                &definition.name,
-                                name,
-                                span,
-                            );
-                        }
-                        Value::EnumType(definition) => {
-                            return member::bind_rils_method(
-                                object.clone(),
-                                &definition.methods,
-                                &definition.trait_methods,
-                                &definition.name,
-                                name,
-                                span,
-                            );
-                        }
-                        _ => unreachable!("native nominal declaration"),
+                    {
+                        return projected
+                            .copy_native()
+                            .map_err(|message| RuntimeError::new(message, span))?
+                            .ok_or_else(|| {
+                                RuntimeError::new("projected field has no native storage", span)
+                            });
                     }
-                }
-                let borrowed = reference
-                    .read()
-                    .map_err(|message| RuntimeError::new(message, span))?;
-                if let Some(member) = member::read_borrowed_field(&borrowed, name, span)? {
-                    return Ok(member);
-                }
-                if let Some(member) = member::resolve_borrowed_host_or_builtin_member(
-                    &borrowed,
-                    object.clone(),
-                    reference.mutable,
-                    name,
-                    span,
-                )? {
-                    return Ok(member);
-                }
-                match borrowed {
-                    _ if name == "clone" => {
-                        Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+                    if let Some(definition) = reference
+                        .native_type_definition()
+                        .map_err(|message| RuntimeError::new(message, span))?
+                    {
+                        match definition {
+                            crate::value::Declaration::StructType(definition) => {
+                                return member::bind_rils_method(
+                                    object.clone(),
+                                    &definition.methods,
+                                    &definition.trait_methods,
+                                    &definition.name,
+                                    name,
+                                    span,
+                                );
+                            }
+                            crate::value::Declaration::EnumType(definition) => {
+                                return member::bind_rils_method(
+                                    object.clone(),
+                                    &definition.methods,
+                                    &definition.trait_methods,
+                                    &definition.name,
+                                    name,
+                                    span,
+                                );
+                            }
+                            _ => unreachable!("native nominal declaration"),
+                        }
+                    }
+                    if name == "clone" {
+                        return Ok(Value::from_callable(Rc::new(BuiltinBoundMethod {
                             receiver: Rc::new(object.clone()),
                             method: clone_method(),
-                        })))
+                        })));
                     }
-                    value => Err(RuntimeError::new(
-                        format!("{} has no member `{name}`", value.type_name()),
+                    Err(RuntimeError::new(
+                        format!(
+                            "{} has no member `{name}`",
+                            helpers::receiver_type(&object)
+                                .map_or_else(|| object.type_name(), |ty| ty.to_string())
+                        ),
                         span,
-                    )),
+                    ))
                 }
             }
-            _ if name == "clone" => Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+
+            _ if name == "clone" => Ok(Value::from_callable(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(object),
                 method: clone_method(),
             }))),

@@ -4,6 +4,45 @@ use rils_syntax::Type;
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
 
 #[test]
+fn shared_rebinding_preserves_metadata_and_storage_and_rejects_wrong_layouts() {
+    let layout = DynamicLayout::copy_of::<i32>(Type::I32);
+    let descriptor = Rc::new(DynamicType::<()>::new(layout.clone()));
+    let object = DynamicObject::new_shared(
+        descriptor,
+        DynamicValue::from_rust(layout.clone(), 4_i32).unwrap(),
+    )
+    .unwrap();
+    let metadata = Rc::new(String::from("retained declaration"));
+    let rebound = object
+        .rebind_shared_with_type(Rc::new(
+            DynamicType::<bool>::new(layout).register_metadata(metadata.clone()),
+        ))
+        .unwrap();
+    assert!(Rc::ptr_eq(
+        &metadata,
+        &rebound.descriptor().metadata::<String>().unwrap()
+    ));
+    rebound
+        .with_mut(|value| value.with_mut::<i32, _>(|value| *value = 9))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        object
+            .with(|value| value.with::<i32, _>(|value| *value))
+            .unwrap()
+            .unwrap(),
+        9
+    );
+    assert!(
+        object
+            .rebind_shared_with_type(Rc::new(DynamicType::<()>::new(DynamicLayout::copy_of::<
+                bool,
+            >(Type::Bool),)))
+            .is_err()
+    );
+}
+
+#[test]
 fn promoting_inline_storage_moves_managed_handles_and_keeps_operations() {
     let item = Rc::new(Cell::new(42));
     let leaf = DynamicLayout::copy_handle_of::<Rc<Cell<i32>>>(Type::named("Handle"));

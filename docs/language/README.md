@@ -12,7 +12,7 @@ Rust 的生命周期和唯一可变借用限制。
 2. [变量、作用域与所有权](02-bindings-and-ownership.md)
 3. [表达式与控制流](03-expressions-and-control-flow.md)
 4. [函数与闭包](04-functions-and-closures.md)
-5. [Struct、Enum 与集合](05-data-types-and-collections.md)
+5. [Struct、Enum 与集合（含空集合推导和迭代器）](05-data-types-and-collections.md)
 6. [Impl、泛型与 Trait](06-impl-generics-and-traits.md)
 7. [模式匹配与宏](07-patterns-and-macros.md)
 8. [标准能力、模块与 IO（含可信标准库声明包）](08-modules-and-standard-library.md)

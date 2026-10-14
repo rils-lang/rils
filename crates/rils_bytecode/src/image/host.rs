@@ -206,12 +206,15 @@ impl BytecodeHost {
             FunctionSignature::variadic(Type::Unit),
             "std::io",
             move |arguments| {
-                let Some(format) = arguments.first().and_then(Value::as_string) else {
+                let Some(format) = arguments
+                    .first()
+                    .and_then(|value| value.get_cloned::<String>().ok())
+                else {
                     return Err("print! requires a format string".into());
                 };
                 let output = crate::formatting::format_arguments(&format, &arguments[1..])?;
                 print_handler(&output, false)?;
-                Ok(Value::Unit)
+                Ok(Value::from(rils_execution::value::native_unit()))
             },
         )?;
         self.register_function(
@@ -221,14 +224,17 @@ impl BytecodeHost {
             move |arguments| {
                 if arguments.is_empty() {
                     handler("", true)?;
-                    return Ok(Value::Unit);
+                    return Ok(Value::from(rils_execution::value::native_unit()));
                 }
-                let Some(format) = arguments.first().and_then(Value::as_string) else {
+                let Some(format) = arguments
+                    .first()
+                    .and_then(|value| value.get_cloned::<String>().ok())
+                else {
                     return Err("println! requires a format string".into());
                 };
                 let output = crate::formatting::format_arguments(&format, &arguments[1..])?;
                 handler(&output, true)?;
-                Ok(Value::Unit)
+                Ok(Value::from(rils_execution::value::native_unit()))
             },
         )?;
         Ok(())

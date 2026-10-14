@@ -79,35 +79,27 @@ impl Interpreter {
                 span,
             )
         })?;
-        let self_reference = match value {
-            Value::Reference(reference) => Value::Reference(reference.clone()),
-            value => {
-                let storage = Rc::new(RefCell::new(
-                    crate::environment::StorageSlot::uninitialized(false),
-                ));
-                storage.borrow_mut().initialize(value.clone());
-                Value::Reference(Rc::new(ReferenceValue::new_storage(storage, false)))
-            }
-        };
+        let self_reference = crate::formatting::receiver_reference(value)
+            .map_err(|message| RuntimeError::new(message, span))?;
         let formatter_value = crate::formatting::formatter_value(buffer)
             .map_err(|message| RuntimeError::new(message, span))?;
         let formatter_storage = Rc::new(RefCell::new(
             crate::environment::StorageSlot::uninitialized(true),
         ));
         formatter_storage.borrow_mut().initialize(formatter_value);
-        let formatter_reference = Value::Reference(Rc::new(ReferenceValue::new_storage(
+        let formatter_reference = Value::from_reference(Rc::new(ReferenceValue::new_storage(
             formatter_storage,
             true,
         )));
         let result = self.call(
-            Value::Function(function),
+            Value::from_callable(function),
             &[self_reference, formatter_reference],
             span,
         )?;
         let result = crate::value::dynamic_result::take_owned(result)
             .map_err(|message| RuntimeError::new(message, span))?;
         match result {
-            Ok(Value::Unit) => Ok(()),
+            Ok(value) if value.is_unit() => Ok(()),
             Err(error) => Err(RuntimeError::new(
                 format!("formatting failed: {error}"),
                 span,
@@ -127,8 +119,12 @@ impl Interpreter {
             .ok()
             .flatten();
         let methods = match &definition {
-            Some(Value::StructType(definition)) => Some(&definition.trait_methods),
-            Some(Value::EnumType(definition)) => Some(&definition.trait_methods),
+            Some(crate::value::Declaration::StructType(definition)) => {
+                Some(&definition.trait_methods)
+            }
+            Some(crate::value::Declaration::EnumType(definition)) => {
+                Some(&definition.trait_methods)
+            }
             _ => None,
         };
         if let Some(methods) = methods {

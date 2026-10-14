@@ -279,6 +279,7 @@ fn fnv1a128(name: &[u8], module: &[u8]) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rils_execution::Value;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -290,7 +291,7 @@ mod tests {
         assert_eq!(decoded.name(), "sample");
         assert_eq!(
             decoded.module().call_value("answer", Vec::new()).unwrap(),
-            crate::Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         );
     }
 
@@ -327,7 +328,7 @@ mod tests {
         let library = crate::compile_library(root.join("rils.toml")).unwrap();
         assert_eq!(
             library.module().call_value("value", Vec::new()).unwrap(),
-            crate::Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         );
         fs::remove_dir_all(root).unwrap();
     }
@@ -359,7 +360,7 @@ mod tests {
         let module = crate::compile_file(root.join("src/prelude.rils")).unwrap();
         assert_eq!(
             module.call_value("prelude_value", Vec::new()).unwrap(),
-            crate::Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         );
         fs::remove_dir_all(root).unwrap();
     }

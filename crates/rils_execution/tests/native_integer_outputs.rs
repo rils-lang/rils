@@ -23,12 +23,12 @@ fn check_tuple(value: Value, expected: Value, overflow: bool) {
     assert_eq!(place.field("0").unwrap().take().unwrap(), expected);
     assert_eq!(
         place.field("1").unwrap().take().unwrap(),
-        Value::Bool(overflow)
+        Value::from(rils_execution::value::native_bool(overflow))
     );
     place
         .field("1")
         .unwrap()
-        .assign(Value::Bool(!overflow))
+        .assign(Value::from(rils_execution::value::native_bool(!overflow)))
         .unwrap();
     let Value::Dynamic(copy) = copy else {
         panic!("tuple copy must be native");
@@ -40,7 +40,7 @@ fn check_tuple(value: Value, expected: Value, overflow: bool) {
             .unwrap()
             .take()
             .unwrap(),
-        Value::Bool(overflow)
+        Value::from(rils_execution::value::native_bool(overflow))
     );
 }
 
@@ -55,22 +55,28 @@ macro_rules! check_width {
                     ("overflowing_mul", input.overflowing_mul(rhs)),
                 ] {
                     check_tuple(
-                        call(method, vec![$constructor(input), $constructor(rhs)]),
-                        $constructor(expected.0),
+                        call(
+                            method,
+                            vec![
+                                Value::from($constructor(input)),
+                                Value::from($constructor(rhs)),
+                            ],
+                        ),
+                        Value::from($constructor(expected.0)),
                         expected.1,
                     );
                 }
             }
             let expected = input.overflowing_neg();
             check_tuple(
-                call("overflowing_neg", vec![$constructor(input)]),
-                $constructor(expected.0),
+                call("overflowing_neg", vec![Value::from($constructor(input))]),
+                Value::from($constructor(expected.0)),
                 expected.1,
             );
             let expected = ($abs)(input);
             check_tuple(
-                call("overflowing_abs", vec![$constructor(input)]),
-                $constructor(expected.0),
+                call("overflowing_abs", vec![Value::from($constructor(input))]),
+                Value::from($constructor(expected.0)),
                 expected.1,
             );
             for argument in [0, 1, <$rust>::BITS, <$rust>::BITS + 1] {
@@ -82,9 +88,12 @@ macro_rules! check_width {
                     check_tuple(
                         call(
                             method,
-                            vec![$constructor(input), numeric::native_u32(argument)],
+                            vec![
+                                Value::from($constructor(input)),
+                                Value::from(numeric::native_u32(argument)),
+                            ],
                         ),
-                        $constructor(expected.0),
+                        Value::from($constructor(expected.0)),
                         expected.1,
                     );
                 }
@@ -94,18 +103,24 @@ macro_rules! check_width {
                 ("checked_mul", input.checked_mul(2), 2),
                 ("checked_div", input.checked_div(0), 0),
             ] {
-                let result = call(method, vec![$constructor(input), $constructor(other)]);
+                let result = call(
+                    method,
+                    vec![
+                        Value::from($constructor(input)),
+                        Value::from($constructor(other)),
+                    ],
+                );
                 assert!(matches!(result, Value::Dynamic(_)));
                 assert_eq!(
                     Type::of_value(&result),
                     Some(Type::Option(Box::new(
-                        Type::of_value(&$constructor(input)).unwrap()
+                        Type::of_value(&Value::from($constructor(input))).unwrap()
                     )))
                 );
                 assert!(result.is_copy());
                 assert_eq!(
                     dynamic_option::take_owned(result).unwrap(),
-                    expected.map($constructor)
+                    expected.map(|value| Value::from($constructor(value)))
                 );
             }
         }
@@ -132,12 +147,12 @@ fn generated_composite_outputs_match_rust_for_all_integer_widths() {
 fn native_conversion_results_keep_inactive_types_and_copy_policy() {
     for target in IntegerType::ALL {
         for (source, success) in [
-            (numeric::native_i32(1), true),
+            (Value::from(numeric::native_i32(1)), true),
             (
                 if target == IntegerType::U128 {
-                    numeric::native_i32(-1)
+                    Value::from(numeric::native_i32(-1))
                 } else {
-                    numeric::native_u128(u128::MAX)
+                    Value::from(numeric::native_u128(u128::MAX))
                 },
                 false,
             ),
@@ -159,7 +174,12 @@ fn native_conversion_results_keep_inactive_types_and_copy_policy() {
             assert_eq!(result.is_ok(), success);
             match result {
                 Ok(number) => assert_eq!(Type::of_value(&number), Some(Type::Integer(target))),
-                Err(error) => assert!(error.as_string().unwrap().contains("outside the")),
+                Err(error) => assert!(
+                    error
+                        .get_cloned::<String>()
+                        .unwrap()
+                        .contains("outside the")
+                ),
             }
         }
     }

@@ -184,7 +184,7 @@ impl<'a> FunctionLowerer<'a> {
                     .last_mut()
                     .unwrap()
                     .insert(binding.clone(), local);
-                let body = self.statements(&body.statements);
+                let body = self.block_statements(body);
                 self.scopes.pop();
                 Ok(HirStatement::For {
                     binding: local,

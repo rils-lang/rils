@@ -36,7 +36,7 @@ fn native_binary_heap_orders_other_integer_widths() {
                 heap.push(1i8); heap.push(7i8); heap.push(3i8);
                 heap.pop().unwrap()
             "#,
-            Value::from_i8(7),
+            Value::from(rils::value::native_i8(7)),
         ),
         (
             r#"
@@ -44,7 +44,7 @@ fn native_binary_heap_orders_other_integer_widths() {
                 heap.push(2usize); heap.push(11usize); heap.push(5usize);
                 heap.pop().unwrap()
             "#,
-            Value::from_usize(11),
+            Value::from(rils::value::native_usize(11)),
         ),
     ] {
         assert_eq!(eval_value(source).unwrap(), expected);
@@ -64,7 +64,7 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
                     + heap.pop().unwrap() + heap.pop().unwrap();
                 if heap.is_empty() && heap.len() == 0usize { highest + total } else { 0 }
             "#,
-            Value::from_i32(18),
+            Value::from(rils::value::native_i32(18)),
         ),
         (
             r#"
@@ -72,7 +72,7 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
                 heap.push('a'); heap.push('z');
                 heap.pop().unwrap()
             "#,
-            Value::Char('z'),
+            Value::from(rils::value::native_char('z')),
         ),
         (
             r#"
@@ -80,7 +80,7 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
                 heap.push("a"); heap.push("z");
                 heap.pop().unwrap()
             "#,
-            Value::from_string("z"),
+            Value::from(rils::value::native_string("z")),
         ),
         (
             r#"
@@ -88,7 +88,7 @@ fn native_binary_heap_matches_in_interpreter_and_vm() {
                 heap.push(1); heap.clear();
                 heap.is_empty() && heap.pop().is_none()
             "#,
-            Value::Bool(true),
+            Value::from(rils::value::native_bool(true)),
         ),
     ] {
         assert_eq!(eval_value(source).unwrap(), expected);
@@ -114,6 +114,6 @@ fn native_binary_heap_moves_string_arguments_and_keeps_order() {
         compiled.execute_value().unwrap(),
         loaded.execute_value().unwrap(),
     ] {
-        assert_eq!(value, Value::from_string("apple"));
+        assert_eq!(value, Value::from(rils::value::native_string("apple")));
     }
 }

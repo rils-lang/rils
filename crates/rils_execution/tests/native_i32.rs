@@ -5,7 +5,7 @@ use rils_execution::{
 
 #[test]
 fn generated_i32_descriptor_keeps_typed_inline_storage_and_method_results() {
-    let value = native_i32(i32::MAX);
+    let value = Value::from(native_i32(i32::MAX));
     let Value::Native(object) = &value else {
         panic!("i32 must use native storage");
     };
@@ -24,14 +24,18 @@ fn generated_i32_descriptor_keeps_typed_inline_storage_and_method_results() {
     let result = execute_integer_intrinsic(
         "core::integer::wrapping_add",
         None,
-        &[value.clone(), native_i32(1)],
+        &[value.clone(), Value::from(native_i32(1))],
     )
     .unwrap();
-    assert_eq!(result.as_i32(), Some(i32::MIN));
+    assert_eq!(result.get_cloned::<i32>().ok(), Some(i32::MIN));
     assert!(matches!(result, Value::Native(_)));
     assert_eq!(
-        execute_integer_intrinsic("core::integer::wrapping_add", None, &[value, Value::U32(1)],)
-            .unwrap_err(),
+        execute_integer_intrinsic(
+            "core::integer::wrapping_add",
+            None,
+            &[value, Value::from(rils_execution::value::native_u32(1))],
+        )
+        .unwrap_err(),
         "expected i32, found u32"
     );
 }

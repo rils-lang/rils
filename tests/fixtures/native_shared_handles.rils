@@ -1,0 +1,17 @@
+struct Item { value: i32 }
+
+fn expired() -> core::rc::Weak<Item> {
+    let owner: core::rc::Rc<Item> = core::rc::Rc::new(Item { value: 7 });
+    owner.downgrade()
+}
+
+let owner: core::rc::Rc<Item> = core::rc::Rc::new(Item { value: 42 });
+let observer: core::rc::Weak<Item> = owner.downgrade();
+let copy: core::rc::Rc<Item> = owner.clone();
+let counts = owner.strong_count() == 2usize
+    && observer.strong_count() == 2usize
+    && observer.weak_count() == 1usize;
+let upgraded: core::rc::Rc<Item> = observer.upgrade().unwrap();
+let shared = upgraded.strong_count() == 3usize && owner.strong_count() == 3usize;
+let dead: core::rc::Weak<Item> = expired();
+counts && shared && dead.strong_count() == 0usize && dead.upgrade().is_none()

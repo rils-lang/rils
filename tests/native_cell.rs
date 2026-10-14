@@ -1,16 +1,30 @@
 use rils::{Value, compile, eval_value};
 
 #[test]
+fn generated_cells_preserve_moves_and_lexical_borrows_in_loaded_bytecode() {
+    let source = include_str!("fixtures/native_cells.rils");
+    let expected = Value::from(rils::value::native_bool(true));
+    assert_eq!(eval_value(source).unwrap(), expected);
+    let module = compile(source).unwrap();
+    assert_eq!(module.execute_value().unwrap(), expected);
+    let loaded = rils::BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute_value().unwrap(), expected);
+}
+
+#[test]
 fn native_cell_definition_runs_in_interpreter_and_vm() {
     let source = r#"
         let cell: core::cell::Cell<i32> = core::cell::Cell::new(1);
         cell.set(2);
         cell.replace(3) + cell.get()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(5));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(5))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(5)
+        Value::from(rils::value::native_i32(5))
     );
 }
 
@@ -81,22 +95,31 @@ fn ref_cells_use_native_storage_and_keep_borrowed_items_live() {
         );
     }
     let source = "let cell: RefCell<i32> = RefCell::new(4); *cell.borrow_mut() = 7; *cell.borrow() + cell.replace(8)";
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(14));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(14))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(14)
+        Value::from(rils::value::native_i32(14))
     );
     let source = "struct Item { value: i32 } { let cell: RefCell<Item> = RefCell::new(Item { value: 4 }); let item = cell.borrow(); item.value }";
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(4));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(4))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(4)
+        Value::from(rils::value::native_i32(4))
     );
     let source = "struct Item { value: i32 } { let cell: RefCell<Item> = RefCell::new(Item { value: 4 }); let mut item = cell.borrow_mut(); item.value = 9; let current = cell.borrow(); current.value }";
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(9));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(9))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(9)
+        Value::from(rils::value::native_i32(9))
     );
 }
 

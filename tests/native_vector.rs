@@ -51,11 +51,20 @@ fn typed_copy_vec_uses_native_storage() {
             }
         );
         assert_eq!(value.to_string(), "[3, 5]");
-        let items = value.as_vec().unwrap();
-        assert_eq!(
-            items.iter().map(Value::as_i32).collect::<Vec<_>>(),
-            vec![Some(3), Some(5)]
-        );
+        value
+            .with_native_view(|view| {
+                assert_eq!(view.sequence_len().unwrap(), 2);
+                for (index, expected) in [3, 5].into_iter().enumerate() {
+                    assert_eq!(
+                        view.sequence_item(index)
+                            .unwrap()
+                            .with_rust::<i32, _>(|value| *value)
+                            .unwrap(),
+                        expected
+                    );
+                }
+            })
+            .unwrap();
     }
 }
 
@@ -68,7 +77,7 @@ fn native_vec_from_moves_non_copy_array_items_across_backends() {
             && values.is_empty()
     "#;
     for value in run_both(source) {
-        assert_eq!(value, Value::Bool(true));
+        assert_eq!(value, Value::from(rils::value::native_bool(true)));
     }
 }
 
@@ -84,7 +93,7 @@ fn native_vec_index_references_allow_sequential_alias_writes() {
         values[0]
     "#;
     for value in run_both(&format!("fn result() -> i32 {{ {source} }} result()")) {
-        assert_eq!(value.as_i32(), Some(9));
+        assert_eq!(value.get_cloned::<i32>().ok(), Some(9));
     }
 }
 
@@ -121,7 +130,7 @@ fn native_vec_methods_and_borrowed_iteration_match_backends() {
         ),
     ] {
         for value in run_both(&format!("fn result() -> i32 {{ {source} }} result()")) {
-            assert_eq!(value.as_i32(), Some(expected), "{source}");
+            assert_eq!(value.get_cloned::<i32>().ok(), Some(expected), "{source}");
         }
     }
 }
@@ -146,15 +155,18 @@ fn string_vec_uses_native_storage() {
     let source = "let mut v: Vec<string> = Vec::new(); v.push(\"hello\"); v";
     for value in run_both(source) {
         assert!(matches!(value, Value::Dynamic(_)));
-        assert_eq!(
-            value.as_vec().unwrap()[0].as_string().as_deref(),
-            Some("hello")
-        );
         let cloned = value.clone_owned().unwrap();
-        assert_eq!(
-            cloned.as_vec().unwrap()[0].as_string().as_deref(),
-            Some("hello")
-        );
+        for value in [&value, &cloned] {
+            value
+                .with_native_view(|view| {
+                    use rils::RilsHostType;
+                    String::with_composed_ref(view.sequence_item(0).unwrap(), |text| {
+                        assert_eq!(text, "hello")
+                    })
+                    .unwrap();
+                })
+                .unwrap();
+        }
     }
 }
 
@@ -187,13 +199,13 @@ fn native_string_vec_methods_and_borrows_match_backends() {
         ),
     ] {
         for value in run_both(&format!("fn result() -> usize {{ {source} }} result()")) {
-            assert_eq!(value.as_usize(), Some(expected), "{source}");
+            assert_eq!(value.get_cloned::<usize>().ok(), Some(expected), "{source}");
         }
     }
     for value in run_both(
         "let mut v: Vec<string> = Vec::new(); v.push(\"first\"); let needle = \"first\"; v.contains(&needle)",
     ) {
-        assert_eq!(value, Value::Bool(true));
+        assert_eq!(value, Value::from(rils::value::native_bool(true)));
     }
 }
 
@@ -214,7 +226,7 @@ fn native_vec_extend_moves_nested_non_copy_elements() {
         destination.pop().unwrap().unwrap().len()
     "#;
     for value in run_both(source) {
-        assert_eq!(value.as_usize(), Some(5));
+        assert_eq!(value.get_cloned::<usize>().ok(), Some(5));
     }
 }
 
@@ -232,7 +244,7 @@ fn native_vec_moves_boxed_user_values_into_push_and_insert() {
             "#
         );
         for value in run_both(&source) {
-            assert_eq!(value.as_i32(), Some(42), "{operation}");
+            assert_eq!(value.get_cloned::<i32>().ok(), Some(42), "{operation}");
         }
     }
 }
@@ -251,7 +263,7 @@ fn native_vec_moves_user_records_into_push_and_insert() {
             "#
         );
         for value in run_both(&source) {
-            assert_eq!(value.as_i32(), Some(42), "{operation}");
+            assert_eq!(value.get_cloned::<i32>().ok(), Some(42), "{operation}");
         }
     }
 }
@@ -275,7 +287,7 @@ fn native_string_vec_rejects_growth_during_borrowed_iteration() {
 fn native_vec_can_be_borrowed_as_slice() {
     let source = "fn first(values: &[i32]) -> i32 { values[0] } let mut v: Vec<i32> = Vec::new(); v.push(5); first(&v)";
     for value in run_both(source) {
-        assert_eq!(value.as_i32(), Some(5));
+        assert_eq!(value.get_cloned::<i32>().ok(), Some(5));
     }
 }
 
@@ -295,7 +307,14 @@ fn native_vec_copy_element_matrix() {
         let source = format!("let mut v: Vec<{ty}> = Vec::new(); v.push({item}); v");
         for value in run_both(&source) {
             assert!(matches!(value, Value::Dynamic(_)), "{source}");
-            assert_eq!(value.as_vec().unwrap().len(), 1, "{source}");
+            assert_eq!(
+                value
+                    .with_native_view(|view| view.sequence_len())
+                    .unwrap()
+                    .unwrap(),
+                1,
+                "{source}"
+            );
         }
     }
 }
@@ -333,7 +352,7 @@ fn nested_non_copy_owned_operations_match_backends() {
         ),
     ] {
         for value in run_both(source) {
-            assert_eq!(value.as_usize(), Some(expected), "{source}");
+            assert_eq!(value.get_cloned::<usize>().ok(), Some(expected), "{source}");
         }
     }
 }
@@ -342,7 +361,7 @@ fn nested_non_copy_owned_operations_match_backends() {
 fn nested_non_copy_elements_can_be_referenced() {
     let source = "fn result() -> bool { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let mut it = v.iter(); it.next().is_some() } result()";
     for value in run_both(source) {
-        assert_eq!(value, Value::Bool(true));
+        assert_eq!(value, Value::from(rils::value::native_bool(true)));
     }
 }
 
@@ -354,7 +373,11 @@ fn nested_non_copy_borrowed_reads_use_recursive_native_clone() {
         "let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"text\")); let needle = Some(\"text\"); v.contains(&needle)",
     ] {
         for value in run_both(source) {
-            assert_eq!(value, Value::Bool(true), "{source}");
+            assert_eq!(
+                value,
+                Value::from(rils::value::native_bool(true)),
+                "{source}"
+            );
         }
     }
 }
@@ -378,6 +401,6 @@ fn nested_non_copy_borrow_preserves_structural_mutation_rule() {
 fn nested_non_copy_borrow_can_replace_element() {
     let source = "fn result() -> usize { let mut v: Vec<Option<string>> = Vec::new(); v.push(Some(\"old\")); { let item = &mut v[0]; *item = Some(\"newer\"); } v.pop().unwrap().unwrap().len() } result()";
     for value in run_both(source) {
-        assert_eq!(value.as_usize(), Some(5));
+        assert_eq!(value.get_cloned::<usize>().ok(), Some(5));
     }
 }

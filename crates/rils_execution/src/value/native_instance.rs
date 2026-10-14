@@ -45,7 +45,7 @@ pub(super) fn with_descriptor(
     }
 }
 
-pub fn definition(object: &DynamicObject) -> Option<Value> {
+pub fn definition(object: &DynamicObject) -> Option<crate::value::Declaration> {
     object
         .descriptor()
         .metadata::<NativeRecordCodec>()?
@@ -53,10 +53,15 @@ pub fn definition(object: &DynamicObject) -> Option<Value> {
 }
 
 /// Resolve method and trait metadata without reading or cloning the payload.
-pub fn value_definition(value: &Value) -> Result<Option<Value>, String> {
+pub fn value_definition(value: &Value) -> Result<Option<crate::value::Declaration>, String> {
     match value {
+        __reference_value if __reference_value.as_reference().is_some() => {
+            let reference = __reference_value
+                .as_reference()
+                .expect("checked reference handle");
+            reference.native_type_definition()
+        }
         Value::Dynamic(object) => Ok(definition(object)),
-        Value::Reference(reference) => reference.native_type_definition(),
 
         _ => Ok(None),
     }
@@ -68,7 +73,7 @@ fn expose(value: DynamicValue, codec: Rc<NativeRecordCodec>) -> Result<Value, St
     }
     if matches!(
         codec.nominal_definition(value.descriptor().rils_type()),
-        Some(Value::StructType(_) | Value::EnumType(_))
+        Some(crate::value::Declaration::StructType(_) | crate::value::Declaration::EnumType(_))
     ) || matches!(
         value.descriptor().rils_type(),
         crate::Type::Option(_)
@@ -153,7 +158,9 @@ impl NativeInstancePlace {
             }
             view.layout()
         })??;
-        let payload = if layout.is_copy() {
+        let payload = if layout.is_copy()
+            && !self.with_view(super::runtime_layouts::contains_noncopy_callable)??
+        {
             self.with_view(|view| view.copy_owned())??
         } else {
             self.object
@@ -172,7 +179,13 @@ impl NativeInstancePlace {
             return Ok(None);
         }
         match self.take()? {
-            Value::Reference(reference) => Ok(Some(reference)),
+            __reference_value if __reference_value.as_reference().is_some() => {
+                let reference = __reference_value
+                    .as_reference()
+                    .expect("checked reference handle");
+                Ok(Some(reference))
+            }
+
             _ => Err("native reference field did not decode to a reference".into()),
         }
     }

@@ -2,11 +2,8 @@ use std::{cell::Cell, rc::Rc};
 
 use rils_execution::{
     FloatType, IntegerType, Type, Value,
-    environment::{Environment, StorageSlot},
-    value::{
-        HashKey, ReferenceValue, record_codec::NativeRecordCodec,
-        record_layout::RecordLayoutResolver,
-    },
+    environment::Environment,
+    value::{ReferenceValue, record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver},
 };
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
@@ -17,94 +14,147 @@ fn value(payload: DynamicValue) -> Value {
     )
 }
 
-fn native(input: Value, ty: &Type) -> Value {
-    let layout = RecordLayoutResolver::new(&[]).resolve(ty).unwrap();
-    NativeRecordCodec::new()
-        .from_native(NativeRecordCodec::new().into_native(input, layout).unwrap())
-        .unwrap()
-}
-
 #[test]
 fn every_registered_scalar_formats_through_nested_sum_views() {
     for (input, ty, display, debug) in [
-        (Value::Unit, Type::Unit, "()", "()"),
-        (Value::Bool(true), Type::Bool, "true", "true"),
         (
-            Value::from_i8(-7),
+            Value::from(rils_execution::value::native_unit()),
+            Type::Unit,
+            "()",
+            "()",
+        ),
+        (
+            Value::from(rils_execution::value::native_bool(true)),
+            Type::Bool,
+            "true",
+            "true",
+        ),
+        (
+            Value::from(rils_execution::value::native_i8(-7)),
             Type::Integer(IntegerType::I8),
             "-7",
             "-7",
         ),
         (
-            Value::from_i16(-7),
+            Value::from(rils_execution::value::native_i16(-7)),
             Type::Integer(IntegerType::I16),
             "-7",
             "-7",
         ),
-        (Value::from_i32(-7), Type::I32, "-7", "-7"),
         (
-            Value::from_i64(-7),
+            Value::from(rils_execution::value::native_i32(-7)),
+            Type::I32,
+            "-7",
+            "-7",
+        ),
+        (
+            Value::from(rils_execution::value::native_i64(-7)),
             Type::Integer(IntegerType::I64),
             "-7",
             "-7",
         ),
         (
-            Value::from_i128(-7),
+            Value::from(rils_execution::value::native_i128(-7)),
             Type::Integer(IntegerType::I128),
             "-7",
             "-7",
         ),
         (
-            Value::from_isize(-7),
+            Value::from(rils_execution::value::native_isize(-7)),
             Type::Integer(IntegerType::Isize),
             "-7",
             "-7",
         ),
-        (Value::from_u8(7), Type::Integer(IntegerType::U8), "7", "7"),
         (
-            Value::from_u16(7),
+            Value::from(rils_execution::value::native_u8(7)),
+            Type::Integer(IntegerType::U8),
+            "7",
+            "7",
+        ),
+        (
+            Value::from(rils_execution::value::native_u16(7)),
             Type::Integer(IntegerType::U16),
             "7",
             "7",
         ),
         (
-            Value::from_u32(7),
+            Value::from(rils_execution::value::native_u32(7)),
             Type::Integer(IntegerType::U32),
             "7",
             "7",
         ),
         (
-            Value::from_u64(7),
+            Value::from(rils_execution::value::native_u64(7)),
             Type::Integer(IntegerType::U64),
             "7",
             "7",
         ),
         (
-            Value::from_u128(7),
+            Value::from(rils_execution::value::native_u128(7)),
             Type::Integer(IntegerType::U128),
             "7",
             "7",
         ),
         (
-            Value::from_usize(7),
+            Value::from(rils_execution::value::native_usize(7)),
             Type::Integer(IntegerType::Usize),
             "7",
             "7",
         ),
         (
-            Value::from_f32(1.5),
+            Value::from(rils_execution::value::native_f32(1.5)),
             Type::Float(FloatType::F32),
             "1.5",
             "1.5",
         ),
-        (Value::from_f64(1.5), Type::F64, "1.5", "1.5"),
-        (Value::from_f32(1.0), Type::Float(FloatType::F32), "1", "1"),
-        (Value::from_f64(1.0), Type::F64, "1", "1"),
-        (Value::from_f64(-0.0), Type::F64, "-0", "-0"),
-        (Value::from_f64(f64::INFINITY), Type::F64, "inf", "inf"),
-        (Value::from_f64(f64::NAN), Type::F64, "NaN", "NaN"),
-        (Value::from_char('x'), Type::Char, "x", "'x'"),
-        (Value::from_string("text"), Type::String, "text", "\"text\""),
+        (
+            Value::from(rils_execution::value::native_f64(1.5)),
+            Type::F64,
+            "1.5",
+            "1.5",
+        ),
+        (
+            Value::from(rils_execution::value::native_f32(1.0)),
+            Type::Float(FloatType::F32),
+            "1",
+            "1",
+        ),
+        (
+            Value::from(rils_execution::value::native_f64(1.0)),
+            Type::F64,
+            "1",
+            "1",
+        ),
+        (
+            Value::from(rils_execution::value::native_f64(-0.0)),
+            Type::F64,
+            "-0",
+            "-0",
+        ),
+        (
+            Value::from(rils_execution::value::native_f64(f64::INFINITY)),
+            Type::F64,
+            "inf",
+            "inf",
+        ),
+        (
+            Value::from(rils_execution::value::native_f64(f64::NAN)),
+            Type::F64,
+            "NaN",
+            "NaN",
+        ),
+        (
+            Value::from(rils_execution::value::native_char('x')),
+            Type::Char,
+            "x",
+            "'x'",
+        ),
+        (
+            Value::from(rils_execution::value::native_string("text")),
+            Type::String,
+            "text",
+            "\"text\"",
+        ),
     ] {
         let leaf = RecordLayoutResolver::new(&[]).resolve(&ty).unwrap();
         let option = DynamicLayout::option(leaf.clone()).unwrap();
@@ -186,7 +236,7 @@ fn formatting_non_clone_records_and_vectors_reads_original_bytes() {
             .is_err(),
         "Probe cannot be cloned through a reference"
     );
-    let borrowed = Value::Reference(reference);
+    let borrowed = Value::from_reference(reference);
     assert_eq!(
         format!("{borrowed}"),
         "Some([Record { probe: <Probe>, text: owned }])"
@@ -199,50 +249,4 @@ fn formatting_non_clone_records_and_vectors_reads_original_bytes() {
     drop(borrowed);
     drop(slot.borrow_mut().take().unwrap());
     assert_eq!(drops.get(), 1);
-}
-
-#[test]
-fn sum_hash_keys_retain_native_storage_and_complete_type_witnesses() {
-    let option_type = Type::Option(Box::new(Type::String));
-    let result_type = Type::Result(Box::new(option_type.clone()), Box::new(Type::I32));
-    let option = |item: Option<&str>| Value::Option {
-        value: item.map(|text| Rc::new(Value::from_string(text))),
-        element_type: Some(Type::String),
-    };
-    for (input, ty) in [
-        (option(None), option_type.clone()),
-        (option(Some("key")), option_type.clone()),
-        (
-            Value::Result {
-                value: Ok(Rc::new(option(Some("key")))),
-                ok_type: Some(option_type.clone()),
-                error_type: Some(Type::I32),
-            },
-            result_type.clone(),
-        ),
-        (
-            Value::Result {
-                value: Err(Rc::new(Value::from_i32(42))),
-                ok_type: Some(option_type.clone()),
-                error_type: Some(Type::I32),
-            },
-            result_type,
-        ),
-    ] {
-        let original = native(input, &ty);
-        let key = HashKey::from_value(&original).unwrap();
-        let stored = key.to_value().unwrap();
-        assert!(
-            matches!(stored, Value::Dynamic(_)),
-            "key must not rebuild legacy sum storage"
-        );
-        assert_eq!(Type::of_value(&stored), Some(ty.clone()));
-        assert_eq!(format!("{stored:?}"), format!("{original:?}"));
-        let mut slot = StorageSlot::uninitialized(false);
-        slot.initialize(original);
-        let slot = Rc::new(std::cell::RefCell::new(slot));
-        let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(slot, false)));
-        assert_eq!(HashKey::from_value(&reference).unwrap(), key);
-        assert_eq!(HashKey::from_value(&stored).unwrap(), key);
-    }
 }

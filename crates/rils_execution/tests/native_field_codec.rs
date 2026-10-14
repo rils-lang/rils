@@ -1,15 +1,10 @@
-use std::{
-    cell::{Cell, RefCell},
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use rils_execution::{
     Type, Value,
     value::{
-        BTreeMapValue, BTreeSetValue, BinaryHeapValue, EnumType, FieldSlot, HashKey, HashMapValue,
-        HashSetValue, IndexedStorage, StructType, VecDequeValue, native_layouts, record_codec,
-        record_layout::RecordLayoutResolver, storage::TypedStorageContext,
+        EnumType, StructType, native_layouts, record_codec, record_layout::RecordLayoutResolver,
+        storage::TypedStorageContext,
     },
 };
 use rils_frontend::{
@@ -33,10 +28,12 @@ fn opaque_native_generic_leaf_survives_an_optional_field() {
     let object =
         DynamicObject::new(Rc::new(DynamicType::new(shared_layout.clone())), shared).unwrap();
     let optional_layout = DynamicLayout::option(shared_layout).unwrap();
-    let optional = Value::Option {
-        value: Some(Rc::new(Value::Dynamic(object))),
-        element_type: Some(shared_type.clone()),
-    };
+    let optional = rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+        .construct_option(
+            &Type::Option(Box::new(shared_type.clone())),
+            Some(Value::Dynamic(object)),
+        )
+        .unwrap();
     let native = record_codec::into_native(optional, optional_layout).unwrap();
     let restored = record_codec::from_native(native).unwrap();
     assert!(matches!(restored, Value::Dynamic(_)));
@@ -62,11 +59,20 @@ fn generated_number_codecs_round_trip_owned_record_payloads() {
     let cases = [
         (
             Type::Integer(rils_execution::IntegerType::I8),
-            Value::from_i8(-8),
+            Value::from(rils_execution::value::native_i8(-8)),
         ),
-        (Type::I32, Value::from_i32(42)),
-        (Type::USIZE, Value::Usize(usize::MAX)),
-        (Type::F64, Value::F64(3.5)),
+        (
+            Type::I32,
+            Value::from(rils_execution::value::native_i32(42)),
+        ),
+        (
+            Type::USIZE,
+            Value::from(rils_execution::value::native_usize(usize::MAX)),
+        ),
+        (
+            Type::F64,
+            Value::from(rils_execution::value::native_f64(3.5)),
+        ),
     ];
     for (ty, value) in cases {
         let restored = if let Some(layout) = native_layouts::integer::layout(&ty) {
@@ -89,19 +95,6 @@ fn generated_number_codecs_round_trip_owned_record_payloads() {
     }
 }
 
-fn indexed(values: Vec<(Value, Type)>, element_type: Option<Type>) -> Rc<IndexedStorage> {
-    Rc::new(IndexedStorage {
-        elements: RefCell::new(
-            values
-                .into_iter()
-                .map(|(value, type_annotation)| FieldSlot::new(type_annotation, value))
-                .collect(),
-        ),
-        element_type: RefCell::new(element_type),
-        active_iterators: Default::default(),
-    })
-}
-
 #[test]
 fn owned_composite_codec_moves_nested_string_without_value_in_native_bytes() {
     let array_type = Type::Array {
@@ -112,34 +105,33 @@ fn owned_composite_codec_moves_nested_string_without_value_in_native_bytes() {
     let optional_type = Type::Option(Box::new(Type::String));
     let tuple_type = Type::Tuple(vec![Type::I32, optional_type.clone(), result_type.clone()]);
     let make = || {
-        let flags = Value::Array(indexed(
-            vec![
-                (Value::Bool(true), Type::Bool),
-                (Value::Bool(false), Type::Bool),
-            ],
-            Some(Type::Bool),
-        ));
-        Value::Tuple(indexed(
-            vec![
-                (Value::from_i32(7), Type::I32),
-                (
-                    Value::Option {
-                        value: Some(Rc::new(Value::from_string("owned"))),
-                        element_type: Some(Type::String),
-                    },
-                    optional_type.clone(),
-                ),
-                (
-                    Value::Result {
-                        value: Ok(Rc::new(flags)),
-                        ok_type: Some(array_type.clone()),
-                        error_type: Some(Type::String),
-                    },
-                    result_type.clone(),
-                ),
-            ],
-            None,
-        ))
+        let context = TypedStorageContext::new(&[], &[]);
+        let flags = context
+            .construct_array(
+                &array_type,
+                vec![
+                    Value::from(rils_execution::value::native_bool(true)),
+                    Value::from(rils_execution::value::native_bool(false)),
+                ],
+            )
+            .unwrap();
+        let optional = context
+            .construct_option(
+                &optional_type,
+                Some(Value::from(rils_execution::value::native_string("owned"))),
+            )
+            .unwrap();
+        let result = context.construct_result(&result_type, Ok(flags)).unwrap();
+        context
+            .construct_tuple(
+                &tuple_type,
+                vec![
+                    Value::from(rils_execution::value::native_i32(7)),
+                    optional,
+                    result,
+                ],
+            )
+            .unwrap()
     };
     let mut resolver = RecordLayoutResolver::new(&[]);
     let layout = resolver.resolve(&tuple_type).unwrap();
@@ -151,16 +143,19 @@ fn owned_composite_codec_moves_nested_string_without_value_in_native_bytes() {
 
 #[test]
 fn owned_composite_codec_rejects_shared_noncopy_items() {
-    let mut resolver = RecordLayoutResolver::new(&[]);
     let ty = Type::Option(Box::new(Type::String));
-    let layout = resolver.resolve(&ty).unwrap();
-    let item = Rc::new(Value::from_string("shared"));
-    let alias = item.clone();
-    let value = Value::Option {
-        value: Some(item),
-        element_type: Some(Type::String),
-    };
-    assert!(record_codec::into_native(value, layout).is_err());
+    let value = TypedStorageContext::new(&[], &[])
+        .construct_option(
+            &ty,
+            Some(Value::from(rils_execution::value::native_string("shared"))),
+        )
+        .unwrap();
+    let alias = value.clone();
+    assert!(
+        TypedStorageContext::new(&[], &[])
+            .construct_tuple(&Type::Tuple(vec![ty]), vec![value])
+            .is_err()
+    );
     drop(alias);
 }
 
@@ -218,7 +213,10 @@ fn nested_user_struct_fields_are_inline_in_native_bytes() {
     let make_inner = |text| {
         instance(
             inner.clone(),
-            vec![Value::from_string(text), Value::from_i32(7)],
+            vec![
+                Value::from(rils_execution::value::native_string(text)),
+                Value::from(rils_execution::value::native_i32(7)),
+            ],
         )
     };
     let make_outer = || {
@@ -226,10 +224,12 @@ fn nested_user_struct_fields_are_inline_in_native_bytes() {
             outer.clone(),
             vec![
                 make_inner("first"),
-                Value::Option {
-                    value: Some(Rc::new(make_inner("second"))),
-                    element_type: Some(Type::named("Inner")),
-                },
+                rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+                    .construct_option(
+                        &Type::Option(Box::new(Type::named("Inner"))),
+                        Some(make_inner("second")),
+                    )
+                    .unwrap(),
             ],
             &[inner.clone(), outer.clone()],
         )
@@ -293,7 +293,10 @@ fn generic_enum_record_payload_keeps_nested_struct_inline() {
                 Some("Filled"),
                 HashMap::from([(
                     "item".into(),
-                    instance(inner.clone(), vec![Value::from_string("inside")]),
+                    instance(
+                        inner.clone(),
+                        vec![Value::from(rils_execution::value::native_string("inside"))],
+                    ),
                 )]),
             )
             .unwrap()
@@ -348,7 +351,10 @@ fn generic_struct_fields_use_concrete_native_layouts() {
             .construct_record(
                 &ty,
                 None,
-                HashMap::from([("item".into(), Value::from_string("generic"))]),
+                HashMap::from([(
+                    "item".into(),
+                    Value::from(rils_execution::value::native_string("generic")),
+                )]),
             )
             .unwrap()
     };
@@ -374,19 +380,20 @@ fn stdlib_vec_declaration_registers_nested_native_record_layout() {
         arguments: vec![element_type.clone()],
     };
     let make = || {
-        Value::Vec(indexed(
+        sequence(
+            &ty,
             vec![
-                (
-                    instance(inner.clone(), vec![Value::from_string("first")]),
-                    element_type.clone(),
+                instance(
+                    inner.clone(),
+                    vec![Value::from(rils_execution::value::native_string("first"))],
                 ),
-                (
-                    instance(inner.clone(), vec![Value::from_string("second")]),
-                    element_type.clone(),
+                instance(
+                    inner.clone(),
+                    vec![Value::from(rils_execution::value::native_string("second"))],
                 ),
             ],
-            Some(element_type.clone()),
-        ))
+            std::slice::from_ref(&inner),
+        )
     };
     let definitions = vec![inner.clone()];
     let mut resolver = RecordLayoutResolver::new(&definitions);
@@ -405,21 +412,29 @@ fn stdlib_vec_declaration_registers_nested_native_record_layout() {
     let moved = native.take_path_field(&path).unwrap();
     assert_eq!(
         codec.from_native(moved).unwrap(),
-        Value::from_string("second")
+        Value::from(rils_execution::value::native_string("second"))
     );
     assert!(
         codec
-            .replace_path_field(&mut native, &path, Value::from_string("third"))
+            .replace_path_field(
+                &mut native,
+                &path,
+                Value::from(rils_execution::value::native_string("third"))
+            )
             .unwrap()
             .is_none()
     );
     let replaced = codec
-        .replace_path_field(&mut native, &path, Value::from_string("second"))
+        .replace_path_field(
+            &mut native,
+            &path,
+            Value::from(rils_execution::value::native_string("second")),
+        )
         .unwrap()
         .unwrap();
     assert_eq!(
         codec.from_native(replaced).unwrap(),
-        Value::from_string("third")
+        Value::from(rils_execution::value::native_string("third"))
     );
     let Value::Dynamic(restored) = codec.from_native(native).unwrap() else {
         panic!("decoded Vec should retain native storage");
@@ -443,22 +458,24 @@ fn stdlib_vecdeque_layout_round_trips_nested_optional_records() {
         arguments: vec![option_type.clone()],
     };
     let make = || {
-        Value::VecDeque(Rc::new(VecDequeValue {
-            elements: RefCell::new(VecDeque::from([
-                Value::Option {
-                    value: Some(Rc::new(instance(
-                        item.clone(),
-                        vec![Value::from_string("front")],
-                    ))),
-                    element_type: Some(Type::named("QueuedItem")),
-                },
-                Value::Option {
-                    value: None,
-                    element_type: Some(Type::named("QueuedItem")),
-                },
-            ])),
-            element_type: RefCell::new(Some(option_type.clone())),
-        }))
+        let definitions = [item.clone()];
+        let context = TypedStorageContext::new(&definitions, &[]);
+        sequence(
+            &ty,
+            vec![
+                context
+                    .construct_option(
+                        &option_type,
+                        Some(instance(
+                            item.clone(),
+                            vec![Value::from(rils_execution::value::native_string("front"))],
+                        )),
+                    )
+                    .unwrap(),
+                context.construct_option(&option_type, None).unwrap(),
+            ],
+            &definitions,
+        )
     };
     let declarations = vec![item.clone()];
     let mut resolver = RecordLayoutResolver::new(&declarations);
@@ -504,13 +521,14 @@ fn stdlib_binary_heap_layout_keeps_owned_elements_and_empty_type() {
     assert!(native_layouts::binary_heap::matches(&ty));
     for values in [
         vec![],
-        vec![Value::from_i32(7), Value::from_i32(-4), Value::from_i32(2)],
+        vec![
+            Value::from(rils_execution::value::native_i32(7)),
+            Value::from(rils_execution::value::native_i32(-4)),
+            Value::from(rils_execution::value::native_i32(2)),
+        ],
     ] {
         let expected_len = values.len();
-        let heap = Value::BinaryHeap(Rc::new(BinaryHeapValue {
-            elements: RefCell::new(values),
-            element_type: RefCell::new(Some(Type::I32)),
-        }));
+        let heap = sequence(&ty, values, &[]);
         let mut codec = record_codec::NativeRecordCodec::new();
         let native = codec.into_native(heap, layout.clone()).unwrap();
         let Value::Dynamic(restored) = codec.from_native(native).unwrap() else {
@@ -527,73 +545,57 @@ fn stdlib_binary_heap_layout_keeps_owned_elements_and_empty_type() {
 #[test]
 fn standard_collection_fields_round_trip_without_value_payloads() {
     let option_type = Type::Option(Box::new(Type::I32));
-    let some = Value::Option {
-        value: Some(Rc::new(Value::from_i32(9))),
-        element_type: Some(Type::I32),
-    };
-    let cases = vec![
+    let cases = [
         (
-            Type::Named {
-                name: "HashSet".into(),
-                arguments: vec![Type::I32],
-            },
-            Value::HashSet(Rc::new(HashSetValue {
-                option_storage: Default::default(),
-                borrowed: Cell::new(0),
-                entries: RefCell::new(HashSet::from([
-                    HashKey::from_value(&Value::from_i32(3)).unwrap()
-                ])),
-                element_type: RefCell::new(Type::I32),
-            })),
+            "HashSet",
+            vec![Type::I32],
+            Value::from(rils_execution::value::native_i32(3)),
         ),
         (
-            Type::Named {
-                name: "BTreeSet".into(),
-                arguments: vec![Type::String],
-            },
-            Value::BTreeSet(Rc::new(BTreeSetValue {
-                option_storage: Default::default(),
-                borrowed: Cell::new(0),
-                entries: RefCell::new(BTreeSet::from([HashKey::from_ordered_value(
-                    &Value::from_string("key"),
+            "BTreeSet",
+            vec![Type::String],
+            Value::from(rils_execution::value::native_string("key")),
+        ),
+        (
+            "HashMap",
+            vec![Type::String, option_type.clone()],
+            TypedStorageContext::new(&[], &[])
+                .construct_tuple(
+                    &Type::Tuple(vec![Type::String, option_type.clone()]),
+                    vec![
+                        Value::from(rils_execution::value::native_string("key")),
+                        TypedStorageContext::new(&[], &[])
+                            .construct_option(
+                                &option_type,
+                                Some(Value::from(rils_execution::value::native_i32(9))),
+                            )
+                            .unwrap(),
+                    ],
                 )
-                .unwrap()])),
-                element_type: RefCell::new(Type::String),
-            })),
+                .unwrap(),
         ),
         (
-            Type::Named {
-                name: "HashMap".into(),
-                arguments: vec![Type::String, option_type.clone()],
-            },
-            Value::HashMap(Rc::new(HashMapValue {
-                option_storage: Default::default(),
-                borrowed: Cell::new(0),
-                entries: RefCell::new(HashMap::from([(
-                    HashKey::from_value(&Value::from_string("key")).unwrap(),
-                    FieldSlot::new(option_type.clone(), some),
-                )])),
-                key_type: RefCell::new(Type::String),
-                value_type: RefCell::new(option_type),
-            })),
+            "BTreeMap",
+            vec![Type::I32, Type::Bool],
+            TypedStorageContext::new(&[], &[])
+                .construct_tuple(
+                    &Type::Tuple(vec![Type::I32, Type::Bool]),
+                    vec![
+                        Value::from(rils_execution::value::native_i32(4)),
+                        Value::from(rils_execution::value::native_bool(true)),
+                    ],
+                )
+                .unwrap(),
         ),
-        (
-            Type::Named {
-                name: "BTreeMap".into(),
-                arguments: vec![Type::I32, Type::Bool],
-            },
-            Value::BTreeMap(Rc::new(BTreeMapValue {
-                option_storage: Default::default(),
-                borrowed: Cell::new(0),
-                entries: RefCell::new(BTreeMap::from([(
-                    HashKey::from_ordered_value(&Value::from_i32(4)).unwrap(),
-                    FieldSlot::new(Type::Bool, Value::Bool(true)),
-                )])),
-                key_type: RefCell::new(Type::I32),
-                value_type: RefCell::new(Type::Bool),
-            })),
-        ),
-    ];
+    ]
+    .map(|(name, arguments, entry)| {
+        let ty = Type::Named {
+            name: name.into(),
+            arguments,
+        };
+        let value = sequence(&ty, vec![entry], &[]);
+        (ty, value)
+    });
     for (ty, value) in cases {
         let mut resolver = RecordLayoutResolver::new(&[]);
         let layout = resolver.resolve(&ty).unwrap();
@@ -621,7 +623,13 @@ fn nominal_codec_rejects_a_layout_with_swapped_field_names() {
         ],
     )
     .unwrap();
-    let value = instance(pair, vec![Value::from_i32(1), Value::from_i32(2)]);
+    let value = instance(
+        pair,
+        vec![
+            Value::from(rils_execution::value::native_i32(1)),
+            Value::from(rils_execution::value::native_i32(2)),
+        ],
+    );
     let error = record_codec::NativeRecordCodec::new()
         .into_native(value, wrong)
         .err()
@@ -636,7 +644,13 @@ fn decoded_tuple_preserves_nominal_identity_and_explicit_copy_policy() {
     let context = TypedStorageContext::new(&declarations, &[]);
     let ty = Type::Tuple(vec![Type::named("Item")]);
     let tuple = context
-        .construct_tuple(&ty, vec![instance(item.clone(), vec![Value::from_i32(7)])])
+        .construct_tuple(
+            &ty,
+            vec![instance(
+                item.clone(),
+                vec![Value::from(rils_execution::value::native_i32(7))],
+            )],
+        )
         .unwrap();
     let optional = context
         .construct_option(&Type::Option(Box::new(ty)), Some(tuple))
@@ -657,7 +671,7 @@ fn decoded_tuple_preserves_nominal_identity_and_explicit_copy_policy() {
     let Value::Dynamic(child) = child else {
         panic!("native record")
     };
-    let Some(Value::StructType(restored)) =
+    let Some(rils_execution::declaration::Declaration::StructType(restored)) =
         rils_execution::value::native_instance::definition(&child)
     else {
         panic!("retained declaration")
@@ -707,4 +721,19 @@ fn empty_native_arrays_keep_transitive_element_declarations_without_runtime_cont
         layout.record_fields().unwrap()[0].layout().rils_type(),
         &Type::named("Inner")
     );
+}
+
+fn sequence(ty: &Type, values: Vec<Value>, definitions: &[Rc<StructType>]) -> Value {
+    let layout = RecordLayoutResolver::new(definitions).resolve(ty).unwrap();
+    let mut codec = record_codec::NativeRecordCodec::with_definitions(definitions, &[]);
+    let items = values
+        .into_iter()
+        .map(|v| {
+            codec
+                .into_native(v, layout.sequence_item().unwrap().clone())
+                .unwrap()
+        })
+        .collect();
+    let value = DynamicValue::sequence(layout, items).unwrap();
+    rils_execution::value::native_instance::from_native(value, Rc::new(codec)).unwrap()
 }

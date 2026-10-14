@@ -26,9 +26,11 @@ fn native_buffer_descriptor() -> Rc<NativeType> {
                 let [Value::Native(other)] = context.arguments() else {
                     return Err("expected one native argument".into());
                 };
-                Ok(Value::Bool(context.receiver::<Vec<i32>, _>(|left| {
-                    other.with::<Vec<i32>, _>(|right| left == right)
-                })??))
+                Ok(Value::from(rils_execution::value::native_bool(
+                    context.receiver::<Vec<i32>, _>(|left| {
+                        other.with::<Vec<i32>, _>(|right| left == right)
+                    })??,
+                )))
             }),
     )
 }
@@ -48,33 +50,24 @@ fn native_stdlib_range_keeps_its_rust_layout_and_rils_place_rules() {
     let second = ReferenceValue::new_storage(slot.clone(), true);
     assert_eq!(slot.borrow_mut().take().err(), Some(AccessError::Borrowed));
 
-    let first_handle = first.read().unwrap();
-    let Value::Native(first_handle) = first_handle else {
-        unreachable!()
-    };
-    assert_eq!(
-        first_handle
-            .with_mut::<Range<i32>, _>(|range| range.next())
-            .unwrap(),
-        Some(2)
-    );
-    let second_handle = second.read().unwrap();
-    let Value::Native(second_handle) = second_handle else {
-        unreachable!()
-    };
-    assert_eq!(
-        second_handle
-            .with_mut::<Range<i32>, _>(|range| range.next())
-            .unwrap(),
-        Some(3)
-    );
-    assert_eq!(
-        second_handle.with::<Range<i32>, _>(Range::current).unwrap(),
-        4
-    );
-
-    assert!(range_type.accepts(&Value::Native(second_handle.clone())));
-    assert!(!Type::named("Vec").accepts(&Value::Native(second_handle)));
+    assert!(first.read().is_err());
+    assert!(second.read().is_err());
+    for expected in [2, 3] {
+        slot.borrow()
+            .with_value(|value| {
+                let Value::Native(object) = value else {
+                    unreachable!()
+                };
+                assert_eq!(
+                    object.with_mut::<Range<i32>, _>(|range| range.next())?,
+                    Some(expected)
+                );
+                assert!(range_type.accepts(value));
+                assert!(!Type::named("Vec").accepts(value));
+                Ok(())
+            })
+            .unwrap();
+    }
     drop(first);
     drop(second);
     assert!(matches!(slot.borrow_mut().take(), Ok(Value::Native(_))));
@@ -181,11 +174,14 @@ fn native_containers_report_nested_lexical_references() {
     }
 
     let environment = Environment::global();
-    environment
-        .borrow_mut()
-        .define("source", Value::from_i32(7), true, None);
+    environment.borrow_mut().define(
+        "source",
+        Value::from(rils_execution::value::native_i32(7)),
+        true,
+        None,
+    );
     let source = environment.borrow().slot("source").unwrap();
-    let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(source, true)));
+    let reference = Value::from_reference(Rc::new(ReferenceValue::new_storage(source, true)));
     let descriptor = Rc::new(
         NativeType::new::<NativeBag>(Type::named("NativeBag")).with_children::<NativeBag>(),
     );
@@ -235,10 +231,14 @@ fn native_iterator_dispatch_follows_registration_instead_of_a_type_name() {
                     ticks.0 += 1;
                     item
                 })?;
-                Ok(Value::Option {
-                    value: item.map(|value| Rc::new(Value::from_i32(value))),
-                    element_type: Some(Type::I32),
-                })
+                Ok(
+                    rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+                        .construct_option(
+                            &Type::Option(Box::new(Type::I32)),
+                            item.map(|value| Value::from(rils_execution::value::native_i32(value))),
+                        )
+                        .unwrap(),
+                )
             },
         ),
     );
@@ -248,11 +248,11 @@ fn native_iterator_dispatch_follows_registration_instead_of_a_type_name() {
     };
     assert!(matches!(
         next_builtin(&mut iterator),
-        Some(Ok(Some(value))) if value.as_i32() == Some(0)
+        Some(Ok(Some(value))) if value.get_cloned::<i32>().ok() == Some(0)
     ));
     assert!(matches!(
         next_builtin(&mut iterator),
-        Some(Ok(Some(value))) if value.as_i32() == Some(1)
+        Some(Ok(Some(value))) if value.get_cloned::<i32>().ok() == Some(1)
     ));
     assert!(matches!(next_builtin(&mut iterator), Some(Ok(None))));
 }

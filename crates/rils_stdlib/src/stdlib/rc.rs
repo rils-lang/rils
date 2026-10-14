@@ -121,6 +121,9 @@ mod native {
 
 pub use native::{Rc, Weak};
 
+#[doc(hidden)]
+pub mod native_storage;
+
 /// Type-erased storage for a concrete Rils `Rc<T>` instantiation.
 #[doc(hidden)]
 #[derive(Clone)]

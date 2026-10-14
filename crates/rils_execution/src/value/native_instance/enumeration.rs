@@ -92,17 +92,21 @@ pub(crate) fn validate_layout(layout: &DynamicLayout, definition: &EnumType) -> 
 }
 
 pub fn enum_variant(value: &Value) -> Result<Option<NativeEnumVariant>, String> {
-    if !matches!(value, Value::Dynamic(_) | Value::Reference(_)) {
+    if !matches!(value, Value::Dynamic(_)) {
         return Ok(None);
     }
-    let Some(Value::EnumType(definition)) = value_definition(value)? else {
+    let Some(crate::value::Declaration::EnumType(definition)) = value_definition(value)? else {
         return Ok(None);
     };
     let index = match value {
-        Value::Dynamic(object) => object.with(|payload| payload.variant_index())??,
-        Value::Reference(reference) => {
+        __reference_value if __reference_value.as_reference().is_some() => {
+            let reference = __reference_value
+                .as_reference()
+                .expect("checked reference handle");
             reference.with_native_view(|view| view.variant_index())??
         }
+        Value::Dynamic(object) => object.with(|payload| payload.variant_index())??,
+
         _ => unreachable!(),
     };
     if index >= definition.variants.len() {
@@ -116,22 +120,28 @@ pub fn enum_variant(value: &Value) -> Result<Option<NativeEnumVariant>, String> 
 
 pub fn borrow_variant_field(value: &Value, index: usize, name: &str) -> Result<Value, String> {
     let reference = match value {
+        __reference_value if __reference_value.as_reference().is_some() => {
+            let reference = __reference_value
+                .as_reference()
+                .expect("checked reference handle");
+            {
+                let payload = Rc::new(
+                    reference
+                        .project_native_variant(index)?
+                        .ok_or("enum reference has no native payload")?,
+                );
+                payload
+                    .project_native_field(name)?
+                    .ok_or_else(|| format!("variant has no field `{name}`"))?
+                    .reborrow(false)?
+            }
+        }
         Value::Dynamic(object) => NativeInstancePlace::new(object.clone())?
             .project(DynamicPathStep::Variant(index))?
             .field(name)?
             .borrow(false, None)?,
-        Value::Reference(reference) => {
-            let payload = Rc::new(
-                reference
-                    .project_native_variant(index)?
-                    .ok_or("enum reference has no native payload")?,
-            );
-            payload
-                .project_native_field(name)?
-                .ok_or_else(|| format!("variant has no field `{name}`"))?
-                .reborrow(false)?
-        }
+
         _ => return Err("value is not a native enum".into()),
     };
-    Ok(Value::Reference(Rc::new(reference)))
+    Ok(Value::from_reference(Rc::new(reference)))
 }

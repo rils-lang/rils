@@ -14,20 +14,8 @@ use crate::{
 };
 
 pub(super) fn branch(value: &Value) -> Result<Branch, String> {
-    if let Some(branch) = crate::value::sum::branch(value)? {
-        return Ok(branch);
-    }
-    match value {
-        Value::Reference(reference) => branch(&reference.read()?),
-        Value::Option { value: Some(_), .. } => Ok(Branch::Some),
-        Value::Option { value: None, .. } => Ok(Branch::None),
-        Value::Result { value: Ok(_), .. } => Ok(Branch::Ok),
-        Value::Result { value: Err(_), .. } => Ok(Branch::Err),
-        _ => Err(format!(
-            "native query expects a sum, found {}",
-            value.type_name()
-        )),
-    }
+    crate::value::sum::branch(value)?
+        .ok_or_else(|| format!("native query expects a sum, found {}", value.type_name()))
 }
 
 pub(super) fn string_argument(value: Value) -> Result<String, String> {
@@ -69,23 +57,29 @@ impl SumBridge {
         let mut codec = NativeRecordCodec::with_definitions(&context.structs, &context.enums)
             .with_owned_conversion();
         let layout = match value {
+            __reference_value if __reference_value.as_reference().is_some() => {
+                let reference = __reference_value
+                    .as_reference()
+                    .expect("checked reference handle");
+                {
+                    if !reference.mutable {
+                        return Err("native receiver requires `&mut self`".into());
+                    }
+                    let layout = reference
+                        .native_layout()?
+                        .ok_or("mutable sum requires native storage")?;
+                    if let Some(source) = reference.native_codec()? {
+                        codec.retain_layout_declarations(&source, &layout)?;
+                    }
+                    layout
+                }
+            }
             Value::Dynamic(object) => {
                 codec = crate::value::sum::codec(object, &context.structs, &context.enums)?
                     .with_owned_conversion();
                 object.descriptor().layout_handle()
             }
-            Value::Reference(reference) => {
-                if !reference.mutable {
-                    return Err("native receiver requires `&mut self`".into());
-                }
-                let layout = reference
-                    .native_layout()?
-                    .ok_or("mutable sum requires native storage")?;
-                if let Some(source) = reference.native_codec()? {
-                    codec.retain_layout_declarations(&source, &layout)?;
-                }
-                layout
-            }
+
             _ => context.layout(&Type::of_value(value).ok_or("sum has no concrete type")?)?,
         };
         if !layout.rils_type().is_concrete_type() {
@@ -213,7 +207,7 @@ impl SumBridge {
         receiver: Value,
         call: impl FnOnce(&mut NativeOption<Value>) -> Result<NativeOption<Value>, String>,
     ) -> Result<Value, String> {
-        let Value::Reference(reference) = receiver else {
+        let Some(reference) = receiver.as_reference() else {
             return Err("native method requires a mutable binding".into());
         };
         let layout = self.layout.clone();

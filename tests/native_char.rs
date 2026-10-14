@@ -18,7 +18,7 @@ fn character_literals_and_string_items_have_native_storage() {
             };
             assert!(object.is_inline());
             assert_eq!(object.descriptor().rils_type(), &Type::Char);
-            assert_eq!(value.as_char(), Some('你'));
+            assert_eq!(value.get_cloned::<char>().ok(), Some('你'));
             assert_eq!(value.to_string(), "你");
             assert_eq!(format!("{value:?}"), "'你'");
         }
@@ -37,9 +37,17 @@ fn native_char_works_as_ordered_key_and_heap_element() {
             'z',
         ),
     ] {
-        assert_eq!(eval_value(source).unwrap().as_char(), Some(expected));
         assert_eq!(
-            compile(source).unwrap().execute_value().unwrap().as_char(),
+            eval_value(source).unwrap().get_cloned::<char>().ok(),
+            Some(expected)
+        );
+        assert_eq!(
+            compile(source)
+                .unwrap()
+                .execute_value()
+                .unwrap()
+                .get_cloned::<char>()
+                .ok(),
             Some(expected)
         );
     }

@@ -46,7 +46,7 @@ fn native_map_and_set_size_queries_match_all_backends() {
         "let mut values: HashSet<i32> = HashSet::new(); let empty = values.is_empty() && values.len() == 0usize; values.insert(1); empty && !values.is_empty() && values.len() == 1usize",
         "let mut values: BTreeSet<i32> = BTreeSet::new(); let empty = values.is_empty() && values.len() == 0usize; values.insert(1); empty && !values.is_empty() && values.len() == 1usize",
     ] {
-        assert_both(source, Value::Bool(true));
+        assert_both(source, Value::from(rils::value::native_bool(true)));
     }
 }
 
@@ -65,7 +65,7 @@ fn native_map_methods_preserve_values_and_borrows() {
         for item in map.iter() { sum = sum + *item.0; }
         if old == "first" && current == "new" && removed == "second" && map.len() == 1usize { sum } else { 0 }
         "#,
-        Value::from_i32(1),
+        Value::from(rils::value::native_i32(1)),
     );
     assert_both(
         r#"
@@ -78,7 +78,7 @@ fn native_map_methods_preserve_values_and_borrows() {
         let key = 2;
         if first == 1 && last == 3 && map.contains_key(&key) { sum } else { 0 }
         "#,
-        Value::from_i32(60),
+        Value::from(rils::value::native_i32(60)),
     );
 }
 
@@ -99,7 +99,7 @@ fn native_map_symbols_cover_queries_and_mutation() {
         map.clear();
         valid && removed == "seven" && map.is_empty()
         "#,
-        Value::Bool(true),
+        Value::from(rils::value::native_bool(true)),
     );
     assert_both(
         r#"
@@ -113,7 +113,7 @@ fn native_map_symbols_cover_queries_and_mutation() {
         map.clear();
         valid && removed == "two" && map.is_empty()
         "#,
-        Value::Bool(true),
+        Value::from(rils::value::native_bool(true)),
     );
 }
 
@@ -129,6 +129,6 @@ fn owned_map_iterators_move_entries_in_both_backends() {
             true,
         ),
     ] {
-        assert_both(source, Value::Bool(expected));
+        assert_both(source, Value::from(rils::value::native_bool(expected)));
     }
 }

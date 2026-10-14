@@ -20,9 +20,7 @@ mod runtime_builtins {
 mod standard_library {
     pub(crate) use rils_execution::standard_library::*;
 }
-mod value {
-    pub(crate) use rils_execution::value::*;
-}
+pub use rils_execution::value;
 
 pub mod analysis {
     pub use rils_frontend::analysis::{

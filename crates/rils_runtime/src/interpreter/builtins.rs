@@ -11,14 +11,17 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             max_arity: usize::MAX,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
             body: NativeFunctionBody::Rust(|arguments| {
-                let Some(format) = arguments.first().and_then(Value::as_string) else {
+                let Some(format) = arguments
+                    .first()
+                    .and_then(|value| value.get_cloned::<String>().ok())
+                else {
                     return Err("print! requires a format string".into());
                 };
                 print!(
                     "{}",
                     crate::formatting::format_arguments(&format, &arguments[1..])?
                 );
-                Ok(Value::Unit)
+                Ok(Value::from(rils_execution::value::native_unit()))
             }),
         },
         NativeFunction {
@@ -30,16 +33,19 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             body: NativeFunctionBody::Rust(|arguments| {
                 if arguments.is_empty() {
                     println!();
-                    return Ok(Value::Unit);
+                    return Ok(Value::from(rils_execution::value::native_unit()));
                 }
-                let Some(format) = arguments.first().and_then(Value::as_string) else {
+                let Some(format) = arguments
+                    .first()
+                    .and_then(|value| value.get_cloned::<String>().ok())
+                else {
                     return Err("println! requires a format string".into());
                 };
                 println!(
                     "{}",
                     crate::formatting::format_arguments(&format, &arguments[1..])?
                 );
-                Ok(Value::Unit)
+                Ok(Value::from(rils_execution::value::native_unit()))
             }),
         },
         NativeFunction {
@@ -49,9 +55,9 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             max_arity: 1,
             signature: Some(FunctionSignature::fixed(vec![Type::Unknown], Type::String)),
             body: NativeFunctionBody::Rust(|arguments| {
-                Ok(rils_execution::value::native_string(
+                Ok(Value::from(rils_execution::value::native_string(
                     arguments[0].type_name(),
-                ))
+                )))
             }),
         },
         NativeFunction {
@@ -75,8 +81,10 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             max_arity: 2,
             signature: Some(FunctionSignature::variadic(Type::Unit)),
             body: NativeFunctionBody::Rust(|arguments| match arguments[0] {
-                Value::Bool(true) => Ok(Value::Unit),
-                Value::Bool(false) => {
+                ref value if value.get_cloned::<bool>().ok() == Some(true) => {
+                    Ok(Value::from(rils_execution::value::native_unit()))
+                }
+                ref value if value.get_cloned::<bool>().ok() == Some(false) => {
                     let message = arguments
                         .get(1)
                         .map(ToString::to_string)
@@ -148,7 +156,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         }
         environment.borrow_mut().define(
             function.binding_name,
-            Value::NativeFunction(function),
+            Value::from_callable(Rc::new(function)),
             false,
             None,
         );
@@ -169,14 +177,14 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
         let symbol = declaration.native_symbol.expect("filtered native symbol");
         environment.borrow_mut().define(
             declaration.path,
-            Value::NativeFunction(NativeFunction {
+            Value::from_callable(Rc::new(NativeFunction {
                 binding_name: declaration.path,
                 name: declaration.path,
                 min_arity: arity,
                 max_arity: arity,
                 signature: Some(signature),
                 body: NativeFunctionBody::Symbol(symbol),
-            }),
+            })),
             false,
             None,
         );
@@ -184,18 +192,21 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
 
     install_builtin_traits(environment);
     install_format_types(environment);
-    environment
-        .borrow_mut()
-        .define("Vec", Value::BuiltinType(BuiltinType::Vec), false, None);
+    environment.borrow_mut().define(
+        "Vec",
+        crate::value::Declaration::BuiltinType(BuiltinType::Vec),
+        false,
+        None,
+    );
     environment.borrow_mut().define(
         "HashMap",
-        Value::BuiltinType(BuiltinType::HashMap),
+        crate::value::Declaration::BuiltinType(BuiltinType::HashMap),
         false,
         None,
     );
     environment.borrow_mut().define(
         "HashSet",
-        Value::BuiltinType(BuiltinType::HashSet),
+        crate::value::Declaration::BuiltinType(BuiltinType::HashSet),
         false,
         None,
     );
@@ -212,7 +223,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     ] {
         environment.borrow_mut().define(
             name,
-            Value::StructType(Rc::new(StructType {
+            crate::value::Declaration::StructType(Rc::new(StructType {
                 field_indices: Default::default(),
                 name: name.into(),
                 opaque_native: rils_builtins::builtin(name)
@@ -248,7 +259,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     for integer in crate::IntegerType::ALL {
         environment.borrow_mut().define(
             integer.name(),
-            Value::BuiltinType(BuiltinType::Integer(integer)),
+            crate::value::Declaration::BuiltinType(BuiltinType::Integer(integer)),
             false,
             None,
         );
@@ -256,14 +267,14 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     for float in [crate::FloatType::F32, crate::FloatType::F64] {
         environment.borrow_mut().define(
             float.name(),
-            Value::BuiltinType(BuiltinType::Float(float)),
+            crate::value::Declaration::BuiltinType(BuiltinType::Float(float)),
             false,
             None,
         );
     }
     environment.borrow_mut().define(
         "Range",
-        Value::StructType(Rc::new(StructType {
+        crate::value::Declaration::StructType(Rc::new(StructType {
             field_indices: Default::default(),
             name: "Range".into(),
             opaque_native: rils_builtins::builtin("Range")
@@ -327,21 +338,27 @@ fn runtime_clone(arguments: &[Value]) -> Result<Value, String> {
 fn install_builtin_modules(environment: &EnvironmentRef) {
     let core = builtin_module(environment, "core");
     let std_definition = builtin_module(environment, "std");
-    let io_definition = match std_definition.members.borrow().get("io") {
-        Some(Value::Module(module)) => module,
+    let io_definition = match std_definition.members.borrow().get_declaration("io") {
+        Some(crate::value::Declaration::Module(module)) => module,
         _ => unreachable!("generated std module contains io"),
     };
     crate::standard_library::install(environment, &std_definition, &io_definition);
     let prelude = builtin_module(environment, "prelude");
     environment
         .borrow_mut()
-        .define("core", Value::Module(core), false, None);
-    environment
-        .borrow_mut()
-        .define("std", Value::Module(std_definition), false, None);
-    environment
-        .borrow_mut()
-        .define("prelude", Value::Module(prelude), false, None);
+        .define("core", crate::value::Declaration::Module(core), false, None);
+    environment.borrow_mut().define(
+        "std",
+        crate::value::Declaration::Module(std_definition),
+        false,
+        None,
+    );
+    environment.borrow_mut().define(
+        "prelude",
+        crate::value::Declaration::Module(prelude),
+        false,
+        None,
+    );
 }
 
 fn builtin_module(environment: &EnvironmentRef, path: &str) -> Rc<ModuleValue> {
@@ -353,7 +370,9 @@ fn builtin_module(environment: &EnvironmentRef, path: &str) -> Rc<ModuleValue> {
             .iter()
             .any(|module| module.path == child_path)
         {
-            Some(Value::Module(builtin_module(environment, &child_path)))
+            Some(crate::value::Binding::Declaration(
+                crate::value::Declaration::Module(builtin_module(environment, &child_path)),
+            ))
         } else {
             let binding = match (path, member) {
                 ("std::io", "print") => "#rils_native_print",
@@ -362,8 +381,8 @@ fn builtin_module(environment: &EnvironmentRef, path: &str) -> Rc<ModuleValue> {
             };
             environment
                 .borrow()
-                .get(binding)
-                .or_else(|| environment.borrow().get(&child_path))
+                .binding(binding)
+                .or_else(|| environment.borrow().binding(&child_path))
         };
         if let Some(value) = value {
             public.insert(member.to_owned());
@@ -381,7 +400,7 @@ fn install_format_types(environment: &EnvironmentRef) {
     for name in ["Formatter", "FormatError"] {
         environment.borrow_mut().define(
             name,
-            Value::StructType(Rc::new(StructType {
+            crate::value::Declaration::StructType(Rc::new(StructType {
                 field_indices: Default::default(),
                 name: name.into(),
                 opaque_native: rils_builtins::builtin(name)
@@ -536,8 +555,11 @@ fn install_builtin_traits(environment: &EnvironmentRef) {
             methods,
         };
         let name = definition.name.clone();
-        environment
-            .borrow_mut()
-            .define(name, Value::TraitType(Rc::new(definition)), false, None);
+        environment.borrow_mut().define(
+            name,
+            crate::value::Declaration::TraitType(Rc::new(definition)),
+            false,
+            None,
+        );
     }
 }

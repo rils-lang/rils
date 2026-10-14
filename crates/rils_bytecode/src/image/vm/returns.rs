@@ -2,6 +2,23 @@
 
 use super::*;
 
+pub(super) fn callable_signature(function: &BytecodeFunction, bound: &[Value]) -> Type {
+    let bindings = resolve_type_bindings(function, bound.iter());
+    Type::function(
+        function
+            .parameter_types
+            .iter()
+            .skip(bound.len())
+            .map(|ty| ty.clone().unwrap_or(Type::Unknown).substitute(&bindings))
+            .collect(),
+        function
+            .return_type
+            .clone()
+            .unwrap_or(Type::Unknown)
+            .substitute(&bindings),
+    )
+}
+
 pub(super) fn resolve_type_bindings<'a>(
     function: &BytecodeFunction,
     arguments: impl Iterator<Item = &'a Value>,

@@ -1,11 +1,11 @@
 use super::*;
 
 pub(super) fn implemented_traits(
-    value: &Value,
+    value: &crate::value::Declaration,
 ) -> Option<&std::cell::RefCell<std::collections::HashSet<String>>> {
     match value {
-        Value::StructType(definition) => Some(&definition.implemented_traits),
-        Value::EnumType(definition) => Some(&definition.implemented_traits),
+        crate::value::Declaration::StructType(definition) => Some(&definition.implemented_traits),
+        crate::value::Declaration::EnumType(definition) => Some(&definition.implemented_traits),
         _ => None,
     }
 }

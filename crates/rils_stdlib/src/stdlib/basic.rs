@@ -81,6 +81,15 @@ mod formatting {
 pub use boxed::Box;
 pub use formatting::FormatError;
 
+pub const NATIVE_LAYOUT_FORMAT_ERROR: rils_native::LayoutRegistration =
+    rils_native::LayoutRegistration {
+        matches: |ty| matches!(ty, rils_syntax::Type::Named { name, arguments } if name == "FormatError" && arguments.is_empty()),
+        layout: |ty, _| {
+            matches!(ty, rils_syntax::Type::Named { name, arguments } if name == "FormatError" && arguments.is_empty())
+                .then(|| Ok(rils_value::DynamicLayout::of::<FormatError>(ty.clone())))
+        },
+    };
+
 pub fn is_native_box(ty: &rils_syntax::Type) -> bool {
     box_layout::matches(ty)
 }

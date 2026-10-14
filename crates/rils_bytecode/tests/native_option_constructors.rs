@@ -94,7 +94,11 @@ fn option_operations_move_non_clone_values_and_preserve_mutable_aliases() {
         ),
     ] {
         for value in run_all(name, source) {
-            assert_eq!(value, Value::from_i32(42), "{name}");
+            assert_eq!(
+                value,
+                Value::from(rils_execution::value::native_i32(42)),
+                "{name}"
+            );
         }
     }
 }

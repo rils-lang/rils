@@ -25,7 +25,7 @@ pub(crate) fn from_ffi_value(
         }
     };
     macro_rules! signed {
-        ($constructor:path, $type:ty) => {{
+        ($constructor:expr, $type:ty) => {{
             require_zero_high()?;
             <$type>::try_from(value.low as i64)
                 .map($constructor)
@@ -40,7 +40,7 @@ pub(crate) fn from_ffi_value(
         }};
     }
     macro_rules! unsigned {
-        ($constructor:path, $type:ty) => {{
+        ($constructor:expr, $type:ty) => {{
             require_zero_high()?;
             <$type>::try_from(value.low).map($constructor).map_err(|_| {
                 fail(
@@ -53,32 +53,62 @@ pub(crate) fn from_ffi_value(
         }};
     }
     match value.tag {
-        RILS_VALUE_UNIT => Ok(Value::Unit),
-        RILS_VALUE_BOOL if value.high == 0 && (value.low == 0 || value.low == 1) => {
-            Ok(Value::Bool(value.low != 0))
-        }
+        RILS_VALUE_UNIT => Ok(Value::from(rils_runtime::value::native_unit())),
+        RILS_VALUE_BOOL if value.high == 0 && (value.low == 0 || value.low == 1) => Ok(
+            Value::from(rils_runtime::value::native_bool(value.low != 0)),
+        ),
         RILS_VALUE_BOOL => Err(fail(
             RILS_STATUS_INVALID_ARGUMENT,
             "bool payload must be 0 or 1",
             "",
             Span::default(),
         )),
-        RILS_VALUE_I8 => signed!(Value::from_i8, i8),
-        RILS_VALUE_I16 => signed!(Value::from_i16, i16),
-        RILS_VALUE_I32 => signed!(Value::from_i32, i32),
-        RILS_VALUE_I64 => signed!(Value::from_i64, i64),
-        RILS_VALUE_I128 => Ok(Value::from_i128(
+        RILS_VALUE_I8 => signed!(
+            |value| Value::from(rils_runtime::value::native_i8(value)),
+            i8
+        ),
+        RILS_VALUE_I16 => signed!(
+            |value| Value::from(rils_runtime::value::native_i16(value)),
+            i16
+        ),
+        RILS_VALUE_I32 => signed!(
+            |value| Value::from(rils_runtime::value::native_i32(value)),
+            i32
+        ),
+        RILS_VALUE_I64 => signed!(
+            |value| Value::from(rils_runtime::value::native_i64(value)),
+            i64
+        ),
+        RILS_VALUE_I128 => Ok(Value::from(rils_runtime::value::native_i128(
             ((u128::from(value.high) << 64) | u128::from(value.low)) as i128,
-        )),
-        RILS_VALUE_ISIZE => signed!(Value::from_isize, isize),
-        RILS_VALUE_U8 => unsigned!(Value::from_u8, u8),
-        RILS_VALUE_U16 => unsigned!(Value::from_u16, u16),
-        RILS_VALUE_U32 => unsigned!(Value::from_u32, u32),
-        RILS_VALUE_U64 => unsigned!(Value::from_u64, u64),
-        RILS_VALUE_U128 => Ok(Value::from_u128(
+        ))),
+        RILS_VALUE_ISIZE => signed!(
+            |value| Value::from(rils_runtime::value::native_isize(value)),
+            isize
+        ),
+        RILS_VALUE_U8 => unsigned!(
+            |value| Value::from(rils_runtime::value::native_u8(value)),
+            u8
+        ),
+        RILS_VALUE_U16 => unsigned!(
+            |value| Value::from(rils_runtime::value::native_u16(value)),
+            u16
+        ),
+        RILS_VALUE_U32 => unsigned!(
+            |value| Value::from(rils_runtime::value::native_u32(value)),
+            u32
+        ),
+        RILS_VALUE_U64 => unsigned!(
+            |value| Value::from(rils_runtime::value::native_u64(value)),
+            u64
+        ),
+        RILS_VALUE_U128 => Ok(Value::from(rils_runtime::value::native_u128(
             (u128::from(value.high) << 64) | u128::from(value.low),
-        )),
-        RILS_VALUE_USIZE => unsigned!(Value::from_usize, usize),
+        ))),
+        RILS_VALUE_USIZE => unsigned!(
+            |value| Value::from(rils_runtime::value::native_usize(value)),
+            usize
+        ),
         RILS_VALUE_F32 => {
             require_zero_high()?;
             let bits = u32::try_from(value.low).map_err(|_| {
@@ -89,11 +119,15 @@ pub(crate) fn from_ffi_value(
                     Span::default(),
                 )
             })?;
-            Ok(Value::from_f32(f32::from_bits(bits)))
+            Ok(Value::from(rils_runtime::value::native_f32(
+                f32::from_bits(bits),
+            )))
         }
         RILS_VALUE_F64 => {
             require_zero_high()?;
-            Ok(Value::from_f64(f64::from_bits(value.low)))
+            Ok(Value::from(rils_runtime::value::native_f64(
+                f64::from_bits(value.low),
+            )))
         }
         RILS_VALUE_CHAR => {
             require_zero_high()?;
@@ -108,11 +142,12 @@ pub(crate) fn from_ffi_value(
                         Span::default(),
                     )
                 })?;
-            Ok(Value::Char(scalar))
+            Ok(Value::from(rils_runtime::value::native_char(scalar)))
         }
         RILS_VALUE_STRING => {
             require_zero_high()?;
-            take_string(value.low).map(Value::from_string)
+            take_string(value.low)
+                .map(|value| Value::from(rils_runtime::value::native_string(value)))
         }
         RILS_VALUE_HOST_HANDLE => {
             if logical_host_type
@@ -209,82 +244,69 @@ pub(crate) fn to_ffi_value(value: Value, source_name: &str) -> Result<RilsValue,
         high,
         ..RilsValue::default()
     };
-    if let Some(number) = value.as_i8() {
+    if let Ok(number) = value.get_cloned::<i8>() {
         return Ok(scalar(RILS_VALUE_I8, number as i64 as u64, 0));
     }
-    if let Some(number) = value.as_i16() {
+    if let Ok(number) = value.get_cloned::<i16>() {
         return Ok(scalar(RILS_VALUE_I16, number as i64 as u64, 0));
     }
-    if let Some(number) = value.as_i32() {
+    if let Ok(number) = value.get_cloned::<i32>() {
         return Ok(scalar(RILS_VALUE_I32, number as i64 as u64, 0));
     }
-    if let Some(number) = value.as_i64() {
+    if let Ok(number) = value.get_cloned::<i64>() {
         return Ok(scalar(RILS_VALUE_I64, number as u64, 0));
     }
-    if let Some(number) = value.as_i128() {
+    if let Ok(number) = value.get_cloned::<i128>() {
         return Ok(scalar(
             RILS_VALUE_I128,
             number as u128 as u64,
             (number as u128 >> 64) as u64,
         ));
     }
-    if let Some(number) = value.as_isize() {
+    if let Ok(number) = value.get_cloned::<isize>() {
         return Ok(scalar(RILS_VALUE_ISIZE, number as i64 as u64, 0));
     }
-    if let Some(number) = value.as_u8() {
+    if let Ok(number) = value.get_cloned::<u8>() {
         return Ok(scalar(RILS_VALUE_U8, u64::from(number), 0));
     }
-    if let Some(number) = value.as_u16() {
+    if let Ok(number) = value.get_cloned::<u16>() {
         return Ok(scalar(RILS_VALUE_U16, u64::from(number), 0));
     }
-    if let Some(number) = value.as_u32() {
+    if let Ok(number) = value.get_cloned::<u32>() {
         return Ok(scalar(RILS_VALUE_U32, u64::from(number), 0));
     }
-    if let Some(number) = value.as_u64() {
+    if let Ok(number) = value.get_cloned::<u64>() {
         return Ok(scalar(RILS_VALUE_U64, number, 0));
     }
-    if let Some(number) = value.as_u128() {
+    if let Ok(number) = value.get_cloned::<u128>() {
         return Ok(scalar(
             RILS_VALUE_U128,
             number as u64,
             (number >> 64) as u64,
         ));
     }
-    if let Some(number) = value.as_usize() {
+    if let Ok(number) = value.get_cloned::<usize>() {
         return Ok(scalar(RILS_VALUE_USIZE, number as u64, 0));
     }
-    if let Some(number) = value.as_f32() {
+    if let Ok(number) = value.get_cloned::<f32>() {
         return Ok(scalar(RILS_VALUE_F32, u64::from(number.to_bits()), 0));
     }
-    if let Some(number) = value.as_f64() {
+    if let Ok(number) = value.get_cloned::<f64>() {
         return Ok(scalar(RILS_VALUE_F64, number.to_bits(), 0));
     }
-    if let Some(text) = value.as_string() {
+    if let Ok(text) = value.get_cloned::<String>() {
         return Ok(scalar(RILS_VALUE_STRING, insert_string(text)?, 0));
     }
-    if let Some(character) = value.as_char() {
+    if let Ok(character) = value.get_cloned::<char>() {
         return Ok(scalar(RILS_VALUE_CHAR, u64::from(u32::from(character)), 0));
     }
+    if value.is_unit() {
+        return Ok(RilsValue::default());
+    }
+    if let Ok(value) = value.get_cloned::<bool>() {
+        return Ok(scalar(RILS_VALUE_BOOL, u64::from(value), 0));
+    }
     let value = match value {
-        Value::Unit => RilsValue::default(),
-        Value::Bool(value) => scalar(RILS_VALUE_BOOL, u64::from(value), 0),
-        Value::I16(value) => scalar(RILS_VALUE_I16, value as i64 as u64, 0),
-        Value::I64(value) => scalar(RILS_VALUE_I64, value as u64, 0),
-        Value::I128(value) => scalar(
-            RILS_VALUE_I128,
-            value as u128 as u64,
-            (value as u128 >> 64) as u64,
-        ),
-        Value::Isize(value) => scalar(RILS_VALUE_ISIZE, value as i64 as u64, 0),
-        Value::U8(value) => scalar(RILS_VALUE_U8, u64::from(value), 0),
-        Value::U16(value) => scalar(RILS_VALUE_U16, u64::from(value), 0),
-        Value::U32(value) => scalar(RILS_VALUE_U32, u64::from(value), 0),
-        Value::U64(value) => scalar(RILS_VALUE_U64, value, 0),
-        Value::U128(value) => scalar(RILS_VALUE_U128, value as u64, (value >> 64) as u64),
-        Value::Usize(value) => scalar(RILS_VALUE_USIZE, value as u64, 0),
-        Value::F32(value) => scalar(RILS_VALUE_F32, u64::from(value.to_bits()), 0),
-        Value::F64(value) => scalar(RILS_VALUE_F64, value.to_bits(), 0),
-        Value::Char(value) => scalar(RILS_VALUE_CHAR, u64::from(u32::from(value)), 0),
         Value::HostObject(object) => {
             let value = Value::HostObject(object);
             if let Some(handle) = rils_runtime::opaque_host_handle(&value) {
@@ -556,29 +578,29 @@ pub(crate) fn from_ffi_host_enum(
         ));
     }
     let integer = from_ffi_value(value, None)?;
-    let raw = if let Some(value) = integer.as_i8() {
+    let raw = if let Ok(value) = integer.get_cloned::<i8>() {
         value as u8 as u128
-    } else if let Some(value) = integer.as_i16() {
+    } else if let Ok(value) = integer.get_cloned::<i16>() {
         value as u16 as u128
-    } else if let Some(value) = integer.as_i32() {
+    } else if let Ok(value) = integer.get_cloned::<i32>() {
         value as u32 as u128
-    } else if let Some(value) = integer.as_i64() {
+    } else if let Ok(value) = integer.get_cloned::<i64>() {
         value as u64 as u128
-    } else if let Some(value) = integer.as_i128() {
+    } else if let Ok(value) = integer.get_cloned::<i128>() {
         value as u128
-    } else if let Some(value) = integer.as_isize() {
+    } else if let Ok(value) = integer.get_cloned::<isize>() {
         value as usize as u128
-    } else if let Some(value) = integer.as_u8() {
+    } else if let Ok(value) = integer.get_cloned::<u8>() {
         u128::from(value)
-    } else if let Some(value) = integer.as_u16() {
+    } else if let Ok(value) = integer.get_cloned::<u16>() {
         u128::from(value)
-    } else if let Some(value) = integer.as_u32() {
+    } else if let Ok(value) = integer.get_cloned::<u32>() {
         u128::from(value)
-    } else if let Some(value) = integer.as_u64() {
+    } else if let Ok(value) = integer.get_cloned::<u64>() {
         u128::from(value)
-    } else if let Some(value) = integer.as_u128() {
+    } else if let Ok(value) = integer.get_cloned::<u128>() {
         value
-    } else if let Some(value) = integer.as_usize() {
+    } else if let Ok(value) = integer.get_cloned::<usize>() {
         value as u128
     } else {
         unreachable!("host enum transport tag was checked as an integer")

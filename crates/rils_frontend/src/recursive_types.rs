@@ -97,7 +97,6 @@ fn is_heap_indirected(name: &str) -> bool {
             | "Vec"
             | "HashMap"
             | "HashSet"
-            | "OwnedIterator"
             | "Iter"
     )
 }

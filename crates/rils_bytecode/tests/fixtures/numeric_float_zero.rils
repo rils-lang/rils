@@ -1,0 +1,2 @@
+let zero = -0.0f64;
+1.0f64 / zero

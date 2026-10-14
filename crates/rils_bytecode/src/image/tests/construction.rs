@@ -182,7 +182,10 @@ fn verifier_rejects_invalid_constructor_types_fields_and_variants() {
     let source = include_str!("../../../tests/fixtures/native_records/verifier.rils");
     let module = compile(source).unwrap();
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute_value().unwrap().as_i32(), Some(42));
+    assert_eq!(
+        loaded.execute_value().unwrap().get_cloned::<i32>().ok(),
+        Some(42)
+    );
     for case in 0..12 {
         let mut invalid = loaded.clone();
         let instruction = invalid

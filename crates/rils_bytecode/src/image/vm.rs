@@ -86,10 +86,11 @@ impl<'a> VirtualMachine<'a> {
                 } => {
                     let callee = &self.module.functions[function];
                     self.frame_mut().registers[destination] =
-                        Some(Value::BytecodeFunction(Rc::new(BytecodeFunctionValue {
+                        Some(Value::from_callable(Rc::new(BytecodeFunctionValue {
                             function,
                             name: callee.name.clone(),
                             parameter_count: callee.parameter_count,
+                            signature: returns::callable_signature(callee, &[]),
                             captures: Vec::new(),
                             bound_arguments: Vec::new(),
                             type_bindings: HashMap::new(),
@@ -103,10 +104,14 @@ impl<'a> VirtualMachine<'a> {
                     let receiver = self.take_register(receiver, instruction.span)?;
                     let callee = &self.module.functions[function];
                     self.frame_mut().registers[destination] =
-                        Some(Value::BytecodeFunction(Rc::new(BytecodeFunctionValue {
+                        Some(Value::from_callable(Rc::new(BytecodeFunctionValue {
                             function,
                             name: callee.name.clone(),
                             parameter_count: callee.parameter_count - 1,
+                            signature: returns::callable_signature(
+                                callee,
+                                std::slice::from_ref(&receiver),
+                            ),
                             captures: Vec::new(),
                             bound_arguments: vec![receiver],
                             type_bindings: HashMap::new(),
@@ -120,7 +125,7 @@ impl<'a> VirtualMachine<'a> {
                     let value = self.take_register(source, instruction.span)?;
                     let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(mutable)));
                     storage.borrow_mut().initialize(value);
-                    self.frame_mut().registers[destination] = Some(Value::Reference(Rc::new(
+                    self.frame_mut().registers[destination] = Some(Value::from_reference(Rc::new(
                         ReferenceValue::new_storage(storage, mutable),
                     )));
                 }
@@ -130,7 +135,7 @@ impl<'a> VirtualMachine<'a> {
                     mutable,
                 } => {
                     let reference = self.take_register(source, instruction.span)?;
-                    let Value::Reference(reference) = reference else {
+                    let Some(reference) = reference.as_reference() else {
                         return Err(BytecodeError::new(
                             "reborrow target is not a reference",
                             instruction.span,
@@ -140,7 +145,7 @@ impl<'a> VirtualMachine<'a> {
                         .reborrow(mutable)
                         .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     self.frame_mut().registers[destination] =
-                        Some(Value::Reference(Rc::new(reference)));
+                        Some(Value::from_reference(Rc::new(reference)));
                 }
                 Instruction::CreateClosure {
                     destination,
@@ -154,10 +159,11 @@ impl<'a> VirtualMachine<'a> {
                         .collect();
                     let type_bindings = self.frame().type_bindings.clone();
                     self.frame_mut().registers[destination] =
-                        Some(Value::BytecodeFunction(Rc::new(BytecodeFunctionValue {
+                        Some(Value::from_callable(Rc::new(BytecodeFunctionValue {
                             function,
                             name: callee.name.clone(),
                             parameter_count: callee.parameter_count,
+                            signature: returns::callable_signature(callee, &[]),
                             captures,
                             bound_arguments: Vec::new(),
                             type_bindings,
@@ -218,7 +224,7 @@ impl<'a> VirtualMachine<'a> {
                             ));
                         }
                     }
-                    self.frame_mut().registers[destination] = Some(Value::Reference(Rc::new(
+                    self.frame_mut().registers[destination] = Some(Value::from_reference(Rc::new(
                         ReferenceValue::new_storage(slot, mutable),
                     )));
                 }
@@ -236,38 +242,29 @@ impl<'a> VirtualMachine<'a> {
                     let place = self.resolve_place(place, instruction.span)?;
                     let reference = self.place_reference(&place, mutable, instruction.span)?;
                     self.frame_mut().registers[destination] =
-                        Some(Value::Reference(Rc::new(reference)));
+                        Some(Value::from_reference(Rc::new(reference)));
                 }
                 Instruction::Dereference {
                     destination,
                     source,
                 } => {
                     let value = self.take_register(source, instruction.span)?;
-                    let Value::Reference(reference) = value else {
+                    let Some(reference) = value.as_reference() else {
                         return Err(BytecodeError::new(
                             "cannot dereference a non-reference value",
                             instruction.span,
                         ));
                     };
-                    let value = reference
-                        .read()
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                    if !value.is_copy() {
-                        return Err(BytecodeError::new(
-                            "cannot move a non-Copy value out of a reference",
-                            instruction.span,
-                        ));
-                    }
                     self.frame_mut().registers[destination] = Some(
-                        value
-                            .clone_owned()
+                        reference
+                            .read()
                             .map_err(|message| BytecodeError::new(message, instruction.span))?,
                     );
                 }
                 Instruction::StoreDereference { reference, source } => {
                     let reference = self.take_register(reference, instruction.span)?;
                     let value = self.take_register(source, instruction.span)?;
-                    let Value::Reference(reference) = reference else {
+                    let Some(reference) = reference.as_reference() else {
                         return Err(BytecodeError::new(
                             "assignment target is not a reference",
                             instruction.span,
@@ -412,9 +409,10 @@ impl<'a> VirtualMachine<'a> {
                     arguments,
                 } => {
                     let callee = self.take_register(callee, instruction.span)?;
-                    let Value::BytecodeFunction(callee) = callee else {
+                    let Ok(callee) = callee.into_callable::<crate::value::BytecodeFunctionValue>()
+                    else {
                         return Err(BytecodeError::new(
-                            format!("{} is not callable", callee.type_name()),
+                            "value is not a bytecode callable",
                             instruction.span,
                         ));
                     };
@@ -430,7 +428,19 @@ impl<'a> VirtualMachine<'a> {
                         ));
                     }
                     self.ensure_call_capacity(instruction.span)?;
-                    let mut call_arguments = callee.bound_arguments.clone();
+                    let mut callee = match Rc::try_unwrap(callee) {
+                        Ok(callee) => callee,
+                        Err(callee) if callee.bound_arguments.iter().all(Value::is_copy) => {
+                            (*callee).clone()
+                        }
+                        Err(_) => {
+                            return Err(BytecodeError::new(
+                                "cannot consume a shared method receiver",
+                                instruction.span,
+                            ));
+                        }
+                    };
+                    let mut call_arguments = std::mem::take(&mut callee.bound_arguments);
                     call_arguments.extend(
                         arguments
                             .into_iter()
@@ -518,7 +528,9 @@ impl<'a> VirtualMachine<'a> {
                                     BytecodeError::new(message, instruction.span)
                                 })?
                             } else {
-                                let Some(format) = arguments.first().and_then(Value::as_string)
+                                let Some(format) = arguments
+                                    .first()
+                                    .and_then(|value| value.get_cloned::<String>().ok())
                                 else {
                                     return Err(BytecodeError::new(
                                         "output function requires a format string",
@@ -531,8 +543,8 @@ impl<'a> VirtualMachine<'a> {
                                     instruction.span,
                                 )?;
                                 (self.imports[import])(&[
-                                    rils_execution::value::native_string("{}"),
-                                    rils_execution::value::native_string(output),
+                                    Value::from(rils_execution::value::native_string("{}")),
+                                    Value::from(rils_execution::value::native_string(output)),
                                 ])
                                 .map_err(|message| BytecodeError::new(message, instruction.span))?
                             }
@@ -566,9 +578,14 @@ impl<'a> VirtualMachine<'a> {
                     let empty_type = self.module.native_imports[import]
                         .specialized_empty_collection_type()
                         .cloned();
-                    let native_empty = empty_type.and_then(|empty_type| {
-                        self.native_context.empty_collection(&empty_type).ok()
-                    });
+                    let native_empty = empty_type
+                        .map(|empty_type| {
+                            self.native_context.empty_collection(
+                                &empty_type.substitute(&self.frame().type_bindings),
+                            )
+                        })
+                        .transpose()
+                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
                     let value = if let Some(value) = native_empty {
                         value
                     } else if crate::runtime_builtins::requires_owned_native_call(&symbol) {
@@ -684,7 +701,8 @@ impl<'a> VirtualMachine<'a> {
                     let matched = self.frame().registers[source]
                         .as_ref()
                         .is_some_and(|value| pattern_matches(&pattern, value));
-                    self.frame_mut().registers[destination] = Some(Value::Bool(matched));
+                    self.frame_mut().registers[destination] =
+                        Some(Value::from(rils_execution::value::native_bool(matched)));
                 }
                 Instruction::BindPattern { source, pattern } => {
                     let value = self.frame().registers[source]
@@ -722,14 +740,15 @@ impl<'a> VirtualMachine<'a> {
                     none_target,
                 } => {
                     let script_iterator = match self.frame().registers[iterator].as_ref() {
-                        Some(Value::BytecodeIterator(iterator)) => Some(iterator.clone()),
+                        Some(Value::Native(object)) => {
+                            object.with::<BytecodeIteratorValue, _>(Clone::clone).ok()
+                        }
                         _ => None,
                     };
                     if let Some(iterator) = script_iterator {
-                        let reference = Value::Reference(Rc::new(ReferenceValue::new_storage(
-                            iterator.storage.clone(),
-                            true,
-                        )));
+                        let reference = Value::from_reference(Rc::new(
+                            ReferenceValue::new_storage(iterator.storage.clone(), true),
+                        ));
                         self.push_script_call(
                             iterator.next_function,
                             vec![reference],

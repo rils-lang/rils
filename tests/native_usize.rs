@@ -1,7 +1,7 @@
 use rils::{BytecodeModule, Value, compile, eval_value};
 
 fn assert_native_usize(value: Value, expected: usize) {
-    assert_eq!(value.as_usize(), Some(expected));
+    assert_eq!(value.get_cloned::<usize>().ok(), Some(expected));
     let Value::Native(object) = value else {
         panic!("usize result must retain native storage");
     };

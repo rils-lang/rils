@@ -1,0 +1,2 @@
+let value = -127i8 - 1i8;
+-value

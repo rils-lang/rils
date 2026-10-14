@@ -2,7 +2,7 @@
 
 use crate::Type;
 
-pub(super) fn storage_type(ty: &Type) -> Type {
+pub(crate) fn storage_type(ty: &Type) -> Type {
     let child = |ty: &Type| Box::new(storage_type(ty));
     let children = |types: &[Type]| types.iter().map(storage_type).collect();
     match ty {

@@ -1,0 +1,8 @@
+fn check() -> bool {
+    let values = (-42i32, "native", -9.0f64);
+    values.0.abs() == 42i32
+        && values.2.abs() == 9.0f64
+        && values.1.len() == 6usize
+        && values.1.contains("ati")
+}
+check()

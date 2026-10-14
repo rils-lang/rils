@@ -18,10 +18,13 @@ fn option_and_result_trait_bounds_follow_their_arguments() {
         assert!(result_text.is_ok());
         optional_number.unwrap() + result_number.unwrap()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(42))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(42)
+        Value::from(rils::value::native_i32(42))
     );
 
     for source in [

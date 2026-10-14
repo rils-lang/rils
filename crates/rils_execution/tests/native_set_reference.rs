@@ -22,7 +22,10 @@ fn borrowed_native_set_item_keeps_sequence_stable() {
     let reference =
         ReferenceValue::new_guarded_dynamic_indexed_element(object.clone(), 0, false, None)
             .unwrap();
-    assert_eq!(reference.read().unwrap(), Value::from_i32(7));
+    assert_eq!(
+        reference.read().unwrap(),
+        Value::from(rils_execution::value::native_i32(7))
+    );
     let blocked = object
         .with_mut(|payload| {
             payload.push_sequence_item(DynamicValue::from_rust(item.clone(), 8_i32).unwrap())

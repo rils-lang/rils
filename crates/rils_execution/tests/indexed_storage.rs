@@ -1,195 +1,155 @@
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
+use std::{cell::Cell, rc::Rc};
 
 use rils_execution::{
     Type, Value,
-    value::{FieldSlot, IndexedStorage, storage::TypedStorageContext},
+    environment::StorageSlot,
+    value::{
+        NativeObject, NativeType, native_instance::NativeInstancePlace,
+        storage::TypedStorageContext,
+    },
 };
 
 fn optional_string() -> Value {
-    Value::Option {
-        value: Some(Rc::new(Value::from_string("owned"))),
-        element_type: Some(Type::String),
-    }
+    TypedStorageContext::new(&[], &[])
+        .construct_option(
+            &Type::Option(Box::new(Type::String)),
+            Some(Value::from(rils_execution::value::native_string("owned"))),
+        )
+        .unwrap()
 }
 
 fn tuple(value: Value) -> Value {
-    Value::Tuple(Rc::new(IndexedStorage {
-        elements: RefCell::new(vec![FieldSlot::new(Type::of_value(&value).unwrap(), value)]),
-        element_type: RefCell::new(None),
-        active_iterators: Cell::new(0),
-    }))
+    TypedStorageContext::new(&[], &[])
+        .construct_tuple(
+            &Type::Tuple(vec![Type::of_value(&value).unwrap()]),
+            vec![value],
+        )
+        .unwrap()
 }
 
-fn annotation() -> Type {
-    Type::Tuple(vec![Type::Option(Box::new(Type::String))])
-}
-
-#[test]
-fn composition_keeps_unique_payload_ownership_and_concrete_array_metadata() {
-    let expected_item = Type::Result(Box::new(Type::I32), Box::new(Type::String));
-    let array = Value::Array(Rc::new(IndexedStorage {
-        elements: RefCell::new(vec![FieldSlot::new(
-            Type::Result(Box::new(Type::Unknown), Box::new(Type::String)),
-            Value::Result {
-                value: Err(Rc::new(Value::from_string("owned"))),
-                ok_type: None,
-                error_type: Some(Type::String),
-            },
-        )]),
-        element_type: RefCell::new(Some(Type::Unknown)),
-        active_iterators: Cell::new(0),
-    }));
-    let expected = Type::Array {
-        element: Box::new(expected_item),
-        length: 1,
-    };
-    let value = TypedStorageContext::new(&[], &[])
-        .apply_declared(array, &expected)
-        .unwrap();
-    assert_eq!(Type::of_value(&value), Some(expected));
-    let Value::Array(sequence) = value else {
-        unreachable!()
-    };
-    let value = sequence.elements.borrow_mut()[0].value.take().unwrap();
+fn place(value: &Value) -> NativeInstancePlace {
     let Value::Dynamic(object) = value else {
-        panic!("missing native result")
+        panic!("indexed aggregate must use native storage")
     };
-    assert!(
-        object.into_value().is_ok(),
-        "composition must not share owned storage"
-    );
+    NativeInstancePlace::new(object.clone()).unwrap()
 }
 
 #[test]
-fn shared_indexed_storage_is_rejected_before_mutation() {
+fn arrays_retain_sum_layouts_including_empty_and_inactive_branches() {
+    let context = TypedStorageContext::new(&[], &[]);
+    let item = Type::Result(Box::new(Type::I32), Box::new(Type::String));
+    for length in [0, 1, 3] {
+        let ty = Type::Array {
+            element: Box::new(item.clone()),
+            length,
+        };
+        let fields = (0..length)
+            .map(|_| {
+                context
+                    .construct_result(
+                        &item,
+                        Err(Value::from(rils_execution::value::native_string("owned"))),
+                    )
+                    .unwrap()
+            })
+            .collect();
+        let value = context.construct_array(&ty, fields).unwrap();
+        assert_eq!(Type::of_value(&value), Some(ty));
+        assert!(!value.is_copy());
+        let Value::Dynamic(object) = value else {
+            panic!("native array expected")
+        };
+        let payload = object
+            .into_value()
+            .map_err(|failure| failure.1)
+            .expect("array owns its bytes");
+        for index in 0..length {
+            assert_eq!(
+                payload
+                    .view()
+                    .field(index)
+                    .unwrap()
+                    .layout()
+                    .unwrap()
+                    .rils_type(),
+                &item
+            );
+        }
+    }
+}
+
+#[test]
+fn native_tuple_partial_move_and_replacement_preserve_field_declarations() {
     let value = tuple(optional_string());
-    let Value::Tuple(observer) = value.clone() else {
-        unreachable!()
+    let field = place(&value).field("0").unwrap();
+    let taken = field.take().unwrap();
+    assert!(value.is_partially_moved());
+    assert!(field.take().is_err());
+    assert!(
+        field
+            .assign(Value::from(rils_execution::value::native_i32(1)))
+            .is_err()
+    );
+    assert!(value.is_partially_moved());
+    field.assign(optional_string()).unwrap();
+    assert!(!value.is_partially_moved());
+    assert_eq!(value.to_string(), "(Some(owned),)");
+    let Value::Dynamic(taken) = taken else {
+        panic!("native Option expected")
     };
-    let error = TypedStorageContext::new(&[], &[])
-        .apply_declared(value, &annotation())
-        .unwrap_err();
-    assert!(error.contains("shared indexed storage"));
-    let slots = observer.elements.borrow();
-    assert!(matches!(slots[0].value, Some(Value::Option { .. })));
-    assert_eq!(slots[0].value.as_ref().unwrap().to_string(), "Some(owned)");
+    assert!(
+        taken.into_value().is_ok(),
+        "field move must retain unique ownership"
+    );
 }
 
 #[test]
-fn unchanged_children_preserve_shared_storage_and_references() {
-    let value = tuple(Value::Unit);
-    let Value::Tuple(observer) = value.clone() else {
-        unreachable!()
-    };
-    observer.elements.borrow_mut()[0].references = 2;
-    let value = TypedStorageContext::new(&[], &[])
-        .apply_declared(value, &Type::Tuple(vec![Type::Unit]))
-        .unwrap();
-    let Value::Tuple(sequence) = value else {
-        unreachable!()
-    };
-    assert!(Rc::ptr_eq(&observer, &sequence));
-    assert_eq!(sequence.elements.borrow()[0].references, 2);
+fn native_tuple_references_reject_moves_and_replacements_before_mutation() {
+    let value = tuple(optional_string());
+    let root = place(&value);
+    let field = root.field("0").unwrap();
+    let reference = field.borrow(false, None).unwrap();
+    assert!(root.take().is_err());
+    assert!(field.take().is_err());
+    assert!(field.assign(optional_string()).is_err());
+    assert_eq!(value.to_string(), "(Some(owned),)");
+    drop(reference);
+    assert_eq!(field.take().unwrap().to_string(), "Some(owned)");
 }
 
 #[test]
-fn active_references_iterators_and_partial_moves_reject_composition() {
-    for case in 0..3 {
-        let value = tuple(optional_string());
-        let Value::Tuple(sequence) = &value else {
-            unreachable!()
-        };
-        let expected = if case == 2 {
-            let mut moved = FieldSlot::new(Type::I32, Value::from_i32(1));
-            moved.value.take();
-            sequence.elements.borrow_mut().push(moved);
-            Type::Tuple(vec![Type::Option(Box::new(Type::String)), Type::I32])
-        } else {
-            if case == 0 {
-                sequence.elements.borrow_mut()[0].references = 1;
-            } else {
-                sequence.active_iterators.set(1);
-            }
-            annotation()
-        };
-        let error = TypedStorageContext::new(&[], &[])
-            .apply_declared(value, &expected)
-            .unwrap_err();
-        assert!(
-            error.contains(match case {
-                0 => "active element references",
-                1 => "indexed iteration",
-                _ => "partially moved",
-            }),
-            "{error}"
-        );
+fn native_declaration_outlives_move_without_retaining_payload() {
+    struct Probe(Rc<Cell<usize>>);
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
     }
-}
-
-#[test]
-fn aggregate_declaration_outlives_move_without_retaining_the_owned_storage() {
-    let value = TypedStorageContext::new(&[], &[])
-        .apply_declared(tuple(optional_string()), &annotation())
-        .unwrap();
-    let Value::Tuple(sequence) = &value else {
-        unreachable!()
+    let dropped = Rc::new(Cell::new(0));
+    let descriptor = Rc::new(NativeType::new::<Probe>(Type::named("Probe")));
+    let make = || {
+        tuple(Value::Native(
+            NativeObject::new(descriptor.clone(), Probe(dropped.clone())).unwrap(),
+        ))
     };
-    let weak = Rc::downgrade(sequence);
-    let mut slot = rils_execution::environment::StorageSlot::uninitialized(true);
-    slot.initialize(value);
+    let mut slot = StorageSlot::uninitialized(true);
+    slot.initialize(make());
     drop(slot.take().unwrap());
-    assert!(
-        weak.upgrade().is_none(),
-        "declaration retained the old payload"
+    assert_eq!(
+        dropped.get(),
+        1,
+        "declaration must not retain moved payload"
     );
-    slot.assign(tuple(optional_string())).unwrap();
-    let Value::Tuple(sequence) = slot.take().unwrap() else {
-        unreachable!()
-    };
-    let Value::Dynamic(object) = sequence.elements.borrow_mut()[0].value.take().unwrap() else {
-        panic!("replacement lost native declaration")
-    };
+    slot.assign(make()).unwrap();
     assert!(
-        object.into_value().is_ok(),
-        "replacement shared an owned payload"
+        slot.assign(tuple(Value::from(rils_execution::value::native_i32(1))))
+            .is_err()
     );
-}
-
-#[test]
-fn failed_aggregate_replacements_leave_the_destination_unchanged() {
-    for case in 0..3 {
-        let value = TypedStorageContext::new(&[], &[])
-            .apply_declared(tuple(optional_string()), &annotation())
-            .unwrap();
-        let mut slot = rils_execution::environment::StorageSlot::uninitialized(true);
-        slot.initialize(value);
-        let replacement = tuple(optional_string());
-        let Value::Tuple(sequence) = &replacement else {
-            unreachable!()
-        };
-        let observer = if case == 0 {
-            Some(sequence.clone())
-        } else {
-            None
-        };
-        if case == 1 {
-            sequence.elements.borrow_mut()[0].references = 1;
-        } else if case == 2 {
-            sequence
-                .elements
-                .borrow_mut()
-                .push(FieldSlot::new(Type::Unit, Value::Unit));
-        }
-        assert!(slot.assign(replacement).is_err());
-        assert_eq!(slot.read().unwrap().to_string(), "(Some(owned),)");
-        if let Some(observer) = observer {
-            assert!(matches!(
-                observer.elements.borrow()[0].value,
-                Some(Value::Option { .. })
-            ));
-        }
-    }
+    assert_eq!(
+        dropped.get(),
+        1,
+        "failed assignment must preserve destination"
+    );
+    drop(slot.take().unwrap());
+    assert_eq!(dropped.get(), 2);
 }

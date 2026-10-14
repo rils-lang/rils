@@ -32,7 +32,7 @@ pub(super) fn matches(
         if !pattern_matches(pattern, &child, &mut probes, environment) {
             return false;
         }
-        if borrowed || matches!(value, Value::Reference(_)) {
+        if borrowed || value.as_reference().is_some() {
             bindings.extend(probes);
             return true;
         }

@@ -6,10 +6,13 @@ fn fixed_arrays_keep_sequence_methods_without_an_array_type() {
         let values: [i32; 3] = [1, 2, 3];
         values.len() + values.into_iter().count()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Usize(6));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_usize(6))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Usize(6)
+        Value::from(rils::value::native_usize(6))
     );
 }
 
@@ -24,10 +27,13 @@ fn arrays_and_slices_share_read_only_sequence_methods() {
         let needle = 2i32;
         inspect(&values) && values.len() == 3usize && values.contains(&needle)
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Bool(true));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_bool(true))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Bool(true)
+        Value::from(rils::value::native_bool(true))
     );
 }
 
@@ -60,11 +66,20 @@ fn borrowed_slices_read_fixed_arrays_without_moving_them() {
         let values: [i32; 3] = [7, 8, 9];
         first(&values) + values[1]
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(15));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(15))
+    );
     let compiled = compile(source).unwrap();
-    assert_eq!(compiled.execute_value().unwrap(), Value::from_i32(15));
+    assert_eq!(
+        compiled.execute_value().unwrap(),
+        Value::from(rils::value::native_i32(15))
+    );
     let restored = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(restored.execute_value().unwrap(), Value::from_i32(15));
+    assert_eq!(
+        restored.execute_value().unwrap(),
+        Value::from(rils::value::native_i32(15))
+    );
 }
 
 #[test]
@@ -76,10 +91,13 @@ fn borrowed_slices_accept_non_copy_arrays_and_vectors() {
         vector.push("third");
         count(&values) + count(&vector) + values.len()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::Usize(5));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_usize(5))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::Usize(5)
+        Value::from(rils::value::native_usize(5))
     );
 }
 

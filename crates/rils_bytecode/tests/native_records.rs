@@ -55,57 +55,57 @@ fn record_ownership_methods_and_patterns_agree_across_backends() {
         (
             "partial move",
             include_str!("fixtures/native_records/partial.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "receivers",
             include_str!("fixtures/native_records/receivers.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "nested owned receiver",
             include_str!("fixtures/native_records/nested_receiver.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "owned receiver returns native composition",
             include_str!("fixtures/native_records/owned_return.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "owned pattern",
             include_str!("fixtures/native_records/owned_pattern.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "borrowed pattern",
             include_str!("fixtures/native_records/borrowed_pattern.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "Copy owners",
             include_str!("fixtures/native_records/copy.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "native collection receivers",
             include_str!("fixtures/native_records/collections.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "iterator scope cleanup",
             include_str!("fixtures/native_records/loop_cleanup.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "Clone owners",
             include_str!("fixtures/native_records/clone.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
         (
             "nested context types",
             include_str!("fixtures/native_records/contextual.rils"),
-            Value::from_i32(42),
+            Value::from(rils_execution::value::native_i32(42)),
         ),
     ] {
         for value in run_all(source) {

@@ -1,6 +1,32 @@
 use rils::{Value, compile, eval_value};
 
 #[test]
+fn enum_constructor_values_move_payloads_in_all_backends() {
+    let source = include_str!("fixtures/enum_constructor_value.rils");
+    let expected = Value::from(rils::value::native_bool(true));
+    assert_eq!(eval_value(source).unwrap(), expected);
+    let module = compile(source).unwrap();
+    assert_eq!(module.execute_value().unwrap(), expected);
+    let loaded = rils::BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+    assert_eq!(loaded.execute_value().unwrap(), expected);
+}
+
+#[test]
+fn stored_owned_method_consumes_its_receiver() {
+    for source in [
+        include_str!("fixtures/owned_bound_method.rils"),
+        include_str!("fixtures/owned_bound_method_tuple.rils"),
+    ] {
+        let expected = Value::from(rils::value::native_string("moved"));
+        assert_eq!(eval_value(source).unwrap(), expected);
+        let module = compile(source).unwrap();
+        assert_eq!(module.execute_value().unwrap(), expected);
+        let loaded = rils::BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.execute_value().unwrap(), expected);
+    }
+}
+
+#[test]
 fn inherent_and_trait_methods_accept_all_call_forms() {
     let source = r#"
         trait Read { fn read(&self) -> i32; }
@@ -15,7 +41,7 @@ fn inherent_and_trait_methods_accept_all_call_forms() {
         number.doubled() + Number::doubled(&number)
             + number.read() + Number::read(&number) + Read::read(&number)
     "#;
-    let expected = Value::from_i32(49);
+    let expected = Value::from(rils::value::native_i32(49));
     assert_eq!(eval_value(source).unwrap(), expected);
     assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
 }
@@ -51,7 +77,7 @@ fn type_paths_preserve_owned_and_mutable_receivers() {
             7,
         ),
     ] {
-        let expected = Value::from_i32(expected);
+        let expected = Value::from(rils::value::native_i32(expected));
         assert_eq!(eval_value(source).unwrap(), expected);
         assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
     }
@@ -69,10 +95,13 @@ fn type_paths_preserve_inherent_priority_and_trait_ambiguity() {
         let number = Number { inner: 7 };
         Number::value(&number)
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(7))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(7)
+        Value::from(rils::value::native_i32(7))
     );
 
     let ambiguous = source.replace("impl Number { fn value(&self) -> i32 { self.inner } }", "");
@@ -87,7 +116,7 @@ fn native_type_paths_pass_the_receiver_as_the_first_argument() {
         Vec::push(&mut items, "first");
         Vec::pop(&mut items).unwrap()
     "#;
-    let expected = Value::from_string("first");
+    let expected = Value::from(rils::value::native_string("first"));
     assert_eq!(eval_value(source).unwrap(), expected);
     assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
 }
@@ -106,7 +135,7 @@ fn type_paths_can_call_trait_default_methods() {
         let number = Number { inner: 7 };
         number.doubled() + Number::doubled(&number) + Read::doubled(&number)
     "#;
-    let expected = Value::from_i32(42);
+    let expected = Value::from(rils::value::native_i32(42));
     assert_eq!(eval_value(source).unwrap(), expected);
     assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
 }
@@ -119,7 +148,7 @@ fn native_trait_paths_accept_the_receiver_explicitly() {
         let mut iterator = IntoIterator::into_iter(values);
         Iterator::next(&mut iterator).unwrap()
     "#;
-    let expected = Value::from_i32(7);
+    let expected = Value::from(rils::value::native_i32(7));
     assert_eq!(eval_value(source).unwrap(), expected);
     assert_eq!(compile(source).unwrap().execute_value().unwrap(), expected);
 }

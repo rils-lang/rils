@@ -1,0 +1,9 @@
+#[derive(Clone, Eq, Hash)]
+struct Item { text: string }
+let mut map: HashMap<i32, Item> = HashMap::new();
+map.insert(1, Item { text: "hash" });
+let mut tree: BTreeMap<i32, Item> = BTreeMap::new();
+tree.insert(1, Item { text: "tree" });
+let mut set: HashSet<Item> = HashSet::new();
+set.insert(Item { text: "set" });
+(map, tree, set)

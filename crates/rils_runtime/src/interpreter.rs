@@ -36,10 +36,9 @@ use crate::{
     types::{FunctionSignature, Type, merge_types},
     value::{
         BoundMethod, BuiltinBoundMethod, BuiltinFunction, BuiltinMethod, BuiltinType, EnumType,
-        HostBoundMethod, HostFunction, HostFunctionHandler, HostType, IndexedStorage, ModuleValue,
-        NativeFunction, NativeFunctionBody, ReferenceValue, StructType, TraitMethodSelector,
-        TraitType, TypeAliasType, UserFunction, Value, VariantConstructor, enum_variant_name,
-        native_range,
+        HostBoundMethod, HostFunction, HostFunctionHandler, HostType, ModuleValue, NativeFunction,
+        NativeFunctionBody, ReferenceValue, StructType, TraitMethodSelector, TraitType,
+        TypeAliasType, UserFunction, Value, VariantConstructor, enum_variant_name, native_range,
     },
 };
 
@@ -155,14 +154,14 @@ impl Interpreter {
         }
         self.globals.borrow_mut().define(
             binding_name,
-            Value::NativeFunction(NativeFunction {
+            Value::from_callable(Rc::new(NativeFunction {
                 binding_name,
                 name,
                 min_arity,
                 max_arity,
                 signature: None,
                 body: NativeFunctionBody::Rust(function),
-            }),
+            })),
             false,
             None,
         );
@@ -191,7 +190,7 @@ impl Interpreter {
         }
         environment.borrow_mut().define(
             name.clone(),
-            Value::HostFunction(Rc::new(HostFunction {
+            Value::from_callable(Rc::new(HostFunction {
                 name: name.clone(),
                 min_arity,
                 max_arity,
@@ -224,7 +223,7 @@ impl Interpreter {
         });
         environment.borrow_mut().define(
             name.clone(),
-            Value::HostType(definition.clone()),
+            crate::value::Declaration::HostType(definition.clone()),
             false,
             None,
         );
@@ -238,9 +237,11 @@ impl Interpreter {
         let mut environment = self.globals.clone();
         let mut parent_module: Option<Rc<ModuleValue>> = None;
         for segment in path {
-            let existing = environment.borrow().get(segment);
+            let existing = environment.borrow().binding(segment);
             let module = match existing {
-                Some(Value::Module(module)) => module,
+                Some(crate::value::Binding::Declaration(crate::value::Declaration::Module(
+                    module,
+                ))) => module,
                 Some(value) => {
                     return Err(format!(
                         "cannot register module `{segment}` over {}",
@@ -256,7 +257,7 @@ impl Interpreter {
                     });
                     environment.borrow_mut().define(
                         segment.clone(),
-                        Value::Module(module.clone()),
+                        crate::value::Declaration::Module(module.clone()),
                         false,
                         None,
                     );
@@ -276,7 +277,9 @@ impl Interpreter {
         let mut environment = self.globals.clone();
         let mut current = None;
         for segment in path {
-            let Some(Value::Module(module)) = environment.borrow().get(segment) else {
+            let Some(crate::value::Declaration::Module(module)) =
+                environment.borrow().get_declaration(segment)
+            else {
                 return Err(format!("module `{segment}` is not registered"));
             };
             environment = module.members.clone();
@@ -388,7 +391,7 @@ impl Interpreter {
                 let members = Environment::named_module_child(parent.clone(), &name);
                 parent.borrow_mut().define(
                     name.clone(),
-                    Value::Module(Rc::new(ModuleValue {
+                    crate::value::Declaration::Module(Rc::new(ModuleValue {
                         name,
                         members: members.clone(),
                         public: RefCell::new(HashSet::new()),
@@ -424,7 +427,9 @@ impl Interpreter {
                     .rsplit("::")
                     .next()
                     .expect("module has a name");
-                if let Some(Value::Module(module)) = parent.borrow().get(name) {
+                if let Some(crate::value::Declaration::Module(module)) =
+                    parent.borrow().get_declaration(name)
+                {
                     *module.public.borrow_mut() = public;
                 }
             }

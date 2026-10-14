@@ -6,7 +6,7 @@ use rils_frontend::format::{FormatKind, FormatSpec};
 
 #[test]
 fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
-    let value = native_i8(i8::MAX);
+    let value = Value::from(native_i8(i8::MAX));
     let Value::Native(object) = &value else {
         panic!("i8 must use native storage");
     };
@@ -28,21 +28,25 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
     let result = execute_integer_intrinsic(
         "core::integer::wrapping_add",
         None,
-        &[value.clone(), native_i8(1)],
+        &[value.clone(), Value::from(native_i8(1))],
     )
     .unwrap();
-    assert_eq!(result, native_i8(i8::MIN));
+    assert_eq!(result, Value::from(native_i8(i8::MIN)));
     assert!(matches!(result, Value::Native(_)));
     assert_eq!(
-        execute_integer_intrinsic("core::integer::wrapping_add", None, &[value, Value::U8(1)],)
-            .unwrap_err(),
+        execute_integer_intrinsic(
+            "core::integer::wrapping_add",
+            None,
+            &[value, Value::from(rils_execution::value::native_u8(1))],
+        )
+        .unwrap_err(),
         "expected i8, found u8"
     );
 
     let none = execute_integer_intrinsic(
         "core::integer::checked_add",
         None,
-        &[native_i8(i8::MAX), native_i8(1)],
+        &[Value::from(native_i8(i8::MAX)), Value::from(native_i8(1))],
     )
     .unwrap();
     let Value::Dynamic(object) = &none else {
@@ -54,12 +58,17 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
         object.descriptor().layout().rils_type(),
         &Type::Option(Box::new(item_type.clone()))
     );
-    assert_eq!(none.as_option(), Some((None, item_type)));
+    assert!(
+        !none
+            .with_native_view(|view| view.option_is_some())
+            .unwrap()
+            .unwrap()
+    );
 
     let overflow = execute_integer_intrinsic(
         "core::integer::overflowing_add",
         None,
-        &[native_i8(i8::MAX), native_i8(1)],
+        &[Value::from(native_i8(i8::MAX)), Value::from(native_i8(1))],
     )
     .unwrap();
     let Value::Dynamic(object) = overflow else {
@@ -68,29 +77,33 @@ fn generated_i8_descriptor_stores_inline_and_calls_rust_methods() {
     let place = rils_execution::value::native_instance::NativeInstancePlace::new(object).unwrap();
     let number = place.field("0").unwrap().take().unwrap();
     assert!(matches!(number, Value::Native(_)));
-    assert_eq!(number, native_i8(i8::MIN));
-    assert_eq!(place.field("1").unwrap().take().unwrap(), Value::Bool(true));
+    assert_eq!(number, Value::from(native_i8(i8::MIN)));
+    assert_eq!(
+        place.field("1").unwrap().take().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
 
     assert_eq!(
-        execute_integer_intrinsic("core::integer::abs", None, &[native_i8(i8::MIN)]).unwrap_err(),
+        execute_integer_intrinsic(
+            "core::integer::abs",
+            None,
+            &[Value::from(native_i8(i8::MIN))]
+        )
+        .unwrap_err(),
         "integer overflow"
     );
 }
 
 #[test]
-fn native_i8_keeps_existing_format_and_hash_semantics() {
-    let value = native_i8(-42);
+fn native_i8_keeps_existing_format_semantics() {
+    let value = Value::from(native_i8(-42));
     assert_eq!(value.to_string(), "-42");
-    assert_eq!(
-        rils_execution::value::HashKey::from_value(&value).unwrap(),
-        rils_execution::value::HashKey::from_value(&Value::from_i8(-42)).unwrap()
-    );
     let spec = FormatSpec {
         kind: FormatKind::LowerHex,
         ..Default::default()
     };
     assert_eq!(
-        formatting::format_value(&native_i8(42), &spec).unwrap(),
+        formatting::format_value(&Value::from(native_i8(42)), &spec).unwrap(),
         "2a"
     );
 }

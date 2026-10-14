@@ -1,0 +1,40 @@
+struct Item { text: string }
+
+fn main() -> i32 {
+    let empty = ();
+    assert!(empty == ());
+    assert!(true != false);
+    let flags: Option<bool> = Some(true);
+    assert!(flags.unwrap());
+    let mut values: Vec<Item> = Vec::new();
+    values.push(Item { text: "owned" });
+    let taken = values.pop().unwrap();
+    assert!(taken.text == "owned");
+    assert!(values.pop().is_none());
+    let mut queue: VecDeque<string> = VecDeque::new();
+    queue.push_back("front");
+    assert!(queue.front_cloned().unwrap() == "front");
+    assert!(queue.pop_front().unwrap() == "front");
+    assert!(queue.pop_back().is_none());
+    let mut heap: BinaryHeap<i64> = BinaryHeap::new();
+    heap.push(17i64);
+    heap.push(42i64);
+    assert!(heap.peek_cloned().unwrap() == 42i64);
+    assert!(heap.pop().unwrap() == 42i64);
+    assert!(heap.pop().unwrap() == 17i64);
+    assert!(heap.pop().is_none());
+    let mut range = 1i16..3i16;
+    assert!(range.next().unwrap() == 1i16);
+    assert!(range.next().unwrap() == 2i16);
+    assert!(range.next().is_none());
+    let mut iter = [true, false].into_iter();
+    assert!(iter.next().unwrap());
+    assert!(!iter.next().unwrap());
+    assert!(iter.next().is_none());
+    let mut records = [Item { text: "array" }].into_iter();
+    let record: Item = records.next().unwrap();
+    assert!(record.text == "array");
+    assert!(records.next().is_none());
+    42
+}
+main()

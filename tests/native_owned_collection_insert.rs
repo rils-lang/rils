@@ -20,10 +20,10 @@ fn assert_both(source: &str, expected: Value) {
 fn native_collection_insert_moves_non_copy_values() {
     assert_both(
         "let mut values: HashSet<Option<string>> = HashSet::new(); values.insert(Some(\"text\")); values.len()",
-        Value::from_usize(1),
+        Value::from(rils::value::native_usize(1)),
     );
     assert_both(
         "let mut values: HashMap<i32, Box<string>> = HashMap::new(); values.insert(1, Box::new(\"text\")); values.len()",
-        Value::from_usize(1),
+        Value::from(rils::value::native_usize(1)),
     );
 }

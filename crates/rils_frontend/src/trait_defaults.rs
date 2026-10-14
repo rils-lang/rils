@@ -22,7 +22,7 @@ pub fn append_bytecode_iterator_defaults(
     };
     let item = Type::Variable("T".into());
     let target = Type::Named {
-        name: "OwnedIterator".into(),
+        name: "Iter".into(),
         arguments: vec![item.clone()],
     };
     let associated_types = vec![AssociatedType {
@@ -434,7 +434,7 @@ pub(crate) fn resolve_associated_type(
         },
         Type::Named { name, arguments } => Type::Named {
             name: if name == "Iterator" {
-                "OwnedIterator".into()
+                "Iter".into()
             } else {
                 name
             },

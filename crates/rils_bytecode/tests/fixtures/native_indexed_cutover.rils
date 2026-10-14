@@ -1,0 +1,49 @@
+struct Item { text: string }
+struct Holder { items: Vec<Item> }
+
+fn empty<T>(witness: T) -> Vec<T> { Vec::new() }
+fn length(values: Vec<Item>) -> usize { values.len() }
+fn increment(value: i32) -> i32 { value + 1 }
+
+fn main() -> i32 {
+    let mut pair = (Item { text: "first" }, [1, 2]);
+    let first = pair.0;
+    pair.0 = Item { text: "replacement" };
+    assert!(first.text == "first");
+    assert!(pair.0.text == "replacement");
+    let copy = pair.1;
+    pair.1[0usize] = 3;
+    assert!(copy[0usize] == 1);
+
+    let mut records: Vec<Item> = empty(Item { text: "type witness" });
+    records.push(Item { text: "moved" });
+    let record = records.pop().unwrap();
+    assert!(record.text == "moved");
+    assert!(records.pop().is_none());
+    assert!(length(Vec::new()) == 0usize);
+    let holder = Holder { items: Vec::new() };
+    assert!(holder.items.is_empty());
+    let mut nested: Vec<Vec<Item>> = Vec::new();
+    nested.push(Vec::new());
+    assert!(nested.pop().unwrap().is_empty());
+
+    let mut callbacks: Vec<fn(i32) -> i32> = Vec::new();
+    callbacks.push(increment);
+    assert!(callbacks.pop().unwrap()(41) == 42);
+
+    let mut number = 1;
+    let mut references: Vec<&mut i32> = Vec::new();
+    references.push(&mut number);
+    {
+        let first = &mut references[0usize];
+        let second = &mut references[0usize];
+        **first = 7;
+        **second = 9;
+    }
+    assert!(number == 9);
+    let mut arrays = Vec::from([[1, 2], [3, 4]]);
+    let last = arrays.pop().unwrap();
+    assert!(last[1usize] == 4);
+    42
+}
+main()

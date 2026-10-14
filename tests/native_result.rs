@@ -32,7 +32,11 @@ fn consuming_result_methods_move_non_copy_native_payloads() {
             compiled.execute_value().unwrap(),
             loaded.execute_value().unwrap(),
         ] {
-            assert_eq!(value.as_string().as_deref(), Some("first"), "{source}");
+            assert_eq!(
+                value.get_cloned::<String>().ok().as_deref(),
+                Some("first"),
+                "{source}"
+            );
         }
     }
 }
@@ -60,7 +64,12 @@ fn concrete_results_use_native_layout_in_both_backends() {
         ] {
             assert_eq!(value.to_string(), expected);
             assert_eq!(format!("{value:?}"), debug);
-            assert!(value.as_result().is_some());
+            assert!(
+                value
+                    .with_native_view(|view| view.variant_index())
+                    .unwrap()
+                    .is_ok()
+            );
             let Value::Dynamic(object) = value else {
                 panic!("concrete Result must have native storage");
             };
@@ -80,10 +89,13 @@ fn native_results_keep_pattern_and_method_behavior() {
         "let value: Result<i32, string> = Ok(7); let copy = value.clone(); copy.unwrap()",
         "fn inner() -> Result<i32, string> { let value: Result<i32, string> = Ok(7); Ok(value?) } inner().unwrap()",
     ] {
-        assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
+        assert_eq!(
+            eval_value(source).unwrap(),
+            Value::from(rils::value::native_i32(7))
+        );
         assert_eq!(
             compile(source).unwrap().execute_value().unwrap(),
-            Value::from_i32(7)
+            Value::from(rils::value::native_i32(7))
         );
     }
 }
@@ -95,10 +107,13 @@ fn concrete_result_error_paths_match_across_backends() {
         "let value: Result<i32, string> = Err(\"missing\"); match value { Ok(number) => number, Err(_) => 7 }",
         "fn inner() -> Result<i32, string> { let value: Result<i32, string> = Err(\"missing\"); Ok(value?) } match inner() { Ok(_) => 0, Err(_) => 7 }",
     ] {
-        assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
+        assert_eq!(
+            eval_value(source).unwrap(),
+            Value::from(rils::value::native_i32(7))
+        );
         assert_eq!(
             compile(source).unwrap().execute_value().unwrap(),
-            Value::from_i32(7)
+            Value::from(rils::value::native_i32(7))
         );
     }
 }

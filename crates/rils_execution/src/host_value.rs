@@ -1,84 +1,11 @@
 //! Host-facing ownership choices for an execution result.
 
-use std::any::Any;
 use std::rc::Rc;
 
 use crate::Value;
-use crate::value::storage::StoredDataRef;
-use rils_stdlib::stdlib::{float::Number as FloatNumber, integer::Number as IntegerNumber};
-use rils_value::{DynamicValueRef, NativeLeafRef};
+use rils_value::DynamicValueRef;
 
-/// Maps a Rust host type to the exact Rust payload stored for its Rils type.
-pub trait RilsHostType: Sized + 'static {
-    type Native: 'static;
-
-    fn from_native(value: Self::Native) -> Self;
-    fn as_native_ref(value: &Self::Native) -> &Self;
-
-    /// Borrow a composed leaf. A type may use a different native
-    /// representation for an inline field than for its standalone wrapper.
-    fn with_composed_ref<R>(
-        view: DynamicValueRef<'_>,
-        callback: impl FnOnce(&Self) -> R,
-    ) -> Result<R, String> {
-        Self::with_leaf_ref(&view.leaf()?, callback)
-    }
-
-    /// Read a checked leaf from standalone, composed, or compatibility storage.
-    fn with_leaf_ref<R>(
-        leaf: &NativeLeafRef<'_>,
-        callback: impl FnOnce(&Self) -> R,
-    ) -> Result<R, String> {
-        leaf.with_rust::<Self::Native, _>(|value| callback(Self::as_native_ref(value)))
-    }
-}
-
-macro_rules! direct_host_type {
-    ($($ty:ty),* $(,)?) => {$(
-        impl RilsHostType for $ty {
-            type Native = Self;
-
-            fn from_native(value: Self::Native) -> Self { value }
-            fn as_native_ref(value: &Self::Native) -> &Self { value }
-        }
-    )*};
-}
-
-direct_host_type!((), bool, char);
-
-macro_rules! wrapped_host_type {
-    ($wrapper:ident; $($ty:ty),* $(,)?) => {$(
-        impl RilsHostType for $ty {
-            type Native = $wrapper<$ty>;
-
-            fn from_native(value: Self::Native) -> Self { value.0 }
-            fn as_native_ref(value: &Self::Native) -> &Self { &value.0 }
-
-            fn with_leaf_ref<R>(leaf: &NativeLeafRef<'_>, callback: impl FnOnce(&Self) -> R) -> Result<R, String> {
-                if leaf.is_rust_type::<Self>() {
-                    leaf.with_rust(callback)
-                } else {
-                    leaf.with_rust::<Self::Native, _>(|value| callback(&value.0))
-                }
-            }
-        }
-    )*};
-}
-
-wrapped_host_type!(IntegerNumber; i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
-wrapped_host_type!(FloatNumber; f32, f64);
-
-impl RilsHostType for String {
-    type Native = rils_stdlib::stdlib::string::String;
-
-    fn from_native(value: Self::Native) -> Self {
-        value.into()
-    }
-
-    fn as_native_ref(value: &Self::Native) -> &Self {
-        value.as_ref()
-    }
-}
+pub use rils_stdlib::host_value::RilsHostType;
 
 /// A script result whose payload stays managed by the Rils runtime.
 ///
@@ -95,7 +22,7 @@ impl RilsValue {
     }
 
     pub fn is_unit(&self) -> bool {
-        matches!(self.value, Value::Unit)
+        self.value.is_unit()
     }
 
     /// Borrow one field of a script-defined struct by declaration index.
@@ -104,7 +31,7 @@ impl RilsValue {
         if let Value::Dynamic(object) = &self.value
             && matches!(
                 crate::value::native_instance::definition(object),
-                Some(Value::StructType(_))
+                Some(crate::value::Declaration::StructType(_))
             )
         {
             let name = self
@@ -114,10 +41,11 @@ impl RilsValue {
                 crate::value::native_instance::NativeInstancePlace::new(object.clone())?
                     .field(&name)?
                     .borrow(false, None)?;
-            return Ok(Self::new(Value::Reference(Rc::new(reference))));
+            return Ok(Self::new(Value::from_reference(Rc::new(reference))));
         }
-        if let Value::Reference(reference) = &self.value
-            && let Some(Value::StructType(definition)) = reference.native_type_definition()?
+        if let Some(reference) = &self.value.as_reference()
+            && let Some(crate::value::Declaration::StructType(definition)) =
+                reference.native_type_definition()?
         {
             let name = definition
                 .fields
@@ -128,7 +56,7 @@ impl RilsValue {
             let projected = reference
                 .project_native_field(name)?
                 .ok_or("result has no native record field")?;
-            return Ok(Self::new(Value::Reference(Rc::new(projected))));
+            return Ok(Self::new(Value::from_reference(Rc::new(projected))));
         }
         Err("result is not a script struct".into())
     }
@@ -145,14 +73,20 @@ impl RilsValue {
 
     fn struct_definition(&self) -> Option<Rc<crate::value::StructType>> {
         match &self.value {
+            __reference_value if __reference_value.as_reference().is_some() => {
+                let reference = __reference_value
+                    .as_reference()
+                    .expect("checked reference handle");
+                match reference.native_type_definition().ok()? {
+                    Some(crate::value::Declaration::StructType(definition)) => Some(definition),
+                    _ => None,
+                }
+            }
             Value::Dynamic(object) => match crate::value::native_instance::definition(object)? {
-                Value::StructType(definition) => Some(definition),
+                crate::value::Declaration::StructType(definition) => Some(definition),
                 _ => None,
             },
-            Value::Reference(reference) => match reference.native_type_definition().ok()? {
-                Some(Value::StructType(definition)) => Some(definition),
-                _ => None,
-            },
+
             _ => None,
         }
     }
@@ -169,7 +103,7 @@ impl RilsValue {
         &self,
         callback: impl FnOnce(DynamicValueRef<'_>) -> R,
     ) -> Result<R, String> {
-        with_native_value(&self.value, callback)
+        self.value.with_native_view(callback)
     }
 
     pub fn get_cloned<T: RilsHostType + Clone>(&self) -> Result<T, String> {
@@ -202,12 +136,10 @@ impl RilsValue {
                         Box::new((Self::new(Value::Dynamic(object)), message))
                     })
             }
-            value => move_legacy::<T::Native>(value)
-                .map(T::from_native)
-                .map_err(|error| {
-                    let (value, message) = *error;
-                    Box::new((Self::new(value), message))
-                }),
+            value => Err(Box::new((
+                Self::new(value),
+                "result is not an owned native Rust value".into(),
+            ))),
         }
     }
 }
@@ -246,34 +178,16 @@ pub(crate) fn with_rust_value<T: 'static, R>(
     value: &Value,
     callback: impl FnOnce(&T) -> R,
 ) -> Result<R, String> {
-    if let Some(storage) = value.stored_data() {
-        return match storage {
-            StoredDataRef::Native(object) => object.with(callback),
-            StoredDataRef::Dynamic(object) => object.with(|value| value.with(callback))?,
-            StoredDataRef::Host(object) => Err(format!(
-                "host object {} has no registered Rust borrow view",
-                object.type_definition.name
-            )),
-        };
+    if let Some(reference) = value.as_reference() {
+        return reference.with_rust(callback);
     }
     match value {
-        Value::Reference(reference) => reference.with_rust(callback),
-        Value::Unit => borrow_legacy(&(), callback),
-        Value::Bool(value) => borrow_legacy(value, callback),
-        Value::I16(value) => borrow_legacy(value, callback),
-        Value::I64(value) => borrow_legacy(value, callback),
-        Value::I128(value) => borrow_legacy(value, callback),
-        Value::Isize(value) => borrow_legacy(value, callback),
-        Value::U8(value) => borrow_legacy(value, callback),
-        Value::U16(value) => borrow_legacy(value, callback),
-        Value::U32(value) => borrow_legacy(value, callback),
-        Value::U64(value) => borrow_legacy(value, callback),
-        Value::U128(value) => borrow_legacy(value, callback),
-        Value::Usize(value) => borrow_legacy(value, callback),
-        Value::F32(value) => borrow_legacy(value, callback),
-        Value::F64(value) => borrow_legacy(value, callback),
-        Value::Char(value) => borrow_legacy(value, callback),
-        _ => Err(format!("{} has no Rust borrow view", value.type_name())),
+        Value::Native(object) => object.with(callback),
+        Value::Dynamic(object) => object.with(|value| value.with(callback))?,
+        Value::HostObject(object) => Err(format!(
+            "host object {} has no registered Rust borrow view",
+            object.type_definition.name
+        )),
     }
 }
 
@@ -282,10 +196,16 @@ pub(crate) fn with_host_value<T: RilsHostType, R>(
     callback: impl FnOnce(&T) -> R,
 ) -> Result<R, String> {
     match value {
+        __reference_value if __reference_value.as_reference().is_some() => {
+            let reference = __reference_value
+                .as_reference()
+                .expect("checked reference handle");
+            reference.with_host_ref(callback)
+        }
         Value::Dynamic(object) => {
             object.with(|value| T::with_composed_ref(value.view(), callback))?
         }
-        Value::Reference(reference) => reference.with_host_ref(callback),
+
         _ => with_rust_value::<T::Native, _>(value, |value| callback(T::as_native_ref(value))),
     }
 }
@@ -294,78 +214,18 @@ pub(crate) fn with_native_value<R>(
     value: &Value,
     callback: impl FnOnce(DynamicValueRef<'_>) -> R,
 ) -> Result<R, String> {
-    if let Some(storage) = value.stored_data() {
-        return match storage {
-            StoredDataRef::Dynamic(object) => object.with(|value| callback(value.view())),
-            StoredDataRef::Native(object) => Err(format!(
-                "{} has no composed layout view",
-                object.descriptor().rils_type()
-            )),
-            StoredDataRef::Host(object) => Err(format!(
-                "host object {} has no composed layout view",
-                object.type_definition.name
-            )),
-        };
+    if let Some(reference) = value.as_reference() {
+        return reference.with_native_view(callback);
     }
     match value {
-        Value::Reference(reference) => reference.with_native_view(callback),
-        _ => Err(format!("{} has no native layout view", value.type_name())),
-    }
-}
-
-fn borrow_legacy<T: 'static, U: 'static, R>(
-    value: &U,
-    callback: impl FnOnce(&T) -> R,
-) -> Result<R, String> {
-    (value as &dyn Any)
-        .downcast_ref::<T>()
-        .map(callback)
-        .ok_or_else(|| format!("value is not {}", std::any::type_name::<T>()))
-}
-
-macro_rules! move_scalar {
-    ($item:ident, $variant:ident, $ty:ty) => {
-        (Box::new($item) as Box<dyn Any>)
-            .downcast::<$ty>()
-            .map(|item| *item)
-            .map_err(|item| {
-                Box::new((
-                    Value::$variant(*item.downcast().expect("original variant type")),
-                    format!("value is not {}", std::any::type_name::<$ty>()),
-                ))
-            })
-    };
-}
-
-fn move_legacy<T: 'static>(value: Value) -> Result<T, Box<(Value, String)>> {
-    // Match once so that a failed downcast can put the original payload back.
-    match value {
-        Value::Unit => (Box::new(()) as Box<dyn Any>)
-            .downcast::<T>()
-            .map(|item| *item)
-            .map_err(|_| {
-                Box::new((
-                    Value::Unit,
-                    format!("value is not {}", std::any::type_name::<T>()),
-                ))
-            }),
-        Value::Bool(item) => move_scalar!(item, Bool, T),
-        Value::I16(item) => move_scalar!(item, I16, T),
-        Value::I64(item) => move_scalar!(item, I64, T),
-        Value::I128(item) => move_scalar!(item, I128, T),
-        Value::Isize(item) => move_scalar!(item, Isize, T),
-        Value::U8(item) => move_scalar!(item, U8, T),
-        Value::U16(item) => move_scalar!(item, U16, T),
-        Value::U32(item) => move_scalar!(item, U32, T),
-        Value::U64(item) => move_scalar!(item, U64, T),
-        Value::U128(item) => move_scalar!(item, U128, T),
-        Value::Usize(item) => move_scalar!(item, Usize, T),
-        Value::F32(item) => move_scalar!(item, F32, T),
-        Value::F64(item) => move_scalar!(item, F64, T),
-        Value::Char(item) => move_scalar!(item, Char, T),
-        value => Err(Box::new((
-            value,
-            "result is not an owned native Rust value".into(),
-        ))),
+        Value::Dynamic(object) => object.with(|value| callback(value.view())),
+        Value::Native(object) => Err(format!(
+            "{} has no composed layout view",
+            object.descriptor().rils_type()
+        )),
+        Value::HostObject(object) => Err(format!(
+            "host object {} has no composed layout view",
+            object.type_definition.name
+        )),
     }
 }

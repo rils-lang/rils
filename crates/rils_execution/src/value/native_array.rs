@@ -42,11 +42,18 @@ pub(crate) fn into_iterator(
 ) -> Result<Value, String> {
     let ty = object.descriptor().layout().rils_type().clone();
     let (mut payload, codec, element, length) = consume(object, context)?;
-    Ok(crate::iteration::generated_collection_iterator(
-        (0..length).map(move |index| codec.from_native(payload.take_field(index)?)),
-        element,
-        &ty,
-    ))
+    let items = (0..length)
+        .map(|index| payload.take_field(index))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut iterator = super::OwnedIteratorValue::from_native(
+        items,
+        codec.resolve_layout(&element, &context.hosts)?,
+        codec,
+    )?;
+    if let Some(ty) = crate::iteration::declared_iterator_type(&ty) {
+        iterator = iterator.with_iterator_type(ty);
+    }
+    Ok(Value::from_owned_iterator(iterator))
 }
 
 pub(crate) fn into_vec(

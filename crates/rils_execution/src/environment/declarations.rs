@@ -1,35 +1,11 @@
-//! Weak declaration handles shared by all lexical and module environments.
+//! Owned declaration handles shared by all lexical and module environments.
 
 use crate::{
     Type,
-    value::{EnumType, HostType, StructType, TraitType, TypeAliasType, Value},
+    value::{Declaration, EnumType, HostType, StructType},
 };
 use rils_frontend::semantic::DeclarationTypeResolver;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::{Rc, Weak},
-};
-
-enum Declaration {
-    Struct(Weak<StructType>),
-    Enum(Weak<EnumType>),
-    Trait(Weak<TraitType>),
-    Alias(Weak<TypeAliasType>),
-    Host(Weak<HostType>),
-}
-
-impl Declaration {
-    fn value(&self) -> Option<Value> {
-        match self {
-            Self::Struct(value) => value.upgrade().map(Value::StructType),
-            Self::Enum(value) => value.upgrade().map(Value::EnumType),
-            Self::Trait(value) => value.upgrade().map(Value::TraitType),
-            Self::Alias(value) => value.upgrade().map(Value::TypeAlias),
-            Self::Host(value) => value.upgrade().map(Value::HostType),
-        }
-    }
-}
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Default)]
 pub(super) struct TypeDeclarations {
@@ -38,34 +14,32 @@ pub(super) struct TypeDeclarations {
 }
 
 impl TypeDeclarations {
-    pub(super) fn register(&self, value: &Value) {
+    pub(super) fn register(&self, value: &Declaration) {
         let (name, declaration) = match value {
-            Value::StructType(value) => (&value.name, Declaration::Struct(Rc::downgrade(value))),
-            Value::EnumType(value) => (&value.name, Declaration::Enum(Rc::downgrade(value))),
-            Value::TraitType(value) => (&value.name, Declaration::Trait(Rc::downgrade(value))),
-            Value::TypeAlias(value) => (&value.name, Declaration::Alias(Rc::downgrade(value))),
-            Value::HostType(value) => (&value.name, Declaration::Host(Rc::downgrade(value))),
+            Declaration::StructType(value) => (&value.name, Declaration::StructType(value.clone())),
+            Declaration::EnumType(value) => (&value.name, Declaration::EnumType(value.clone())),
+            Declaration::TraitType(value) => (&value.name, Declaration::TraitType(value.clone())),
+            Declaration::TypeAlias(value) => (&value.name, Declaration::TypeAlias(value.clone())),
+            Declaration::HostType(value) => (&value.name, Declaration::HostType(value.clone())),
             _ => return,
         };
         self.values.borrow_mut().insert(name.clone(), declaration);
     }
 
-    pub(super) fn get(&self, name: &str) -> Option<Value> {
-        self.values.borrow().get(name)?.value()
+    pub(super) fn get(&self, name: &str) -> Option<Declaration> {
+        self.values.borrow().get(name).cloned()
     }
 
     pub(super) fn definitions(&self) -> (Vec<Rc<StructType>>, Vec<Rc<EnumType>>) {
         let mut structs = Vec::new();
         let mut enums = Vec::new();
-        self.values.borrow_mut().retain(|_, declaration| {
-            match declaration.value() {
-                Some(Value::StructType(value)) => structs.push(value),
-                Some(Value::EnumType(value)) => enums.push(value),
-                Some(_) => {}
-                None => return false,
+        for declaration in self.values.borrow().values() {
+            match declaration {
+                Declaration::StructType(value) => structs.push(value.clone()),
+                Declaration::EnumType(value) => enums.push(value.clone()),
+                _ => {}
             }
-            true
-        });
+        }
         (structs, enums)
     }
 
@@ -74,16 +48,14 @@ impl TypeDeclarations {
     }
 
     pub(super) fn host_definitions(&self) -> Vec<Rc<HostType>> {
-        let mut hosts = Vec::new();
-        self.values.borrow_mut().retain(|_, declaration| {
-            match declaration.value() {
-                Some(Value::HostType(value)) => hosts.push(value),
-                Some(_) => {}
-                None => return false,
-            }
-            true
-        });
-        hosts
+        self.values
+            .borrow()
+            .values()
+            .filter_map(|declaration| match declaration {
+                Declaration::HostType(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     pub(super) fn resolve(&self, ty: &Type, module: &[String]) -> Type {

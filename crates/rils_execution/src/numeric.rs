@@ -1,18 +1,15 @@
-#![allow(non_upper_case_globals)]
-
 use crate::{IntegerType, Type, ast::BinaryOp, value::Value};
 
 mod float_methods;
 pub(crate) mod native;
-mod scalars;
+mod operators;
 
-use scalars::lift_migrated_integer;
-pub(crate) use scalars::lower_migrated_integer;
-pub use scalars::{
-    f32_payload, f64_payload, i8_payload, i16_payload, i32_payload, i64_payload, i128_payload,
-    isize_payload, native_f32, native_f64, native_i8, native_i16, native_i32, native_i64,
-    native_i128, native_isize, native_u8, native_u16, native_u32, native_u64, native_u128,
-    native_usize, u8_payload, u16_payload, u32_payload, u64_payload, u128_payload, usize_payload,
+pub use native::float::{f32_payload, f64_payload, native_f32, native_f64};
+pub use native::integer::{
+    i8_payload, i16_payload, i32_payload, i64_payload, i128_payload, isize_payload, native_i8,
+    native_i16, native_i32, native_i64, native_i128, native_isize, native_u8, native_u16,
+    native_u32, native_u64, native_u128, native_usize, u8_payload, u16_payload, u32_payload,
+    u64_payload, u128_payload, usize_payload,
 };
 
 pub fn integer_constant(target: IntegerType, constant: rils_builtins::IntegerConstantId) -> Value {
@@ -26,79 +23,25 @@ pub fn float_constant(target: crate::FloatType, constant: rils_builtins::FloatCo
 }
 
 pub fn cast_integer(value: Value, target: IntegerType) -> Result<Value, String> {
-    enum IntegerValue {
-        Signed(i128),
-        Unsigned(u128),
-    }
-
-    let source = if let Some(value) = i8_payload(&value) {
-        (IntegerType::I8, IntegerValue::Signed(value.into()))
-    } else if let Some(value) = i32_payload(&value) {
-        (IntegerType::I32, IntegerValue::Signed(value.into()))
-    } else {
-        match lower_migrated_integer(value) {
-            Value::I16(value) => (IntegerType::I16, IntegerValue::Signed(value.into())),
-            Value::I64(value) => (IntegerType::I64, IntegerValue::Signed(value.into())),
-            Value::I128(value) => (IntegerType::I128, IntegerValue::Signed(value)),
-            Value::Isize(value) => (IntegerType::Isize, IntegerValue::Signed(value as i128)),
-            Value::U8(value) => (IntegerType::U8, IntegerValue::Unsigned(value.into())),
-            Value::U16(value) => (IntegerType::U16, IntegerValue::Unsigned(value.into())),
-            Value::U32(value) => (IntegerType::U32, IntegerValue::Unsigned(value.into())),
-            Value::U64(value) => (IntegerType::U64, IntegerValue::Unsigned(value.into())),
-            Value::U128(value) => (IntegerType::U128, IntegerValue::Unsigned(value)),
-            Value::Usize(value) => (IntegerType::Usize, IntegerValue::Unsigned(value as u128)),
-            value => {
-                return Err(format!(
-                    "`as` expects an integer, found {}",
-                    value.type_name()
-                ));
-            }
-        }
+    let Some(Type::Integer(source_type)) = Type::of_value(&value) else {
+        return Err(format!(
+            "`as` expects an integer, found {}",
+            value.type_name()
+        ));
     };
-    if !source.0.can_cast_losslessly_to(target) {
+    let source = native::integer::integer_value(&value)?;
+    if !source_type.can_cast_losslessly_to(target) {
         return Err(format!(
             "cannot cast `{}` to `{target}` because the target type cannot represent the source type's full range",
-            source.0
+            source_type
         ));
     }
 
-    macro_rules! signed_target {
-        ($kind:ty, $constructor:path) => {{
-            let converted = match source.1 {
-                IntegerValue::Signed(value) => <$kind>::try_from(value).map_err(|_| ()),
-                IntegerValue::Unsigned(value) => <$kind>::try_from(value).map_err(|_| ()),
-            };
-            converted.map($constructor)
-        }};
-    }
-    macro_rules! unsigned_target {
-        ($kind:ty, $constructor:path) => {{
-            let converted = match source.1 {
-                IntegerValue::Signed(value) => <$kind>::try_from(value).map_err(|_| ()),
-                IntegerValue::Unsigned(value) => <$kind>::try_from(value).map_err(|_| ()),
-            };
-            converted.map($constructor)
-        }};
-    }
-
-    let converted = match target {
-        IntegerType::I8 => signed_target!(i8, native_i8),
-        IntegerType::I16 => signed_target!(i16, Value::I16),
-        IntegerType::I32 => signed_target!(i32, native_i32),
-        IntegerType::I64 => signed_target!(i64, Value::I64),
-        IntegerType::I128 => signed_target!(i128, Value::I128),
-        IntegerType::Isize => signed_target!(isize, Value::Isize),
-        IntegerType::U8 => unsigned_target!(u8, Value::U8),
-        IntegerType::U16 => unsigned_target!(u16, Value::U16),
-        IntegerType::U32 => unsigned_target!(u32, Value::U32),
-        IntegerType::U64 => unsigned_target!(u64, Value::U64),
-        IntegerType::U128 => unsigned_target!(u128, Value::U128),
-        IntegerType::Usize => unsigned_target!(usize, Value::Usize),
-    };
-    converted.map(lift_migrated_integer).map_err(|_| {
+    let converted = native::integer::convert_integer(&source, target);
+    converted.map_err(|_| {
         format!(
             "cannot cast value from `{}` to `{target}` without losing information",
-            source.0
+            source_type
         )
     })
 }
@@ -140,162 +83,33 @@ pub fn execute_intrinsic(
     execute_integer_intrinsic(symbol, target, values)
 }
 
-macro_rules! integer_binary {
-    ($left:expr, $operator:expr, $right:expr, $constructor:path) => {{
-        use BinaryOp::*;
-        let overflow = || "integer overflow".to_string();
-        match $operator {
-            Add => $left
-                .checked_add($right)
-                .map($constructor)
-                .ok_or_else(overflow),
-            Subtract => $left
-                .checked_sub($right)
-                .map($constructor)
-                .ok_or_else(overflow),
-            Multiply => $left
-                .checked_mul($right)
-                .map($constructor)
-                .ok_or_else(overflow),
-            Divide if $right == 0 => Err("division by zero".into()),
-            Divide => $left
-                .checked_div($right)
-                .map($constructor)
-                .ok_or_else(overflow),
-            Remainder if $right == 0 => Err("division by zero".into()),
-            Remainder => $left
-                .checked_rem($right)
-                .map($constructor)
-                .ok_or_else(overflow),
-            Greater => Ok(Value::Bool($left > $right)),
-            GreaterEqual => Ok(Value::Bool($left >= $right)),
-            Less => Ok(Value::Bool($left < $right)),
-            LessEqual => Ok(Value::Bool($left <= $right)),
-            Equal | NotEqual => unreachable!("equality is handled before numeric dispatch"),
-        }
-    }};
-}
-
-macro_rules! float_binary {
-    ($left:expr, $operator:expr, $right:expr, $constructor:path) => {{
-        use BinaryOp::*;
-        match $operator {
-            Add => Ok($constructor($left + $right)),
-            Subtract => Ok($constructor($left - $right)),
-            Multiply => Ok($constructor($left * $right)),
-            Divide if $right == 0.0 => Err("division by zero".into()),
-            Divide => Ok($constructor($left / $right)),
-            Remainder if $right == 0.0 => Err("division by zero".into()),
-            Remainder => Ok($constructor($left % $right)),
-            Greater => Ok(Value::Bool($left > $right)),
-            GreaterEqual => Ok(Value::Bool($left >= $right)),
-            Less => Ok(Value::Bool($left < $right)),
-            LessEqual => Ok(Value::Bool($left <= $right)),
-            Equal | NotEqual => unreachable!("equality is handled before numeric dispatch"),
-        }
-    }};
-}
-
 pub fn negate(value: Value) -> Result<Value, String> {
-    if let Some(value) = f32_payload(&value) {
-        return Ok(native_f32(-value));
-    }
-    if let Some(value) = f64_payload(&value) {
-        return Ok(native_f64(-value));
-    }
-    if let Some(value) = i8_payload(&value) {
-        return value
-            .checked_neg()
-            .map(native_i8)
-            .ok_or_else(|| "integer overflow".to_owned());
-    }
-    if let Some(value) = i32_payload(&value) {
-        return value
-            .checked_neg()
-            .map(native_i32)
-            .ok_or_else(|| "integer overflow".to_owned());
-    }
-    let value = lower_migrated_integer(value);
-    macro_rules! signed {
-        ($value:expr, $constructor:path) => {
-            $value
-                .checked_neg()
-                .map($constructor)
-                .ok_or_else(|| "integer overflow".to_string())
-        };
-    }
-    let result = match value {
-        Value::I16(value) => signed!(value, Value::I16),
-        Value::I64(value) => signed!(value, Value::I64),
-        Value::I128(value) => signed!(value, Value::I128),
-        Value::Isize(value) => signed!(value, Value::Isize),
-        Value::F32(value) => Ok(Value::F32(-value)),
-        Value::F64(value) => Ok(Value::F64(-value)),
-        value => Err(format!(
+    match Type::of_value(&value) {
+        Some(Type::Integer(kind)) => native::integer::negate(kind, &value),
+        Some(Type::Float(kind)) => native::float::negate(kind, &value),
+        _ => Err(format!(
             "unary `-` expects a signed number, found {}",
             value.type_name()
         )),
-    };
-    result.map(lift_migrated_integer)
+    }
 }
 
 pub fn binary(left: Value, operator: BinaryOp, right: Value) -> Result<Value, String> {
-    if let (Some(left), Some(right)) = (f32_payload(&left), f32_payload(&right)) {
-        return float_binary!(left, operator, right, native_f32);
+    let ty = Type::of_value(&left);
+    if ty == Type::of_value(&right) {
+        match ty {
+            Some(Type::Integer(kind)) => {
+                return native::integer::binary(kind, &left, operator, &right);
+            }
+            Some(Type::Float(kind)) => return native::float::binary(kind, &left, operator, &right),
+            _ => {}
+        }
     }
-    if let (Some(left), Some(right)) = (f64_payload(&left), f64_payload(&right)) {
-        return float_binary!(left, operator, right, native_f64);
-    }
-    if let (Some(left), Some(right)) = (i8_payload(&left), i8_payload(&right)) {
-        return integer_binary!(left, operator, right, native_i8);
-    }
-    if let (Some(left), Some(right)) = (i32_payload(&left), i32_payload(&right)) {
-        return integer_binary!(left, operator, right, native_i32);
-    }
-    let result = match (lower_migrated_integer(left), lower_migrated_integer(right)) {
-        (Value::I16(left), Value::I16(right)) => {
-            integer_binary!(left, operator, right, Value::I16)
-        }
-        (Value::I64(left), Value::I64(right)) => {
-            integer_binary!(left, operator, right, Value::I64)
-        }
-        (Value::I128(left), Value::I128(right)) => {
-            integer_binary!(left, operator, right, Value::I128)
-        }
-        (Value::Isize(left), Value::Isize(right)) => {
-            integer_binary!(left, operator, right, Value::Isize)
-        }
-        (Value::U8(left), Value::U8(right)) => {
-            integer_binary!(left, operator, right, Value::U8)
-        }
-        (Value::U16(left), Value::U16(right)) => {
-            integer_binary!(left, operator, right, Value::U16)
-        }
-        (Value::U32(left), Value::U32(right)) => {
-            integer_binary!(left, operator, right, Value::U32)
-        }
-        (Value::U64(left), Value::U64(right)) => {
-            integer_binary!(left, operator, right, Value::U64)
-        }
-        (Value::U128(left), Value::U128(right)) => {
-            integer_binary!(left, operator, right, Value::U128)
-        }
-        (Value::Usize(left), Value::Usize(right)) => {
-            integer_binary!(left, operator, right, Value::Usize)
-        }
-        (Value::F32(left), Value::F32(right)) => {
-            float_binary!(left, operator, right, Value::F32)
-        }
-        (Value::F64(left), Value::F64(right)) => {
-            float_binary!(left, operator, right, Value::F64)
-        }
-        (left, right) => Err(format!(
-            "operator expects numbers of the same type, found {} and {}",
-            left.type_name(),
-            right.type_name()
-        )),
-    };
-    result.map(lift_migrated_integer)
+    Err(format!(
+        "operator expects numbers of the same type, found {} and {}",
+        left.type_name(),
+        right.type_name()
+    ))
 }
 
 /// Executes an integer operation whose operand type has already been proven by the compiler.
@@ -309,67 +123,24 @@ pub fn integer_binary_typed(
     operator: BinaryOp,
     right: Value,
 ) -> Result<Value, String> {
+    if Type::of_value(&left) != Some(Type::Integer(integer))
+        || Type::of_value(&right) != Some(Type::Integer(integer))
+    {
+        return Err(format!(
+            "typed integer operator expects {integer}, found {} and {}",
+            left.type_name(),
+            right.type_name()
+        ));
+    }
     if matches!(operator, BinaryOp::Equal | BinaryOp::NotEqual) {
-        let equal = left == right;
-        return Ok(Value::Bool(if operator == BinaryOp::Equal {
-            equal
-        } else {
-            !equal
-        }));
+        let equal = left.try_equal(&right)?;
+        return Ok(Value::from(crate::value::native_bool(
+            if operator == BinaryOp::Equal {
+                equal
+            } else {
+                !equal
+            },
+        )));
     }
-
-    if integer == IntegerType::I8 {
-        return match (i8_payload(&left), i8_payload(&right)) {
-            (Some(left), Some(right)) => integer_binary!(left, operator, right, native_i8),
-            _ => Err(format!(
-                "typed integer operator expects {integer}, found {} and {}",
-                left.type_name(),
-                right.type_name()
-            )),
-        };
-    }
-
-    if integer == IntegerType::I32 {
-        return match (i32_payload(&left), i32_payload(&right)) {
-            (Some(left), Some(right)) => integer_binary!(left, operator, right, native_i32),
-            _ => Err(format!(
-                "typed integer operator expects {integer}, found {} and {}",
-                left.type_name(),
-                right.type_name()
-            )),
-        };
-    }
-
-    let left = lower_migrated_integer(left);
-    let right = lower_migrated_integer(right);
-    macro_rules! typed {
-        ($value:ident, $constructor:path) => {
-            match (left, right) {
-                (Value::$value(left), Value::$value(right)) => {
-                    integer_binary!(left, operator, right, $constructor)
-                }
-                (left, right) => Err(format!(
-                    "typed integer operator expects {integer}, found {} and {}",
-                    left.type_name(),
-                    right.type_name()
-                )),
-            }
-        };
-    }
-
-    let result = match integer {
-        IntegerType::I8 => unreachable!("i8 uses its native operator path"),
-        IntegerType::I16 => typed!(I16, Value::I16),
-        IntegerType::I32 => unreachable!("i32 uses its native operator path"),
-        IntegerType::I64 => typed!(I64, Value::I64),
-        IntegerType::I128 => typed!(I128, Value::I128),
-        IntegerType::Isize => typed!(Isize, Value::Isize),
-        IntegerType::U8 => typed!(U8, Value::U8),
-        IntegerType::U16 => typed!(U16, Value::U16),
-        IntegerType::U32 => typed!(U32, Value::U32),
-        IntegerType::U64 => typed!(U64, Value::U64),
-        IntegerType::U128 => typed!(U128, Value::U128),
-        IntegerType::Usize => typed!(Usize, Value::Usize),
-    };
-    result.map(lift_migrated_integer)
+    native::integer::binary(integer, &left, operator, &right)
 }

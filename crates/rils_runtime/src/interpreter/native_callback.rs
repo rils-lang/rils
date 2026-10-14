@@ -22,11 +22,12 @@ impl Interpreter {
                     ));
                 };
                 let buffer = super::formatting::formatter_buffer(receiver, span)?;
-                let value = value.as_string().ok_or_else(|| {
+                let value = value.get_cloned::<String>().ok().ok_or_else(|| {
                     RuntimeError::new("Formatter::write_str expects string", span)
                 })?;
                 buffer.write_str(&value);
-                return Ok(super::builtin_methods::format_ok());
+                return crate::formatting::format_ok()
+                    .map_err(|message| RuntimeError::new(message, span));
             }
             Some("write_derived_debug") => {
                 let [receiver, value] = arguments else {
@@ -36,7 +37,8 @@ impl Interpreter {
                     ));
                 };
                 self.write_derived_debug(receiver, value, span)?;
-                return Ok(super::builtin_methods::format_ok());
+                return crate::formatting::format_ok()
+                    .map_err(|message| RuntimeError::new(message, span));
             }
             _ => {}
         }

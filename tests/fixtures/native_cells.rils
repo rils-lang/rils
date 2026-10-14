@@ -1,0 +1,11 @@
+let text: Cell<string> = Cell::new("first");
+let previous = text.replace("second");
+text.set("third");
+let value: RefCell<i32> = RefCell::new(40);
+{
+    let first = value.borrow_mut();
+    let second = value.borrow_mut();
+    *first = *second + 2;
+}
+let old = value.replace(43);
+previous == "first" && old == 42 && *value.borrow() == 43

@@ -40,7 +40,7 @@ fn borrowed_sums_and_nested_patterns_match_in_every_backend() {
     ] {
         assert_eq!(
             eval_value(source).unwrap_or_else(|e| panic!("{name}, interpreter: {e}")),
-            Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         );
         let module = compile(source).unwrap_or_else(|e| panic!("{name}, compile: {e}"));
         let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
@@ -49,7 +49,7 @@ fn borrowed_sums_and_nested_patterns_match_in_every_backend() {
                 module
                     .execute_value()
                     .unwrap_or_else(|e| panic!("{name}, {backend}: {e}")),
-                Value::from_i32(42)
+                Value::from(rils_execution::value::native_i32(42))
             );
         }
     }

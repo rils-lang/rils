@@ -3,6 +3,47 @@
 Rils（Rust-Inspired Lightweight Script）是一门面向嵌入场景的轻量脚本语言，采用 Rust 风格语法、
 显式所有权和可验证的字节码执行模型，并提供 Rust 宿主 API、静态分析器与 VS Code 支持。
 
+当前开发分支正在移除旧 `Value`：所有标量统一为 Native，Option/Result、tuple、数组及全部内建集合统一为 Dynamic。
+本轮迁移累计删除 49 个旧变体，枚举由 52 项降至 3 项；`IndexedStorage`、`FieldSlot`、旧集合键和存储已删除。
+Rust 宿主从 `rils::value` 导入构造函数，使用 `native_unit()`、`native_bool()`、`native_*()` 返回 NativeObject，再用 `Value::from(...)` 接入运行时，以 `with_ref::<T, _>()` 借用或 `get_cloned::<T>()` 显式复制读取；
+sum、tuple 和数组使用 `TypedStorageContext`，空集合通过 `NativeOwnedContext::empty_collection` 提供完整类型，
+元素访问使用原生布局或引用投影。集合输出与消费式迭代保留元素声明，离开原执行上下文后仍可读取用户类型。
+旧接口测试已迁移或清理，工作区可完整编译；当前仍有运行时语义回归待修复，完整目标和未完成项见 [TODO](TODO.md)。
+
+数值运算、取负、整数转换和数值方法的输入/输出桥接由标准库类型族声明生成。
+字符串方法的生成桥接直接借用原生 receiver 与字段投影，不再经 `import_receiver` 构造临时 Value；嵌套引用沿原存储读取，只有声明中的拥有型字符串参数才显式复制。通用借用读取明确区分原生视图、叶子和 Host，旧 Legacy 分支及 equality 兼容模块已删除。
+
+Iterator::next 对独立原生 receiver 和聚合字段中的原生投影直接调用同一注册方法，不再重复读取临时 Value；可变调用修改原字段，共享投影拒绝可变访问。Clone 直接克隆槽位中的值或原生投影，投影叶子的注册 Clone 保留其原生描述符。两类入口的访问冲突返回错误，克隆引用仍保留引用身份。
+
+字符串和数值方法共用 NativeOutput 返回值协议，Option、Result、二元 tuple 和 Iter 按组合规则转换，不再逐个具体类型维护桥接。生成的迭代器保留声明中的 Iter<T> 类型，并在推进时传播元素转换错误。
+
+组合值的显式 Clone 携带原始声明上下文递归处理活跃字段与分支，嵌套注册叶子调用自身 Clone；返回值须保持注册身份。克隆失败会释放已生成的负载，源值保持原有存储。
+
+Iterator 默认方法通过原生注册表识别独立对象、词法引用和字段投影，不再为方法查找读取临时 receiver。投影上的默认方法按声明借用或消费原字段，保留迭代状态与相邻字段。
+空集合类型可从后续方法实参回传到初始化表达式；Iterator 声明和执行统一使用 `Iter<T>`，VM 函数值保留签名以推导回调返回类型。
+
+借用值的字面量模式匹配、Display/Debug 和 Formatter 缓冲区读取直接访问原生存储；模式绑定保留原引用，格式化不会克隆 receiver，也不会先读取成临时 Value。格式化 trait 调用支持嵌套引用，解释器与 VM 共用目标引用准备逻辑。
+
+引用取值统一遵守 Copy 规则，非 Copy 字符串、集合元素和 RefCell 负载不再通过读取隐式克隆。Rust 执行层可使用 `with_ref` / `with_native_view` 观察原存储，显式 Clone 才产生独立副本。
+
+消费式绑定方法可以移入局部变量或 tuple 后调用，非 Copy receiver 保持唯一所有权；enum tuple 变体支持作为构造函数值使用。这两种调用均覆盖解释器、VM 和加载后的字节码。
+
+嵌套数值引用的方法调用（如 `&&i32` 的 `.abs()`）、Range Clone 的返回类型，以及完整路径 `Rc::new` 的泛型结果已贯通共享前端推导，无需额外类型标注。
+
+解释器内建与宿主成员查找直接使用引用后的类型和原宿主声明，已删除引用读取后再解析成员的回退路径。整数与浮点生成桥接共用原生读取协议，支持组合叶子及解释器中的嵌套引用 receiver。
+Vec 的专用动态分派和旧序列查询分派模块已删除；生成桥接统一处理拥有型输入、索引、原生输出和数组共享查询。标量查询保留按声明自动调用 Rust 方法体的通用桥接，新增方法无需登记名称。contains 借用元素，extend 消费源 Vec，移出元素保留 receiver 的声明上下文。
+Rc/Weak 的运行时 Operation 枚举和专用适配已删除；共享句柄操作由标准库实现，生成桥接直接借用原生视图，构造、downgrade 和 upgrade 输出保留元素声明上下文。
+Cell/RefCell 的运行时专用模块也已删除；标准库负责原生构造、Copy 读取、set/replace 和替换冲突检查，生成桥接负责拥有型输入与输出转换。RefCell 借用直接持有原始 receiver 与声明信息，允许多个局部可变引用，存在借用时拒绝替换。RefCell 与集合借用迭代器不再从调用上下文重建类型信息；离开原执行上下文后，字段投影、再借用和用户类型查询仍使用原存储及声明。
+VecDeque/BinaryHeap 已接入声明生成的调用桥接，执行层专用模块及借用参数克隆后 push 的旧路径已删除；堆调整和队列边界操作由标准库实现，push 消费原生元素，pop 保留元素声明，消费式迭代检查具体 receiver 类型。
+执行层保留类型检查与通用调用封装，VM 的已知整数类型操作直接进入生成分派；溢出、除零及现有转换规则保持不变。
+HashMap/BTreeMap、HashSet/BTreeSet 的调用分派、参数转换、receiver 检查和返回值包装由标准库声明生成；Option 和迭代器的元素布局按签名中的类型参数选择，执行层的 native_map/native_set 专用模块已删除。查找、插入、移除、有序边界查询和集合运算使用标准库原生布局算法；集合运算仅 Clone 结果所需元素。运行时提供通用布局访问、词法引用检查、用户 Clone 回调与输出上下文，其他集合实现继续迁移。
+
+拥有型、借用型和 VM 脚本迭代器已使用 Native 注册，旧迭代器枚举分支与 Value 元素缓存已删除。原生迭代元素直接移动，空迭代器及耗尽后的 None 保留完整布局；引用来源通过子值注册继续检查。Iterator 默认方法体的部分空 Vec 类型推导尚未接通，相关测试仍失败。
+
+引用已统一为 Dynamic 原生叶子，删除 `Value::Reference`；Rust 构造改用 `Value::from_reference`，读取句柄用 `as_reference()`。Copy 复制引用租约，宿主视图访问被引用值；容器内外保留相同的布局、身份和词法来源。
+
+函数、闭包、绑定方法和构造器统一使用 Dynamic callable 句柄，已删除十种旧 Value 函数分支及重复的 Callable 枚举。Rust 使用 `Value::from_callable(Rc<T>)` 构造，通过 `as_callable::<T>()` 检查具体目标；消费式分发用 `into_callable::<T>()`，避免临时包装阻止非 Copy receiver 移出。类型/模块声明已迁入独立 Declaration，名称解析使用 Binding，运行时 Value 仅保留三类存储。
+
 ## 快速开始
 
 ```console
@@ -32,12 +73,12 @@ Rust 标准库中的固有方法用 `#[export_rils]` 导出，trait impl 用 `#[
 
 原生 Option/Result 的借用模式直接投影活动分支的原负载，支持嵌套泛型 struct/enum、集合和局部引用，不需要 Clone。子引用保留原对象及词法来源，存活期间禁止替换父容器；释放后恢复替换。小型 Copy 容器只在需要持久子投影时转移到共享存储，数据直接移动。
 
-Option/Result 的普通消费式方法和回调方法由过程宏按签名生成原生转换并调用标准库方法体；回调参数及结果按所有权传递，跳过回调的分支也保留完整输出类型与声明。`take/replace` 可直接访问局部、结构体字段和集合元素中的 Option，移动非 Clone 负载并保留借用保护。Rust 宿主调用这类方法使用 `call_native_owned_symbol()`，传入拥有型参数与 `NativeOwnedContext`；借用切片入口用于标签查询。全局 `unwrap/unwrap_or` 复用原生调用；IO/FS 直接返回原生 Result，保留完整类型和错误声明。模式绑定和 sum 哈希键保留原生布局；Display/Debug 直接读取组合视图与标准库注册的格式化操作，不要求复制非 Clone payload。旧 sum 变体及剩余借用适配仍在迁移。
+Option/Result 的普通消费式方法和回调方法由过程宏按签名生成原生转换并调用标准库方法体；回调参数及结果按所有权传递，跳过回调的分支也保留完整输出类型与声明。`take/replace` 可直接访问局部、结构体字段和集合元素中的 Option，移动非 Clone 负载并保留借用保护。Rust 宿主调用这类方法使用 `call_native_owned_symbol()`，传入拥有型参数与 `NativeOwnedContext`；借用切片入口用于标签查询。全局 `unwrap/unwrap_or` 复用原生调用；IO/FS 直接返回原生 Result，保留完整类型和错误声明。模式绑定和 sum 哈希键保留原生布局；Display/Debug 直接读取组合视图与标准库注册的格式化操作，不要求复制非 Clone payload。旧 sum 变体已经删除；剩余借用快照接口及旧集合存储继续迁移。
 
-局部绑定的原生存储使用显式标注或前端推导类型；布局可解析时，未标注的用户类型 Option/Result 及嵌套元组/数组也会提升。模块类型未被导入时仍可解析布局，内部私有字段和前向声明也能参与；不同模块的同名类型按完整路径区分，`type_of` 与 VM 保持一致。类型化元组/数组初始化会递归提升内部用户类型的 Option/Result，涵盖具体泛型参数、返回值和透明别名。已建立原生布局的 Option/Result 在局部变量、字段及元组/数组元素替换时保留布局；可变引用写回使用同一消费式入口。局部变量、字段及元组/数组元素的声明操作表独立于负载保留，move 后重新赋值也可复用。整体元组/数组替换同样保存递归声明，涵盖嵌套元素、整个负载 move 和多个可变引用依次写回，不保留旧负载。直接表达式以及 if/match 返回的 Option/Result、嵌套元组/数组也按前端推导类型提升，不要求先绑定局部变量。
+局部绑定的原生存储使用显式标注或前端推导类型；布局可解析时，未标注的用户类型 Option/Result 及嵌套元组/数组也会提升。模块类型未被导入时仍可解析布局，内部私有字段和前向声明也能参与；不同模块的同名类型按完整路径区分，`type_of` 与 VM 保持一致。类型化元组/数组初始化会递归提升内部用户类型的 Option/Result，涵盖具体泛型参数、返回值和透明别名。已建立原生布局的 Option/Result 在局部变量、字段及元组/数组元素替换时保留布局；可变引用写回使用同一消费式入口。局部变量、字段及元组/数组元素的声明操作表独立于负载保留，move 后重新赋值也可复用。整体元组/数组替换直接保留原生描述符，涵盖嵌套元素、整个负载 move 和多个可变引用依次写回，不保留旧负载。直接表达式以及 if/match 返回的 Option/Result、嵌套元组/数组也按前端推导类型提升，不要求先绑定局部变量。
 
 前端推断、类型检查和 HIR 使用共享的声明类型解析器，保留定义模块内的完整类型路径，并展开参数、返回值及字段中的透明类型别名。跨模块原生 Option/Result 字段替换、直接赋值 `None` 和链式泛型别名返回值在解释器、VM 与字节码加载后执行中保持一致。
-独立的 [`rils_value`](crates/rils_value/README.md) crate 提供按 Rust 布局存储的原生值与类型操作注册；小型 Copy 值直接内联，其他值使用共享存储。`NativeType` 也会自动登记组合叶子布局及拥有型转换，使任意注册的 Rust 负载可移入动态组合存储再取回；执行层已在 tuple 中保留描述符上下文，兼容 HashMap/BTreeMap 的拥有型条目也直接返回原生 tuple。兼容 Map 的插入、查询、删除以及有序集合首尾查询直接返回原生 Option；集合保留输出布局和声明，删除至空或清空后仍能构造带完整类型的 None。`Range<T>`、所有标准库整数宽度、`f32`、`f64` 和 `string` 已在解释器与字节码 VM 中使用原生负载；Rust 宿主通过 `Value::from_i16` / `Value::as_i16` 等对应宽度的方法构造和读取整数，浮点与字符串分别使用 `from_f32` / `as_f32`、`from_f64` / `as_f64`、`from_string` / `as_string`。整数与浮点方法由标准库声明生成注册，并通过类型化上下文调用 Rust 方法。`type_of(1..3)` 保留泛型参数，返回 `"Range<i32>"`。
+独立的 [`rils_value`](crates/rils_value/README.md) crate 提供按 Rust 布局存储的原生值与类型操作注册；小型 Copy 值直接内联，其他值使用共享存储。`NativeType` 也会自动登记组合叶子布局及拥有型转换，使任意注册的 Rust 负载可移入动态组合存储再取回；执行层已在 tuple 中保留描述符上下文，兼容 HashMap/BTreeMap 的拥有型条目也直接返回原生 tuple。兼容 Map 的插入、查询、删除以及有序集合首尾查询直接返回原生 Option；集合保留输出布局和声明，删除至空或清空后仍能构造带完整类型的 None。`Range<T>`、所有标准库整数宽度、`f32`、`f64` 和 `string` 已在解释器与字节码 VM 中使用原生负载；Rust 宿主通过 `native_i16` / `Value::get_cloned::<i16>` 等对应宽度的方法构造和读取整数，浮点与字符串分别使用 `native_f32` / `get_cloned::<f32>`、`native_f64` / `get_cloned::<f64>`、`native_string` / `get_cloned::<String>`。整数与浮点方法由标准库声明生成注册，并通过类型化上下文调用 Rust 方法。`type_of(1..3)` 保留泛型参数，返回 `"Range<i32>"`。
 
 原生 Option/Result、记录、enum 和 Vec 的比较直接借用活动负载与字段，`Vec::contains(&value)` 也读取原元素和查询值，不隐式复制内容。基础数值比较由标准库声明生成注册，包装类型与原始标量通过安全的借用映射比较。Rust 宿主可用 `Value::try_equal()` 获取缺失注册、已 move 字段或访问冲突等错误；旧 sum 变体及拥有型快照接口仍在迁移。
 
@@ -45,17 +86,17 @@ Option/Result 的普通消费式方法和回调方法由过程宏按签名生成
 
 原生数组支持索引、引用写回、共享查询和迭代；消费式迭代按需移出元素，`Vec::from(array)` 直接转移原生元素存储。索引不能移出非 Copy 元素。空数组保留完整元素声明，原生 `[T; 0]` 的 Copy 仍由 T 的能力决定；用户类型不会因字段均为 Copy 自动获得 Copy。Rust 宿主构造数组布局使用 `DynamicLayout::array(item_layout, length)`。
 
-`Some(value)`、类型明确的 `None` 和 Option 默认值在解释器与 VM 中直接构造原生布局并消费子值，覆盖基础值、标准库容器、用户 struct/enum、函数及局部引用。数组、比较、if 分支、泛型实参和方法参数可补齐构造类型；未解析的元素类型或缺失布局报错，不回退到旧值。拥有型 `Option::or/xor` 与 `Result::ok/err` 也复用同一构造器。`Ok` / `Err` 也按完整 `Result<T, E>` 直接构造原生布局；返回声明、if/match 分支、泛型实参和 `?` 上下文可补齐两侧类型。限定路径与 `use` 别名保留构造器身份；无上下文的 `Ok(value)` / `Err(error)` 需补完整标注，非活动分支也必须有布局。剩余借用适配继续迁移。Rust 宿主可用 `RilsValue::with_native_view()` 借用组合负载，使用 `TypedStorageContext::construct_option/construct_result` 构造拥有型组合值，或用 `Value::as_option()` 读取可转换的新旧 Option 表示；基础值可通过 `Value::as_i8()`、`Value::as_i32()`、`Value::as_usize()` 和 `Value::as_string()` 读取。实验性 v8 的 Option/Result 构造操作数已变化，旧字节码需重新编译，格式号不变。
+`Some(value)`、类型明确的 `None` 和 Option 默认值在解释器与 VM 中直接构造原生布局并消费子值，覆盖基础值、标准库容器、用户 struct/enum、函数及局部引用。数组、比较、if 分支、泛型实参和方法参数可补齐构造类型；未解析的元素类型或缺失布局报错，不回退到旧值。拥有型 `Option::or/xor` 与 `Result::ok/err` 也复用同一构造器。`Ok` / `Err` 也按完整 `Result<T, E>` 直接构造原生布局；返回声明、if/match 分支、泛型实参和 `?` 上下文可补齐两侧类型。限定路径与 `use` 别名保留构造器身份；无上下文的 `Ok(value)` / `Err(error)` 需补完整标注，非活动分支也必须有布局。剩余借用适配继续迁移。Rust 宿主可用 `RilsValue::with_native_view()` 借用组合负载，使用 `TypedStorageContext::construct_option/construct_result` 构造拥有型组合值，通过 `Value::with_native_view()` 的 Option 标签与子布局投影借用读取，不生成拥有型快照；基础值可通过 `Value::get_cloned::<i8>()`、`Value::get_cloned::<i32>()`、`Value::get_cloned::<usize>()` 和 `Value::get_cloned::<String>()` 读取。实验性 v8 的 Option/Result 构造操作数已变化，旧字节码需重新编译，格式号不变。
 
 词法引用和函数值也有执行层注册的原生叶子布局：`Option<&mut T>`、`Result<fn(T) -> U, E>`、`Vec<fn(T) -> U>` 及包含它们的泛型记录可以参与原生组合存储。Copy 保留引用租约或函数身份，闭包的捕获状态继续共享；原生字段内的引用仍按来源检查作用域，不能因进入组合存储而逃逸。宿主声明已接入相同上下文：Option/Result、空集合、Box、Rc 和 Cell/RefCell 构造可递归组合宿主字段，保留声明的 Copy 策略与对象身份。Rust 宿主可用 `Engine::register_host_contract_types()` 和 `BytecodeHost::register_host_contract()` 安装 Manifest 类型；C API 冻结宿主契约时自动接入。`register_native_type()` 的自定义类型使用完整模块路径，默认非 Copy。
 
-原生值 crate 已支持运行时组合的 `Option<T>`、用户结构体、tuple、定长数组、带标签变体和拥有型序列布局；执行层可从已有 struct/enum 声明解析具体泛型实例的字段偏移和变体负载。带具体标准库元素布局的 `VecDeque<T>` 与 `BinaryHeap<T>` 在解释器和 VM 的类型化局部绑定中已使用动态原生序列存储；元素有可解析布局的类型化空 `Vec<T>` 也已接入，Rust 宿主可通过 `Value::as_vec()` 读取新旧表示。入队、出队、堆插入、堆弹出及清空等操作直接访问原生负载；支持 Clone 的组合元素端点克隆与容器克隆按原生布局递归读取负载。类型化局部绑定中的用户定义元素可在布局可解析时使用原生路径；其他构造上下文仍可能走旧容器路径。字节码中的本模块用户结构体字段 place 已使用经过验证的声明索引，两端都按具体布局投影原生字段。独立用户 struct/enum 已按具体类型存入原生布局；容器内原生用户记录的嵌套字段与索引引用已直接沿布局路径访问 bytes，支持 RefCell、借用迭代器、tuple/array/Vec 子字段、参数与方法 receiver 写回。整数、浮点数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数与 `string` 方法的原生对象注册由过程宏生成；两类方法返回的 `Option<T>` 已使用原生布局；整数的 `overflowing_*` tuple 和 `try_from` Result 也直接构造原生存储，`Option<T>` 自身的方法桥接当前通过过渡适配器读取原生负载，其他类型的可执行注册及实际值迁移仍在进行中。
+原生值 crate 已支持运行时组合的 `Option<T>`、用户结构体、tuple、定长数组、带标签变体和拥有型序列布局；执行层可从已有 struct/enum 声明解析具体泛型实例的字段偏移和变体负载。带具体标准库元素布局的 `VecDeque<T>` 与 `BinaryHeap<T>` 在解释器和 VM 的类型化局部绑定中已使用动态原生序列存储；元素有可解析布局的类型化空 `Vec<T>` 也已接入，Rust 宿主通过 `Value::with_native_view()` 查询序列长度并按索引借用元素。入队、出队、堆插入、堆弹出及清空等操作直接访问原生负载；支持 Clone 的组合元素端点克隆与容器克隆按原生布局递归读取负载。类型化局部绑定中的用户定义元素可在布局可解析时使用原生路径；构造需要完整的元素类型与可解析布局，缺失上下文时明确报错。字节码中的本模块用户结构体字段 place 已使用经过验证的声明索引，两端都按具体布局投影原生字段。独立用户 struct/enum 已按具体类型存入原生布局；容器内原生用户记录的嵌套字段与索引引用已直接沿布局路径访问 bytes，支持 RefCell、借用迭代器、tuple/array/Vec 子字段、参数与方法 receiver 写回。整数、浮点数、`string` 与 `Option<T>` 的布局工厂从标准库声明生成。整数与 `string` 方法的原生对象注册由过程宏生成；两类方法返回的 `Option<T>` 已使用原生布局；整数的 `overflowing_*` tuple 和 `try_from` Result 也直接构造原生存储，`Option<T>` 自身的方法桥接当前通过过渡适配器读取原生负载，其他类型的可执行注册及实际值迁移仍在进行中。
 `VecDeque<T>` 和 `BinaryHeap<T>` 可通过 `into_iter()` 或 `for` 消费并遍历；队列保持队首到队尾的顺序，堆遍历不保证排序。集合实现 `IntoIterator`，产出的迭代器实现 `Iterator`。`Vec<T>` 的拥有型迭代接管原有元素存储，`iter()` 则借用元素并保留集合；字符串迭代按需生成下一项。
 
 项目中的公开源码声明可通过多层 `pub use` 重导出；Analyzer 的补全、Hover、跳转和引用查找
 会追踪到原声明，并隔离不同项目中的同名符号。
 
-具备可解析分支布局的 `Result<T, E>` 已接入原生布局，包括 `Result<Option<string>, string>` 等非 Copy 组合；Rust 宿主可通过 `Value::as_result()` 统一读取新旧表示。借用读取与 Clone 按组合布局递归处理，叶子类型仍需有对应的原生 Clone 注册。
+具备可解析分支布局的 `Result<T, E>` 已接入原生布局，包括 `Result<Option<string>, string>` 等非 Copy 组合；Rust 宿主通过 `Value::with_native_view()` 查询变体标签并借用活动负载。借用读取与 Clone 按组合布局递归处理，叶子类型仍需有对应的原生 Clone 注册。
 
 ## Rust 嵌入
 

@@ -17,25 +17,48 @@ pub(crate) struct NativeReceiver {
 impl NativeReceiver {
     pub(crate) fn from_value(value: &Value) -> Result<Option<Self>, String> {
         match value {
+            __reference_value if __reference_value.as_reference().is_some() => {
+                let reference = __reference_value
+                    .as_reference()
+                    .expect("checked reference handle");
+                {
+                    let Some(layout) = reference.native_layout()? else {
+                        return Ok(None);
+                    };
+                    Ok(Some(Self {
+                        descriptor: Rc::new(match super::borrowed::native_codec(value)? {
+                            Some(codec) => DynamicType::new(layout).register_metadata(codec),
+                            None => DynamicType::new(layout),
+                        }),
+                        storage: Storage::Reference(reference.clone()),
+                    }))
+                }
+            }
             Value::Dynamic(object) => Ok(Some(Self {
                 descriptor: object.descriptor_handle(),
                 storage: Storage::Object(object.clone()),
             })),
-            Value::Reference(reference) => {
-                let Some(layout) = reference.native_layout()? else {
-                    return Ok(None);
-                };
-                Ok(Some(Self {
-                    descriptor: Rc::new(DynamicType::new(layout)),
-                    storage: Storage::Reference(reference.clone()),
-                }))
-            }
+
             _ => Ok(None),
         }
     }
 
     pub(crate) fn descriptor(&self) -> &DynamicType<Value> {
         &self.descriptor
+    }
+
+    pub(crate) fn codec(&self) -> super::record_codec::NativeRecordCodec {
+        self.descriptor
+            .metadata::<super::record_codec::NativeRecordCodec>()
+            .map(|codec| (*codec).clone())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn option_for(
+        &self,
+        item: Rc<rils_value::DynamicLayout>,
+    ) -> Result<super::storage::PreparedOption, String> {
+        super::storage::PreparedOption::from_layout(item, self.codec())
     }
 
     pub(crate) fn with<R>(
@@ -65,13 +88,6 @@ impl NativeReceiver {
         ) {
             (Ok(Ok(left)), Ok(Ok(right))) => Rc::ptr_eq(&left, &right),
             _ => false,
-        }
-    }
-
-    pub(crate) fn owned_object(&self) -> Result<DynamicObject, String> {
-        match &self.storage {
-            Storage::Object(object) => Ok(object.clone()),
-            Storage::Reference(_) => Err("cannot consume a borrowed native receiver".into()),
         }
     }
 }

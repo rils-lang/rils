@@ -10,7 +10,7 @@ pub enum Value {
 
 // The execution crate supplies the receiver conversion. The macro supplies
 // the method call, so an additional query needs no method-name registration.
-mod vector {
+mod sequence_query {
     use super::{Value, fixture};
 
     pub trait Output {
@@ -27,6 +27,7 @@ mod vector {
         }
     }
     pub fn with_shared<R: Output>(
+        _name: &str,
         arguments: &[Value],
         call: impl FnOnce(&fixture::Vec<i32>) -> R,
     ) -> Result<Value, String> {

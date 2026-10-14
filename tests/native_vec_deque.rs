@@ -34,10 +34,13 @@ fn native_vec_deque_can_own_another_native_vec_deque() {
         let mut recovered = outer.pop_front().unwrap();
         recovered.pop_front().unwrap()
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(7));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(7))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(7)
+        Value::from(rils::value::native_i32(7))
     );
 }
 
@@ -66,10 +69,13 @@ fn native_vec_deque_matches_in_interpreter_and_vm() {
             if queue.is_empty() && queue.len() == 0usize { 42 } else { 0 }
         "#,
     ] {
-        assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+        assert_eq!(
+            eval_value(source).unwrap(),
+            Value::from(rils::value::native_i32(42))
+        );
         assert_eq!(
             compile(source).unwrap().execute_value().unwrap(),
-            Value::from_i32(42)
+            Value::from(rils::value::native_i32(42))
         );
     }
 }
@@ -83,10 +89,13 @@ fn cloning_an_element_keeps_the_owned_string_in_the_queue() {
         let original = queue.pop_front().unwrap();
         if copy == original && queue.is_empty() { 42 } else { 0 }
     "#;
-    assert_eq!(eval_value(source).unwrap(), Value::from_i32(42));
+    assert_eq!(
+        eval_value(source).unwrap(),
+        Value::from(rils::value::native_i32(42))
+    );
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(42)
+        Value::from(rils::value::native_i32(42))
     );
 }
 
@@ -106,7 +115,7 @@ fn cloning_a_noncopy_composite_element_keeps_native_queue_storage() {
         compiled.execute_value().unwrap(),
         loaded.execute_value().unwrap(),
     ] {
-        assert_eq!(value, Value::from_i32(42));
+        assert_eq!(value, Value::from(rils::value::native_i32(42)));
     }
 }
 
@@ -130,7 +139,11 @@ fn native_vec_deque_moves_recursive_user_values_from_both_ends() {
             compiled.execute_value().unwrap(),
             loaded.execute_value().unwrap(),
         ] {
-            assert_eq!(value, Value::from_i32(42), "{push}/{pop}");
+            assert_eq!(
+                value,
+                Value::from(rils::value::native_i32(42)),
+                "{push}/{pop}"
+            );
         }
     }
 }

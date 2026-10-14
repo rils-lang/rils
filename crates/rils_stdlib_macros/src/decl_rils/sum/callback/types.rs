@@ -161,8 +161,8 @@ impl Shape {
             Self::Result(_, _) => {
                 quote!(bridge.for_type(&types.resolve(&#pattern)?, context)?.export_result(#value)?)
             }
-            Self::Bool => quote!(crate::Value::Bool(#value)),
-            Self::Unit => quote!({ #value; crate::Value::Unit }),
+            Self::Bool => quote!(crate::Value::from(crate::value::native_bool(#value))),
+            Self::Unit => quote!({ #value; crate::Value::from(crate::value::native_unit()) }),
         }
     }
 }

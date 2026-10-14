@@ -28,7 +28,13 @@ fn source(
 
 fn number_sum(branch: Branch) -> Value {
     let number = RecordLayoutResolver::new(&[]).resolve(&Type::I32).unwrap();
-    let item = || record_codec::into_native(Value::from_i32(1), number.clone()).unwrap();
+    let item = || {
+        record_codec::into_native(
+            Value::from(rils_execution::value::native_i32(1)),
+            number.clone(),
+        )
+        .unwrap()
+    };
     let payload = match branch {
         Branch::Some => {
             DynamicValue::some(DynamicLayout::option(number.clone()).unwrap(), item()).unwrap()
@@ -57,22 +63,22 @@ fn every_sum_branch_uses_original_storage_and_lexical_guards() {
         assert!(matches!(&value, Value::Dynamic(object) if object.is_inline()));
         let (environment, storage, root) = source(value);
         assert_eq!(
-            borrowed_sum::branch(&Value::Reference(root.clone())).unwrap(),
+            borrowed_sum::branch(&Value::from_reference(root.clone())).unwrap(),
             Some(branch)
         );
         assert!(
             matches!(storage.borrow().read().unwrap(), Value::Dynamic(object) if object.is_inline())
         );
         if branch == Branch::None {
-            assert!(borrowed_sum::payload(&Value::Reference(root.clone()), branch).is_err());
+            assert!(borrowed_sum::payload(&Value::from_reference(root.clone()), branch).is_err());
             assert!(root.project_native_step(DynamicPathStep::Some).is_err());
             continue;
         }
-        let bound = borrowed_sum::payload(&Value::Reference(root.clone()), branch).unwrap();
+        let bound = borrowed_sum::payload(&Value::from_reference(root.clone()), branch).unwrap();
         assert!(
             matches!(storage.borrow().read().unwrap(), Value::Dynamic(object) if !object.is_inline())
         );
-        let Value::Reference(child) = &bound else {
+        let Some(child) = bound.as_reference() else {
             panic!("payload reference")
         };
         assert!(!child.mutable);
@@ -84,23 +90,42 @@ fn every_sum_branch_uses_original_storage_and_lexical_guards() {
             Branch::None => unreachable!(),
         };
         let writer = root.project_native_step(step).unwrap().unwrap();
-        writer.write(Value::from_i32(42)).unwrap();
-        assert_eq!(child.copy_native().unwrap(), Some(Value::from_i32(42)));
+        writer
+            .write(Value::from(rils_execution::value::native_i32(42)))
+            .unwrap();
+        assert_eq!(
+            child.copy_native().unwrap(),
+            Some(Value::from(rils_execution::value::native_i32(42)))
+        );
         assert!(storage.borrow_mut().assign(number_sum(branch)).is_err());
         let independent = storage.borrow_mut().take().unwrap();
-        writer.write(Value::from_i32(7)).unwrap();
-        assert_eq!(child.copy_native().unwrap(), Some(Value::from_i32(7)));
+        writer
+            .write(Value::from(rils_execution::value::native_i32(7)))
+            .unwrap();
+        assert_eq!(
+            child.copy_native().unwrap(),
+            Some(Value::from(rils_execution::value::native_i32(7)))
+        );
         assert_eq!(
             independent
-                .as_option()
-                .and_then(|v| v.0)
-                .or_else(|| independent.as_result().map(|v| v.0.unwrap_or_else(|e| e))),
-            Some(Value::from_i32(42))
+                .with_native_view(|view| {
+                    let child = if matches!(view.layout()?.rils_type(), Type::Option(_)) {
+                        view.option_item()?
+                    } else {
+                        view.variant_payload()?
+                    };
+                    child.with_rust::<i32, _>(|value| *value)
+                })
+                .unwrap()
+                .ok()
+                .map(|number| Value::from(rils_execution::value::native_i32(number))),
+            Some(Value::from(rils_execution::value::native_i32(42)))
         );
         drop(writer);
         drop(root);
         assert!(child.is_local_to(&environment));
         assert!(storage.borrow_mut().assign(number_sum(branch)).is_err());
+        drop(child);
         drop(bound);
         storage.borrow_mut().assign(number_sum(branch)).unwrap();
     }
@@ -144,10 +169,10 @@ fn nested_sum_projection_does_not_clone_unregistered_non_copy_payloads() {
     let (environment, storage, root) = source(Value::Dynamic(
         DynamicObject::new(Rc::new(DynamicType::new(option)), payload).unwrap(),
     ));
-    let outer = Value::Reference(root.clone());
+    let outer = Value::from_reference(root.clone());
     assert_eq!(borrowed_sum::branch(&outer).unwrap(), Some(Branch::Some));
     let result = borrowed_sum::payload(&outer, Branch::Some).unwrap();
-    let Value::Reference(reference) = &result else {
+    let Some(reference) = result.as_reference() else {
         panic!("result reference")
     };
     assert!(
@@ -155,14 +180,14 @@ fn nested_sum_projection_does_not_clone_unregistered_non_copy_payloads() {
         "Probe has no borrowed Clone registration"
     );
     assert_eq!(borrowed_sum::branch(&result).unwrap(), Some(Branch::Ok));
-    let record = borrowed_sum::payload(&result, Branch::Ok).unwrap();
-    let Value::Reference(record) = record else {
+    let record_value = borrowed_sum::payload(&result, Branch::Ok).unwrap();
+    let Some(record) = record_value.as_reference() else {
         panic!("record reference")
     };
     assert!(record.project_native_variant(1).is_err());
     let field = Rc::new(record.project_native_field("probe").unwrap().unwrap());
     assert!(field.is_local_to(&environment));
-    RilsValue::new(Value::Reference(field.clone()))
+    RilsValue::new(Value::from_reference(field.clone()))
         .with_native_view(|view| {
             view.with_rust::<Probe, _>(|probe| assert!(Rc::ptr_eq(&probe.0, &drops)))
         })
@@ -171,7 +196,9 @@ fn nested_sum_projection_does_not_clone_unregistered_non_copy_payloads() {
     assert_eq!(drops.get(), 0);
     drop(outer);
     drop(result);
+    drop(reference);
     drop(record);
+    drop(record_value);
     drop(root);
     assert!(
         storage.borrow_mut().take().is_err(),
@@ -184,33 +211,37 @@ fn nested_sum_projection_does_not_clone_unregistered_non_copy_payloads() {
 
 #[test]
 fn non_copy_payload_assignment_requires_ownership_and_preserves_failed_targets() {
-    let rils_execution::value::dynamic_option::Construction::Native(value) =
-        rils_execution::value::dynamic_option::construct(
-            Some(Value::from_string("original")),
-            &Type::String,
+    let value = rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+        .construct_option(
+            &Type::Option(Box::new(Type::String)),
+            Some(Value::from(rils_execution::value::native_string(
+                "original",
+            ))),
         )
-        .unwrap()
-    else {
-        panic!("native option")
-    };
+        .unwrap();
     let (_, _, root) = source(value);
     let writer = Rc::new(
         root.project_native_step(DynamicPathStep::Some)
             .unwrap()
             .unwrap(),
     );
-    let shared = Value::from_string("shared");
+    let shared = Value::from(rils_execution::value::native_string("shared"));
     assert!(writer.write(shared.clone()).is_err());
     assert_eq!(
-        RilsValue::new(Value::Reference(writer.clone()))
+        RilsValue::new(Value::from_reference(writer.clone()))
             .get_cloned::<String>()
             .unwrap(),
         "original"
     );
-    assert_eq!(shared.as_string().as_deref(), Some("shared"));
-    writer.write(Value::from_string("changed")).unwrap();
     assert_eq!(
-        RilsValue::new(Value::Reference(writer))
+        shared.get_cloned::<String>().ok().as_deref(),
+        Some("shared")
+    );
+    writer
+        .write(Value::from(rils_execution::value::native_string("changed")))
+        .unwrap();
+    assert_eq!(
+        RilsValue::new(Value::from_reference(writer))
             .get_cloned::<String>()
             .unwrap(),
         "changed"

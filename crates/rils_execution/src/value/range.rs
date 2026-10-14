@@ -27,19 +27,17 @@ pub fn native_range(start: Value, end: Value) -> Result<Value, String> {
                         let equal = context.receiver::<Range, _>(|range| {
                             other.with::<Range, _>(|other| range == other)
                         })??;
-                        Ok(Value::Bool(equal))
+                        Ok(Value::from(crate::value::native_bool(equal)))
                     })
                     .register_method(native_ops::DISPLAY, |context| {
-                        Ok(super::native_string(context.receiver::<Range, _>(ToString::to_string)?))
+                        Ok(Value::from(super::native_string(context.receiver::<Range, _>(ToString::to_string)?)))
                     })
                     .register_method(native_ops::NEXT, |context| {
                         let value = context.receiver_mut::<Range, _>(Iterator::next)?;
-                        Ok(Value::Option {
-                            value: value.map(|item| Rc::new(
-                                crate::runtime_builtins::native_value::NativeValue::into_value(item)
-                            )),
-                            element_type: Some($type),
-                        })
+                        super::storage::TypedStorageContext::new(&[], &[]).construct_option(
+                            &Type::Option(Box::new($type)),
+                            value.map(crate::runtime_builtins::native_value::NativeValue::into_value),
+                        )
                     }),
                 );
             }
@@ -56,48 +54,71 @@ pub fn native_range(start: Value, end: Value) -> Result<Value, String> {
     ) {
         return native_range!(start, end, i8, Type::Integer(IntegerType::I8));
     }
-
+    if let (Some(start), Some(end)) = (
+        crate::numeric::i16_payload(&start),
+        crate::numeric::i16_payload(&end),
+    ) {
+        return native_range!(start, end, i16, Type::Integer(IntegerType::I16));
+    }
     if let (Some(start), Some(end)) = (
         crate::numeric::i32_payload(&start),
         crate::numeric::i32_payload(&end),
     ) {
-        return native_range!(start, end, i32, Type::I32);
+        return native_range!(start, end, i32, Type::Integer(IntegerType::I32));
     }
-
-    match (
-        crate::numeric::lower_migrated_integer(start),
-        crate::numeric::lower_migrated_integer(end),
+    if let (Some(start), Some(end)) = (
+        crate::numeric::i64_payload(&start),
+        crate::numeric::i64_payload(&end),
     ) {
-        (Value::I16(start), Value::I16(end)) => {
-            native_range!(start, end, i16, Type::Integer(IntegerType::I16))
-        }
-        (Value::I64(start), Value::I64(end)) => {
-            native_range!(start, end, i64, Type::Integer(IntegerType::I64))
-        }
-        (Value::I128(start), Value::I128(end)) => {
-            native_range!(start, end, i128, Type::Integer(IntegerType::I128))
-        }
-        (Value::Isize(start), Value::Isize(end)) => {
-            native_range!(start, end, isize, Type::Integer(IntegerType::Isize))
-        }
-        (Value::U8(start), Value::U8(end)) => {
-            native_range!(start, end, u8, Type::Integer(IntegerType::U8))
-        }
-        (Value::U16(start), Value::U16(end)) => {
-            native_range!(start, end, u16, Type::Integer(IntegerType::U16))
-        }
-        (Value::U32(start), Value::U32(end)) => {
-            native_range!(start, end, u32, Type::Integer(IntegerType::U32))
-        }
-        (Value::U64(start), Value::U64(end)) => {
-            native_range!(start, end, u64, Type::Integer(IntegerType::U64))
-        }
-        (Value::U128(start), Value::U128(end)) => {
-            native_range!(start, end, u128, Type::Integer(IntegerType::U128))
-        }
-        (Value::Usize(start), Value::Usize(end)) => {
-            native_range!(start, end, usize, Type::USIZE)
-        }
-        _ => Err("range bounds must have the same integer type".into()),
+        return native_range!(start, end, i64, Type::Integer(IntegerType::I64));
     }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::i128_payload(&start),
+        crate::numeric::i128_payload(&end),
+    ) {
+        return native_range!(start, end, i128, Type::Integer(IntegerType::I128));
+    }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::isize_payload(&start),
+        crate::numeric::isize_payload(&end),
+    ) {
+        return native_range!(start, end, isize, Type::Integer(IntegerType::Isize));
+    }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::u8_payload(&start),
+        crate::numeric::u8_payload(&end),
+    ) {
+        return native_range!(start, end, u8, Type::Integer(IntegerType::U8));
+    }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::u16_payload(&start),
+        crate::numeric::u16_payload(&end),
+    ) {
+        return native_range!(start, end, u16, Type::Integer(IntegerType::U16));
+    }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::u32_payload(&start),
+        crate::numeric::u32_payload(&end),
+    ) {
+        return native_range!(start, end, u32, Type::Integer(IntegerType::U32));
+    }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::u64_payload(&start),
+        crate::numeric::u64_payload(&end),
+    ) {
+        return native_range!(start, end, u64, Type::Integer(IntegerType::U64));
+    }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::u128_payload(&start),
+        crate::numeric::u128_payload(&end),
+    ) {
+        return native_range!(start, end, u128, Type::Integer(IntegerType::U128));
+    }
+    if let (Some(start), Some(end)) = (
+        crate::numeric::usize_payload(&start),
+        crate::numeric::usize_payload(&end),
+    ) {
+        return native_range!(start, end, usize, Type::Integer(IntegerType::Usize));
+    }
+    Err("range bounds must have the same integer type".into())
 }

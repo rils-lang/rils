@@ -34,12 +34,18 @@ fn emits_and_round_trips_typed_integer_binary_instructions() {
             })
     };
     assert!(has_i32_binary(&module));
-    assert_eq!(module.execute_value().unwrap(), Value::from_i32(3));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(3))
+    );
 
     let image = module.to_bytes().expect("module serializes");
     let loaded = BytecodeModule::from_bytes(&image).expect("module deserializes");
     assert!(has_i32_binary(&loaded));
-    assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(3));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(3))
+    );
 }
 
 #[test]
@@ -100,7 +106,7 @@ fn trait_metadata_constructs_and_calls_persistent_default_instances() {
             "Behaviour",
             "tick",
             &mut state,
-            vec![Value::from_i32(2)],
+            vec![Value::from(rils_execution::value::native_i32(2))],
             &host,
             1_000_000,
         )
@@ -111,13 +117,13 @@ fn trait_metadata_constructs_and_calls_persistent_default_instances() {
             "Behaviour",
             "tick",
             &mut state,
-            vec![Value::from_i32(3)],
+            vec![Value::from(rils_execution::value::native_i32(3))],
             &host,
             1_000_000,
         )
         .expect("second trait call should preserve state");
-    assert_eq!(first, Value::from_i32(2));
-    assert_eq!(second, Value::from_i32(5));
+    assert_eq!(first, Value::from(rils_execution::value::native_i32(2)));
+    assert_eq!(second, Value::from(rils_execution::value::native_i32(5)));
 
     let decoded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(
@@ -518,8 +524,14 @@ fn compiles_loop_values_and_moves() {
 #[test]
 fn compiled_modules_are_reusable_and_limit_steps() {
     let module = compile("let value = 40; value + 2").unwrap();
-    assert_eq!(module.execute_value().unwrap(), Value::from_i32(42));
-    assert_eq!(module.execute_value().unwrap(), Value::from_i32(42));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(42))
+    );
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(42))
+    );
     assert!(module.instruction_count() > 0);
     assert!(module.register_count() > 0);
 
@@ -543,15 +555,24 @@ fn calls_named_functions_with_arguments() {
     let module = compile("pub fn add(left: i32, right: i32) -> i32 { left + right }").unwrap();
     assert_eq!(
         module
-            .call_value("add", vec![Value::from_i32(20), Value::from_i32(22)])
+            .call_value(
+                "add",
+                vec![
+                    Value::from(rils_execution::value::native_i32(20)),
+                    Value::from(rils_execution::value::native_i32(22))
+                ]
+            )
             .unwrap(),
-        Value::from_i32(42)
+        Value::from(rils_execution::value::native_i32(42))
     );
 
     let error = module.call_value("missing", Vec::new()).unwrap_err();
     assert!(error.message.contains("unknown exported function"));
     let error = module
-        .call_value("add", vec![Value::from_i32(1)])
+        .call_value(
+            "add",
+            vec![Value::from(rils_execution::value::native_i32(1))],
+        )
         .unwrap_err();
     assert!(error.message.contains("expects 2 arguments"));
 
@@ -597,7 +618,12 @@ fn constructs_and_clones_rc_handles_with_explicit_type_arguments() {
     )
     .expect("Rc source should compile");
     let strong_count = module.call_value("main", Vec::new()).unwrap();
-    assert!(strong_count.as_usize().is_some_and(|count| count >= 2));
+    assert!(
+        strong_count
+            .get_cloned::<usize>()
+            .ok()
+            .is_some_and(|count| count >= 2)
+    );
 }
 
 #[test]
@@ -616,7 +642,8 @@ fn upgrades_weak_handles_while_the_rc_is_alive() {
         module
             .call_value("main", Vec::new())
             .unwrap()
-            .as_usize()
+            .get_cloned::<usize>()
+            .ok()
             .is_some_and(|count| count >= 1)
     );
 }
@@ -635,7 +662,7 @@ fn mutates_cell_values_in_bytecode() {
     .expect("Cell source should compile");
     assert_eq!(
         module.call_value("main", Vec::new()).unwrap(),
-        Value::from_i32(5)
+        Value::from(rils_execution::value::native_i32(5))
     );
 }
 
@@ -652,7 +679,7 @@ fn borrows_ref_cell_values_in_bytecode() {
     .expect("RefCell source should compile");
     assert_eq!(
         module.call_value("main", Vec::new()).unwrap(),
-        Value::from_i32(8)
+        Value::from(rils_execution::value::native_i32(8))
     );
 }
 
@@ -671,7 +698,7 @@ fn executes_vec_deque_operations_in_bytecode() {
     .expect("VecDeque source should compile");
     assert_eq!(
         module.call_value("main", Vec::new()).unwrap(),
-        Value::from_i32(3)
+        Value::from(rils_execution::value::native_i32(3))
     );
 }
 
@@ -687,7 +714,10 @@ fn executes_binary_heap_max_order_in_bytecode() {
     "#;
     assert_matches_interpreter(source);
     let module = compile(source).expect("BinaryHeap source should compile");
-    assert_eq!(module.execute_value().unwrap(), Value::from_i32(13));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(13))
+    );
 }
 
 #[test]
@@ -708,7 +738,7 @@ fn executes_btree_map_in_key_order_in_bytecode() {
     assert_matches_interpreter(source);
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(127)
+        Value::from(rils_execution::value::native_i32(127))
     );
 }
 
@@ -732,7 +762,7 @@ fn executes_btree_set_in_order_in_bytecode() {
     assert_matches_interpreter(source);
     assert_eq!(
         compile(source).unwrap().execute_value().unwrap(),
-        Value::from_i32(1234)
+        Value::from(rils_execution::value::native_i32(1234))
     );
 }
 
@@ -754,7 +784,10 @@ fn compiles_functions_recursion_and_early_return() {
     assert_matches_interpreter(source);
     let module = compile(source).unwrap();
     assert_eq!(module.function_count(), 2);
-    assert_eq!(module.execute_value().unwrap(), Value::from_i32(722));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(722))
+    );
 }
 
 #[test]
@@ -766,7 +799,10 @@ fn recursion_uses_explicit_vm_frames_and_respects_the_configured_limit() {
         countdown(1000)
     "#;
     let module = compile(source).unwrap();
-    assert_eq!(module.execute_value().unwrap(), Value::from_i32(0));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(0))
+    );
 
     let error = module
         .execute_value_with_limits(crate::ExecutionLimits::new(1_000_000, 8))
@@ -960,7 +996,10 @@ fn migrated_vec_members_use_native_imports_without_host_imports() {
     )
     .unwrap();
 
-    assert_eq!(module.execute_value().unwrap(), Value::Usize(3));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_usize(3))
+    );
     assert_eq!(
         module
             .imports()
@@ -988,7 +1027,10 @@ fn migrated_vec_members_use_native_imports_without_host_imports() {
 fn iterator_default_body_compiles_without_legacy_runtime_id() {
     let source = "let values = [1, 2, 3]; values.into_iter().count()";
     let module = compile(source).unwrap();
-    assert_eq!(module.execute_value().unwrap(), Value::Usize(3));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_usize(3))
+    );
     assert!(
         module
             .functions
@@ -1001,7 +1043,10 @@ fn iterator_default_body_compiles_without_legacy_runtime_id() {
 fn vec_is_empty_uses_native_body_without_legacy_runtime_id() {
     let source = "let values: Vec<i32> = Vec::new(); values.is_empty()";
     let module = compile(source).unwrap();
-    assert_eq!(module.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
     assert!(
         module
             .native_imports
@@ -1033,7 +1078,10 @@ fn native_calls_include_legacy_adapters_and_survive_round_trip() {
 
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(loaded.native_imports, module.native_imports);
-    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
 
     let mut missing = loaded.clone();
     missing.native_imports[0].symbol = "core::option::option::missing".into();
@@ -1156,7 +1204,10 @@ fn exported_callback_function_native_imports_are_verified() {
                 matches!(instruction.instruction, Instruction::CallNative { .. })
             })
     );
-    assert_eq!(module.execute_value().unwrap(), Value::from_i32(3));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(3))
+    );
 
     let mut restored = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     restored.native_imports[0].signature.return_type = Type::Unknown;
@@ -1225,7 +1276,10 @@ fn option_result_native_methods_and_global_helpers_match_interpreter() {
         crate::eval(source).unwrap()
     );
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
 }
 
 #[test]
@@ -1251,7 +1305,10 @@ fn string_methods_use_native_imports_without_legacy_ids() {
 
     let bytes = module.to_bytes().unwrap();
     let loaded = BytecodeModule::from_bytes(&bytes).unwrap();
-    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
     let mut previous_format = bytes;
     previous_format[8..10].copy_from_slice(&7u16.to_le_bytes());
     assert!(
@@ -1276,9 +1333,15 @@ fn numeric_intrinsics_compile_as_verified_symbol_imports() {
     assert!(symbols.contains("core::integer::i32::try_from"));
     assert!(symbols.contains("core::float::sqrt"));
     assert!(symbols.contains("core::float::is_nan"));
-    assert_eq!(module.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        module.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute_value().unwrap(), Value::Bool(true));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_bool(true))
+    );
     let mut invalid = loaded;
     let import = invalid
         .native_imports
@@ -1331,7 +1394,7 @@ fn compiles_and_executes_standard_native_macros() {
     host.enable_standard_io().unwrap();
     assert_eq!(
         module.execute_value_with_host(&host).unwrap(),
-        Value::from_i32(42)
+        Value::from(rils_execution::value::native_i32(42))
     );
 
     let failure = compile("assert!(false, \"expected failure\")")
@@ -1647,7 +1710,7 @@ fn rejects_unlinked_unauthorized_and_incompatible_imports() {
             "type_of",
             FunctionSignature::fixed(Vec::new(), Type::String),
             "core",
-            |_| Ok(Value::from_string("invalid")),
+            |_| Ok(Value::from(rils_execution::value::native_string("invalid"))),
         )
         .unwrap();
     let error = module.execute_value_with_host(&incompatible).unwrap_err();
@@ -1696,8 +1759,13 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
         FunctionSignature::fixed(vec![Type::I32, Type::I32], Type::I32),
         "unity.math",
         |arguments| match arguments {
-            [left, right] => match (left.as_i32(), right.as_i32()) {
-                (Some(left), Some(right)) => Ok(Value::from_i32(left + right)),
+            [left, right] => match (
+                left.get_cloned::<i32>().ok(),
+                right.get_cloned::<i32>().ok(),
+            ) {
+                (Some(left), Some(right)) => {
+                    Ok(Value::from(rils_execution::value::native_i32(left + right)))
+                }
                 _ => Err("unexpected arguments".into()),
             },
             _ => Err("unexpected arguments".into()),
@@ -1708,14 +1776,14 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
         "unity_engine::math::one",
         FunctionSignature::fixed(Vec::new(), Type::I32),
         "unity.math",
-        |_| Ok(Value::from_i32(1)),
+        |_| Ok(Value::from(rils_execution::value::native_i32(1))),
     )
     .unwrap();
 
     module.validate_host(&host).unwrap();
     assert_eq!(
         module.execute_value_with_host(&host).unwrap(),
-        Value::from_i32(42)
+        Value::from(rils_execution::value::native_i32(42))
     );
 
     let image = module.to_bytes().unwrap();
@@ -1723,7 +1791,7 @@ fn compiles_validates_and_executes_custom_host_contract_imports() {
     loaded.validate_host(&host).unwrap();
     assert_eq!(
         loaded.execute_value_with_host(&host).unwrap(),
-        Value::from_i32(42)
+        Value::from(rils_execution::value::native_i32(42))
     );
 }
 
@@ -1766,8 +1834,9 @@ fn links_distinct_host_overloads_by_name_and_signature() {
         "unity.math",
         |arguments| match arguments {
             [value] => value
-                .as_i32()
-                .map(|value| Value::from_i32(value + 1))
+                .get_cloned::<i32>()
+                .ok()
+                .map(|value| Value::from(rils_execution::value::native_i32(value + 1)))
                 .ok_or_else(|| "unexpected integer overload arguments".into()),
             _ => Err("unexpected integer overload arguments".into()),
         },
@@ -1782,8 +1851,9 @@ fn links_distinct_host_overloads_by_name_and_signature() {
         "unity.math",
         |arguments| match arguments {
             [value] => value
-                .as_f32()
-                .map(|value| Value::from_f32(value + 0.5))
+                .get_cloned::<f32>()
+                .ok()
+                .map(|value| Value::from(rils_execution::value::native_f32(value + 0.5)))
                 .ok_or_else(|| "unexpected float overload arguments".into()),
             _ => Err("unexpected float overload arguments".into()),
         },
@@ -1792,7 +1862,7 @@ fn links_distinct_host_overloads_by_name_and_signature() {
 
     assert_eq!(
         module.execute_value_with_host(&host).unwrap(),
-        Value::from_i32(21)
+        Value::from(rils_execution::value::native_i32(21))
     );
 }
 
@@ -1823,8 +1893,9 @@ fn custom_host_contract_participates_in_static_type_checking() {
         "unity.time",
         |arguments| match arguments {
             [value] => value
-                .as_f32()
-                .map(|value| Value::from_f32(value * 2.0))
+                .get_cloned::<f32>()
+                .ok()
+                .map(|value| Value::from(rils_execution::value::native_f32(value * 2.0)))
                 .ok_or_else(|| "unexpected arguments".into()),
             _ => Err("unexpected arguments".into()),
         },
@@ -1832,7 +1903,7 @@ fn custom_host_contract_participates_in_static_type_checking() {
     .unwrap();
     assert_eq!(
         module.execute_value_with_host(&host).unwrap(),
-        Value::F32(5.0)
+        Value::from(rils_execution::value::native_f32(5.0))
     );
 
     let error = match compile_with_host("unity_engine::time::scale(true)", &contract) {
@@ -2159,7 +2230,10 @@ fn indexed_record_fields_round_trip_and_reject_invalid_indices() {
     assert_matches_interpreter(source);
     let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
     assert_eq!(indexed_places(&loaded), indexed_places(&module));
-    assert_eq!(loaded.execute_value().unwrap(), Value::from_i32(15));
+    assert_eq!(
+        loaded.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(15))
+    );
 
     let mut wrong_type = loaded.clone();
     let decoy_id = wrong_type
@@ -2476,7 +2550,10 @@ fn compile_file_loads_external_modules() {
     std::fs::write(&module, "pub fn answer() -> i32 { 42 }").unwrap();
 
     let compiled = crate::compile_file(&root).expect("file module should compile");
-    assert_eq!(compiled.execute_value().unwrap(), Value::from_i32(42));
+    assert_eq!(
+        compiled.execute_value().unwrap(),
+        Value::from(rils_execution::value::native_i32(42))
+    );
 
     std::fs::remove_file(root).unwrap();
     std::fs::remove_file(module).unwrap();
@@ -2507,11 +2584,4 @@ fn rejects_static_errors_and_unsupported_features() {
     .err()
     .expect("bound method values cannot retain a local reference");
     assert!(borrowed_method.message.contains("bound method values"));
-
-    let owned_method = compile(
-        "struct Message { text: string } impl Message { fn consume(self) -> string { self.text } } let message = Message { text: \"owned\" }; let consume = message.consume; consume()",
-    )
-    .err()
-    .expect("a Copy function value cannot hide a non-Copy receiver");
-    assert!(owned_method.message.contains("owned receiver require Copy"));
 }

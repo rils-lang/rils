@@ -25,7 +25,9 @@ impl TypedStorageContext<'_> {
             let record = encode_fields(fields, child, &mut codec)?;
             DynamicValue::variant(layout, index, record)?
         } else {
-            let Some(Value::StructType(definition)) = codec.nominal_definition(ty) else {
+            let Some(crate::value::Declaration::StructType(definition)) =
+                codec.nominal_definition(ty)
+            else {
                 return Err(format!("{ty} is not a struct declaration"));
             };
             if definition.opaque_native {
@@ -100,7 +102,8 @@ impl TypedStorageContext<'_> {
         layout: &DynamicLayout,
         variant: &str,
     ) -> Result<(usize, EnumVariant, Rc<DynamicLayout>), String> {
-        let Some(Value::EnumType(definition)) = codec.nominal_definition(ty) else {
+        let Some(crate::value::Declaration::EnumType(definition)) = codec.nominal_definition(ty)
+        else {
             return Err(format!("{ty} is not an enum declaration"));
         };
         let index = definition

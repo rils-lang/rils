@@ -1,4 +1,4 @@
-//! Borrowed comparison of native storage, with a compatibility boundary for Value.
+//! Borrowed comparison of native storage and execution handles.
 
 use std::rc::Rc;
 
@@ -7,15 +7,13 @@ use rils_value::{DynamicValueRef, NativeLeafRef};
 use super::{ReferenceValue, Value};
 use crate::Type;
 
-mod legacy;
-mod mixed;
 use super::borrowed::{Read, with_read};
 
 impl Value {
     /// Compare values without cloning their native payloads.
     pub fn try_equal(&self, other: &Self) -> Result<bool, String> {
-        if !matches!(self, Self::Dynamic(_)) && !matches!(other, Self::Dynamic(_)) {
-            return Ok(legacy::equal(self, other));
+        if let (Self::Native(left), Self::Native(right)) = (self, other) {
+            return Ok(super::native_ops::equal(left, right));
         }
         with_read(self, false, |left| {
             with_read(other, false, |right| compare(left, right))
@@ -36,8 +34,12 @@ pub fn borrowed_equal(left: &Value, right: &Value) -> Result<bool, String> {
     })??
 }
 
-pub(crate) fn view_equal_value(view: DynamicValueRef<'_>, value: &Value) -> Result<bool, String> {
-    with_read(value, false, |value| compare(Read::View(view), value))?
+/// Match a literal against the original referent, without copying a borrowed value.
+/// This dereferences the scrutinee only; ordinary reference equality keeps its identity rules.
+pub fn literal_matches(literal: &Value, value: &Value) -> Result<bool, String> {
+    with_read(literal, false, |literal| {
+        super::borrowed::with_referent(value, |value| compare(literal, value))
+    })??
 }
 
 pub(crate) fn view_query_equal(
@@ -45,12 +47,6 @@ pub(crate) fn view_query_equal(
     argument: &Value,
 ) -> Result<bool, String> {
     with_read(argument, true, |value| compare(Read::View(view), value))?
-}
-
-pub(crate) fn query_equal(value: &Value, argument: &Value) -> Result<bool, String> {
-    with_read(value, false, |left| {
-        with_read(argument, true, |right| compare(left, right))
-    })??
 }
 
 fn compare(left: Read<'_>, right: Read<'_>) -> Result<bool, String> {
@@ -63,20 +59,6 @@ fn compare(left: Read<'_>, right: Read<'_>) -> Result<bool, String> {
             }
             equal_leaves(&view.leaf()?, &leaf)
         }
-        (Read::View(view), Read::Legacy(value)) | (Read::Legacy(value), Read::View(view)) => {
-            if view.layout()?.is_rust_value() {
-                compare(Read::Leaf(view.leaf()?), Read::Legacy(value))
-            } else {
-                mixed::equal(&view, value)
-            }
-        }
-        (Read::Leaf(leaf), Read::Legacy(Value::Reference(reference)))
-        | (Read::Legacy(Value::Reference(reference)), Read::Leaf(leaf))
-            if leaf.is_rust_type::<Rc<ReferenceValue>>() =>
-        {
-            leaf.with_rust::<Rc<ReferenceValue>, _>(|left| Rc::ptr_eq(left, reference))
-        }
-        (Read::Legacy(left), Read::Legacy(right)) => Ok(legacy::equal(left, right)),
         _ => Ok(false),
     }
 }

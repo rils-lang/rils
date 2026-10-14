@@ -17,7 +17,7 @@ impl Interpreter {
                 ..
             } = statement
             {
-                if environment.borrow().get(name).is_some() {
+                if environment.borrow().binding(name).is_some() {
                     return Err(RuntimeError::new(
                         format!("name `{name}` is already defined"),
                         *span,
@@ -26,7 +26,7 @@ impl Interpreter {
                 let declaration_name = environment.borrow().qualified_type_name(name);
                 environment.borrow_mut().define(
                     name.clone(),
-                    Value::TypeAlias(Rc::new(TypeAliasType {
+                    crate::value::Declaration::TypeAlias(Rc::new(TypeAliasType {
                         name: declaration_name,
                         generic_parameters: generic_parameters.clone(),
                         target: target.clone(),
@@ -36,7 +36,7 @@ impl Interpreter {
                 );
             }
         }
-        let mut result = Value::Unit;
+        let mut result = Value::from(rils_execution::value::native_unit());
         for statement in statements {
             self.tick(statement_span(statement))?;
             match self.execute_statement(statement, environment.clone())? {
@@ -70,7 +70,7 @@ impl Interpreter {
                     .as_ref()
                     .map(|expression| self.evaluate(expression, environment))
                     .transpose()?
-                    .unwrap_or(Value::Unit);
+                    .unwrap_or(Value::from(rils_execution::value::native_unit()));
                 Ok(Flow::Return(value))
             }
             Stmt::Expr {
@@ -78,7 +78,11 @@ impl Interpreter {
                 terminated,
             } => {
                 let value = self.evaluate(expression, environment)?;
-                Ok(Flow::Value(if *terminated { Value::Unit } else { value }))
+                Ok(Flow::Value(if *terminated {
+                    Value::from(rils_execution::value::native_unit())
+                } else {
+                    value
+                }))
             }
             _ => self.execute_non_expression_statement(statement, environment),
         }
@@ -96,7 +100,7 @@ impl Interpreter {
                 span,
                 ..
             } => {
-                if environment.borrow().get(name).is_some() {
+                if environment.borrow().binding(name).is_some() {
                     return Err(RuntimeError::new(
                         format!("name `{name}` is already defined"),
                         *span,
@@ -118,7 +122,7 @@ impl Interpreter {
                 }
                 environment.borrow_mut().define(
                     name.clone(),
-                    Value::Module(Rc::new(ModuleValue {
+                    crate::value::Declaration::Module(Rc::new(ModuleValue {
                         name: name.clone(),
                         members,
                         public: RefCell::new(public),
@@ -126,13 +130,18 @@ impl Interpreter {
                     false,
                     None,
                 );
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Use { imports, .. } => {
                 for import in imports {
                     if import.kind == crate::ast::UseImportKind::Glob {
                         let value = resolve_visible_path(&import.path, &environment, import.span)?;
-                        let Value::Module(module) = value else {
+                        let crate::value::Binding::Declaration(crate::value::Declaration::Module(
+                            module,
+                        )) = value
+                        else {
                             return Err(RuntimeError::new(
                                 "glob import target must be a module",
                                 import.span,
@@ -153,7 +162,7 @@ impl Interpreter {
                             .into_iter()
                             .map(|name| {
                                 let value =
-                                    module.members.borrow().get(&name).ok_or_else(|| {
+                                    module.members.borrow().binding(&name).ok_or_else(|| {
                                         RuntimeError::new(
                                             format!("module export `{name}` is unavailable"),
                                             import.span,
@@ -177,7 +186,9 @@ impl Interpreter {
                     }
                     environment.borrow_mut().define(name, value, false, None);
                 }
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Let {
                 name,
@@ -199,15 +210,7 @@ impl Interpreter {
                     .map(|ty| expand_type_aliases(ty, &environment, *span))
                     .transpose()?;
                 let contextual_type = type_annotation.as_ref().or(inferred_type.as_ref());
-                let value = match contextual_type.and_then(|expected| {
-                    self.construct_contextual_empty(initializer, expected, &environment)
-                }) {
-                    Some(value) => {
-                        self.tick(initializer.span())?;
-                        value?
-                    }
-                    None => self.evaluate(initializer, environment.clone())?,
-                };
+                let value = self.evaluate(initializer, environment.clone())?;
                 if value.contains_reference() {
                     if Rc::ptr_eq(&environment, &self.globals) {
                         return Err(RuntimeError::new(
@@ -222,22 +225,6 @@ impl Interpreter {
                         ));
                     }
                 }
-                if type_annotation.is_none()
-                    && matches!(
-                        &value,
-                        Value::Option {
-                            element_type: None,
-                            ..
-                        }
-                    )
-                {
-                    return Err(RuntimeError::new(
-                        format!(
-                            "cannot infer the element type of `{name}`; declare it as `Option<T>`"
-                        ),
-                        *span,
-                    ));
-                }
                 let mut value = apply_type_owned(type_annotation.as_ref(), value, *span, name)?;
                 if let Some(expected) = contextual_type {
                     let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
@@ -251,7 +238,9 @@ impl Interpreter {
                 environment
                     .borrow_mut()
                     .define(name.clone(), value, *mutable, type_annotation);
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Function {
                 name,
@@ -286,7 +275,7 @@ impl Interpreter {
                     .semantic_expression_ids
                     .as_ref()
                     .map(|ids| ids.for_cloned_block(body, &function_body));
-                let function = Value::Function(Rc::new(UserFunction {
+                let function = Value::from_callable(Rc::new(UserFunction {
                     name: name.clone(),
                     generic_parameters: generic_parameters.clone(),
                     parameters,
@@ -299,7 +288,9 @@ impl Interpreter {
                 environment
                     .borrow_mut()
                     .define(name.clone(), function, false, None);
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Struct {
                 name,
@@ -309,12 +300,12 @@ impl Interpreter {
                 span,
                 ..
             } => {
-                let existing = environment.borrow().get(name);
-                let shadows_builtin = matches!(&existing, Some(Value::StructType(definition))
+                let existing = environment.borrow().get_declaration(name);
+                let shadows_builtin = matches!(&existing, Some(crate::value::Declaration::StructType(definition))
                     if definition.opaque_native
                         && definition.fields.is_empty()
                         && rils_builtins::builtin(name).is_some_and(|builtin| builtin.opaque_native));
-                if existing.is_some() && !shadows_builtin {
+                if environment.borrow().binding(name).is_some() && !shadows_builtin {
                     return Err(RuntimeError::new(
                         format!("name `{name}` is already defined"),
                         *span,
@@ -351,11 +342,13 @@ impl Interpreter {
                 };
                 environment.borrow_mut().define(
                     name.clone(),
-                    Value::StructType(Rc::new(definition)),
+                    crate::value::Declaration::StructType(Rc::new(definition)),
                     false,
                     None,
                 );
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Enum {
                 name,
@@ -364,7 +357,7 @@ impl Interpreter {
                 span,
                 ..
             } => {
-                if environment.borrow().get(name).is_some() {
+                if environment.borrow().binding(name).is_some() {
                     return Err(RuntimeError::new(
                         format!("name `{name}` is already defined"),
                         *span,
@@ -421,13 +414,17 @@ impl Interpreter {
                 };
                 environment.borrow_mut().define(
                     name.clone(),
-                    Value::EnumType(Rc::new(definition)),
+                    crate::value::Declaration::EnumType(Rc::new(definition)),
                     false,
                     None,
                 );
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
-            Stmt::TypeAlias { .. } => Ok(Flow::Value(Value::Unit)),
+            Stmt::TypeAlias { .. } => Ok(Flow::Value(Value::from(
+                rils_execution::value::native_unit(),
+            ))),
             Stmt::Trait {
                 name,
                 generic_parameters,
@@ -437,7 +434,7 @@ impl Interpreter {
                 span,
                 ..
             } => {
-                if environment.borrow().get(name).is_some() {
+                if environment.borrow().binding(name).is_some() {
                     return Err(RuntimeError::new(
                         format!("name `{name}` is already defined"),
                         *span,
@@ -492,7 +489,7 @@ impl Interpreter {
                 let declaration_name = environment.borrow().qualified_type_name(name);
                 environment.borrow_mut().define(
                     name.clone(),
-                    Value::TraitType(Rc::new(TraitType {
+                    crate::value::Declaration::TraitType(Rc::new(TraitType {
                         name: declaration_name,
                         generic_parameters: generic_parameters.clone(),
                         bounds: bounds.clone(),
@@ -502,7 +499,9 @@ impl Interpreter {
                     false,
                     None,
                 );
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Impl { .. } => self.execute_implementation(statement, environment),
             Stmt::While {
@@ -521,7 +520,9 @@ impl Interpreter {
                         Flow::Continue => continue,
                     }
                 }
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Loop { body, .. } => loop {
                 match self.execute_block(body, environment.clone())? {
@@ -572,7 +573,7 @@ impl Interpreter {
                         .slot(iterator_name)
                         .expect("for-loop iterator slot exists");
                     let receiver =
-                        Value::Reference(Rc::new(ReferenceValue::new_storage(slot, true)));
+                        Value::from_reference(Rc::new(ReferenceValue::new_storage(slot, true)));
                     let method = self.resolve_member(receiver, "next", *span)?;
                     let next = self.call(method, &[], *span)?;
                     let (structs, enums) = loop_environment.borrow().visible_type_definitions();
@@ -593,7 +594,9 @@ impl Interpreter {
                         Flow::Continue => continue,
                     }
                 }
-                Ok(Flow::Value(Value::Unit))
+                Ok(Flow::Value(Value::from(
+                    rils_execution::value::native_unit(),
+                )))
             }
             Stmt::Return { .. } | Stmt::Expr { .. } => {
                 unreachable!("return and expression statements use the fast path")
@@ -603,7 +606,7 @@ impl Interpreter {
                     .as_ref()
                     .map(|expression| self.evaluate(expression, environment))
                     .transpose()?
-                    .unwrap_or(Value::Unit);
+                    .unwrap_or(Value::from(rils_execution::value::native_unit()));
                 if value.contains_reference() {
                     return Err(RuntimeError::new(
                         "references cannot escape a loop through `break`",
@@ -641,7 +644,10 @@ pub(super) fn public_names(
                     names.push(name.to_owned());
                 } else {
                     let value = resolve_visible_path(&import.path, environment, import.span)?;
-                    let Value::Module(module) = value else {
+                    let crate::value::Binding::Declaration(crate::value::Declaration::Module(
+                        module,
+                    )) = value
+                    else {
                         return Err(RuntimeError::new(
                             "glob import target must be a module",
                             import.span,
@@ -660,17 +666,18 @@ pub(super) fn resolve_visible_path(
     path: &[String],
     environment: &EnvironmentRef,
     span: Span,
-) -> Result<Value, RuntimeError> {
+) -> Result<crate::value::Binding, RuntimeError> {
     let (environment, path) = anchored_environment(path, environment, span)?;
     let Some((first, rest)) = path.split_first() else {
         return Err(RuntimeError::new("empty path", span));
     };
     let mut value = environment
         .borrow()
-        .get(first)
+        .binding(first)
         .ok_or_else(|| RuntimeError::new(format!("undefined name `{first}`"), span))?;
     for segment in rest {
-        let Value::Module(module) = value else {
+        let crate::value::Binding::Declaration(crate::value::Declaration::Module(module)) = value
+        else {
             return Err(RuntimeError::new(
                 format!("`{segment}` cannot be selected from {}", value.type_name()),
                 span,
@@ -682,7 +689,7 @@ pub(super) fn resolve_visible_path(
                 span,
             ));
         }
-        value = module.members.borrow().get(segment).ok_or_else(|| {
+        value = module.members.borrow().binding(segment).ok_or_else(|| {
             RuntimeError::new(
                 format!("module `{}` is missing member `{segment}`", module.name),
                 span,
@@ -690,6 +697,16 @@ pub(super) fn resolve_visible_path(
         })?;
     }
     Ok(value)
+}
+
+pub(super) fn resolve_visible_declaration(
+    path: &[String],
+    environment: &EnvironmentRef,
+    span: Span,
+) -> Result<crate::value::Declaration, RuntimeError> {
+    resolve_visible_path(path, environment, span)?
+        .into_declaration()
+        .ok_or_else(|| RuntimeError::new("path does not name a declaration", span))
 }
 
 pub(super) fn anchored_environment<'a>(

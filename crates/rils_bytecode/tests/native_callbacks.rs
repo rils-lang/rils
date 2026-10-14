@@ -39,7 +39,7 @@ fn callbacks_move_native_non_clone_payloads_and_preserve_scoped_references() {
     ] {
         assert_eq!(
             eval_value(source).unwrap_or_else(|error| panic!("{name}, interpreter: {error}")),
-            rils_execution::Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         );
         let module = compile(source).unwrap_or_else(|error| panic!("{name}, compiler: {error}"));
         let loaded =
@@ -49,7 +49,7 @@ fn callbacks_move_native_non_clone_payloads_and_preserve_scoped_references() {
                 module
                     .execute_value()
                     .unwrap_or_else(|error| panic!("{name}, VM: {error}")),
-                rils_execution::Value::from_i32(42)
+                Value::from(rils_execution::value::native_i32(42))
             );
         }
     }
@@ -116,3 +116,4 @@ fn callback_execution_counts_toward_the_vm_budget() {
         .unwrap_err();
     assert!(error.message.contains("step limit"));
 }
+use rils_execution::Value;

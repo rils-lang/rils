@@ -8,7 +8,29 @@ pub const DISPLAY: &str = "Display::fmt";
 pub const NEXT: &str = "Iterator::next";
 
 pub fn is_iterator(value: &Value) -> bool {
-    matches!(value, Value::Native(object) if object.descriptor().has_method(NEXT))
+    has_method(value, NEXT).unwrap_or(false)
+}
+
+/// Inspect method registration without cloning or decoding the receiver payload.
+pub fn has_method(value: &Value, symbol: &str) -> Result<bool, String> {
+    if let Some(reference) = value.as_reference() {
+        return reference.has_native_method(symbol);
+    }
+    match value {
+        Value::Native(object) => Ok(object.descriptor().has_method(symbol)),
+        Value::Dynamic(object) => {
+            let Some(codec) = object
+                .descriptor()
+                .metadata::<super::record_codec::NativeRecordCodec>()
+            else {
+                return Ok(false);
+            };
+            Ok(codec
+                .registered_type(object.descriptor().layout())?
+                .is_some_and(|descriptor| descriptor.has_method(symbol)))
+        }
+        Value::HostObject(_) => Ok(false),
+    }
 }
 
 pub fn clone_owned(object: &NativeObject) -> Result<NativeObject, String> {
@@ -32,30 +54,22 @@ pub fn equal(left: &NativeObject, right: &NativeObject) -> bool {
     }
     matches!(
         left.call(EQUAL, &[Value::Native(right.clone())]),
-        Some(Ok(Value::Bool(true)))
+        Some(Ok(value)) if value.get_cloned::<bool>().ok() == Some(true)
     )
 }
 
 pub fn display(object: &NativeObject) -> String {
     match object.call(DISPLAY, &[]) {
         Some(Ok(value)) => value
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .unwrap_or_else(|| format!("<{}>", object.descriptor().rils_type())),
         _ => format!("<{}>", object.descriptor().rils_type()),
     }
 }
 
 pub fn next(object: &NativeObject) -> Option<Result<Option<Value>, String>> {
-    object.call(NEXT, &[]).map(|result| {
-        let value = result?;
-        match value {
-            Value::Option { value, .. } => value
-                .map(|value| {
-                    std::rc::Rc::try_unwrap(value)
-                        .map_err(|_| "native iterator returned a shared item".to_owned())
-                })
-                .transpose(),
-            _ => Err("native Iterator::next must return Option".into()),
-        }
-    })
+    object
+        .call(NEXT, &[])
+        .map(|result| super::dynamic_option::take_owned(result?))
 }

@@ -24,7 +24,7 @@ fn native_comparisons_agree_in_interpreter_vm_and_loaded_vm() {
     ] {
         assert_eq!(
             eval_value(source).unwrap_or_else(|error| panic!("{name}, interpreter: {error:?}")),
-            Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         );
         let module = compile(source).unwrap_or_else(|error| panic!("{name}, compile: {error}"));
         let loaded = BytecodeModule::from_bytes(&module.to_bytes().unwrap()).unwrap();
@@ -33,7 +33,7 @@ fn native_comparisons_agree_in_interpreter_vm_and_loaded_vm() {
                 module
                     .execute_value()
                     .unwrap_or_else(|error| panic!("{name}, {backend}: {error}")),
-                Value::from_i32(42)
+                Value::from(rils_execution::value::native_i32(42))
             );
         }
     }

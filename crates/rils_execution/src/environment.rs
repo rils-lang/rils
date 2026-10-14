@@ -1,5 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use crate::declaration::{Binding, Declaration};
 use crate::{types::Type, value::Value};
 
 mod declarations;
@@ -50,7 +51,8 @@ impl StorageSlot {
         self.value.clone().ok_or(AccessError::Moved)
     }
 
-    pub(crate) fn with_value<R>(
+    /// Inspect the stored value without cloning its handle or payload.
+    pub fn with_value<R>(
         &self,
         callback: impl FnOnce(&Value) -> Result<R, String>,
     ) -> Result<R, String> {
@@ -74,9 +76,6 @@ impl StorageSlot {
 
     pub fn take(&mut self) -> Result<Value, AccessError> {
         let value = self.value.as_ref().ok_or(AccessError::Moved)?;
-        if matches!(value, Value::Reference(_)) {
-            return Ok(value.clone());
-        }
         if value.is_partially_moved() {
             return Err(AccessError::PartiallyMoved);
         }
@@ -124,8 +123,6 @@ impl StorageSlot {
                 self.native_declaration.clone(),
             )
             .map_err(|_| AssignError::TypeMismatch(expected.clone()))?;
-        } else if matches!(&value, Value::Option { .. }) {
-            return Err(AssignError::OptionRequiresAnnotation);
         }
         if let Some(declaration) = crate::value::storage::native_declaration(&value) {
             self.native_declaration = Some(declaration);
@@ -160,6 +157,7 @@ impl StorageSlot {
 
 pub struct Environment {
     values: HashMap<String, StorageRef>,
+    names: HashMap<String, Declaration>,
     type_bindings: HashMap<String, Type>,
     parent: Option<EnvironmentRef>,
     module: bool,
@@ -198,6 +196,7 @@ impl Environment {
     pub fn global() -> EnvironmentRef {
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
+            names: HashMap::new(),
             type_bindings: HashMap::new(),
             parent: None,
             module: false,
@@ -211,6 +210,7 @@ impl Environment {
         let declarations = parent.borrow().declarations.clone();
         Rc::new(RefCell::new(Self {
             values: HashMap::new(),
+            names: HashMap::new(),
             type_bindings: HashMap::new(),
             parent: Some(parent),
             module: false,
@@ -304,11 +304,27 @@ impl Environment {
     pub fn define(
         &mut self,
         name: impl Into<String>,
-        value: Value,
+        value: impl Into<Binding>,
         mutable: bool,
         type_annotation: Option<Type>,
     ) {
-        self.declarations.register(&value);
+        let name = name.into();
+        let value = match value.into() {
+            Binding::Value(value) => {
+                self.names.remove(&name);
+                value
+            }
+            Binding::Declaration(declaration) => {
+                assert!(
+                    !mutable && type_annotation.is_none(),
+                    "declarations have no mutable value slot"
+                );
+                self.declarations.register(&declaration);
+                self.values.remove(&name);
+                self.names.insert(name, declaration);
+                return;
+            }
+        };
         let native_declaration = crate::value::storage::native_declaration(&value);
         let type_annotation = type_annotation.or_else(|| match Type::of_value(&value) {
             Some(inferred @ (Type::Option(_) | Type::Result(_, _))) => Some(inferred),
@@ -317,7 +333,7 @@ impl Environment {
                 .map(|declaration| declaration.rils_type().clone()),
         });
         self.values.insert(
-            name.into(),
+            name,
             Rc::new(RefCell::new(StorageSlot {
                 native_declaration,
                 value: Some(value),
@@ -329,12 +345,43 @@ impl Environment {
     }
 
     pub fn get(&self, name: &str) -> Option<Value> {
-        self.slot(name)
-            .and_then(|slot| slot.borrow().read().ok())
+        self.slot(name).and_then(|slot| slot.borrow().read().ok())
+    }
+
+    pub fn get_declaration(&self, name: &str) -> Option<Declaration> {
+        if self.values.contains_key(name) {
+            return None;
+        }
+        self.names
+            .get(name)
+            .cloned()
+            .or_else(|| {
+                self.parent
+                    .as_ref()
+                    .and_then(|parent| parent.borrow().get_declaration(name))
+            })
             .or_else(|| {
                 name.contains("::")
                     .then(|| self.declarations.get(name))
                     .flatten()
+            })
+    }
+
+    pub fn binding(&self, name: &str) -> Option<Binding> {
+        if let Some(slot) = self.values.get(name) {
+            return slot.borrow().read().ok().map(Binding::Value);
+        }
+        if let Some(declaration) = self.names.get(name) {
+            return Some(declaration.clone().into());
+        }
+        self.parent
+            .as_ref()
+            .and_then(|parent| parent.borrow().binding(name))
+            .or_else(|| {
+                name.contains("::")
+                    .then(|| self.declarations.get(name))
+                    .flatten()
+                    .map(Binding::Declaration)
             })
     }
 
@@ -344,6 +391,9 @@ impl Environment {
     }
 
     pub fn slot(&self, name: &str) -> Option<StorageRef> {
+        if self.names.contains_key(name) {
+            return None;
+        }
         self.values.get(name).cloned().or_else(|| {
             self.parent
                 .as_ref()
@@ -352,10 +402,13 @@ impl Environment {
     }
 
     pub fn contains_local(&self, name: &str) -> bool {
-        self.values.contains_key(name)
+        self.values.contains_key(name) || self.names.contains_key(name)
     }
 
     pub fn assign(&mut self, name: &str, value: Value) -> Result<(), AssignError> {
+        if self.names.contains_key(name) {
+            return Err(AssignError::Immutable);
+        }
         if let Some(slot) = self.values.get(name) {
             return slot.borrow_mut().assign(value);
         }
@@ -387,7 +440,7 @@ impl Environment {
             slot.borrow()
                 .value
                 .as_ref()
-                .is_some_and(|value| matches!(value, Value::Function(_)))
+                .is_some_and(|value| value.as_callable::<crate::value::UserFunction>().is_some())
         })
     }
 }

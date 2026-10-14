@@ -10,6 +10,19 @@ use crate::{
 };
 
 impl NativeRecordCodec {
+    pub(crate) fn registered_type(
+        &self,
+        layout: &DynamicLayout,
+    ) -> Result<Option<Rc<NativeType>>, String> {
+        let Some(descriptor) = self.native_types.get(layout.rils_type()) else {
+            return Ok(None);
+        };
+        if !descriptor.layout_handle().compatible_with(layout) {
+            return Err("composed native leaf has a conflicting layout".into());
+        }
+        Ok(Some(descriptor.clone()))
+    }
+
     pub(super) fn resolve_registered_layout(
         &self,
         ty: &Type,

@@ -23,12 +23,6 @@ fn native_sum_types(value: &Value) -> Vec<String> {
                 types
             })
             .unwrap(),
-        Value::Tuple(sequence) | Value::Array(sequence) => sequence
-            .elements
-            .borrow()
-            .iter()
-            .flat_map(|slot| native_sum_types(slot.value.as_ref().unwrap()))
-            .collect(),
         other => panic!("expression retained legacy sum storage: {other:?}"),
     }
 }

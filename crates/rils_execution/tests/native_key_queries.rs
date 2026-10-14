@@ -17,7 +17,7 @@ fn reference(value: Value) -> (Value, Rc<RefCell<StorageSlot>>) {
     slot.initialize(value);
     let slot = Rc::new(RefCell::new(slot));
     (
-        Value::Reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true))),
+        Value::from_reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true))),
         slot,
     )
 }
@@ -93,24 +93,24 @@ fn collection_queries_read_scalar_wrappers_and_reject_other_integer_widths() {
         for (ty, stored, query, absent, wrong) in [
             (
                 Type::I32,
-                Value::from_i32(i32::MIN),
-                Value::from_i32(i32::MIN),
-                Value::from_i32(i32::MAX),
-                Value::from_i64(i32::MIN.into()),
+                Value::from(rils_execution::value::native_i32(i32::MIN)),
+                Value::from(rils_execution::value::native_i32(i32::MIN)),
+                Value::from(rils_execution::value::native_i32(i32::MAX)),
+                Value::from(rils_execution::value::native_i64(i32::MIN.into())),
             ),
             (
                 Type::Integer(IntegerType::U128),
-                Value::from_u128(u128::MAX),
-                Value::U128(u128::MAX),
-                Value::from_u128(0),
-                Value::from_u64(u64::MAX),
+                Value::from(rils_execution::value::native_u128(u128::MAX)),
+                Value::from(rils_execution::value::native_u128(u128::MAX)),
+                Value::from(rils_execution::value::native_u128(0)),
+                Value::from(rils_execution::value::native_u64(u64::MAX)),
             ),
             (
                 Type::String,
-                Value::from_string("键🦀"),
-                Value::from_string("键🦀"),
-                Value::from_string("other"),
-                Value::from_char('键'),
+                Value::from(rils_execution::value::native_string("键🦀")),
+                Value::from(rils_execution::value::native_string("键🦀")),
+                Value::from(rils_execution::value::native_string("other")),
+                Value::from(rils_execution::value::native_char('键')),
             ),
         ] {
             let (receiver, _) = reference(collection(kind, &ty, vec![stored]));
@@ -119,77 +119,151 @@ fn collection_queries_read_scalar_wrappers_and_reject_other_integer_widths() {
             let reading = source.borrow();
             assert_eq!(
                 contains(kind, &receiver, query.clone()),
-                Ok(Value::Bool(true)),
+                Ok(Value::from(rils_execution::value::native_bool(true))),
                 "{kind} {ty}"
             );
             drop(reading);
             assert_eq!(
                 contains(kind, &receiver, reference(absent).0),
-                Ok(Value::Bool(false))
+                Ok(Value::from(rils_execution::value::native_bool(false)))
             );
             assert!(contains(kind, &receiver, reference(wrong).0).is_err());
             if kind.ends_with("Map") {
                 let result = call(kind, "get_cloned", &[receiver.clone(), query.clone()]).unwrap();
-                assert_eq!(result.as_option().unwrap().0, Some(Value::Bool(true)));
+                assert_eq!(
+                    rils_execution::value::dynamic_option::take_owned(result).unwrap(),
+                    Some(Value::from(rils_execution::value::native_bool(true)))
+                );
             }
             let removed = call(kind, "remove", &[receiver.clone(), query.clone()]).unwrap();
             if kind.ends_with("Map") {
-                assert_eq!(removed.as_option().unwrap().0, Some(Value::Bool(true)));
+                assert_eq!(
+                    rils_execution::value::dynamic_option::take_owned(removed).unwrap(),
+                    Some(Value::from(rils_execution::value::native_bool(true)))
+                );
             } else {
-                assert_eq!(removed, Value::Bool(true));
+                assert_eq!(
+                    removed,
+                    Value::from(rils_execution::value::native_bool(true))
+                );
             }
-            assert_eq!(contains(kind, &receiver, query), Ok(Value::Bool(false)));
-            assert_eq!(call(kind, "len", &[receiver]), Ok(Value::from_usize(0)));
+            assert_eq!(
+                contains(kind, &receiver, query),
+                Ok(Value::from(rils_execution::value::native_bool(false)))
+            );
+            assert_eq!(
+                call(kind, "len", &[receiver]),
+                Ok(Value::from(rils_execution::value::native_usize(0)))
+            );
         }
     }
 }
 
-fn some(text: &str) -> Value {
-    Value::Option {
-        value: Some(Rc::new(Value::from_string(text))),
-        element_type: Some(Type::String),
+#[test]
+fn all_native_collections_query_keys_without_clone_registration() {
+    use rils_execution::value::{NativeObject, NativeType};
+    type Text = rils_stdlib::stdlib::string::String;
+    for kind in ["HashMap", "HashSet", "BTreeMap", "BTreeSet"] {
+        let (receiver, _) = reference(collection(
+            kind,
+            &Type::String,
+            vec![Value::from(rils_execution::value::native_string("key 🦀"))],
+        ));
+        let query = Value::from(
+            NativeObject::new(
+                Rc::new(NativeType::new::<Text>(Type::String)),
+                Text::from("key 🦀".to_owned()),
+            )
+            .unwrap(),
+        );
+        assert!(query.clone_owned().is_err());
+        let (query, source) = reference(query);
+        let guard = source.borrow();
+        assert_eq!(
+            contains(kind, &receiver, query.clone()),
+            Ok(Value::from(rils_execution::value::native_bool(true)))
+        );
+        drop(guard);
+        call(kind, "remove", &[receiver.clone(), query.clone()]).unwrap();
+        assert_eq!(
+            contains(kind, &receiver, query.clone()),
+            Ok(Value::from(rils_execution::value::native_bool(false)))
+        );
+        assert_eq!(
+            query.with_ref::<String, _>(|text| text.clone()).unwrap(),
+            "key 🦀"
+        );
     }
 }
+
 #[test]
-fn compatibility_and_native_sum_queries_share_identity_without_consuming_sources() {
+fn native_collection_scalar_key_matrix() {
+    use rils_execution::value::*;
+    let values = [
+        Value::from(native_i8(i8::MIN)),
+        Value::from(native_i16(i16::MIN)),
+        Value::from(native_i32(i32::MIN)),
+        Value::from(native_i64(i64::MIN)),
+        Value::from(native_i128(i128::MIN)),
+        Value::from(native_isize(isize::MIN)),
+        Value::from(native_u8(u8::MAX)),
+        Value::from(native_u16(u16::MAX)),
+        Value::from(native_u32(u32::MAX)),
+        Value::from(native_u64(u64::MAX)),
+        Value::from(native_u128(u128::MAX)),
+        Value::from(native_usize(usize::MAX)),
+        Value::from(native_bool(false)),
+        Value::from(native_char('🦀')),
+        Value::from(native_string("identity")),
+    ];
+    for value in values {
+        let ty = Type::of_value(&value).unwrap();
+        for kind in ["HashMap", "HashSet", "BTreeMap", "BTreeSet"] {
+            let (receiver, _) =
+                reference(collection(kind, &ty, vec![value.clone_owned().unwrap()]));
+            assert_eq!(
+                contains(kind, &receiver, reference(value.clone_owned().unwrap()).0),
+                Ok(Value::from(native_bool(true))),
+                "{kind} {ty}"
+            );
+        }
+    }
+}
+
+fn option(ty: Type, text: Option<&str>) -> Value {
+    rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+        .construct_option(
+            &Type::Option(Box::new(ty)),
+            text.map(|text| Value::from(rils_execution::value::native_string(text))),
+        )
+        .unwrap()
+}
+
+#[test]
+fn native_sum_queries_preserve_sources_and_inactive_generic_types() {
     let ty = Type::Option(Box::new(Type::String));
     for kind in ["HashMap", "HashSet"] {
         let (receiver, _) = reference(collection(
             kind,
             &ty,
             vec![
-                some("owned"),
-                Value::Option {
-                    value: None,
-                    element_type: Some(Type::String),
-                },
+                option(Type::String, Some("owned")),
+                option(Type::String, None),
             ],
         ));
-        for item in [
-            some("owned"),
-            Value::Option {
-                value: None,
-                element_type: None,
-            },
-        ] {
-            let layout = RecordLayoutResolver::new(&[]).resolve(&ty).unwrap();
-            let native = wrap(
-                NativeRecordCodec::new()
-                    .into_native(item.clone_owned().unwrap(), layout)
-                    .unwrap(),
+        for text in [Some("owned"), None] {
+            let (query, slot) = reference(option(Type::String, text));
+            assert_eq!(
+                contains(kind, &receiver, query),
+                Ok(Value::from(rils_execution::value::native_bool(true)))
             );
-            for item in [item, native] {
-                let (query, slot) = reference(item);
-                assert_eq!(contains(kind, &receiver, query), Ok(Value::Bool(true)));
-                assert!(slot.borrow_mut().take().is_ok());
-            }
+            assert!(slot.borrow_mut().take().is_ok());
         }
-        let bad = Value::Option {
-            value: None,
-            element_type: Some(Type::I32),
-        };
-        assert!(contains(kind, &receiver, reference(bad).0).is_err());
-        assert_eq!(call(kind, "len", &[receiver]), Ok(Value::from_usize(2)));
+        assert!(contains(kind, &receiver, reference(option(Type::I32, None)).0).is_err());
+        assert_eq!(
+            call(kind, "len", &[receiver]),
+            Ok(Value::from(rils_execution::value::native_usize(2)))
+        );
     }
 }
 
@@ -198,23 +272,27 @@ fn projected_keys_keep_their_native_owner_and_conflicting_access_is_reported() {
     let source = collection(
         "HashMap",
         &Type::String,
-        vec![Value::from_string("projected")],
+        vec![Value::from(rils_execution::value::native_string(
+            "projected",
+        ))],
     );
     let Value::Dynamic(object) = source else {
         unreachable!()
     };
-    let key = Value::Reference(Rc::new(
+    let key = Value::from_reference(Rc::new(
         ReferenceValue::new_guarded_dynamic_indexed_field(object.clone(), 0, Some(0), false, None)
             .unwrap(),
     ));
     let (receiver, _) = reference(collection(
         "HashSet",
         &Type::String,
-        vec![Value::from_string("projected")],
+        vec![Value::from(rils_execution::value::native_string(
+            "projected",
+        ))],
     ));
     assert_eq!(
         contains("HashSet", &receiver, key.clone()),
-        Ok(Value::Bool(true))
+        Ok(Value::from(rils_execution::value::native_bool(true)))
     );
     assert_eq!(
         object
@@ -223,7 +301,9 @@ fn projected_keys_keep_their_native_owner_and_conflicting_access_is_reported() {
             .unwrap(),
         1
     );
-    let (query, slot) = reference(Value::from_string("projected"));
+    let (query, slot) = reference(Value::from(rils_execution::value::native_string(
+        "projected",
+    )));
     {
         let _writing = slot.borrow_mut();
         assert!(
@@ -232,7 +312,10 @@ fn projected_keys_keep_their_native_owner_and_conflicting_access_is_reported() {
                 .contains("mutably accessed")
         );
     }
-    assert_eq!(contains("HashSet", &receiver, query), Ok(Value::Bool(true)));
+    assert_eq!(
+        contains("HashSet", &receiver, query),
+        Ok(Value::from(rils_execution::value::native_bool(true)))
+    );
     assert!(
         object
             .with_mut(|payload| payload.clear_sequence())
@@ -297,7 +380,10 @@ fn nominal_keys_require_eq_and_hash_but_never_gain_copy_implicitly() {
         let reading = slot.borrow();
         let found = contains("HashSet", &receiver, query.clone());
         if traits.len() == 2 {
-            assert_eq!(found, Ok(Value::Bool(true)));
+            assert_eq!(
+                found,
+                Ok(Value::from(rils_execution::value::native_bool(true)))
+            );
         } else {
             assert!(found.unwrap_err().contains("Eq + Hash"));
         }
@@ -308,36 +394,42 @@ fn nominal_keys_require_eq_and_hash_but_never_gain_copy_implicitly() {
 }
 
 #[test]
-fn compatibility_array_queries_report_borrow_conflicts_and_moved_fields() {
-    use rils_execution::value::{FieldSlot, IndexedStorage};
-    let array = Rc::new(IndexedStorage {
-        elements: RefCell::new(vec![FieldSlot::new(Type::I32, Value::from_i32(42))]),
-        element_type: RefCell::new(Some(Type::I32)),
-        active_iterators: Default::default(),
-    });
+fn native_array_queries_report_borrow_conflicts_and_moved_fields() {
+    use rils_execution::value::{
+        native_instance::NativeInstancePlace, storage::TypedStorageContext,
+    };
     let ty = Type::Array {
-        element: Box::new(Type::I32),
+        element: Box::new(Type::String),
         length: 1,
     };
-    let (receiver, _) = reference(collection(
-        "HashSet",
-        &ty,
-        vec![Value::Array(array.clone()).clone_owned().unwrap()],
-    ));
-    let (query, _) = reference(Value::Array(array.clone()));
-    {
-        let _writing = array.elements.borrow_mut();
-        assert!(
-            contains("HashSet", &receiver, query.clone())
-                .unwrap_err()
-                .contains("mutably accessed")
-        );
-    }
+    let array = || {
+        TypedStorageContext::new(&[], &[])
+            .construct_array(
+                &ty,
+                vec![Value::from(rils_execution::value::native_string("key"))],
+            )
+            .unwrap()
+    };
+    let (receiver, _) = reference(collection("HashSet", &ty, vec![array()]));
+    let Value::Dynamic(object) = array() else {
+        panic!("native array expected")
+    };
+    let (query, _) = reference(Value::Dynamic(object.clone()));
+    object
+        .with_mut(|_| {
+            assert!(contains("HashSet", &receiver, query.clone()).is_err());
+        })
+        .unwrap();
     assert_eq!(
         contains("HashSet", &receiver, query.clone()),
-        Ok(Value::Bool(true))
+        Ok(Value::from(rils_execution::value::native_bool(true)))
     );
-    array.elements.borrow_mut()[0].value = None;
+    NativeInstancePlace::new(object)
+        .unwrap()
+        .field("0")
+        .unwrap()
+        .take()
+        .unwrap();
     assert!(
         contains("HashSet", &receiver, query)
             .unwrap_err()
@@ -345,6 +437,6 @@ fn compatibility_array_queries_report_borrow_conflicts_and_moved_fields() {
     );
     assert_eq!(
         call("HashSet", "len", &[receiver]),
-        Ok(Value::from_usize(1))
+        Ok(Value::from(rils_execution::value::native_usize(1)))
     );
 }

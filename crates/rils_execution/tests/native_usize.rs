@@ -5,7 +5,7 @@ use rils_execution::{
 
 #[test]
 fn generated_usize_descriptor_keeps_typed_inline_storage_and_method_results() {
-    let value = native_usize(usize::MAX);
+    let value = Value::from(native_usize(usize::MAX));
     let Value::Native(object) = &value else {
         panic!("usize must use native storage");
     };
@@ -24,14 +24,18 @@ fn generated_usize_descriptor_keeps_typed_inline_storage_and_method_results() {
     let result = execute_integer_intrinsic(
         "core::integer::wrapping_add",
         None,
-        &[value.clone(), native_usize(1)],
+        &[value.clone(), Value::from(native_usize(1))],
     )
     .unwrap();
-    assert_eq!(result.as_usize(), Some(0));
+    assert_eq!(result.get_cloned::<usize>().ok(), Some(0));
     assert!(matches!(result, Value::Native(_)));
     assert_eq!(
-        execute_integer_intrinsic("core::integer::wrapping_add", None, &[value, Value::U32(1)],)
-            .unwrap_err(),
+        execute_integer_intrinsic(
+            "core::integer::wrapping_add",
+            None,
+            &[value, Value::from(rils_execution::value::native_u32(1))],
+        )
+        .unwrap_err(),
         "expected usize, found u32"
     );
 }

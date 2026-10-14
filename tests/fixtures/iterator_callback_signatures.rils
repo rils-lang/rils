@@ -1,0 +1,17 @@
+fn increment(value: i32) -> i32 { value + 1 }
+struct Offset { amount: i32 }
+impl Offset {
+    fn apply(&self, value: i32) -> i32 { value + self.amount }
+}
+fn check() -> bool {
+    let offset = Offset { amount: 2 };
+    let amount = 3;
+    fn transform(value: i32) -> i32 { value + amount }
+    let mut direct = (1..2).map(increment).collect_vec();
+    let mut bound = (1..2).map(offset.apply).collect_vec();
+    let mut captured = (1..2).map(transform).collect_vec();
+    direct.pop().unwrap() == 2
+        && bound.pop().unwrap() == 3
+        && captured.pop().unwrap() == 4
+}
+check()

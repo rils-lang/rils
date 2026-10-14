@@ -57,7 +57,7 @@ impl VirtualMachine<'_> {
             } => {
                 let value = self.take_register(value, span)?;
                 let count = self.take_register(count, span)?;
-                let Some(count) = count.as_usize() else {
+                let Ok(count) = count.get_cloned::<usize>() else {
                     return Err(BytecodeError::new("array repeat count must be usize", span));
                 };
                 self.frame_mut().registers[destination] = Some(

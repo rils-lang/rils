@@ -27,13 +27,32 @@ fn format_reference(
     formatter: &mut Formatter<'_>,
     debug: bool,
 ) -> fmt::Result {
-    match reference.with_native_view(|view| format_view(view, formatter, debug, true)) {
-        Ok(result) => result,
-        Err(_) => match reference.read() {
-            Ok(value) if debug => fmt::Debug::fmt(&value, formatter),
-            Ok(value) => fmt::Display::fmt(&value, formatter),
-            Err(_) => formatter.write_str("<invalid reference>"),
+    use super::super::ReferenceValue;
+    use super::super::borrowed::Read;
+    use std::rc::Rc;
+    match reference.with_borrowed_target(|value| match value {
+        Read::View(view) => format_view(view, formatter, debug, true),
+        Read::Host(object) => write!(formatter, "<{}>", object.type_definition.name),
+        Read::Leaf(leaf) if leaf.is_rust_type::<Rc<ReferenceValue>>() => leaf
+            .with_rust::<Rc<ReferenceValue>, _>(|reference| {
+                format_reference(reference, formatter, debug)
+            })
+            .map_err(|_| fmt::Error)?,
+        Read::Leaf(leaf) if debug && leaf.rils_type() == &Type::String => reference
+            .with_host_ref::<String, _>(|value| fmt::Debug::fmt(value, formatter))
+            .map_err(|_| fmt::Error)?,
+        Read::Leaf(leaf) if debug && leaf.rils_type() == &Type::Char => reference
+            .with_host_ref::<char, _>(|value| fmt::Debug::fmt(value, formatter))
+            .map_err(|_| fmt::Error)?,
+        Read::Leaf(leaf) => match reference.call_native(super::super::native_ops::DISPLAY, &[]) {
+            Ok(value) => value
+                .with_ref::<String, _>(|text| formatter.write_str(text))
+                .map_err(|_| fmt::Error)?,
+            Err(_) => write!(formatter, "<{}>", leaf.rils_type()),
         },
+    }) {
+        Ok(result) => result,
+        Err(_) => formatter.write_str("<invalid reference>"),
     }
 }
 

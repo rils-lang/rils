@@ -108,6 +108,11 @@ impl<'a> FunctionLowerer<'a> {
                     });
                 }
                 let (type_id, variant) = self.enum_variant_path(&segments, *span)?;
+                if matches!(&self.type_definitions[type_id], HirTypeDefinition::Enum { variants, .. }
+                    if variants.iter().any(|entry| matches!(entry, EnumVariant::Tuple { name, .. } if name == &variant)))
+                {
+                    return self.variant_constructor_value(expression, type_id, variant, *span);
+                }
                 Ok(HirExpression::ConstructUnitVariant {
                     type_id,
                     expected: self.constructor_type(expression, type_id)?,
@@ -443,7 +448,7 @@ impl<'a> FunctionLowerer<'a> {
                         .flatten()
                         .filter(|ty| {
                             matches!(ty, Type::Named { name, .. } if name == owner)
-                                && rils_frontend::standard_library::is_concrete_native_type(ty)
+                                && ty.is_type_witness()
                         });
                         return Ok(HirExpression::CallNative {
                             symbol: symbol.to_owned(),

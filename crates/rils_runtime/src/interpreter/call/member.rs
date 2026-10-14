@@ -6,26 +6,11 @@ pub(super) fn resolve_numeric_member(
     name: &str,
     span: Span,
 ) -> Result<Option<Value>, RuntimeError> {
-    let method = match value {
-        Value::I16(_)
-        | Value::I64(_)
-        | Value::I128(_)
-        | Value::Isize(_)
-        | Value::U8(_)
-        | Value::U16(_)
-        | Value::U32(_)
-        | Value::U64(_)
-        | Value::U128(_)
-        | Value::Usize(_) => {
+    let method = match super::helpers::receiver_type(value) {
+        Some(Type::Integer(_)) => {
             rils_builtins::integer_method(name).map(|method| BuiltinMethod::Native(method.symbol))
         }
-        Value::Native(object) if matches!(object.descriptor().rils_type(), Type::Integer(_)) => {
-            rils_builtins::integer_method(name).map(|method| BuiltinMethod::Native(method.symbol))
-        }
-        Value::F32(_) | Value::F64(_) => {
-            rils_builtins::float_method(name).map(|method| BuiltinMethod::Native(method.symbol))
-        }
-        Value::Native(object) if matches!(object.descriptor().rils_type(), Type::Float(_)) => {
+        Some(Type::Float(_)) => {
             rils_builtins::float_method(name).map(|method| BuiltinMethod::Native(method.symbol))
         }
         _ => return Ok(None),
@@ -36,12 +21,10 @@ pub(super) fn resolve_numeric_member(
             span,
         )
     })?;
-    Ok(Some(Value::BuiltinBoundMethod(Rc::new(
-        BuiltinBoundMethod {
-            receiver: Rc::new(value.clone()),
-            method,
-        },
-    ))))
+    Ok(Some(Value::from_callable(Rc::new(BuiltinBoundMethod {
+        receiver: Rc::new(value.clone()),
+        method,
+    }))))
 }
 
 pub(super) fn resolve_host_or_builtin_member(
@@ -51,19 +34,19 @@ pub(super) fn resolve_host_or_builtin_member(
 ) -> Result<Option<Value>, RuntimeError> {
     if let Some((method, mode)) = builtin_runtime_member(value, name) {
         if mode == rils_builtins::ReceiverMode::Mutable
-            && matches!(value, Value::Reference(reference) if !reference.mutable)
+            && value
+                .as_reference()
+                .is_some_and(|reference| !reference.mutable)
         {
             return Err(RuntimeError::new(
                 format!("method `{name}` requires `&mut self`"),
                 span,
             ));
         }
-        return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
-            BuiltinBoundMethod {
-                receiver: Rc::new(value.clone()),
-                method,
-            },
-        ))));
+        return Ok(Some(Value::from_callable(Rc::new(BuiltinBoundMethod {
+            receiver: Rc::new(value.clone()),
+            method,
+        }))));
     }
     if name == "into_iter"
         && Type::of_value(value).is_some_and(|ty| {
@@ -74,71 +57,32 @@ pub(super) fn resolve_host_or_builtin_member(
                 .is_some_and(|definition| definition.member("next").is_some())
         })
     {
-        return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
-            BuiltinBoundMethod {
-                receiver: Rc::new(value.clone()),
-                method: BuiltinMethod::IteratorIdentity,
-            },
-        ))));
+        return Ok(Some(Value::from_callable(Rc::new(BuiltinBoundMethod {
+            receiver: Rc::new(value.clone()),
+            method: BuiltinMethod::IteratorIdentity,
+        }))));
     }
-    let Value::HostObject(instance) = value else {
+    let Some(definition) = value
+        .host_type_definition()
+        .map_err(|message| RuntimeError::new(message, span))?
+    else {
         return Ok(None);
     };
-    let function = instance
-        .type_definition
+    let function = definition
         .methods
         .borrow()
         .get(name)
         .cloned()
         .ok_or_else(|| {
             RuntimeError::new(
-                format!(
-                    "type `{}` has no method `{name}`",
-                    instance.type_definition.name
-                ),
+                format!("type `{}` has no method `{name}`", definition.name),
                 span,
             )
         })?;
-    Ok(Some(Value::HostBoundMethod(Rc::new(HostBoundMethod {
+    Ok(Some(Value::from_callable(Rc::new(HostBoundMethod {
         receiver: Rc::new(value.clone()),
         function,
     }))))
-}
-
-pub(super) fn take_tuple_field(
-    value: &Value,
-    name: &str,
-    span: Span,
-) -> Result<Option<Value>, RuntimeError> {
-    let Value::Tuple(sequence) = value else {
-        return Ok(None);
-    };
-    let index = name
-        .parse::<usize>()
-        .map_err(|_| RuntimeError::new(format!("tuple has no field `{name}`"), span))?;
-    let mut elements = sequence.elements.borrow_mut();
-    let slot = elements
-        .get_mut(index)
-        .ok_or_else(|| RuntimeError::new(format!("tuple index {index} is out of bounds"), span))?;
-    let field = slot
-        .value
-        .as_ref()
-        .ok_or_else(|| RuntimeError::new(format!("use of moved tuple field `{index}`"), span))?;
-    if field.is_copy() {
-        return field
-            .clone_owned()
-            .map(Some)
-            .map_err(|message| RuntimeError::new(message, span));
-    }
-    if slot.references > 0 {
-        return Err(RuntimeError::new(
-            format!("cannot move tuple field `{index}` while it is referenced"),
-            span,
-        ));
-    }
-    Ok(Some(
-        slot.value.take().expect("tuple field value was checked"),
-    ))
 }
 
 pub(super) fn take_struct_field(
@@ -164,113 +108,6 @@ pub(super) fn take_struct_field(
     Ok(None)
 }
 
-pub(super) fn read_borrowed_field(
-    value: &Value,
-    name: &str,
-    span: Span,
-) -> Result<Option<Value>, RuntimeError> {
-    let field = match value {
-        Value::Tuple(sequence) => {
-            let index = name
-                .parse::<usize>()
-                .map_err(|_| RuntimeError::new(format!("tuple has no field `{name}`"), span))?;
-            let value = sequence
-                .elements
-                .borrow()
-                .get(index)
-                .and_then(|slot| slot.value.as_ref())
-                .cloned()
-                .ok_or_else(|| {
-                    RuntimeError::new(format!("use of moved tuple field `{index}`"), span)
-                })?;
-            (value, format!("tuple field `{index}`"))
-        }
-
-        Value::Dynamic(object) => {
-            let Some(index) = object.descriptor().layout().record_field_index(name) else {
-                return Ok(None);
-            };
-            let layout = object
-                .descriptor()
-                .layout()
-                .record_fields()
-                .and_then(|fields| fields.get(index))
-                .ok_or_else(|| RuntimeError::new(format!("unknown field `{name}`"), span))?
-                .layout_handle();
-            if !layout.is_copy() {
-                return Err(RuntimeError::new(
-                    format!("cannot move non-Copy field `{name}` through a reference"),
-                    span,
-                ));
-            }
-            let value = object
-                .with(|payload| payload.copy_path(&[rils_value::DynamicPathStep::Field(index)]))
-                .map_err(|message| RuntimeError::new(message, span))?
-                .map_err(|message| RuntimeError::new(message, span))?;
-            let value = rils_execution::value::record_codec::from_native(value)
-                .map_err(|message| RuntimeError::new(message, span))?;
-            return Ok(Some(value));
-        }
-        _ => return Ok(None),
-    };
-    if !field.0.is_copy() {
-        return Err(RuntimeError::new(
-            format!("cannot move non-Copy {} through a reference", field.1),
-            span,
-        ));
-    }
-    field
-        .0
-        .clone_owned()
-        .map(Some)
-        .map_err(|message| RuntimeError::new(message, span))
-}
-
-pub(super) fn resolve_borrowed_host_or_builtin_member(
-    borrowed: &Value,
-    receiver: Value,
-    receiver_mutable: bool,
-    name: &str,
-    span: Span,
-) -> Result<Option<Value>, RuntimeError> {
-    if let Some((method, mode)) = builtin_runtime_member(borrowed, name) {
-        if mode == rils_builtins::ReceiverMode::Mutable && !receiver_mutable {
-            return Err(RuntimeError::new(
-                format!("{}::{name} requires `&mut self`", borrowed.type_name()),
-                span,
-            ));
-        }
-        return Ok(Some(Value::BuiltinBoundMethod(Rc::new(
-            BuiltinBoundMethod {
-                receiver: Rc::new(receiver),
-                method,
-            },
-        ))));
-    }
-    let Value::HostObject(instance) = borrowed else {
-        return Ok(None);
-    };
-    let function = instance
-        .type_definition
-        .methods
-        .borrow()
-        .get(name)
-        .cloned()
-        .ok_or_else(|| {
-            RuntimeError::new(
-                format!(
-                    "type `{}` has no method `{name}`",
-                    instance.type_definition.name
-                ),
-                span,
-            )
-        })?;
-    Ok(Some(Value::HostBoundMethod(Rc::new(HostBoundMethod {
-        receiver: Rc::new(receiver),
-        function,
-    }))))
-}
-
 pub(super) fn bind_rils_method(
     receiver: Value,
     methods: &std::cell::RefCell<HashMap<String, Rc<UserFunction>>>,
@@ -290,7 +127,7 @@ pub(super) fn bind_rils_method(
     })?;
     let Some(function) = function else {
         if name == "clone" {
-            return Ok(Value::BuiltinBoundMethod(Rc::new(BuiltinBoundMethod {
+            return Ok(Value::from_callable(Rc::new(BuiltinBoundMethod {
                 receiver: Rc::new(receiver),
                 method: clone_method(),
             })));
@@ -316,14 +153,14 @@ pub(super) fn bind_rils_method(
         .first()
         .and_then(|parameter| parameter.type_annotation.as_ref())
     {
-        Some(Type::Reference { mutable, .. }) if !matches!(receiver, Value::Reference(_)) => {
+        Some(Type::Reference { mutable, .. }) if receiver.as_reference().is_none() => {
             let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(*mutable)));
             storage.borrow_mut().initialize(receiver);
-            Value::Reference(Rc::new(ReferenceValue::new_storage(storage, *mutable)))
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(storage, *mutable)))
         }
         _ => receiver,
     };
-    Ok(Value::BoundMethod(Rc::new(BoundMethod {
+    Ok(Value::from_callable(Rc::new(BoundMethod {
         receiver: Rc::new(receiver),
         function,
     })))

@@ -4,7 +4,10 @@ extern crate self as rils_stdlib;
 
 pub mod stdlib;
 
+pub mod arithmetic;
+pub mod host_value;
 pub mod native;
+pub mod native_collections;
 
 pub use rils_syntax::Type;
 

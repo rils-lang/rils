@@ -52,6 +52,6 @@ fn one_module_can_instantiate_several_native_collection_defaults() {
         module.execute_value().unwrap(),
         loaded.execute_value().unwrap(),
     ] {
-        assert_eq!(value, Value::Bool(true));
+        assert_eq!(value, Value::from(rils::value::native_bool(true)));
     }
 }

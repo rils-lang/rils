@@ -6,7 +6,9 @@ use rils_syntax::Type;
 
 use crate::storage::Payload;
 
+mod call;
 mod composition;
+pub use call::NativeCallContext;
 mod leaf;
 pub use leaf::NativeLeafRef;
 
@@ -300,7 +302,8 @@ impl<V: 'static> NativeObject<V> {
     pub fn call(&self, name: &str, arguments: &[V]) -> Option<Result<V, String>> {
         let method = self.descriptor.methods.get(name)?;
         Some(method(&NativeCallContext {
-            receiver: self,
+            receiver: call::Receiver::Object(self),
+            descriptor: &self.descriptor,
             arguments,
         }))
     }
@@ -345,29 +348,5 @@ impl<V: 'static> NativeObject<V> {
                 std::any::type_name::<T>()
             ))
         }
-    }
-}
-
-/// The receiver and arguments visible to one registered native operation.
-pub struct NativeCallContext<'a, V> {
-    receiver: &'a NativeObject<V>,
-    arguments: &'a [V],
-}
-
-impl<V: 'static> NativeCallContext<'_, V> {
-    pub fn arguments(&self) -> &[V] {
-        self.arguments
-    }
-
-    pub fn receiver<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Result<R, String> {
-        self.receiver.with(f)
-    }
-
-    pub fn receiver_mut<T: 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R, String> {
-        self.receiver.with_mut(f)
-    }
-
-    pub fn new_object<T: 'static>(&self, value: T) -> Result<NativeObject<V>, String> {
-        NativeObject::new(self.receiver.descriptor.clone(), value)
     }
 }

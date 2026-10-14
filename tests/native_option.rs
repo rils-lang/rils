@@ -29,7 +29,11 @@ fn consuming_option_methods_move_non_copy_native_payloads() {
             compiled.execute_value().unwrap(),
             loaded.execute_value().unwrap(),
         ] {
-            assert_eq!(value.as_string().as_deref(), Some("first"), "{source}");
+            assert_eq!(
+                value.get_cloned::<String>().ok().as_deref(),
+                Some("first"),
+                "{source}"
+            );
         }
     }
 }
@@ -49,7 +53,7 @@ fn mutable_option_methods_write_back_inline_copy_values() {
         compiled.execute_value().unwrap(),
         loaded.execute_value().unwrap(),
     ] {
-        assert_eq!(value.as_i32(), Some(42));
+        assert_eq!(value.get_cloned::<i32>().ok(), Some(42));
     }
 }
 
@@ -63,7 +67,12 @@ fn assert_dynamic_option(
 ) {
     assert_eq!(value.to_string(), display);
     assert_eq!(format!("{value:?}"), debug);
-    assert!(value.as_option().is_some());
+    assert!(
+        value
+            .with_native_view(|view| view.option_is_some())
+            .unwrap()
+            .is_ok()
+    );
     let Value::Dynamic(object) = value else {
         panic!("{ty} must use dynamic native storage in {stage}");
     };
@@ -195,7 +204,13 @@ fn options_of_native_containers_use_composed_layouts() {
                 );
             };
             assert_eq!(object.descriptor().layout().rils_type().to_string(), ty);
-            assert_eq!(value.as_option().unwrap().0.is_some(), present);
+            assert_eq!(
+                value
+                    .with_native_view(|view| view.option_is_some())
+                    .unwrap()
+                    .unwrap(),
+                present
+            );
             assert_eq!(
                 object.with(|payload| payload.is_some()).unwrap().unwrap(),
                 present
@@ -231,13 +246,11 @@ fn manual_user_option_without_declaration_context_preserves_its_owned_value() {
         "fixtures/native_expression_storage/manual_item.rils"
     ))
     .unwrap();
-    let value = Value::Option {
-        value: Some(std::rc::Rc::new(item)),
-        element_type: Some(rils::Type::named("Item")),
-    };
     let expected = rils::Type::Option(Box::new(rils::Type::named("Item")));
-    let value = value.apply_declared_storage(&expected).unwrap();
-    assert!(matches!(value, Value::Option { .. }));
+    let value = rils::value::storage::TypedStorageContext::new(&[], &[])
+        .construct_option(&expected, Some(item))
+        .unwrap();
+    assert!(matches!(value, Value::Dynamic(_)));
     assert_eq!(value.to_string(), "Some(Item { value: 37 })");
 }
 
@@ -252,7 +265,7 @@ fn options_move_native_containers_through_unwrap() {
                 let mut recovered = value.unwrap();
                 recovered.pop_front().unwrap()
             "#,
-            Value::from_i32(7),
+            Value::from(rils::value::native_i32(7)),
         ),
         (
             r#"
@@ -262,7 +275,7 @@ fn options_move_native_containers_through_unwrap() {
                 let mut recovered = value.unwrap();
                 recovered.pop().unwrap()
             "#,
-            Value::from_string("z"),
+            Value::from(rils::value::native_string("z")),
         ),
     ] {
         assert_eq!(eval_value(source).unwrap(), expected);
@@ -305,10 +318,17 @@ fn owned_some_moves_string_and_legacy_items_keep_their_value() {
         compile("Some(true)").unwrap().execute_value().unwrap(),
     ] {
         assert!(matches!(value, Value::Dynamic(_)));
-        assert_eq!(
-            value.as_option(),
-            Some((Some(Value::Bool(true)), rils::Type::Bool))
-        );
+        value
+            .with_native_view(|view| {
+                assert!(view.option_is_some().unwrap());
+                assert!(
+                    view.option_item()
+                        .unwrap()
+                        .with_rust::<bool, _>(|value| *value)
+                        .unwrap()
+                );
+            })
+            .unwrap();
     }
 }
 
@@ -353,9 +373,15 @@ fn numeric_option_families_use_generated_native_conversions() {
         let methods = format!(
             "let some: {option_type} = Some(1{ty}); let none: {option_type} = None; some.is_some() && none.is_none()"
         );
-        assert_eq!(eval_value(&methods).unwrap(), Value::Bool(true));
+        assert_eq!(
+            eval_value(&methods).unwrap(),
+            Value::from(rils::value::native_bool(true))
+        );
         let compiled = compile(&methods).unwrap();
-        assert_eq!(compiled.execute_value().unwrap(), Value::Bool(true));
+        assert_eq!(
+            compiled.execute_value().unwrap(),
+            Value::from(rils::value::native_bool(true))
+        );
     }
 }
 
@@ -654,9 +680,18 @@ fn contextual_none_uses_native_storage_across_backends() {
 #[test]
 fn native_options_work_as_collection_keys_and_match_values() {
     let source = include_str!("fixtures/native_option.rils");
-    assert_eq!(eval_value(source).unwrap().as_i32(), Some(42));
+    assert_eq!(
+        eval_value(source).unwrap().get_cloned::<i32>().ok(),
+        Some(42)
+    );
     let compiled = compile(source).unwrap();
-    assert_eq!(compiled.execute_value().unwrap().as_i32(), Some(42));
+    assert_eq!(
+        compiled.execute_value().unwrap().get_cloned::<i32>().ok(),
+        Some(42)
+    );
     let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
-    assert_eq!(loaded.execute_value().unwrap().as_i32(), Some(42));
+    assert_eq!(
+        loaded.execute_value().unwrap().get_cloned::<i32>().ok(),
+        Some(42)
+    );
 }

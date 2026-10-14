@@ -15,6 +15,7 @@ pub enum DynamicPathStep {
 
 /// A borrowed view of any native layout, including composed generic values.
 /// It retains the owning value's borrow and never materializes an interpreter value.
+#[derive(Clone)]
 pub struct DynamicValueRef<'a> {
     pub(super) root: &'a DynamicValue,
     pub(super) path: Vec<DynamicPathStep>,
@@ -122,6 +123,22 @@ impl<'a> DynamicValueRef<'a> {
             .get(index)
             .ok_or_else(|| format!("sequence index {index} is out of bounds"))?;
         Ok(callback(item))
+    }
+
+    /// Borrow the original sequence allocation for a read-only native method.
+    /// The callback cannot replace elements or change the borrow ledger.
+    pub fn with_sequence_storage<R>(
+        &self,
+        callback: impl FnOnce(&Vec<DynamicValue>) -> R,
+    ) -> Result<R, String> {
+        let (pointer, layout) = self.root.project(&self.path)?;
+        if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {
+            return Err("value is not a sequence".into());
+        }
+        // SAFETY: project validates the initialized sequence at this path.
+        // The root's immutable borrow keeps the header and allocation alive.
+        let storage = unsafe { &*pointer.cast::<SequenceStorage>() };
+        Ok(callback(&storage.items))
     }
 
     pub fn sequence_len(&self) -> Result<usize, String> {

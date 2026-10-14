@@ -1,0 +1,9 @@
+let mut fields = (1..6, 7..10);
+let second = fields.0.nth(1usize);
+let next = fields.0.next();
+let remaining = fields.0.count();
+let other = fields.1.next();
+second == Some(2)
+    && next == Some(3)
+    && remaining == 2usize
+    && other == Some(7)

@@ -58,5 +58,8 @@ fn ordinary_direct_calls_keep_their_existing_instruction_path() {
             .flat_map(|function| &function.instructions)
             .any(|instruction| matches!(instruction.instruction, Instruction::ApplyStorage { .. }))
     );
-    assert_eq!(module.execute_value().unwrap().as_i32(), Some(74));
+    assert_eq!(
+        module.execute_value().unwrap().get_cloned::<i32>().ok(),
+        Some(74)
+    );
 }

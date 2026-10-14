@@ -14,9 +14,9 @@ fn native_result_methods_cover_both_variants_and_preserve_option_types() {
                 .construct_result(
                     &result_type,
                     if success {
-                        Ok(Value::from_i32(7))
+                        Ok(Value::from(rils_execution::value::native_i32(7)))
                     } else {
-                        Err(Value::from_string("failure"))
+                        Err(Value::from(rils_execution::value::native_string("failure")))
                     },
                 )
                 .unwrap()
@@ -27,14 +27,16 @@ fn native_result_methods_cover_both_variants_and_preserve_option_types() {
                 "core::result::result::is_ok",
                 std::slice::from_ref(&query_input)
             ),
-            Some(Ok(Value::Bool(success)))
+            Some(Ok(Value::from(rils_execution::value::native_bool(success))))
         );
         assert_eq!(
             runtime_builtins::call_native_symbol(
                 "core::result::result::is_err",
                 std::slice::from_ref(&query_input)
             ),
-            Some(Ok(Value::Bool(!success)))
+            Some(Ok(Value::from(rils_execution::value::native_bool(
+                !success
+            ))))
         );
         assert_eq!(
             runtime_builtins::call_native_owned_symbol(
@@ -46,7 +48,7 @@ fn native_result_methods_cover_both_variants_and_preserve_option_types() {
                 .storage()
                 .construct_option(
                     &Type::Option(Box::new(Type::I32)),
-                    success.then(|| Value::from_i32(7)),
+                    success.then(|| Value::from(rils_execution::value::native_i32(7))),
                 )
                 .unwrap()))
         );
@@ -60,7 +62,8 @@ fn native_result_methods_cover_both_variants_and_preserve_option_types() {
                 .storage()
                 .construct_option(
                     &Type::Option(Box::new(Type::String)),
-                    (!success).then(|| Value::from_string("failure")),
+                    (!success)
+                        .then(|| Value::from(rils_execution::value::native_string("failure"))),
                 )
                 .unwrap()))
         );
@@ -84,7 +87,7 @@ fn native_result_methods_reject_invalid_receivers_and_arities() {
             }
         };
         assert!(
-            call(vec![Value::from_i32(5)])
+            call(vec![Value::from(rils_execution::value::native_i32(5))])
                 .unwrap()
                 .unwrap_err()
                 .contains("expects Result")

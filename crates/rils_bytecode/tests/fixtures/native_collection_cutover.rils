@@ -1,0 +1,77 @@
+struct Item { text: string }
+impl Item {
+    fn size(&self) -> usize { self.text.len() }
+}
+struct Collections {
+    queue: VecDeque<Item>,
+    map: HashMap<i32, Item>,
+    tree: BTreeMap<i32, Item>,
+    set: HashSet<string>,
+    ordered: BTreeSet<string>,
+    heap: BinaryHeap<string>,
+}
+fn empty_queue<T>(witness: T) -> VecDeque<T> { VecDeque::new() }
+fn empty_map<T>(witness: T) -> HashMap<i32, T> { HashMap::new() }
+fn main() -> i32 {
+    let mut collections = Collections {
+        queue: VecDeque::new(), map: HashMap::new(), tree: BTreeMap::new(),
+        set: HashSet::new(), ordered: BTreeSet::new(), heap: BinaryHeap::new(),
+    };
+    collections.queue.push_back(Item { text: "back" });
+    collections.queue.push_front(Item { text: "front" });
+    let front = collections.queue.pop_front().unwrap();
+    assert!(front.size() == 5usize);
+    let back = collections.queue.pop_back().unwrap();
+    assert!(back.size() == 4usize);
+    assert!(collections.queue.pop_back().is_none());
+
+    collections.map.insert(1, Item { text: "original" });
+    let previous = collections.map.insert(1, Item { text: "replacement" }).unwrap();
+    assert!(previous.size() == 8usize);
+    let key = 1;
+    let removed = collections.map.remove(&key).unwrap();
+    assert!(removed.size() == 11usize);
+    assert!(collections.map.remove(&key).is_none());
+    collections.tree.insert(2, Item { text: "tree" });
+    for pair in collections.tree.iter() {
+        assert!(*pair.0 == 2);
+        let item = pair.1;
+        assert!(item.size() == 4usize);
+    }
+    let tree = collections.tree;
+    for pair in tree.into_iter() { assert!(pair.1.size() == 4usize); }
+
+    collections.set.insert("hash");
+    collections.ordered.insert("ordered");
+    for item in collections.set.iter() { assert!(item.len() == 4usize); }
+    for item in collections.ordered.iter() { assert!(item.len() == 7usize); }
+    collections.heap.push("a"); collections.heap.push("z");
+    assert!(collections.heap.pop().unwrap() == "z");
+    assert!(collections.heap.pop().unwrap() == "a");
+    assert!(collections.heap.pop().is_none());
+
+    let mut queue: VecDeque<Item> = empty_queue(Item { text: "witness" });
+    queue.push_back(Item { text: "owned" });
+    for item in queue.into_iter() { assert!(item.size() == 5usize); }
+    let mut map: HashMap<i32, Item> = empty_map(Item { text: "witness" });
+    map.insert(0, Item { text: "generic" });
+    for item in map.into_iter() { assert!(item.1.size() == 7usize); }
+
+    let mut loops: HashMap<i32, Item> = HashMap::new();
+    loops.insert(1, Item { text: "break" });
+    for pair in loops.iter() {
+        let item = pair.1;
+        assert!(item.size() == 5usize);
+        break;
+    }
+    loops.clear();
+    loops.insert(2, Item { text: "continue" });
+    for pair in loops.iter() {
+        let item = pair.1;
+        assert!(item.size() == 8usize);
+        continue;
+    }
+    loops.clear();
+    42
+}
+main()

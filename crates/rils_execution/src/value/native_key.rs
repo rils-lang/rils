@@ -57,7 +57,10 @@ fn read(
                     registry.key_leaf(&leaf)
                 }
             }
-            Read::Legacy(value) => legacy(value, layout, ordered),
+            Read::Host(object) => Err(format!(
+                "{} cannot be used as a hash collection key",
+                object.type_definition.name
+            )),
         }
     })?
 }
@@ -81,11 +84,11 @@ fn validate(view: &DynamicValueRef<'_>, codec: &NativeRecordCodec) -> Result<(),
     let layout = view.layout()?;
     if matches!(layout.rils_type(), Type::Named { .. }) {
         let supported = match codec.nominal_definition(layout.rils_type()) {
-            Some(Value::StructType(definition)) => {
+            Some(crate::value::Declaration::StructType(definition)) => {
                 let traits = definition.implemented_traits.borrow();
                 traits.contains("Eq") && traits.contains("Hash")
             }
-            Some(Value::EnumType(definition)) => {
+            Some(crate::value::Declaration::EnumType(definition)) => {
                 let traits = definition.implemented_traits.borrow();
                 traits.contains("Eq") && traits.contains("Hash")
             }
@@ -125,99 +128,3 @@ fn validate_fields(view: &DynamicValueRef<'_>, codec: &NativeRecordCodec) -> Res
     }
     Ok(())
 }
-
-fn legacy(value: &Value, layout: &DynamicLayout, ordered: bool) -> Result<NativeKey, String> {
-    let ty = layout.rils_type();
-    if ordered {
-        return Err(format!("{ty} has no registered native key ordering"));
-    }
-    match (ty, value) {
-        (
-            Type::Option(item),
-            Value::Option {
-                value,
-                element_type,
-            },
-        ) => {
-            check_annotation(item, element_type.as_ref())?;
-            match value {
-                Some(value) => read(
-                    value,
-                    layout.option_item().ok_or("missing key item layout")?,
-                    false,
-                    false,
-                )
-                .map(|key| NativeKey::Some(Box::new(key))),
-                None => Ok(NativeKey::None),
-            }
-        }
-        (
-            Type::Result(ok, error),
-            Value::Result {
-                value,
-                ok_type,
-                error_type,
-            },
-        ) => {
-            check_annotation(ok, ok_type.as_ref())?;
-            check_annotation(error, error_type.as_ref())?;
-            let (index, value) = match value {
-                Ok(value) => (0, value),
-                Err(value) => (1, value),
-            };
-            let alternatives = layout
-                .variant_alternatives()
-                .ok_or("missing key alternatives")?;
-            let key = read(value, &alternatives[index], false, false)?;
-            Ok(NativeKey::Variant(index, Box::new(key)))
-        }
-        (Type::Tuple(_), Value::Tuple(sequence)) | (Type::Array { .. }, Value::Array(sequence)) => {
-            let elements = sequence
-                .elements
-                .try_borrow()
-                .map_err(|_| "key sequence is already mutably accessed")?;
-            let fields = layout.record_fields().ok_or("missing key fields")?;
-            if elements.len() != fields.len() {
-                return Err("collection key length mismatch".into());
-            }
-            if let Type::Array { element, .. } = ty {
-                let annotation = sequence
-                    .element_type
-                    .try_borrow()
-                    .map_err(|_| "key sequence type is already mutably accessed")?;
-                check_annotation(element, annotation.as_ref())?;
-            }
-            elements
-                .iter()
-                .zip(fields)
-                .map(|(slot, field)| {
-                    check_annotation(field.layout().rils_type(), Some(&slot.type_annotation))?;
-                    read(
-                        slot.value.as_ref().ok_or("moved key element")?,
-                        field.layout(),
-                        false,
-                        false,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(NativeKey::Fields)
-        }
-        _ => Err(format!(
-            "{} cannot be used as a hash collection key",
-            value.type_name()
-        )),
-    }
-}
-
-fn check_annotation(expected: &Type, actual: Option<&Type>) -> Result<(), String> {
-    if let Some(actual) = actual
-        && crate::types::merge_types(expected, actual).as_ref() != Some(expected)
-    {
-        return Err(format!("collection key expects {expected}, found {actual}"));
-    }
-    Ok(())
-}
-
-#[path = "native_key/identity.rs"]
-mod identity;
-pub(crate) use identity::identity;

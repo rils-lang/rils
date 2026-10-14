@@ -24,18 +24,25 @@ fn array_consumption_is_lazy_and_drops_nonclone_elements_once() {
         }
     }
     let drops = Rc::new(Cell::new(0));
-    let leaf = DynamicLayout::of::<Payload>(Type::named("Payload"));
     let ty = Type::Array {
         element: Box::new(Type::named("Payload")),
         length: 2,
     };
-    let value = array(
-        ty.clone(),
-        (0..2)
-            .map(|_| DynamicValue::from_rust(leaf.clone(), Payload(drops.clone())).unwrap())
-            .collect(),
-        leaf,
-    );
+    let descriptor = Rc::new(rils_value::NativeType::new::<Payload>(Type::named(
+        "Payload",
+    )));
+    let mut codec = NativeRecordCodec::new();
+    codec.register_native_type(descriptor.clone()).unwrap();
+    let leaf = descriptor.layout_handle();
+    let layout = DynamicLayout::array(leaf.clone(), 2).unwrap();
+    let fields = (0..2)
+        .map(|_| DynamicValue::from_rust(leaf.clone(), Payload(drops.clone())).unwrap())
+        .collect();
+    let value = rils_execution::value::native_instance::from_native(
+        DynamicValue::record(layout, fields).unwrap(),
+        Rc::new(codec),
+    )
+    .unwrap();
     assert!(matches!(&value, Value::Dynamic(_)));
     assert_eq!(Type::of_value(&value), Some(ty));
     assert!(!value.is_copy());
@@ -94,7 +101,10 @@ fn arrays_move_to_vec_without_cloning_and_copy_storage_is_independent() {
         },
         vec![
             NativeRecordCodec::new()
-                .into_native(Value::from_i32(1), leaf.clone())
+                .into_native(
+                    Value::from(rils_execution::value::native_i32(1)),
+                    leaf.clone(),
+                )
                 .unwrap(),
         ],
         leaf,
@@ -107,7 +117,7 @@ fn arrays_move_to_vec_without_cloning_and_copy_storage_is_independent() {
         .unwrap()
         .field("0")
         .unwrap()
-        .assign(Value::from_i32(2))
+        .assign(Value::from(rils_execution::value::native_i32(2)))
         .unwrap();
     let Value::Dynamic(copy) = copy else {
         panic!("native array copy")
@@ -119,7 +129,7 @@ fn arrays_move_to_vec_without_cloning_and_copy_storage_is_independent() {
             .unwrap()
             .take()
             .unwrap(),
-        Value::from_i32(1)
+        Value::from(rils_execution::value::native_i32(1))
     );
 }
 

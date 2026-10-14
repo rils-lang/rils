@@ -1,0 +1,13 @@
+fn check() -> bool {
+let values = (-42i32, "native", -9.0f64);
+let integer = &values.0;
+let nested_integer = &integer;
+let text = &values.1;
+let nested_text = &text;
+let floating = &values.2;
+nested_integer.abs() == 42i32
+    && floating.abs() == 9.0f64
+    && nested_text.len() == 6usize
+    && nested_text.contains("ati")
+}
+check()

@@ -3,66 +3,6 @@ use super::*;
 pub(super) mod nominal;
 
 impl Interpreter {
-    pub(super) fn construct_contextual_empty(
-        &self,
-        expression: &Expr,
-        expected: &Type,
-        environment: &EnvironmentRef,
-    ) -> Option<Result<Value, RuntimeError>> {
-        let Type::Named {
-            name,
-            arguments: type_arguments,
-        } = expected
-        else {
-            return None;
-        };
-        let Expr::Call {
-            callee,
-            arguments,
-            span,
-        } = expression
-        else {
-            return None;
-        };
-        if !arguments.is_empty() {
-            return None;
-        }
-        let segments = match callee.as_ref() {
-            Expr::Path { segments, .. } | Expr::GenericPath { segments, .. } => segments,
-            _ => return None,
-        };
-        let [.., owner, member] = segments.as_slice() else {
-            return None;
-        };
-        if owner != name
-            || member != "new"
-            || rils_frontend::standard_library::empty_native_constructor_symbol(owner).is_none()
-        {
-            return None;
-        }
-        if type_arguments.contains(&Type::Unknown) {
-            if span.source.is_generated() {
-                return None;
-            }
-            return Some(Err(RuntimeError::new(
-                format!(
-                    "cannot infer the type arguments of `{name}::new()`; add a type annotation or explicit type arguments"
-                ),
-                *span,
-            )));
-        }
-        if !rils_frontend::standard_library::is_concrete_native_type(expected) {
-            return None;
-        }
-        let context =
-            crate::runtime_builtins::NativeOwnedContext::from_environment(&environment.borrow());
-        Some(
-            context
-                .empty_collection(expected)
-                .map_err(|message| RuntimeError::new(message, *span)),
-        )
-    }
-
     pub(super) fn construct_record(
         &self,
         path: &[String],
@@ -71,8 +11,8 @@ impl Interpreter {
         span: Span,
         environment: &EnvironmentRef,
     ) -> Result<Value, RuntimeError> {
-        let direct = self.resolve_path(path, environment, span).ok();
-        if let Some(Value::StructType(definition)) = direct {
+        let direct = execution::resolve_visible_declaration(path, environment, span).ok();
+        if let Some(crate::value::Declaration::StructType(definition)) = direct {
             let name = definition.name.as_str();
             if definition.opaque_native {
                 return Err(RuntimeError::new(
@@ -118,7 +58,8 @@ impl Interpreter {
         if path.len() >= 2 {
             let variant_name = path.last().expect("record path has variant");
             let enum_path = &path[..path.len() - 1];
-            if let Ok(Value::EnumType(definition)) = self.resolve_path(enum_path, environment, span)
+            if let Ok(crate::value::Declaration::EnumType(definition)) =
+                execution::resolve_visible_declaration(enum_path, environment, span)
             {
                 let enum_name = &definition.name;
                 let variant = definition

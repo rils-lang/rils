@@ -13,13 +13,6 @@ pub(super) enum Place {
         mutable: bool,
         source: Option<crate::environment::StorageRef>,
     },
-    IndexedElement {
-        sequence: Rc<IndexedStorage>,
-        index: usize,
-        owner: String,
-        mutable: bool,
-        guard: Option<Rc<ReferenceValue>>,
-    },
     DynamicIndexedElement {
         sequence: rils_execution::value::DynamicObject,
         codec: Rc<rils_execution::value::record_codec::NativeRecordCodec>,
@@ -55,19 +48,21 @@ impl Place {
             );
         }
         let value = match self {
-            Self::Storage { slot, .. } => slot.borrow().read().ok(),
-
-            Self::IndexedElement {
-                sequence, index, ..
-            } => sequence
-                .elements
+            Self::Storage { slot, .. } => slot
                 .borrow()
-                .get(*index)
-                .and_then(|slot| slot.value.clone()),
+                .with_value(|value| {
+                    Ok(match value {
+                        Value::Dynamic(object) => Some(object.clone()),
+                        _ => None,
+                    })
+                })
+                .ok()
+                .flatten(),
+
             _ => None,
         };
         match value {
-            Some(Value::Dynamic(object))
+            Some(object)
                 if rils_execution::value::native_instance::definition(&object).is_some()
                     || matches!(
                         object.descriptor().layout().rils_type(),
@@ -104,26 +99,6 @@ impl Place {
                 RuntimeError::new(format!("cannot access moved value `{name}`"), span)
             }),
 
-            Self::IndexedElement {
-                sequence, index, ..
-            } => {
-                let elements = sequence.elements.borrow();
-                let value = elements
-                    .get(*index)
-                    .and_then(|slot| slot.value.as_ref())
-                    .ok_or_else(|| {
-                        RuntimeError::new(format!("use of moved element at index {index}"), span)
-                    })?;
-                if !value.is_copy() {
-                    return Err(RuntimeError::new(
-                        "cannot move a non-Copy value out through indexing",
-                        span,
-                    ));
-                }
-                value
-                    .clone_owned()
-                    .map_err(|message| RuntimeError::new(message, span))
-            }
             Self::DynamicIndexedElement {
                 sequence, index, ..
             } => rils_execution::value::dynamic_sequence::copy_item(sequence, *index)
@@ -169,45 +144,6 @@ impl Place {
                 .write(value)
                 .map_err(|error| super::evaluation::assignment_error(error, "reference", span)),
 
-            Self::IndexedElement {
-                sequence,
-                index,
-                owner,
-                mutable,
-                guard: _guard,
-            } => {
-                if !mutable {
-                    return Err(RuntimeError::new(
-                        format!("cannot assign through immutable place `{owner}`"),
-                        span,
-                    ));
-                }
-                let mut elements = sequence.elements.borrow_mut();
-                let slot = elements.get_mut(index).ok_or_else(|| {
-                    RuntimeError::new(format!("index {index} is out of bounds"), span)
-                })?;
-                if slot.references > 0
-                    || slot
-                        .value
-                        .as_ref()
-                        .is_some_and(Value::has_active_references)
-                {
-                    return Err(RuntimeError::new(
-                        format!("cannot replace element {index} while it is referenced"),
-                        span,
-                    ));
-                }
-                slot.assign(value).map_err(|_| {
-                    RuntimeError::new(
-                        format!(
-                            "value is incompatible with element type {}",
-                            slot.type_annotation
-                        ),
-                        span,
-                    )
-                })?;
-                Ok(())
-            }
             Self::DynamicIndexedElement {
                 sequence,
                 codec: _,
@@ -255,10 +191,15 @@ impl Place {
             Self::Storage { slot, name } => {
                 {
                     let storage = slot.borrow();
-                    let current = storage.read().map_err(|_| {
-                        RuntimeError::new(format!("cannot reference moved value `{name}`"), span)
-                    })?;
-                    if current.is_partially_moved() {
+                    let partially_moved = storage
+                        .with_value(|value| Ok(value.is_partially_moved()))
+                        .map_err(|_| {
+                            RuntimeError::new(
+                                format!("cannot reference moved value `{name}`"),
+                                span,
+                            )
+                        })?;
+                    if partially_moved {
                         return Err(RuntimeError::new(
                             format!("cannot reference partially moved value `{name}`"),
                             span,
@@ -274,24 +215,6 @@ impl Place {
                 Rc::new(ReferenceValue::new_storage(slot, mutable))
             }
 
-            Self::IndexedElement {
-                sequence,
-                index,
-                owner,
-                mutable: owner_mutable,
-                guard,
-            } => {
-                if mutable && !owner_mutable {
-                    return Err(RuntimeError::new(
-                        format!("cannot mutably reference an element of immutable place `{owner}`"),
-                        span,
-                    ));
-                }
-                Rc::new(
-                    ReferenceValue::new_guarded_indexed_element(sequence, index, mutable, guard)
-                        .map_err(|message| RuntimeError::new(message, span))?,
-                )
-            }
             Self::DynamicIndexedElement {
                 sequence,
                 codec,
@@ -323,18 +246,21 @@ impl Place {
                     .map_err(|message| RuntimeError::new(message, span))?,
             ),
         };
-        Ok(Value::Reference(reference))
+        Ok(Value::from_reference(reference))
     }
 
     fn is_mutable(&self) -> bool {
         match self {
             Self::NativeField { mutable, .. } => *mutable,
-            Self::Storage { slot, .. } => match slot.borrow().read() {
-                Ok(Value::Reference(reference)) => reference.mutable,
-                _ => slot.borrow().is_mutable(),
-            },
+            Self::Storage { slot, .. } => {
+                let storage = slot.borrow();
+                storage
+                    .with_value(|value| Ok(value.as_reference().map(|reference| reference.mutable)))
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| storage.is_mutable())
+            }
 
-            Self::IndexedElement { mutable, .. } => *mutable,
             Self::DynamicIndexedElement { mutable, .. } => *mutable,
             Self::Reference { reference } => reference.mutable,
         }
@@ -345,47 +271,24 @@ impl Place {
             Self::NativeField { owner, name, .. } => format!("{owner}.{name}"),
             Self::Storage { name, .. } => name.clone(),
 
-            Self::IndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
             Self::DynamicIndexedElement { owner, index, .. } => format!("{owner}[{index}]"),
             Self::Reference { .. } => "reference".into(),
         }
     }
 
-    pub(super) fn projection_value(&self, span: Span) -> Result<Value, RuntimeError> {
+    /// Keep projections as references; only root storage needs an owner handle.
+    pub(super) fn projection_receiver(&self, span: Span) -> Result<Value, RuntimeError> {
+        if let Some(reference) = self.projection_guard(span)? {
+            return Ok(Value::from_reference(reference));
+        }
         match self {
-            Self::NativeField { place, .. } => place
-                .borrow(false, None)
-                .and_then(|reference| reference.read())
-                .map_err(|message| RuntimeError::new(message, span)),
-            Self::Storage { slot, name } => {
-                let value = slot.borrow().read().map_err(|_| {
-                    RuntimeError::new(format!("cannot access moved value `{name}`"), span)
-                })?;
-                match value {
-                    Value::Reference(reference) => reference
-                        .read()
-                        .map_err(|message| RuntimeError::new(message, span)),
-                    value => Ok(value),
-                }
-            }
-
-            Self::IndexedElement {
-                sequence, index, ..
-            } => sequence
-                .elements
+            Self::Storage { slot, name } => slot
                 .borrow()
-                .get(*index)
-                .and_then(|slot| slot.value.clone())
-                .ok_or_else(|| {
-                    RuntimeError::new(format!("use of moved element at index {index}"), span)
+                .with_value(|value| Ok(value.clone()))
+                .map_err(|_| {
+                    RuntimeError::new(format!("cannot access moved value `{name}`"), span)
                 }),
-            Self::DynamicIndexedElement {
-                sequence, index, ..
-            } => rils_execution::value::dynamic_sequence::copy_item(sequence, *index)
-                .map_err(|message| RuntimeError::new(message, span)),
-            Self::Reference { reference } => reference
-                .read()
-                .map_err(|message| RuntimeError::new(message, span)),
+            _ => unreachable!("projected places retain a reference guard"),
         }
     }
 
@@ -417,28 +320,13 @@ impl Place {
                         .map_err(|message| RuntimeError::new(message, span))?,
                 )))
             }
-            Self::Storage { slot, name } => match slot.borrow().read().map_err(|_| {
-                RuntimeError::new(format!("cannot access moved value `{name}`"), span)
-            })? {
-                Value::Reference(reference) => Ok(Some(reference)),
-                _ => Ok(None),
-            },
+            Self::Storage { slot, name } => slot
+                .borrow()
+                .with_value(|value| Ok(value.as_reference()))
+                .map_err(|_| {
+                    RuntimeError::new(format!("cannot access moved value `{name}`"), span)
+                }),
 
-            Self::IndexedElement {
-                sequence,
-                index,
-                mutable,
-                guard,
-                ..
-            } => Ok(Some(Rc::new(
-                ReferenceValue::new_guarded_indexed_element(
-                    sequence.clone(),
-                    *index,
-                    *mutable,
-                    guard.clone(),
-                )
-                .map_err(|message| RuntimeError::new(message, span))?,
-            ))),
             Self::DynamicIndexedElement {
                 sequence,
                 codec,
@@ -484,7 +372,7 @@ impl Interpreter {
                 ..
             } => {
                 let value = self.evaluate(operand, environment.clone())?;
-                let Value::Reference(reference) = value else {
+                let Some(reference) = value.as_reference() else {
                     return Err(RuntimeError::new(
                         "dereference target is not a reference",
                         span,
@@ -518,25 +406,7 @@ impl Interpreter {
                         reference: Rc::new(projected),
                     });
                 }
-                let value = owner.projection_value(span)?;
-                if let Value::Tuple(sequence) = value {
-                    let index = name.parse::<usize>().map_err(|_| {
-                        RuntimeError::new(format!("tuple has no field `{name}`"), span)
-                    })?;
-                    if index >= sequence.elements.borrow().len() {
-                        return Err(RuntimeError::new(
-                            format!("tuple index {index} is out of bounds"),
-                            span,
-                        ));
-                    }
-                    return Ok(Place::IndexedElement {
-                        sequence,
-                        index,
-                        owner: owner_name,
-                        mutable,
-                        guard,
-                    });
-                }
+                let value = owner.projection_receiver(span)?;
                 if let Value::Dynamic(object) = value {
                     let index = object
                         .descriptor()
@@ -570,7 +440,7 @@ impl Interpreter {
                 let mutable = owner.is_mutable();
                 let owner_name = owner.description();
                 let index = self.evaluate(index, environment.clone())?;
-                let Some(index) = index.as_usize() else {
+                let Ok(index) = index.get_cloned::<usize>() else {
                     return Err(RuntimeError::new("collection indices must be usize", span));
                 };
                 if let Some(place) = owner.native_owner(span)?
@@ -615,9 +485,8 @@ impl Interpreter {
                         reference: Rc::new(projected),
                     });
                 }
-                let value = owner.projection_value(span)?;
-                let sequence = match value {
-                    Value::Array(sequence) | Value::Vec(sequence) => sequence,
+                let value = owner.projection_receiver(span)?;
+                match value {
                     Value::Dynamic(sequence)
                         if rils_execution::value::native_layouts::vec::matches(
                             sequence.descriptor().layout().rils_type(),
@@ -633,7 +502,7 @@ impl Interpreter {
                                 span,
                             ));
                         }
-                        return Ok(Place::DynamicIndexedElement {
+                        Ok(Place::DynamicIndexedElement {
                             sequence,
                             codec: {
                                 let (structs, enums) =
@@ -644,28 +513,13 @@ impl Interpreter {
                             owner: owner_name,
                             mutable,
                             guard,
-                        });
+                        })
                     }
-                    value => {
-                        return Err(RuntimeError::new(
-                            format!("type `{}` does not support indexing", value.type_name()),
-                            span,
-                        ));
-                    }
-                };
-                if index >= sequence.elements.borrow().len() {
-                    return Err(RuntimeError::new(
-                        format!("index {index} is out of bounds"),
+                    value => Err(RuntimeError::new(
+                        format!("type `{}` does not support indexing", value.type_name()),
                         span,
-                    ));
+                    )),
                 }
-                Ok(Place::IndexedElement {
-                    sequence,
-                    index,
-                    owner: owner_name,
-                    mutable,
-                    guard,
-                })
             }
             _ => Err(RuntimeError::new(
                 "expression does not refer to an assignable place",

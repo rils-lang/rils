@@ -15,6 +15,49 @@ impl Drop for Probe {
 }
 
 #[test]
+fn native_sequence_storage_is_borrowed_in_place_through_nested_paths() {
+    for length in [0, 1, 3] {
+        let drops = Rc::new(Cell::new(0));
+        let item = DynamicLayout::of::<Probe>(Type::named("Probe"));
+        let layout = DynamicLayout::sequence(Type::named("Items"), item.clone());
+        let fields = (0..length)
+            .map(|index| {
+                DynamicValue::from_rust(
+                    item.clone(),
+                    Probe {
+                        drops: drops.clone(),
+                        text: index.to_string(),
+                    },
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let pointer = fields.as_ptr();
+        let sequence = DynamicValue::sequence(layout.clone(), fields).unwrap();
+        let record =
+            DynamicLayout::record(Type::named("Holder"), vec![("items".into(), layout)]).unwrap();
+        let record = DynamicValue::record(record, vec![sequence]).unwrap();
+        record
+            .view()
+            .field(0)
+            .unwrap()
+            .with_sequence_storage(|items| {
+                assert_eq!(items.len(), length);
+                assert_eq!(items.as_ptr(), pointer);
+                for (index, item) in items.iter().enumerate() {
+                    item.with::<Probe, _>(|value| assert_eq!(value.text, index.to_string()))
+                        .unwrap();
+                }
+            })
+            .unwrap();
+        assert!(record.view().with_sequence_storage(|_| ()).is_err());
+        assert_eq!(drops.get(), 0);
+        drop(record);
+        assert_eq!(drops.get(), length);
+    }
+}
+
+#[test]
 fn native_view_projects_noncopy_generic_compositions_without_moving_them() {
     let drops = Rc::new(Cell::new(0));
     let probe_type = Type::named("Probe");

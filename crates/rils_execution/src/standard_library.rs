@@ -9,10 +9,7 @@ use crate::{
     environment::{Environment, EnvironmentRef},
     source::Span,
     types::Type,
-    value::{
-        EnumType, FieldSlot, HostFunction, IndexedStorage, ModuleValue, StructType, Value,
-        storage::TypedStorageContext,
-    },
+    value::{EnumType, HostFunction, ModuleValue, StructType, Value, storage::TypedStorageContext},
 };
 
 #[doc(hidden)]
@@ -66,8 +63,16 @@ pub fn install(
         associated_types: RefCell::new(HashMap::new()),
     });
 
-    publish(io_module, "ErrorKind", Value::EnumType(error_kind.clone()));
-    publish(io_module, "Error", Value::StructType(error.clone()));
+    publish(
+        io_module,
+        "ErrorKind",
+        crate::value::Declaration::EnumType(error_kind.clone()),
+    );
+    publish(
+        io_module,
+        "Error",
+        crate::value::Declaration::StructType(error.clone()),
+    );
     install_io_functions(io_module, error.clone(), error_kind.clone());
 
     let fs_module = Rc::new(ModuleValue {
@@ -76,7 +81,11 @@ pub fn install(
         public: RefCell::new(HashSet::new()),
     });
     install_fs_functions(&fs_module, error, error_kind);
-    publish(std_module, "fs", Value::Module(fs_module));
+    publish(
+        std_module,
+        "fs",
+        crate::value::Declaration::Module(fs_module),
+    );
 }
 
 fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_kind: Rc<EnumType>) {
@@ -92,7 +101,7 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
                 Ok(line) => Ok(result_ok(
                     &error,
                     &error_kind,
-                    crate::value::native_string(std::string::String::from(line)),
+                    Value::from(crate::value::native_string(std::string::String::from(line))),
                     Type::String,
                 )),
                 Err(source) => Ok(result_error(
@@ -112,7 +121,12 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             let error = error.clone();
             let error_kind = error_kind.clone();
             move |arguments| match native_result(native::write(arguments[0].to_string())) {
-                Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
+                Ok(()) => Ok(result_ok(
+                    &error,
+                    &error_kind,
+                    Value::from(crate::value::native_unit()),
+                    Type::Unit,
+                )),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
@@ -124,7 +138,12 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             let error = error.clone();
             let error_kind = error_kind.clone();
             move |arguments| match native_result(native::write_line(arguments[0].to_string())) {
-                Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
+                Ok(()) => Ok(result_ok(
+                    &error,
+                    &error_kind,
+                    Value::from(crate::value::native_unit()),
+                    Type::Unit,
+                )),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
@@ -134,7 +153,12 @@ fn install_io_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
         "flush",
         host_function("std::io::flush", 0, 0, move |_| {
             match native_result(native::flush()) {
-                Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
+                Ok(()) => Ok(result_ok(
+                    &error,
+                    &error_kind,
+                    Value::from(crate::value::native_unit()),
+                    Type::Unit,
+                )),
                 Err(source) => Ok(result_error(&error, &error_kind, source, None, Type::Unit)),
             }
         }),
@@ -153,8 +177,9 @@ fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             error.clone(),
             error_kind.clone(),
             |path| {
-                native_result(native::read_to_string(path_text(path)))
-                    .map(|text| crate::value::native_string(std::string::String::from(text)))
+                native_result(native::read_to_string(path_text(path))).map(|text| {
+                    Value::from(crate::value::native_string(std::string::String::from(text)))
+                })
             },
         ),
     );
@@ -180,7 +205,10 @@ fn install_fs_functions(module: &Rc<ModuleValue>, error: Rc<StructType>, error_k
             Type::Bool,
             error.clone(),
             error_kind.clone(),
-            |path| native_result(native::try_exists(path_text(path))).map(Value::Bool),
+            |path| {
+                native_result(native::try_exists(path_text(path)))
+                    .map(|value| Value::from(crate::value::native_bool(value)))
+            },
         ),
     );
     publish(
@@ -280,7 +308,12 @@ where
         let path = string_argument(arguments, 0, name)?;
         let text = string_argument(arguments, 1, name)?;
         match operation(std::path::Path::new(&path), &text) {
-            Ok(()) => Ok(result_ok(&error, &error_kind, Value::Unit, Type::Unit)),
+            Ok(()) => Ok(result_ok(
+                &error,
+                &error_kind,
+                Value::from(crate::value::native_unit()),
+                Type::Unit,
+            )),
             Err(source) => Ok(result_error(
                 &error,
                 &error_kind,
@@ -302,7 +335,7 @@ where
     F: Fn(&std::path::Path) -> std::io::Result<()> + 'static,
 {
     fs_function(name, Type::Unit, error, error_kind, move |path| {
-        operation(path).map(|()| Value::Unit)
+        operation(path).map(|()| Value::from(crate::value::native_unit()))
     })
 }
 
@@ -312,7 +345,7 @@ fn host_function(
     max_arity: usize,
     function: impl Fn(&[Value]) -> Result<Value, String> + 'static,
 ) -> Value {
-    Value::HostFunction(Rc::new(HostFunction {
+    Value::from_callable(Rc::new(HostFunction {
         name: name.into(),
         min_arity,
         max_arity,
@@ -336,7 +369,8 @@ pub fn bytecode_host_functions() -> Vec<(String, Rc<HostFunction>)> {
     install(&Environment::global(), &std, &io);
 
     let mut functions = Vec::new();
-    let Some(Value::Module(fs)) = std.members.borrow().get("fs") else {
+    let Some(crate::value::Declaration::Module(fs)) = std.members.borrow().get_declaration("fs")
+    else {
         return functions;
     };
     for declaration in rils_builtins::BUILTINS {
@@ -351,14 +385,19 @@ pub fn bytecode_host_functions() -> Vec<(String, Rc<HostFunction>)> {
             "std::fs" => &fs,
             _ => continue,
         };
-        if let Some(Value::HostFunction(function)) = source.members.borrow().get(name) {
+        if let Some(function) = source
+            .members
+            .borrow()
+            .get(name)
+            .and_then(|value| value.as_callable::<HostFunction>())
+        {
             functions.push((declaration.path.to_owned(), function));
         }
     }
     functions
 }
 
-fn publish(module: &Rc<ModuleValue>, name: &str, value: Value) {
+fn publish(module: &Rc<ModuleValue>, name: &str, value: impl Into<crate::value::Binding>) {
     module.members.borrow_mut().define(name, value, false, None);
     module.public.borrow_mut().insert(name.into());
 }
@@ -368,7 +407,7 @@ fn string_argument(
     index: usize,
     function: &str,
 ) -> Result<std::string::String, String> {
-    arguments[index].as_string().ok_or_else(|| {
+    arguments[index].get_cloned::<String>().ok().ok_or_else(|| {
         format!(
             "std::fs::{function} argument {} must be string, found {}",
             index + 1,
@@ -432,14 +471,14 @@ fn io_error(
         ("kind".into(), kind),
         (
             "message".into(),
-            crate::value::native_string(source.to_string()),
+            Value::from(crate::value::native_string(source.to_string())),
         ),
         (
             "path".into(),
             storage
                 .construct_option(
                     &Type::Option(Box::new(Type::String)),
-                    path.map(crate::value::native_string),
+                    path.map(|text| crate::value::native_string(text).into()),
                 )
                 .expect("standard library error path matches its declaration"),
         ),
@@ -450,16 +489,28 @@ fn io_error(
 }
 
 fn string_vec(values: Vec<String>) -> Value {
-    Value::Vec(Rc::new(IndexedStorage {
-        active_iterators: std::cell::Cell::new(0),
-        elements: RefCell::new(
-            values
-                .into_iter()
-                .map(|value| FieldSlot::new(Type::String, crate::value::native_string(value)))
-                .collect(),
-        ),
-        element_type: RefCell::new(Some(Type::String)),
-    }))
+    let context = crate::runtime_builtins::NativeOwnedContext::default();
+    let ty = Type::Named {
+        name: "Vec".into(),
+        arguments: vec![Type::String],
+    };
+    let layout = context
+        .layout(&ty)
+        .expect("standard library string Vec layout");
+    let item = layout.sequence_item().expect("Vec item layout");
+    let values = values
+        .into_iter()
+        .map(|value| {
+            crate::value::record_codec::into_native(
+                crate::value::native_string(value).into(),
+                item.clone(),
+            )
+            .expect("standard library string payload")
+        })
+        .collect();
+    let payload = rils_value::DynamicValue::sequence(layout, values)
+        .expect("standard library string Vec payload");
+    crate::value::record_codec::from_native(payload).expect("standard library string Vec value")
 }
 
 fn error_kind_name(kind: std::io::ErrorKind) -> &'static str {

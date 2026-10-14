@@ -86,13 +86,18 @@ fn all_shapes_construct_native_instances_without_legacy_children() {
     for variant in ["Empty", "Tuple", "Record"] {
         let value = match variant {
             "Empty" => context.construct_unit_variant(&ty, variant),
-            "Tuple" => {
-                context.construct_tuple_variant(&ty, variant, vec![Value::from_string("owned")])
-            }
+            "Tuple" => context.construct_tuple_variant(
+                &ty,
+                variant,
+                vec![Value::from(rils_execution::value::native_string("owned"))],
+            ),
             _ => context.construct_record(
                 &ty,
                 Some(variant),
-                HashMap::from([("item".into(), Value::from_string("owned"))]),
+                HashMap::from([(
+                    "item".into(),
+                    Value::from(rils_execution::value::native_string("owned")),
+                )]),
             ),
         }
         .unwrap();
@@ -113,7 +118,8 @@ fn all_shapes_construct_native_instances_without_legacy_children() {
                     .unwrap()
                     .take()
                     .unwrap()
-                    .as_string()
+                    .get_cloned::<String>()
+                    .ok()
                     .as_deref(),
                 Some("owned")
             );
@@ -148,8 +154,14 @@ fn constructors_reject_unresolved_types_missing_fields_and_wrong_variant_shapes(
     let holder = generic("Holder", Type::I32);
     for fields in [
         HashMap::new(),
-        HashMap::from([("wrong".into(), Value::from_i32(42))]),
-        HashMap::from([("item".into(), Value::from_string("wrong type"))]),
+        HashMap::from([(
+            "wrong".into(),
+            Value::from(rils_execution::value::native_i32(42)),
+        )]),
+        HashMap::from([(
+            "item".into(),
+            Value::from(rils_execution::value::native_string("wrong type")),
+        )]),
     ] {
         assert!(context.construct_record(&holder, None, fields).is_err());
     }
@@ -209,7 +221,7 @@ fn owned_host_children_preserve_identity_and_drop_once_on_success_or_failure() {
                 payload: Rc::new(Probe(other_drops.clone())),
             }))
         } else {
-            Value::from_i32(42)
+            Value::from(rils_execution::value::native_i32(42))
         };
         let result = context.construct_record(
             &Type::named("Pair"),
@@ -247,7 +259,10 @@ fn shared_non_copy_input_is_rejected_without_moving_original_children() {
         .construct_record(
             &child_type,
             None,
-            HashMap::from([("item".into(), Value::from_string("original"))]),
+            HashMap::from([(
+                "item".into(),
+                Value::from(rils_execution::value::native_string("original")),
+            )]),
         )
         .unwrap();
     assert!(
@@ -265,7 +280,8 @@ fn shared_non_copy_input_is_rejected_without_moving_original_children() {
             .unwrap()
             .take()
             .unwrap()
-            .as_string()
+            .get_cloned::<String>()
+            .ok()
             .as_deref(),
         Some("original")
     );

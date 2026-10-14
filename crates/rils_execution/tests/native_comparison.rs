@@ -8,8 +8,8 @@ use rils_execution::{
     environment::StorageSlot,
     runtime_builtins::call_native_symbol,
     value::{
-        FieldSlot, IndexedStorage, ReferenceValue, equality::borrowed_equal,
-        record_codec::NativeRecordCodec, record_layout::RecordLayoutResolver,
+        ReferenceValue, equality::borrowed_equal, record_codec::NativeRecordCodec,
+        record_layout::RecordLayoutResolver,
     },
 };
 use rils_stdlib::stdlib::string::String as NativeString;
@@ -28,10 +28,9 @@ fn native(input: Value, ty: &Type) -> Value {
 
 fn some(input: Value, ty: &Type) -> Value {
     native(
-        Value::Option {
-            value: Some(Rc::new(input)),
-            element_type: Some(ty.clone()),
-        },
+        rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+            .construct_option(&Type::Option(Box::new(ty.clone())), Some(input))
+            .unwrap(),
         &Type::Option(Box::new(ty.clone())),
     )
 }
@@ -41,7 +40,7 @@ fn reference(input: Value, mutable: bool) -> (Value, Rc<RefCell<StorageSlot>>) {
     slot.initialize(input);
     let slot = Rc::new(RefCell::new(slot));
     (
-        Value::Reference(Rc::new(ReferenceValue::new_storage(slot.clone(), mutable))),
+        Value::from_reference(Rc::new(ReferenceValue::new_storage(slot.clone(), mutable))),
         slot,
     )
 }
@@ -49,107 +48,114 @@ fn reference(input: Value, mutable: bool) -> (Value, Rc<RefCell<StorageSlot>>) {
 #[test]
 fn every_scalar_compares_directly_and_inside_native_sums() {
     for (left, equal, different, ty) in [
-        (Value::Unit, Value::Unit, None, Type::Unit),
         (
-            Value::Bool(true),
-            Value::Bool(true),
-            Some(Value::Bool(false)),
+            Value::from(rils_execution::value::native_unit()),
+            Value::from(rils_execution::value::native_unit()),
+            None,
+            Type::Unit,
+        ),
+        (
+            Value::from(rils_execution::value::native_bool(true)),
+            Value::from(rils_execution::value::native_bool(true)),
+            Some(Value::from(rils_execution::value::native_bool(false))),
             Type::Bool,
         ),
         (
-            Value::from_i8(-7),
-            Value::from_i8(-7),
-            Some(Value::from_i8(8)),
+            Value::from(rils_execution::value::native_i8(-7)),
+            Value::from(rils_execution::value::native_i8(-7)),
+            Some(Value::from(rils_execution::value::native_i8(8))),
             Type::Integer(IntegerType::I8),
         ),
         (
-            Value::from_i16(-7),
-            Value::I16(-7),
-            Some(Value::from_i16(8)),
+            Value::from(rils_execution::value::native_i16(-7)),
+            Value::from(rils_execution::value::native_i16(-7)),
+            Some(Value::from(rils_execution::value::native_i16(8))),
             Type::Integer(IntegerType::I16),
         ),
         (
-            Value::from_i32(-7),
-            Value::from_i32(-7),
-            Some(Value::from_i32(8)),
+            Value::from(rils_execution::value::native_i32(-7)),
+            Value::from(rils_execution::value::native_i32(-7)),
+            Some(Value::from(rils_execution::value::native_i32(8))),
             Type::I32,
         ),
         (
-            Value::from_i64(-7),
-            Value::I64(-7),
-            Some(Value::from_i64(8)),
+            Value::from(rils_execution::value::native_i64(-7)),
+            Value::from(rils_execution::value::native_i64(-7)),
+            Some(Value::from(rils_execution::value::native_i64(8))),
             Type::Integer(IntegerType::I64),
         ),
         (
-            Value::from_i128(-7),
-            Value::I128(-7),
-            Some(Value::from_i128(8)),
+            Value::from(rils_execution::value::native_i128(-7)),
+            Value::from(rils_execution::value::native_i128(-7)),
+            Some(Value::from(rils_execution::value::native_i128(8))),
             Type::Integer(IntegerType::I128),
         ),
         (
-            Value::from_isize(-7),
-            Value::Isize(-7),
-            Some(Value::from_isize(8)),
+            Value::from(rils_execution::value::native_isize(-7)),
+            Value::from(rils_execution::value::native_isize(-7)),
+            Some(Value::from(rils_execution::value::native_isize(8))),
             Type::Integer(IntegerType::Isize),
         ),
         (
-            Value::from_u8(7),
-            Value::U8(7),
-            Some(Value::from_u8(8)),
+            Value::from(rils_execution::value::native_u8(7)),
+            Value::from(rils_execution::value::native_u8(7)),
+            Some(Value::from(rils_execution::value::native_u8(8))),
             Type::Integer(IntegerType::U8),
         ),
         (
-            Value::from_u16(7),
-            Value::U16(7),
-            Some(Value::from_u16(8)),
+            Value::from(rils_execution::value::native_u16(7)),
+            Value::from(rils_execution::value::native_u16(7)),
+            Some(Value::from(rils_execution::value::native_u16(8))),
             Type::Integer(IntegerType::U16),
         ),
         (
-            Value::from_u32(7),
-            Value::U32(7),
-            Some(Value::from_u32(8)),
+            Value::from(rils_execution::value::native_u32(7)),
+            Value::from(rils_execution::value::native_u32(7)),
+            Some(Value::from(rils_execution::value::native_u32(8))),
             Type::Integer(IntegerType::U32),
         ),
         (
-            Value::from_u64(7),
-            Value::U64(7),
-            Some(Value::from_u64(8)),
+            Value::from(rils_execution::value::native_u64(7)),
+            Value::from(rils_execution::value::native_u64(7)),
+            Some(Value::from(rils_execution::value::native_u64(8))),
             Type::Integer(IntegerType::U64),
         ),
         (
-            Value::from_u128(7),
-            Value::U128(7),
-            Some(Value::from_u128(8)),
+            Value::from(rils_execution::value::native_u128(7)),
+            Value::from(rils_execution::value::native_u128(7)),
+            Some(Value::from(rils_execution::value::native_u128(8))),
             Type::Integer(IntegerType::U128),
         ),
         (
-            Value::from_usize(7),
-            Value::Usize(7),
-            Some(Value::from_usize(8)),
+            Value::from(rils_execution::value::native_usize(7)),
+            Value::from(rils_execution::value::native_usize(7)),
+            Some(Value::from(rils_execution::value::native_usize(8))),
             Type::USIZE,
         ),
         (
-            Value::from_f32(1.5),
-            Value::F32(1.5),
-            Some(Value::from_f32(2.0)),
+            Value::from(rils_execution::value::native_f32(1.5)),
+            Value::from(rils_execution::value::native_f32(1.5)),
+            Some(Value::from(rils_execution::value::native_f32(2.0))),
             Type::Float(FloatType::F32),
         ),
         (
-            Value::from_f64(1.5),
-            Value::F64(1.5),
-            Some(Value::from_f64(2.0)),
+            Value::from(rils_execution::value::native_f64(1.5)),
+            Value::from(rils_execution::value::native_f64(1.5)),
+            Some(Value::from(rils_execution::value::native_f64(2.0))),
             Type::F64,
         ),
         (
-            Value::from_char('x'),
-            Value::Char('x'),
-            Some(Value::from_char('y')),
+            Value::from(rils_execution::value::native_char('x')),
+            Value::from(rils_execution::value::native_char('x')),
+            Some(Value::from(rils_execution::value::native_char('y'))),
             Type::Char,
         ),
         (
-            Value::from_string("same"),
-            Value::from_string("same"),
-            Some(Value::from_string("different")),
+            Value::from(rils_execution::value::native_string("same")),
+            Value::from(rils_execution::value::native_string("same")),
+            Some(Value::from(rils_execution::value::native_string(
+                "different",
+            ))),
             Type::String,
         ),
     ] {
@@ -159,7 +165,7 @@ fn every_scalar_compares_directly_and_inside_native_sums() {
             "{ty}"
         );
         assert_eq!(
-            some(left.clone(), &ty).try_equal(&some(equal, &ty)),
+            some(left.clone_owned().unwrap(), &ty).try_equal(&some(equal, &ty)),
             Ok(true),
             "Option<{ty}>"
         );
@@ -177,10 +183,9 @@ fn every_scalar_compares_directly_and_inside_native_sums() {
 fn option_and_result_comparison_checks_tags_and_full_type_witnesses() {
     let none = |ty: &Type| {
         native(
-            Value::Option {
-                value: None,
-                element_type: Some(ty.clone()),
-            },
+            rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+                .construct_option(&Type::Option(Box::new(ty.clone())), None)
+                .unwrap(),
             &Type::Option(Box::new(ty.clone())),
         )
     };
@@ -190,22 +195,20 @@ fn option_and_result_comparison_checks_tags_and_full_type_witnesses() {
     );
     assert_eq!(none(&Type::String).try_equal(&none(&Type::I32)), Ok(false));
     assert_eq!(
-        none(&Type::String).try_equal(&some(Value::from_string("text"), &Type::String)),
+        none(&Type::String).try_equal(&some(
+            Value::from(rils_execution::value::native_string("text")),
+            &Type::String
+        )),
         Ok(false)
     );
     let result = |ok: bool, text: &str| {
-        native(
-            Value::Result {
-                value: if ok {
-                    Ok(Rc::new(Value::from_string(text)))
-                } else {
-                    Err(Rc::new(Value::from_string(text)))
-                },
-                ok_type: Some(Type::String),
-                error_type: Some(Type::String),
-            },
-            &Type::Result(Box::new(Type::String), Box::new(Type::String)),
-        )
+        let item = Value::from(rils_execution::value::native_string(text));
+        rils_execution::value::storage::TypedStorageContext::new(&[], &[])
+            .construct_result(
+                &Type::Result(Box::new(Type::String), Box::new(Type::String)),
+                if ok { Ok(item) } else { Err(item) },
+            )
+            .unwrap()
     };
     for (left, right, expected) in [
         (result(true, "x"), result(true, "x"), true),
@@ -225,8 +228,14 @@ fn sum_comparison_preserves_float_partial_equality() {
         (f64::INFINITY, f64::INFINITY, true),
     ] {
         assert_eq!(
-            some(Value::from_f64(left), &Type::F64)
-                .try_equal(&some(Value::from_f64(right), &Type::F64)),
+            some(
+                Value::from(rils_execution::value::native_f64(left)),
+                &Type::F64
+            )
+            .try_equal(&some(
+                Value::from(rils_execution::value::native_f64(right)),
+                &Type::F64
+            )),
             Ok(expected)
         );
     }
@@ -241,7 +250,10 @@ fn generated_scalar_equality_accepts_registered_borrowed_representations() {
         )
         .unwrap(),
     );
-    let raw = native(Value::from_i32(42), &Type::I32);
+    let raw = native(
+        Value::from(rils_execution::value::native_i32(42)),
+        &Type::I32,
+    );
     assert_eq!(wrapped.try_equal(&raw), Ok(true));
     assert_eq!(raw.try_equal(&wrapped), Ok(true));
 }
@@ -389,10 +401,13 @@ fn vec_contains_reads_borrowed_string_and_record_needles() {
     );
     let (receiver, slot) = reference(values, true);
     for (text, expected) in [("needle", true), ("absent", false)] {
-        let (needle, _) = reference(Value::from_string(text), false);
+        let (needle, _) = reference(
+            Value::from(rils_execution::value::native_string(text)),
+            false,
+        );
         assert_eq!(
             call_native_symbol(symbol, &[receiver.clone(), needle]).unwrap(),
-            Ok(Value::Bool(expected))
+            Ok(Value::from(rils_execution::value::native_bool(expected)))
         );
     }
     drop(receiver);
@@ -418,48 +433,19 @@ fn vec_contains_reads_borrowed_string_and_record_needles() {
     );
     assert_eq!(
         call_native_symbol(symbol, &[receiver, needle]).unwrap(),
-        Ok(Value::Bool(true))
-    );
-}
-
-#[test]
-fn native_and_compatibility_aggregates_compare_through_original_elements() {
-    let original = Value::Vec(Rc::new(IndexedStorage {
-        elements: RefCell::new(vec![FieldSlot::new(
-            Type::String,
-            Value::from_string("same"),
-        )]),
-        element_type: RefCell::new(Some(Type::String)),
-        active_iterators: Cell::new(0),
-    }));
-    let ty = Type::Named {
-        name: "Vec".into(),
-        arguments: vec![Type::String],
-    };
-    let converted = native(original.clone_owned().unwrap(), &ty);
-    assert_eq!(converted.try_equal(&original), Ok(true));
-    assert_eq!(original.try_equal(&converted), Ok(true));
-    let Value::Vec(elements) = original else {
-        unreachable!()
-    };
-    elements.elements.borrow_mut()[0].value = None;
-    assert!(
-        converted
-            .try_equal(&Value::Vec(elements))
-            .unwrap_err()
-            .contains("moved")
+        Ok(Value::from(rils_execution::value::native_bool(true)))
     );
 }
 
 #[test]
 fn native_aggregate_reference_leaves_preserve_reference_identity() {
-    let (reference, _) = reference(Value::from_i32(42), false);
+    let (reference, _) = reference(Value::from(rils_execution::value::native_i32(42)), false);
     let separate = reference.clone();
     let ty = Type::of_value(&reference).unwrap();
     let option = some(reference.clone(), &ty);
     assert_eq!(option.try_equal(&some(separate, &ty)), Ok(true));
     // A second reference to an equal value has a different reference identity.
-    let (other, _) = self::reference(Value::from_i32(42), false);
+    let (other, _) = self::reference(Value::from(rils_execution::value::native_i32(42)), false);
     assert_eq!(option.try_equal(&some(other, &ty)), Ok(false));
     assert_eq!(reference.try_equal(&reference), Ok(true));
 }
@@ -495,8 +481,11 @@ fn comparison_rejects_native_fields_that_have_been_moved() {
 
 #[test]
 fn comparison_reports_conflicting_access_and_releases_read_guards() {
-    let (borrowed, slot) = reference(Value::from_string("original"), true);
-    let other = Value::from_string("original");
+    let (borrowed, slot) = reference(
+        Value::from(rils_execution::value::native_string("original")),
+        true,
+    );
+    let other = Value::from(rils_execution::value::native_string("original"));
     {
         let _writing = slot.borrow_mut();
         assert!(
@@ -506,24 +495,13 @@ fn comparison_reports_conflicting_access_and_releases_read_guards() {
         );
     }
     assert_eq!(borrowed_equal(&borrowed, &other), Ok(true));
-    let Value::Reference(reference) = &borrowed else {
+    let Some(reference) = borrowed.as_reference() else {
         unreachable!()
     };
-    reference.write(Value::from_string("changed")).unwrap();
+    reference
+        .write(Value::from(rils_execution::value::native_string("changed")))
+        .unwrap();
     assert_eq!(borrowed_equal(&borrowed, &other), Ok(false));
-}
-
-#[test]
-fn mixed_sum_comparison_keeps_reference_payloads_as_values() {
-    let (item, _) = reference(Value::from_i32(42), false);
-    let ty = Type::of_value(&item).unwrap();
-    let converted = some(item.clone(), &ty);
-    let original = Value::Option {
-        value: Some(Rc::new(item)),
-        element_type: Some(ty),
-    };
-    assert_eq!(converted.try_equal(&original), Ok(true));
-    assert_eq!(original.try_equal(&converted), Ok(true));
 }
 
 #[test]
@@ -534,28 +512,28 @@ fn vec_contains_dereferences_the_outer_argument_but_preserves_reference_elements
         .unwrap()
         .native_symbol
         .unwrap();
-    let (item, _) = reference(Value::from_i32(42), false);
+    let (item, _) = reference(Value::from(rils_execution::value::native_i32(42)), false);
     let ty = Type::of_value(&item).unwrap();
-    let original = Value::Vec(Rc::new(IndexedStorage {
-        elements: RefCell::new(vec![FieldSlot::new(ty.clone(), item.clone())]),
-        element_type: RefCell::new(Some(ty.clone())),
-        active_iterators: Cell::new(0),
-    }));
-    let converted = native(
-        original.clone_owned().unwrap(),
-        &Type::Named {
+    let item_layout = RecordLayoutResolver::new(&[]).resolve(&ty).unwrap();
+    let layout = DynamicLayout::sequence(
+        Type::Named {
             name: "Vec".into(),
             arguments: vec![ty],
         },
+        item_layout.clone(),
     );
-    for collection in [original, converted] {
+    let payload = NativeRecordCodec::new()
+        .into_native(item.clone(), item_layout)
+        .unwrap();
+    let collection = value(DynamicValue::sequence(layout, vec![payload]).unwrap());
+    {
         let (receiver, _) = reference(collection, false);
-        let (other, _) = reference(Value::from_i32(42), false);
+        let (other, _) = reference(Value::from(rils_execution::value::native_i32(42)), false);
         for (needle, expected) in [(item.clone(), true), (other, false)] {
             let (argument, _) = reference(needle, false);
             assert_eq!(
                 call_native_symbol(symbol, &[receiver.clone(), argument]).unwrap(),
-                Ok(Value::Bool(expected))
+                Ok(Value::from(rils_execution::value::native_bool(expected)))
             );
         }
     }

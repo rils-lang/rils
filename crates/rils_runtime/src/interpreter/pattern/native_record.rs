@@ -34,7 +34,7 @@ pub(super) fn matches(
                     return Some(false);
                 }
             }
-            if borrowed || matches!(value, Value::Reference(_)) {
+            if borrowed || value.as_reference().is_some() {
                 bindings.extend(probes);
                 return Some(true);
             }

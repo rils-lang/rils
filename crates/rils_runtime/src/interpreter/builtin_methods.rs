@@ -30,11 +30,3 @@ impl Interpreter {
         }
     }
 }
-
-pub(super) fn format_ok() -> Value {
-    Value::Result {
-        value: Ok(Rc::new(Value::Unit)),
-        ok_type: Some(Type::Unit),
-        error_type: Some(Type::named("FormatError")),
-    }
-}

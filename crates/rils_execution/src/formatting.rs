@@ -8,6 +8,35 @@ pub use rils_stdlib::stdlib::fmt::FormatterBuffer;
 
 use crate::Value;
 
+/// Prepare the shared receiver expected by a formatting trait method.
+pub fn receiver_reference(value: &Value) -> Result<Value, String> {
+    use crate::value::{ReferenceValue, borrowed::Read};
+    if let Some(mut reference) = value.as_reference() {
+        loop {
+            let nested = reference.with_borrowed_target(|target| match target {
+                Read::View(view) if view.layout()?.is_rust_type::<Rc<ReferenceValue>>() => {
+                    view.with_rust::<Rc<ReferenceValue>, _>(Rc::clone).map(Some)
+                }
+                Read::Leaf(leaf) if leaf.is_rust_type::<Rc<ReferenceValue>>() => {
+                    leaf.with_rust::<Rc<ReferenceValue>, _>(Rc::clone).map(Some)
+                }
+                _ => Ok(None),
+            })??;
+            match nested {
+                Some(inner) => reference = inner,
+                None => return Ok(Value::from_reference(reference)),
+            }
+        }
+    }
+    let slot = Rc::new(std::cell::RefCell::new(
+        crate::environment::StorageSlot::uninitialized(false),
+    ));
+    slot.borrow_mut().initialize(value.clone());
+    Ok(Value::from_reference(Rc::new(ReferenceValue::new_storage(
+        slot, false,
+    ))))
+}
+
 pub fn formatter_value(buffer: Rc<FormatterBuffer>) -> Result<Value, String> {
     use rils_value::{DynamicLayout, DynamicType, DynamicValue};
     let ty = crate::Type::named("Formatter");
@@ -20,27 +49,17 @@ pub fn formatter_value(buffer: Rc<FormatterBuffer>) -> Result<Value, String> {
 }
 
 pub fn buffer_from_value(value: &Value) -> Result<Rc<FormatterBuffer>, String> {
-    let mut value = value.clone();
-    while let Value::Reference(reference) = value {
-        value = reference.read()?;
-    }
-    match value {
-        Value::Dynamic(object) => object
-            .with(|value| {
-                value
-                    .view()
-                    .with_rust::<rils_stdlib::stdlib::fmt::Formatter, _>(|formatter| {
-                        formatter.buffer()
-                    })
-            })
-            .and_then(|value| value),
-        Value::HostObject(object) => object
+    use crate::value::borrowed::{Read, with_referent};
+    use rils_stdlib::stdlib::fmt::Formatter;
+    with_referent(value, |value| match value {
+        Read::View(view) => view.with_rust::<Formatter, _>(Formatter::buffer),
+        Read::Leaf(leaf) => leaf.with_rust::<Formatter, _>(Formatter::buffer),
+        Read::Host(object) => object
             .payload
             .downcast_ref::<Rc<FormatterBuffer>>()
             .cloned()
             .ok_or_else(|| "invalid Formatter payload".into()),
-        _ => Err("formatter receiver is not a Formatter".into()),
-    }
+    })?
 }
 
 pub fn format_arguments(format: &str, arguments: &[Value]) -> Result<String, String> {
@@ -92,52 +111,28 @@ fn render_value(value: &Value, spec: &FormatSpec) -> Result<String, String> {
 }
 
 fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
-    if let Value::Reference(reference) = value {
-        return display(&reference.read()?, spec);
-    }
-    if !matches!(value, Value::Native(object) if object.descriptor().has_method(crate::value::native_ops::DISPLAY))
-        && !matches!(
-            value,
-            Value::Unit
-                | Value::Bool(_)
-                | Value::Char(_)
-                | Value::I16(_)
-                | Value::I64(_)
-                | Value::I128(_)
-                | Value::Isize(_)
-                | Value::U8(_)
-                | Value::U16(_)
-                | Value::U32(_)
-                | Value::U64(_)
-                | Value::U128(_)
-                | Value::Usize(_)
-                | Value::F32(_)
-                | Value::F64(_)
-                | Value::HostObject(_)
-        )
+    let receiver_type = crate::runtime_type::receiver_type(value);
+    if !crate::value::native_ops::has_method(value, crate::value::native_ops::DISPLAY)?
+        && !receiver_type.as_ref().is_some_and(|ty| {
+            rils_frontend::format_traits::implements(ty, "Display", &|_, _| false)
+        })
+        && value.host_type_definition()?.is_none()
     {
         return Err(format!(
             "type `{}` does not implement required trait `Display`",
             value.type_name()
         ));
     }
-    let rendered = match (value, spec.precision) {
-        (Value::Native(_), Some(precision)) if value.as_f32().is_some() => Ok(format!(
-            "{:.precision$}",
-            value.as_f32().expect("checked f32 payload")
-        )),
-        (Value::Native(_), Some(precision)) if value.as_f64().is_some() => Ok(format!(
-            "{:.precision$}",
-            value.as_f64().expect("checked f64 payload")
-        )),
-        (Value::F32(value), Some(precision)) => Ok(format!("{value:.precision$}")),
-        (Value::F64(value), Some(precision)) => Ok(format!("{value:.precision$}")),
-        (value, Some(precision)) if value.as_string().is_some() => Ok(value
-            .as_string()
-            .expect("checked string payload")
-            .chars()
-            .take(precision)
-            .collect()),
+    let rendered = match (receiver_type, spec.precision) {
+        (Some(crate::Type::Float(crate::FloatType::F32)), Some(precision)) => {
+            Ok(format!("{:.precision$}", value.get_cloned::<f32>()?))
+        }
+        (Some(crate::Type::Float(crate::FloatType::F64)), Some(precision)) => {
+            Ok(format!("{:.precision$}", value.get_cloned::<f64>()?))
+        }
+        (Some(crate::Type::String), Some(precision)) => {
+            value.with_ref::<String, _>(|text| text.chars().take(precision).collect())
+        }
         (_, Some(_)) => Err(format!(
             "format precision is not supported for `{}`",
             value.type_name()
@@ -152,37 +147,36 @@ fn display(value: &Value, spec: &FormatSpec) -> Result<String, String> {
 }
 
 fn is_nonnegative_number(value: &Value) -> bool {
-    if let Some(value) = crate::numeric::i8_payload(value) {
+    if let Ok(value) = value.get_cloned::<i8>() {
         return value >= 0;
     }
-    if let Some(value) = crate::numeric::i32_payload(value) {
+    if let Ok(value) = value.get_cloned::<i16>() {
         return value >= 0;
     }
-    if crate::numeric::usize_payload(value).is_some() {
-        return true;
+    if let Ok(value) = value.get_cloned::<i32>() {
+        return value >= 0;
     }
-    if let Some(value) = value.as_f32() {
+    if let Ok(value) = value.get_cloned::<i64>() {
+        return value >= 0;
+    }
+    if let Ok(value) = value.get_cloned::<i128>() {
+        return value >= 0;
+    }
+    if let Ok(value) = value.get_cloned::<isize>() {
+        return value >= 0;
+    }
+    if let Ok(value) = value.get_cloned::<f32>() {
         return value >= 0.0;
     }
-    if let Some(value) = value.as_f64() {
+    if let Ok(value) = value.get_cloned::<f64>() {
         return value >= 0.0;
     }
-    let lowered = crate::numeric::lower_migrated_integer(value.clone());
-    match &lowered {
-        Value::I16(value) => *value >= 0,
-        Value::I64(value) => *value >= 0,
-        Value::I128(value) => *value >= 0,
-        Value::Isize(value) => *value >= 0,
-        Value::U8(_)
-        | Value::U16(_)
-        | Value::U32(_)
-        | Value::U64(_)
-        | Value::U128(_)
-        | Value::Usize(_) => true,
-        Value::F32(value) => *value >= 0.0,
-        Value::F64(value) => *value >= 0.0,
-        _ => false,
-    }
+    value.get_cloned::<u8>().ok().is_some()
+        || value.get_cloned::<u16>().ok().is_some()
+        || value.get_cloned::<u32>().ok().is_some()
+        || value.get_cloned::<u64>().ok().is_some()
+        || value.get_cloned::<u128>().ok().is_some()
+        || value.get_cloned::<usize>().ok().is_some()
 }
 
 #[derive(Clone, Copy)]
@@ -208,34 +202,46 @@ fn integer_format(value: &Value, kind: IntegerFormat, alternate: bool) -> Result
             }
         }};
     }
-    if let Some(value) = crate::numeric::i8_payload(value) {
+    if let Ok(value) = value.get_cloned::<i8>() {
         return Ok(render!(value));
     }
-    if let Some(value) = crate::numeric::i32_payload(value) {
+    if let Ok(value) = value.get_cloned::<i16>() {
         return Ok(render!(value));
     }
-    if let Some(value) = crate::numeric::usize_payload(value) {
+    if let Ok(value) = value.get_cloned::<i32>() {
         return Ok(render!(value));
     }
-    let lowered = crate::numeric::lower_migrated_integer(value.clone());
-    Ok(match &lowered {
-        Value::I16(value) => render!(value),
-        Value::I64(value) => render!(value),
-        Value::I128(value) => render!(value),
-        Value::Isize(value) => render!(value),
-        Value::U8(value) => render!(value),
-        Value::U16(value) => render!(value),
-        Value::U32(value) => render!(value),
-        Value::U64(value) => render!(value),
-        Value::U128(value) => render!(value),
-        Value::Usize(value) => render!(value),
-        _ => {
-            return Err(format!(
-                "integer formatting is not supported for `{}`",
-                value.type_name()
-            ));
-        }
-    })
+    if let Ok(value) = value.get_cloned::<i64>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<i128>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<isize>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<u8>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<u16>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<u32>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<u64>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<u128>() {
+        return Ok(render!(value));
+    }
+    if let Ok(value) = value.get_cloned::<usize>() {
+        return Ok(render!(value));
+    }
+    Err(format!(
+        "integer formatting is not supported for `{}`",
+        value.type_name()
+    ))
 }
 
 fn float_format(value: &Value, upper: bool, precision: Option<usize>) -> Result<String, String> {
@@ -249,20 +255,16 @@ fn float_format(value: &Value, upper: bool, precision: Option<usize>) -> Result<
             }
         }};
     }
-    if let Some(value) = value.as_f32() {
+    if let Ok(value) = value.get_cloned::<f32>() {
         return Ok(render!(value));
     }
-    if let Some(value) = value.as_f64() {
+    if let Ok(value) = value.get_cloned::<f64>() {
         return Ok(render!(value));
     }
-    match value {
-        Value::F32(value) => Ok(render!(value)),
-        Value::F64(value) => Ok(render!(value)),
-        _ => Err(format!(
-            "exponential formatting is not supported for `{}`",
-            value.type_name()
-        )),
-    }
+    Err(format!(
+        "exponential formatting is not supported for `{}`",
+        value.type_name()
+    ))
 }
 
 fn apply_width(rendered: String, spec: &FormatSpec) -> String {
@@ -302,6 +304,17 @@ fn apply_width(rendered: String, spec: &FormatSpec) -> String {
     )
 }
 
+/// The standard formatter success result uses the registered native layouts.
+pub fn format_ok() -> Result<Value, String> {
+    crate::value::storage::TypedStorageContext::new(&[], &[]).construct_result(
+        &crate::Type::Result(
+            Box::new(crate::Type::Unit),
+            Box::new(crate::Type::named("FormatError")),
+        ),
+        Ok(Value::from(crate::value::native_unit())),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,21 +324,32 @@ mod tests {
         assert_eq!(
             format_arguments(
                 "value={:+6} hex={:#x} float={:.2}",
-                &[Value::from_i32(12), Value::U8(15), Value::from_f64(1.234)]
+                &[
+                    Value::from(crate::value::native_i32(12)),
+                    Value::from(crate::value::native_u8(15)),
+                    Value::from(crate::value::native_f64(1.234))
+                ]
             )
             .unwrap(),
             "value=   +12 hex=0xf float=1.23"
         );
         assert_eq!(
-            format_arguments("{:+06} {:#06x}", &[Value::from_i32(12), Value::U8(15)]).unwrap(),
+            format_arguments(
+                "{:+06} {:#06x}",
+                &[
+                    Value::from(crate::value::native_i32(12)),
+                    Value::from(crate::value::native_u8(15))
+                ]
+            )
+            .unwrap(),
             "+00012 0x000f"
         );
         assert_eq!(
-            format_arguments("{:?}", &[Value::from_string("hello")]).unwrap(),
+            format_arguments("{:?}", &[Value::from(crate::value::native_string("hello"))]).unwrap(),
             "\"hello\""
         );
         assert_eq!(
-            format_arguments("{:.2}", &[Value::from_f32(1.234)]).unwrap(),
+            format_arguments("{:.2}", &[Value::from(crate::value::native_f32(1.234))]).unwrap(),
             "1.23"
         );
     }

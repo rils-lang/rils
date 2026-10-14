@@ -1,5 +1,19 @@
 use rils::{BytecodeModule, Value, compile, eval_value};
 
+#[test]
+fn nested_assignment_projections_update_the_original_owner() {
+    let source = include_str!("fixtures/native_assignment_storage/nested_projection.rils");
+    let compiled = compile(source).unwrap();
+    let loaded = BytecodeModule::from_bytes(&compiled.to_bytes().unwrap()).unwrap();
+    for value in [
+        eval_value(source).unwrap(),
+        compiled.execute_value().unwrap(),
+        loaded.execute_value().unwrap(),
+    ] {
+        assert!(value.get_cloned::<bool>().unwrap());
+    }
+}
+
 fn assert_native_sum(value: &Value) {
     match value {
         Value::Dynamic(object) => {
@@ -21,11 +35,6 @@ fn assert_native_sum(value: &Value) {
                 })
                 .unwrap();
         }
-        Value::Tuple(sequence) | Value::Array(sequence) => {
-            for slot in sequence.elements.borrow().iter() {
-                assert_native_sum(slot.value.as_ref().unwrap());
-            }
-        }
         value => panic!("expected native sum, found {value:?}"),
     }
 }
@@ -41,7 +50,7 @@ fn separate_files_preserve_field_declarations_and_aliases() {
         compiled.execute_value().unwrap(),
         loaded.execute_value().unwrap(),
     ] {
-        assert_eq!(value.as_i32(), Some(37));
+        assert_eq!(value.get_cloned::<i32>().ok(), Some(37));
     }
 }
 
@@ -90,7 +99,7 @@ fn replacement_preserves_the_producers_nominal_declaration() {
             compiled.execute_value().unwrap(),
             loaded.execute_value().unwrap(),
         ] {
-            assert_eq!(value.as_i32(), Some(37));
+            assert_eq!(value.get_cloned::<i32>().ok(), Some(37));
         }
     }
 }
@@ -201,12 +210,6 @@ fn native_leaf_types(value: &Value) -> Vec<String> {
                 types
             })
             .unwrap(),
-        Value::Tuple(sequence) => sequence
-            .elements
-            .borrow()
-            .iter()
-            .flat_map(|slot| native_leaf_types(slot.value.as_ref().unwrap()))
-            .collect(),
         other => panic!("expected native nominal sums, found {other:?}"),
     }
 }
