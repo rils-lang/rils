@@ -9,7 +9,7 @@ fn standard<T>(value: Option<T>) -> std::option::Option<T> {
 
 #[test]
 fn native_deque_preserves_both_ends_and_empty_cases() {
-    let mut queue = VecDeque::new();
+    let mut queue = VecDeque::<i32>::new();
     assert!(queue.is_empty());
     assert_eq!(standard(queue.pop_front()), None);
     assert_eq!(standard(queue.pop_back()), None);

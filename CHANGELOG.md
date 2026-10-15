@@ -5,6 +5,24 @@
 
 ## Unreleased
 
+- 修复向原生集合或字段写入自定义 native 值后丢失方法注册的问题；后续克隆、移除和引用访问保留注册信息，同名但不兼容的注册在写入前报错。
+
+- 标准库声明宏支持 `#[rils_storage(sequence((K, V)), Rust类型路径)]`，可声明多个语言类型参数及显式条目布局；支持 tuple 嵌套与重排，每个语言参数必须恰好出现一次。Map/Set 的构造、查询、修改、集合运算和迭代现通过存储协议执行标准库方法体，借用条目按声明投影并保留参数身份。
+
+- **Rust API 迁移：** HashMap、BTreeMap、HashSet、BTreeSet 新增可省略的存储后端参数；默认后端构造可能需要显式类型参数或结果类型标注。删除 `rils_stdlib::native_collections` 的 Map/Set 辅助接口，改用集合的 `with_storage` 和 `rils_stdlib::storage` 协议。集合 `iter` 等借用方法使用普通借用调用入口；直接调用原生符号的代码应按 `requires_owned_native_call` 选择入口。Rils 集合 API、物理存储布局、C ABI 和字节码格式不变。
+
+- 标准库声明宏新增 `#[rils_param(语言类型)]`，允许存储后端参数类型投影为语言签名；`Vec::from` 保留 `[T; N]` 签名并执行统一标准库方法体。Vec、VecDeque、BinaryHeap 的构造及 BinaryHeap 全部操作接入存储后端。Rust 调用默认后端构造时可能需写 `Vec::<T>::new()` / `Vec::<T>::from(...)`，或标注结果类型；VecDeque、BinaryHeap 同理。旧 `native_collections::queue` 辅助接口删除，改用标准库集合的 `with_storage` 及存储协议。
+
+- 标准库 Rust `VecDeque<T>` 支持可省略的存储后端参数，Rils API 和 `VecDequeIntoIter<T>` 类型保持不变。Rust 辅助接口 `clone_front_with` / `clone_back_with` 已移除，定制克隆后端改用 `SequenceClone` 与 `VecDeque::with_storage`。
+
+- 标准库声明宏支持存储后端泛型 trait impl，以及关联类型上的 `#[rils_associated(语言类型)]`：Rust 实现可使用 `S::IntoIter`，生成的 Rils 声明仍为 `Iterator<T>`。Vec 和数组的消费式迭代据此统一执行标准库方法体；默认 Rust Vec API、脚本签名、存储布局和字节码格式不变。
+
+- 标准库 Rust `Vec<T>` 新增可省略的存储后端参数；Rils 声明仍为 `Vec<T>`。删除 `Vec::from_storage` 和 `DynamicValueRef::with_sequence_storage`：查询改用 `Vec::<(), _>::with_storage(view.indexed()?)`，或直接通过索引视图观察元素。声明宏用 `#[rils_storage(sequence, Rust类型路径)]` 标记实现专用参数，数组和 Vec 查询均执行标准库方法体；脚本语法及存储布局不变。
+
+- Rust 原生存储 API 收拢访问边界：`with_sequence_item` 回调改为接收 `DynamicValueRef`；新增 `DynamicValueRef::indexed()` 提供数组和序列的长度及元素视图。`take_all_sequence_items` 改为 `drain_sequence`，返回拥有型 `OwnedElements` 游标，逐项返回 `Result<DynamicValue, String>`。物理布局、脚本 API、C ABI 和字节码格式不变。
+
+- Rust 声明 API 删除 `BuiltinType::Vec/HashMap/HashSet`；这些集合统一使用 `Declaration::StructType`，类型参数和成员信息来自共享内建声明。依赖旧变体的宿主代码应读取结构体声明及其名称。
+
 - 修复嵌套数值引用的方法解析，以及未标注 Range Clone、完整路径 `Rc::new` 的类型推导；三类调用不再需要额外类型标注来绕过字节码编译失败。
 
 - 消费式绑定方法可保存到局部变量或 tuple 后调用；持有非 Copy receiver 的 callable 不再隐式 Copy，也不能通过 Clone 共享该 receiver，VM 调用时移交绑定参数。带负载 enum 的 tuple 变体可作为构造函数值保存、调用，并支持字节码导出后加载执行。

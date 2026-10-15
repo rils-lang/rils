@@ -43,17 +43,13 @@ impl NativeOwnedContext {
         if !ty.is_concrete_type() {
             return Err(format!("cannot infer the complete collection type: {ty}"));
         }
-        let layout = self.layout(ty)?;
-        let payload = rils_value::DynamicValue::sequence(layout, Vec::new())?;
-        crate::value::native_instance::from_native(
-            payload,
-            Rc::new(
-                crate::value::record_codec::NativeRecordCodec::with_definitions(
-                    &self.structs,
-                    &self.enums,
-                ),
-            ),
-        )
+        let Type::Named { name, .. } = ty else {
+            return Err(format!("{ty} has no declared empty constructor"));
+        };
+        let symbol = rils_frontend::standard_library::empty_native_constructor_symbol(name)
+            .ok_or_else(|| format!("{ty} has no declared empty constructor"))?;
+        super::call_native_constructor_symbol(symbol, Vec::new(), self, Some(ty))
+            .ok_or_else(|| format!("{ty} has no native empty constructor"))?
     }
 
     pub fn none(&self, item: &Type) -> Result<Value, String> {

@@ -80,13 +80,26 @@ fn iterators_reject_other_collection_receivers_before_borrowing_or_consuming() {
                     .unwrap()
                     .native_symbol
                     .unwrap();
-                let error = call_native_owned_symbol(
-                    symbol,
-                    vec![empty(other)],
-                    &NativeOwnedContext::default(),
-                )
-                .unwrap()
-                .unwrap_err();
+                let value = empty(other);
+                let value = if method == "iter" {
+                    let mut slot = rils_execution::environment::StorageSlot::uninitialized(false);
+                    slot.initialize(value);
+                    Value::from_reference(std::rc::Rc::new(
+                        rils_execution::value::ReferenceValue::new_storage(
+                            std::rc::Rc::new(std::cell::RefCell::new(slot)),
+                            false,
+                        ),
+                    ))
+                } else {
+                    value
+                };
+                let arguments = vec![value];
+                let result = if requires_owned_native_call(symbol) {
+                    call_native_owned_symbol(symbol, arguments, &NativeOwnedContext::default())
+                } else {
+                    call_native_symbol(symbol, &arguments)
+                };
+                let error = result.unwrap().unwrap_err();
                 assert!(
                     error.contains(owner) && error.contains("wrong"),
                     "{owner}::{method}({other}): {error}"

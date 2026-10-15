@@ -267,3 +267,210 @@ fn conflicting_native_registrations_are_rejected_instead_of_losing_operations() 
         .unwrap();
     assert!(error.contains("conflicting native registration"));
 }
+
+#[test]
+fn map_insert_rejects_conflicting_registration_before_replacing_existing_value() {
+    use rils_execution::runtime_builtins::{NativeOwnedContext, call_native_owned_symbol};
+
+    for tree in [false, true] {
+        let descriptor = |answer| {
+            Rc::new(
+                NativeType::new::<i32>(Type::named("RegisteredValue"))
+                    .register_method("answer", move |_| {
+                        Ok(Value::from(rils_execution::value::native_i32(answer)))
+                    }),
+            )
+        };
+        let original = descriptor(11);
+        let replacement = descriptor(29);
+        let environment = Environment::global();
+        environment.borrow_mut().define(
+            "map",
+            map(
+                tree,
+                NativeObject::new(original.clone(), 11_i32).unwrap().into(),
+            ),
+            true,
+            None,
+        );
+        let slot = environment.borrow().slot("map").unwrap();
+        let receiver =
+            Value::from_reference(Rc::new(ReferenceValue::new_storage(slot.clone(), true)));
+        let owner = if tree { "BTreeMap" } else { "HashMap" };
+        let symbol = rils_builtins::builtin_member(owner, "insert")
+            .unwrap()
+            .native_symbol
+            .unwrap();
+        let error = call_native_owned_symbol(
+            symbol,
+            vec![
+                receiver,
+                rils_execution::value::native_i32(7).into(),
+                NativeObject::new(replacement, 29_i32).unwrap().into(),
+            ],
+            &NativeOwnedContext::default(),
+        )
+        .unwrap()
+        .unwrap_err();
+        assert!(
+            error.contains("conflicting native registration"),
+            "{owner}: {error}"
+        );
+
+        let source = slot.borrow_mut().take().unwrap();
+        let stored = place(entry(source)).field("1").unwrap().take().unwrap();
+        let Value::Native(stored) = stored else {
+            panic!("registered native value must keep its registration");
+        };
+        assert!(Rc::ptr_eq(&original, &stored.descriptor_handle()));
+        assert_eq!(stored.with::<i32, _>(|value| *value), Ok(11));
+    }
+}
+
+#[test]
+fn first_map_insert_retains_registration_in_the_original_owner_context() {
+    use rils_execution::runtime_builtins::{
+        NativeOwnedContext, call_native_owned_symbol, call_native_symbol,
+    };
+    use rils_execution::value::record_codec::NativeRecordCodec;
+    use rils_value::{DynamicLayout, DynamicObject, DynamicType, DynamicValue};
+
+    for tree in [false, true] {
+        for has_context in [false, true] {
+            let owner = if tree { "BTreeMap" } else { "HashMap" };
+            let descriptor = Rc::new(
+                NativeType::new::<i32>(Type::named("LateRegistration"))
+                    .with_copy::<i32>()
+                    .register_method("answer", |_| {
+                        Ok(Value::from(rils_execution::value::native_i32(41)))
+                    }),
+            );
+            let item = DynamicLayout::aggregate(
+                Type::Tuple(vec![Type::I32, Type::named("LateRegistration")]),
+                vec![
+                    ("0".into(), DynamicLayout::copy_of::<i32>(Type::I32)),
+                    ("1".into(), descriptor.layout_handle()),
+                ],
+            )
+            .unwrap();
+            let layout = DynamicLayout::sequence(
+                Type::Named {
+                    name: owner.into(),
+                    arguments: vec![Type::I32, Type::named("LateRegistration")],
+                },
+                item,
+            );
+            let payload = DynamicValue::sequence(layout.clone(), Vec::new()).unwrap();
+            let context = Rc::new(NativeRecordCodec::new());
+            let snapshot = context.as_ref().clone();
+            let value = if has_context {
+                rils_execution::value::native_instance::from_native(payload, context).unwrap()
+            } else {
+                Value::Dynamic(
+                    DynamicObject::new(Rc::new(DynamicType::new(layout)), payload).unwrap(),
+                )
+            };
+            let environment = Environment::global();
+            environment.borrow_mut().define("map", value, true, None);
+            let slot = environment.borrow().slot("map").unwrap();
+            let receiver = Value::from_reference(Rc::new(ReferenceValue::new_storage(slot, true)));
+            let symbol = |method| {
+                rils_builtins::builtin_member(owner, method)
+                    .unwrap()
+                    .native_symbol
+                    .unwrap()
+            };
+            call_native_owned_symbol(
+                symbol("insert"),
+                vec![
+                    receiver.clone(),
+                    rils_execution::value::native_i32(7).into(),
+                    NativeObject::new(descriptor.clone(), 9_i32).unwrap().into(),
+                ],
+                &NativeOwnedContext::default(),
+            )
+            .unwrap()
+            .unwrap();
+
+            for method in ["get_cloned", "remove"] {
+                let value = call_native_symbol(
+                    symbol(method),
+                    &[
+                        receiver.clone(),
+                        rils_execution::value::native_i32(7).into(),
+                    ],
+                )
+                .unwrap()
+                .unwrap();
+                let Value::Native(value) = rils_execution::value::dynamic_option::take_owned(value)
+                    .unwrap()
+                    .unwrap()
+                else {
+                    panic!(
+                        "{owner}::{method} lost inserted native registration (context={has_context})"
+                    );
+                };
+                assert!(Rc::ptr_eq(&descriptor, &value.descriptor_handle()));
+                assert_eq!(
+                    value
+                        .call("answer", &[])
+                        .unwrap()
+                        .unwrap()
+                        .get_cloned::<i32>(),
+                    Ok(41)
+                );
+            }
+            // Explicit commits update the receiver's context, not earlier detached snapshots.
+            assert!(matches!(
+                snapshot
+                    .from_native(
+                        DynamicValue::from_rust(descriptor.layout_handle(), 1_i32).unwrap()
+                    )
+                    .unwrap(),
+                Value::Dynamic(_)
+            ));
+        }
+    }
+}
+
+#[test]
+fn native_field_assignment_commits_new_registered_operations() {
+    use rils_execution::value::record_codec::NativeRecordCodec;
+    use rils_value::{DynamicLayout, DynamicValue};
+
+    for via_reference in [false, true] {
+        let descriptor =
+            Rc::new(NativeType::new::<i32>(Type::named("FieldValue")).with_copy::<i32>());
+        let layout = DynamicLayout::aggregate(
+            Type::Tuple(vec![Type::named("FieldValue")]),
+            vec![("0".into(), descriptor.layout_handle())],
+        )
+        .unwrap();
+        let payload = DynamicValue::record(
+            layout,
+            vec![DynamicValue::from_rust(descriptor.layout_handle(), 1_i32).unwrap()],
+        )
+        .unwrap();
+        let value = rils_execution::value::native_instance::from_native(
+            payload,
+            Rc::new(NativeRecordCodec::new()),
+        )
+        .unwrap();
+        let field = place(value).field("0").unwrap();
+        let replacement = NativeObject::new(descriptor.clone(), 9_i32).unwrap().into();
+        if via_reference {
+            field
+                .borrow(true, None)
+                .unwrap()
+                .write(replacement)
+                .unwrap();
+        } else {
+            field.assign(replacement).unwrap();
+        }
+        let Value::Native(stored) = field.take().unwrap() else {
+            panic!("field assignment lost native operations");
+        };
+        assert!(Rc::ptr_eq(&descriptor, &stored.descriptor_handle()));
+        assert_eq!(stored.with::<i32, _>(|value| *value), Ok(9));
+    }
+}

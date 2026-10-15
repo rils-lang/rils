@@ -1,7 +1,7 @@
 //! Owned iteration keeps native elements and a complete output layout until exhaustion.
 use std::{cell::RefCell, rc::Rc};
 
-use rils_value::{DynamicLayout, DynamicValue};
+use rils_value::{DynamicLayout, DynamicValue, OwnedElements};
 
 use crate::{
     Type, Value,
@@ -13,7 +13,7 @@ use crate::{
 };
 
 enum Source {
-    Native(RefCell<std::vec::IntoIter<DynamicValue>>),
+    Native(RefCell<OwnedElements>),
     // Only execution-owned, reference-free standard-library generators use this path.
     Generated(RefCell<Box<dyn Iterator<Item = Result<Value, String>>>>),
 }
@@ -32,22 +32,19 @@ impl OwnedIteratorValue {
         item_layout: Rc<DynamicLayout>,
         codec: NativeRecordCodec,
     ) -> Result<Self, String> {
+        Self::from_cursor(OwnedElements::from_values(item_layout, items)?, codec)
+    }
+
+    pub fn from_cursor(items: OwnedElements, codec: NativeRecordCodec) -> Result<Self, String> {
+        let item_layout = items.item_layout().clone();
         if !item_layout.rils_type().is_concrete_type() {
             return Err("native iterator requires a complete element layout".into());
-        }
-        for item in &items {
-            if !item.descriptor().compatible_with(&item_layout) {
-                return Err("iterator element has a different native layout".into());
-            }
-            if item.view().is_partially_moved()? {
-                return Err("cannot iterate partially moved native elements".into());
-            }
         }
         Ok(Self {
             element_type: item_layout.rils_type().clone(),
             item_layout,
             codec,
-            source: Source::Native(RefCell::new(items.into_iter())),
+            source: Source::Native(RefCell::new(items)),
             iterator_type: None,
         })
     }
@@ -79,7 +76,8 @@ impl OwnedIteratorValue {
                 items
                     .try_borrow_mut()
                     .map_err(|_| "iterator is already advancing")?
-                    .next(),
+                    .next()
+                    .transpose()?,
             ),
             Source::Generated(items) => output.construct(
                 items
@@ -97,6 +95,7 @@ impl OwnedIteratorValue {
                 .try_borrow_mut()
                 .map_err(|_| "iterator is already advancing")?
                 .next()
+                .transpose()?
                 .map(|item| self.codec.from_native(item))
                 .transpose(),
             Source::Generated(items) => items
@@ -111,53 +110,54 @@ impl OwnedIteratorValue {
 impl NativeChildren<Value> for OwnedIteratorValue {
     fn visit_values(&self, visit: &mut dyn FnMut(&Value)) {
         if let Source::Native(items) = &self.source {
-            for item in items.borrow().as_slice() {
-                crate::value::runtime_layouts::visit_execution_handles(item.view(), visit)
-                    .expect("iterator retains valid native storage");
-                self.codec
-                    .any_native_child(
-                        item.view(),
+            items
+                .borrow()
+                .any_remaining(|view| {
+                    crate::value::runtime_layouts::visit_execution_handles(view.clone(), visit)?;
+                    self.codec.any_native_child(
+                        view,
                         &mut |value| {
                             visit(value);
                             false
                         },
                         NativeChildState::None,
-                    )
-                    .expect("iterator retains registered native children");
-            }
+                    )?;
+                    Ok(false)
+                })
+                .expect("iterator retains valid native storage");
         }
     }
 
     fn has_active_references(&self) -> bool {
         if let Source::Native(items) = &self.source {
-            return items.borrow().as_slice().iter().any(|item| {
-                item.has_path_references()
-                    || self
-                        .codec
-                        .any_native_child(
-                            item.view(),
+            let items = items.borrow();
+            return items.has_active_references()
+                || items
+                    .any_remaining(|view| {
+                        self.codec.any_native_child(
+                            view,
                             &mut Value::has_active_references,
                             NativeChildState::References,
                         )
-                        .unwrap_or(true)
-            });
+                    })
+                    .unwrap_or(true);
         }
         false
     }
 
     fn is_partially_moved(&self) -> bool {
         if let Source::Native(items) = &self.source {
-            return items.borrow().as_slice().iter().any(|item| {
-                item.view().is_partially_moved().unwrap_or(true)
-                    || self
-                        .codec
-                        .any_native_child(
-                            item.view(),
+            return items
+                .borrow()
+                .any_remaining(|view| {
+                    Ok(view.is_partially_moved()?
+                        || self.codec.any_native_child(
+                            view,
                             &mut Value::is_partially_moved,
                             NativeChildState::Partial,
-                        )
-                        .unwrap_or(true)
-            });
+                        )?)
+                })
+                .unwrap_or(true);
         }
         false
     }

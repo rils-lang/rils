@@ -404,3 +404,24 @@ fn nested_non_copy_borrow_can_replace_element() {
         assert_eq!(value.get_cloned::<usize>().ok(), Some(5));
     }
 }
+
+#[test]
+fn storage_backend_mutations_match_interpreter_vm_and_loaded_bytecode() {
+    for value in run_both(include_str!("fixtures/native_vector/shrink.rils")) {
+        assert_eq!(value.get_cloned::<usize>().unwrap(), 13);
+    }
+}
+
+#[test]
+fn element_transfers_preserve_struct_identity_in_all_backends() {
+    for value in run_both(include_str!("fixtures/native_vector/transfers.rils")) {
+        assert_eq!(value.get_cloned::<String>().unwrap(), "abc");
+    }
+}
+
+#[test]
+fn sequence_extension_moves_non_copy_records_in_all_backends() {
+    for value in run_both(include_str!("fixtures/native_vector/extend.rils")) {
+        assert_eq!(value.get_cloned::<String>().unwrap(), "abc");
+    }
+}

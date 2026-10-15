@@ -10,14 +10,14 @@ fn value<T>(option: Option<T>) -> std::option::Option<T> {
 
 #[test]
 fn hash_set_supports_owned_and_borrowed_operations() {
-    let mut values = HashSet::new();
+    let mut values: HashSet<i32> = HashSet::new();
     assert!(values.insert(1));
     assert!(values.insert(3));
     assert!(!values.insert(1));
     assert!(values.contains(&3));
     assert_eq!(values.iter().count(), 2);
 
-    let mut other = HashSet::new();
+    let mut other: HashSet<i32> = HashSet::new();
     other.insert(3);
     other.insert(4);
     assert_eq!(values.union(&other).len(), 3);
@@ -30,7 +30,7 @@ fn hash_set_supports_owned_and_borrowed_operations() {
 
 #[test]
 fn hash_map_preserves_replaced_values_and_entries() {
-    let mut values = HashMap::new();
+    let mut values: HashMap<i32, &str> = HashMap::new();
     assert_eq!(value(values.insert(1, "first")), None);
     assert_eq!(value(values.insert(2, "second")), None);
     assert_eq!(value(values.insert(1, "replacement")), Some("first"));

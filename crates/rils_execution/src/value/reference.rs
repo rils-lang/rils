@@ -114,7 +114,7 @@ impl ReferenceValue {
             .ok_or("dynamic value is not an indexed sequence")?;
         if let Some(field) = field {
             sequence.with(|value| {
-                value.with_sequence_item(index, |item| item.view().field(field).map(|_| ()))
+                value.with_sequence_item(index, |item| item.field(field).map(|_| ()))
             })???;
         }
         let ledger = sequence.with(|value| value.sequence_borrows())??;
@@ -135,7 +135,7 @@ impl ReferenceValue {
     pub fn new_dynamic_cell(value: &Value, mutable: bool) -> Result<Self, String> {
         let cell = super::native_receiver::NativeReceiver::from_value(value)?
             .ok_or("expected native RefCell receiver")?;
-        let codec = Rc::new(cell.codec());
+        let codec = cell.codec_handle();
         cell.with(|payload| {
             payload.with_rust::<ErasedRefCell, _>(|value| {
                 value.references.set(value.references.get() + 1);
@@ -312,8 +312,8 @@ impl ReferenceValue {
             } => sequence.with(|value| {
                 value.with_sequence_item(*index, |item| {
                     callback(match field {
-                        Some(field) => item.view().field(*field)?,
-                        None => item.view(),
+                        Some(field) => item.field(*field)?,
+                        None => item,
                     });
                     Ok(())
                 })

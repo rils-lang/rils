@@ -256,14 +256,9 @@ impl DynamicValue {
     pub fn with_sequence_item<R>(
         &self,
         index: usize,
-        f: impl FnOnce(&Self) -> R,
+        f: impl FnOnce(super::DynamicValueRef<'_>) -> R,
     ) -> Result<R, String> {
-        let item = self
-            .sequence_storage()?
-            .items
-            .get(index)
-            .ok_or_else(|| format!("sequence index {index} is out of bounds"))?;
-        Ok(f(item))
+        self.view().with_sequence_item(index, f)
     }
 
     pub fn replace_sequence_item(
@@ -290,8 +285,8 @@ impl DynamicValue {
         self.view_mut().truncate_sequence(length)
     }
 
-    pub fn take_all_sequence_items(&mut self) -> Result<Vec<DynamicValue>, String> {
-        self.view_mut().take_all_sequence_items()
+    pub fn drain_sequence(&mut self) -> Result<super::OwnedElements, String> {
+        self.view_mut().drain_sequence()
     }
 
     pub fn clear_sequence(&mut self) -> Result<(), String> {

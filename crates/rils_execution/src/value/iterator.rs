@@ -20,8 +20,53 @@ pub struct BorrowedIndexedIteratorValue {
     pub index: std::cell::Cell<usize>,
     pub length: usize,
     pub element_type: Type,
-    pub map_entries: bool,
+    pub(crate) projection: BorrowedIteratorProjection,
+    pub iterator_type: Type,
     pub native_codec: Option<Rc<NativeRecordCodec>>,
+}
+
+/// The declaration determines which stored type parameter each reference projects.
+pub(crate) enum BorrowedIteratorProjection {
+    Reference { path: Vec<usize>, inner: Type },
+    Tuple(Vec<Self>),
+}
+
+impl BorrowedIteratorProjection {
+    pub(crate) fn item_type(&self) -> Type {
+        match self {
+            Self::Reference { inner, .. } => Type::Reference {
+                mutable: false,
+                inner: Box::new(inner.clone()),
+            },
+            Self::Tuple(fields) => Type::Tuple(fields.iter().map(Self::item_type).collect()),
+        }
+    }
+
+    fn project(&self, entry: &Rc<ReferenceValue>) -> Result<Value, String> {
+        match self {
+            Self::Reference { path, .. } => {
+                let mut source = entry.clone();
+                for index in path {
+                    source = Rc::new(
+                        source
+                            .project_native_field(&index.to_string())?
+                            .ok_or("iterator field has no native path")?,
+                    );
+                }
+                source
+                    .reborrow(false)
+                    .map(|reference| Value::from_reference(Rc::new(reference)))
+            }
+            Self::Tuple(fields) => {
+                let values = fields
+                    .iter()
+                    .map(|field| field.project(entry))
+                    .collect::<Result<Vec<_>, _>>()?;
+                super::storage::TypedStorageContext::new(&[], &[])
+                    .construct_tuple(&self.item_type(), values)
+            }
+        }
+    }
 }
 
 pub enum IndexedIteratorStorage {
@@ -34,25 +79,7 @@ pub enum IndexedIteratorStorage {
 
 impl BorrowedIndexedIteratorValue {
     pub fn item_type(&self) -> Type {
-        if self.map_entries {
-            let Type::Tuple(fields) = &self.element_type else {
-                unreachable!("map entry has a pair layout")
-            };
-            Type::Tuple(
-                fields
-                    .iter()
-                    .map(|field| Type::Reference {
-                        mutable: false,
-                        inner: Box::new(field.clone()),
-                    })
-                    .collect(),
-            )
-        } else {
-            Type::Reference {
-                mutable: false,
-                inner: Box::new(self.element_type.clone()),
-            }
-        }
+        self.projection.item_type()
     }
 
     pub fn next(&self) -> Result<Option<Value>, String> {
@@ -78,38 +105,13 @@ impl BorrowedIndexedIteratorValue {
         if index >= self.length {
             return Ok(None);
         }
-        if self.map_entries {
-            let IndexedIteratorStorage::Native { .. } = &self.storage else {
-                return Err("map iterator has no native entry storage".into());
-            };
-            let fields = (0..2)
-                .map(|field| {
-                    let entry = Rc::new(
-                        self.source
-                            .project_native_index_with_codec(index, self.native_codec.clone())?
-                            .ok_or("map entry has no native path")?,
-                    );
-                    let reference = entry
-                        .project_native_field(&field.to_string())?
-                        .ok_or("map entry field has no native path")?;
-                    reference
-                        .reborrow(false)
-                        .map(|reference| Value::from_reference(Rc::new(reference)))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let pair = super::storage::TypedStorageContext::new(&[], &[])
-                .construct_tuple(&self.item_type(), fields)?;
-            self.index.set(index + 1);
-            return Ok(Some(pair));
-        }
-        let reference = match &self.storage {
-            IndexedIteratorStorage::Native { .. } | IndexedIteratorStorage::NativeArray => self
-                .source
+        let entry = Rc::new(
+            self.source
                 .project_native_index_with_codec(index, self.native_codec.clone())?
-                .ok_or("iterator element has no native path")?
-                .reborrow(false)?,
-        };
+                .ok_or("iterator element has no native path")?,
+        );
+        let item = self.projection.project(&entry)?;
         self.index.set(index + 1);
-        Ok(Some(Value::from_reference(Rc::new(reference))))
+        Ok(Some(item))
     }
 }

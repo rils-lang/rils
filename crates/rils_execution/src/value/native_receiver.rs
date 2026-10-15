@@ -28,16 +28,21 @@ impl NativeReceiver {
                     Ok(Some(Self {
                         descriptor: Rc::new(match super::borrowed::native_codec(value)? {
                             Some(codec) => DynamicType::new(layout).register_metadata(codec),
-                            None => DynamicType::new(layout),
+                            None => return Err("native receiver has no declaration context".into()),
                         }),
                         storage: Storage::Reference(reference.clone()),
                     }))
                 }
             }
-            Value::Dynamic(object) => Ok(Some(Self {
-                descriptor: object.descriptor_handle(),
-                storage: Storage::Object(object.clone()),
-            })),
+            Value::Dynamic(object) => {
+                object.descriptor().metadata_or_insert_with(|| {
+                    Rc::new(super::record_codec::NativeRecordCodec::default())
+                });
+                Ok(Some(Self {
+                    descriptor: object.descriptor_handle(),
+                    storage: Storage::Object(object.clone()),
+                }))
+            }
 
             _ => Ok(None),
         }
@@ -48,17 +53,21 @@ impl NativeReceiver {
     }
 
     pub(crate) fn codec(&self) -> super::record_codec::NativeRecordCodec {
-        self.descriptor
-            .metadata::<super::record_codec::NativeRecordCodec>()
-            .map(|codec| (*codec).clone())
-            .unwrap_or_default()
+        self.codec_handle().as_ref().clone()
     }
 
-    pub(crate) fn option_for(
+    pub(crate) fn codec_handle(&self) -> Rc<super::record_codec::NativeRecordCodec> {
+        self.descriptor
+            .metadata::<super::record_codec::NativeRecordCodec>()
+            .expect("native receiver retains its owner's declaration context")
+    }
+
+    pub(crate) fn commit_codec(
         &self,
-        item: Rc<rils_value::DynamicLayout>,
-    ) -> Result<super::storage::PreparedOption, String> {
-        super::storage::PreparedOption::from_layout(item, self.codec())
+        codec: &super::record_codec::NativeRecordCodec,
+    ) -> Result<(), String> {
+        self.codec_handle()
+            .commit_layout_declarations(codec, self.descriptor.layout())
     }
 
     pub(crate) fn with<R>(

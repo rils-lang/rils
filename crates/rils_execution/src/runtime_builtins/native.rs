@@ -229,6 +229,40 @@ pub fn is_owned_symbol(symbol: &str) -> bool {
         || vector::is_owned_symbol(symbol)
 }
 
+pub fn is_constructor_symbol(symbol: &str) -> bool {
+    vector::is_constructor_symbol(symbol)
+        || vec_deque::is_constructor_symbol(symbol)
+        || binary_heap::is_constructor_symbol(symbol)
+        || hash_set::is_constructor_symbol(symbol)
+        || hash_map::is_constructor_symbol(symbol)
+        || btree_set::is_constructor_symbol(symbol)
+        || btree_map::is_constructor_symbol(symbol)
+}
+pub fn call_constructor_symbol(
+    symbol: &str,
+    arguments: Vec<crate::Value>,
+    context: &super::NativeOwnedContext,
+    expected: Option<&crate::Type>,
+) -> Option<Result<crate::Value, String>> {
+    if vector::is_constructor_symbol(symbol) {
+        vector::call_constructor_symbol(symbol, arguments, context, expected)
+    } else if vec_deque::is_constructor_symbol(symbol) {
+        vec_deque::call_constructor_symbol(symbol, arguments, context, expected)
+    } else if binary_heap::is_constructor_symbol(symbol) {
+        binary_heap::call_constructor_symbol(symbol, arguments, context, expected)
+    } else if hash_set::is_constructor_symbol(symbol) {
+        hash_set::call_constructor_symbol(symbol, arguments, context, expected)
+    } else if hash_map::is_constructor_symbol(symbol) {
+        hash_map::call_constructor_symbol(symbol, arguments, context, expected)
+    } else if btree_set::is_constructor_symbol(symbol) {
+        btree_set::call_constructor_symbol(symbol, arguments, context, expected)
+    } else if btree_map::is_constructor_symbol(symbol) {
+        btree_map::call_constructor_symbol(symbol, arguments, context, expected)
+    } else {
+        None
+    }
+}
+
 mod callable_functions {
     use rils_stdlib_macros::decl_rils_function_native;
 

@@ -627,42 +627,43 @@ impl<'a> Inferencer<'a> {
         match iterable_type {
             Type::Reference { inner, .. } => self.iterable_item_type_inner(inner, depth + 1),
             Type::Array { element, .. } => (**element).clone(),
-            Type::Named { name, arguments } => match name.as_str() {
-                "Vec" | "VecDeque" | "BinaryHeap" | "HashSet" | "BTreeSet" | "Iter" | "Range" => {
-                    arguments.first().cloned().unwrap_or(Type::Unknown)
+            Type::Named { name, arguments } => {
+                if let Some(item) = crate::standard_library::builtin_into_iterator_item_type(
+                    iterable_type,
+                )
+                .or_else(|| crate::standard_library::builtin_iterator_item_type(iterable_type))
+                {
+                    return item;
                 }
-                "HashMap" | "BTreeMap" if arguments.len() == 2 => Type::Tuple(arguments.clone()),
-                _ => {
-                    let Some(definition) = self.types.get(name) else {
-                        return Type::Unknown;
-                    };
-                    let substitutions = definition
-                        .generic_parameters
-                        .iter()
-                        .cloned()
-                        .zip(arguments.iter().cloned())
-                        .collect::<HashMap<_, _>>();
-                    if let Some(item) = definition
-                        .associated_types
-                        .get(&(String::from("IntoIterator"), String::from("Item")))
-                    {
-                        return item.substitute(&substitutions);
-                    }
-                    if let Some(item) = definition
-                        .associated_types
-                        .get(&("Iterator".into(), "Item".into()))
-                    {
-                        return item.substitute(&substitutions);
-                    }
-                    let Some(iterator) = definition
-                        .associated_types
-                        .get(&("IntoIterator".into(), "IntoIter".into()))
-                    else {
-                        return Type::Unknown;
-                    };
-                    self.iterable_item_type_inner(&iterator.substitute(&substitutions), depth + 1)
+                let Some(definition) = self.types.get(name) else {
+                    return Type::Unknown;
+                };
+                let substitutions = definition
+                    .generic_parameters
+                    .iter()
+                    .cloned()
+                    .zip(arguments.iter().cloned())
+                    .collect::<HashMap<_, _>>();
+                if let Some(item) = definition
+                    .associated_types
+                    .get(&(String::from("IntoIterator"), String::from("Item")))
+                {
+                    return item.substitute(&substitutions);
                 }
-            },
+                if let Some(item) = definition
+                    .associated_types
+                    .get(&("Iterator".into(), "Item".into()))
+                {
+                    return item.substitute(&substitutions);
+                }
+                let Some(iterator) = definition
+                    .associated_types
+                    .get(&("IntoIterator".into(), "IntoIter".into()))
+                else {
+                    return Type::Unknown;
+                };
+                self.iterable_item_type_inner(&iterator.substitute(&substitutions), depth + 1)
+            }
             _ => Type::Unknown,
         }
     }

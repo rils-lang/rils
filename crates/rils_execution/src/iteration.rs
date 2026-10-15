@@ -2,7 +2,7 @@
 
 use crate::{
     Type, runtime_builtins,
-    value::{DynamicObject, OwnedIteratorValue, Value, native_ops},
+    value::{Value, native_ops},
 };
 
 pub enum IntoIteratorResult {
@@ -25,85 +25,48 @@ pub fn into_iterator_with_context(
     value: Value,
     context: &runtime_builtins::NativeOwnedContext,
 ) -> Result<IntoIteratorResult, String> {
-    let iterator = match value {
-        value @ Value::Native(_) if native_ops::is_iterator(&value) => value,
-        Value::Dynamic(object)
-            if matches!(object.descriptor().layout().rils_type(), Type::Array { .. }) =>
-        {
-            crate::value::native_array::into_iterator(object, context)?
-        }
-        Value::Dynamic(object)
-            if crate::value::native_layouts::vec::matches(
-                object.descriptor().layout().rils_type(),
-            ) =>
-        {
-            native_sequence_into_iterator(object, context)?
-        }
-        Value::Dynamic(object)
-            if crate::value::native_layouts::btree_set::matches(
-                object.descriptor().layout().rils_type(),
-            ) =>
-        {
-            native_sequence_into_iterator(object, context)?
-        }
-        Value::Dynamic(object)
-            if crate::value::native_layouts::vec_deque::matches(
-                object.descriptor().layout().rils_type(),
-            ) || crate::value::native_layouts::binary_heap::matches(
-                object.descriptor().layout().rils_type(),
-            ) =>
-        {
-            native_sequence_into_iterator(object, context)?
-        }
-        Value::Dynamic(object)
-            if crate::value::native_layouts::hash_set::matches(
-                object.descriptor().layout().rils_type(),
-            ) =>
-        {
-            native_sequence_into_iterator(object, context)?
-        }
-        Value::Dynamic(object)
-            if crate::value::native_layouts::hash_map::matches(
-                object.descriptor().layout().rils_type(),
-            ) =>
-        {
-            native_sequence_into_iterator(object, context)?
-        }
-        Value::Dynamic(object)
-            if crate::value::native_layouts::btree_map::matches(
-                object.descriptor().layout().rils_type(),
-            ) =>
-        {
-            native_sequence_into_iterator(object, context)?
-        }
-        value => return Ok(IntoIteratorResult::UserDefined(value)),
+    if matches!(&value, Value::Native(_) if native_ops::is_iterator(&value)) {
+        return Ok(IntoIteratorResult::Ready(value));
+    }
+    // References must use their own trait implementation, never consume a referent.
+    if value.as_reference().is_some() {
+        return Ok(IntoIteratorResult::UserDefined(value));
+    }
+    let Some(ty) = Type::of_value(&value) else {
+        return Ok(IntoIteratorResult::UserDefined(value));
     };
+    let Some(member) = rils_frontend::standard_library::builtin_trait_member_for_type(
+        &ty,
+        "IntoIterator",
+        "into_iter",
+    ) else {
+        return Ok(IntoIteratorResult::UserDefined(value));
+    };
+    let Some(symbol) = member.native_symbol else {
+        return Ok(IntoIteratorResult::UserDefined(value));
+    };
+    let result = if runtime_builtins::requires_owned_native_call(symbol) {
+        runtime_builtins::call_native_owned_symbol(symbol, vec![value], context)
+    } else {
+        runtime_builtins::call_native_symbol(symbol, &[value])
+    };
+    let iterator = result.ok_or_else(|| {
+        format!("declared IntoIterator method `{symbol}` has no native implementation")
+    })??;
     Ok(IntoIteratorResult::Ready(iterator))
 }
 
-pub(crate) fn native_sequence_into_iterator(
-    object: DynamicObject,
-    context: &runtime_builtins::NativeOwnedContext,
-) -> Result<Value, String> {
-    let iterator_type = declared_iterator_type(object.descriptor().layout().rils_type());
-    let item_type = object
-        .descriptor()
-        .layout()
-        .sequence_item()
-        .ok_or("native collection has no item layout")?
-        .clone();
-    let codec = crate::value::sum::codec(&object, &context.structs, &context.enums)?;
-    let items = object.with_mut(|payload| payload.take_all_sequence_items())??;
-    let mut iterator = OwnedIteratorValue::from_native(items, item_type, codec)?;
-    if let Some(iterator_type) = iterator_type {
-        iterator = iterator.with_iterator_type(iterator_type);
-    }
-    Ok(Value::from_owned_iterator(iterator))
-}
-
 pub(crate) fn declared_iterator_type(collection_type: &Type) -> Option<Type> {
-    let method =
-        rils_frontend::standard_library::builtin_member_type(collection_type, "into_iter")?;
+    rils_frontend::standard_library::builtin_trait_member_for_type(
+        collection_type,
+        "IntoIterator",
+        "into_iter",
+    )?;
+    let method = rils_frontend::standard_library::builtin_trait_member_type(
+        "IntoIterator",
+        collection_type,
+        "into_iter",
+    )?;
     match method {
         Type::Function { return_type, .. } => Some(*return_type),
         _ => None,

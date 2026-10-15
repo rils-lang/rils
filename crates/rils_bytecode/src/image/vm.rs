@@ -575,20 +575,7 @@ impl<'a> VirtualMachine<'a> {
                         .map(|register| self.take_register(register, instruction.span))
                         .collect::<Result<Vec<_>, _>>()?;
                     let symbol = self.module.native_imports[import].symbol.clone();
-                    let empty_type = self.module.native_imports[import]
-                        .specialized_empty_collection_type()
-                        .cloned();
-                    let native_empty = empty_type
-                        .map(|empty_type| {
-                            self.native_context.empty_collection(
-                                &empty_type.substitute(&self.frame().type_bindings),
-                            )
-                        })
-                        .transpose()
-                        .map_err(|message| BytecodeError::new(message, instruction.span))?;
-                    let value = if let Some(value) = native_empty {
-                        value
-                    } else if crate::runtime_builtins::requires_owned_native_call(&symbol) {
+                    let value = if crate::runtime_builtins::requires_owned_native_call(&symbol) {
                         let expected = self.module.native_imports[import]
                             .signature
                             .return_type

@@ -80,133 +80,15 @@ impl ProgramLowerer {
         let mut functions = HashMap::new();
         let mut types = HashMap::new();
         let mut type_definitions = Vec::new();
-        // Box is a compiler-provided heap indirection. Keep its nominal
-        // declaration in the HIR even when the standard-library source is not
-        // part of a standalone compilation unit.
-        let box_id = type_definitions.len();
-        types.insert("Box".to_owned(), box_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "Box".to_owned(),
-            opaque_native: rils_builtins::builtin("Box").is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
-        let rc_id = type_definitions.len();
-        types.insert("Rc".to_owned(), rc_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "Rc".to_owned(),
-            opaque_native: rils_builtins::builtin("Rc").is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
-        let cell_id = type_definitions.len();
-        types.insert("Cell".to_owned(), cell_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "Cell".to_owned(),
-            opaque_native: rils_builtins::builtin("Cell").is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
-        let ref_cell_id = type_definitions.len();
-        types.insert("RefCell".to_owned(), ref_cell_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "RefCell".to_owned(),
-            opaque_native: rils_builtins::builtin("RefCell").is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
-        let deque_id = type_definitions.len();
-        types.insert("VecDeque".to_owned(), deque_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "VecDeque".to_owned(),
-            opaque_native: rils_builtins::builtin("VecDeque")
-                .is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
-        let heap_id = type_definitions.len();
-        types.insert("BinaryHeap".to_owned(), heap_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "BinaryHeap".to_owned(),
-            opaque_native: rils_builtins::builtin("BinaryHeap")
-                .is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
-        let tree_map_id = type_definitions.len();
-        types.insert("BTreeMap".to_owned(), tree_map_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "BTreeMap".to_owned(),
-            opaque_native: rils_builtins::builtin("BTreeMap")
-                .is_some_and(|item| item.opaque_native),
-            generic_parameters: ["K", "V"]
-                .into_iter()
-                .map(|name| rils_frontend::ast::GenericParameter {
-                    is_const: false,
-                    name: name.to_owned(),
-                    bounds: Vec::new(),
-                    span: Span::default(),
-                })
-                .collect(),
-            fields: Vec::new(),
-        });
-        let tree_set_id = type_definitions.len();
-        types.insert("BTreeSet".to_owned(), tree_set_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "BTreeSet".to_owned(),
-            opaque_native: rils_builtins::builtin("BTreeSet")
-                .is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
-        let weak_id = type_definitions.len();
-        types.insert("Weak".to_owned(), weak_id);
-        type_definitions.push(HirTypeDefinition::Struct {
-            name: "Weak".to_owned(),
-            opaque_native: rils_builtins::builtin("Weak").is_some_and(|item| item.opaque_native),
-            generic_parameters: vec![rils_frontend::ast::GenericParameter {
-                is_const: false,
-                name: "T".to_owned(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-        });
+        for declaration in rils_frontend::standard_library::builtin_runtime_struct_declarations() {
+            types.insert(declaration.name.into(), type_definitions.len());
+            type_definitions.push(HirTypeDefinition::Struct {
+                name: declaration.name.into(),
+                opaque_native: declaration.opaque_native,
+                generic_parameters: declaration.generic_parameters.clone(),
+                fields: declaration.fields.clone(),
+            });
+        }
         for declaration in host.types() {
             let Some(host_enum) = declaration.enum_definition.as_ref() else {
                 continue;

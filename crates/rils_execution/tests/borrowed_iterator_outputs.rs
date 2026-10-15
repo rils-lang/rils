@@ -1,7 +1,10 @@
 use rils_execution::{
     RilsValue, Type, Value,
     environment::StorageSlot,
-    runtime_builtins::{NativeOwnedContext, call_native_owned_symbol, call_native_symbol},
+    runtime_builtins::{
+        NativeOwnedContext, call_native_owned_symbol, call_native_symbol,
+        requires_owned_native_call,
+    },
     value::ReferenceValue,
 };
 use rils_value::{NativeObject, NativeType};
@@ -21,8 +24,13 @@ fn symbol(kind: &str, method: &str) -> &'static str {
         .native_symbol
         .unwrap()
 }
-fn owned(kind: &str, method: &str, args: Vec<Value>) -> Result<Value, String> {
-    call_native_owned_symbol(symbol(kind, method), args, &NativeOwnedContext::default()).unwrap()
+fn call(kind: &str, method: &str, args: Vec<Value>) -> Result<Value, String> {
+    let symbol = symbol(kind, method);
+    if requires_owned_native_call(symbol) {
+        call_native_owned_symbol(symbol, args, &NativeOwnedContext::default()).unwrap()
+    } else {
+        call_native_symbol(symbol, &args).unwrap()
+    }
 }
 fn next(iterator: &Value) -> Result<Value, String> {
     call_native_symbol(symbol("Iterator", "next"), std::slice::from_ref(iterator)).unwrap()
@@ -65,7 +73,7 @@ fn collection(kind: &str) -> (Value, Vec<usize>) {
     if kind.ends_with("Map") {
         args.push(value);
     }
-    owned(kind, "insert", args).unwrap();
+    call(kind, "insert", args).unwrap();
     (source, addresses)
 }
 fn insert_extra(kind: &str, receiver: &Value) -> Result<Value, String> {
@@ -73,7 +81,7 @@ fn insert_extra(kind: &str, receiver: &Value) -> Result<Value, String> {
     if kind.ends_with("Map") {
         args.push(text("extra value"));
     }
-    owned(kind, "insert", args)
+    call(kind, "insert", args)
 }
 
 #[test]
@@ -82,7 +90,7 @@ fn native_borrowed_outputs_keep_native_layouts_addresses_and_leases() {
         {
             let (source, addresses) = collection(kind);
             let receiver = reference(source);
-            let iterator = reference(owned(kind, "iter", vec![receiver.clone()]).unwrap());
+            let iterator = reference(call(kind, "iter", vec![receiver.clone()]).unwrap());
             let result = next(&iterator).unwrap();
             let reference_type = Type::Reference {
                 mutable: false,

@@ -4,12 +4,106 @@ use rils_stdlib_macros::decl_rils;
 
 #[decl_rils(core::collections)]
 mod native {
-    use super::super::{Iter, Iterator, Option};
 
     /// A growable owned sequence.
     #[rils_struct]
     #[repr(transparent)]
-    pub struct Vec<T>(std::vec::Vec<T>);
+    pub struct Vec<
+        T,
+        #[rils_storage(sequence, rils_stdlib::stdlib::collections::vector::Vec)] S = std::vec::Vec<T>,
+    >(S, std::marker::PhantomData<T>);
+
+    impl<T, S> Vec<T, S> {
+        /// Wrap a storage backend without converting or copying its elements.
+        pub fn with_storage(storage: S) -> Self {
+            Self(storage, std::marker::PhantomData)
+        }
+    }
+
+    impl<T, S: rils_stdlib::storage::SequenceRead> Vec<T, S> {
+        /// Returns the element count.
+        #[export_rils]
+        pub fn len(&self) -> usize {
+            self.0.len()
+        }
+
+        /// Returns true when the Vec has no elements.
+        #[export_rils]
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
+        }
+    }
+
+    impl<T, S: rils_stdlib::storage::SequenceTruncate> Vec<T, S> {
+        /// Removes all elements.
+        #[export_rils]
+        #[rils_return(())]
+        pub fn clear(&mut self) -> S::TruncateOutput {
+            self.truncate(0)
+        }
+
+        /// Shortens the Vec to at most the supplied length.
+        #[export_rils]
+        #[rils_return(())]
+        pub fn truncate(&mut self, length: usize) -> S::TruncateOutput {
+            self.0.truncate(length)
+        }
+    }
+
+    impl<T, S: rils_stdlib::storage::SequenceTransfer<T>> Vec<T, S> {
+        /// Appends one element.
+        #[export_rils]
+        #[rils_return(())]
+        pub fn push(&mut self, value: T) -> S::WriteOutput {
+            self.0.push(value)
+        }
+
+        /// Removes and returns the last element.
+        #[export_rils]
+        #[rils_return(Option<T>)]
+        pub fn pop(&mut self) -> S::PopOutput {
+            self.0.pop()
+        }
+
+        /// Inserts an element at the supplied index.
+        #[export_rils]
+        #[rils_return(())]
+        pub fn insert(&mut self, index: usize, value: T) -> S::WriteOutput {
+            self.0.insert(index, value)
+        }
+
+        /// Removes and returns the element at the supplied index.
+        #[export_rils]
+        #[rils_return(T)]
+        pub fn remove(&mut self, index: usize) -> S::TakeOutput {
+            self.0.remove(index)
+        }
+
+        /// Removes an element by replacing it with the final element.
+        #[export_rils]
+        #[rils_return(T)]
+        pub fn swap_remove(&mut self, index: usize) -> S::TakeOutput {
+            self.0.swap_remove(index)
+        }
+    }
+
+    impl<T, S: rils_stdlib::storage::SequenceExtend> Vec<T, S> {
+        /// Moves every element from another Vec into this Vec.
+        #[export_rils]
+        #[rils_return(())]
+        pub fn extend(&mut self, other: Self) -> S::ExtendOutput {
+            self.0.extend(other.0)
+        }
+    }
+
+    impl<T, S: rils_stdlib::storage::SequenceIter> Vec<T, S> {
+        /// Borrows each element without consuming the Vec.
+        #[export_rils]
+        #[rils_return(Iter<&T>)]
+        pub fn iter(&self) -> S::IterOutput<'_> {
+            self.0.iter()
+        }
+    }
 
     impl<T> std::ops::Deref for Vec<T> {
         type Target = std::vec::Vec<T>;
@@ -24,7 +118,7 @@ mod native {
         }
     }
 
-    impl<T> Default for Vec<T> {
+    impl<T, S: rils_stdlib::storage::SequenceNew> Default for Vec<T, S> {
         fn default() -> Self {
             Self::new()
         }
@@ -32,122 +126,63 @@ mod native {
 
     impl<T> From<std::vec::Vec<T>> for Vec<T> {
         fn from(values: std::vec::Vec<T>) -> Self {
-            Self(values)
+            Self::with_storage(values)
         }
     }
 
     impl<T, const N: usize> From<[T; N]> for Vec<T> {
         fn from(values: [T; N]) -> Self {
-            Self(std::vec::Vec::from(values))
+            Self::with_storage(std::vec::Vec::from(values))
         }
     }
 
     #[rils_impl]
-    impl<T> IntoIterator for Vec<T> {
-        type Item = T;
-        type IntoIter = Iterator<T>;
+    impl<T, S: rils_stdlib::storage::SequenceIntoIter> IntoIterator for Vec<T, S> {
+        #[rils_associated(T)]
+        type Item = S::Item;
+        #[rils_associated(Iterator<T>)]
+        type IntoIter = S::IntoIter;
         /// Consumes the Vec and creates an iterator.
         fn into_iter(self) -> Self::IntoIter {
-            Iter::from(self.0)
+            self.0.into_iter()
         }
     }
 
-    impl<T> Vec<T> {
-        /// Borrow existing Rust storage without moving or copying its elements.
-        pub fn from_storage(values: &std::vec::Vec<T>) -> &Self {
-            // SAFETY: Vec<T> is a transparent wrapper around precisely this
-            // Rust Vec<T>. The shared borrow cannot mutate or take ownership.
-            unsafe { &*(values as *const std::vec::Vec<T>).cast::<Self>() }
-        }
-
+    impl<T, S: rils_stdlib::storage::SequenceFromArray<T>> Vec<T, S> {
         /// Creates a Vec from an owned array.
         #[export_rils]
-        pub fn from<const N: usize>(values: [T; N]) -> Self {
-            <Self as From<[T; N]>>::from(values)
+        #[rils_return(Self)]
+        pub fn from<const N: usize>(
+            #[rils_param([T; N])] values: S::Array<N>,
+        ) -> <S::Array<N> as rils_stdlib::storage::ArrayInput>::Output<Self> {
+            rils_stdlib::storage::ArrayInput::build(values, Self::with_storage)
         }
-
-        /// Returns the owned storage to a native runtime adapter.
-        pub fn into_inner(self) -> std::vec::Vec<T> {
-            self.0
-        }
-
+    }
+    impl<T, S: rils_stdlib::storage::SequenceNew> Vec<T, S> {
         /// Creates an empty Vec.
         #[export_rils]
         pub fn new() -> Self {
-            Self(std::vec::Vec::new())
+            Self::with_storage(S::new())
         }
-
-        /// Returns the element count.
-        #[export_rils]
-        pub fn len(&self) -> usize {
-            self.0.len()
+    }
+    impl<T, S> Vec<T, S> {
+        /// Returns the owned storage to a native runtime adapter.
+        pub fn into_storage(self) -> S {
+            self.0
         }
-
-        /// Returns true when the Vec has no elements.
-        #[export_rils]
-        pub fn is_empty(&self) -> bool {
-            self.len() == 0
-        }
-
-        /// Appends one element.
-        #[export_rils]
-        pub fn push(&mut self, value: T) {
-            self.0.push(value);
-        }
-
-        /// Removes and returns the last element.
-        #[export_rils]
-        pub fn pop(&mut self) -> Option<T> {
-            self.0.pop().map_or(Option::None, Option::Some)
-        }
-
-        /// Removes all elements.
-        #[export_rils]
-        pub fn clear(&mut self) {
-            self.0.clear();
-        }
-
-        /// Shortens the Vec to at most the supplied length.
-        #[export_rils]
-        pub fn truncate(&mut self, length: usize) {
-            self.0.truncate(length);
-        }
-
-        /// Inserts an element at the supplied index.
-        #[export_rils]
-        pub fn insert(&mut self, index: usize, value: T) {
-            self.0.insert(index, value);
-        }
-
-        /// Removes and returns the element at the supplied index.
-        #[export_rils]
-        pub fn remove(&mut self, index: usize) -> T {
-            self.0.remove(index)
-        }
-
-        /// Removes an element by replacing it with the final element.
-        #[export_rils]
-        pub fn swap_remove(&mut self, index: usize) -> T {
-            self.0.swap_remove(index)
-        }
-
-        /// Moves every element from another Vec into this Vec.
-        #[export_rils]
-        pub fn extend(&mut self, other: Self) {
-            self.0.extend(other.0);
-        }
-
-        /// Borrows each element without consuming the Vec.
-        #[export_rils]
-        pub fn iter(&self) -> Iter<&T> {
-            Iter::from(self.0.iter().collect::<std::vec::Vec<_>>())
+    }
+    impl<T> Vec<T> {
+        /// Returns the default Rust storage.
+        pub fn into_inner(self) -> std::vec::Vec<T> {
+            self.0
         }
     }
 
-    impl<T: PartialEq> Vec<T> {
+    impl<T, S: rils_stdlib::storage::SequenceSearch<T>> Vec<T, S> {
         /// Returns true when an equal element is present.
         #[export_rils]
-        pub fn contains(&self, value: &T) -> bool {
+        #[rils_return(bool)]
+        pub fn contains(&self, value: &T) -> S::SearchOutput {
             self.0.contains(value)
         }
     }

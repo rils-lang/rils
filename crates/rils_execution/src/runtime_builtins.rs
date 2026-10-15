@@ -8,17 +8,15 @@ use crate::value::OwnedIteratorValue;
 
 mod boxed;
 mod callback;
-mod collection_constructor;
 mod context;
 pub use context::NativeOwnedContext;
 pub(crate) use context::resolve_layout;
 mod indexed_iter;
-mod keyed_collection;
 mod native;
 pub(crate) mod native_output;
 pub mod native_value;
 mod range;
-mod sequence_query;
+mod sequence_access;
 mod sum_native;
 
 pub type NativeCallback<'a, E> = dyn FnMut(&Value, Vec<Value>) -> Result<Value, E> + 'a;
@@ -44,6 +42,11 @@ impl<E> From<&str> for NativeCallError<E> {
 /// Calls a native standard-library method by the path generated from its declaration.
 /// Returns `None` when no native bridge has been generated for the symbol yet.
 pub fn call_native_symbol(symbol: &str, arguments: &[Value]) -> Option<Result<Value, String>> {
+    if is_native_constructor_symbol(symbol) {
+        return Some(Err(
+            "native construction requires an owned call with a type context".into(),
+        ));
+    }
     native::call_symbol(symbol, arguments).or_else(|| {
         if let Some((declaration, target)) = rils_builtins::intrinsic_by_symbol(symbol) {
             return Some(crate::numeric::execute_intrinsic(
@@ -83,6 +86,9 @@ pub fn call_native_owned_symbol(
     arguments: Vec<Value>,
     context: &NativeOwnedContext,
 ) -> Option<Result<Value, String>> {
+    if is_native_constructor_symbol(symbol) {
+        return call_native_constructor_symbol(symbol, arguments, context, None);
+    }
     if let Some((owner, member)) = owned_sum_member(symbol)
         && owner.path == "Option"
         && arguments
@@ -98,9 +104,24 @@ pub fn call_native_owned_symbol(
 }
 
 pub fn requires_owned_native_call(symbol: &str) -> bool {
-    requires_native_callback(symbol)
+    is_native_constructor_symbol(symbol)
+        || requires_native_callback(symbol)
         || owned_sum_member(symbol).is_some()
         || native::is_owned_symbol(symbol)
+}
+
+fn is_native_constructor_symbol(symbol: &str) -> bool {
+    native::is_constructor_symbol(symbol)
+}
+
+/// Calls a declared storage constructor with the complete result type, when available.
+pub fn call_native_constructor_symbol(
+    symbol: &str,
+    arguments: Vec<Value>,
+    context: &NativeOwnedContext,
+    expected: Option<&Type>,
+) -> Option<Result<Value, String>> {
+    native::call_constructor_symbol(symbol, arguments, context, expected)
 }
 
 pub fn requires_native_callback(symbol: &str) -> bool {
@@ -124,8 +145,8 @@ fn owned_sum_member(
 }
 
 /// Calls an exported symbol with owned arguments and a fallible callable hook.
-/// `expected` supplies the complete result witness for generic sum outputs,
-/// including branches on which the callback is not invoked.
+/// `expected` supplies the complete result witness for generic outputs,
+/// including constructors and branches on which the callback is not invoked.
 pub fn call_native_symbol_with_callback<E>(
     symbol: &str,
     arguments: Vec<Value>,
@@ -133,7 +154,10 @@ pub fn call_native_symbol_with_callback<E>(
     expected: Option<&Type>,
     callback: &mut NativeCallback<'_, E>,
 ) -> Option<Result<Value, NativeCallError<E>>> {
-    if requires_native_callback(symbol) {
+    if is_native_constructor_symbol(symbol) {
+        call_native_constructor_symbol(symbol, arguments, context, expected)
+            .map(|result| result.map_err(Into::into))
+    } else if requires_native_callback(symbol) {
         native::call_callback_symbol(symbol, arguments, context, expected, callback).map(|result| {
             let value = result?;
             if let Some(expected) = expected

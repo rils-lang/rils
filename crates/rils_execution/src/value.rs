@@ -54,7 +54,6 @@ mod access;
 pub(crate) mod borrowed;
 mod conversion;
 pub mod equality;
-pub(crate) mod native_key;
 mod ownership;
 mod primitive;
 pub use crate::numeric::{
@@ -71,6 +70,7 @@ pub use reference::ReferenceValue;
 
 #[path = "value/iterator.rs"]
 mod iterator;
+pub(crate) use iterator::BorrowedIteratorProjection;
 pub use iterator::{BorrowedIndexedIteratorValue, IndexedIteratorStorage, OwnedIteratorValue};
 
 pub type HostFunctionHandler = dyn Fn(&[Value]) -> Result<Value, String>;
@@ -240,9 +240,6 @@ pub enum BuiltinMethod {
 
 #[derive(Clone, Copy)]
 pub enum BuiltinType {
-    Vec,
-    HashMap,
-    HashSet,
     Integer(crate::IntegerType),
     Float(crate::FloatType),
 }

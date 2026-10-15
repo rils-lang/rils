@@ -109,36 +109,16 @@ impl<'a> DynamicValueRef<'a> {
     pub fn with_sequence_item<R>(
         &self,
         index: usize,
-        callback: impl FnOnce(&DynamicValue) -> R,
+        callback: impl FnOnce(DynamicValueRef<'_>) -> R,
     ) -> Result<R, String> {
-        let (pointer, layout) = self.root.project(&self.path)?;
-        if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {
-            return Err("value is not a sequence".into());
-        }
-        // SAFETY: project checked the initialized sequence; the root borrow
-        // keeps its item allocation alive throughout the callback.
-        let storage = unsafe { &*pointer.cast::<SequenceStorage>() };
-        let item = storage
-            .items
-            .get(index)
-            .ok_or_else(|| format!("sequence index {index} is out of bounds"))?;
+        let item = self.sequence_item(index)?;
+        item.layout()?;
         Ok(callback(item))
     }
 
-    /// Borrow the original sequence allocation for a read-only native method.
-    /// The callback cannot replace elements or change the borrow ledger.
-    pub fn with_sequence_storage<R>(
-        &self,
-        callback: impl FnOnce(&Vec<DynamicValue>) -> R,
-    ) -> Result<R, String> {
-        let (pointer, layout) = self.root.project(&self.path)?;
-        if !matches!(layout.drop_kind, DropKind::Sequence { .. }) {
-            return Err("value is not a sequence".into());
-        }
-        // SAFETY: project validates the initialized sequence at this path.
-        // The root's immutable borrow keeps the header and allocation alive.
-        let storage = unsafe { &*pointer.cast::<SequenceStorage>() };
-        Ok(callback(&storage.items))
+    /// Validate an indexed view without exposing the backing allocation.
+    pub fn indexed(&self) -> Result<super::IndexedView<'_>, String> {
+        super::IndexedView::new(self.clone())
     }
 
     pub fn sequence_len(&self) -> Result<usize, String> {

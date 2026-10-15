@@ -3,6 +3,21 @@
 本文档记录尚未完成的优化、新特性和生态工作。条目按主题归类，不绑定具体版本；实际排期
 会根据使用场景、兼容性和测试结果调整。已完成的能力应从这里移除，并同步到正式文档。
 
+## Rils 原生布局与泛型存储
+
+Vec、VecDeque、BinaryHeap、Map、Set 的现有构造、查询、修改和迭代已统一执行标准库方法体；
+多参数条目布局和借用字段投影来自存储声明。存储协议与调用边界见
+[标准库文档](crates/rils_stdlib/README.md)和[声明宏文档](crates/rils_stdlib_macros/README.md)。
+后续布局工作沿用这些访问边界，无需先补另一套集合专用桥接。
+
+- 已确定方向：Rils 自行定义标量、struct、enum、数组和泛型容器的进程内布局，不要求等价于 Rust 对应类型；Rust 互操作在边界显式转换。进程内布局不是字节码或 C ABI 的持久化格式。
+- `Vec<T>` 的目标是按具体 T 的大小和对齐连续保存元素，容器共享元素描述；不以 `Vec<DynamicValue>` 或逐元素引用作为最终表示。类型实例化只要求生成布局与操作绑定，不要求生成每个实例的机器码。
+- 待实施的协议：分开表示不可变类型布局、拥有型存储、初始化/部分 move 状态与借用凭据。record 的字段存活标记不再占据用户字段负载；数组以元素步长描述，不为每个索引建立一份字段描述。enum 判别标记属于值布局，初始化标记属于运行时状态。
+- 通用内存层提供按布局分配、原位构造、移动、析构和受控投影；stdlib 定义容器头布局、增长策略、集合算法及迭代行为。execution 仅组织 Value 类别、词法引用和脚本调用；不增加 Vec、Map 等具体类型分支。
+- 首批验证连续 Vec：同时修改元素投影、借用检查、构造/取出和消费式迭代。`into_iter` 接管原缓冲区与剩余初始化区间，不预先展开成 `Vec<DynamicValue>`。边界临时值可以拥有独立存储，但不能成为容器内逐元素的常驻包装。
+- 当前物理布局仍需重构：`SequenceStorage.items` 是 `Vec<DynamicValue>`；record 的负载带字段初始化字节；独立 `None` 可能只分配标记字节。只读索引和消费式迭代已收拢到 `IndexedView` / `OwnedElements`，后续替换其内部存储；新增按布局的移动入口必须按有效分支和初始化状态操作，不能假定所有旧值都已分配完整布局并直接整块读取。
+- 验证矩阵覆盖零大小/高对齐元素、容量溢出、部分构造失败、非 Copy 精确析构、嵌套 struct/enum/Vec、引用阻止地址失效及 Rust 边界转换。增加可重复 release benchmark，分别测元素区大小、分配次数和操作耗时；不能仅以功能测试证明已实现紧凑存储。
+
 ## 泛型 trait bound 一致性
 
 - `Display` / `Debug` 的调用约束已进入共享前端；字节码编译路径仍需补齐其他泛型函数调用的 trait bound。目前解释器会拒绝将 `Option<string>` 传给 `T: Copy`，但字节码路径尚未拒绝同一调用；应在共享前端完成检查，并增加解释器与 VM 的失败路径对照测试。
@@ -25,7 +40,7 @@
 
 ### 运行时与编译器
 
-- Rust 执行入口已返回 `RilsValue`，原生组合值和 `Vec<T>` 元素引用现可经 `with_native_view` 沿布局借用读取；继续把脚本内部 `ReferenceValue::read`、其他集合查询、方法分发及容器接到该视图，消除对拥有型 `Value` 的依赖。用户结构体映射的 derive 暂缓，后续放入已确定的 `rils_host_macros`，生成临时 Rust 对象的移出、异常恢复和写回代码。`Vec<T>` 的布局提升、索引引用及迭代器创建已移除 `can_read_element` 门槛；迁移内部调用后删除仅供兼容的原始 `Value` 返回入口。
+- Rust 执行入口已返回 `RilsValue`，原生组合值和集合元素引用可沿布局借用读取，内建集合查询与方法桥接已统一使用受控存储视图；继续检查脚本内部 `ReferenceValue::read`、其他方法分发及宿主边界，消除不必要的拥有型 `Value` 转换。用户结构体映射的 derive 暂缓，后续放入已确定的 `rils_host_macros`，生成临时 Rust 对象的移出、异常恢复和写回代码。`Vec<T>` 的布局提升、索引引用及迭代器创建已移除 `can_read_element` 门槛；迁移内部调用后删除仅供兼容的原始 `Value` 返回入口。
 - `Value` 迁移以删除旧表示为阶段终点，交叉影响的构造、存储、调用、引用、返回和宿主接口一起修改；不为维持旧测试增设过渡兼容层。允许中间态测试未迁完，发布前必须恢复完整验证。所有标量、Option/Result、tuple/数组及全部内建集合的旧表示、两种旧 Map/Set 借用迭代器已删除；累计删除 49 项，旧枚举由本轮迁移开始的 52 项降至 3 项。IndexedStorage、FieldSlot、HashKey/KeyIdentity、旧集合 receiver、引用投影及比较路径也已删除。
 - OwnedIterator、BorrowedIndexedIterator、BytecodeIterator 已接入 Native 注册，删除对应旧 Value 分支及拥有型迭代器的 Value 缓存；空迭代器和耗尽后的 None 保留元素布局与声明，自定义 Native 描述符、非 Copy 析构和引用来源已有测试。Reference 已接入原生引用叶子布局并删除旧枚举分支；独立引用、容器内引用、解释器/VM 投影、借用模式、Copy 和宿主读取共用原生句柄。十种函数、绑定方法和构造器分支已从 Value 删除，容器编码中的 Callable 枚举也已删除；统一使用 Dynamic callable 句柄，由具体 CallTarget 提供签名、显示及捕获值遍历，后端按具体目标执行。声明绑定已与值槽位分离：TypeDeclarations 拥有声明，名称解析返回 Binding，模块导出保留声明身份；StructType/EnumType/TraitType/TypeAlias/HostType/BuiltinType/Module 已移出 Value，声明无法进入 StorageSlot。Value 当前仅保留 Native/Dynamic/HostObject 三类物理存储。构造器使用 callable 目标，实例只保留布局与声明身份；保留 Value 作为三类存储的统一载体，清理其中残留的旧表示和兼容转换。
 - 继续检查局部槽位、VM 寄存器、原生调用和 `RilsValue` 的剩余转换入口；当前统一载体已只有 Native、Dynamic、HostObject 三类，不再依赖旧类型大枚举。

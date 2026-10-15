@@ -1,4 +1,7 @@
-use rils_stdlib::native_collections::queue;
+use rils_stdlib::{
+    stdlib::collections::{BinaryHeap, VecDeque},
+    storage::CloningView,
+};
 use rils_syntax::Type;
 use rils_value::{DynamicLayout, DynamicValue};
 
@@ -31,26 +34,60 @@ fn native_heap_matches_rust_heap_and_preserves_storage_on_borrow_failure() {
         let mut native = empty();
         let mut expected = std::collections::BinaryHeap::new();
         for value in input {
-            queue::heap_push(native.view_mut(), item(value)).unwrap();
+            BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+                .push(item(value))
+                .unwrap();
             expected.push(value);
         }
+        let heap = native.view();
+        let heap = BinaryHeap::<DynamicValue, _>::with_storage(CloningView::new(
+            heap.indexed().unwrap(),
+            |view| view.with_rust::<i32, _>(|value| item(*value)),
+        ));
+        assert_eq!(
+            heap.peek_cloned().unwrap().map(number),
+            expected.peek().copied()
+        );
         let lease = native
             .sequence_borrows()
             .unwrap()
             .begin_iteration()
             .unwrap();
         if !expected.is_empty() {
-            assert!(queue::heap_pop(native.view_mut()).is_err());
+            assert!(
+                BinaryHeap::<(), _>::with_storage(native.view_mut())
+                    .clear()
+                    .is_err()
+            );
+            assert!(
+                BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+                    .pop()
+                    .is_err()
+            );
         }
-        assert!(queue::heap_push(native.view_mut(), item(100)).is_err());
+        assert!(
+            BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+                .push(item(100))
+                .is_err()
+        );
         drop(lease);
         while let Some(value) = expected.pop() {
             assert_eq!(
-                number(queue::heap_pop(native.view_mut()).unwrap().unwrap()),
+                number(
+                    BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+                        .pop()
+                        .unwrap()
+                        .unwrap()
+                ),
                 value
             );
         }
-        assert!(queue::heap_pop(native.view_mut()).unwrap().is_none());
+        assert!(
+            BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+                .pop()
+                .unwrap()
+                .is_none()
+        );
     }
 }
 
@@ -66,14 +103,73 @@ fn deque_pop_preserves_end_order_and_rejects_active_borrows() {
             .unwrap()
             .begin_iteration()
             .unwrap();
-        assert!(queue::pop(native.view_mut(), back).is_err());
+        assert!(pop(&mut native, back).is_err());
         drop(lease);
         for expected in if back { [3, 2, 1] } else { [1, 2, 3] } {
-            assert_eq!(
-                number(queue::pop(native.view_mut(), back).unwrap().unwrap()),
-                expected
-            );
+            assert_eq!(number(pop(&mut native, back).unwrap().unwrap()), expected);
         }
-        assert!(queue::pop(native.view_mut(), back).unwrap().is_none());
+        assert!(pop(&mut native, back).unwrap().is_none());
     }
+}
+
+fn pop(value: &mut DynamicValue, back: bool) -> Result<Option<DynamicValue>, String> {
+    let mut deque = VecDeque::<DynamicValue, _>::with_storage(value.view_mut());
+    if back {
+        deque.pop_back()
+    } else {
+        deque.pop_front()
+    }
+}
+
+#[test]
+fn heap_rejects_unsupported_elements_before_mutating_and_clear_keeps_layout() {
+    let mut unsupported = DynamicValue::sequence(
+        DynamicLayout::sequence(
+            Type::named("Heap"),
+            DynamicLayout::copy_of::<bool>(Type::Bool),
+        ),
+        vec![],
+    )
+    .unwrap();
+    let rejected =
+        DynamicValue::from_rust(DynamicLayout::copy_of::<bool>(Type::Bool), true).unwrap();
+    let error = BinaryHeap::<DynamicValue, _>::with_storage(unsupported.view_mut())
+        .push(rejected)
+        .unwrap_err();
+    assert!(error.contains("does not support ordering bool"), "{error}");
+    assert_eq!(unsupported.view().sequence_len().unwrap(), 0);
+
+    let mut native = empty();
+    for value in [3, 1, 2] {
+        BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+            .push(item(value))
+            .unwrap();
+    }
+    let view = native.view();
+    let failing = BinaryHeap::<DynamicValue, _>::with_storage(CloningView::new(
+        view.indexed().unwrap(),
+        |_| Err("clone failed".into()),
+    ));
+    assert_eq!(failing.peek_cloned().err().unwrap(), "clone failed");
+    BinaryHeap::<(), _>::with_storage(native.view_mut())
+        .clear()
+        .unwrap();
+    assert!(
+        BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+            .pop()
+            .unwrap()
+            .is_none()
+    );
+    BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+        .push(item(7))
+        .unwrap();
+    assert_eq!(
+        number(
+            BinaryHeap::<DynamicValue, _>::with_storage(native.view_mut())
+                .pop()
+                .unwrap()
+                .unwrap()
+        ),
+        7
+    );
 }

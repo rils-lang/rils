@@ -191,71 +191,7 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
     }
 
     install_builtin_traits(environment);
-    install_format_types(environment);
-    environment.borrow_mut().define(
-        "Vec",
-        crate::value::Declaration::BuiltinType(BuiltinType::Vec),
-        false,
-        None,
-    );
-    environment.borrow_mut().define(
-        "HashMap",
-        crate::value::Declaration::BuiltinType(BuiltinType::HashMap),
-        false,
-        None,
-    );
-    environment.borrow_mut().define(
-        "HashSet",
-        crate::value::Declaration::BuiltinType(BuiltinType::HashSet),
-        false,
-        None,
-    );
-    for name in [
-        "Box",
-        "Rc",
-        "Weak",
-        "Cell",
-        "RefCell",
-        "VecDeque",
-        "BinaryHeap",
-        "BTreeMap",
-        "BTreeSet",
-    ] {
-        environment.borrow_mut().define(
-            name,
-            crate::value::Declaration::StructType(Rc::new(StructType {
-                field_indices: Default::default(),
-                name: name.into(),
-                opaque_native: rils_builtins::builtin(name)
-                    .is_some_and(|declaration| declaration.opaque_native),
-                generic_parameters: if name == "BTreeMap" {
-                    ["K", "V"]
-                        .into_iter()
-                        .map(|name| GenericParameter {
-                            is_const: false,
-                            name: name.into(),
-                            bounds: Vec::new(),
-                            span: Span::default(),
-                        })
-                        .collect()
-                } else {
-                    vec![GenericParameter {
-                        is_const: false,
-                        name: "T".into(),
-                        bounds: Vec::new(),
-                        span: Span::default(),
-                    }]
-                },
-                fields: Vec::new(),
-                methods: Default::default(),
-                trait_methods: Default::default(),
-                implemented_traits: RefCell::new(HashSet::new()),
-                associated_types: RefCell::new(HashMap::new()),
-            })),
-            false,
-            None,
-        );
-    }
+    install_builtin_structs(environment);
     for integer in crate::IntegerType::ALL {
         environment.borrow_mut().define(
             integer.name(),
@@ -272,58 +208,6 @@ pub(super) fn install_builtins(environment: &EnvironmentRef) {
             None,
         );
     }
-    environment.borrow_mut().define(
-        "Range",
-        crate::value::Declaration::StructType(Rc::new(StructType {
-            field_indices: Default::default(),
-            name: "Range".into(),
-            opaque_native: rils_builtins::builtin("Range")
-                .is_some_and(|declaration| declaration.opaque_native),
-            generic_parameters: vec![GenericParameter {
-                is_const: false,
-                name: "T".into(),
-                bounds: Vec::new(),
-                span: Span::default(),
-            }],
-            fields: Vec::new(),
-            methods: Default::default(),
-            trait_methods: Default::default(),
-            implemented_traits: RefCell::new(
-                ["Iterator".to_string(), "IntoIterator".to_string()]
-                    .into_iter()
-                    .collect(),
-            ),
-            associated_types: RefCell::new(HashMap::from([
-                (
-                    "Iterator".to_string(),
-                    HashMap::from([(
-                        "Item".to_string(),
-                        TypeAliasType {
-                            name: "Item".into(),
-                            generic_parameters: Vec::new(),
-                            target: Type::Variable("T".into()),
-                        },
-                    )]),
-                ),
-                (
-                    "IntoIterator".to_string(),
-                    HashMap::from([(
-                        "IntoIter".to_string(),
-                        TypeAliasType {
-                            name: "IntoIter".into(),
-                            generic_parameters: Vec::new(),
-                            target: Type::Named {
-                                name: "Range".into(),
-                                arguments: vec![Type::Variable("T".into())],
-                            },
-                        },
-                    )]),
-                ),
-            ])),
-        })),
-        false,
-        None,
-    );
     install_builtin_modules(environment);
 }
 
@@ -396,21 +280,34 @@ fn builtin_module(environment: &EnvironmentRef, path: &str) -> Rc<ModuleValue> {
     })
 }
 
-fn install_format_types(environment: &EnvironmentRef) {
-    for name in ["Formatter", "FormatError"] {
+fn install_builtin_structs(environment: &EnvironmentRef) {
+    for declaration in rils_frontend::standard_library::builtin_runtime_struct_declarations() {
+        let mut associated_types: HashMap<String, HashMap<String, TypeAliasType>> = HashMap::new();
+        for ((trait_name, name), target) in &declaration.associated_types {
+            associated_types
+                .entry(trait_name.clone())
+                .or_default()
+                .insert(
+                    name.clone(),
+                    TypeAliasType {
+                        name: name.clone(),
+                        generic_parameters: Vec::new(),
+                        target: target.clone(),
+                    },
+                );
+        }
         environment.borrow_mut().define(
-            name,
+            declaration.name,
             crate::value::Declaration::StructType(Rc::new(StructType {
                 field_indices: Default::default(),
-                name: name.into(),
-                opaque_native: rils_builtins::builtin(name)
-                    .is_some_and(|declaration| declaration.opaque_native),
-                generic_parameters: Vec::new(),
-                fields: Vec::new(),
+                name: declaration.name.into(),
+                opaque_native: declaration.opaque_native,
+                generic_parameters: declaration.generic_parameters.clone(),
+                fields: declaration.fields.clone(),
                 methods: Default::default(),
                 trait_methods: Default::default(),
                 implemented_traits: Default::default(),
-                associated_types: Default::default(),
+                associated_types: RefCell::new(associated_types),
             })),
             false,
             None,

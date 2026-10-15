@@ -90,13 +90,10 @@ fn collection_outputs_retain_declarations_after_leaving_the_execution_context() 
                         .is_ok_and(|present| !present)
                 );
             }
-            let borrowed = call_native_owned_symbol(
-                symbol(owner, "iter"),
-                vec![receiver.clone()],
-                &NativeOwnedContext::default(),
-            )
-            .unwrap()
-            .unwrap();
+            let borrowed =
+                call_native_symbol(symbol(owner, "iter"), std::slice::from_ref(&receiver))
+                    .unwrap()
+                    .unwrap();
             let Value::Native(borrowed) = borrowed else {
                 panic!("native borrowed iterator expected")
             };

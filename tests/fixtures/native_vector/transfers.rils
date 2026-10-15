@@ -1,0 +1,11 @@
+struct Item { name: string }
+struct Holder { values: Vec<Item> }
+let mut holder = Holder { values: Vec::new() };
+holder.values.push(Item { name: "a" });
+holder.values.push(Item { name: "c" });
+holder.values.insert(1, Item { name: "b" });
+let first = holder.values.remove(0);
+let second = holder.values.swap_remove(0);
+let third = holder.values.pop().unwrap();
+let empty = holder.values.pop().is_none();
+if empty { first.name + second.name + third.name } else { "wrong" }

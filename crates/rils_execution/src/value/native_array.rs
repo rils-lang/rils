@@ -1,8 +1,7 @@
 //! Consume fixed native aggregates while preserving element layouts and declarations.
-use super::{DynamicObject, Value, record_codec::NativeRecordCodec};
+use super::{DynamicObject, record_codec::NativeRecordCodec};
 use crate::{Type, runtime_builtins::NativeOwnedContext};
 use rils_value::DynamicValue;
-use std::rc::Rc;
 
 fn consume(
     object: DynamicObject,
@@ -36,38 +35,14 @@ fn consume(
     Ok((payload, codec, element, length))
 }
 
-pub(crate) fn into_iterator(
+pub(crate) fn into_cursor(
     object: DynamicObject,
     context: &NativeOwnedContext,
-) -> Result<Value, String> {
-    let ty = object.descriptor().layout().rils_type().clone();
-    let (mut payload, codec, element, length) = consume(object, context)?;
-    let items = (0..length)
-        .map(|index| payload.take_field(index))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut iterator = super::OwnedIteratorValue::from_native(
-        items,
+) -> Result<(rils_value::OwnedElements, NativeRecordCodec), String> {
+    let (payload, codec, element, _) = consume(object, context)?;
+    let cursor = rils_value::OwnedElements::from_array(
+        payload,
         codec.resolve_layout(&element, &context.hosts)?,
-        codec,
     )?;
-    if let Some(ty) = crate::iteration::declared_iterator_type(&ty) {
-        iterator = iterator.with_iterator_type(ty);
-    }
-    Ok(Value::from_owned_iterator(iterator))
-}
-
-pub(crate) fn into_vec(
-    object: DynamicObject,
-    context: &NativeOwnedContext,
-) -> Result<Value, String> {
-    let (mut payload, codec, element, length) = consume(object, context)?;
-    let ty = Type::Named {
-        name: "Vec".into(),
-        arguments: vec![element],
-    };
-    let layout = codec.resolve_layout(&ty, &context.hosts)?;
-    let items = (0..length)
-        .map(|index| payload.take_field(index))
-        .collect::<Result<Vec<_>, _>>()?;
-    super::native_instance::from_native(DynamicValue::sequence(layout, items)?, Rc::new(codec))
+    Ok((cursor, codec))
 }

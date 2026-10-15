@@ -10,7 +10,7 @@ fn value<T>(option: Option<T>) -> std::option::Option<T> {
 
 #[test]
 fn ordered_set_preserves_order_and_set_operations() {
-    let mut values = BTreeSet::new();
+    let mut values: BTreeSet<i32> = BTreeSet::new();
     assert!(values.insert(3));
     assert!(values.insert(1));
     assert!(!values.insert(1));
@@ -19,7 +19,7 @@ fn ordered_set_preserves_order_and_set_operations() {
     assert_eq!(value(values.last_cloned()), Some(3));
     assert_eq!(values.iter().copied().collect::<Vec<_>>(), [1, 3]);
 
-    let mut other = BTreeSet::new();
+    let mut other: BTreeSet<i32> = BTreeSet::new();
     other.insert(3);
     other.insert(4);
     assert_eq!(
@@ -47,7 +47,7 @@ fn ordered_set_preserves_order_and_set_operations() {
 
 #[test]
 fn ordered_map_preserves_keys_and_replaces_values() {
-    let mut values = BTreeMap::new();
+    let mut values: BTreeMap<i32, &str> = BTreeMap::new();
     assert_eq!(value(values.insert(2, "two")), None);
     assert_eq!(value(values.insert(1, "one")), None);
     assert_eq!(value(values.insert(2, "second")), Some("two"));

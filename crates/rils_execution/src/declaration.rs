@@ -21,9 +21,6 @@ impl Declaration {
         match self {
             Self::HostType(value) => format!("type {}", value.name),
             Self::BuiltinType(value) => match value {
-                BuiltinType::Vec => "type Vec".into(),
-                BuiltinType::HashMap => "type HashMap".into(),
-                BuiltinType::HashSet => "type HashSet".into(),
                 BuiltinType::Integer(kind) => format!("type {kind}"),
                 BuiltinType::Float(kind) => format!("type {kind}"),
             },

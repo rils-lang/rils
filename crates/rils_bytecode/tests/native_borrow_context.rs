@@ -4,7 +4,10 @@ use rils_bytecode::{BytecodeModule, compile};
 use rils_execution::{
     Value,
     declaration::Declaration,
-    runtime_builtins::{NativeOwnedContext, call_native_owned_symbol},
+    runtime_builtins::{
+        NativeOwnedContext, call_native_owned_symbol, call_native_symbol,
+        requires_owned_native_call,
+    },
     value::{
         ReferenceValue, native_i32,
         native_instance::{NativeInstancePlace, value_definition},
@@ -16,7 +19,11 @@ fn call(owner: &str, method: &str, value: Value) -> Result<Value, String> {
         .unwrap()
         .native_symbol
         .unwrap();
-    call_native_owned_symbol(symbol, vec![value], &NativeOwnedContext::default()).unwrap()
+    if requires_owned_native_call(symbol) {
+        call_native_owned_symbol(symbol, vec![value], &NativeOwnedContext::default()).unwrap()
+    } else {
+        call_native_symbol(symbol, &[value]).unwrap()
+    }
 }
 
 fn assert_item(value: &Value) {

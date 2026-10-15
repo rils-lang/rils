@@ -360,7 +360,8 @@ fn borrowed_map_and_set_items_block_structural_mutation() {
     ] {
         let error = eval_value(source).expect_err("mutation must be rejected while borrowed");
         assert!(
-            error.to_string().contains("cannot mutate"),
+            error.to_string().contains("cannot structurally mutate")
+                && error.to_string().contains("referenced"),
             "{source}: {error}"
         );
     }

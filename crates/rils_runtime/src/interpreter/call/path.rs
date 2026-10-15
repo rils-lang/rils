@@ -9,15 +9,6 @@ pub(super) fn resolve_associated_path(
     span: Span,
 ) -> Result<Value, RuntimeError> {
     match base {
-        crate::value::Declaration::BuiltinType(BuiltinType::Vec) => {
-            native_collection_member("Vec", member, span)
-        }
-        crate::value::Declaration::BuiltinType(BuiltinType::HashMap) => {
-            native_collection_member("HashMap", member, span)
-        }
-        crate::value::Declaration::BuiltinType(BuiltinType::HashSet) => {
-            native_collection_member("HashSet", member, span)
-        }
         crate::value::Declaration::BuiltinType(BuiltinType::Integer(target)) => {
             if let Some(constant) = rils_builtins::integer_constant(member) {
                 return Ok(crate::numeric::integer_constant(target, constant.id));
@@ -46,38 +37,10 @@ pub(super) fn resolve_associated_path(
             Ok(crate::numeric::float_constant(target, constant.id))
         }
         crate::value::Declaration::StructType(definition) => {
-            if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
-                && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
-                && let Some(symbol) = builtin.native_symbol
-                && crate::runtime_builtins::requires_owned_native_call(symbol)
-                && let Some(signature) =
-                    rils_frontend::standard_library::erased_builtin_member_signature(builtin)
+            if rils_builtins::builtin_member(&definition.name, member)
+                .is_some_and(|member| member.native_symbol.is_some())
             {
-                let arity = signature.parameters.as_ref().map_or(0, Vec::len);
-                return Ok(Value::from_callable(Rc::new(NativeFunction {
-                    binding_name: symbol,
-                    name: symbol,
-                    min_arity: arity,
-                    max_arity: arity,
-                    signature: Some(signature),
-                    body: NativeFunctionBody::Symbol(symbol),
-                })));
-            }
-            if let Some(builtin) = rils_builtins::builtin_member(&definition.name, member)
-                && builtin.kind == rils_builtins::BuiltinMemberKind::AssociatedFunction
-                && let Some(symbol) = builtin.native_symbol
-                && let Some(signature) =
-                    rils_frontend::standard_library::erased_builtin_member_signature(builtin)
-            {
-                let arity = signature.parameters.as_ref().map_or(0, Vec::len);
-                return Ok(Value::from_callable(Rc::new(NativeFunction {
-                    binding_name: symbol,
-                    name: symbol,
-                    min_arity: arity,
-                    max_arity: arity,
-                    signature: Some(signature),
-                    body: NativeFunctionBody::Symbol(symbol),
-                })));
+                return native_declared_member(&definition.name, member, span);
             }
             let method = select_method(&definition.methods, &definition.trait_methods, member)
                 .map_err(|traits| {
@@ -156,7 +119,7 @@ pub(super) fn resolve_associated_path(
     }
 }
 
-fn native_collection_member(owner: &str, member: &str, span: Span) -> Result<Value, RuntimeError> {
+fn native_declared_member(owner: &str, member: &str, span: Span) -> Result<Value, RuntimeError> {
     let declaration = rils_builtins::builtin_member(owner, member)
         .ok_or_else(|| RuntimeError::new(format!("{owner} has no `{member}` method"), span))?;
     let symbol = declaration.native_symbol.ok_or_else(|| {

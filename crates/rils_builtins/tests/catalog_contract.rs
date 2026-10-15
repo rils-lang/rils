@@ -929,3 +929,81 @@ fn boxed_methods_are_exported_from_the_wrapper_definition() {
     assert_eq!(signature.parameters.len(), 1);
     assert_eq!(signature.result, rils_builtins::TypePattern::SelfType);
 }
+
+#[test]
+fn sequence_backend_is_not_a_language_type_parameter() {
+    let declaration = builtin("Vec").unwrap();
+    assert_eq!(declaration.type_parameters, &["T"]);
+    let source = declaration.source.unwrap();
+    assert!(source.contains("struct Vec<T>"), "{source}");
+    assert!(!source.contains("SequenceRead"));
+    assert!(!source.contains("TruncateOutput"));
+    assert!(!source.contains("SequenceTruncate"));
+    for hidden in [
+        "WriteOutput",
+        "TakeOutput",
+        "PopOutput",
+        "SequenceTransfer",
+        "SearchOutput",
+        "ExtendOutput",
+        "SequenceExtend",
+        "SequenceIter",
+        "SequenceIntoIter",
+        "S::IntoIter",
+        "rils_associated",
+        "IterOutput",
+        "SequenceSearch",
+    ] {
+        assert!(!source.contains(hidden));
+    }
+    assert!(!source.contains("rils_storage"));
+    assert!(!source.contains("<T, S>"));
+    for name in [
+        "len",
+        "is_empty",
+        "clear",
+        "truncate",
+        "push",
+        "insert",
+        "pop",
+        "remove",
+        "swap_remove",
+    ] {
+        let member = builtin_member("Vec", name).unwrap();
+        assert!(member.type_parameters.is_empty());
+        assert!(member.native_symbol.is_some());
+        if matches!(name, "clear" | "truncate") {
+            let signature = member.signature.as_ref().unwrap();
+            assert_eq!(signature.result, TypePattern::Unit);
+            assert_eq!(signature.parameters.len(), usize::from(name == "truncate"));
+        }
+    }
+}
+
+#[test]
+fn sequence_transfer_signatures_retain_element_parameters() {
+    for (name, arity) in [("push", 1), ("insert", 2)] {
+        let method = builtin_member("Vec", name).unwrap();
+        let signature = method.signature.as_ref().unwrap();
+        assert_eq!(signature.parameters.len(), arity);
+        assert_eq!(signature.parameters[arity - 1], TypePattern::Generic("T"));
+        assert_eq!(signature.result, TypePattern::Unit);
+    }
+    for name in ["remove", "swap_remove"] {
+        let signature = builtin_member("Vec", name)
+            .unwrap()
+            .signature
+            .as_ref()
+            .unwrap();
+        assert_eq!(signature.result, TypePattern::Generic("T"));
+    }
+    assert_eq!(
+        builtin_member("Vec", "pop")
+            .unwrap()
+            .signature
+            .as_ref()
+            .unwrap()
+            .result,
+        TypePattern::Option(&TypePattern::Generic("T"))
+    );
+}

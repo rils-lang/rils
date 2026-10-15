@@ -10,109 +10,26 @@ use syn::{
 use crate::type_patterns;
 
 mod cell;
-mod keyed;
 mod native;
 mod shared;
+pub(super) mod storage;
 mod vector;
 
 pub(super) fn expand_native(path: Path, module: ItemMod) -> TokenStream {
     native::expand(path, module)
 }
 
-pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
-    let definition = match Definition::parse(path, module) {
-        Ok(definition) => definition,
-        Err(error) => return error.into_compile_error().into(),
-    };
-    let Some((shape, boxed)) = layout_shape(&definition.item) else {
-        return Error::new_spanned(
-            &definition.item,
-            "native collection layout requires one supported standard-library collection field",
-        )
-        .into_compile_error()
-        .into();
-    };
-    let name = definition.item.ident.to_string();
-    let item_layout = if shape == 1 {
-        quote! { resolve_child(&arguments[0]) }
-    } else {
-        quote! {
-            (|| {
-                let key = resolve_child(&arguments[0])?;
-                let value = resolve_child(&arguments[1])?;
-                rils_value::DynamicLayout::aggregate(
-                    crate::Type::Tuple(arguments.clone()),
-                    vec![("0".into(), key), ("1".into(), value)],
-                )
-            })()
-        }
-    };
-    let layout = if boxed {
-        quote! {
-            Some(Ok(rils_value::DynamicLayout::of::<std::boxed::Box<dyn std::any::Any>>(ty.clone())))
-        }
-    } else {
-        quote! {
-            Some(#item_layout
-                .map(|item| rils_value::DynamicLayout::sequence(ty.clone(), item)))
-        }
-    };
-    quote! {
-        pub fn matches(ty: &crate::Type) -> bool {
-            matches!(ty, crate::Type::Named { name, arguments }
-                if name == #name && arguments.len() == #shape)
-        }
+mod layout;
 
-        pub fn layout(
-            ty: &crate::Type,
-            resolve_child: &mut dyn FnMut(&crate::Type) -> Result<std::rc::Rc<rils_value::DynamicLayout>, String>,
-        ) -> Option<Result<std::rc::Rc<rils_value::DynamicLayout>, String>> {
-            let crate::Type::Named { arguments, .. } = ty else {
-                return None;
-            };
-            if !matches(ty) {
-                return None;
-            }
-            let _ = resolve_child;
-            #layout
-        }
-    }
-    .into()
+pub(super) fn expand_layout(path: Path, module: ItemMod) -> TokenStream {
+    Definition::parse(path, module)
+        .and_then(|definition| layout::tokens(&definition))
+        .unwrap_or_else(|error| error.into_compile_error())
+        .into()
 }
 
 pub(crate) fn supports_layout(item: &ItemStruct) -> bool {
-    layout_shape(item).is_some()
-}
-
-fn layout_shape(item: &ItemStruct) -> Option<(usize, bool)> {
-    let Fields::Unnamed(fields) = &item.fields else {
-        return None;
-    };
-    if fields.unnamed.len() != 1 {
-        return None;
-    }
-    let storage = fields
-        .unnamed
-        .first()?
-        .ty
-        .to_token_stream()
-        .to_string()
-        .replace(' ', "");
-    let type_count = item.generics.type_params().count();
-    let shape: usize = match (type_count, storage.as_str()) {
-        (
-            1,
-            "std::vec::Vec<T>"
-            | "std::collections::VecDeque<T>"
-            | "std::collections::BinaryHeap<T>"
-            | "std::collections::HashSet<T>"
-            | "std::collections::BTreeSet<T>",
-        ) => 1,
-        (2, "std::collections::HashMap<K,V>" | "std::collections::BTreeMap<K,V>") => 2,
-        (1, "std::boxed::Box<T>") => 1,
-        _ => 0,
-    };
-    (shape != 0).then_some((shape, storage == "std::boxed::Box<T>"))
+    layout::shape(item).is_some()
 }
 
 struct Definition {
@@ -158,6 +75,7 @@ impl Definition {
                 "public tuple fields are not supported in Rils structs; use named fields",
             ));
         }
+        let language_generics = storage::language_generics(&item)?;
         let traits = super::trait_impls::parse(&item.attrs)?;
         if !traits.is_empty() && !item.generics.params.is_empty() {
             return Err(Error::new_spanned(
@@ -183,11 +101,13 @@ impl Definition {
             {
                 continue;
             }
+            storage::validate_impl_parameters(Some(&item), implementation)?;
             if implementation.trait_.is_some() {
+                let language_impl = storage::language_impl(&item, implementation)?;
                 if let Some(parsed) = super::trait_impls::parse_impl(
-                    implementation,
+                    &language_impl,
                     &item.ident,
-                    &item.generics,
+                    &language_generics,
                     item.attrs
                         .iter()
                         .any(|attr| attr.path().is_ident("rils_struct")),
@@ -211,7 +131,7 @@ impl Definition {
                         ));
                     }
                     trait_impls.push(parsed);
-                    exported_impls.push(implementation.clone());
+                    exported_impls.push(language_impl);
                 }
             }
             if implementation.trait_.is_some() {
@@ -237,7 +157,7 @@ impl Definition {
                         "exported struct member requires a public Rust body",
                     ));
                 }
-                methods.push(method.clone());
+                methods.push(storage::language_method(&item, method)?);
             }
         }
         if methods.is_empty()
@@ -252,6 +172,7 @@ impl Definition {
                 "definition needs a #[export_rils] method",
             ));
         }
+        storage::validate_surface(&item, &methods)?;
         let mut names = std::collections::BTreeSet::new();
         for method in &methods {
             if !names.insert(method.sig.ident.to_string()) {
@@ -270,9 +191,7 @@ impl Definition {
 
     fn source(&self) -> syn::Result<String> {
         let name = &self.item.ident;
-        let type_parameters = self
-            .item
-            .generics
+        let type_parameters = storage::language_generics(&self.item)?
             .type_params()
             .map(|parameter| parameter.ident.to_string())
             .collect::<Vec<_>>();
@@ -580,14 +499,13 @@ pub(super) fn expand_metadata(path: Path, module: ItemMod) -> TokenStream {
 }
 
 fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
+    let source = definition.source()?;
     let name = definition.item.ident.to_string();
     let opaque_native = opaque_native(&definition.item);
     let (path, backend) = super::declaration_identity(&definition.path, &name);
     let docs = super::documentation(&definition.item.attrs);
     let module = &definition.path;
-    let type_parameters = definition
-        .item
-        .generics
+    let type_parameters = storage::language_generics(&definition.item)?
         .type_params()
         .map(|parameter| parameter.ident.to_string())
         .collect::<Vec<_>>();
@@ -737,7 +655,7 @@ fn metadata_tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStr
             path: #path,
             kind: crate::BuiltinKind::Struct,
             opaque_native: #opaque_native,
-            source: None,
+            source: Some(#source),
             supertraits: &[],
             type_parameters: &[#(#type_parameters),*],
             members: &[#(#fields,)* #(#methods),*],

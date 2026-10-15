@@ -23,10 +23,18 @@ argument conversion invokes Rils trait dispatch before passing rendered text to 
 导出自由函数的桥接器按具体函数签名生成适配闭包，不对参数个数预设固定上限。
 Option/Result 的回调方法已直接在带 `FnOnce` 约束、返回普通 Rust 值的方法上使用
 `#[export_rils]`；宏生成隐藏的可失败实现供运行时桥接调用。导出方法默认生成原生符号，
-无需额外的后端标记。Vec 的 receiver 代理把元素槽位临时移入 Rust 包装类型并在调用结束后归还；
-生成器从方法签名生成调用，Rust 检查参数与返回值是否满足转换接口。
-涉及词法引用的借用迭代，以及结构修改时的引用保护，仍由对应 receiver 适配器处理。
-其他复杂 receiver 类型仍需扩展原生桥接。
+无需额外的后端标记。Vec、VecDeque、BinaryHeap、HashMap、BTreeMap、HashSet、BTreeSet
+使用隐藏存储参数，方法体通过存储协议操作原生视图和拥有型游标；生成器按 receiver、参数与
+返回签名调用原方法，Rust 检查它们是否满足转换接口。
+构造也执行标准库方法体，执行边界提供具体结果布局；数组输入通过 `#[rils_param([T; N])]`
+保留 Rils 签名。Map 的条目使用 `sequence((K, V))` 声明，生成的 `EntrySchema` 决定字段投影，
+支持嵌套与重排；每个语言类型参数必须恰好出现一次。借用迭代器按声明产生引用或引用 tuple，
+即使 K 与 V 实例化为同一类型，也保留各自参数身份。
+键的 Hash/Ordered 策略、集合算法和名义 Eq + Hash 规则由标准库定义；执行层提供通用声明查询、
+克隆、布局转换和受控存储访问。集合运算的两侧各自保留来源声明，结果合并所需元数据。
+词法引用和结构修改保护由通用存储适配器维持。当前序列仍逐元素保存 `DynamicValue`，
+连续元素区等物理布局优化见根目录 [TODO](../../TODO.md)。
+完整协议及 Rust 调用迁移说明见 [声明宏文档](../rils_stdlib_macros/README.md)。
 
 Option/Result 的普通消费式方法从 receiver、参数和返回签名生成拥有型桥接，运行时只负责
 原生布局转换，不按方法名实现操作。泛型子值临时移入 Rust 的 `Option<Value>` /
@@ -57,7 +65,8 @@ trait impl 的导出方法签名从 Rust 方法签名和 impl 中的关联类型
 trait 方法不使用 `#[rils_return]` 覆盖返回类型。`Range<T>` 已经实现
 Rust `Iterator`，其 `IntoIterator` 来自 blanket impl；Rils 也在标准库声明中登记
 `Iterator` 到 `IntoIterator` 的通用关系。
-拥有型标准库迭代器以 `VecDeque` 保存剩余元素，并实现 Rust 的 `Iterator` trait。
+集合的消费式迭代器持有对应存储后端的拥有型游标，并实现 Rust 的 `Iterator` trait；
+执行层的 `OwnedElements` 按需移出条目，保留剩余元素遍历和析构。
 `#[rils_trait]` 的方法体会导出为 Rils 默认方法，缺少重写的 impl 自动获得该实现。
 `Iterator` 的默认方法在 trait 定义处编写，由解释器和字节码从同一份生成源码执行；
 `next` 仍是推进迭代器的底层原语。旧数字调用操作码已移除，旧字节码需重新编译。

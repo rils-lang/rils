@@ -39,28 +39,6 @@ impl Interpreter {
         environment: EnvironmentRef,
         expected: Option<&Type>,
     ) -> Result<Value, RuntimeError> {
-        if let Some(function) = callee.as_callable::<crate::value::NativeFunction>()
-            && let NativeFunctionBody::Symbol(symbol) = function.body
-            && let Some(expected @ Type::Named { name, .. }) = expected
-            && rils_frontend::standard_library::empty_native_constructor_symbol(name)
-                == Some(symbol)
-            && arguments.is_empty()
-        {
-            if !expected.is_concrete_type() {
-                return Err(RuntimeError::new(
-                    format!(
-                        "cannot infer the type arguments of `{name}::new()`; add a type annotation or explicit type arguments"
-                    ),
-                    span,
-                ));
-            }
-            let context = crate::runtime_builtins::NativeOwnedContext::from_environment(
-                &environment.borrow(),
-            );
-            return context
-                .empty_collection(expected)
-                .map_err(|message| RuntimeError::new(message, span));
-        }
         if let Some(method) = callee.as_callable::<crate::value::BuiltinBoundMethod>()
             && matches!(method.method, BuiltinMethod::Native(symbol) if crate::runtime_builtins::requires_owned_native_call(symbol))
         {

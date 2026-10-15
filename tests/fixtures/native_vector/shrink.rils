@@ -1,0 +1,11 @@
+struct Holder { items: Vec<string> }
+let mut empty: Vec<i32> = Vec::new();
+empty.clear();
+empty.truncate(8);
+let mut holder = Holder { items: Vec::from(["a", "b", "c"]) };
+holder.items.truncate(8);
+let first = holder.items.len();
+holder.items.truncate(1);
+let second = holder.items.len();
+holder.items.clear();
+first + second * 10 + holder.items.len() + empty.len()

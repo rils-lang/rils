@@ -129,6 +129,8 @@ fn expand_with_layouts(
     let mut trait_checks = Vec::new();
     let mut layout_declarations = Vec::new();
 
+    structure::storage::validate_module_parameters(items)?;
+
     for item in items {
         let Some(attrs) = item_attrs(item) else {
             continue;
@@ -286,6 +288,10 @@ fn expand_with_layouts(
         let Some(target) = target_name(implementation) else {
             continue;
         };
+        if !has_attr(&implementation.attrs, "rils_impl")
+            && implementation.items.iter().any(|member| matches!(member, ImplItem::Type(associated) if has_attr(&associated.attrs, "rils_associated"))) {
+            return Err(Error::new_spanned(implementation, "#[rils_associated] requires an exported #[rils_impl]"));
+        }
         if has_attr(&implementation.attrs, "rils_impl") {
             if !exported.contains(&target.to_string())
                 || trait_aliases.iter().any(|(name, _)| name == target)
@@ -323,9 +329,13 @@ fn expand_with_layouts(
     let mut shadow_functions = Vec::new();
     for item in emitted_items.iter_mut() {
         match item {
-            Item::Struct(value) => value.attrs.retain(|attr| {
-                !attr.path().is_ident("rils_struct") && !attr.path().is_ident("rils_impl")
-            }),
+            Item::Struct(value) => {
+                structure::storage::parameter(value)?;
+                structure::storage::strip_markers(&mut value.generics);
+                value.attrs.retain(|attr| {
+                    !attr.path().is_ident("rils_struct") && !attr.path().is_ident("rils_impl")
+                });
+            }
             Item::Enum(value) => value.attrs.retain(|attr| {
                 !attr.path().is_ident("rils_enum") && !attr.path().is_ident("rils_impl")
             }),
@@ -350,7 +360,13 @@ fn expand_with_layouts(
                 let sum =
                     target_name(value).is_some_and(|name| name == "Option" || name == "Result");
                 for member in &mut value.items {
+                    if let ImplItem::Type(associated) = member {
+                        associated
+                            .attrs
+                            .retain(|attr| !attr.path().is_ident("rils_associated"));
+                    }
                     if let ImplItem::Fn(method) = member {
+                        structure::storage::strip_parameter_markers(&mut method.sig);
                         if has_attr(&method.attrs, "export_rils")
                             && let Some(shadow) =
                                 super::function_definition::callback_signature::shadow_method(
@@ -449,7 +465,7 @@ mod tests {
         let module: ItemMod = syn::parse_quote! {
             mod native {
                 #[rils_struct]
-                pub struct Vec<T>(std::vec::Vec<T>);
+                pub struct Vec<T, #[rils_storage(sequence, crate::Vec)] S = std::vec::Vec<T>>(S, std::marker::PhantomData<T>);
                 #[rils_struct]
                 pub struct Iter<T>(std::vec::IntoIter<T>);
             }

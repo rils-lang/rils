@@ -32,25 +32,22 @@ fn native_sequence_storage_is_borrowed_in_place_through_nested_paths() {
                 .unwrap()
             })
             .collect::<Vec<_>>();
-        let pointer = fields.as_ptr();
         let sequence = DynamicValue::sequence(layout.clone(), fields).unwrap();
         let record =
             DynamicLayout::record(Type::named("Holder"), vec![("items".into(), layout)]).unwrap();
         let record = DynamicValue::record(record, vec![sequence]).unwrap();
-        record
-            .view()
-            .field(0)
-            .unwrap()
-            .with_sequence_storage(|items| {
-                assert_eq!(items.len(), length);
-                assert_eq!(items.as_ptr(), pointer);
-                for (index, item) in items.iter().enumerate() {
-                    item.with::<Probe, _>(|value| assert_eq!(value.text, index.to_string()))
-                        .unwrap();
-                }
-            })
-            .unwrap();
-        assert!(record.view().with_sequence_storage(|_| ()).is_err());
+        let view = record.view().field(0).unwrap();
+        let items = view.indexed().unwrap();
+        assert_eq!(items.len(), length);
+        for index in 0..length {
+            items
+                .item(index)
+                .unwrap()
+                .with_rust::<Probe, _>(|value| assert_eq!(value.text, index.to_string()))
+                .unwrap();
+        }
+        assert!(items.item(length).is_err());
+        assert!(record.view().indexed().is_err());
         assert_eq!(drops.get(), 0);
         drop(record);
         assert_eq!(drops.get(), length);

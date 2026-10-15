@@ -20,9 +20,6 @@ fn tokens(definition: &Definition) -> syn::Result<proc_macro2::TokenStream> {
     {
         return boxed_tokens(definition);
     }
-    if let Some(tokens) = super::keyed::tokens(definition) {
-        return Ok(tokens);
-    }
     if let Some(tokens) = super::shared::tokens(definition) {
         return Ok(tokens);
     }

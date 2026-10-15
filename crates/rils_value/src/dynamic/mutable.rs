@@ -170,11 +170,22 @@ impl DynamicValueMut<'_> {
         Ok(())
     }
 
-    pub fn take_all_sequence_items(&mut self) -> Result<Vec<DynamicValue>, String> {
+    /// Transfer sequence storage into a cursor after validating every element.
+    pub fn drain_sequence(&mut self) -> Result<super::OwnedElements, String> {
+        let item = self
+            .view()
+            .layout()?
+            .sequence_item()
+            .ok_or("value is not a sequence")?
+            .clone();
         let storage = self.sequence_storage_mut()?;
         storage.borrows.check_structural_mutation()?;
+        super::OwnedElements::validate(&item, &storage.items)?;
         storage.borrows.clear()?;
-        Ok(std::mem::take(&mut storage.items))
+        Ok(super::OwnedElements::from_validated(
+            item,
+            std::mem::take(&mut storage.items),
+        ))
     }
 
     pub fn clear_sequence(&mut self) -> Result<(), String> {

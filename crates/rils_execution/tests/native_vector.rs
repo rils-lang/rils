@@ -88,6 +88,15 @@ fn native_vec_receiver_preserves_referenced_slots_and_rejects_reordering() {
         Ok(Value::from(rils_execution::value::native_usize(2)))
     );
     for (name, arguments) in [
+        ("clear", vec![receiver.clone()]),
+        ("pop", vec![receiver.clone()]),
+        (
+            "truncate",
+            vec![
+                receiver.clone(),
+                Value::from(rils_execution::value::native_usize(0)),
+            ],
+        ),
         (
             "push",
             vec![
@@ -194,4 +203,110 @@ fn reference_handle_stays_compact() {
         "reference handle grew to {} bytes",
         std::mem::size_of::<ReferenceValue>()
     );
+}
+
+#[test]
+fn owned_sequence_arguments_reject_aliases_borrows_and_layout_mismatches() {
+    let context = NativeOwnedContext::default();
+    let make = |ty: Type, value: Value| {
+        let array = context
+            .storage()
+            .construct_array(
+                &Type::Array {
+                    element: Box::new(ty),
+                    length: 1,
+                },
+                vec![value],
+            )
+            .unwrap();
+        call_native_owned_symbol(symbol("from"), vec![array], &context)
+            .unwrap()
+            .unwrap()
+    };
+    let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+    storage
+        .borrow_mut()
+        .initialize(make(Type::I32, rils_execution::value::native_i32(1).into()));
+    let receiver = Value::from_reference(Rc::new(ReferenceValue::new_storage(storage, true)));
+    let other = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+    other
+        .borrow_mut()
+        .initialize(make(Type::I32, rils_execution::value::native_i32(2).into()));
+    let borrowed = Value::from_reference(Rc::new(ReferenceValue::new_storage(other, false)));
+    for (source, expected) in [
+        (receiver.clone(), "itself"),
+        (borrowed, "owned"),
+        (
+            make(Type::Bool, rils_execution::value::native_bool(true).into()),
+            "layout",
+        ),
+    ] {
+        let error =
+            call_native_owned_symbol(symbol("extend"), vec![receiver.clone(), source], &context)
+                .unwrap()
+                .unwrap_err();
+        assert!(error.contains(expected), "expected {expected}: {error}");
+        assert_eq!(
+            call_native_symbol(symbol("len"), std::slice::from_ref(&receiver))
+                .unwrap()
+                .unwrap()
+                .get_cloned::<usize>()
+                .unwrap(),
+            1
+        );
+    }
+}
+
+#[test]
+fn borrowed_sequence_iteration_uses_shared_dispatch_and_retains_its_lease() {
+    assert!(!rils_execution::runtime_builtins::requires_owned_native_call(symbol("iter")));
+    let context = NativeOwnedContext::default();
+    for array in [false, true] {
+        for length in [0, 1, 4] {
+            let value = context
+                .storage()
+                .construct_array(
+                    &Type::Array {
+                        element: Box::new(Type::I32),
+                        length,
+                    },
+                    (0..length)
+                        .map(|i| rils_execution::value::native_i32(i as i32).into())
+                        .collect(),
+                )
+                .unwrap();
+            let value = if array {
+                value
+            } else {
+                call_native_owned_symbol(symbol("from"), vec![value], &context)
+                    .unwrap()
+                    .unwrap()
+            };
+            assert!(
+                call_native_symbol(symbol("iter"), std::slice::from_ref(&value))
+                    .unwrap()
+                    .is_err()
+            );
+            let storage = Rc::new(RefCell::new(StorageSlot::uninitialized(true)));
+            storage.borrow_mut().initialize(value);
+            let receiver =
+                Value::from_reference(Rc::new(ReferenceValue::new_storage(storage, true)));
+            let iterator = call_native_symbol(symbol("iter"), std::slice::from_ref(&receiver))
+                .unwrap()
+                .unwrap();
+            if !array {
+                assert!(
+                    call_native_symbol(symbol("clear"), std::slice::from_ref(&receiver))
+                        .unwrap()
+                        .is_err()
+                );
+            }
+            drop(iterator);
+            if !array {
+                call_native_symbol(symbol("clear"), std::slice::from_ref(&receiver))
+                    .unwrap()
+                    .unwrap();
+            }
+        }
+    }
 }

@@ -28,16 +28,14 @@ impl Value {
     }
 
     pub fn from_borrowed_iterator(iterator: BorrowedIndexedIteratorValue) -> Self {
-        let descriptor = NativeType::new::<BorrowedIndexedIteratorValue>(Type::Named {
-            name: "Iter".into(),
-            arguments: vec![iterator.item_type()],
-        })
-        .with_children::<BorrowedIndexedIteratorValue>()
-        .register_method(native_ops::NEXT, |call| {
-            call.receiver::<BorrowedIndexedIteratorValue, _>(
-                BorrowedIndexedIteratorValue::next_option,
-            )?
-        });
+        let descriptor =
+            NativeType::new::<BorrowedIndexedIteratorValue>(iterator.iterator_type.clone())
+                .with_children::<BorrowedIndexedIteratorValue>()
+                .register_method(native_ops::NEXT, |call| {
+                    call.receiver::<BorrowedIndexedIteratorValue, _>(
+                        BorrowedIndexedIteratorValue::next_option,
+                    )?
+                });
         Self::Native(
             NativeObject::new(Rc::new(descriptor), iterator)
                 .expect("matching native iterator registration"),

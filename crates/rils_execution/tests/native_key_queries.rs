@@ -366,13 +366,17 @@ fn nominal_keys_require_eq_and_hash_but_never_gain_copy_implicitly() {
         },
         layout.clone(),
     );
-    let (receiver, _) = reference(wrap(
-        DynamicValue::sequence(
-            set,
-            vec![DynamicValue::record(layout.clone(), vec![]).unwrap()],
+    let (receiver, _) = reference(
+        native_instance::from_native(
+            DynamicValue::sequence(
+                set,
+                vec![DynamicValue::record(layout.clone(), vec![]).unwrap()],
+            )
+            .unwrap(),
+            codec.clone(),
         )
         .unwrap(),
-    ));
+    );
     for traits in [vec![], vec!["Eq"], vec!["Hash"], vec!["Eq", "Hash"]] {
         *definition.implemented_traits.borrow_mut() =
             traits.iter().map(|name| (*name).to_owned()).collect();

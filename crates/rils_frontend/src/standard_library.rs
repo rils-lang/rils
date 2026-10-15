@@ -1,3 +1,6 @@
+mod declarations;
+pub use declarations::{BuiltinStructDeclaration, builtin_runtime_struct_declarations};
+
 use std::collections::HashMap;
 
 use crate::types::{FunctionSignature, Type};
@@ -116,7 +119,25 @@ pub fn builtin_member_type(object: &Type, name: &str) -> Option<Type> {
     ))
 }
 
+/// Resolves an exported associated type using its declaration's generic arguments.
+pub fn builtin_associated_type(object: &Type, trait_name: &str, name: &str) -> Option<Type> {
+    let (owner, self_type, generics) = builtin_owner(object)?;
+    let declaration = builtin_runtime_struct_declarations()
+        .iter()
+        .find(|item| item.name == owner)?;
+    let target = declaration
+        .associated_types
+        .get(&(trait_name.into(), name.into()))?;
+    let mut substitutions = generics
+        .into_iter()
+        .map(|(name, ty)| (name.to_owned(), ty))
+        .collect::<HashMap<_, _>>();
+    substitutions.insert("Self".into(), self_type);
+    Some(target.substitute(&substitutions))
+}
+
 pub fn builtin_iterator_item_type(object: &Type) -> Option<Type> {
+    builtin_trait_member_for_type(object, "Iterator", "next")?;
     let Type::Function { return_type, .. } = builtin_member_type(object, "next")? else {
         return None;
     };
@@ -127,6 +148,7 @@ pub fn builtin_iterator_item_type(object: &Type) -> Option<Type> {
 }
 
 pub fn builtin_into_iterator_item_type(object: &Type) -> Option<Type> {
+    builtin_trait_member_for_type(object, "IntoIterator", "into_iter")?;
     let Type::Function { return_type, .. } = builtin_member_type(object, "into_iter")? else {
         return None;
     };
@@ -463,16 +485,11 @@ fn resolve_member_pattern(
             {
                 return item.clone();
             }
-            if trait_name == Some("Iterator")
-                && name == "Item"
-                && arguments.is_empty()
-                && let Type::Named {
-                    name: owner,
-                    arguments: items,
-                } = &base
-                && matches!(owner.as_str(), "Iter" | "Range")
+            if arguments.is_empty()
+                && let Some(trait_name) = trait_name
+                && let Some(target) = builtin_associated_type(&base, trait_name, name)
             {
-                return items.first().cloned().unwrap_or(Type::Unknown);
+                return target;
             }
             Type::Associated {
                 base: Box::new(base),

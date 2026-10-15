@@ -268,31 +268,17 @@ pub(super) fn type_implements_trait(
     }
     match trait_name {
         "IntoIterator" if matches!(actual, Type::Array { .. }) => true,
-        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Vec" && arguments.len() == 1) => {
+        "IntoIterator"
+            if rils_frontend::standard_library::builtin_into_iterator_item_type(actual)
+                .is_some()
+                || rils_frontend::standard_library::builtin_iterator_item_type(actual)
+                    .is_some() =>
+        {
             true
         }
-        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if matches!(name.as_str(), "VecDeque" | "BinaryHeap") && arguments.len() == 1) => {
-            true
-        }
-        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashMap" && arguments.len() == 2) => {
-            true
-        }
-        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "BTreeMap" && arguments.len() == 2) => {
-            true
-        }
-        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "BTreeSet" && arguments.len() == 1) => {
-            true
-        }
-        "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "HashSet" && arguments.len() == 1) => {
-            true
-        }
-        "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Iter" && arguments.len() == 1) => {
-            true
-        }
-        "Iterator" if matches!(actual, Type::Named { name, arguments } if name == "Iter" && arguments.len() == 1) => {
-            true
-        }
-        "Iterator" | "IntoIterator" if matches!(actual, Type::Named { name, arguments } if name == "Range" && arguments.is_empty()) => {
+        "Iterator"
+            if rils_frontend::standard_library::builtin_iterator_item_type(actual).is_some() =>
+        {
             true
         }
         "Copy" => type_is_copy(actual, environment),
