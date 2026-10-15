@@ -20,8 +20,14 @@ impl NativeRecordCodec {
         source: &Self,
         layout: &DynamicLayout,
     ) -> Result<(), String> {
-        if let Some(descriptor) = source.native_types.get(layout.rils_type()) {
-            self.register_native_type(descriptor.clone())?;
+        let descriptor = source
+            .declarations
+            .borrow()
+            .native_types
+            .get(layout.rils_type())
+            .cloned();
+        if let Some(descriptor) = descriptor {
+            self.register_native_type(descriptor)?;
         }
         // Zero-sized arrays and phantom arguments have types without physical fields.
         self.retain_type_declarations(source, layout.rils_type())?;
@@ -40,7 +46,22 @@ impl NativeRecordCodec {
         }
         Ok(())
     }
+
+    /// Publish compatible declaration additions to this owner's shared context.
+    /// Clones remain independent snapshots; readers observe a complete validated update.
+    pub(crate) fn commit_layout_declarations(
+        &self,
+        source: &Self,
+        layout: &DynamicLayout,
+    ) -> Result<(), String> {
+        let mut candidate = self.clone();
+        candidate.retain_layout_declarations(source, layout)?;
+        *self.declarations.borrow_mut() = candidate.declarations.into_inner();
+        Ok(())
+    }
+
     fn retain_type_declarations(&mut self, source: &Self, ty: &Type) -> Result<(), String> {
+        let source = source.declarations.borrow().clone();
         let mut pending = vec![ty.clone()];
         let mut visited = std::collections::HashSet::new();
         while let Some(ty) = pending.pop() {
@@ -53,13 +74,14 @@ impl NativeRecordCodec {
                     if !visited.insert(name.clone()) {
                         continue;
                     }
-                    if (source.structs.contains_key(&name) && self.enums.contains_key(&name))
-                        || (source.enums.contains_key(&name) && self.structs.contains_key(&name))
+                    let target = self.declarations.get_mut();
+                    if (source.structs.contains_key(&name) && target.enums.contains_key(&name))
+                        || (source.enums.contains_key(&name) && target.structs.contains_key(&name))
                     {
                         return Err(format!("conflicting native declaration for `{name}`"));
                     }
-                    retain(&mut self.structs, &source.structs, &name, Rc::ptr_eq)?;
-                    retain(&mut self.enums, &source.enums, &name, |left, right| {
+                    retain(&mut target.structs, &source.structs, &name, Rc::ptr_eq)?;
+                    retain(&mut target.enums, &source.enums, &name, |left, right| {
                         Rc::ptr_eq(left, right)
                             || matches!((&left.host_definition, &right.host_definition), (Some(left), Some(right)) if left == right)
                     })?;

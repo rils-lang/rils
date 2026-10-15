@@ -210,12 +210,9 @@ impl NativeInstancePlace {
             return Err("cannot replace a referenced native child".into());
         }
         let layout = self.field_layout()?;
-        let value = self
-            .codec
-            .as_ref()
-            .clone()
-            .with_owned_conversion()
-            .into_native(value, layout)?;
+        let mut codec = self.codec.as_ref().clone().with_owned_conversion();
+        let value = codec.into_native(value, layout.clone())?;
+        self.codec.commit_layout_declarations(&codec, &layout)?;
         self.object
             .with_mut(|payload| payload.replace_path_owned(&self.path, value))??;
         Ok(())

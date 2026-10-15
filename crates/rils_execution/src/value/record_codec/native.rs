@@ -14,13 +14,19 @@ impl NativeRecordCodec {
         &self,
         layout: &DynamicLayout,
     ) -> Result<Option<Rc<NativeType>>, String> {
-        let Some(descriptor) = self.native_types.get(layout.rils_type()) else {
+        let descriptor = self
+            .declarations
+            .borrow()
+            .native_types
+            .get(layout.rils_type())
+            .cloned();
+        let Some(descriptor) = descriptor else {
             return Ok(None);
         };
         if !descriptor.layout_handle().compatible_with(layout) {
             return Err("composed native leaf has a conflicting layout".into());
         }
-        Ok(Some(descriptor.clone()))
+        Ok(Some(descriptor))
     }
 
     pub(super) fn resolve_registered_layout(
@@ -32,8 +38,20 @@ impl NativeRecordCodec {
             codec: self,
             hosts: crate::value::runtime_layouts::HostLayoutProvider::new(hosts),
         };
-        let structs = self.structs.values().cloned().collect::<Vec<_>>();
-        let enums = self.enums.values().cloned().collect::<Vec<_>>();
+        let structs = self
+            .declarations
+            .borrow()
+            .structs
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        let enums = self
+            .declarations
+            .borrow()
+            .enums
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
         crate::value::record_layout::RecordLayoutResolver::with_provider(
             &structs,
             &enums,
@@ -48,12 +66,13 @@ impl NativeRecordCodec {
                 "native registration requires a concrete type: {ty}"
             ));
         }
-        if let Some(existing) = self.native_types.get(ty) {
+        let declarations = self.declarations.get_mut();
+        if let Some(existing) = declarations.native_types.get(ty) {
             if !Rc::ptr_eq(existing, &descriptor) && !existing.same_registration(&descriptor) {
                 return Err(format!("conflicting native registration for {ty}"));
             }
         } else {
-            self.native_types.insert(ty.clone(), descriptor);
+            declarations.native_types.insert(ty.clone(), descriptor);
         }
         Ok(())
     }
@@ -119,6 +138,8 @@ impl NativeRecordCodec {
         state: NativeChildState,
     ) -> Result<bool, String> {
         if !self
+            .declarations
+            .borrow()
             .native_types
             .values()
             .any(|descriptor| descriptor.has_children())
@@ -127,7 +148,13 @@ impl NativeRecordCodec {
         }
         view.any_leaf(&mut |view| {
             let layout = view.layout()?;
-            let Some(descriptor) = self.native_types.get(layout.rils_type()) else {
+            let descriptor = self
+                .declarations
+                .borrow()
+                .native_types
+                .get(layout.rils_type())
+                .cloned();
+            let Some(descriptor) = descriptor else {
                 return Ok(false);
             };
             if !descriptor.layout_handle().compatible_with(&layout) {
@@ -155,9 +182,14 @@ impl crate::value::record_layout::NativeLayoutProvider for RegisteredLayouts<'_>
         ty: &Type,
         resolve: &mut dyn FnMut(&Type) -> Result<Rc<DynamicLayout>, String>,
     ) -> Option<Result<Rc<DynamicLayout>, String>> {
-        self.codec
+        let descriptor = self
+            .codec
+            .declarations
+            .borrow()
             .native_types
             .get(ty)
+            .cloned();
+        descriptor
             .map(|descriptor| Ok(descriptor.layout_handle()))
             .or_else(|| self.hosts.layout(ty, resolve))
     }

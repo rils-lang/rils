@@ -4,7 +4,7 @@
 //! wrappers at the execution boundary. Nominal declarations are retained in
 //! the codec so moved structs and enums keep their native storage and identity.
 
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use rils_stdlib::stdlib::string::String as NativeString;
 use rils_value::{DynamicLayout, DynamicPathStep, DynamicValue};
@@ -24,10 +24,15 @@ mod sum;
 
 #[derive(Clone, Default)]
 pub struct NativeRecordCodec {
+    declarations: RefCell<CodecDeclarations>,
+    require_owned: bool,
+}
+
+#[derive(Clone, Default)]
+struct CodecDeclarations {
     native_types: HashMap<Type, Rc<super::NativeType>>,
     structs: HashMap<String, Rc<StructType>>,
     enums: HashMap<String, Rc<EnumType>>,
-    require_owned: bool,
 }
 
 impl NativeRecordCodec {
@@ -37,15 +42,17 @@ impl NativeRecordCodec {
 
     pub fn with_definitions(structs: &[Rc<StructType>], enums: &[Rc<EnumType>]) -> Self {
         Self {
-            native_types: HashMap::new(),
-            structs: structs
-                .iter()
-                .map(|definition| (definition.name.clone(), definition.clone()))
-                .collect(),
-            enums: enums
-                .iter()
-                .map(|definition| (definition.name.clone(), definition.clone()))
-                .collect(),
+            declarations: RefCell::new(CodecDeclarations {
+                native_types: HashMap::new(),
+                structs: structs
+                    .iter()
+                    .map(|definition| (definition.name.clone(), definition.clone()))
+                    .collect(),
+                enums: enums
+                    .iter()
+                    .map(|definition| (definition.name.clone(), definition.clone()))
+                    .collect(),
+            }),
             require_owned: false,
         }
     }
@@ -59,12 +66,15 @@ impl NativeRecordCodec {
         let Type::Named { name, .. } = ty else {
             return None;
         };
-        self.structs
+        let declarations = self.declarations.borrow();
+        declarations
+            .structs
             .get(name)
             .cloned()
             .map(crate::value::Declaration::StructType)
             .or_else(|| {
-                self.enums
+                declarations
+                    .enums
                     .get(name)
                     .cloned()
                     .map(crate::value::Declaration::EnumType)
@@ -114,7 +124,7 @@ impl NativeRecordCodec {
         let ty = layout.rils_type().clone();
         if let Value::Native(object) = &value
             && object.descriptor().layout_handle().compatible_with(&layout)
-            && (self.require_owned || self.native_types.contains_key(&ty))
+            && (self.require_owned || self.declarations.borrow().native_types.contains_key(&ty))
         {
             self.register_native_type(object.descriptor_handle())?;
             let Value::Native(object) = value else {
@@ -204,7 +214,13 @@ impl NativeRecordCodec {
     }
 
     fn decode(&self, value: DynamicValue) -> Result<Value, String> {
-        if let Some(descriptor) = self.native_types.get(value.descriptor().rils_type()) {
+        let descriptor = self
+            .declarations
+            .borrow()
+            .native_types
+            .get(value.descriptor().rils_type())
+            .cloned();
+        if let Some(descriptor) = descriptor {
             return descriptor
                 .from_dynamic(value)
                 .map(Value::Native)
@@ -244,8 +260,10 @@ impl NativeRecordCodec {
             _ if value.descriptor().sequence_item().is_some() => {
                 super::native_instance::from_native(value, Rc::new(self.clone()))
             }
-            Type::Named { name, arguments } if self.structs.contains_key(&name) => {
-                let definition = self.structs[&name].clone();
+            Type::Named { name, arguments }
+                if self.declarations.borrow().structs.contains_key(&name) =>
+            {
+                let definition = self.declarations.borrow().structs[&name].clone();
                 let fields = value
                     .descriptor()
                     .record_fields()
@@ -271,8 +289,10 @@ impl NativeRecordCodec {
                 }
                 super::native_instance::from_native(value, Rc::new(self.clone()))
             }
-            Type::Named { name, arguments } if self.enums.contains_key(&name) => {
-                let definition = self.enums[&name].clone();
+            Type::Named { name, arguments }
+                if self.declarations.borrow().enums.contains_key(&name) =>
+            {
+                let definition = self.declarations.borrow().enums[&name].clone();
                 if definition.generic_parameters.len() != arguments.len() {
                     return Err(format!("enum `{name}` has wrong type argument count"));
                 }

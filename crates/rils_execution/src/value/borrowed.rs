@@ -14,7 +14,9 @@ pub(crate) fn native_codec(
                 .expect("checked reference handle");
             reference.native_codec()
         }
-        Value::Dynamic(object) => Ok(object.descriptor().metadata()),
+        Value::Dynamic(object) => Ok(Some(object.descriptor().metadata_or_insert_with(|| {
+            std::rc::Rc::new(super::record_codec::NativeRecordCodec::default())
+        }))),
 
         _ => Ok(None),
     }

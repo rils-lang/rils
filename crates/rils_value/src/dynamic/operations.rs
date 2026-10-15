@@ -2,6 +2,7 @@
 
 use std::{
     any::{Any, TypeId},
+    cell::RefCell,
     collections::HashMap,
     rc::Rc,
 };
@@ -16,7 +17,7 @@ pub struct DynamicType<V> {
     layout: Rc<DynamicLayout>,
     methods: HashMap<String, Method<V>>,
     owned_operations: HashMap<String, OwnedOperation<V>>,
-    metadata: HashMap<TypeId, Rc<dyn Any>>,
+    metadata: RefCell<HashMap<TypeId, Rc<dyn Any>>>,
 }
 
 impl<V> DynamicType<V> {
@@ -25,15 +26,18 @@ impl<V> DynamicType<V> {
             layout,
             methods: HashMap::new(),
             owned_operations: HashMap::new(),
-            metadata: HashMap::new(),
+            metadata: RefCell::new(HashMap::new()),
         }
     }
 
-    /// Attach immutable declaration context to the operation table. This is
+    /// Attach shared declaration context to the operation table. This is
     /// type metadata, never the bytes or children of a stored value.
     pub fn register_metadata<T: 'static>(mut self, metadata: Rc<T>) -> Self {
         assert!(
-            self.metadata.insert(TypeId::of::<T>(), metadata).is_none(),
+            self.metadata
+                .get_mut()
+                .insert(TypeId::of::<T>(), metadata)
+                .is_none(),
             "dynamic metadata {} was registered twice",
             std::any::type_name::<T>()
         );
@@ -42,10 +46,27 @@ impl<V> DynamicType<V> {
 
     pub fn metadata<T: 'static>(&self) -> Option<Rc<T>> {
         self.metadata
+            .borrow()
             .get(&TypeId::of::<T>())?
             .clone()
             .downcast()
             .ok()
+    }
+
+    /// Install a lazily required metadata context once on the original descriptor.
+    /// The initializer runs without a metadata borrow, so it may consult other metadata.
+    pub fn metadata_or_insert_with<T: 'static>(&self, initialize: impl FnOnce() -> Rc<T>) -> Rc<T> {
+        if let Some(metadata) = self.metadata() {
+            return metadata;
+        }
+        let initialized = initialize();
+        self.metadata
+            .borrow_mut()
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| initialized.clone())
+            .clone()
+            .downcast()
+            .expect("metadata type matches its TypeId")
     }
 
     pub fn register_method(

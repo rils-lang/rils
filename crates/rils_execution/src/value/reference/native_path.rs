@@ -70,6 +70,9 @@ impl NativePath {
         let value = codec
             .into_native(value, layout.clone())
             .map_err(|_| AssignError::TypeMismatch(layout.rils_type().clone()))?;
+        self.codec
+            .commit_layout_declarations(&codec, &layout)
+            .map_err(|_| AssignError::TypeMismatch(layout.rils_type().clone()))?;
         self.object
             .with_mut(|payload| payload.replace_path_reference(&self.path, value))
             .map_err(|_| AssignError::BorrowedTarget)?
@@ -98,7 +101,12 @@ impl ReferenceValue {
                 if let Some(field) = field {
                     path.push(DynamicPathStep::Field(*field));
                 }
-                NativePath::new(sequence.clone(), path, codec.clone().unwrap_or_default())?
+                let codec = codec.clone().unwrap_or_else(|| {
+                    sequence
+                        .descriptor()
+                        .metadata_or_insert_with(|| Rc::new(NativeRecordCodec::default()))
+                });
+                NativePath::new(sequence.clone(), path, codec)?
             }
             ReferenceTarget::DynamicCell { cell, codec } => {
                 let object = cell.with(|payload| {
@@ -141,8 +149,7 @@ impl ReferenceValue {
         };
         let codec = object
             .descriptor()
-            .metadata::<NativeRecordCodec>()
-            .unwrap_or_default();
+            .metadata_or_insert_with(|| Rc::new(NativeRecordCodec::default()));
         NativePath::new(object.clone().into_compact(), vec![], codec).map(Some)
     }
 
@@ -176,7 +183,13 @@ impl ReferenceValue {
         // Declaration lookup must not promote storage or acquire a mutable borrow.
         match &self.target {
             ReferenceTarget::DynamicField(path) => Ok(Some(path.codec.clone())),
-            ReferenceTarget::DynamicIndexedElement { codec, .. } => Ok(codec.clone()),
+            ReferenceTarget::DynamicIndexedElement {
+                sequence, codec, ..
+            } => Ok(Some(codec.clone().unwrap_or_else(|| {
+                sequence
+                    .descriptor()
+                    .metadata_or_insert_with(|| Rc::new(NativeRecordCodec::default()))
+            }))),
             ReferenceTarget::DynamicCell { codec, .. } => Ok(Some(codec.clone())),
             ReferenceTarget::Storage(target) => target
                 .try_borrow()
